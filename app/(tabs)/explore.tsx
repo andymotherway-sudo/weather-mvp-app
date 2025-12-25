@@ -1,112 +1,241 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// app/(tabs)/explore.tsx
+// Buoy Explorer – list of buoys with live risk badges and NOAA obs
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-export default function TabTwoScreen() {
+import { Card } from '../../components/layout/Card';
+import { theme } from '../../styles/theme';
+import { typography } from '../../styles/typography';
+import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
+import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+
+// Live risk heuristic based on wave height + wind
+function getLiveRisk(
+  waveM: number | null | undefined,
+  windKts: number | null | undefined,
+): { level: 'Low' | 'Moderate' | 'High'; label: string } {
+  if (waveM == null && windKts == null) {
+    return { level: 'Low', label: 'No recent obs' };
+  }
+
+  const ft = waveM != null ? waveM * 3.28084 : null;
+  const w = windKts ?? 0;
+
+  if ((ft == null || ft < 3) && w < 15) {
+    return { level: 'Low', label: 'Generally calm conditions' };
+  }
+
+  if ((ft != null && ft < 6) && w < 25) {
+    return { level: 'Moderate', label: 'Choppy / moderate seas' };
+  }
+
+  return { level: 'High', label: 'Rough / hazardous conditions' };
+}
+
+// One row in the explorer list – uses NOAA data directly
+function BuoyListItem({ buoy }: { buoy: BuoyDetailData }) {
+  const router = useRouter();
+
+  const waveM = buoy.waveHeightM ?? null;
+  const waveFt = waveM != null ? waveM * 3.28084 : null;
+  const windKts = buoy.windSpeedKts ?? null;
+
+  const risk = getLiveRisk(waveM, windKts);
+
+  const hasLive = waveM != null || windKts != null;
+
+  const liveLine = hasLive
+    ? [
+        waveFt != null ? `${waveFt.toFixed(1)} ft` : '— ft',
+        windKts != null ? `${windKts.toFixed(0)} kt` : '— kt',
+      ].join(' · ')
+    : 'No recent sea state';
+
+  const footnote = 'Tap to view live buoy detail.';
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: '/buoy/[buoyId]',
+          params: { buoyId: buoy.id, name: buoy.name },
+        })
+      }
+    >
+      <Card style={styles.buoyCard}>
+        <View style={styles.buoyHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.buoyName}>{buoy.name}</Text>
+            <Text style={styles.buoyMeta}>
+              NOAA NDBC · {buoy.id}
+            </Text>
+            <Text style={styles.buoyMeta}>
+              {buoy.lat.toFixed(3)}, {buoy.lon.toFixed(3)}
+            </Text>
+            {buoy.updatedAt && (
+              <Text style={styles.buoyMeta}>
+                Updated {new Date(buoy.updatedAt).toLocaleString()}
+              </Text>
+            )}
+
+            <Text style={styles.buoyMeta}>
+              Sea state: {liveLine}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.riskBadge,
+              risk.level === 'Low' && styles.riskLow,
+              risk.level === 'Moderate' && styles.riskModerate,
+              risk.level === 'High' && styles.riskHigh,
+            ]}
+          >
+            <Text style={styles.riskBadgeLabel}>{risk.level}</Text>
+            <Text style={styles.riskBadgeText}>{risk.label}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.buoyFootnote}>{footnote}</Text>
+      </Card>
+    </Pressable>
+  );
+}
+
+export default function ExploreBuoysScreen() {
+  const { data, loading, error } = useAllBuoyDetails();
+  const buoys: BuoyDetailData[] = data ?? [];
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={typography.title}>Buoy Explorer</Text>
+          <Text style={typography.subtitle}>
+            Live NOAA buoys (latest observations)
+          </Text>
+        </View>
+      </View>
+
+      {loading && !data && (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={typography.small}>Loading buoys…</Text>
+        </View>
+      )}
+
+      {error && (
+        <Card style={styles.errorCard}>
+          <Text style={styles.errorTitle}>Error</Text>
+          <Text style={styles.errorText}>{error}</Text>
+        </Card>
+      )}
+
+      {buoys.map((buoy) => (
+        <BuoyListItem key={buoy.id} buoy={buoy} />
+      ))}
+
+      {!loading && !error && buoys.length === 0 && (
+        <View style={styles.center}>
+          <Text style={typography.small}>No buoys found.</Text>
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
   },
-  titleContainer: {
+  content: {
+    padding: theme.spacing.lg,
+    paddingBottom: theme.spacing['2xl'],
+  },
+  headerRow: {
     flexDirection: 'row',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  center: {
+    marginTop: theme.spacing['2xl'],
+    alignItems: 'center',
+  },
+  errorCard: {
+    backgroundColor: theme.colors.errorBg,
+    borderColor: theme.colors.errorBg,
+    marginBottom: theme.spacing.lg,
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.errorText,
+    marginBottom: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: theme.colors.errorText,
+  },
+  buoyCard: {
+    marginBottom: theme.spacing.md,
+  },
+  buoyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  buoyName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  buoyMeta: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+  },
+  buoyFootnote: {
+    marginTop: theme.spacing.sm,
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+  },
+  riskBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    maxWidth: 140,
+  },
+  riskBadgeLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F9FAFB',
+  },
+  riskBadgeText: {
+    fontSize: 10,
+    color: '#E5E7EB',
+  },
+  riskLow: {
+    backgroundColor: '#16a34a33',
+    borderColor: '#16a34a',
+  },
+  riskModerate: {
+    backgroundColor: '#facc1533',
+    borderColor: '#facc15',
+  },
+  riskHigh: {
+    backgroundColor: '#fb923c33',
+    borderColor: '#fb923c',
   },
 });
