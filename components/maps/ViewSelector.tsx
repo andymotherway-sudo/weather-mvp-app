@@ -11,15 +11,19 @@ export function ViewSelector(props: {
 }) {
   const { value, onChange, nerdy } = props;
 
-  const views = MAP_VIEWS.filter((v) => {
+  const views = MAP_VIEWS.filter((v: any) => {
+    // Preserve your existing rule
     if (v.id === 'storm' && !nerdy) return false;
+
+    // Optional future rule (won’t affect anything unless you add nerdyOnly to MAP_VIEWS)
+    if (v.nerdyOnly && !nerdy) return false;
+
     return true;
   });
 
   return (
-    // NOTE: keep this container tight; parent Glass provides the “panel”
     <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-      {views.map((v) => {
+      {views.map((v: any) => {
         const active = v.id === value;
         return (
           <Pressable

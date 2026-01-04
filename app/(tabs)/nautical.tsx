@@ -4,7 +4,7 @@
 // Also supports "zone mode" when launched from polygon world map.
 
 import { useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -1021,7 +1021,7 @@ export default function NauticalScreen() {
         {/* TIDES – only where supported */}
         {supportsTides && mode === 'simple' && data && (
           <Card style={styles.mainCard}>
-            <Text style={styles.sectionLabel}>Today's Tides</Text>
+            <Text style={styles.sectionLabel}>{"Today's Tides"}</Text>
 
             {predictions.map((p) => (
               <View key={p.time} style={styles.simpleRow}>

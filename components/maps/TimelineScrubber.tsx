@@ -1,6 +1,12 @@
 // components/maps/TimelineScrubber.tsx
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  LayoutChangeEvent,
+  PanResponder,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
 
 import type { MapRuntimeState } from '../../app/lib/maps/types';
 
@@ -29,7 +35,7 @@ function formatRadarFrameLabel(iso: string) {
 
 /**
  * Fallback frames (used when real scan times are missing).
- * These let the UI scrub/play while you’re still wiring scan-times.
+ * These let the UI scrub while you’re still wiring scan-times.
  */
 function buildFallbackFrames(opts?: { minutesBack?: number; stepMinutes?: number }): FrameLike[] {
   const minutesBack = opts?.minutesBack ?? 120;
@@ -45,12 +51,7 @@ function buildFallbackFrames(opts?: { minutesBack?: number; stepMinutes?: number
   return out;
 }
 
-function Btn(props: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  active?: boolean;
-}) {
+function Btn(props: { label: string; onPress: () => void; disabled?: boolean; active?: boolean }) {
   const disabled = !!props.disabled;
   const active = !!props.active;
 
@@ -76,6 +77,14 @@ function Btn(props: {
   );
 }
 
+/**
+ * Drop-in replacement (keeps props/behavior):
+ * - IMPORTANT: removes internal playback timer (maps.tsx is the source of truth for playback)
+ * - Adds a scrub bar:
+ *   - drag to preview frames locally (no dispatch spam)
+ *   - commits ONE onSetFrame on release (reduces jitter)
+ *   - pauses playback on touch (you already handle resume rules in maps.tsx)
+ */
 export function TimelineScrubber(props: {
   state: MapRuntimeState;
   frames?: FrameLike[]; // real frames (preferred)
@@ -90,70 +99,169 @@ export function TimelineScrubber(props: {
   const frameCount = effectiveFrames.length;
   const idx = clamp(state.radarTime.frameIndex, frameCount);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasRealFrames = frames.length > 0;
+  const playDisabled = frameCount < 2;
 
+  // ---- Scrub UI state ----
+  const [trackW, setTrackW] = useState(0);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number>(idx);
+
+  // Keep preview aligned when not scrubbing
   useEffect(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    if (!scrubbing) setPreviewIdx(idx);
+  }, [idx, scrubbing]);
 
-    if (!state.radarTime.playing) return;
-
-    if (frameCount < 2) {
-      onSetPlaying(false);
-      return;
-    }
-
-    timerRef.current = setInterval(() => {
-      onSetFrame(nextFrameIndex(idx, frameCount));
-    }, 350);
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [state.radarTime.playing, idx, frameCount, onSetFrame, onSetPlaying]);
+  const idxForUI = scrubbing ? previewIdx : idx;
 
   const label = useMemo(() => {
     if (frameCount === 0) return 'Latest';
-    const f = effectiveFrames[idx];
-    if (!f?.iso) return `Frame ${idx}`;
+    const f = effectiveFrames[idxForUI];
+    if (!f?.iso) return `Frame ${idxForUI}`;
     return formatRadarFrameLabel(f.iso);
-  }, [effectiveFrames, idx, frameCount]);
+  }, [effectiveFrames, idxForUI, frameCount]);
 
-  const playDisabled = frameCount < 2;
-  const hasRealFrames = frames.length > 0;
+  const onTrackLayout = (e: LayoutChangeEvent) => {
+    setTrackW(Math.max(0, Math.floor(e.nativeEvent.layout.width)));
+  };
+
+  const xToIndex = (x: number) => {
+    if (frameCount <= 1 || trackW <= 1) return 0;
+    const t = Math.max(0, Math.min(1, x / trackW));
+    const i = Math.round(t * (frameCount - 1));
+    return clamp(i, frameCount);
+  };
+
+  const commitFrame = (i: number) => {
+    onSetFrame(clamp(i, frameCount));
+  };
+
+  // Pause once when scrubbing begins (prevents “fight” with playback loop)
+  const pausedOnceRef = useRef(false);
+
+  const panResponder = useMemo(() => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => frameCount > 1,
+      onMoveShouldSetPanResponder: () => frameCount > 1,
+      onPanResponderGrant: (evt) => {
+        if (frameCount <= 1) return;
+
+        setScrubbing(true);
+        pausedOnceRef.current = false;
+
+        // Pause playback immediately on touch (maps.tsx still enforces local-mode rules)
+        if (state.radarTime.playing && !pausedOnceRef.current) {
+          pausedOnceRef.current = true;
+          onSetPlaying(false);
+        }
+
+        const x = evt.nativeEvent.locationX ?? 0;
+        setPreviewIdx(xToIndex(x));
+      },
+      onPanResponderMove: (evt) => {
+        if (frameCount <= 1) return;
+        const x = evt.nativeEvent.locationX ?? 0;
+        setPreviewIdx(xToIndex(x));
+      },
+      onPanResponderRelease: () => {
+        setScrubbing(false);
+        commitFrame(previewIdx);
+      },
+      onPanResponderTerminate: () => {
+        setScrubbing(false);
+        commitFrame(previewIdx);
+      },
+    });
+    // NOTE: include only stable deps (state.radarTime.playing is okay; it’s boolean)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameCount, trackW, previewIdx, state.radarTime.playing, onSetPlaying, onSetFrame]);
+
+  // ---- Knob position ----
+  const knobLeft = useMemo(() => {
+    if (frameCount <= 1 || trackW <= 1) return 0;
+    const t = idxForUI / (frameCount - 1);
+    return Math.max(0, Math.min(trackW, Math.round(t * trackW)));
+  }, [idxForUI, frameCount, trackW]);
 
   return (
-    // NOTE: no padding / borders here — parent overlay (Glass) provides that
-    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-      <Btn
-        label={state.radarTime.playing ? 'Pause' : 'Play'}
-        onPress={() => onSetPlaying(!state.radarTime.playing)}
-        disabled={playDisabled}
-        active={state.radarTime.playing}
-      />
+    // NOTE: parent overlay (Glass) provides padding/borders
+    <View style={{ gap: 10 }}>
+      {/* Row 1: controls */}
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        <Btn
+          label={state.radarTime.playing ? 'Pause' : 'Play'}
+          onPress={() => onSetPlaying(!state.radarTime.playing)}
+          disabled={playDisabled}
+          active={state.radarTime.playing}
+        />
 
-      <Btn
-        label="◀"
-        onPress={() => onSetFrame(prevFrameIndex(idx, frameCount))}
-        disabled={frameCount < 1}
-      />
+        <Btn
+          label="◀"
+          onPress={() => {
+            // stepping should pause (prevents the playback loop from immediately advancing)
+            if (state.radarTime.playing) onSetPlaying(false);
+            commitFrame(prevFrameIndex(idx, frameCount));
+          }}
+          disabled={frameCount < 1}
+        />
 
-      <Btn
-        label="▶"
-        onPress={() => onSetFrame(nextFrameIndex(idx, frameCount))}
-        disabled={frameCount < 1}
-      />
+        <Btn
+          label="▶"
+          onPress={() => {
+            if (state.radarTime.playing) onSetPlaying(false);
+            commitFrame(nextFrameIndex(idx, frameCount));
+          }}
+          disabled={frameCount < 1}
+        />
 
-      <View style={{ marginLeft: 6 }}>
-        <Text style={{ color: 'white', fontWeight: '900' }}>{label}</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 2, fontSize: 12 }}>
-          {hasRealFrames ? `${frames.length} frames` : 'No scan-times yet (fallback)'}
-        </Text>
+        <View style={{ marginLeft: 6, flex: 1 }}>
+          <Text style={{ color: 'white', fontWeight: '900' }}>{label}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 2, fontSize: 12 }}>
+            {hasRealFrames ? `${frames.length} frames` : 'No scan-times yet (fallback)'}
+            {scrubbing ? ' · scrubbing' : ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* Row 2: scrub bar */}
+      <View
+        onLayout={onTrackLayout}
+        {...panResponder.panHandlers}
+        style={{
+          height: 18,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.10)',
+          backgroundColor: 'rgba(255,255,255,0.04)',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        {/* “filled” portion */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: knobLeft,
+            backgroundColor: 'rgba(255,255,255,0.10)',
+          }}
+        />
+
+        {/* knob */}
+        <View
+          style={{
+            position: 'absolute',
+            left: Math.max(0, knobLeft - 9),
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.18)',
+            backgroundColor: 'rgba(255,255,255,0.14)',
+          }}
+        />
       </View>
     </View>
   );

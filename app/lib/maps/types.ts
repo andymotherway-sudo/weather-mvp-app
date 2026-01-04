@@ -1,9 +1,10 @@
 // app/lib/maps/types.ts
 
-export type MapViewId = 'radar' | 'wildfire' | 'storm' | 'aviation';
+export type MapViewId = 'clouds' | 'radar' | 'wildfire' | 'storm' | 'aviation';
 
 export type LayerId =
   | 'radar.reflectivity'
+  | 'sat.clouds'
   | 'wildfire.smoke'
   | 'wildfire.perimeters'
   | 'wildfire.hotspots'

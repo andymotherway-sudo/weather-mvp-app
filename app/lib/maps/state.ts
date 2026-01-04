@@ -26,11 +26,13 @@ export function createInitialMapState(opts?: {
   nerdy?: boolean;
   viewport?: MapViewport;
 }): MapRuntimeState {
+  // Keep Radar as the default initial view unless you explicitly change it.
   const viewId = opts?.viewId ?? 'radar';
   const nerdy = opts?.nerdy ?? false;
 
   const viewport: MapViewport =
-    opts?.viewport ?? ({
+    opts?.viewport ??
+    ({
       center: { lat: 33.4152, lon: -111.8315 }, // Mesa-ish default
       zoom: 9,
     } satisfies MapViewport);
@@ -85,8 +87,15 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         }
       }
 
-      // Preserve radar playback state
+      // Preserve radar playback state by default...
       next.radarTime = state.radarTime;
+
+      // ...but if the next view doesn't have radar enabled, pause playing to avoid wasted work.
+      const radarEnabled = !!next.layers?.['radar.reflectivity' as LayerId]?.enabled;
+      if (!radarEnabled && next.radarTime.playing) {
+        next.radarTime = { ...next.radarTime, playing: false };
+      }
+
       return next;
     }
 

@@ -23,7 +23,7 @@ export type LayerCatalogItem = {
 
   // allow toggling these UI affordances
   supportsOpacity?: boolean; // default true
-  supportsLegend?: boolean;  // default true if legendKey exists
+  supportsLegend?: boolean; // default true if legendKey exists
   supportsSourceInfo?: boolean; // default true if source exists
 };
 
@@ -51,6 +51,22 @@ export const LAYER_CATALOG = [
     zIndex: 100,
     legendKey: 'reflectivity',
     source: { name: 'RainViewer / IEM (adapter)', details: 'Radar mosaic + local when available' },
+  },
+
+  // ✅ NEW: Clouds (GOES visible, “ch02”) via your OverlayEngine WMS
+  {
+    id: 'sat.clouds',
+    group: 'weather',
+    title: 'Clouds',
+    subtitle: 'GOES visible (CONUS)',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.85,
+    // Put it BELOW radar so radar stays readable on top
+    zIndex: 60,
+    source: { name: 'IEM GOES (WMS)', details: 'GOES-East CONUS channel 02' },
+    supportsLegend: false,
+    supportsOpacity: true,
   },
 
   {
