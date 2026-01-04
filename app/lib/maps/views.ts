@@ -2,6 +2,14 @@
 import type { MapViewDefinition } from './types';
 
 export const MAP_VIEWS: MapViewDefinition[] = [
+  // ✅ NEW: Clouds as a first-class view
+  {
+    id: 'clouds',
+    title: 'Clouds',
+    presetEnabledLayers: ['sat.clouds'],
+    timelineDriverLayer: 'sat.clouds', // fine even if it doesn’t drive the radar scrubber
+  },
+
   {
     id: 'radar',
     title: 'Radar',

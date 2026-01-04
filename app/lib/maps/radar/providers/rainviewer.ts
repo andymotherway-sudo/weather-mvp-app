@@ -1,3 +1,4 @@
+// app/lib/maps/providers/rainviewer.ts
 import type { RadarFrame, RadarProvider } from './types';
 
 // Simple in-memory cache (upgrade to persisted cache later)
@@ -103,8 +104,9 @@ export function createRainViewerProvider(opts?: {
         throw new Error('RainViewer provider not initialized: call getFrames() first');
       }
 
-      const idx = cachedFrames.findIndex((f) => f.t === frame.t);
-      const path = cachedPaths[Math.max(0, idx)];
+    const idx = cachedFrames.findIndex((f) => f.t === frame.t);
+    const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
+    const path = cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
 
       return tileTemplateFor(cachedHost, path);
     },

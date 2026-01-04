@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import {
@@ -48,54 +48,60 @@ function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
 
 function resolveSupports(layer: LayerCatalogItem) {
   const supportsOpacity = layer.supportsOpacity ?? true;
-
   const supportsLegend = layer.supportsLegend ?? (layer.legendKey ? true : false);
-
   const supportsSourceInfo = layer.supportsSourceInfo ?? (layer.source ? true : false);
-
   return { supportsOpacity, supportsLegend, supportsSourceInfo };
 }
 
-export function LayerSheet(props: Props) {
-  if (!props?.state) {
-    return (
-      <View style={{ padding: 12 }}>
-        <Text style={{ fontWeight: '900', color: 'white' }}>Layers</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 6 }}>
-          Loading map state…
-        </Text>
-      </View>
-    );
-  }
+function emptyGrouped(): Record<LayerGroupId, LayerCatalogItem[]> {
+  return {
+    weather: [],
+    fire: [],
+    storm: [],
+    aviation: [],
+  };
+}
 
-  const isNerdy = props.state.nerdy;
+export function LayerSheet(props: Props) {
+  // IMPORTANT: Hooks must run unconditionally on every render.
+  const state = props?.state;
+  const isNerdy = !!state?.nerdy;
 
   const [expanded, setExpanded] = useState<Partial<Record<LayerId, boolean>>>({});
 
   const grouped = useMemo(() => {
+    // If state isn't ready yet, return an empty grouping; UI can show a loading state below.
+    if (!state) return emptyGrouped();
+
     const visible = LAYER_CATALOG.filter((l) => {
       if (l.visibility === 'nerdy') return isNerdy;
       return true;
     });
 
-    const map: Record<LayerGroupId, LayerCatalogItem[]> = {
-      weather: [],
-      fire: [],
-      storm: [],
-      aviation: [],
-    };
+    const map = emptyGrouped();
 
-    for (const item of visible) map[item.group].push(item);
+    for (const item of visible) {
+      map[item.group].push(item);
+    }
 
     (Object.keys(map) as LayerGroupId[]).forEach((k) => {
       map[k] = [...map[k]].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
     });
 
     return map;
-  }, [isNerdy]);
+  }, [state, isNerdy]);
 
-  const toggleExpanded = (id: LayerId) =>
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const toggleExpanded = (id: LayerId) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  // Now that hooks have run, it's safe to early-return.
+  if (!state) {
+    return (
+      <View style={{ padding: 12 }}>
+        <Text style={{ fontWeight: '900', color: 'white' }}>Layers</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 6 }}>Loading map state…</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ padding: 12, gap: 14 }}>
@@ -110,7 +116,7 @@ export function LayerSheet(props: Props) {
             </Text>
 
             {items.map((layer) => {
-              const runtime = props.state.layers?.[layer.id];
+              const runtime = state.layers?.[layer.id];
               const enabled = runtime?.enabled ?? false;
               const opacity = runtime?.opacity ?? layer.defaultOpacity;
 
@@ -220,14 +226,11 @@ export function LayerSheet(props: Props) {
                           <Text style={{ fontWeight: '900', color: 'rgba(255,255,255,0.85)' }}>
                             Opacity
                           </Text>
-                          <OpacityRow
-                            value={opacity}
-                            onChange={(v) => props.onSetOpacity(layer.id, v)}
-                          />
+                          <OpacityRow value={opacity} onChange={(v) => props.onSetOpacity(layer.id, v)} />
                         </>
                       ) : null}
 
-                      {(canLegend || canSource) ? (
+                      {canLegend || canSource ? (
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                           {canLegend ? (
                             <Pressable

@@ -7,26 +7,31 @@ export interface LatLng {
 
 export type NauticalZoneType = 'coastal' | 'offshore' | 'highSeas';
 
+export type GeoJSONPolygon = {
+  type: 'Polygon';
+  coordinates: number[][][]; // [ring][point][lon,lat]
+};
+
+export type GeoJSONMultiPolygon = {
+  type: 'MultiPolygon';
+  coordinates: number[][][][]; // [poly][ring][point][lon,lat]
+};
+
+export type GeoJSONGeometry = GeoJSONPolygon | GeoJSONMultiPolygon;
+
 export interface NauticalZone {
   id: string;        // e.g. "PZZ350"
   name: string;
   wfo: string;       // forecast office (CWA)
   type: NauticalZoneType;
   centroid: LatLng;
-  polygon: LatLng[]; // outer ring (renderable by react-native-maps)
+
+  // ✅ keep for compatibility / quick rendering
+  polygon: LatLng[];
+
+  // ✅ NEW: keep full shape for MapLibre + multipolygons
+  geometry: GeoJSONGeometry;
 }
-
-type GeoJSONPolygon = {
-  type: 'Polygon';
-  coordinates: number[][][]; // [ring][point][lon,lat]
-};
-
-type GeoJSONMultiPolygon = {
-  type: 'MultiPolygon';
-  coordinates: number[][][][]; // [poly][ring][point][lon,lat]
-};
-
-type GeoJSONGeometry = GeoJSONPolygon | GeoJSONMultiPolygon;
 
 function toLatLngRing(ring: number[][]): LatLng[] {
   return ring.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
@@ -47,10 +52,7 @@ function getOuterRing(geom: GeoJSONGeometry): LatLng[] | null {
 function computeCentroidApprox(points: LatLng[]): LatLng {
   const n = points.length || 1;
   const sum = points.reduce(
-    (acc, p) => ({
-      latitude: acc.latitude + p.latitude,
-      longitude: acc.longitude + p.longitude,
-    }),
+    (acc, p) => ({ latitude: acc.latitude + p.latitude, longitude: acc.longitude + p.longitude }),
     { latitude: 0, longitude: 0 },
   );
   return { latitude: sum.latitude / n, longitude: sum.longitude / n };
@@ -63,7 +65,6 @@ async function fetchAllPages(url: string): Promise<any[]> {
   while (nextUrl) {
     const res: Response = await fetch(nextUrl, {
       headers: {
-        // NWS asks for a User-Agent with contact info
         'User-Agent': 'OmniWx/1.0 (contact: youremail@example.com)',
         Accept: 'application/geo+json, application/json',
       },
@@ -74,28 +75,15 @@ async function fetchAllPages(url: string): Promise<any[]> {
       throw new Error(`NWS zones fetch failed (${res.status}): ${text}`);
     }
 
-    const json: {
-      features?: any[];
-      pagination?: { next?: string | null };
-    } = await res.json();
-
+    const json: { features?: any[]; pagination?: { next?: string | null } } = await res.json();
     const features: any[] = Array.isArray(json.features) ? json.features : [];
     out.push(...features);
 
-    // Try JSON pagination first
-    const nextFromBody: string | null =
-      (json.pagination?.next as string | null | undefined) ?? null;
+    const nextFromBody: string | null = (json.pagination?.next as string | null | undefined) ?? null;
+    if (nextFromBody) { nextUrl = nextFromBody; continue; }
 
-    if (nextFromBody) {
-      nextUrl = nextFromBody;
-      continue;
-    }
-
-    // Then try Link header
     const link: string | null = res.headers.get('link') ?? res.headers.get('Link');
-    const match: RegExpMatchArray | null =
-      link ? link.match(/<([^>]+)>;\s*rel="next"/i) : null;
-
+    const match: RegExpMatchArray | null = link ? link.match(/<([^>]+)>;\s*rel="next"/i) : null;
     nextUrl = match?.[1] ?? null;
   }
 
@@ -123,9 +111,10 @@ export async function fetchMarineZones(): Promise<NauticalZone[]> {
       id,
       name,
       wfo,
-      type: 'coastal', // refine later if desired
+      type: 'coastal',
       centroid: computeCentroidApprox(ring),
       polygon: ring,
+      geometry: geom, // ✅ keep full geometry
     });
   }
 

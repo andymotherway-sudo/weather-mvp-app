@@ -1,212 +1,175 @@
 // app/lib/maps/radarIem.ts
-// Radar providers + adapters.
-// Step 1: RainViewer timeline + tiles (reliable frames, “premium feel” while testing).
-// Keep IEM helpers for later (hyperlocal provider switch can be added as Step 2).
+// IEM radar helpers (mosaic + local RIDGE).
+// This file returns COMPLETE {z}/{x}/{y} tile templates that MapLibre can consume.
 
 export type RadarScan = { iso: string; stamp: string };
 
 type ResolveOpts = {
   zoom: number;
-  product: 'N0Q' | 'N0B' | 'N0Z'; // kept for compatibility (RainViewer doesn’t map 1:1)
+  product: 'N0Q' | 'N0B' | 'N0Z';
   localMinZoom: number;
   maxLocalDistanceKm: number;
-  nationalTimestamp: string; // kept for compatibility
+  nationalTimestamp: string; // e.g. "900913-m05m" or "900913"
 };
 
 export type RadarLayerChoice = {
-  provider: 'rainviewer' | 'iem-mosaic' | 'iem-ridge';
+  provider: 'iem-mosaic' | 'iem-ridge' | 'rainviewer';
   tier: 'national' | 'local';
   maxTileZoom: number;
-  tileUrl: string; // urlTemplate for UrlTile
+  tileUrl: string;
   debugLabel: string;
-  radarIcao?: string; // reserved for Step 2
-  radarIdDisplay?: string;
+  radarIcao?: string;
 };
 
-// -----------------------------
-// IEM helpers you already use
-// -----------------------------
+const IEM_TILE_BASE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+
+// Tune these:
+// - Mosaic: cap lower to reduce request fan-out (helps 503s a LOT)
+// - Ridge: allow a bit higher so it doesn’t look blocky when you zoom in locally
+const MOSAIC_MAX_Z = 7;
+const RIDGE_MAX_Z = 9;
+
+// IEM national mosaic "minutes ago" availability is commonly 0..50m in 5m steps.
+const DEFAULT_MOSAIC_MINUTES = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
+
+function minutesToStamp(minutesAgo: number) {
+  if (minutesAgo <= 0) return '900913';
+  return `900913-m${String(minutesAgo).padStart(2, '0')}m`;
+}
 
 export function iemNationalMosaicTimestamps() {
-  // Oldest -> newest (matches your minutes array)
-  return [
-    '900913-m50m',
-    '900913-m45m',
-    '900913-m40m',
-    '900913-m35m',
-    '900913-m30m',
-    '900913-m25m',
-    '900913-m20m',
-    '900913-m15m',
-    '900913-m10m',
-    '900913-m05m',
-    '900913',
-  ];
+  return DEFAULT_MOSAIC_MINUTES.map(minutesToStamp); // Oldest -> newest
 }
 
-export function buildLocalFallbackFramesUTC(opts: { minutesBack: number; stepMinutes: number }): RadarScan[] {
-  const minutesBack = Math.max(5, Math.floor(opts.minutesBack));
-  const step = Math.max(1, Math.floor(opts.stepMinutes));
-  const now = Date.now();
+function iemMosaicTileTemplate(product: 'N0Q' | 'N0B' | 'N0Z', stamp: string) {
+  const p = product.toLowerCase(); // n0q/n0b/n0z
+  const layer = `nexrad-${p}-${stamp}`;
+  return `${IEM_TILE_BASE}/${layer}/{z}/{x}/{y}.png`;
+}
 
-  const frames: RadarScan[] = [];
-  for (let m = minutesBack; m >= 0; m -= step) {
-    const t = new Date(now - m * 60_000);
-    // IEM RIDGE stamp: YYYYMMDDHHmm (UTC)
-    const stamp =
-      String(t.getUTCFullYear()) +
-      String(t.getUTCMonth() + 1).padStart(2, '0') +
-      String(t.getUTCDate()).padStart(2, '0') +
-      String(t.getUTCHours()).padStart(2, '0') +
-      String(t.getUTCMinutes()).padStart(2, '0');
+function iemRidgeTileTemplate(radarIcao: string, product: 'N0Q' | 'N0B' | 'N0Z') {
+  const layer = `ridge::${radarIcao}-${product}-0`;
+  return `${IEM_TILE_BASE}/${layer}/{z}/{x}/{y}.png`;
+}
 
-    frames.push({ iso: t.toISOString(), stamp });
+type RadarSite = { icao: string; lat: number; lon: number };
+
+// (same RADAR_SITES list as you already have)
+const RADAR_SITES: RadarSite[] = [
+  { icao: 'KSOX', lat: 33.817, lon: -117.636 },
+  { icao: 'KVTX', lat: 34.412, lon: -119.179 },
+  { icao: 'KDAX', lat: 38.501, lon: -121.678 },
+  { icao: 'KMUX', lat: 37.155, lon: -121.898 },
+  { icao: 'KHNX', lat: 36.314, lon: -119.632 },
+  { icao: 'KLGX', lat: 47.116, lon: -124.107 },
+  { icao: 'KATX', lat: 48.195, lon: -122.495 },
+  { icao: 'KRTX', lat: 45.715, lon: -122.965 },
+  { icao: 'KOTX', lat: 47.681, lon: -117.626 },
+  { icao: 'KRGX', lat: 39.754, lon: -119.462 },
+  { icao: 'KFSX', lat: 34.574, lon: -111.198 },
+  { icao: 'KIWA', lat: 33.289, lon: -111.67 },
+  { icao: 'KEMX', lat: 31.893, lon: -110.63 },
+  { icao: 'KFTG', lat: 39.786, lon: -104.545 },
+  { icao: 'KPUX', lat: 38.459, lon: -104.181 },
+
+  { icao: 'KTLX', lat: 35.333, lon: -97.278 },
+  { icao: 'KFDR', lat: 34.362, lon: -98.976 },
+  { icao: 'KINX', lat: 36.175, lon: -95.564 },
+  { icao: 'KICT', lat: 37.654, lon: -97.443 },
+  { icao: 'KTWX', lat: 38.996, lon: -96.233 },
+  { icao: 'KDMX', lat: 41.731, lon: -93.723 },
+  { icao: 'KMPX', lat: 44.849, lon: -93.565 },
+
+  { icao: 'KHGX', lat: 29.471, lon: -95.079 },
+  { icao: 'KSRX', lat: 35.29, lon: -94.362 },
+  { icao: 'KLIX', lat: 30.337, lon: -89.825 },
+  { icao: 'KTLH', lat: 30.397, lon: -84.329 },
+  { icao: 'KTBW', lat: 27.705, lon: -82.402 },
+
+  { icao: 'KILN', lat: 39.42, lon: -83.822 },
+  { icao: 'KLOT', lat: 41.604, lon: -88.085 },
+  { icao: 'KDTX', lat: 42.7, lon: -83.471 },
+  { icao: 'KPBZ', lat: 40.532, lon: -80.218 },
+  { icao: 'KDIX', lat: 39.947, lon: -74.411 },
+  { icao: 'KOKX', lat: 40.865, lon: -72.864 },
+  { icao: 'KBOX', lat: 41.956, lon: -71.137 },
+  { icao: 'KCLX', lat: 32.656, lon: -81.042 },
+  { icao: 'KJAX', lat: 30.485, lon: -81.702 },
+];
+
+function toRad(d: number) {
+  return (d * Math.PI) / 180;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function findNearestRadar(lat: number, lon: number): { site: RadarSite; distanceKm: number } | null {
+  let best: RadarSite | null = null;
+  let bestD = Infinity;
+
+  for (const s of RADAR_SITES) {
+    const d = haversineKm(lat, lon, s.lat, s.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
   }
-  return frames;
+
+  if (!best || !Number.isFinite(bestD)) return null;
+  return { site: best, distanceKm: bestD };
 }
 
-// NOTE: Kept for compatibility; Step 1 uses RainViewer for frames.
-// Still handy later for true hyperlocal RIDGE animation if you keep IEM.
-export async function fetchIemScans(opts: {
-  radarId: string; // e.g., "KIWA" or "KTLX"
-  product: 'N0Q' | 'N0B' | 'N0Z';
-  minutesBack: number;
-}): Promise<RadarScan[]> {
-  const radar = String(opts.radarId).trim().toUpperCase();
-  const product = String(opts.product).trim().toUpperCase();
-  const minutesBack = Math.max(15, Math.floor(opts.minutesBack));
+/**
+ * Decide radar layer:
+ * - Default: IEM Mosaic timeline
+ * - Upgrade: at high zoom on LATEST frame only (stamp === "900913"), swap to nearest RIDGE radar.
+ */
+export function resolveRadarLayer(lat: number, lon: number, opts: ResolveOpts): RadarLayerChoice {
+  const zoom = Number.isFinite(opts.zoom) ? opts.zoom : 4;
+  const stamp = opts.nationalTimestamp || '900913';
 
-  const end = new Date();
-  const start = new Date(Date.now() - minutesBack * 60_000);
+  const wantsLocal = zoom >= opts.localMinZoom;
+  const isLatestFrame = stamp === '900913';
 
-  // IEM list endpoint
-  const url =
-    `https://mesonet.agron.iastate.edu/json/radar.py?operation=list` +
-    `&radar=${encodeURIComponent(radar)}` +
-    `&product=${encodeURIComponent(product)}` +
-    `&start=${encodeURIComponent(start.toISOString())}` +
-    `&end=${encodeURIComponent(end.toISOString())}`;
+  if (wantsLocal && isLatestFrame) {
+    const nearest = findNearestRadar(lat, lon);
+    if (nearest && nearest.distanceKm <= opts.maxLocalDistanceKm) {
+      const radarIcao = nearest.site.icao;
+      return {
+        provider: 'iem-ridge',
+        tier: 'local',
+        maxTileZoom: RIDGE_MAX_Z,
+        tileUrl: iemRidgeTileTemplate(radarIcao, opts.product),
+        radarIcao,
+        debugLabel: `IEM RIDGE · ${radarIcao} · ${opts.product} · ${nearest.distanceKm.toFixed(0)}km`,
+      };
+    }
+  }
 
-  console.log('[IEM] scan list url', url);
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`IEM scan list failed (${res.status})`);
-
-  const json = (await res.json()) as any;
-  const scans = Array.isArray(json?.scans) ? json.scans : [];
-
-  // Typical shape: ["2025-12-22T19:20:00Z", ...]
-  // Convert to RIDGE stamps if needed:
-  const out: RadarScan[] = scans
-    .map((iso: any) => {
-      const d = new Date(String(iso));
-      if (Number.isNaN(d.getTime())) return null;
-      const stamp =
-        String(d.getUTCFullYear()) +
-        String(d.getUTCMonth() + 1).padStart(2, '0') +
-        String(d.getUTCDate()).padStart(2, '0') +
-        String(d.getUTCHours()).padStart(2, '0') +
-        String(d.getUTCMinutes()).padStart(2, '0');
-      return { iso: d.toISOString(), stamp };
-    })
-    .filter(Boolean) as RadarScan[];
-
-  return out;
-}
-
-// -----------------------------
-// RainViewer adapter (Step 1)
-// -----------------------------
-
-type RainViewerMaps = {
-  host?: string;
-  radar?: {
-    past?: Array<{ time: number; path: string }>;
-    nowcast?: Array<{ time: number; path: string }>;
+  return {
+    provider: 'iem-mosaic',
+    tier: wantsLocal ? 'local' : 'national',
+    maxTileZoom: MOSAIC_MAX_Z,
+    tileUrl: iemMosaicTileTemplate(opts.product, stamp),
+    debugLabel: `IEM Mosaic · ${opts.product} · ${stamp}`,
   };
-};
-
-let RV_CACHE: { at: number; data: RainViewerMaps | null } = { at: 0, data: null };
-const RV_TTL_MS = 60_000;
-
-async function fetchRainViewerMapsJson(): Promise<RainViewerMaps> {
-  const now = Date.now();
-  if (RV_CACHE.data && now - RV_CACHE.at < RV_TTL_MS) return RV_CACHE.data;
-
-  const url = 'https://api.rainviewer.com/public/weather-maps.json';
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`RainViewer maps.json failed (${res.status})`);
-  const data = (await res.json()) as RainViewerMaps;
-
-  RV_CACHE = { at: now, data };
-  return data;
 }
 
 export async function fetchRainViewerFrames(): Promise<RadarScan[]> {
-  const data = await fetchRainViewerMapsJson();
-  const past = data?.radar?.past ?? [];
-  const nowcast = data?.radar?.nowcast ?? [];
-
-  const frames = [...past, ...nowcast]
-    .filter((f) => typeof f?.time === 'number' && typeof f?.path === 'string')
-    .map((f) => ({
-      iso: new Date(f.time * 1000).toISOString(),
-      // stamp = RainViewer "path" (e.g. "/v2/radar/169....")
-      stamp: f.path,
-    }));
-
-  return frames;
+  return [];
 }
 
-function buildRainViewerTileTemplate(host: string, path: string) {
-  // RainViewer tile template uses host + path + /256/{z}/{x}/{y}/2/1_1.png
-  // Zoom is capped at 10 on their Weather Maps API docs.
-  const h = host.endsWith('/') ? host.slice(0, -1) : host;
-  const p = path.startsWith('/') ? path : `/${path}`;
-  return `${h}${p}/256/{z}/{x}/{y}/2/1_1.png`;
-}
-
-// -----------------------------
-// Resolve which layer to use (Step 1)
-// -----------------------------
-// Step 1: Always use RainViewer tiles/timeline as the “premium testing” baseline.
-// Keep zoom-based "tier" labeling, but DO NOT attempt true hyperlocal provider yet.
-
-export function resolveRadarLayer(
-  lat: number,
-  lon: number,
-  opts: ResolveOpts,
-): RadarLayerChoice {
-  const zoom = Number.isFinite(opts.zoom) ? opts.zoom : 4;
-
-  // You said: zoom should control when hyperlocality kicks in (later).
-  // For Step 1, we still label national/local using your threshold,
-  // but we keep the provider = rainviewer for both.
-  const tier: 'national' | 'local' = zoom >= opts.localMinZoom ? 'local' : 'national';
-
-  // We can’t build the exact tile URL here because RainViewer needs host+path.
-  // maps.tsx will call fetchRainViewerFrames() and then compute tile URL with the current frame’s path.
-  // Return a placeholder; maps.tsx will replace it.
-  return {
-    provider: 'rainviewer',
-    tier,
-    maxTileZoom: 10,
-    tileUrl: '',
-    debugLabel: tier === 'local' ? 'RainViewer radar (mosaic) · local-labeled' : 'RainViewer radar (mosaic)',
-  };
-}
-
-export async function buildRainViewerTileUrlForFrame(framePath: string): Promise<{
-  tileUrl: string;
-  providerLabel: string;
-}> {
-  const data = await fetchRainViewerMapsJson();
-  const host = data?.host;
-
-  if (!host) {
-    throw new Error('RainViewer maps.json missing host');
-  }
-
-  const tileUrl = buildRainViewerTileTemplate(host, framePath);
-  return { tileUrl, providerLabel: 'RainViewer' };
+export async function buildRainViewerTileUrlForFrame(
+  _framePath: string,
+): Promise<{ tileUrl: string; providerLabel: string }> {
+  throw new Error('RainViewer is not wired in MapLibre-first mode yet.');
 }
