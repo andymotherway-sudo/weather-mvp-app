@@ -39,7 +39,7 @@ import {
   type NauticalStation,
 } from '../lib/nautical/stations';
 
-// ✅ nerdy builder (keep this import)
+// nerdy builder
 import { buildNerdyData } from '../lib/nautical/buildNerdyData';
 
 // ---- small local types to avoid `any` -----------------------------
@@ -174,7 +174,7 @@ function asString(v: unknown): string | undefined {
 }
 
 /**
- * ✅ Smart formatter that prevents "[object Object]"
+ * Smart formatter that prevents "[object Object]"
  * and renders common shapes nicely.
  */
 function fmtSmart(v: unknown): string {
@@ -197,7 +197,7 @@ function fmtSmart(v: unknown): string {
   if (typeof v === 'object') {
     const o = v as any;
 
-    // 1) Most common: { label, value, unit }
+    // { label, value, unit }
     if (typeof o.label === 'string') {
       const label = o.label;
       const unit = typeof o.unit === 'string' ? ` ${o.unit}` : '';
@@ -208,14 +208,14 @@ function fmtSmart(v: unknown): string {
       return label;
     }
 
-    // 2) Common numeric carrier: { value, unit }
+    // { value, unit }
     if (typeof o.value === 'number' && Number.isFinite(o.value)) {
       const unit = typeof o.unit === 'string' ? ` ${o.unit}` : '';
       return `${o.value}${unit}`;
     }
     if (typeof o.value === 'string') return o.value;
 
-    // 3) Confidence-ish shapes (handle a bunch of likely key names)
+    // confidence-ish
     const level =
       (typeof o.level === 'string' && o.level) ||
       (typeof o.rating === 'string' && o.rating) ||
@@ -243,35 +243,9 @@ function fmtSmart(v: unknown): string {
       return `${level} (${scoreRaw})`;
     if (level) return level;
 
-    // 4) Useful text fallback
     if (typeof o.text === 'string') return o.text;
 
-    // 5) Compact key/value summary (prevents [data])
-    const preferredKeys = [
-      'level',
-      'label',
-      'rating',
-      'pct',
-      'percent',
-      'percentage',
-      'score',
-      'value',
-      'unit',
-      'source',
-      'stale',
-      'reason',
-      'missing',
-    ];
-
-    const pairs: string[] = [];
-    for (const k of preferredKeys) {
-      if (o[k] != null) pairs.push(`${k}: ${fmtSmart(o[k])}`);
-      if (pairs.length >= 3) break;
-    }
-
-    if (pairs.length > 0) return pairs.join(' · ');
-
-    // 6) last resort: short-ish JSON (don’t hide as [data])
+    // short-ish JSON
     try {
       const s = JSON.stringify(o);
       if (!s) return '[data]';
@@ -284,7 +258,6 @@ function fmtSmart(v: unknown): string {
   return String(v);
 }
 
-// ✅ your Nerdy UI uses fmt(...); wire it to fmtSmart
 const fmt = fmtSmart;
 
 // ---------- Nerdy “Explain” content ---------------------------------
@@ -310,19 +283,18 @@ function explainFor(key: ExplainKey) {
           '• Peak period (Tp)\n' +
           '• Wind speed / gusts\n' +
           '• Wind–wave angle (onshore / opposing wind increases steepness)\n\n' +
-          'How it’s usually computed:\n' +
+          'How it’s computed here:\n' +
           '• Estimate steepness ~ Hs / L where L ≈ 1.56·Tp² (deep-water wavelength)\n' +
-          '• Boost risk when winds oppose dominant wave direction\n' +
-          '• Boost risk when wind is strong enough to actively grow/shorten waves\n\n' +
+          '• Map steepness into Low/Moderate/Elevated/High\n\n' +
           'Note: this is not a certified marine safety metric — it’s a science-y indicator for situational awareness.',
       };
     case 'tallestSet':
       return {
         title: 'Tallest set',
         body:
-          'A “set” is a group of larger-than-average waves. This value estimates what the biggest wave in a set could be.\n\n' +
+          'A “set” is a group of larger-than-average waves. This estimates what the biggest wave in a set could be.\n\n' +
           'Rule of thumb:\n' +
-          '• Tallest set ≈ 1.6× to 2.0× Hs (significant wave height)\n\n' +
+          '• Tallest set ≈ ~1.8× Hs (significant wave height)\n\n' +
           'Why:\n' +
           '• Hs is roughly the average of the highest 1/3 of waves, but occasional larger waves occur due to randomness and wave-grouping.\n\n' +
           'Use:\n' +
@@ -345,9 +317,9 @@ function explainFor(key: ExplainKey) {
         body:
           'A qualitative label summarizing how wind direction relates to wave direction.\n\n' +
           'Examples:\n' +
-          '• Following: wind roughly aligned with wave direction\n' +
+          '• Aligned: wind roughly aligned with wave direction\n' +
           '• Opposing: wind roughly against the wave direction\n' +
-          '• Cross: wind roughly perpendicular to the wave direction\n\n' +
+          '• Cross sea: wind roughly perpendicular to the wave direction\n\n' +
           'This mainly affects perceived sea state and breaking potential.',
       };
     case 'stability':
@@ -364,10 +336,12 @@ function explainFor(key: ExplainKey) {
       return {
         title: 'Risk score',
         body:
-          'A combined, heuristic score derived from wave height, wind speed, gusts, and any hazard flags.\n\n' +
+          'A combined, heuristic score derived from wave height, period, wind speed, gusts, and wind–wave interaction.\n\n' +
           'Typically:\n' +
-          '• Increases with Hs, Tp (especially long-period swell), and wind/gusts\n' +
-          '• Increases when wind opposes wave direction\n\n' +
+          '• Increases with wave height (Hs)\n' +
+          '• Increases with long period swell (Tp)\n' +
+          '• Increases with stronger wind/gusts\n' +
+          '• Adds a bump for opposing wind and cross seas\n\n' +
           'It’s intended for quick scanning — always defer to official forecasts and local knowledge.',
       };
     case 'confidence':
@@ -377,10 +351,10 @@ function explainFor(key: ExplainKey) {
           'A coarse indicator of how complete / consistent the inputs are.\n\n' +
           'Higher when:\n' +
           '• Buoy observations are available (fresh timestamp)\n' +
-          '• Multiple fields are populated (Hs, Tp, wind, SST)\n\n' +
+          '• Model agrees with observations\n\n' +
           'Lower when:\n' +
-          '• Model-only fields are missing\n' +
-          '• Data is stale or partial',
+          '• Data is stale or partial\n' +
+          '• Cross-sea regime increases uncertainty',
       };
   }
 }
@@ -400,7 +374,7 @@ export default function NauticalScreen() {
   const zoneId = asString(params.zoneId);
   const wfo = asString(params.wfo);
 
-  // ✅ accept either `zoneName` or `name`
+  // accept either `zoneName` or `name`
   const zoneName = asString(params.zoneName) ?? asString(params.name);
 
   const isZoneMode = !!zoneId;
@@ -408,7 +382,7 @@ export default function NauticalScreen() {
   const [mode, setMode] = useState<Mode>('simple');
   const { tempUnit } = useSettings();
 
-  // ---- Explain modal state
+  // Explain modal state
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainKey, setExplainKey] = useState<ExplainKey | null>(null);
   const explain = explainKey ? explainFor(explainKey) : null;
@@ -437,24 +411,20 @@ export default function NauticalScreen() {
   const [search, setSearch] = useState('');
   const [selectedBuoyId, setSelectedBuoyId] = useState<string | null>(null);
 
-  // Data hooks (tides + model summary come from station; in zone mode we keep it,
-  // but simply do not render tides)
+  // Data hooks
   const { data, loading, error, refreshing, refresh } =
     useNauticalSummary(station);
 
   const { data: allBuoyData } = useAllBuoyDetails();
   const allBuoys: BuoyDetailData[] = allBuoyData ?? [];
 
-  // ✅ IMPORTANT FIX:
   // station.id is a tide station id, not a buoy id.
   const stationBuoyId = station.buoyId ?? null;
   const activeBuoyId = selectedBuoyId ?? stationBuoyId;
 
   const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined);
 
-  // ✅ Forecast source:
-  // - Zone mode: drive forecast by zoneId (PZZ### etc)
-  // - Area mode: drive forecast by area.forecastZoneId
+  // Forecast source:
   const forecastZoneId = isZoneMode ? zoneId : area.forecastZoneId;
 
   const { forecast, loading: forecastLoading, error: forecastError } =
@@ -462,9 +432,7 @@ export default function NauticalScreen() {
 
   const activeBuoy =
     allBuoys.find(
-      (b) =>
-        b.id.toUpperCase() ===
-        String(activeBuoyId ?? '').toUpperCase(),
+      (b) => b.id.toUpperCase() === String(activeBuoyId ?? '').toUpperCase(),
     ) ?? null;
 
   // --- SEARCH: stations + buoys -----------------------------------
@@ -581,7 +549,7 @@ export default function NauticalScreen() {
           ? styles.riskHigh
           : styles.riskExtreme;
 
-  // ✅ Header lines
+  // Header lines
   const headerLine = isZoneMode
     ? String(zoneName ?? `Marine Zone ${zoneId}`)
     : supportsTides
@@ -598,7 +566,7 @@ export default function NauticalScreen() {
   const predictions = (data?.predictions ?? []) as TidePrediction[];
   const forecastPeriods = (forecast?.periods ?? []) as ForecastPeriod[];
 
-  // ✅ Nerdy model (don’t assume a specific NerdyData shape here)
+  // Nerdy model (typed)
   const nerdy = buildNerdyData({
     zoneId: forecastZoneId,
     zoneName: isZoneMode ? String(zoneName ?? '') : undefined,
@@ -631,12 +599,10 @@ export default function NauticalScreen() {
       : null,
   });
 
-  const nerdyAny = nerdy as any;
-
   const debugNerdy =
-    __DEV__ && nerdyAny
+    __DEV__ && nerdy
       ? JSON.stringify(
-          nerdyAny,
+          nerdy,
           (k, v) =>
             typeof v === 'number' && Number.isFinite(v)
               ? Number(v.toFixed(3))
@@ -794,7 +760,9 @@ export default function NauticalScreen() {
 
             <Text style={styles.simpleMeta}>
               Swell {swellPeriod != null ? `${swellPeriod.toFixed(0)} s` : '—'} ·{' '}
-              {swellDirDeg != null ? `${swellDir} (${Math.round(swellDirDeg)}°)` : '—'}
+              {swellDirDeg != null
+                ? `${swellDir} (${Math.round(swellDirDeg)}°)`
+                : '—'}
             </Text>
 
             <Text style={styles.simpleMeta}>
@@ -804,7 +772,8 @@ export default function NauticalScreen() {
             </Text>
 
             <Text style={styles.simpleMeta}>
-              Beaufort {beaufort.force != null ? `F${beaufort.force}` : '—'} · {beaufort.label}
+              Beaufort {beaufort.force != null ? `F${beaufort.force}` : '—'} ·{' '}
+              {beaufort.label}
             </Text>
 
             <Text style={styles.simpleMeta}>
@@ -840,7 +809,7 @@ export default function NauticalScreen() {
           </Card>
         )}
 
-                {/* ✅ NERDY CARD (science-y) */}
+        {/* NERDY CARD */}
         {mode === 'nerdy' && (conditions || buoyData || forecast) && (
           <Card style={styles.mainCard}>
             <Text style={styles.sectionLabel}>Nerdy</Text>
@@ -849,157 +818,127 @@ export default function NauticalScreen() {
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Derived indices</Text>
 
-              {/* You don't currently compute a unified "risk score" in buildNerdyData.
-                  So: show a placeholder or reuse seaRisk.level as a simple proxy. */}
               <NerdyRow
                 k="Risk score"
                 v={fmt(
-                  nerdyAny?.riskScore ??
-                    nerdyAny?.score ??
-                    seaRisk?.level ??
-                    '—',
+                  nerdy.riskScore != null
+                    ? `${nerdy.riskScore}/100 · ${nerdy.riskLevel ?? '—'}`
+                    : (seaRisk.level ?? '—'),
                 )}
                 explainKey="riskScore"
               />
 
               <NerdyRow
                 k="Confidence"
-                v={fmt(
-                  nerdyAny?.confidence?.level ??
-                    nerdyAny?.confidence?.score01 ??
-                    nerdyAny?.confidence ??
-                    '—',
-                )}
+                v={fmt(nerdy.confidence?.level ?? nerdy.confidence?.score01 ?? '—')}
                 explainKey="confidence"
               />
 
-              <NerdyRow
-                k="Generated"
-                v={new Date().toLocaleString()}
-              />
+              <NerdyRow k="Generated" v={new Date().toLocaleString()} />
             </View>
 
-            {/* Wave (from obs) */}
+            {/* Wave */}
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Wave</Text>
 
-              <NerdyRow
-                k="Hs (m)"
-                v={fmt(nerdyAny?.obs?.significantWaveHeightM)}
-              />
+              <NerdyRow k="Hs (m)" v={fmt(nerdy.obs?.significantWaveHeightM)} />
               <NerdyRow
                 k="Hs (ft)"
                 v={fmt(
-                  nerdyAny?.obs?.significantWaveHeightM != null
-                    ? Number(nerdyAny.obs.significantWaveHeightM) * 3.28084
+                  nerdy.obs?.significantWaveHeightM != null
+                    ? Number(nerdy.obs.significantWaveHeightM) * 3.28084
                     : null,
                 )}
               />
-              <NerdyRow
-                k="Tp (s)"
-                v={fmt(nerdyAny?.obs?.dominantPeriodS)}
-              />
-              <NerdyRow
-                k="Dir (°)"
-                v={fmt(nerdyAny?.obs?.dominantDirectionDeg)}
-              />
+              <NerdyRow k="Tp (s)" v={fmt(nerdy.obs?.dominantPeriodS)} />
+              <NerdyRow k="Dir (°)" v={fmt(nerdy.obs?.dominantDirectionDeg)} />
               <NerdyRow
                 k="Dir"
                 v={fmt(
-                  nerdyAny?.obs?.dominantDirectionDeg != null
-                    ? degToCompass(Number(nerdyAny.obs.dominantDirectionDeg))
+                  nerdy.obs?.dominantDirectionDeg != null
+                    ? degToCompass(Number(nerdy.obs.dominantDirectionDeg))
                     : '—',
                 )}
               />
+
+              <NerdyRow
+                k="Wavelength (m)"
+                v={fmt(nerdy.mechanics?.wavelengthM)}
+              />
+              <NerdyRow
+                k="Steepness (H/L)"
+                v={fmt(nerdy.mechanics?.steepnessRatio)}
+              />
+              <NerdyRow
+                k="Steepness label"
+                v={fmt(nerdy.mechanics?.steepnessLabel)}
+              />
             </View>
 
-            {/* Wind (from obs) */}
+            {/* Wind */}
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Wind</Text>
 
-              <NerdyRow
-                k="Speed (kt)"
-                v={fmt(nerdyAny?.obs?.windSpeedKts)}
-              />
-              <NerdyRow
-                k="Gust (kt)"
-                v={fmt(nerdyAny?.obs?.windGustKts)}
-              />
-              <NerdyRow
-                k="Dir (°)"
-                v={fmt(nerdyAny?.obs?.windDirectionDeg)}
-              />
+              <NerdyRow k="Speed (kt)" v={fmt(nerdy.obs?.windSpeedKts)} />
+              <NerdyRow k="Gust (kt)" v={fmt(nerdy.obs?.windGustKts)} />
+              <NerdyRow k="Dir (°)" v={fmt(nerdy.obs?.windDirectionDeg)} />
               <NerdyRow
                 k="Dir"
                 v={fmt(
-                  nerdyAny?.obs?.windDirectionDeg != null
-                    ? degToCompass(Number(nerdyAny.obs.windDirectionDeg))
+                  nerdy.obs?.windDirectionDeg != null
+                    ? degToCompass(Number(nerdy.obs.windDirectionDeg))
                     : '—',
                 )}
               />
             </View>
 
-            {/* Air–sea physics (from windWave + basic ΔT) */}
+            {/* Air–sea physics */}
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Air–sea physics</Text>
 
               <NerdyRow
                 k="Wind–wave angle (°)"
-                v={fmt(nerdyAny?.windWave?.angleOffsetDeg)}
+                v={fmt(nerdy.windWave?.angleOffsetDeg)}
                 explainKey="windWaveAngle"
               />
 
-              {/* Your builder uses `regime`, not `label` */}
               <NerdyRow
                 k="Interaction"
-                v={fmt(nerdyAny?.windWave?.regime)}
+                v={fmt(nerdy.windWave?.regime)}
                 explainKey="interaction"
               />
 
-              {/* You don't currently compute a stability label. Provide ΔT and a simple label here. */}
               <NerdyRow
                 k="Stability"
-                v={fmt(
-                  nerdyAny?.obs?.airTempC != null && nerdyAny?.obs?.seaSurfaceTempC != null
-                    ? (Number(nerdyAny.obs.airTempC) - Number(nerdyAny.obs.seaSurfaceTempC) >= 0
-                        ? 'Stable-ish'
-                        : 'Unstable-ish')
-                    : '—',
-                )}
+                v={fmt(nerdy.stability ?? '—')}
                 explainKey="stability"
               />
 
               <NerdyRow
                 k="ΔT air–sea (°C)"
-                v={fmt(
-                  nerdyAny?.obs?.airTempC != null && nerdyAny?.obs?.seaSurfaceTempC != null
-                    ? Number(nerdyAny.obs.airTempC) - Number(nerdyAny.obs.seaSurfaceTempC)
-                    : null,
-                )}
+                v={fmt(nerdy.deltaTAirSeaC ?? null)}
               />
             </View>
 
-            {/* Hazards (from mechanics) */}
+            {/* Hazards */}
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Hazards</Text>
 
-              {/* "Primary" hazard isn't computed in buildNerdyData today */}
-              <NerdyRow
-                k="Primary"
-                v={fmt(nerdyAny?.primaryHazard ?? '—')}
-              />
+              <NerdyRow k="Primary" v={fmt(nerdy.primaryHazard ?? '—')} />
 
-              {/* Tallest set isn't computed in buildNerdyData today */}
               <NerdyRow
                 k="Tallest set"
-                v={fmt(nerdyAny?.tallestSet ?? '—')}
+                v={fmt(
+                  nerdy.tallestSetM != null
+                    ? `${(Number(nerdy.tallestSetM) * 3.28084).toFixed(1)} ft`
+                    : '—',
+                )}
                 explainKey="tallestSet"
               />
 
-              {/* Breaking risk DOES exist: mechanics.breakingRisk */}
               <NerdyRow
                 k="Breaking risk"
-                v={fmt(nerdyAny?.mechanics?.breakingRisk)}
+                v={fmt(nerdy.mechanics?.breakingRisk)}
                 explainKey="breakingRisk"
               />
             </View>
@@ -1017,7 +956,6 @@ export default function NauticalScreen() {
           </Card>
         )}
 
-
         {/* TIDES – only where supported */}
         {supportsTides && mode === 'simple' && data && (
           <Card style={styles.mainCard}>
@@ -1034,7 +972,9 @@ export default function NauticalScreen() {
               </View>
             ))}
 
-            <Text style={styles.updatedText}>Updated {formatTime(data.generatedAt)}</Text>
+            <Text style={styles.updatedText}>
+              Updated {formatTime(data.generatedAt)}
+            </Text>
           </Card>
         )}
 
@@ -1060,7 +1000,7 @@ export default function NauticalScreen() {
           </Card>
         )}
 
-        {/* COASTAL & OFFSHORE FORECAST – zone-driven OR area-driven */}
+        {/* COASTAL & OFFSHORE FORECAST */}
         {forecast && (
           <Card style={styles.mainCard}>
             <View style={styles.forecastHeaderRow}>
@@ -1310,7 +1250,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // ✅ Nerdy layout styles
+  // Nerdy layout styles
   nerdySection: {
     marginTop: 12,
     paddingTop: 10,
@@ -1353,7 +1293,7 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
 
-  // ✅ Explain modal styles
+  // Explain modal styles
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',

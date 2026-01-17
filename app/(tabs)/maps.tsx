@@ -3,6 +3,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, PixelRatio, Pressable, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+// ✅ route params for deep-linking to views (mariner/astronomer/etc)
+import { useLocalSearchParams, useRouter } from 'expo-router';
+
+// ✅ validate view ids against your view registry
+import { MAP_VIEWS } from '../lib/maps/views';
+
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 
 import { Glass } from '../../components/common/Glass';
@@ -49,8 +55,15 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
   const z = Math.max(2, Math.min(12, zoom));
   if (raw) return { blendMs: 0, dwellMs: 700, opacityMult: 1.0, enableTemporal3: false, label: 'Raw' };
   if (z <= 5)
-    return { blendMs: 900, dwellMs: nerdy ? 2000 : 2200, opacityMult: nerdy ? 0.82 : 0.76, enableTemporal3: true, label: 'Smooth (wide)' };
-  if (z <= 8) return { blendMs: 700, dwellMs: nerdy ? 1650 : 1800, opacityMult: nerdy ? 0.92 : 0.86, enableTemporal3: false, label: 'Smooth' };
+    return {
+      blendMs: 900,
+      dwellMs: nerdy ? 2000 : 2200,
+      opacityMult: nerdy ? 0.82 : 0.76,
+      enableTemporal3: true,
+      label: 'Smooth (wide)',
+    };
+  if (z <= 8)
+    return { blendMs: 700, dwellMs: nerdy ? 1650 : 1800, opacityMult: nerdy ? 0.92 : 0.86, enableTemporal3: false, label: 'Smooth' };
   return { blendMs: 420, dwellMs: nerdy ? 1200 : 1350, opacityMult: 1.0, enableTemporal3: false, label: 'Smooth (local)' };
 }
 
@@ -142,15 +155,35 @@ function buildIemWmsGetMapUrl(args: {
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
 
-  const [state, dispatch] = React.useReducer(mapReducer, undefined, () =>
-    createInitialMapState({ viewId: 'radar', nerdy: false }),
-  );
+  // ✅ read ?view=... (mariner / astronomer / radar / clouds / wildfire / ...)
+  const params = useLocalSearchParams<{ view?: string }>();
+  const router = useRouter();
+
+  const [state, dispatch] = React.useReducer(mapReducer, undefined, () => createInitialMapState({ viewId: 'radar', nerdy: false }));
   const { location, permission } = useLocation();
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
 
   const [rawMode, setRawMode] = useState(false);
+
+  // ✅ external camera ref so we can imperatively recenter w/o fighting region state
+  const mapCameraRef = useRef<any>(null);
+
+  // ✅ allow deep-link “views” (plus aliases) without adding new MapViewIds yet.
+  useEffect(() => {
+    const raw = params?.view ? String(params.view).toLowerCase() : '';
+    if (!raw) return;
+
+    // Aliases until you add first-class view IDs in types.ts + views.ts
+    const mapped = raw === 'mariner' ? 'clouds' : raw === 'astronomer' ? 'clouds' : raw;
+
+    const valid = MAP_VIEWS.some((v) => v.id === mapped);
+    if (!valid) return;
+
+    dispatch({ type: 'SET_VIEW', viewId: mapped as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params?.view]);
 
   useEffect(() => {
     const enabled = !!state.layers?.['radar.reflectivity']?.enabled;
@@ -263,11 +296,9 @@ export default function MapsScreen() {
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
 
-  // ✅ NEW: clouds layer (exists in types/catalog; OFF by default via views)
+  // Clouds are first-class in your catalog but state typing may not include it yet
   const cloudsEnabled = !!(state.layers as any)?.['sat.clouds']?.enabled;
-  const cloudsOpacity = Number.isFinite((state.layers as any)?.['sat.clouds']?.opacity)
-    ? (state.layers as any)['sat.clouds'].opacity
-    : 0.85;
+  const cloudsOpacity = Number.isFinite((state.layers as any)?.['sat.clouds']?.opacity) ? (state.layers as any)['sat.clouds'].opacity : 0.85;
 
   const localMinZoom = 9.5;
   const usingLocalImage = sheetValue.radarProvider === 'iem' && radarEnabled && mapZoom >= localMinZoom;
@@ -275,10 +306,7 @@ export default function MapsScreen() {
   const lastRegionRef = useRef<Region | null>(null);
 
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
-  const [localImageCoords, setLocalImageCoords] = useState<
-    [[number, number], [number, number], [number, number], [number, number]] | null
-  >(null);
-
+  const [localImageCoords, setLocalImageCoords] = useState<[[number, number], [number, number], [number, number], [number, number]] | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const windowSize = Dimensions.get('window');
@@ -382,17 +410,7 @@ export default function MapsScreen() {
       });
       return choice?.tileUrl ?? null;
     });
-  }, [
-    radarEnabled,
-    usingLocalImage,
-    usingRainViewer,
-    rvFrames,
-    iemFrames,
-    centerForRadar.lat,
-    centerForRadar.lon,
-    mapZoom,
-    product,
-  ]);
+  }, [radarEnabled, usingLocalImage, usingRainViewer, rvFrames, iemFrames, centerForRadar.lat, centerForRadar.lon, mapZoom, product]);
 
   const heldTemplatesRef = useRef<Array<string | null>>([]);
   const [preloadTo, setPreloadTo] = useState<number | null>(null);
@@ -740,9 +758,7 @@ export default function MapsScreen() {
   useEffect(() => {
     if (permission !== 'granted' || !location) return;
     setStableInitialRegion((cur) => {
-      const isStillDefaultish =
-        Math.abs(cur.latitude - 39.5) < 0.5 && Math.abs(cur.longitude + 98.35) < 0.5 && cur.longitudeDelta >= 3.5;
-
+      const isStillDefaultish = Math.abs(cur.latitude - 39.5) < 0.5 && Math.abs(cur.longitude + 98.35) < 0.5 && cur.longitudeDelta >= 3.5;
       if (!isStillDefaultish) return cur;
       return { latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 };
     });
@@ -750,11 +766,20 @@ export default function MapsScreen() {
 
   const recenterToGps = () => {
     if (permission !== 'granted' || !location) return;
+
+    // state
     setAnchorMode('gps');
     setAnchorPoint({ lat: location.lat, lon: location.lon });
     setStableInitialRegion({ latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 });
     dispatch({ type: 'SET_VIEWPORT', viewport: { center: { lat: location.lat, lon: location.lon }, zoom: 9 } });
     markUserInteraction();
+
+    // camera (immediate UX)
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [location.lon, location.lat],
+      zoomLevel: 9,
+      animationDuration: 450,
+    });
   };
 
   const canSwitchProduct = state.nerdy;
@@ -774,14 +799,11 @@ export default function MapsScreen() {
 
   /**
    * WMS Overlays (Clouds / GOES)
-   * - Now correctly gated by your layer state: sat.clouds
-   * - OFF by default (because views.ts does not enable it)
+   * - gated by your layer state: sat.clouds
    */
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     if (!cloudsEnabled) return [];
-
     const op = Math.max(0, Math.min(1, Number(cloudsOpacity)));
-
     return [
       {
         id: 'goes-conus-ch02',
@@ -795,19 +817,6 @@ export default function MapsScreen() {
         format: 'image/png',
         transparent: true,
       },
-      // Keep IR available for later / nerdy toggle if you want
-      // {
-      //   id: 'goes-conus-ch13',
-      //   url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
-      //   layers: 'conus_ch13',
-      //   opacity: Math.max(0, Math.min(1, op * 0.9)),
-      //   zIndex: 61,
-      //   enabled: true,
-      //   version: '1.1.1',
-      //   crs: 'EPSG:3857',
-      //   format: 'image/png',
-      //   transparent: true,
-      // },
     ];
   }, [cloudsEnabled, cloudsOpacity]);
 
@@ -818,6 +827,7 @@ export default function MapsScreen() {
           engine="maplibre"
           initialRegion={stableInitialRegion}
           mapStyle={sheetValue.baseMapStyle}
+          cameraRef={mapCameraRef}
           onPanDrag={() => {
             const now = Date.now();
             if (now - lastPanMarkRef.current > 450) {
@@ -830,9 +840,7 @@ export default function MapsScreen() {
             lastRegionRef.current = r;
 
             const zFloat =
-              typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom)
-                ? (r as any).zoom
-                : approxZoomFromLongitudeDelta(r.longitudeDelta);
+              typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : approxZoomFromLongitudeDelta(r.longitudeDelta);
 
             setMapZoom(zFloat);
 
@@ -852,8 +860,7 @@ export default function MapsScreen() {
             templates: activeRadar.templates,
             opacities: activeRadar.opacities,
             tileMaxZ: radarTileMaxZ,
-            localImage:
-              usingLocalImage && localImageUrl && localImageCoords ? { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity } : null,
+            localImage: usingLocalImage && localImageUrl && localImageCoords ? { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity } : null,
           }}
           overlays={overlays}
         />
@@ -903,7 +910,56 @@ export default function MapsScreen() {
             </View>
 
             <View style={{ marginTop: 8 }}>
-              <ViewSelector value={state.viewId} nerdy={state.nerdy} onChange={(id) => dispatch({ type: 'SET_VIEW', viewId: id })} />
+              <ViewSelector
+                value={state.viewId}
+                nerdy={state.nerdy}
+                onChange={(id: any) => {
+                  const view = String(id).toLowerCase();
+
+                  // Special “Mariner” route -> Nautical Map
+                  if (view === 'mariner') {
+                    const r = lastRegionRef.current ?? stableInitialRegion;
+
+                    const z =
+                      typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
+
+                    router.push({
+                      pathname: '/nautical-map',
+                      params: {
+                        lat: String(r.latitude),
+                        lon: String(r.longitude),
+                        latDelta: String(r.latitudeDelta),
+                        lonDelta: String(r.longitudeDelta),
+                        zoom: String(z),
+                        from: 'maps',
+                        nav: String(Date.now()), 
+                      },
+                    });
+                    return;
+                  }
+
+                  if (view === 'astronomer') {
+                    const r = lastRegionRef.current ?? stableInitialRegion;
+                    const z = typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
+
+                    router.push({
+                      pathname: '/astro-map',
+                      params: {
+                        lat: String(r.latitude),
+                        lon: String(r.longitude),
+                        latDelta: String(r.latitudeDelta),
+                        lonDelta: String(r.longitudeDelta),
+                        zoom: String(z),
+                        from: 'maps',
+                        nav: String(Date.now()),
+                      },
+                    });
+                    return;
+                  }
+
+                  dispatch({ type: 'SET_VIEW', viewId: id });
+                }}
+              />
             </View>
 
             {canSwitchProduct && sheetValue.radarProvider === 'iem' ? (

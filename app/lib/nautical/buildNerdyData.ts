@@ -1,17 +1,16 @@
 // app/lib/nautical/buildNerdyData.ts
 
 import type {
-    ConfidenceLevel,
-    ModelComparison,
-    NerdyData,
-    NerdySourceRef,
-    SeaStateObs,
-    WaveMechanics,
-    WindWaveInteraction,
+  ConfidenceLevel,
+  ModelComparison,
+  NerdyData,
+  NerdySourceRef,
+  SeaStateObs,
+  WaveMechanics,
+  WindWaveInteraction,
 } from './typesNerdy';
 
 // ---- Minimal “inputs” that match what you already have ----
-// Adjust these types if your real shapes differ; the function is defensive.
 
 type BuoyLike = {
   id: string;
@@ -61,10 +60,8 @@ export type BuildNerdyParams = {
   wfo?: string;
 
   buoy?: BuoyLike | null;
-  // your existing "conditions" object from useNauticalSummary
   conditions?: ConditionsLike | null;
 
-  // optional: your forecast hook result (for provenance)
   forecast?: MarineForecastLike | null;
 };
 
@@ -74,14 +71,8 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
 
-function degToCompass(deg?: number | null): string | undefined {
-  if (deg == null || Number.isNaN(deg)) return undefined;
-  const dirs = [
-    'N','NNE','NE','ENE','E','ESE','SE','SSE',
-    'S','SSW','SW','WSW','W','WNW','NW','NNW',
-  ];
-  const idx = Math.round(((deg % 360) + 360) % 360 / 22.5) % 16;
-  return dirs[idx];
+function clamp(x: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, x));
 }
 
 // Smallest absolute angle between two bearings
@@ -110,8 +101,6 @@ function steepnessRatio(
 
 function steepnessLabel(r?: number | null): WaveMechanics['steepnessLabel'] {
   if (r == null) return undefined;
-  // Rough thresholds commonly used as heuristics:
-  // <0.03 low, 0.03-0.06 moderate, >0.06 steep
   if (r < 0.03) return 'Low';
   if (r < 0.06) return 'Moderate';
   return 'Steep';
@@ -121,7 +110,6 @@ function breakingRiskFromSteepness(
   r?: number | null,
 ): WaveMechanics['breakingRisk'] {
   if (r == null) return undefined;
-  // heuristics: steepness > ~0.07 is “breaking likely”
   if (r < 0.03) return 'Low';
   if (r < 0.06) return 'Moderate';
   if (r < 0.08) return 'Elevated';
@@ -148,8 +136,88 @@ function minutesBetween(nowIso: string, thenIso?: string | null): number | null 
   return Math.max(0, Math.round((now - then) / 60000));
 }
 
+// Tallest set heuristic: often ~1.6–2.0× Hs.
+// We'll pick 1.8× as a middle “nerdy” estimate.
+function tallestSetFromHs(waveHeightM?: number | null): number | null {
+  if (waveHeightM == null || waveHeightM <= 0) return null;
+  return 1.8 * waveHeightM;
+}
+
+// Stability based on ΔT = air - sea
+function stabilityFromDeltaT(deltaTC?: number | null): {
+  deltaTC?: number;
+  label?: 'Stable-ish' | 'Unstable-ish';
+} {
+  if (deltaTC == null || !Number.isFinite(deltaTC)) return {};
+  return {
+    deltaTC,
+    label: deltaTC >= 0 ? 'Stable-ish' : 'Unstable-ish',
+  };
+}
+
+// Risk scoring: 0–100, explainable, monotonic.
+// Inputs are *heuristics* for scanning, not safety certification.
+function computeRiskScore(args: {
+  waveHeightM: number | null;
+  periodS: number | null;
+  windSpeedKts: number | null;
+  windGustKts: number | null;
+  breakingRisk: WaveMechanics['breakingRisk'];
+  regime: WindWaveInteraction['regime'];
+}): { score: number; level: 'Low' | 'Moderate' | 'High' | 'Extreme' } {
+  const H = args.waveHeightM ?? 0;
+  const T = args.periodS ?? 0;
+  const W = args.windSpeedKts ?? 0;
+  const G = args.windGustKts ?? 0;
+
+  // Normalize components into 0–1 ranges
+  const waveN = clamp(H / 4.0, 0, 1);         // 0–4m
+  const periodN = clamp((T - 6) / 10, 0, 1);  // 6–16s
+  const windN = clamp(W / 35, 0, 1);          // 0–35kt
+  const gustN = clamp((G - W) / 20, 0, 1);    // gust factor
+
+  let score01 =
+    0.45 * waveN +
+    0.15 * periodN +
+    0.30 * windN +
+    0.10 * gustN;
+
+  // Adjustments
+  if (args.regime === 'Opposing') score01 += 0.08;
+  if (args.regime === 'Cross sea') score01 += 0.06;
+
+  if (args.breakingRisk === 'High') score01 += 0.10;
+  else if (args.breakingRisk === 'Elevated') score01 += 0.06;
+  else if (args.breakingRisk === 'Moderate') score01 += 0.02;
+
+  score01 = clamp01(score01);
+  const score = Math.round(score01 * 100);
+
+  const level =
+    score >= 80 ? 'Extreme' : score >= 60 ? 'High' : score >= 35 ? 'Moderate' : 'Low';
+
+  return { score, level };
+}
+
+function computePrimaryHazard(args: {
+  breakingRisk: WaveMechanics['breakingRisk'];
+  regime: WindWaveInteraction['regime'];
+  windSpeedKts: number | null;
+  waveHeightM: number | null;
+}): string | undefined {
+  const W = args.windSpeedKts ?? 0;
+  const H = args.waveHeightM ?? 0;
+
+  if (args.breakingRisk === 'High' || args.breakingRisk === 'Elevated') {
+    return 'Breaking / steep faces';
+  }
+  if (args.regime === 'Cross sea') return 'Cross sea / confused surface';
+  if (W >= 34) return 'Gale-force wind';
+  if (H >= 4) return 'Very large seas';
+  return undefined;
+}
+
 // Confidence scoring: simple & explainable.
-// High confidence if buoy exists + observed age is small + model agrees.
 function computeConfidence(args: {
   hasBuoy: boolean;
   obsAgeMin: number | null;
@@ -279,15 +347,14 @@ export function buildNerdyData({
       regime === 'Cross sea'
         ? 'Cross sea likely: confused surface and more roll.'
         : regime === 'Opposing'
-        ? 'Opposing wind can steepen faces and increase breaking risk.'
-        : regime === 'Aligned'
-        ? 'Aligned wind supports a more organized sea state.'
-        : undefined,
+          ? 'Opposing wind can steepen faces and increase breaking risk.'
+          : regime === 'Aligned'
+            ? 'Aligned wind supports a more organized sea state.'
+            : undefined,
     trend: 'Unknown',
   };
 
   // Model comparison (only if we have both buoy and model estimate)
-  // Here: treat conditions.significantWaveHeightM as “model” when buoy exists.
   let model: ModelComparison | undefined;
 
   if (buoy?.waveHeightM != null && conditions?.significantWaveHeightM != null) {
@@ -314,6 +381,32 @@ export function buildNerdyData({
     obsAgeMin,
     modelDeltaM: model?.deltaWaveHeightM ?? null,
     hasCrossSea,
+  });
+
+  // New derived fields that your UI wants
+  const tallestSetM = tallestSetFromHs(waveHeightM);
+
+  const deltaT =
+    buoy?.airTempC != null && seaSurfaceTempC != null
+      ? buoy.airTempC - seaSurfaceTempC
+      : null;
+
+  const stability = stabilityFromDeltaT(deltaT);
+
+  const risk = computeRiskScore({
+    waveHeightM,
+    periodS,
+    windSpeedKts,
+    windGustKts,
+    breakingRisk: mechanics.breakingRisk,
+    regime: windWave.regime,
+  });
+
+  const primaryHazard = computePrimaryHazard({
+    breakingRisk: mechanics.breakingRisk,
+    regime: windWave.regime,
+    windSpeedKts,
+    waveHeightM,
   });
 
   // Sources list
@@ -361,6 +454,15 @@ export function buildNerdyData({
     mechanics,
     windWave,
     model,
+
+    // ✅ NEW: fields your Nautical nerdy card is already trying to show
+    // If your NerdyData type doesn't include these yet, add them there too.
+    tallestSetM: tallestSetM ?? undefined,
+    primaryHazard,
+    riskScore: risk.score,
+    riskLevel: risk.level,
+    stability: stability.label,
+    deltaTAirSeaC: stability.deltaTC,
 
     confidence: {
       level: conf.level,

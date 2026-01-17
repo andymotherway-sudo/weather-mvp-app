@@ -1,31 +1,31 @@
 // app/lib/nautical/typesNerdy.ts
 
-export type ConfidenceLevel = "Low" | "Moderate" | "High";
-export type Trend = "Building" | "Steady" | "Subsiding" | "Unknown";
+export type ConfidenceLevel = 'Low' | 'Moderate' | 'High';
+export type Trend = 'Building' | 'Steady' | 'Subsiding' | 'Unknown';
 
 export interface NerdySourceRef {
   kind:
-    | "NDBC_BUOY"
-    | "NWS_MARINE_ZONE_TEXT"
-    | "NWS_API"
-    | "MODEL_WAVE"
-    | "MODEL_WIND"
-    | "OTHER";
-  id?: string;              // e.g. "46050" or "PZZ370"
-  name?: string;            // e.g. "NOAA NDBC"
-  url?: string;             // optional
-  updatedAt?: string;       // ISO
-  latencyMinutes?: number;  // derived
+    | 'NDBC_BUOY'
+    | 'NWS_MARINE_ZONE_TEXT'
+    | 'NWS_API'
+    | 'MODEL_WAVE'
+    | 'MODEL_WIND'
+    | 'OTHER';
+  id?: string; // e.g. "46050" or "PZZ370"
+  name?: string; // e.g. "NOAA NDBC"
+  url?: string; // optional
+  updatedAt?: string; // ISO
+  latencyMinutes?: number; // derived
   notes?: string;
 }
 
 /** A wave component (spectral-ish) if available */
 export interface WaveComponent {
-  label: "Primary swell" | "Secondary swell" | "Wind sea" | "Other";
+  label: 'Primary swell' | 'Secondary swell' | 'Wind sea' | 'Other';
   periodS?: number;
   directionDeg?: number;
-  directionText?: string;   // e.g. "WNW"
-  energyPct?: number;       // 0-100, optional
+  directionText?: string; // e.g. "WNW"
+  energyPct?: number; // 0-100, optional
 }
 
 /** Core observation snapshot for sea state */
@@ -48,25 +48,25 @@ export interface SeaStateObs {
 
 /** Derived mechanics (math) */
 export interface WaveMechanics {
-  wavelengthM?: number;     // derived from dominant period
-  steepnessRatio?: number;  // H/L (e.g. 0.09)
-  steepnessLabel?: "Low" | "Moderate" | "Steep";
-  breakingRisk?: "Low" | "Moderate" | "Elevated" | "High";
+  wavelengthM?: number; // derived from dominant period
+  steepnessRatio?: number; // H/L (e.g. 0.09)
+  steepnessLabel?: 'Low' | 'Moderate' | 'Steep';
+  breakingRisk?: 'Low' | 'Moderate' | 'Elevated' | 'High';
 }
 
 /** Wind-wave relationship */
 export interface WindWaveInteraction {
-  angleOffsetDeg?: number;  // abs difference wind dir vs dominant swell dir
-  regime?: "Aligned" | "Opposing" | "Cross sea" | "Unknown";
-  comfortNote?: string;     // one-liner
+  angleOffsetDeg?: number; // abs difference wind dir vs dominant swell dir
+  regime?: 'Aligned' | 'Opposing' | 'Cross sea' | 'Unknown';
+  comfortNote?: string; // one-liner
   trend?: Trend;
 }
 
 /** Coastal/tide interaction (optional; only when applicable) */
 export interface CoastalInteraction {
-  tidePhase?: "Flood" | "Ebb" | "Slack" | "Unknown";
+  tidePhase?: 'Flood' | 'Ebb' | 'Slack' | 'Unknown';
   tidalCurrentKts?: number;
-  shoalingRisk?: "Low" | "Moderate" | "High" | "Unknown";
+  shoalingRisk?: 'Low' | 'Moderate' | 'High' | 'Unknown';
   barInletRiskNote?: string;
 }
 
@@ -78,17 +78,17 @@ export interface ModelComparison {
   windSpeedModelKts?: number;
   windSpeedObsKts?: number;
   deltaWindSpeedKts?: number;
-  modelName?: string;        // "WW3", "HRRR", etc.
+  modelName?: string; // "WW3", "HRRR", etc.
 }
 
 /** Your single payload for the Nerdy card */
 export interface NerdyData {
   // identifiers/context
-  zoneId?: string;           // "PZZ370"
+  zoneId?: string; // "PZZ370"
   zoneName?: string;
   wfo?: string;
 
-  buoyId?: string;           // "46050"
+  buoyId?: string; // "46050"
   buoyName?: string;
 
   // core data
@@ -102,13 +102,20 @@ export interface NerdyData {
   model?: ModelComparison;
 
   // risk + confidence
-  riskLevel?: "Low" | "Moderate" | "High" | "Extreme";
+  riskScore?: number; // 0..100 heuristic
+  riskLevel?: 'Low' | 'Moderate' | 'High' | 'Extreme';
   riskText?: string;
+
+  // explainable derived extras
+  primaryHazard?: string;
+  tallestSetM?: number; // estimated largest set wave height (m)
+  stability?: 'Stable-ish' | 'Unstable-ish';
+  deltaTAirSeaC?: number; // air - sea
 
   confidence?: {
     level: ConfidenceLevel;
-    score01?: number;        // 0..1
-    drivers?: string[];      // short bullet reasons
+    score01?: number; // 0..1
+    drivers?: string[]; // short bullet reasons
   };
 
   // provenance

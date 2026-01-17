@@ -37,6 +37,12 @@ export type MapRendererProps = {
   radar: RadarOverlay;
   children?: React.ReactNode;
   overlays?: WmsOverlayConfig[];
+
+  /**
+   * Optional external camera ref.
+   * If provided, MapRenderer binds its internal <Camera/> to this ref so screens can call setCamera().
+   */
+  cameraRef?: React.RefObject<any>;
 };
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
@@ -118,7 +124,6 @@ function regionFromBoundsPolygon(coords: any): Region | null {
   };
 }
 
-// Stable short hash so changing template/url forces new source id
 function hashTemplate(s: string) {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
@@ -131,7 +136,10 @@ const MAPLIBRE_LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-s
 export function MapRenderer(props: MapRendererProps) {
   const { initialRegion, mapStyle, onRegionChangeComplete, onPanDrag, radar, overlays, children } = props;
 
-  const cameraRef = useRef<any>(null);
+  // ✅ Internal ref always exists; if parent passes a ref, we use it.
+  const internalCameraRef = useRef<any>(null);
+  const cameraRef = props.cameraRef ?? internalCameraRef;
+
   const mapStyleUrl = mapStyle === 'dark' ? MAPLIBRE_DARK_STYLE_URL : MAPLIBRE_LIGHT_STYLE_URL;
 
   const initialCamera = useMemo(() => {
@@ -142,10 +150,8 @@ export function MapRenderer(props: MapRendererProps) {
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
 
-  // Track current region for overlays (and any future systems)
   const lastRegionRef = useRef<Region>(initialRegion);
 
-  // Track layout size so overlays can request reasonable WMS image sizes
   const [layout, setLayout] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const dpr = PixelRatio.get();
   const overlayW = Math.max(0, Math.floor(layout.w * dpr));
@@ -213,12 +219,12 @@ export function MapRenderer(props: MapRendererProps) {
     const z = approxZoomFromLongitudeDelta(initialRegion.longitudeDelta);
     setLiveZoom(z);
 
-    cameraRef.current?.setCamera({
+    cameraRef.current?.setCamera?.({
       centerCoordinate: initialCamera.centerCoordinate,
       zoomLevel: initialCamera.zoomLevel,
       animationDuration: 350,
     });
-  }, [initialCamera.centerCoordinate, initialCamera.zoomLevel, initialRegion]);
+  }, [initialCamera.centerCoordinate, initialCamera.zoomLevel, initialRegion, cameraRef]);
 
   /* =========================================================================
    * Region change handling + user interaction flag
@@ -249,37 +255,20 @@ export function MapRenderer(props: MapRendererProps) {
 
     let nextRegion: Region | null = null;
 
-    if (polyRegion) {
-      nextRegion = { ...polyRegion, zoom: zoom ?? lastRegionRef.current?.zoom };
-    }
+    if (polyRegion) nextRegion = { ...polyRegion, zoom: zoom ?? lastRegionRef.current?.zoom };
 
     if (!nextRegion && Array.isArray(center) && center.length >= 2) {
       const lon = Number(center[0]);
       const lat = Number(center[1]);
-
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        const lonDelta =
-          zoom !== null ? lonDeltaFromZoom(zoom) : lastRegionRef.current?.longitudeDelta ?? initialRegion.longitudeDelta;
-
+        const lonDelta = zoom !== null ? lonDeltaFromZoom(zoom) : lastRegionRef.current?.longitudeDelta ?? initialRegion.longitudeDelta;
         const latDelta = Math.max(0.0001, lonDelta * 0.6);
-
-        nextRegion = {
-          latitude: lat,
-          longitude: lon,
-          latitudeDelta: latDelta,
-          longitudeDelta: lonDelta,
-          zoom: zoom ?? lastRegionRef.current?.zoom,
-        };
+        nextRegion = { latitude: lat, longitude: lon, latitudeDelta: latDelta, longitudeDelta: lonDelta, zoom: zoom ?? lastRegionRef.current?.zoom };
       }
     }
 
     if (!nextRegion) {
-      const bounds =
-        e?.properties?.visibleBounds ??
-        e?.properties?.bounds ??
-        e?.properties?.visibleExtent ??
-        e?.properties?.region;
-
+      const bounds = e?.properties?.visibleBounds ?? e?.properties?.bounds ?? e?.properties?.visibleExtent ?? e?.properties?.region;
       const r = regionFromBounds(bounds);
       if (r) {
         const z2 = zoom ?? approxZoomFromLongitudeDelta(r.longitudeDelta);
@@ -315,7 +304,7 @@ export function MapRenderer(props: MapRendererProps) {
   };
 
   /* =========================================================================
-   * Radar overlays (your existing logic, unchanged)
+   * Radar overlays
    * ========================================================================= */
 
   const localImage = radar.localImage ?? null;
@@ -354,8 +343,7 @@ export function MapRenderer(props: MapRendererProps) {
 
   const layerMaxZ = 24;
 
-  const rasterResampling: 'linear' | 'nearest' =
-    isUserInteracting ? 'linear' : liveZoom >= 7 ? 'nearest' : 'linear';
+  const rasterResampling: 'linear' | 'nearest' = isUserInteracting ? 'linear' : liveZoom >= 7 ? 'nearest' : 'linear';
 
   return (
     <View
@@ -366,61 +354,35 @@ export function MapRenderer(props: MapRendererProps) {
         setLayout({ w, h });
       }}
     >
-      <MapLibreGL.MapView
-        style={{ flex: 1 }}
-        mapStyle={mapStyleUrl}
-        logoEnabled={false}
-        attributionEnabled={false}
-        onRegionDidChange={handleRegionDidChange}
-      >
+      <MapLibreGL.MapView style={{ flex: 1 }} mapStyle={mapStyleUrl} logoEnabled={false} attributionEnabled={false} onRegionDidChange={handleRegionDidChange}>
         <MapLibreGL.Camera
           ref={cameraRef}
-          defaultSettings={{
-            centerCoordinate: initialCamera.centerCoordinate,
-            zoomLevel: initialCamera.zoomLevel,
-          }}
+          defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
           animationDuration={0}
         />
-        {children}
 
-        {/* ✅ WMS / overlay system (renders BELOW radar by default) */}
         {overlays?.length && overlayW > 0 && overlayH > 0 ? (
-          <OverlayEngine
-            region={lastRegionRef.current}
-            width={overlayW}
-            height={overlayH}
-            overlays={overlays}
-            isUserInteracting={isUserInteracting}
-          />
+          <OverlayEngine region={lastRegionRef.current} width={overlayW} height={overlayH} overlays={overlays} isUserInteracting={isUserInteracting} />
         ) : null}
 
-        {/* Hyperlocal mode: ONE WMS image */}
-        {useLocalImage ? (() => {
-          const url = String(localImage!.url);
-          const coords = localImage!.coordinates;
-          const opacity = clamp(Number(localImage!.opacity ?? 1), 0, 1);
+        {useLocalImage
+          ? (() => {
+              const url = String(localImage!.url);
+              const coords = localImage!.coordinates;
+              const opacity = clamp(Number(localImage!.opacity ?? 1), 0, 1);
 
-          const h = hashTemplate(url);
-          const srcId = `radar-img-src-${h}`;
-          const lyrId = `radar-img-lyr-${h}`;
+              const h = hashTemplate(url);
+              const srcId = `radar-img-src-${h}`;
+              const lyrId = `radar-img-lyr-${h}`;
 
-          return (
-            <MapLibreGL.ImageSource id={srcId} key={srcId} url={url} coordinates={coords}>
-              <MapLibreGL.RasterLayer
-                id={lyrId}
-                sourceID={srcId}
-                maxZoomLevel={layerMaxZ}
-                style={{
-                  rasterOpacity: opacity,
-                  rasterResampling,
-                  rasterFadeDuration: 0,
-                }}
-              />
-            </MapLibreGL.ImageSource>
-          );
-        })() : null}
+              return (
+                <MapLibreGL.ImageSource id={srcId} key={srcId} url={url} coordinates={coords}>
+                  <MapLibreGL.RasterLayer id={lyrId} sourceID={srcId} maxZoomLevel={layerMaxZ} style={{ rasterOpacity: opacity, rasterResampling, rasterFadeDuration: 0 }} />
+                </MapLibreGL.ImageSource>
+              );
+            })()
+          : null}
 
-        {/* Tiles mode */}
         {!useLocalImage && radar.enabled
           ? radarTemplates.map((tpl, slotIdx) => {
               if (!tpl) return null;
@@ -433,27 +395,14 @@ export function MapRenderer(props: MapRendererProps) {
               const lyrId = `radar-lyr-${slotIdx}-${h}`;
 
               return (
-                <MapLibreGL.RasterSource
-                  key={srcId}
-                  id={srcId}
-                  tileUrlTemplates={[tpl]}
-                  tileSize={256}
-                  maxZoomLevel={requestMaxZ}
-                >
-                  <MapLibreGL.RasterLayer
-                    id={lyrId}
-                    sourceID={srcId}
-                    maxZoomLevel={layerMaxZ}
-                    style={{
-                      rasterOpacity: safeOpacity,
-                      rasterResampling,
-                      rasterFadeDuration: 0,
-                    }}
-                  />
+                <MapLibreGL.RasterSource key={srcId} id={srcId} tileUrlTemplates={[tpl]} tileSize={256} maxZoomLevel={requestMaxZ}>
+                  <MapLibreGL.RasterLayer id={lyrId} sourceID={srcId} maxZoomLevel={layerMaxZ} style={{ rasterOpacity: safeOpacity, rasterResampling, rasterFadeDuration: 0 }} />
                 </MapLibreGL.RasterSource>
               );
             })
           : null}
+
+        {children}
       </MapLibreGL.MapView>
     </View>
   );

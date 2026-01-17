@@ -1,6 +1,13 @@
 // app/lib/maps/types.ts
 
-export type MapViewId = 'clouds' | 'radar' | 'wildfire' | 'storm' | 'aviation';
+export type MapViewId =
+  | 'clouds'
+  | 'radar'
+  | 'wildfire'
+  | 'storm'
+  | 'aviation'
+  | 'mariner'
+  | 'astronomer';
 
 export type LayerId =
   | 'radar.reflectivity'
@@ -9,16 +16,19 @@ export type LayerId =
   | 'wildfire.perimeters'
   | 'wildfire.hotspots'
   | 'alerts.polygons'
-  | 'lightning.strikes';
+  | 'lightning.strikes'
+  | 'astro.skyScore'
+  | 'space.aurora.prob'
+  | 'space.aurora.oval';
 
 export type LayerKind = 'tile' | 'geojson';
 
 export type NerdyVisibility = 'simple' | 'nerdy' | 'both';
 
 export type TimestampMode =
-  | 'radar_timeline'     // scrubbable frames
-  | 'latest_snapshot'    // “latest only”
-  | 'daily_snapshot';    // “daily analysis” style
+  | 'radar_timeline' // scrubbable frames
+  | 'latest_snapshot' // “latest only”
+  | 'daily_snapshot'; // “daily analysis” style
 
 export type LatLon = { lat: number; lon: number };
 

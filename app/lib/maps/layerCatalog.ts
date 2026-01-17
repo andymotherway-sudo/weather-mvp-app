@@ -1,7 +1,7 @@
 // app/lib/maps/layerCatalog.ts
 import type { LayerId, NerdyVisibility, TimestampMode } from './types';
 
-export type LayerGroupId = 'weather' | 'fire' | 'storm' | 'aviation';
+export type LayerGroupId = 'weather' | 'fire' | 'storm' | 'aviation' | 'astro';
 
 export type LayerCatalogItem = {
   id: LayerId;
@@ -32,6 +32,7 @@ export const LAYER_GROUPS: ReadonlyArray<{ id: LayerGroupId; title: string }> = 
   { id: 'fire', title: 'Fire' },
   { id: 'storm', title: 'Storm' },
   { id: 'aviation', title: 'Aviation' },
+  { id: 'astro', title: 'Astronomy' },
 ] as const;
 
 /**
@@ -134,6 +135,45 @@ export const LAYER_CATALOG = [
     supportsOpacity: true,
     supportsLegend: false,
   },
+  {
+  id: 'astro.skyScore',
+  group: 'astro',
+  title: 'Sky Score',
+  subtitle: 'Observing conditions heatmap',
+  visibility: 'both',
+  timestampMode: 'latest_snapshot',
+  defaultOpacity: 0.85,
+  zIndex: 70,
+  supportsLegend: false,
+  supportsOpacity: true,
+  source: { name: 'Omni Wx', details: 'Computed from clouds/moon/light metrics' },
+},
+{
+  id: 'space.aurora.prob',
+  group: 'astro',
+  title: 'Aurora',
+  subtitle: 'Visibility probability',
+  visibility: 'both',
+  timestampMode: 'latest_snapshot',
+  defaultOpacity: 0.75,
+  zIndex: 95,
+  supportsLegend: false,
+  supportsOpacity: true,
+  source: { name: 'NOAA SWPC', details: 'OVATION model (global probability grid)' },
+},
+{
+  id: 'space.aurora.oval',
+  group: 'astro',
+  title: 'Aurora Oval',
+  subtitle: 'Boundary contour',
+  visibility: 'nerdy',
+  timestampMode: 'latest_snapshot',
+  defaultOpacity: 0.9,
+  zIndex: 110,
+  supportsLegend: false,
+  supportsOpacity: true,
+  source: { name: 'NOAA SWPC', details: 'Derived contour from OVATION probabilities' },
+},
 ] as const satisfies ReadonlyArray<LayerCatalogItem>;
 
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(
