@@ -157,6 +157,15 @@ export default function TabsLayout() {
           <Tabs.Screen name="astronomer" options={{ href: null }} />
           <Tabs.Screen name="buoy-map" options={{ href: null }} />
           <Tabs.Screen name="nautical-map" options={{ href: null }} />
+          <Tabs.Screen
+              name="astro-map"
+              options={
+                {
+                  href: null,
+                  unmountOnBlur: true, // ✅ runtime option, TS doesn't know it
+                } as any
+              }
+            />
         </Tabs>
       </PlaceProvider>
     </LocationProvider>
