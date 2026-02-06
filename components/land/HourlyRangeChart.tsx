@@ -199,10 +199,9 @@ export function HourlyRangeChart({
   const H = 240;
 
   const axisL = 28;
-  const axisR = 34;
-
+  
   const padL = padX + axisL;
-  const padR = padX + axisR;
+  const padR = padX;
 
   const padT = 18;
   const padB = 78;
@@ -292,6 +291,7 @@ export function HourlyRangeChart({
     return { t: Math.round(t), y: yForTemp(t) };
   });
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
+  const pctAxisX = padL + 6;
 
   const windStats = useMemo(() => {
     const ws = data.map((h) => pick(h, 'windMph')).filter((x): x is number => typeof x === 'number');
@@ -321,6 +321,13 @@ export function HourlyRangeChart({
   }, [selIdx, viewportW, padX, step, TILE_W]);
 
   const selX = xForIdx(selIdx);
+
+  const selTemp = pick(data[selIdx] as any, tempKey);
+  const windTextX = padL + 14;
+  const windTextY =
+  typeof selTemp === 'number'
+    ? clamp(yForTemp(selTemp) + 18, padT + 14, padT + plotH - 14)
+    : padT + plotH * 0.7;
 
   const selScale = bump.interpolate({
     inputRange: [0, 1],
@@ -461,7 +468,7 @@ export function HourlyRangeChart({
               {pctTicks.map((tk, idx) => (
                 <SvgText
                   key={`p-yt-${idx}`}
-                  x={W - padR + 10}
+                  x={pctAxisX}
                   y={tk.y + 3}
                   fontSize="9"
                   fill={C.tickPct}
@@ -472,14 +479,25 @@ export function HourlyRangeChart({
                 </SvgText>
               ))}
 
-              <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="900" textAnchor="end">
+              {/* Axis divider between °F labels and % labels */}
+              <Line
+                x1={padL + 2}
+                x2={padL + 2}
+                y1={padT}
+                y2={padT + plotH}
+                stroke="rgba(255,255,255,0.06)"
+                strokeWidth={1}
+              />
+
+              <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="800" textAnchor="end">
                 {unitsLabel}
               </SvgText>
-              <SvgText x={W - padR + 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.22)" fontWeight="900" textAnchor="start">
+              <SvgText x={pctAxisX} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.22)" fontWeight="800" textAnchor="start">
                 %
               </SvgText>
 
               <Line x1={selX} x2={selX} y1={padT} y2={windBandBot} stroke={C.cursor} strokeWidth={2} />
+              
 
               {precipArea ? (
                 <>
@@ -546,7 +564,7 @@ export function HourlyRangeChart({
                 );
               })}
 
-              <SvgText x={padL} y={windBandTop - 4} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
+              <SvgText x={windTextX} y={windTextY} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
                 Wind / Gust
               </SvgText>
               <SvgText x={W - padR} y={windBandTop - 4} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800" textAnchor="end">

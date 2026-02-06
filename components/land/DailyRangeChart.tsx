@@ -111,11 +111,10 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
 
   // Give ourselves room for the left temp axis + right % axis
   const axisL = 28; // left margin for °F ticks
-  const axisR = 34; // right margin for % ticks
 
   const padL = padX + axisL;
-  const padR = padX + axisR;
-
+  const padR = padX;
+  
   const padT = 18;
   const padB = 78;
 
@@ -204,6 +203,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
   });
 
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
+  const pctAxisX = padL + 6; 
 
   // Wind stats
   const windStats = useMemo(() => {
@@ -238,6 +238,14 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
 
   const selX = xForIdx(selIdx);
 
+  const selLow = data[selIdx]?.tempMinF;
+
+  const windTextX = padL + 14;
+  const windTextY =
+  typeof selLow === 'number'
+    ? clamp(yForTemp(selLow) - 10, padT + 14, padT + plotH - 14)
+    : padT + plotH * 0.7;
+  
   const selScale = bump.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.06],
@@ -349,21 +357,30 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 </G>
               ))}
 
-              {/* Right-side % axis labels (clean separation) */}
+              {/* Axis divider between °F labels and % labels */}
+              <Line
+                x1={padL + 2}
+                x2={padL + 2}
+                y1={padT}
+                y2={padT + plotH}
+                stroke="rgba(255,255,255,0.06)"
+                strokeWidth={1}
+              />
+              
+              {/* % axis labels (now near left) */}
               {pctTicks.map((tk, idx) => (
                 <SvgText
                   key={`p-yt-${idx}`}
-                  x={W - padR + 10}
+                  x={pctAxisX}
                   y={tk.y + 3}
                   fontSize="9"
                   fill={C.tickPct}
-                  fontWeight="900"
+                  fontWeight="800"
                   textAnchor="start"
                 >
                   {`${tk.p}%`}
-                </SvgText>
-              ))}
-
+                  </SvgText>
+                ))}
               {/* Axis headers */}
               <SvgText
                 x={padL - 10}
@@ -376,7 +393,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 {unitsLabel}
               </SvgText>
               <SvgText
-                x={W - padR + 10}
+                x={pctAxisX}
                 y={padT - 6}
                 fontSize="10"
                 fill="rgba(255,255,255,0.22)"
@@ -466,7 +483,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 );
               })}
 
-              <SvgText x={padL} y={windBandTop - 4} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
+              <SvgText x={windTextX} y={windTextY} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
                 Wind / Gust
               </SvgText>
               <SvgText
@@ -681,4 +698,5 @@ const s = StyleSheet.create({
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
   },
+  
 })
