@@ -21,6 +21,7 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 
+
 type UnitSystem = 'us' | 'metric';
 
 export default function HourlyTab() {
@@ -79,10 +80,7 @@ export default function HourlyTab() {
             {locationLabel}
           </Text>
 
-          {hourly.length ? (
-            <Text style={styles.hint}>72h panels • tap panels to switch • optional nerdy timeline</Text>
-          ) : null}
-        </View>
+         </View>
 
         {loading && !data ? (
           <View style={styles.center}>
@@ -100,7 +98,7 @@ export default function HourlyTab() {
 
         {hourly.length ? (
           <>
-            <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="temp" />
+            <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
 
             <View style={{ marginTop: theme.spacing.sm }}>
               <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>

@@ -29,8 +29,28 @@ function clampInt(n: number, a: number, b: number) {
 function fmtInt(v: number | null, suffix = '') {
   return v == null ? '—' : `${Math.round(v)}${suffix}`;
 }
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function todayISODateLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// ✅ IMPORTANT: parse yyyy-mm-dd as LOCAL midnight (not UTC)
+function parseISODateLocal(dateISO: string) {
+  const y = Number(dateISO.slice(0, 4));
+  const m = Number(dateISO.slice(5, 7));
+  const d = Number(dateISO.slice(8, 10));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return new Date(dateISO);
+  return new Date(y, m - 1, d); // local midnight
+}
+
 function niceDayLabel(dateISO: string) {
-  const d = new Date(dateISO);
+  // ✅ use LOCAL midnight date object for labels
+  const d = parseISODateLocal(dateISO);
+
   const day = d.toLocaleDateString(undefined, { weekday: 'short' });
   const md = d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
   return { day, md, d };
@@ -263,7 +283,8 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
             {data.map((d, i) => {
               const { day, md } = niceDayLabel(d.date);
               const isSel = i === selIdx;
-              const isToday = i === 0;
+              const todayISO = todayISODateLocal();
+              const isToday = d.date === todayISO;
 
               return (
                 <Pressable
@@ -462,7 +483,8 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
               {/* bottom labels */}
               {data.map((d, i) => {
                 const { day } = niceDayLabel(d.date);
-                const isToday = i === 0;
+                const todayISO = todayISODateLocal();
+                const isToday = d.date === todayISO;
                 const isSel = i === selIdx;
 
                 return (
@@ -659,4 +681,4 @@ const s = StyleSheet.create({
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
   },
-});
+})
