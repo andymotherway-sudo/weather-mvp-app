@@ -2,21 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_LOCATION } from '../weather/locations';
 
-export type ForecastDay = {
-  date: string;
-  tempMaxF: number | null;
-  tempMinF: number | null;
-  precipProbMaxPct: number | null;
-  windGustMaxMph: number | null;
-  windMaxMph: number | null; // sustained wind (daily max)
-  windDirDominantDeg: number | null; // 0..360
-  cloudCoverAvgPct: number | null;
-  dewPointMaxF: number | null;
-  humidityMaxPct: number | null; // computed from hourly RH
-};
-
 export type ForecastHour = {
-  time: string; // ISO/localized by timezone=auto
+  time: string; // ISO
   tempF: number | null;
   dewPointF: number | null;
   humidityPct: number | null;
@@ -24,6 +11,20 @@ export type ForecastHour = {
   precipProbPct: number | null;
   windMph: number | null;
   windGustMph: number | null;
+  windDirDeg?: number | null;
+};
+
+export type ForecastDay = {
+  date: string; // YYYY-MM-DD
+  tempMaxF: number | null;
+  tempMinF: number | null;
+  dewPointMaxF: number | null;
+  humidityMaxPct: number | null;
+  precipProbMaxPct: number | null;
+  windMaxMph: number | null;
+  windGustMaxMph: number | null;
+  windDirDominantDeg: number | null;
+  cloudCoverAvgPct: number | null;
 };
 
 type ForecastData = {

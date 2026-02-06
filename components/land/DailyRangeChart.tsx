@@ -240,10 +240,10 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
 
   const selLow = data[selIdx]?.tempMinF;
 
-  const windTextX = padL + 14;
+  const windTextX = clamp(selX, padL + 54, W - padR - 54);
   const windTextY =
   typeof selLow === 'number'
-    ? clamp(yForTemp(selLow) - 10, padT + 14, padT + plotH - 14)
+    ? clamp(yForTemp(selLow) - 18, padT + 18, padT + plotH - 18)
     : padT + plotH * 0.7;
   
   const selScale = bump.interpolate({
@@ -483,19 +483,26 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 );
               })}
 
-              <SvgText x={windTextX} y={windTextY} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
-                Wind / Gust
-              </SvgText>
-              <SvgText
-                x={W - padR}
-                y={windBandTop - 4}
-                fontSize="10"
-                fill="rgba(255,255,255,0.40)"
-                fontWeight="800"
-                textAnchor="end"
-              >
-                max {String(Math.round(windStats.max))}
-              </SvgText>
+              {/* ✅ Wind/Gust label in the left gutter */}
+              {(() => {
+                const x = padX; // left gutter inset
+                const y = windBandTop + windBandH / 2 + 4;
+
+                return (
+                  <G>
+                    <SvgText
+                      x={x}
+                      y={y}
+                      fontSize="11"
+                      fontWeight="900"
+                      textAnchor="start"
+                      fill="rgba(255, 255, 255, 0.57)"
+                    >
+                      Wind/Gust
+                    </SvgText>
+                  </G>
+                );
+              })()}
 
               {/* bottom labels */}
               {data.map((d, i) => {
