@@ -1,4 +1,4 @@
-// lib/openmeteo/hooks.ts
+// app/lib/openmeteo/hooks.ts
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_LOCATION } from '../weather/locations';
 
@@ -8,8 +8,11 @@ export type ForecastDay = {
   tempMinF: number | null;
   precipProbMaxPct: number | null;
   windGustMaxMph: number | null;
+  windMaxMph: number | null; // sustained wind (daily max)
+  windDirDominantDeg: number | null; // 0..360
   cloudCoverAvgPct: number | null;
   dewPointMaxF: number | null;
+  humidityMaxPct: number | null; // computed from hourly RH
 };
 
 export type ForecastHour = {
@@ -56,28 +59,11 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-/**
- * Open-Meteo forecast hook.
- * - daily: N-day rollup (max/min, max POP, gust max, avg cloud, max dewpoint)
- * - hourly: N*24 hours of nerdy timeline fields
- *
- * Notes:
- * - gust variable: wind_gusts_10m
- * - dew point: dew_point_2m
- * - cloud cover: cloudcover
- * - RH: relativehumidity_2m
- * - POP: precipitation_probability
- */
 export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastState {
   const opts = useMemo(() => {
     if (isOpts(arg)) {
-      return {
-        lat: arg.lat,
-        lon: arg.lon,
-        days: arg.days ?? 3,
-      };
+      return { lat: arg.lat, lon: arg.lon, days: arg.days ?? 3 };
     }
-    // old style: arg is days
     return {
       lat: DEFAULT_LOCATION.lat,
       lon: DEFAULT_LOCATION.lon,
@@ -103,11 +89,14 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
 
         setError(null);
 
+        // These names match your existing parsing keys below
         const dailyVars = [
           'temperature_2m_max',
           'temperature_2m_min',
           'precipitation_probability_max',
           'wind_gusts_10m_max',
+          'windspeed_10m_max',
+          'winddirection_10m_dominant',
           'cloudcover_mean',
           'dew_point_2m_max',
         ].join(',');
@@ -136,27 +125,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
-        // ---- Daily parse ----
-        const d = json.daily ?? {};
-        const dTimes: string[] = d.time ?? [];
-        const tMax: any[] = d.temperature_2m_max ?? [];
-        const tMin: any[] = d.temperature_2m_min ?? [];
-        const popMax: any[] = d.precipitation_probability_max ?? [];
-        const gustMax: any[] = d.wind_gusts_10m_max ?? [];
-        const cloudMean: any[] = d.cloudcover_mean ?? [];
-        const dpMax: any[] = d.dew_point_2m_max ?? [];
-
-        const daily: ForecastDay[] = dTimes.map((date, idx) => ({
-          date,
-          tempMaxF: safeNum(tMax[idx]),
-          tempMinF: safeNum(tMin[idx]),
-          precipProbMaxPct: safeNum(popMax[idx]),
-          windGustMaxMph: safeNum(gustMax[idx]),
-          cloudCoverAvgPct: safeNum(cloudMean[idx]),
-          dewPointMaxF: safeNum(dpMax[idx]),
-        }));
-
-        // ---- Hourly parse ----
+        // ---- Hourly parse (FIRST) ----
         const h = json.hourly ?? {};
         const hTimes: string[] = h.time ?? [];
         const hTemp: any[] = h.temperature_2m ?? [];
@@ -176,6 +145,43 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           precipProbPct: safeNum(hPop[idx]),
           windMph: safeNum(hWind[idx]),
           windGustMph: safeNum(hGust[idx]),
+        }));
+
+        // ---- Compute DAILY humidityMaxPct from hourly RH ----
+        const rhMaxByDate: Record<string, number> = {};
+        for (let i = 0; i < hTimes.length; i++) {
+          const dt = hTimes[i];
+          const dateKey = typeof dt === 'string' ? dt.slice(0, 10) : '';
+          const rh = safeNum(hRh[i]);
+          if (!dateKey || rh == null) continue;
+
+          const prev = rhMaxByDate[dateKey];
+          if (prev == null || rh > prev) rhMaxByDate[dateKey] = rh;
+        }
+
+        // ---- Daily parse ----
+        const d = json.daily ?? {};
+        const dTimes: string[] = d.time ?? [];
+        const tMax: any[] = d.temperature_2m_max ?? [];
+        const tMin: any[] = d.temperature_2m_min ?? [];
+        const popMax: any[] = d.precipitation_probability_max ?? [];
+        const gustMax: any[] = d.wind_gusts_10m_max ?? [];
+        const cloudMean: any[] = d.cloudcover_mean ?? [];
+        const dpMax: any[] = d.dew_point_2m_max ?? [];
+        const windMax: any[] = d.windspeed_10m_max ?? [];
+        const windDir: any[] = d.winddirection_10m_dominant ?? [];
+
+        const daily: ForecastDay[] = dTimes.map((date, idx) => ({
+          date,
+          tempMaxF: safeNum(tMax[idx]),
+          tempMinF: safeNum(tMin[idx]),
+          precipProbMaxPct: safeNum(popMax[idx]),
+          windMaxMph: safeNum(windMax[idx]),
+          windDirDominantDeg: safeNum(windDir[idx]),
+          windGustMaxMph: safeNum(gustMax[idx]),
+          cloudCoverAvgPct: safeNum(cloudMean[idx]),
+          dewPointMaxF: safeNum(dpMax[idx]),
+          humidityMaxPct: typeof rhMaxByDate[date] === 'number' ? rhMaxByDate[date] : null,
         }));
 
         setData({ daily, hourly });

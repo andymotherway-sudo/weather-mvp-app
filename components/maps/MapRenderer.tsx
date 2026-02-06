@@ -43,6 +43,12 @@ export type MapRendererProps = {
    * If provided, MapRenderer binds its internal <Camera/> to this ref so screens can call setCamera().
    */
   cameraRef?: React.RefObject<any>;
+
+  /**
+   * Optional tap handler (MapLibre onPress).
+   * Provides native event with geometry.coordinates, etc.
+   */
+  onMapPress?: (e: any) => void;
 };
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
@@ -134,9 +140,8 @@ const MAPLIBRE_DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl
 const MAPLIBRE_LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
 export function MapRenderer(props: MapRendererProps) {
-  const { initialRegion, mapStyle, onRegionChangeComplete, onPanDrag, radar, overlays, children } = props;
+  const { initialRegion, mapStyle, onRegionChangeComplete, onPanDrag, radar, overlays, children, onMapPress } = props;
 
-  // ✅ Internal ref always exists; if parent passes a ref, we use it.
   const internalCameraRef = useRef<any>(null);
   const cameraRef = props.cameraRef ?? internalCameraRef;
 
@@ -149,7 +154,6 @@ export function MapRenderer(props: MapRendererProps) {
   }, [initialRegion.latitude, initialRegion.longitude, initialRegion.longitudeDelta]);
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
-
   const lastRegionRef = useRef<Region>(initialRegion);
 
   const [layout, setLayout] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -157,10 +161,7 @@ export function MapRenderer(props: MapRendererProps) {
   const overlayW = Math.max(0, Math.floor(layout.w * dpr));
   const overlayH = Math.max(0, Math.floor(layout.h * dpr));
 
-  /* =========================================================================
-   * 503 circuit breaker (load shedding)
-   * ========================================================================= */
-
+  // 503 breaker (unchanged)
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
   const burstRef = useRef<{ t0: number; n: number }>({ t0: 0, n: 0 });
 
@@ -200,10 +201,7 @@ export function MapRenderer(props: MapRendererProps) {
 
   const isDegraded = Date.now() < degradedUntil;
 
-  /* =========================================================================
-   * Camera reset on initialRegion change
-   * ========================================================================= */
-
+  // Camera reset on initialRegion change (unchanged)
   const lastKeyRef = useRef<string>('');
   useEffect(() => {
     const key = `${initialRegion.latitude.toFixed(5)}:${initialRegion.longitude.toFixed(5)}:${initialRegion.longitudeDelta.toFixed(5)}`;
@@ -226,10 +224,7 @@ export function MapRenderer(props: MapRendererProps) {
     });
   }, [initialCamera.centerCoordinate, initialCamera.zoomLevel, initialRegion, cameraRef]);
 
-  /* =========================================================================
-   * Region change handling + user interaction flag
-   * ========================================================================= */
-
+  // Region change handling (unchanged)
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userActiveRef = useRef(false);
   const userEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -303,10 +298,7 @@ export function MapRenderer(props: MapRendererProps) {
     }
   };
 
-  /* =========================================================================
-   * Radar overlays
-   * ========================================================================= */
-
+  // Radar overlays (unchanged)
   const localImage = radar.localImage ?? null;
   const useLocalImage = radar.enabled && !!localImage?.url && !!localImage?.coordinates?.length;
 
@@ -342,7 +334,6 @@ export function MapRenderer(props: MapRendererProps) {
   }, [radar.tileMaxZ, isDegraded, liveZoom]);
 
   const layerMaxZ = 24;
-
   const rasterResampling: 'linear' | 'nearest' = isUserInteracting ? 'linear' : liveZoom >= 7 ? 'nearest' : 'linear';
 
   return (
@@ -354,7 +345,14 @@ export function MapRenderer(props: MapRendererProps) {
         setLayout({ w, h });
       }}
     >
-      <MapLibreGL.MapView style={{ flex: 1 }} mapStyle={mapStyleUrl} logoEnabled={false} attributionEnabled={false} onRegionDidChange={handleRegionDidChange}>
+      <MapLibreGL.MapView
+        style={{ flex: 1 }}
+        mapStyle={mapStyleUrl}
+        logoEnabled={false}
+        attributionEnabled={false}
+        onRegionDidChange={handleRegionDidChange}
+        onPress={onMapPress}
+      >
         <MapLibreGL.Camera
           ref={cameraRef}
           defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
@@ -377,7 +375,12 @@ export function MapRenderer(props: MapRendererProps) {
 
               return (
                 <MapLibreGL.ImageSource id={srcId} key={srcId} url={url} coordinates={coords}>
-                  <MapLibreGL.RasterLayer id={lyrId} sourceID={srcId} maxZoomLevel={layerMaxZ} style={{ rasterOpacity: opacity, rasterResampling, rasterFadeDuration: 0 }} />
+                  <MapLibreGL.RasterLayer
+                    id={lyrId}
+                    sourceID={srcId}
+                    maxZoomLevel={layerMaxZ}
+                    style={{ rasterOpacity: opacity, rasterResampling, rasterFadeDuration: 0 }}
+                  />
                 </MapLibreGL.ImageSource>
               );
             })()
@@ -396,7 +399,12 @@ export function MapRenderer(props: MapRendererProps) {
 
               return (
                 <MapLibreGL.RasterSource key={srcId} id={srcId} tileUrlTemplates={[tpl]} tileSize={256} maxZoomLevel={requestMaxZ}>
-                  <MapLibreGL.RasterLayer id={lyrId} sourceID={srcId} maxZoomLevel={layerMaxZ} style={{ rasterOpacity: safeOpacity, rasterResampling, rasterFadeDuration: 0 }} />
+                  <MapLibreGL.RasterLayer
+                    id={lyrId}
+                    sourceID={srcId}
+                    maxZoomLevel={layerMaxZ}
+                    style={{ rasterOpacity: safeOpacity, rasterResampling, rasterFadeDuration: 0 }}
+                  />
                 </MapLibreGL.RasterSource>
               );
             })

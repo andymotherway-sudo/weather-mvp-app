@@ -1,9 +1,12 @@
 // app/(tabs)/index.tsx
-// Land Wx – Rich + Nerdy
+// Land Wx – Rich + Nerdy (Branded + Alpha polish)
+
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -12,9 +15,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Rect } from 'react-native-svg';
 
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useCurrentWeather } from '../lib/weather/hooks';
@@ -39,6 +43,8 @@ import { dewPointBandF, gustFactor, heatIndexF, windChillF } from '../lib/land/n
 import { AlertBanner } from '../../components/alerts/AlertBanner';
 import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
 
+import { DailyRangeChart } from '../../components/land/DailyRangeChart';
+
 type UnitSystem = 'us' | 'metric';
 
 type SavedLocation = {
@@ -50,8 +56,6 @@ type SavedLocation = {
   lon: number;
   tz?: string;
 };
-
-type TopPanelId = 'now' | 'wind' | 'moisture' | 'sky' | 'extras';
 
 function safeNum(v: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v;
@@ -89,34 +93,11 @@ function normalizeConfidence(v: any): 'low' | 'medium' | 'high' | undefined {
   return undefined;
 }
 
-function WindRow({
-  windMph,
-  gustMph,
-  windDirDeg,
-}: {
-  windMph: number | null;
-  gustMph: number | null;
-  windDirDeg: number | null;
-}) {
-  const dir = dirToCompass(windDirDeg);
-  const dirText = windDirDeg != null ? `${dir ?? ''} ${Math.round(windDirDeg)}°`.trim() : '—';
-  const windText = windMph != null ? `${Math.round(windMph)} mph` : '—';
-  const gustText = gustMph != null ? `${Math.round(gustMph)} mph` : '—';
-
-  return (
-    <View style={styles.windRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.windLabel}>Wind</Text>
-        <Text style={styles.windValue}>
-          {windText} <Text style={{ opacity: 0.6 }}>→</Text> Gust {gustText}
-        </Text>
-      </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={styles.windLabel}>Dir</Text>
-        <Text style={styles.windValue}>{dirText}</Text>
-      </View>
-    </View>
-  );
+function formatUpdatedTime(observationTime: string | null) {
+  if (!observationTime) return '—';
+  const d = new Date(observationTime);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 function LocationPickerModal({
@@ -184,6 +165,7 @@ function LocationPickerModal({
       }
     }, 250);
 
+    
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -204,12 +186,14 @@ function LocationPickerModal({
     })
   );
 
-  const resRows: Array<{ key: string; title: string; sub: string; onPress: () => void }> = (results ?? []).map((item) => ({
-    key: item.id,
-    title: formatLocLabel(item),
-    sub: `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
-    onPress: () => onPick(item),
-  }));
+  const resRows: Array<{ key: string; title: string; sub: string; onPress: () => void }> = (results ?? []).map(
+    (item) => ({
+      key: item.id,
+      title: formatLocLabel(item),
+      sub: `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
+      onPress: () => onPick(item),
+    })
+  );
 
   const sections = useMemo(() => {
     const out: any[] = [];
@@ -296,35 +280,736 @@ function LocationPickerModal({
   );
 }
 
-function Pill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}>
-      <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function RowKV({ label, value, onPress }: { label: string; value: string; onPress?: () => void }) {
+function StatTile({
+  label,
+  value,
+  onPress,
+  valueHint,
+  style,
+}: {
+  label: string;
+  value: string;
+  valueHint?: string;
+  onPress?: () => void;
+  style?: any;
+}) {
   const body = (
-    <View style={styles.rowKV}>
-      <Text style={styles.rowKVLabel}>{label}</Text>
-      <Text style={styles.rowKVValue} numberOfLines={1}>
+    <View style={[styles.statTile, style]}>
+      <Text style={styles.tileLabel}>{label}</Text>
+      <Text style={styles.tileValue} numberOfLines={1}>
         {value}
       </Text>
+      {valueHint ? <Text style={styles.tileHint}>{valueHint}</Text> : null}
     </View>
   );
+
   if (!onPress) return body;
+
   return (
-    <Pressable onPress={onPress} style={{ width: '100%' }}>
+    <Pressable onPress={onPress} style={{ flex: 1 }}>
       {body}
     </Pressable>
   );
 }
 
+
+function SimpleSummary({
+  dewpointF,
+  humidityPct,
+  windMph,
+  gustMph,
+  windDirDeg,
+  cloudCoverPct,
+  uvIndex,
+  precipChancePct,
+  visibilityMi,
+  pressureHpa,
+  narrative,
+  hideWind, // ✅ add
+}: {
+  dewpointF: number | null;
+  humidityPct: number | null;
+  windMph: number | null;
+  gustMph: number | null;
+  windDirDeg: number | null;
+  cloudCoverPct: number | null;
+  uvIndex: number | null;
+  precipChancePct: number | null;
+  visibilityMi: number | null;
+  pressureHpa: number | null;
+  narrative?: string;
+  hideWind?: boolean; // ✅ add
+}) {
+
+  const hasMoisture = dewpointF != null || humidityPct != null;
+  const hasWind = !hideWind && (windMph != null || gustMph != null || windDirDeg != null);
+  const hasSky = cloudCoverPct != null || uvIndex != null;
+  const hasPrecipVis = precipChancePct != null || visibilityMi != null || pressureHpa != null;
+
+  // show UV only if it’s meaningful (you can tweak this rule)
+  const showUv = uvIndex != null && uvIndex > 0;
+
+  const dirToCompass = (deg: number | null) => {
+    if (deg == null) return null;
+    const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const idx = Math.round(((deg % 360) / 22.5)) % 16;
+    return dirs[idx];
+  };
+
+  const windDirText = windDirDeg != null ? `${dirToCompass(windDirDeg) ?? ''}`.trim() : '—';
+
+  const fmt0 = (v: number | null, suffix = '') => (v == null ? '—' : `${Math.round(v)}${suffix}`);
+  const fmt1 = (v: number | null, suffix = '') => (v == null ? '—' : `${v.toFixed(1)}${suffix}`);
+
+  return (
+    <View style={ss.wrap}>
+      {/* Moisture & comfort */}
+      {hasMoisture ? (
+        <View style={ss.section}>
+          <Text style={ss.sectionTitle}>Comfort</Text>
+
+          <View style={ss.grid2}>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Dew Point</Text>
+              <Text style={ss.v}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
+            </View>
+            <View style={ss.cell}>
+              <Text style={ss.k}>RH</Text>
+              <Text style={ss.v}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
+            </View>
+          </View>
+
+          {narrative ? <Text style={ss.note} numberOfLines={2}>{narrative}</Text> : null}
+        </View>
+      ) : null}
+
+      {/* Wind */}
+      {hasWind ? (
+        <View style={ss.section}>
+          <Text style={ss.sectionTitle}>Wind</Text>
+
+          <View style={ss.grid2}>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Speed</Text>
+              <Text style={ss.v}>
+                {windMph != null ? `${Math.round(windMph)} mph` : '—'}{' '}
+                <Text style={{ opacity: 0.7 }}> {windDirText}</Text>
+              </Text>
+            </View>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Gusts</Text>
+              <Text style={ss.v}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Sky */}
+      {hasSky ? (
+        <View style={ss.section}>
+          <Text style={ss.sectionTitle}>Sky</Text>
+
+          <View style={ss.grid2}>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Cloud Cover</Text>
+              <Text style={ss.v}>{cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'}</Text>
+            </View>
+            <View style={ss.cell}>
+              <Text style={ss.k}>UV</Text>
+              <Text style={ss.v}>{showUv ? fmt1(uvIndex, '') : '—'}</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Precip / Visibility / Pressure */}
+      {hasPrecipVis ? (
+        <View style={ss.section}>
+          <Text style={ss.sectionTitle}>Extras</Text>
+
+          <View style={ss.grid3}>
+            <View style={ss.cell}>
+              <Text style={ss.k}>POP</Text>
+              <Text style={ss.v}>{precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}</Text>
+            </View>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Vis</Text>
+              <Text style={ss.v}>{visibilityMi != null ? fmt1(visibilityMi, ' mi') : '—'}</Text>
+            </View>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Pressure</Text>
+              <Text style={ss.v}>{pressureHpa != null ? fmt0(pressureHpa, ' hPa') : '—'}</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const ss = StyleSheet.create({
+  wrap: { marginTop: 10, gap: 10 },
+
+  section: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  sectionTitle: {
+    fontSize: 11,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+
+  grid2: { flexDirection: 'row', gap: 10 },
+  grid3: { flexDirection: 'row', gap: 10 },
+
+  cell: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+
+  k: {
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.50)',
+    fontWeight: '900',
+  },
+
+  v: {
+    marginTop: 8,
+    fontSize: 15,
+    fontWeight: '900',
+    color: 'white',
+  },
+
+  note: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.55)',
+  },
+});
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={nd.section}>
+      <Text style={nd.sectionTitle}>{title}</Text>
+      <View style={nd.sectionBody}>{children}</View>
+    </View>
+  );
+}
+
+function NerdyDeepDive({
+  dewpointF,
+  humidityPct,
+  dpBand,
+  spreadF,
+  tempF,
+
+  windMph,
+  gustMph,
+  windDirDeg,
+  gf,
+
+  cloudCoverPct,
+  uvIndex,
+
+  precipChancePct,
+  visibilityMi,
+  pressureHpa,
+
+  feelsDriverLabel,
+  feelsDriverValue,
+
+  onExplain,
+}: {
+  dewpointF: number | null;
+  humidityPct: number | null;
+  dpBand: string | null;
+  spreadF: number | null;
+  tempF: number | null;
+
+  windMph: number | null;
+  gustMph: number | null;
+  windDirDeg: number | null;
+  gf: number | null;
+
+  cloudCoverPct: number | null;
+  uvIndex: number | null;
+
+  precipChancePct: number | null;
+  visibilityMi: number | null;
+  pressureHpa: number | null;
+
+  feelsDriverLabel: string;
+  feelsDriverValue: string;
+
+  onExplain: (p: ExplainPayload) => void;
+}) {
+  const dir = dirToCompass(windDirDeg);
+  const dirText = windDirDeg != null ? `${dir ?? ''} ${Math.round(windDirDeg)}°`.trim() : '—';
+
+ return (
+  <View style={nd.wrap}>
+    {/* COMFORT */}
+    <SectionCard title="Comfort">
+      <View style={nd.grid2}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Dew point"
+            value={dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Dew point',
+                summary: 'Dew point is the absolute moisture content of the air.',
+                whyItMatters: 'It tracks comfort, fog potential, and overnight lows better than RH.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: dewpointF != null ? 'high' : undefined,
+                learnTopicId: 'dewpoint',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="RH"
+            value={humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Relative humidity',
+                summary: 'RH is moisture relative to temperature (not absolute moisture).',
+                whyItMatters: 'Good for comfort, but can swing with temperature even if moisture stays the same.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: humidityPct != null ? 'medium' : undefined,
+                learnTopicId: 'humidity',
+              })
+            }
+          />
+        </View>
+      </View>
+
+      <View style={nd.grid2}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Dew band"
+            value={dpBand ?? '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Dew point band',
+                summary: 'A quick qualitative label based on dew point ranges.',
+                whyItMatters: 'Fast “feel” of the air—dry vs sticky—without thinking in numbers.',
+                howComputed: 'Derived from dew point thresholds.',
+                confidence: dewpointF != null ? 'high' : undefined,
+                learnTopicId: 'dewpoint',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Spread (T−Td)"
+            value={spreadF != null ? `${Math.round(spreadF)}°F` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Temperature–dew point spread',
+                summary: 'Difference between air temperature and dew point.',
+                whyItMatters: 'Smaller spread can mean higher fog/low cloud potential (context dependent).',
+                howComputed: 'Computed as temperature minus dew point.',
+                confidence: tempF != null && dewpointF != null ? 'high' : undefined,
+                learnTopicId: 'dewpoint',
+              })
+            }
+          />
+        </View>
+      </View>
+
+      <StatTile
+        label={feelsDriverLabel}
+        value={feelsDriverValue}
+        onPress={() =>
+          onExplain({
+            title: feelsDriverLabel,
+            summary: 'A “feels” metric that’s most relevant given current conditions.',
+            whyItMatters: 'Often aligns better with comfort / hazard thresholds than air temp alone.',
+            howComputed: 'Heat Index uses T+RH; Wind Chill uses T+wind; otherwise a source “feels-like”.',
+            confidence: 'medium',
+            learnTopicId: 'apparent-temp',
+          })
+        }
+      />
+    </SectionCard>
+
+    {/* WIND */}
+    <SectionCard title="Wind">
+      <View style={nd.grid2}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Speed"
+            value={windMph != null ? `${Math.round(windMph)} mph` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Wind speed',
+                summary: 'Sustained wind speed at the station.',
+                whyItMatters: 'Drives comfort, evaporation, fire spread, and turbulence near terrain.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: windMph != null ? 'medium' : undefined,
+                learnTopicId: 'wind',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Gusts"
+            value={gustMph != null ? `${Math.round(gustMph)} mph` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Wind gusts',
+                summary: 'Peak wind bursts over a short interval.',
+                whyItMatters: 'Gusts are what break branches, kick up dust, and cause choppy driving.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: gustMph != null ? 'medium' : undefined,
+                learnTopicId: 'wind',
+              })
+            }
+          />
+        </View>
+      </View>
+
+      <View style={nd.grid2}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Direction"
+            value={dirText}
+            onPress={() =>
+              onExplain({
+                title: 'Wind direction',
+                summary: 'Direction the wind is coming from, in degrees/compass.',
+                whyItMatters: 'Shifts can indicate fronts, terrain effects, or local drainage/upslope flows.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: windDirDeg != null ? 'medium' : undefined,
+                learnTopicId: 'wind',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Gust factor"
+            value={gf != null ? gf.toFixed(2) : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Gust factor',
+                summary: 'A ratio that reflects how “gusty” it is compared to sustained wind.',
+                whyItMatters: 'Higher values can mean more turbulent/mixed conditions.',
+                howComputed: 'Derived from sustained wind and gust (defensive math).',
+                confidence: windMph != null && gustMph != null ? 'medium' : undefined,
+                learnTopicId: 'wind',
+              })
+            }
+          />
+        </View>
+      </View>
+    </SectionCard>
+
+    {/* SKY */}
+    <SectionCard title="Sky">
+      <View style={nd.grid2}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Cloud cover"
+            value={cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Cloud cover',
+                summary: 'Estimated sky coverage by clouds.',
+                whyItMatters: 'Controls heating/cooling rates and astronomical viewing quality.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: cloudCoverPct != null ? 'medium' : undefined,
+                learnTopicId: 'clouds',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="UV index"
+            value={uvIndex != null ? fmt(uvIndex, 1) : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'UV Index',
+                summary: 'A standardized measure of sunburn risk.',
+                whyItMatters: 'Useful even in cooler temps; clouds can reduce it but not eliminate it.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: uvIndex != null ? 'medium' : undefined,
+                learnTopicId: 'uv',
+              })
+            }
+          />
+        </View>
+      </View>
+    </SectionCard>
+
+    {/* EXTRAS */}
+    <SectionCard title="Extras">
+      <View style={nd.grid3}>
+        <View style={nd.gridItem}>
+          <StatTile
+            label="POP"
+            value={precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'POP (Probability of Precip)',
+                summary: 'Chance of measurable precipitation at a point.',
+                whyItMatters: 'Planning signal; does not imply intensity.',
+                howComputed: 'From the current conditions source when available.',
+                confidence: precipChancePct != null ? 'medium' : undefined,
+                learnTopicId: 'pop',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Vis"
+            value={visibilityMi != null ? `${visibilityMi.toFixed(1)} mi` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Visibility',
+                summary: 'How far you can see horizontally under current conditions.',
+                whyItMatters: 'Key for driving, aviation, and smoke/fog/dust impacts.',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: visibilityMi != null ? 'medium' : undefined,
+                learnTopicId: 'visibility',
+              })
+            }
+          />
+        </View>
+
+        <View style={nd.gridItem}>
+          <StatTile
+            label="Pressure"
+            value={pressureHpa != null ? `${fmt(pressureHpa)} hPa` : '—'}
+            onPress={() =>
+              onExplain({
+                title: 'Pressure',
+                summary: 'Atmospheric pressure (often station or sea-level adjusted).',
+                whyItMatters: 'Trends can hint at larger-scale changes (fronts, lows/highs).',
+                howComputed: 'From the current conditions provider when available.',
+                confidence: pressureHpa != null ? 'medium' : undefined,
+                learnTopicId: 'pressure',
+              })
+            }
+          />
+        </View>
+      </View>
+    </SectionCard>
+  </View>
+);
+}
+
+const nd = StyleSheet.create({
+  wrap: { marginTop: 12, gap: 10 },
+  gridItem: { flex: 1 },
+  section: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  sectionTitle: {
+    fontSize: 11,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '900',
+    marginBottom: 10,
+  },
+  sectionBody: { gap: 10 },
+
+  grid2: { flexDirection: 'row', gap: 10 },
+  grid3: { flexDirection: 'row', gap: 10 },
+});
+function PillMini({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+      }}
+    >
+      <Text style={{ color: 'rgba(255,255,255,0.80)', fontWeight: '900', fontSize: 11 }}>{label}</Text>
+    </View>
+  );
+}
+
+function TempRangeBar({
+  minF,
+  maxF,
+  dayMinF,
+  dayMaxF,
+}: {
+  minF: number;
+  maxF: number;
+  dayMinF: number | null;
+  dayMaxF: number | null;
+}) {
+  if (dayMinF == null || dayMaxF == null) return null;
+  const span = Math.max(1, maxF - minF);
+  const leftPct = ((dayMinF - minF) / span) * 100;
+  const widthPct = ((dayMaxF - dayMinF) / span) * 100;
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <View
+        style={{
+          height: 10,
+          borderRadius: 999,
+          backgroundColor: 'rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+        }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            left: `${Math.max(0, leftPct)}%`,
+            width: `${Math.max(4, widthPct)}%`,
+            top: 0,
+            bottom: 0,
+            borderRadius: 999,
+            backgroundColor: 'rgba(160,220,255,0.40)',
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
+function DailyRowPremium({ d, minF, maxF }: { d: any; minF: number; maxF: number }) {
+  const date = new Date(d.date);
+  const day = date.toLocaleDateString(undefined, { weekday: 'short' });
+  const md = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  return (
+    <View
+      style={{
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        marginTop: 10,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+        <View style={{ width: 70 }}>
+          <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{day}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.55)', fontWeight: '800', marginTop: 2, fontSize: 12 }}>
+            {md}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+            <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>
+              {d.tempMaxF != null ? Math.round(d.tempMaxF) : '—'}° / {d.tempMinF != null ? Math.round(d.tempMinF) : '—'}°
+            </Text>
+
+            <Text style={{ color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 12 }}>
+              POP {d.precipProbMaxPct != null ? `${Math.round(d.precipProbMaxPct)}%` : '—'}
+            </Text>
+          </View>
+
+          <TempRangeBar minF={minF} maxF={maxF} dayMinF={d.tempMinF} dayMaxF={d.tempMaxF} />
+
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            <PillMini label={`DP ${d.dewPointMaxF != null ? `${Math.round(d.dewPointMaxF)}°` : '—'}`} />
+            <PillMini label={`☁︎ ${d.cloudCoverAvgPct != null ? `${Math.round(d.cloudCoverAvgPct)}%` : '—'}`} />
+            <PillMini label={`G ${d.windGustMaxMph != null ? `${Math.round(d.windGustMaxMph)} mph` : '—'}`} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// -------------------------------
+// 15-day "Premium" Range Chart
+// - Precip bars behind temp range
+// - Dew point dotted line
+// - Gust markers (▲)
+// - Animated Today highlight
+// -------------------------------
+
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
+
+function clamp01(x: number) {
+  return Math.max(0, Math.min(1, x));
+}
+
+function niceDayLabel(d: any) {
+  const date = new Date(d.date);
+  const day = date.toLocaleDateString(undefined, { weekday: 'short' });
+  const md = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return { day, md, date };
+}
+
+function isSameLocalDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function getPrecipAmountMm(d: any): number | null {
+  // Try common Open-Meteo keys (varies by what you request)
+  const v =
+    d.precipitationSumMm ??
+    d.precipSumMm ??
+    d.precipitation_sum ??
+    d.precip_sum ??
+    d.rainSumMm ??
+    d.rain_sum ??
+    null;
+
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+
 export default function LandWeatherScreen() {
   const [mode, setMode] = useState<'simple' | 'nerdy'>('simple');
-  const [topPanel, setTopPanel] = useState<TopPanelId>('now');
   
+
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Explain + Learn system
@@ -336,6 +1021,24 @@ export default function LandWeatherScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const units: UnitSystem = 'us';
+
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 6000, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 6000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [glowAnim]);
+
+  const hour = new Date().getHours();
+  const isNight = hour < 6 || hour >= 19;
+  const isSunrise = hour >= 6 && hour < 8;
+  const isSunset = hour >= 17 && hour < 19;
 
   const { activeCoords, activeLabel, state: locState, refreshCurrentLocation, addOrActivateFavorite, setActiveCurrent } =
     useLocations();
@@ -350,24 +1053,16 @@ export default function LandWeatherScreen() {
     return { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
   }, [activeCoords]);
 
-  
-
   const locationLabel = useMemo(() => {
     if (activeCoords) return activeLabel;
     return `${DEFAULT_LOCATION.name}${DEFAULT_LOCATION.region ? `, ${DEFAULT_LOCATION.region}` : ''}`;
   }, [activeCoords, activeLabel]);
 
   const { primary, alerts } = useNwsAlerts({
-  lat: coords.lat,
-  lon: coords.lon,
-  enabled: true, // or make this conditional if you ever allow coords to be null
+    lat: coords.lat,
+    lon: coords.lon,
+    enabled: true,
   });
-
-  const onPressAlert = () => {
-    // Phase 1: quick details route or modal
-    // router.push({ pathname: '/alert', params: { id: primary?.id } });
-    setExplainPayload(null); // optional; ignore
-  };
 
   const isFavorited = useMemo(() => {
     const favs = locState.favorites ?? [];
@@ -427,18 +1122,24 @@ export default function LandWeatherScreen() {
   const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
 
   const daily = (forecastData?.daily ?? []).slice(0, 15);
-  const hourly = forecastData?.hourly ?? []; // still used for nerdy insights only
+  const dailyMinMax = useMemo(() => {
+  const mins = daily.map((d: any) => d.tempMinF).filter((x: any) => typeof x === 'number');
+  const maxs = daily.map((d: any) => d.tempMaxF).filter((x: any) => typeof x === 'number');
+  const minF = mins.length ? Math.min(...mins) : 0;
+  const maxF = maxs.length ? Math.max(...maxs) : 100;
+  return { minF, maxF };
+}, [daily]);
+  const hourly = forecastData?.hourly ?? [];
 
   const insights: NerdyInsight[] = useMemo(() => {
     return buildNerdyInsights({ tempF, dewpointF, humidityPct, windMph, gustMph, hourly });
   }, [tempF, dewpointF, humidityPct, windMph, gustMph, hourly]);
 
-  const onAddFavorite = () => {
-    if (isFavorited) return;
+  const onToggleFavorite = () => {
+    if (isFavorited) return; // keep “remove” for later if you want
     addOrActivateFavorite(locationLabel, coords.lat, coords.lon);
   };
 
-  // ✅ NEW: selecting a location sets it globally (Hourly/Climo follow)
   const onPickLocation = (loc: SavedLocation) => {
     const label = formatLocLabel(loc);
     addOrActivateFavorite(label, loc.lat, loc.lon);
@@ -477,7 +1178,54 @@ export default function LandWeatherScreen() {
     return { label: 'Feels', value: '—', conf: undefined };
   }, [hi, wc, feelsLikeF]);
 
-  const observedExtrasMissing = pressureHpa == null && visibilityMi == null && uvIndex == null;
+  const updatedText = `Updated ${formatUpdatedTime(observationTime)}`;
+  const onPressAlert = () => {
+    setExplainPayload({
+      title: primary?.event ?? 'Weather Alert',
+      summary: primary?.headline ?? 'Active alert in this area.',
+      whyItMatters: 'Weather alerts indicate hazards and recommended actions.',
+      howComputed: 'Provided by NWS alerts feed for the selected coordinates.',
+      confidence: 'high',
+      learnTopicId: 'nws-alerts',
+    });
+    setExplainOpen(true);
+  };
+    // --- Simple-mode interpretation lines ("narrative") ---
+  const moistureHint =
+    dewpointF != null
+      ? dewpointF < 30
+        ? 'Very dry air • rapid cooling after sunset'
+        : dewpointF < 50
+          ? 'Comfortable moisture levels'
+          : 'Humid air • clouds linger'
+      : null;
+
+  const windHint =
+    windMph != null
+      ? windMph < 5
+        ? 'Calm air • fog possible overnight'
+        : windMph < 15
+          ? 'Light mixing • stable conditions'
+          : 'Windy • rapid air turnover'
+      : null;
+
+  const skyHint =
+    cloudCoverPct != null
+      ? cloudCoverPct < 20
+        ? 'Clear skies dominate'
+        : cloudCoverPct < 60
+          ? 'Partial cloud cover'
+          : 'Clouds limit radiational cooling'
+      : null;
+
+  // Upgrade hero summary slightly (still human, still short)
+  const heroSummary =
+    dewpointF != null && windMph != null
+      ? `${dewpointF < 45 ? 'Dry air' : 'Moist air'} • ${
+          windMph < 5 ? 'calm' : windMph < 15 ? 'breezy' : 'windy'
+        }`
+      : '—';
+
 
   return (
     <>
@@ -486,26 +1234,54 @@ export default function LandWeatherScreen() {
           style={styles.container}
           contentContainerStyle={[
             styles.content,
-            { paddingTop: Math.max(theme.spacing.md, insets.top * 0.25) },
+            { paddingTop: Math.max(theme.spacing.md, insets.top * 0.15) },
           ]}
           refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
         >
+          {/* HEADER */}
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.appTitle}>Land Wx</Text>
+              <View style={styles.brandRow}>
+                <View style={styles.brandLeft}>
+                  <View style={styles.brandMarkWrap}>
+                  <Image source={require('../../assets/brand/omniwx-mark.png')} style={styles.brandMark} />
+                  </View>
+                  <View style={{ flexShrink: 1 }}>
+                    <View style={styles.wordmarkRow}>
+                      <Text style={styles.wordmarkOmni}>OMNI</Text>
+                      <Text style={styles.wordmarkWxSup}>wx</Text>
+                    </View>
+                    <View style={styles.domainPill}>
+                      <Text style={styles.domainPillText}>Land Wx</Text>
+                    </View>
+                  </View>
 
-              <View style={styles.locationRow}>
-                <Pressable onPress={() => setPickerOpen(true)} style={styles.locationTap}>
-                  <Text style={styles.appSubtitle} numberOfLines={1}>
+                  <View style={{ flex: 1 }} />
+                </View>
+              </View>
+
+              <View style={styles.locationRowNew}>
+                <Pressable onPress={() => setPickerOpen(true)} style={{ flex: 1 }}>
+                  <Text style={styles.locationPrimary} numberOfLines={1}>
                     {locationLabel}
                   </Text>
-                  <Text style={styles.locationHint} numberOfLines={1}>
-                    Tap to search • view favorites
+                  <Text style={styles.locationSecondary} numberOfLines={1}>
+                    📍 Change location
                   </Text>
                 </Pressable>
 
-                <Pressable onPress={onAddFavorite} disabled={isFavorited} style={[styles.starBtn, isFavorited && { opacity: 0.5 }]}>
-                  <Text style={styles.starText}>{isFavorited ? '★' : '☆'}</Text>
+                <Pressable
+                  onPress={onToggleFavorite}
+                  disabled={isFavorited}
+                  style={[
+                    styles.favoriteChip,
+                    isFavorited && styles.favoriteChipActive,
+                    isFavorited && { opacity: 0.85 },
+                  ]}
+                >
+                  <Text style={[styles.favoriteChipText, isFavorited && { color: 'white' }]}>
+                    {isFavorited ? '★ Saved' : '☆ Save'}
+                  </Text>
                 </Pressable>
               </View>
 
@@ -545,7 +1321,7 @@ export default function LandWeatherScreen() {
               <AlertBanner primary={primary} count={alerts.length} onPress={onPressAlert} />
             </View>
           ) : null}
-              
+
           {loading && !currentData ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
@@ -553,18 +1329,51 @@ export default function LandWeatherScreen() {
             </View>
           ) : null}
 
-          {(currentError || forecastError) ? (
+          {currentError || forecastError ? (
             <Card style={styles.errorCard}>
               <Text style={styles.errorTitle}>Error</Text>
               <Text style={styles.errorText}>{currentError || forecastError}</Text>
             </Card>
           ) : null}
 
+          {/* HERO */}
           <Card style={styles.heroCard}>
+            {/* Placeholder for future animated background */}
+            <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+              <Animated.View
+                style={[
+                  styles.heroBgSoftGlow,
+                  {
+                    backgroundColor: isNight
+                      ? 'rgba(120,160,255,0.10)'
+                      : isSunrise || isSunset
+                        ? 'rgba(255,180,120,0.14)'
+                        : 'rgba(160,220,255,0.10)',
+                    opacity: glowAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.55, 0.85],
+                    }),
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.heroBgHorizon,
+                  {
+                    backgroundColor: isNight
+                      ? 'rgba(80,120,200,0.08)'
+                      : 'rgba(255,190,120,0.05)',
+                  },
+                ]}
+              />
+              </View>
             <View style={styles.heroTopRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
                 <Text style={styles.heroCondition}>{condition}</Text>
+                <Text style={styles.heroSummary} numberOfLines={1}>
+                  {heroSummary}
+              </Text>
               </View>
 
               <View style={styles.heroRight}>
@@ -573,111 +1382,43 @@ export default function LandWeatherScreen() {
               </View>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillRow}>
-              <Pill label="Now" active={topPanel === 'now'} onPress={() => setTopPanel('now')} />
-              <Pill label="Wind" active={topPanel === 'wind'} onPress={() => setTopPanel('wind')} />
-              <Pill label="Moisture" active={topPanel === 'moisture'} onPress={() => setTopPanel('moisture')} />
-              <Pill label="Sky" active={topPanel === 'sky'} onPress={() => setTopPanel('sky')} />
-              <Pill label="Extras" active={topPanel === 'extras'} onPress={() => setTopPanel('extras')} />
-            </ScrollView>
-
-            <View style={{ marginTop: theme.spacing.sm }}>
-              {topPanel === 'now' ? (
-                <View style={styles.panelBox}>
-                  <RowKV
-                    label="Dew • RH"
-                    value={`${dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'} • ${humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}`}
-                    onPress={() =>
-                      openQuickExplain({
-                        title: 'Dew point (and humidity)',
-                        summary: 'Dew point is an absolute measure of moisture. RH is relative to temperature.',
-                        whyItMatters: 'Dew point tracks comfort, fog potential, and overnight lows better than RH alone.',
-                        howComputed: 'Dew point and RH come from your current conditions source when available.',
-                        confidence: dewpointF != null ? 'high' : humidityPct != null ? 'medium' : undefined,
-                        learnTopicId: 'dewpoint',
-                      })
-                    }
-                  />
-                  <RowKV
-                    label={feelsDriver.label}
-                    value={feelsDriver.value}
-                    onPress={() =>
-                      openQuickExplain({
-                        title: feelsDriver.label,
-                        summary:
-                          hi != null
-                            ? 'Heat Index estimates perceived heat when humidity reduces evaporative cooling.'
-                            : wc != null
-                              ? 'Wind Chill estimates perceived cold when wind increases heat loss.'
-                              : 'Feels-like is a source apparent temperature estimate.',
-                        whyItMatters: '“Feels” metrics often match comfort/hazard thresholds better than air temp alone.',
-                        howComputed:
-                          hi != null ? 'Heat Index uses temperature and RH.' : wc != null ? 'Wind Chill uses temperature and wind speed.' : 'Provided by your current source.',
-                        confidence: feelsDriver.conf,
-                        learnTopicId: hi != null ? 'heat-index' : wc != null ? 'wind-chill' : 'apparent-temp',
-                      })
-                    }
-                  />
-                  <RowKV
-                    label="POP"
-                    value={precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}
-                    onPress={() =>
-                      openQuickExplain({
-                        title: 'POP (Probability of Precip)',
-                        summary: 'The chance of measurable precipitation at a point.',
-                        whyItMatters: 'Great for planning, but it doesn’t mean intensity.',
-                        howComputed: 'Provided by the current conditions source when available.',
-                        confidence: precipChancePct != null ? 'medium' : undefined,
-                        learnTopicId: 'pop',
-                      })
-                    }
-                  />
-                </View>
-              ) : null}
-
-              {topPanel === 'wind' ? (
-                <View style={styles.panelBox}>
-                  <WindRow windMph={windMph} gustMph={gustMph} windDirDeg={windDirDeg} />
-                  <RowKV label="Gust factor" value={gf != null ? gf.toFixed(2) : '—'} />
-                </View>
-              ) : null}
-
-              {topPanel === 'moisture' ? (
-                <View style={styles.panelBox}>
-                  <RowKV label="Dew point band" value={dpBand ?? '—'} />
-                  <RowKV label="Spread (T − Td)" value={spreadF != null ? `${Math.round(spreadF)}°F` : '—'} />
-                  <RowKV label="RH" value={humidityPct != null ? `${Math.round(humidityPct)}%` : '—'} />
-                </View>
-              ) : null}
-
-              {topPanel === 'sky' ? (
-                <View style={styles.panelBox}>
-                  <RowKV label="Cloud cover" value={cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'} />
-                  <RowKV label="UV Index" value={uvIndex != null ? fmt(uvIndex, 1) : '—'} />
-                </View>
-              ) : null}
-
-              {topPanel === 'extras' ? (
-                <View style={styles.panelBox}>
-                  {observedExtrasMissing ? (
-                    <View style={styles.availabilityBox}>
-                      <Text style={styles.availabilityTitle}>No observed extras from this source</Text>
-                      <Text style={styles.availabilitySub}>
-                        Pressure / UV / Visibility aren’t included in the current feed right now.
-                      </Text>
-                    </View>
-                  ) : (
-                    <>
-                      <RowKV label="Pressure" value={pressureHpa != null ? `${fmt(pressureHpa)} hPa` : '—'} />
-                      <RowKV label="Visibility" value={visibilityMi != null ? `${fmt(visibilityMi, 1)} mi` : '—'} />
-                      <RowKV label="UV Index" value={uvIndex != null ? fmt(uvIndex, 1) : '—'} />
-                    </>
-                  )}
-                </View>
-              ) : null}
-            </View>
-
-            <Text style={styles.updatedText}>Observed {observationTime ? new Date(observationTime).toLocaleTimeString() : '—'}</Text>
+           {mode === 'simple' ? (
+            <SimpleSummary
+              dewpointF={dewpointF}
+              humidityPct={humidityPct}
+              windMph={windMph}
+              gustMph={gustMph}
+              windDirDeg={windDirDeg}
+              cloudCoverPct={cloudCoverPct}
+              uvIndex={uvIndex}
+              precipChancePct={precipChancePct}
+              visibilityMi={visibilityMi}
+              pressureHpa={pressureHpa}
+              narrative={moistureHint ?? undefined}
+              hideWind // ✅ add
+            />
+          ) : (
+            <NerdyDeepDive
+              dewpointF={dewpointF}
+              humidityPct={humidityPct}
+              dpBand={dpBand}
+              spreadF={spreadF}
+              tempF={tempF}
+              windMph={windMph}
+              gustMph={gustMph}
+              windDirDeg={windDirDeg}
+              gf={gf}
+              cloudCoverPct={cloudCoverPct}
+              uvIndex={uvIndex}
+              precipChancePct={precipChancePct}
+              visibilityMi={visibilityMi}
+              pressureHpa={pressureHpa}
+              feelsDriverLabel={feelsDriver.label}
+              feelsDriverValue={feelsDriver.value}
+              onExplain={openQuickExplain}
+            />
+          )}
+            <Text style={styles.updatedText}>{updatedText}</Text>
           </Card>
 
           {mode === 'nerdy' ? (
@@ -691,50 +1432,56 @@ export default function LandWeatherScreen() {
             />
           ) : null}
 
-          {daily.length > 0 ? (
-            <Card style={styles.forecastCard}>
-              <Text style={styles.cardTitle}>{mode === 'nerdy' ? 'Daily (Model Blend)' : '15-Day Outlook'}</Text>
+{daily.length > 0 ? (
+  <Card style={styles.forecastCard}>
+    <Text style={styles.cardTitle}>
+      {mode === 'nerdy' ? 'Daily (Model Blend)' : '15-Day Forecast'}
+    </Text>
 
-              {daily.map((d: any) => {
-                const date = new Date(d.date);
-                const day = date.toLocaleDateString(undefined, { weekday: 'short' });
+    {mode === 'nerdy' ? (
+      // ─────────────────────────────
+      // NERDY MODE → row-per-day
+      // ─────────────────────────────
+      daily.map((d: any) => {
+        const date = new Date(d.date);
+        const day = date.toLocaleDateString(undefined, { weekday: 'short' });
 
-                if (mode !== 'nerdy') {
-                  return (
-                    <View style={styles.forecastRow} key={d.date}>
-                      <Text style={styles.forecastDay}>{day}</Text>
-                      <Text style={styles.forecastTemps}>
-                        {d.tempMaxF != null ? Math.round(d.tempMaxF) : '—'}° / {d.tempMinF != null ? Math.round(d.tempMinF) : '—'}°
-                      </Text>
-                      <Text style={styles.forecastMeta}>{d.precipProbMaxPct != null ? `${Math.round(d.precipProbMaxPct)}%` : '—'}</Text>
-                    </View>
-                  );
-                }
+        return (
+          <View style={styles.dailyNerdyRow} key={d.date}>
+            <View style={styles.dailyLeft}>
+              <Text style={styles.forecastDay}>{day}</Text>
+              <Text style={styles.dailySub}>
+                DP max {d.dewPointMaxF != null ? `${Math.round(d.dewPointMaxF)}°` : '—'} · ☁︎{' '}
+                {d.cloudCoverAvgPct != null ? `${Math.round(d.cloudCoverAvgPct)}%` : '—'}
+              </Text>
+            </View>
 
-                return (
-                  <View style={styles.dailyNerdyRow} key={d.date}>
-                    <View style={styles.dailyLeft}>
-                      <Text style={styles.forecastDay}>{day}</Text>
-                      <Text style={styles.dailySub}>
-                        DP max {d.dewPointMaxF != null ? `${Math.round(d.dewPointMaxF)}°` : '—'} · ☁︎ {d.cloudCoverAvgPct != null ? `${Math.round(d.cloudCoverAvgPct)}%` : '—'}
-                      </Text>
-                    </View>
+            <View style={styles.dailyRight}>
+              <Text style={styles.dailyMain}>
+                {d.tempMaxF != null ? Math.round(d.tempMaxF) : '—'}° /{' '}
+                {d.tempMinF != null ? Math.round(d.tempMinF) : '—'}°
+              </Text>
+              <Text style={styles.dailySubRight}>
+                POP {d.precipProbMaxPct != null ? `${Math.round(d.precipProbMaxPct)}%` : '—'} · G{' '}
+                {d.windGustMaxMph != null ? `${Math.round(d.windGustMaxMph)}mph` : '—'}
+              </Text>
+            </View>
+          </View>
+        );
+      })
+    ) : (
+      // ─────────────────────────────
+      // SIMPLE MODE → premium chart
+      // ─────────────────────────────
+      <DailyRangeChart daily={daily} />
+    )}
 
-                    <View style={styles.dailyRight}>
-                      <Text style={styles.dailyMain}>
-                        {d.tempMaxF != null ? Math.round(d.tempMaxF) : '—'}° / {d.tempMinF != null ? Math.round(d.tempMinF) : '—'}°
-                      </Text>
-                      <Text style={styles.dailySubRight}>
-                        POP {d.precipProbMaxPct != null ? `${Math.round(d.precipProbMaxPct)}%` : '—'} · G {d.windGustMaxMph != null ? `${Math.round(d.windGustMaxMph)}mph` : '—'}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
+    <Text style={styles.updatedText}>
+      Source: Open-Meteo (multi-model blend)
+    </Text>
+  </Card>
+) : null}
 
-              <Text style={styles.updatedText}>Source: Open-Meteo (multi-model blend)</Text>
-            </Card>
-          ) : null}
 
           <View style={{ height: 26 }} />
         </ScrollView>
@@ -765,7 +1512,6 @@ export default function LandWeatherScreen() {
   );
 }
 
-// (styles unchanged from your file)
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
   container: { flex: 1, backgroundColor: theme.colors.background },
@@ -774,17 +1520,53 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: theme.spacing.lg,
     gap: 12,
   },
-  appTitle: { ...typography.title },
 
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  locationTap: { flex: 1 },
-  appSubtitle: { ...typography.subtitle },
-  locationHint: { fontSize: 12, opacity: 0.55, marginTop: 2, color: theme.colors.textSecondary },
+  // Brand
+  brandRow: { marginBottom: 6 },
+  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandMark: { width: '100%', height: '100%', resizeMode: 'contain',  backgroundColor: 'transparent', borderRadius: 21, },
+  brandMarkWrap: {width: 42, height: 42, backgroundColor: 'transparent',},
+  wordmarkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
+  wordmarkOmni: { color: 'white', fontSize: 18, fontWeight: '900', letterSpacing: 0.4 },
+  wordmarkWxSup: {  marginLeft: 2,  marginTop: 2, fontSize: 10,  fontWeight: '800',  color: 'rgba(255,255,255,0.75)',},
+  wordmarkWx: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '800', marginBottom: 2 },
 
+  domainPill: {
+    marginTop: 2,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  domainPillText: { fontSize: 11, fontWeight: '800', color: 'white' },
+
+  // Location
+  locationRowNew: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  locationPrimary: { fontSize: 14, fontWeight: '900', color: 'white' },
+  locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
+
+  favoriteChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  favoriteChipActive: {
+    borderColor: 'rgba(200,240,255,0.28)',
+    backgroundColor: 'rgba(160,220,255,0.10)',
+  },
+  favoriteChipText: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12 },
+
+  // Quick Nav
   quickNavRow: { marginTop: 10, flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   quickNavBtn: {
     paddingVertical: 8,
@@ -808,16 +1590,6 @@ const styles = StyleSheet.create({
   nerdyPillText: { color: 'white', fontWeight: '900', fontSize: 11, letterSpacing: 0.8 },
   nerdyBannerHint: { fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: '700' },
 
-  starBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  starText: { color: 'white', fontWeight: '900', fontSize: 14 },
-
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   smallText: { ...typography.small, marginTop: theme.spacing.sm },
 
@@ -825,53 +1597,76 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 16, fontWeight: '600', color: theme.colors.errorText, marginBottom: 4 },
   errorText: { fontSize: 13, color: theme.colors.errorText },
 
-  heroCard: { marginBottom: theme.spacing.lg },
-  heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  heroTemp: { fontSize: 64, fontWeight: '800', color: theme.colors.textPrimary },
-  heroCondition: { fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary, marginTop: 4 },
-  heroRight: { alignItems: 'flex-end' },
-  heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary },
-  heroMiniValue: { fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary },
-
-  pillRow: { gap: 10, paddingTop: 12, paddingBottom: 6 },
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+  // Hero
+  heroCard: { marginBottom: theme.spacing.lg, overflow: 'hidden' },
+  heroBgLayer: { ...StyleSheet.absoluteFillObject },
+  heroBgSoftGlow: {
+    position: 'absolute',
+    left: -80,
+    top: -80,
+    width: 220,
+    height: 220,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(160,220,255,0.10)',
   },
-  pillActive: { borderColor: 'rgba(200,240,255,0.30)', backgroundColor: 'rgba(160,220,255,0.10)' },
-  pillText: { color: 'rgba(255,255,255,0.78)', fontWeight: '900', fontSize: 12 },
-  pillTextActive: { color: 'white' },
+  heroBgHorizon: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: -20,
+    height: 120,
+    backgroundColor: 'rgba(255, 190, 120, 0.05)',
+  },
 
-  panelBox: { paddingTop: 6, gap: 10 },
+  heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  heroTemp: { fontSize: 64, fontWeight: '900', color: theme.colors.textPrimary },
+  heroCondition: { fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 4 },
+  heroSummary: { marginTop: 8, fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
 
-  rowKV: {
-    paddingVertical: 10,
+  heroRight: { alignItems: 'flex-end' },
+  heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
+  heroMiniValue: { fontSize: 18, fontWeight: '900', color: theme.colors.textPrimary },
+
+   panelBox: { paddingTop: 6, gap: 10 },
+
+   panelHint: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.55)',
+    lineHeight: 16,
+  },
+
+  // Stat Tiles
+  statTile: {
+    paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  rowKVLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
-  rowKVValue: { marginTop: 6, fontSize: 16, fontWeight: '900', color: theme.colors.textPrimary },
+  tileLabel: {
+    fontSize: 11,
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '900',
+  },
+  tileValue: { marginTop: 8, fontSize: 16, fontWeight: '900', color: theme.colors.textPrimary },
+  tileHint: { marginTop: 6, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.45)' },
 
   windRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 10,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  windLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary },
-  windValue: { marginTop: 4, fontSize: 14, fontWeight: '800', color: theme.colors.textPrimary },
 
   availabilityBox: {
     paddingVertical: 12,
@@ -884,40 +1679,92 @@ const styles = StyleSheet.create({
   availabilityTitle: { color: 'white', fontWeight: '900', fontSize: 13 },
   availabilitySub: { marginTop: 6, color: 'rgba(255,255,255,0.65)', fontWeight: '700', fontSize: 12, lineHeight: 17 },
 
-  updatedText: { ...typography.small, marginTop: theme.spacing.md },
+  updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.8 },
 
+  // Forecast
   forecastCard: { marginBottom: theme.spacing.lg },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary, marginBottom: 10 },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 10 },
 
   forecastRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  forecastDay: { fontSize: 12, color: '#CBD5F5', width: 60 },
-  forecastTemps: { fontSize: 12, color: theme.colors.textPrimary, flex: 1 },
-  forecastMeta: { fontSize: 12, color: theme.colors.textSecondary, textAlign: 'right', width: 70 },
+  forecastDay: { fontSize: 12, color: '#CBD5F5', width: 60, fontWeight: '800' },
+  forecastTemps: { fontSize: 12, color: theme.colors.textPrimary, flex: 1, fontWeight: '800' },
+  forecastMeta: { fontSize: 12, color: 'rgba(255,255,255,0.45)', textAlign: 'right', width: 70, fontWeight: '800' },
 
-  dailyNerdyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, gap: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
+  dailyNerdyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
   dailyLeft: { flex: 1 },
   dailyRight: { alignItems: 'flex-end' },
-  dailyMain: { fontSize: 12, color: theme.colors.textPrimary, fontWeight: '700' },
-  dailySub: { marginTop: 2, fontSize: 11, opacity: 0.75, color: theme.colors.textSecondary },
-  dailySubRight: { marginTop: 2, fontSize: 11, opacity: 0.75, color: theme.colors.textSecondary },
+  dailyMain: { fontSize: 12, color: theme.colors.textPrimary, fontWeight: '900' },
+  dailySub: { marginTop: 2, fontSize: 11, opacity: 0.75, color: theme.colors.textSecondary, fontWeight: '700' },
+  dailySubRight: { marginTop: 2, fontSize: 11, opacity: 0.75, color: theme.colors.textSecondary, fontWeight: '700' },
 
+  // Modal
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
-  modalSheet: { position: 'absolute', left: 12, right: 12, top: 80, bottom: 40, borderRadius: 22, backgroundColor: 'rgba(18, 22, 35, 0.98)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', padding: 14 },
+  modalSheet: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 80,
+    bottom: 40,
+    borderRadius: 22,
+    backgroundColor: 'rgba(18, 22, 35, 0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    padding: 14,
+  },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   modalTitle: { color: 'white', fontSize: 16, fontWeight: '900' },
-  modalCloseBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  modalCloseBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
   modalCloseText: { color: 'white', fontWeight: '900', fontSize: 12 },
   modalActive: { marginTop: 10, color: 'rgba(255,255,255,0.7)', fontSize: 12 },
 
-  currentBtn: { marginTop: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  currentBtn: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
   currentBtnText: { color: 'white', fontWeight: '900' },
 
-  searchInput: { marginTop: 10, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', color: 'white' },
+  searchInput: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    color: 'white',
+  },
 
   modalSection: { marginTop: 14, marginBottom: 8, fontSize: 12, fontWeight: '900', color: 'rgba(255,255,255,0.85)' },
   modalError: { marginTop: 8, fontSize: 12, color: '#FFB4B4', fontWeight: '800' },
 
-  pickRow: { paddingVertical: 10, paddingHorizontal: 10, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', marginBottom: 8 },
+  pickRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 8,
+  },
   pickTitle: { color: 'white', fontWeight: '900' },
   pickSub: { marginTop: 2, color: 'rgba(255,255,255,0.55)', fontSize: 12 },
 });

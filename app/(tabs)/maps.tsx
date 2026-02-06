@@ -939,23 +939,24 @@ export default function MapsScreen() {
                   }
 
                   if (view === 'astronomer') {
-                    const r = lastRegionRef.current ?? stableInitialRegion;
-                    const z = typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
+              const r = lastRegionRef.current ?? stableInitialRegion;
+              const z =
+                typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
 
-                    router.push({
-                      pathname: '/astro-map',
-                      params: {
-                        lat: String(r.latitude),
-                        lon: String(r.longitude),
-                        latDelta: String(r.latitudeDelta),
-                        lonDelta: String(r.longitudeDelta),
-                        zoom: String(z),
-                        from: 'maps',
-                        nav: String(Date.now()),
-                      },
-                    });
-                    return;
-                  }
+              router.push({
+                pathname: '/astro-map', // ✅ go straight to the MapLibre screen
+                params: {
+                  lat: String(r.latitude),
+                  lon: String(r.longitude),
+                  latDelta: String(r.latitudeDelta),
+                  lonDelta: String(r.longitudeDelta),
+                  zoom: String(z),
+                  from: 'maps',
+                  nav: String(Date.now()), // ✅ unique every time
+                },
+              });
+              return;
+            }
 
                   dispatch({ type: 'SET_VIEW', viewId: id });
                 }}
