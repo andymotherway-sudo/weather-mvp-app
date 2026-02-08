@@ -3,6 +3,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
+import { useWxLab } from '../../app/context/WxLabContext'; // adjust relative path if needed
+import { getTypography } from '../../styles/typography';
+
 type DailyDatum = {
   date: string; // ISO yyyy-mm-dd
   tempMaxF: number | null;
@@ -18,6 +21,19 @@ type DailyDatum = {
   windDirDominantDeg: number | null; // 0..360
 
   cloudCoverAvgPct: number | null;
+};
+
+type Props = {
+  daily: DailyDatum[];
+  unitsLabel?: string;
+
+  /**
+   * Optional overrides so you can force-show these overlays even if wxLab=false.
+   * If omitted, they follow wxLab.
+   */
+  showDewPoint?: boolean;
+  showHumidity?: boolean;
+  showCloudBand?: boolean;
 };
 
 function clamp(n: number, a: number, b: number) {
@@ -48,19 +64,38 @@ function parseISODateLocal(dateISO: string) {
 }
 
 function niceDayLabel(dateISO: string) {
-  // ✅ use LOCAL midnight date object for labels
   const d = parseISODateLocal(dateISO);
-
   const day = d.toLocaleDateString(undefined, { weekday: 'short' });
   const md = d.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
   return { day, md, d };
 }
+
 function buildPath(points: Array<{ x: number; y: number }>) {
   if (!points.length) return '';
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
 }
 
-export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDatum[]; unitsLabel?: string }) {
+function pickWxIcon(pop?: number | null, cloud?: number | null) {
+  const p = typeof pop === 'number' ? pop : 0;
+  const c = typeof cloud === 'number' ? cloud : 0;
+
+  if (p >= 70) return '🌧️';
+  if (p >= 35) return '🌦️';
+  if (c >= 85) return '☁️';
+  if (c >= 45) return '⛅';
+  return '☀️';
+}
+
+export function DailyRangeChart({
+  daily,
+  unitsLabel = '°F',
+  showDewPoint,
+  showHumidity,
+  showCloudBand,
+}: Props) {
+  const { wxLab } = useWxLab();
+  const T = useMemo(() => getTypography({ wxLab }), [wxLab]);
+
   const data = useMemo(() => (daily ?? []).filter((d) => d?.date).slice(0, 10), [daily]);
 
   const [selIdx, setSelIdx] = useState(0);
@@ -68,6 +103,10 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
 
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
+
+  const showDew = showDewPoint ?? wxLab;
+  const showRh = showHumidity ?? wxLab;
+  const showCloud = showCloudBand ?? wxLab;
 
   // Bump animation (only on tap)
   const bump = useRef(new Animated.Value(0)).current;
@@ -92,6 +131,9 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
     wind: 'rgba(255,255,255,0.30)',
     gust: 'rgba(255,255,255,0.70)',
 
+    cloudFill: 'rgba(255,255,255,0.10)',
+    cloudOn: 'rgba(255,255,255,0.55)',
+
     cursor: 'rgba(255,255,255,0.22)',
     grid: 'rgba(255,255,255,0.08)',
     tickTemp: 'rgba(255,255,255,0.48)',
@@ -107,16 +149,14 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-  const H = 240;
+  const H = 260;
 
-  // Give ourselves room for the left temp axis + right % axis
   const axisL = 28; // left margin for °F ticks
-
   const padL = padX + axisL;
   const padR = padX;
-  
+
   const padT = 18;
-  const padB = 78;
+  const padB = 98;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -125,6 +165,11 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
   const windBandH = 22;
   const windBandTop = padT + plotH + 10;
   const windBandBot = windBandTop + windBandH;
+
+  // Cloud band (under wind)
+  const cloudBandH = 14;
+  const cloudBandTop = windBandBot + 8;
+  const cloudBandBot = cloudBandTop + cloudBandH;
 
   const xForIdx = (i: number) => padL + i * (TILE_W + GAP) + TILE_W / 2;
 
@@ -203,7 +248,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
   });
 
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
-  const pctAxisX = padL + 6; 
+  const pctAxisX = padL + 6;
 
   // Wind stats
   const windStats = useMemo(() => {
@@ -238,32 +283,30 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
 
   const selX = xForIdx(selIdx);
 
-  const selLow = data[selIdx]?.tempMinF;
-
-  const windTextX = clamp(selX, padL + 54, W - padR - 54);
-  const windTextY =
-  typeof selLow === 'number'
-    ? clamp(yForTemp(selLow) - 18, padT + 18, padT + plotH - 18)
-    : padT + plotH * 0.7;
-  
   const selScale = bump.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.06],
   });
 
+  const selCloudPct =
+    typeof data[selIdx]?.cloudCoverAvgPct === 'number' ? clamp(data[selIdx]!.cloudCoverAvgPct!, 0, 100) : null;
+
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
-        <Text style={s.title}>DAILY FORECAST</Text>
+        <Text style={[s.title, T.label]}>DAILY FORECAST</Text>
 
-        <View style={s.legendRow}>
-          <LegendPill label="High" kind="line" color={C.high} />
-          <LegendPill label="Low" kind="line" color={C.low} />
-          <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
-          <LegendPill label="RH" kind="dot" color={C.rh} />
-          <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
-          <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
-        </View>
+        {wxLab ? (
+          <View style={s.legendRow}>
+            <LegendPill label="High" kind="line" color={C.high} />
+            <LegendPill label="Low" kind="line" color={C.low} />
+            <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
+            <LegendPill label="RH" kind="dot" color={C.rh} />
+            <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
+            <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
+            <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -310,27 +353,30 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                       isSel && { transform: [{ scale: selScale }] },
                     ]}
                   >
-                    <Text style={s.dayTop}>{isToday ? 'TODAY' : `${day} ${md.split(' ')[1]}`}</Text>
-                    <Text style={s.icon}>☀︎</Text>
+                    <Text style={[s.dayTop, T.body]}>{isToday ? 'TODAY' : `${day} ${md.split(' ')[1]}`}</Text>
+                    <Text style={s.icon}>{pickWxIcon(d.precipProbMaxPct, d.cloudCoverAvgPct)}</Text>
 
-                    <Text style={s.hilo}>
+                    {/* ✅ avoid Typography.primaryNumber dependency */}
+                    <Text style={[s.hilo, T.title]}>
                       {fmtInt(d.tempMaxF)}
                       <Text style={{ opacity: 0.65 }}> | </Text>
                       {fmtInt(d.tempMinF)}
                     </Text>
 
-                    {/* Wind & Gust stacked */}
-                    <Text style={s.sub}>Wind {fmtInt(d.windMaxMph, ' mph')}</Text>
-                    <Text style={s.sub}>Gust {fmtInt(d.windGustMaxMph, ' mph')}</Text>
+                    <Text style={[s.sub, T.metric]}>Wind {fmtInt(d.windMaxMph, ' mph')}</Text>
+                    <Text style={[s.sub, T.metric]}>Gust {fmtInt(d.windGustMaxMph, ' mph')}</Text>
 
-                    {/* DP and RH inline */}
-                    <View style={s.subRow}>
-                      <Text style={s.sub}>DP {fmtInt(d.dewPointMaxF)}</Text>
-                      <Text style={s.subDot}>·</Text>
-                      <Text style={s.sub}>RH {fmtInt(d.humidityMaxPct, '%')}</Text>
-                    </View>
+                    {wxLab ? <Text style={[s.sub, T.metric]}>Clouds {fmtInt(d.cloudCoverAvgPct, '%')}</Text> : null}
 
-                    <Text style={s.sub}>💧 {fmtInt(d.precipProbMaxPct, '%')}</Text>
+                    {wxLab ? (
+                      <View style={s.subRow}>
+                        <Text style={[s.sub, T.metric]}>DP {fmtInt(d.dewPointMaxF)}</Text>
+                        <Text style={[s.subDot, { fontVariant: ['tabular-nums'] }]}>·</Text>
+                        <Text style={[s.sub, T.metric]}>RH {fmtInt(d.humidityMaxPct, '%')}</Text>
+                      </View>
+                    ) : null}
+
+                    <Text style={[s.sub, T.metric]}>💧 {fmtInt(d.precipProbMaxPct, '%')}</Text>
                   </Animated.View>
                 </Pressable>
               );
@@ -349,7 +395,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                     y={tk.y + 4}
                     fontSize="10"
                     fill={C.tickTemp}
-                    fontWeight="900"
+                    fontWeight={wxLab ? '700' : '900'}
                     textAnchor="end"
                   >
                     {String(tk.t)}
@@ -366,8 +412,8 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 stroke="rgba(255,255,255,0.06)"
                 strokeWidth={1}
               />
-              
-              {/* % axis labels (now near left) */}
+
+              {/* % axis labels (near left) */}
               {pctTicks.map((tk, idx) => (
                 <SvgText
                   key={`p-yt-${idx}`}
@@ -375,19 +421,20 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                   y={tk.y + 3}
                   fontSize="9"
                   fill={C.tickPct}
-                  fontWeight="800"
+                  fontWeight={wxLab ? '600' : '800'}
                   textAnchor="start"
                 >
                   {`${tk.p}%`}
-                  </SvgText>
-                ))}
+                </SvgText>
+              ))}
+
               {/* Axis headers */}
               <SvgText
                 x={padL - 10}
                 y={padT - 6}
                 fontSize="10"
                 fill="rgba(255,255,255,0.30)"
-                fontWeight="900"
+                fontWeight={wxLab ? '700' : '900'}
                 textAnchor="end"
               >
                 {unitsLabel}
@@ -397,14 +444,14 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 y={padT - 6}
                 fontSize="10"
                 fill="rgba(255,255,255,0.22)"
-                fontWeight="900"
+                fontWeight={wxLab ? '700' : '900'}
                 textAnchor="start"
               >
                 %
               </SvgText>
 
               {/* Cursor */}
-              <Line x1={selX} x2={selX} y1={padT} y2={windBandBot} stroke={C.cursor} strokeWidth={2} />
+              <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
               {/* precip area */}
               {precipArea ? (
@@ -419,12 +466,12 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
               {pathMax ? <Path d={pathMax} stroke={C.high} strokeWidth={3.6} fill="none" /> : null}
 
               {/* dew point dashed */}
-              {pathDp ? (
+              {showDew && pathDp ? (
                 <Path d={pathDp} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" />
               ) : null}
 
               {/* RH dotted */}
-              {pathRh ? (
+              {showRh && pathRh ? (
                 <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" />
               ) : null}
 
@@ -433,8 +480,8 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 const x = xForIdx(i);
                 const yMax = typeof d.tempMaxF === 'number' ? yForTemp(d.tempMaxF) : null;
                 const yMin = typeof d.tempMinF === 'number' ? yForTemp(d.tempMinF) : null;
-                const yDp = typeof d.dewPointMaxF === 'number' ? yForTemp(d.dewPointMaxF) : null;
-                const yRh = typeof d.humidityMaxPct === 'number' ? yForPct(d.humidityMaxPct) : null;
+                const yDp = showDew && typeof d.dewPointMaxF === 'number' ? yForTemp(d.dewPointMaxF) : null;
+                const yRh = showRh && typeof d.humidityMaxPct === 'number' ? yForPct(d.humidityMaxPct) : null;
 
                 return (
                   <G key={`pt-${d.date}`}>
@@ -483,26 +530,69 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 );
               })}
 
-              {/* ✅ Wind/Gust label in the left gutter */}
-              {(() => {
-                const x = padX; // left gutter inset
-                const y = windBandTop + windBandH / 2 + 4;
+              {/* Wind/Gust label in the left gutter */}
+              <G>
+                <SvgText
+                  x={padX}
+                  y={windBandTop + windBandH / 2 + 4}
+                  fontSize="11"
+                  fontWeight={wxLab ? '700' : '900'}
+                  textAnchor="start"
+                  fill="rgba(255, 255, 255, 0.57)"
+                >
+                  Wind/Gust
+                </SvgText>
+              </G>
 
-                return (
+              {/* Cloud band (under wind) */}
+              {showCloud ? (
+                <>
+                  <Rect
+                    x={padL}
+                    y={cloudBandTop}
+                    width={plotW}
+                    height={cloudBandH}
+                    rx={8}
+                    fill="rgba(255,255,255,0.03)"
+                  />
+
+                  {data.map((d, i) => {
+                    const pct = typeof d.cloudCoverAvgPct === 'number' ? clamp(d.cloudCoverAvgPct, 0, 100) : null;
+
+                    const tileLeft = padL + i * (TILE_W + GAP);
+                    const innerPad = 10;
+                    const barW = TILE_W - innerPad * 2;
+                    const barH = 6;
+                    const barX = tileLeft + innerPad;
+                    const barY = cloudBandTop + (cloudBandH - barH) / 2;
+
+                    const fillW = pct == null ? 0 : (barW * pct) / 100;
+
+                    return (
+                      <G key={`cb-${d.date}`}>
+                        <Rect x={barX} y={barY} width={barW} height={barH} rx={999} fill={C.cloudFill} />
+                        {pct != null ? (
+                          <Rect x={barX} y={barY} width={fillW} height={barH} rx={999} fill={C.cloudOn} />
+                        ) : null}
+                      </G>
+                    );
+                  })}
+
+                  {/* Clouds label in left gutter */}
                   <G>
                     <SvgText
-                      x={x}
-                      y={y}
+                      x={padX}
+                      y={cloudBandTop + cloudBandH / 2 + 4}
                       fontSize="11"
-                      fontWeight="900"
+                      fontWeight="700"
                       textAnchor="start"
-                      fill="rgba(255, 255, 255, 0.57)"
+                      fill="rgba(255,255,255,0.40)"
                     >
-                      Wind/Gust
+                      Clouds
                     </SvgText>
                   </G>
-                );
-              })()}
+                </>
+              ) : null}
 
               {/* bottom labels */}
               {data.map((d, i) => {
@@ -518,7 +608,7 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                     y={H - 14}
                     fontSize="11"
                     fill={isSel ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)'}
-                    fontWeight={isSel ? '900' : '800'}
+                    fontWeight={isSel ? (wxLab ? '800' : '900') : wxLab ? '600' : '800'}
                     textAnchor="middle"
                   >
                     {isToday ? 'Today' : day}
@@ -526,6 +616,14 @@ export function DailyRangeChart({ daily, unitsLabel = '°F' }: { daily: DailyDat
                 );
               })}
             </Svg>
+
+            {/* ✅ Clouds % moved BELOW chart (no crowding) */}
+            {showCloud ? (
+              <View style={s.cloudReadoutRow}>
+                <Text style={s.cloudReadoutLabel}>Clouds</Text>
+                <Text style={s.cloudReadoutValue}>{selCloudPct == null ? '—' : `${Math.round(selCloudPct)}%`}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </ScrollView>
@@ -547,7 +645,6 @@ function LegendPill({
       <View style={s.legSwatchWrap}>
         {kind === 'line' ? <View style={[s.swLine, { backgroundColor: color }]} /> : null}
 
-        {/* ✅ dew icon = dashed segments */}
         {kind === 'dashed' ? (
           <View style={s.swDashRow}>
             <View style={[s.swDash, { backgroundColor: color }]} />
@@ -640,7 +737,6 @@ const s = StyleSheet.create({
 
   swLine: { height: 3, borderRadius: 2 },
 
-  // ✅ dashed legend swatch
   swDashRow: { width: 18, height: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   swDash: { width: 4, height: 2, borderRadius: 2, opacity: 0.95 },
 
@@ -705,5 +801,24 @@ const s = StyleSheet.create({
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
   },
-  
-})
+
+  cloudReadoutRow: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cloudReadoutLabel: {
+    color: 'rgba(255,255,255,0.45)',
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  cloudReadoutValue: {
+    color: 'rgba(255,255,255,0.70)',
+    fontWeight: '900',
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
+  },
+});

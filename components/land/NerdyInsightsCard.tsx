@@ -9,27 +9,44 @@ export function NerdyInsightsCard({
   insights,
   onPressInsight,
   onPressLearn,
+  title = 'Insights',
+  dewpointLine,
 }: {
   insights: NerdyInsight[];
   onPressInsight: (i: NerdyInsight) => void;
   onPressLearn: () => void;
+  title?: string;
+  /** Example: "49°F • Comfortable" or "—" (omit to hide) */
+  dewpointLine?: string | null;
 }) {
-  if (!insights.length) return null;
+  if (!insights.length && !dewpointLine) return null;
 
   return (
     <Card style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.title}>Nerdy Insights</Text>
+        <Text style={styles.title}>{title}</Text>
         <Pressable onPress={onPressLearn} style={styles.learnChip}>
           <Text style={styles.learnText}>Learn</Text>
         </Pressable>
       </View>
 
+      {dewpointLine ? (
+        <View style={[styles.row, styles.dewRow]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>Dew point</Text>
+            <Text style={styles.rowBadge}>{dewpointLine}</Text>
+          </View>
+        </View>
+      ) : null}
+
       {insights.map((it, idx) => (
         <Pressable
           key={it.id}
           onPress={() => onPressInsight(it)}
-          style={[styles.row, idx > 0 && styles.rowTop]}
+          style={[
+            styles.row,
+            (idx > 0 || !!dewpointLine) && styles.rowTop,
+          ]}
         >
           <View style={{ flex: 1 }}>
             <Text style={styles.rowTitle}>{it.title}</Text>
@@ -48,8 +65,16 @@ export function NerdyInsightsCard({
 
 const styles = StyleSheet.create({
   card: { marginBottom: theme.spacing.md },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
   title: { color: theme.colors.textPrimary, fontSize: 15, fontWeight: '900' },
+
   learnChip: {
     paddingVertical: 6,
     paddingHorizontal: 10,
@@ -70,6 +95,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+
+  dewRow: {
+    // slightly calmer look since it isn’t tappable
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+
   rowTop: { marginTop: 10 },
 
   rowTitle: { color: 'white', fontWeight: '900' },

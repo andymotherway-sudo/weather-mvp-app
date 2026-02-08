@@ -24,7 +24,13 @@ export type ForecastDay = {
   windMaxMph: number | null;
   windGustMaxMph: number | null;
   windDirDominantDeg: number | null;
+
+  // Existing (Open-Meteo daily)
   cloudCoverAvgPct: number | null;
+
+  // ✅ New (derived from hourly)
+  cloudCoverMinPct: number | null;
+  cloudCoverMaxPct: number | null;
 };
 
 type ForecastData = {
@@ -148,16 +154,29 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           windGustMph: safeNum(hGust[idx]),
         }));
 
-        // ---- Compute DAILY humidityMaxPct from hourly RH ----
+        // ---- Compute DAILY derived fields from HOURLY ----
         const rhMaxByDate: Record<string, number> = {};
+        const cloudMinByDate: Record<string, number> = {};
+        const cloudMaxByDate: Record<string, number> = {};
+
         for (let i = 0; i < hTimes.length; i++) {
           const dt = hTimes[i];
           const dateKey = typeof dt === 'string' ? dt.slice(0, 10) : '';
-          const rh = safeNum(hRh[i]);
-          if (!dateKey || rh == null) continue;
+          if (!dateKey) continue;
 
-          const prev = rhMaxByDate[dateKey];
-          if (prev == null || rh > prev) rhMaxByDate[dateKey] = rh;
+          const rh = safeNum(hRh[i]);
+          if (rh != null) {
+            const prev = rhMaxByDate[dateKey];
+            if (prev == null || rh > prev) rhMaxByDate[dateKey] = rh;
+          }
+
+          const cc = safeNum(hCloud[i]);
+          if (cc != null) {
+            const prevMin = cloudMinByDate[dateKey];
+            const prevMax = cloudMaxByDate[dateKey];
+            if (prevMin == null || cc < prevMin) cloudMinByDate[dateKey] = cc;
+            if (prevMax == null || cc > prevMax) cloudMaxByDate[dateKey] = cc;
+          }
         }
 
         // ---- Daily parse ----
@@ -183,6 +202,10 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           cloudCoverAvgPct: safeNum(cloudMean[idx]),
           dewPointMaxF: safeNum(dpMax[idx]),
           humidityMaxPct: typeof rhMaxByDate[date] === 'number' ? rhMaxByDate[date] : null,
+
+          // ✅ new
+          cloudCoverMinPct: typeof cloudMinByDate[date] === 'number' ? cloudMinByDate[date] : null,
+          cloudCoverMaxPct: typeof cloudMaxByDate[date] === 'number' ? cloudMaxByDate[date] : null,
         }));
 
         setData({ daily, hourly });

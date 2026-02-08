@@ -185,7 +185,27 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'Shortwave radiation is incoming solar energy. High shortwave with dry air often boosts mixing, which can lower humidity and increase wind gusts during the afternoon.\n\n' +
       'Conversely, cloud cover reduces shortwave and slows warming. At night, clouds can reduce heat loss.',
   },
-
+  {
+  id: 'radiation-regime',
+  title: 'Radiation Regime (net surface heating vs cooling)',
+  bullets: [
+    'Describes whether the surface is gaining or losing energy overall.',
+    'Daytime sun adds energy; nighttime infrared loss removes it.',
+    'Clouds strongly influence which side dominates.',
+  ],
+  body:
+    'Radiation regime describes the *net* energy balance at the surface:\n\n' +
+    '• Incoming shortwave (sunlight)\n' +
+    '• Outgoing longwave (infrared heat loss)\n\n' +
+    'If incoming energy exceeds outgoing loss, the surface is in a **net warming regime**. ' +
+    'If heat loss exceeds incoming energy, it is in a **net cooling regime**.\n\n' +
+    'Why this matters:\n' +
+    '• Net cooling favors fog, frost, and stable layers.\n' +
+    '• Net warming promotes mixing, gusts, and boundary-layer growth.\n' +
+    '• Clouds reduce daytime heating but also reduce nighttime cooling.\n\n' +
+    'In OMNI wx, radiation regime is inferred from sun angle, cloud cover, time of day, and temperature trends. ' +
+    'It is a *diagnostic signal*, not a direct measurement.',
+  },
   {
     id: 'uv',
     title: 'UV Index',
