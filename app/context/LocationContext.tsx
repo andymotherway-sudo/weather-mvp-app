@@ -1,6 +1,6 @@
 // app/context/LocationContext.tsx
 import * as Location from 'expo-location';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export type UserLocation = {
   lat: number;
@@ -25,9 +25,19 @@ export function LocationProvider(props: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Prevent overlapping refresh calls from thrashing state
+  const refreshingRef = useRef(false);
+
   const refresh = async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+
     try {
       setError(null);
+
+      // If we don't have permission, don't even try
+      if (permission !== 'granted') return;
+
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
@@ -40,6 +50,8 @@ export function LocationProvider(props: { children: React.ReactNode }) {
       });
     } catch (e: any) {
       setError(e?.message ?? 'Location refresh failed');
+    } finally {
+      refreshingRef.current = false;
     }
   };
 
@@ -62,7 +74,10 @@ export function LocationProvider(props: { children: React.ReactNode }) {
 
         setPermission('granted');
 
-        // Best effort: last known first, then current
+        // ✅ Do NOT set any "default place" here.
+        // We only set a location when we actually have one (last known or current).
+
+        // Best effort: last known first (fast), then current (accurate)
         const last = await Location.getLastKnownPositionAsync();
         if (mounted && last?.coords) {
           setLocation({
@@ -73,6 +88,7 @@ export function LocationProvider(props: { children: React.ReactNode }) {
           });
         }
 
+        // Now update to current position. This is what you want as "startup location".
         await refresh();
       } catch (e: any) {
         if (!mounted) return;

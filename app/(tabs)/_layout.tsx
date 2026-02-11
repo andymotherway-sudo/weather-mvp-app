@@ -9,6 +9,7 @@ import { Colors } from '../../constants/theme';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 import { LocationProvider } from '../context/LocationContext';
 import { PlaceProvider } from '../context/PlaceContext';
+import { WxLabProvider } from '../context/WxLabContext'; // ✅ add
 
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
@@ -22,7 +23,7 @@ export default function TabsLayout() {
   const tabBarStyle = useMemo(() => {
     const baseHeight = Platform.select({ ios: 60, android: 56, default: 56 }) as number;
     const padTop = 8;
-    const padBottom = Math.max(10, insets.bottom); // ✅ key fix for Android gesture/nav bar
+    const padBottom = Math.max(10, insets.bottom);
     return {
       backgroundColor: bg,
       borderTopColor: border,
@@ -30,7 +31,6 @@ export default function TabsLayout() {
       height: baseHeight + padBottom + padTop,
       paddingTop: padTop,
       paddingBottom: padBottom,
-
       shadowColor: '#000',
       shadowOpacity: 0.25,
       shadowRadius: 18,
@@ -40,28 +40,30 @@ export default function TabsLayout() {
   }, [bg, border, insets.bottom]);
 
   return (
-    <LocationProvider>
-      <PlaceProvider>
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarActiveTintColor: tint,
-            tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
-            tabBarLabelStyle: {
-              fontWeight: '800',
-              fontSize: 11,
-              marginTop: -2,
-              marginBottom: 2,
-            },
-            tabBarIconStyle: { marginTop: 2 },
-            tabBarStyle: tabBarStyle,
-            tabBarHideOnKeyboard: true,
+    <WxLabProvider>
+      <LocationProvider>
+        <PlaceProvider>
+          <Tabs
+            screenOptions={{
+              headerShown: false,
+              tabBarActiveTintColor: tint,
+              tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
+              tabBarLabelStyle: {
+                fontWeight: '800',
+                fontSize: 11,
+                marginTop: -2,
+                marginBottom: 2,
+              },
+              tabBarIconStyle: { marginTop: 2 },
+              tabBarStyle: tabBarStyle,
+              tabBarHideOnKeyboard: true,
 
-            headerStyle: { backgroundColor: bgElev },
-            headerTintColor: 'white',
-            headerTitleStyle: { fontWeight: '900' },
-          }}
-        >
+              headerStyle: { backgroundColor: bgElev },
+              headerTintColor: 'white',
+              headerTitleStyle: { fontWeight: '900' },
+            }}
+          >
+
           <Tabs.Screen
             name="index"
             options={{
@@ -166,8 +168,9 @@ export default function TabsLayout() {
                 } as any
               }
             />
-        </Tabs>
-      </PlaceProvider>
-    </LocationProvider>
+             </Tabs>
+        </PlaceProvider>
+      </LocationProvider>
+    </WxLabProvider>
   );
 }

@@ -25,4 +25,5 @@ export type OpenMeteoForecast = {
   provider: 'open-meteo';
   timezone: string;
   daily: OpenMeteoDaily[];
+  
 };

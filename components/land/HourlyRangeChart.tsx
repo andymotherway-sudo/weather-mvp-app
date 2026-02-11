@@ -50,7 +50,6 @@ function dayKeyFromIso(iso: string): string {
 }
 function parseHourMinute(iso: string): { h: number; m: number } | null {
   if (!iso) return null;
-  // works for "YYYY-MM-DDTHH:MM", "YYYY-MM-DD HH:MM", with optional seconds/offset
   const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
   if (!m) return null;
   const hh = Number(m[4]);
@@ -84,7 +83,6 @@ function fmtInt(v: number | null, suffix = '') {
 /**
  * Parse Open-Meteo "YYYY-MM-DDTHH:MM..." into LOCAL milliseconds safely across engines.
  * We intentionally ignore any timezone suffix and treat the hour/minute as local clock time.
- * (Good enough for picking "closest hour" and anchoring the 72h window.)
  */
 function parseLocalMsStrict(iso: string): number | null {
   if (!iso) return null;
@@ -143,7 +141,7 @@ export function HourlyRangeChart({
     return bestI;
   }, [all, nowTick]);
 
-  // ✅ The key fix: show the 72h window starting at "now"
+  // ✅ show the 72h window starting at "now"
   const data = useMemo(() => {
     if (!all.length) return [];
     const start = clampInt(nowIdx, 0, Math.max(0, all.length - 1));
@@ -199,10 +197,9 @@ export function HourlyRangeChart({
   const H = 240;
 
   const axisL = 28;
-  const axisR = 34;
 
   const padL = padX + axisL;
-  const padR = padX + axisR;
+  const padR = padX;
 
   const padT = 18;
   const padB = 78;
@@ -292,6 +289,7 @@ export function HourlyRangeChart({
     return { t: Math.round(t), y: yForTemp(t) };
   });
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
+  const pctAxisX = padL + 6;
 
   const windStats = useMemo(() => {
     const ws = data.map((h) => pick(h, 'windMph')).filter((x): x is number => typeof x === 'number');
@@ -321,6 +319,10 @@ export function HourlyRangeChart({
   }, [selIdx, viewportW, padX, step, TILE_W]);
 
   const selX = xForIdx(selIdx);
+
+  // ✅ TRULY FIXED label: does not depend on data values, only chart geometry
+  const windTextX = padL + plotW * 0.30;
+  const windTextY = windBandTop + windBandH / 2;
 
   const selScale = bump.interpolate({
     inputRange: [0, 1],
@@ -419,9 +421,7 @@ export function HourlyRangeChart({
                       isPad && { opacity: 0.35 },
                     ]}
                   >
-                    <Text style={s.hourTop}>
-                      {isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}
-                    </Text>
+                    <Text style={s.hourTop}>{isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}</Text>
 
                     <Text style={s.hilo}>{fmtInt(tempV, '°')}</Text>
 
@@ -459,23 +459,18 @@ export function HourlyRangeChart({
               ))}
 
               {pctTicks.map((tk, idx) => (
-                <SvgText
-                  key={`p-yt-${idx}`}
-                  x={W - padR + 10}
-                  y={tk.y + 3}
-                  fontSize="9"
-                  fill={C.tickPct}
-                  fontWeight="900"
-                  textAnchor="start"
-                >
+                <SvgText key={`p-yt-${idx}`} x={pctAxisX} y={tk.y + 3} fontSize="9" fill={C.tickPct} fontWeight="900" textAnchor="start">
                   {`${tk.p}%`}
                 </SvgText>
               ))}
 
-              <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="900" textAnchor="end">
+              {/* Axis divider between °F labels and % labels */}
+              <Line x1={padL + 2} x2={padL + 2} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
+
+              <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="800" textAnchor="end">
                 {unitsLabel}
               </SvgText>
-              <SvgText x={W - padR + 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.22)" fontWeight="900" textAnchor="start">
+              <SvgText x={pctAxisX} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.22)" fontWeight="800" textAnchor="start">
                 %
               </SvgText>
 
@@ -511,8 +506,10 @@ export function HourlyRangeChart({
                 );
               })}
 
+              {/* Wind band background */}
               <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.03)" />
 
+              {/* Wind/Gust bars */}
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
                 const wv = pick(h, 'windMph');
@@ -539,19 +536,36 @@ export function HourlyRangeChart({
 
                     {wv != null && typeof dir === 'number' ? (
                       <G rotation={dir} origin={`${x} ${windBandTop - 2}`}>
-                        <Path d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`} fill="rgba(160,220,255,0.55)" />
+                        <Path
+                          d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
+                          fill="rgba(160,220,255,0.55)"
+                        />
                       </G>
                     ) : null}
                   </G>
                 );
               })}
 
-              <SvgText x={padL} y={windBandTop - 4} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800">
-                Wind / Gust
-              </SvgText>
-              <SvgText x={W - padR} y={windBandTop - 4} fontSize="10" fill="rgba(255,255,255,0.40)" fontWeight="800" textAnchor="end">
-                max {String(Math.round(windStats.max))}
-              </SvgText>
+              {/* ✅ Wind/Gust label in the left gutter (the circled area) */}
+              {(() => {
+                const x = padX; // left gutter starts at 0..padL; padX=14 is a nice inset
+                const y = windBandTop + windBandH / 2 + 4; // vertical center of wind band (Android-safe)
+
+                return (
+                  <G>
+                    <SvgText
+                      x={x}
+                      y={y}
+                      fontSize="11"
+                      fontWeight="900"
+                      textAnchor="start"
+                      fill="rgba(255, 255, 255, 0.57)"
+                    >
+                      Wind/Gust
+                    </SvgText>
+                  </G>
+                );
+              })()}
 
               {data.map((h: any, i) => {
                 if (!bottomLabelMask[i]) return null;
@@ -687,9 +701,35 @@ const s = StyleSheet.create({
   swBar2Left: { height: 7, opacity: 0.75 },
   swBar2Right: { height: 10, opacity: 0.95 },
 
-  swMountainWrap: { width: 18, height: 10, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.04)', justifyContent: 'flex-end' },
-  swMountainFill: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 7, opacity: 0.18, borderTopLeftRadius: 10, borderTopRightRadius: 6, transform: [{ skewX: '-10deg' }] },
-  swMountainRidge: { position: 'absolute', left: -2, right: -2, bottom: 2, height: 6, borderTopWidth: 2, opacity: 0.55, transform: [{ skewX: '-10deg' }] },
+  swMountainWrap: {
+    width: 18,
+    height: 10,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    justifyContent: 'flex-end',
+  },
+  swMountainFill: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 7,
+    opacity: 0.18,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 6,
+    transform: [{ skewX: '-10deg' }],
+  },
+  swMountainRidge: {
+    position: 'absolute',
+    left: -2,
+    right: -2,
+    bottom: 2,
+    height: 6,
+    borderTopWidth: 2,
+    opacity: 0.55,
+    transform: [{ skewX: '-10deg' }],
+  },
 
   tileMeta: { marginTop: 6, alignItems: 'flex-start' },
   tileLine: {
