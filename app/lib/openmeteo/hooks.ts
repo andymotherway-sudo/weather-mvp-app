@@ -25,10 +25,8 @@ export type ForecastDay = {
   windGustMaxMph: number | null;
   windDirDominantDeg: number | null;
 
-  // Existing (Open-Meteo daily)
   cloudCoverAvgPct: number | null;
 
-  // ✅ New (derived from hourly)
   cloudCoverMinPct: number | null;
   cloudCoverMaxPct: number | null;
 };
@@ -49,12 +47,10 @@ type ForecastState = {
 export type OpenMeteoForecastOpts = {
   lat: number;
   lon: number;
-  days?: number; // default 3
+  days?: number; // default 3 (forecast days)
+  pastDays?: number; // ✅ new (e.g., 3–10)
 };
 
-// Allow BOTH call styles:
-// - useOpenMeteoForecast(3)
-// - useOpenMeteoForecast({ lat, lon, days: 3 })
 type OpenMeteoForecastArg = number | OpenMeteoForecastOpts;
 
 function isOpts(arg: OpenMeteoForecastArg): arg is OpenMeteoForecastOpts {
@@ -69,19 +65,20 @@ function safeNum(v: any): number | null {
 export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastState {
   const opts = useMemo(() => {
     if (isOpts(arg)) {
-      return { lat: arg.lat, lon: arg.lon, days: arg.days ?? 3 };
+      return { lat: arg.lat, lon: arg.lon, days: arg.days ?? 3, pastDays: arg.pastDays ?? 0 };
     }
     return {
       lat: DEFAULT_LOCATION.lat,
       lon: DEFAULT_LOCATION.lon,
       days: typeof arg === 'number' ? arg : 3,
+      pastDays: 0,
     };
   }, [arg]);
 
-  // Optional but helpful: reduce refetch spam from minor GPS jitter
   const latKey = useMemo(() => Number(opts.lat.toFixed(3)), [opts.lat]);
   const lonKey = useMemo(() => Number(opts.lon.toFixed(3)), [opts.lon]);
-  const days = opts.days;
+  const days = opts.days ?? 3;
+  const pastDays = opts.pastDays ?? 0;
 
   const [data, setData] = useState<ForecastData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -96,7 +93,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
 
         setError(null);
 
-        // These names match your existing parsing keys below
         const dailyVars = [
           'temperature_2m_max',
           'temperature_2m_min',
@@ -118,12 +114,14 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'wind_gusts_10m',
         ].join(',');
 
+        // Open-Meteo supports past_days (archived) and up to ~16 forecast days depending on model/provider. :contentReference[oaicite:5]{index=5}
         const url =
           `https://api.open-meteo.com/v1/forecast` +
           `?latitude=${latKey}&longitude=${lonKey}` +
           `&daily=${dailyVars}` +
           `&hourly=${hourlyVars}` +
           `&forecast_days=${days}` +
+          (pastDays > 0 ? `&past_days=${pastDays}` : ``) +
           `&temperature_unit=fahrenheit` +
           `&wind_speed_unit=mph` +
           `&timezone=auto`;
@@ -202,8 +200,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           cloudCoverAvgPct: safeNum(cloudMean[idx]),
           dewPointMaxF: safeNum(dpMax[idx]),
           humidityMaxPct: typeof rhMaxByDate[date] === 'number' ? rhMaxByDate[date] : null,
-
-          // ✅ new
           cloudCoverMinPct: typeof cloudMinByDate[date] === 'number' ? cloudMinByDate[date] : null,
           cloudCoverMaxPct: typeof cloudMaxByDate[date] === 'number' ? cloudMaxByDate[date] : null,
         }));
@@ -217,7 +213,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         setRefreshing(false);
       }
     },
-    [latKey, lonKey, days]
+    [latKey, lonKey, days, pastDays]
   );
 
   useEffect(() => {

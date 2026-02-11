@@ -1,10 +1,11 @@
+// app/context/PlaceContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from './LocationContext';
 
 export type Place = {
   id: string; // stable key: `${lat.toFixed(4)},${lon.toFixed(4)}`
-  name: string; // display name: "Brookings, OR"
+  name: string; // display name
   lat: number;
   lon: number;
   source: 'gps' | 'favorite' | 'search';
@@ -19,44 +20,123 @@ type PlaceState = {
   useGPS: () => void;
 };
 
-const KEY = 'omniwx.place.v1';
+const KEY = 'omniwx.place.v2';
 const Ctx = createContext<PlaceState | null>(null);
 
 function makeId(lat: number, lon: number) {
   return `${lat.toFixed(4)},${lon.toFixed(4)}`;
 }
+function nearlySame(a: number, b: number, eps = 0.0002) {
+  return Math.abs(a - b) <= eps;
+}
+
+// Detect the old “Brookings default” (and related OR/CA coast defaults) so we don’t honor it on boot.
+function looksLikeOldDefault(p: any) {
+  if (!p) return false;
+  const name = String(p.name ?? '').toLowerCase();
+  const lat = Number(p.lat);
+  const lon = Number(p.lon);
+
+  const nearBrookings =
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    Math.abs(lat - 42.0526) < 0.08 &&
+    Math.abs(lon - -124.2836) < 0.08;
+
+  // cover “BROOKINGS, OR”, “SELMA 4 W, OR”, etc.
+  const nameHint =
+    name.includes('brookings') || name.includes('selma') || (name.includes(', or') && name.includes('us'));
+
+  return nearBrookings || nameHint;
+}
 
 export function PlaceProvider({ children }: { children: React.ReactNode }) {
-  const { location, permission } = useLocation();
+  const { location, permission, loading: locationLoading } = useLocation();
 
   const [active, setActiveState] = useState<Place | null>(null);
   const [favorites, setFavorites] = useState<Place[]>([]);
 
+  // Track hydration so we don’t overwrite saved state at boot
+  const hydratedRef = useRef(false);
+
   // load persisted
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
-      const raw = await AsyncStorage.getItem(KEY);
-      if (!raw) return;
       try {
+        const raw = await AsyncStorage.getItem(KEY);
+        if (!mounted) return;
+
+        if (!raw) {
+          hydratedRef.current = true;
+          return;
+        }
+
         const parsed = JSON.parse(raw);
-        setActiveState(parsed.active ?? null);
-        setFavorites(parsed.favorites ?? []);
+        const persistedFavs = Array.isArray(parsed?.favorites) ? parsed.favorites : [];
+
+        // Normalize persisted active
+        const persistedActive = parsed?.active ?? null;
+
+        setFavorites(persistedFavs);
+
+        // ✅ If the persisted active is the old Brookings default, drop it so GPS becomes the boot choice.
+        if (persistedActive && looksLikeOldDefault(persistedActive)) {
+          setActiveState(null);
+
+          // Also fix storage so we don’t keep seeing it
+          await AsyncStorage.setItem(KEY, JSON.stringify({ active: null, favorites: persistedFavs }));
+        } else {
+          setActiveState(persistedActive);
+        }
       } catch {
         // ignore
+      } finally {
+        hydratedRef.current = true;
       }
     })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // persist
   useEffect(() => {
+    if (!hydratedRef.current) return;
     AsyncStorage.setItem(KEY, JSON.stringify({ active, favorites })).catch(() => {});
   }, [active, favorites]);
 
-  // If no active place is set, and GPS exists, default to GPS
+  // ✅ Default-to-GPS behavior:
+  // - Only after hydration
+  // - Only when permission granted and we have an actual GPS/last-known fix
+  // - Only when user has not already chosen an active place
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if (active) return;
+    if (locationLoading) return;
     if (permission !== 'granted') return;
     if (!location) return;
+
+    setActiveState({
+      id: makeId(location.lat, location.lon),
+      name: 'Current Location',
+      lat: location.lat,
+      lon: location.lon,
+      source: 'gps',
+    });
+  }, [active, location, permission, locationLoading]);
+
+  // ✅ Keep "Current Location" truly current (but only if user is in GPS mode)
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (!active || active.source !== 'gps') return;
+    if (permission !== 'granted') return;
+    if (!location) return;
+
+    // Avoid jitter updates that cause reload/abort storms
+    if (nearlySame(active.lat, location.lat) && nearlySame(active.lon, location.lon)) return;
 
     setActiveState({
       id: makeId(location.lat, location.lon),

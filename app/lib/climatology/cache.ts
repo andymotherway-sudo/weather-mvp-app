@@ -2,10 +2,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ClimatologyResult } from './types';
 
-const KEY_PREFIX = 'omniwx:climo:v1';
+// ✅ bump cache version so we can add new fields safely
+const KEY_PREFIX = 'omniwx:climo:v2';
 
 function keyFor(lat: number, lon: number) {
-  // stable-ish key; avoids explosion from tiny coordinate jitter
   const la = lat.toFixed(3);
   const lo = lon.toFixed(3);
   return `${KEY_PREFIX}:${la},${lo}`;
@@ -15,7 +15,13 @@ export async function readClimoCache(lat: number, lon: number): Promise<Climatol
   try {
     const raw = await AsyncStorage.getItem(keyFor(lat, lon));
     if (!raw) return null;
-    return JSON.parse(raw) as ClimatologyResult;
+
+    const parsed = JSON.parse(raw) as ClimatologyResult;
+
+    // ultra-light validation so bad cache doesn’t crash downstream
+    if (!parsed || !parsed.station || !Array.isArray(parsed.normals) || !parsed.fetchedAtIso) return null;
+
+    return parsed;
   } catch {
     return null;
   }

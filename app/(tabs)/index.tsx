@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { usePlace } from '../context/PlaceContext';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useCurrentWeather } from '../lib/weather/hooks';
 import { DEFAULT_LOCATION } from '../lib/weather/locations';
@@ -864,6 +865,36 @@ export default function LandWeatherScreen() {
   // ✅ WxLab context drives "simple vs nerdy"
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
+  
+  const placeCtx = usePlace() as any;
+
+  const placeSetActive =
+    (typeof placeCtx?.setActive === 'function' && placeCtx.setActive) ||
+    (typeof placeCtx?.setActivePlace === 'function' && placeCtx.setActivePlace) ||
+    (typeof placeCtx?.setPlace === 'function' && placeCtx.setPlace) ||
+    null;
+
+  const placeSetCurrent =
+    (typeof placeCtx?.setActiveCurrent === 'function' && placeCtx.setActiveCurrent) ||
+    (typeof placeCtx?.setCurrent === 'function' && placeCtx.setCurrent) ||
+    null;
+
+  const placeRefreshCurrent =
+    (typeof placeCtx?.refreshCurrentLocation === 'function' && placeCtx.refreshCurrentLocation) ||
+    (typeof placeCtx?.refreshCurrent === 'function' && placeCtx.refreshCurrent) ||
+    null;
+
+  const pushPlaceToContext = (name: string, lat: number, lon: number) => {
+    if (!placeSetActive) return;
+    placeSetActive({
+      name,
+      lat,
+      lon,
+      source: 'land',
+      kind: 'saved',
+      id: `geo:${lat.toFixed(4)},${lon.toFixed(4)}`,
+    });
+  };
 
   const setWxLab =
     (typeof wxLabCtx?.setWxLab === 'function' && wxLabCtx.setWxLab) ||
@@ -921,6 +952,14 @@ export default function LandWeatherScreen() {
     if (activeCoords) return activeLabel;
     return `${DEFAULT_LOCATION.name}${DEFAULT_LOCATION.region ? `, ${DEFAULT_LOCATION.region}` : ''}`;
   }, [activeCoords, activeLabel]);
+
+    // ✅ Keep PlaceContext synced with whatever Land is currently showing
+  useEffect(() => {
+    // Only push when you have a real activeCoords (not the DEFAULT fallback)
+    if (!activeCoords) return;
+    pushPlaceToContext(activeLabel, activeCoords.lat, activeCoords.lon);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCoords?.lat, activeCoords?.lon, activeLabel]);
 
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
@@ -1044,12 +1083,15 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
   const onPickLocation = (loc: SavedLocation) => {
     const label = formatLocLabel(loc);
     addOrActivateFavorite(label, loc.lat, loc.lon);
+    pushPlaceToContext(label, loc.lat, loc.lon);
     setPickerOpen(false);
   };
 
   const onPickCurrent = () => {
     setActiveCurrent();
     refreshCurrentLocation();
+    if (placeSetCurrent) placeSetCurrent();
+    if (placeRefreshCurrent) placeRefreshCurrent();
     setPickerOpen(false);
   };
 
