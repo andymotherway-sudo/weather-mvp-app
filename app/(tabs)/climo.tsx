@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   Image,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -21,7 +22,7 @@ import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 import { useClimatologyNormals } from '../lib/climatology/hook';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 
-import ClimatologyChart from '../../components/land/ClimatologyChart';
+import { ClimatologyChart } from '../../components/land/ClimatologyChart';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -116,6 +117,29 @@ function fmtElapsed(s: number) {
   return `${m}m ${String(r).padStart(2, '0')}s`;
 }
 
+function clampYearsToWindow(years: number[] | undefined, win?: { from: number; to: number } | null) {
+  const arr = Array.isArray(years) ? years : [];
+  const filtered = win
+    ? arr.filter((y) => Number.isFinite(y) && y >= win.from && y <= win.to)
+    : arr.filter((y) => Number.isFinite(y));
+
+  return Array.from(new Set(filtered)).sort((a, b) => a - b);
+}
+
+function isoFromYearAndDoy(year: number, doy1: number) {
+  const doy = Math.round(clamp(doy1, 1, 366));
+  const d = new Date(year, 0, 1); // Jan 1
+  d.setDate(d.getDate() + (doy - 1)); // move forward doy-1 days
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function clamp(v: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, v));
+}
+
 /* ---------------- component ---------------- */
 
 export default function ClimoTab() {
@@ -135,8 +159,14 @@ export default function ClimoTab() {
 
   /* ---------- date navigation ---------- */
 
-  const todayIso = useMemo(() => isoTodayLocal(), []);
+  // ✅ DO NOT memoize "today" forever; tab stays mounted
+  const todayIso = isoTodayLocal();
   const [selectedIso, setSelectedIso] = useState(todayIso);
+
+  // Keep selected date sane if app stays open across midnight
+  useEffect(() => {
+    setSelectedIso((cur) => (cur ? cur : todayIso));
+  }, [todayIso]);
 
   const minSelectable = OBS_START_ISO;
   const maxSelectable = useMemo(() => `${todayIso.slice(0, 4)}-12-31`, [todayIso]);
@@ -157,6 +187,54 @@ export default function ClimoTab() {
   );
 
   const jumpToday = useCallback(() => setSelectedIso(todayIso), [todayIso]);
+
+  /* ---------- swipe "day carousel" (affects brief + normals + records) ---------- */
+
+  const swipeX = useRef(new Animated.Value(0)).current;
+
+  const SWIPE_TRIGGER_PX = 55;
+  const SWIPE_MAX_DRAG_PX = 90;
+
+  const dayPanResponder = useMemo(() => {
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, g) => {
+        // capture mostly-horizontal gestures so ScrollView keeps vertical scroll
+        const dx = Math.abs(g.dx);
+        const dy = Math.abs(g.dy);
+        return dx > 10 && dx > dy * 1.25;
+      },
+      onPanResponderGrant: () => {
+        swipeX.stopAnimation();
+        swipeX.setValue(0);
+      },
+      onPanResponderMove: (_evt, g) => {
+        swipeX.setValue(clamp(g.dx, -SWIPE_MAX_DRAG_PX, SWIPE_MAX_DRAG_PX));
+      },
+      onPanResponderRelease: (_evt, g) => {
+        const dx = g.dx;
+
+        // snap back
+        Animated.timing(swipeX, {
+          toValue: 0,
+          duration: 160,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+
+        // swipe left => next day, swipe right => prev day
+        if (dx <= -SWIPE_TRIGGER_PX) bumpDay(+1);
+        else if (dx >= SWIPE_TRIGGER_PX) bumpDay(-1);
+      },
+      onPanResponderTerminate: () => {
+        Animated.timing(swipeX, {
+          toValue: 0,
+          duration: 140,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+      },
+    });
+  }, [bumpDay, swipeX]);
 
   /* ---------- data hooks ---------- */
 
@@ -196,7 +274,7 @@ export default function ClimoTab() {
     preferCache: true,
   });
 
-  /* ---------- records (with "first-load gate" + one-shot auto-retry) ---------- */
+  /* ---------- records (selectedIso drives selectedRecord) ---------- */
 
   const records = useDailyRecords({
     lat: coords?.lat ?? 0,
@@ -214,13 +292,8 @@ export default function ClimoTab() {
   // Track "did records ever resolve" so we don't show "No record data" while still warming up.
   const [recordsEverResolved, setRecordsEverResolved] = useState(false);
 
-  // One-shot auto retry to handle occasional first-call empties / races.
-  const [recordsAutoRetried, setRecordsAutoRetried] = useState(false);
-
   useEffect(() => {
-    // reset when location changes
     setRecordsEverResolved(false);
-    setRecordsAutoRetried(false);
   }, [coords?.lat, coords?.lon]);
 
   useEffect(() => {
@@ -230,26 +303,21 @@ export default function ClimoTab() {
     if (!loading && (err || map)) setRecordsEverResolved(true);
   }, [(records as any)?.loading, (records as any)?.error, (records as any)?.records]);
 
-  useEffect(() => {
-    if (!hasPlace) return;
-
-    const loading = !!(records as any)?.loading;
-    const map = (records as any)?.records;
-    const empty = !map || (typeof map === 'object' && Object.keys(map).length === 0);
-
-    if (loading) return;
-    if (!empty) return;
-    if (recordsAutoRetried) return;
-
-    setRecordsAutoRetried(true);
-    const t = setTimeout(() => (records as any)?.refresh?.(), 700);
-    return () => clearTimeout(t);
-  }, [hasPlace, recordsAutoRetried, (records as any)?.loading, (records as any)?.records]);
-
   /* ---------- Records UX: elapsed timer + animated progress bar ---------- */
 
   const rLoading = !!(records as any)?.loading;
   const rErr = (records as any)?.error;
+  const rProgress = (records as any)?.progress as
+    | null
+    | {
+        phase?: string;
+        message?: string;
+        pages?: number;
+        rows?: number;
+        pct?: number;
+        yearFrom?: number;
+        yearTo?: number;
+      };
   const rMap = (records as any)?.records;
   const rEmpty = !rMap || (typeof rMap === 'object' && Object.keys(rMap).length === 0);
 
@@ -257,7 +325,6 @@ export default function ClimoTab() {
   const [recordsElapsedSec, setRecordsElapsedSec] = useState(0);
 
   useEffect(() => {
-    // reset on location change
     setRecordsStartedAt(null);
     setRecordsElapsedSec(0);
   }, [coords?.lat, coords?.lon]);
@@ -267,7 +334,6 @@ export default function ClimoTab() {
       setRecordsStartedAt((cur) => cur ?? Date.now());
       return;
     }
-    // when loading ends, freeze the elapsed time (keep it displayed if we show retry messaging)
   }, [rLoading]);
 
   useEffect(() => {
@@ -278,7 +344,6 @@ export default function ClimoTab() {
     return () => clearInterval(id);
   }, [recordsStartedAt]);
 
-  // Animated indeterminate bar (subtle movement)
   const progAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!(rLoading || (!recordsEverResolved && hasPlace))) {
@@ -302,46 +367,31 @@ export default function ClimoTab() {
     const elapsed = fmtElapsed(recordsElapsedSec);
     const suffix = elapsed ? ` • ${elapsed}` : '';
 
-    // Warm-up (first response hasn't landed yet)
     if (!recordsEverResolved) {
-      // More confident copy after a few seconds
       if (recordsElapsedSec >= 10) return `Still working on NOAA records…${suffix}`;
       return `Fetching NOAA records…${suffix}`;
     }
 
-    // Actively loading again
     if (rLoading) {
-      if (recordsAutoRetried) return `NOAA is slow — retrying automatically…${suffix}`;
       if (recordsElapsedSec >= 12) return `Still working on NOAA records…${suffix}`;
       return `Loading records…${suffix}`;
     }
 
-    // Past warm-up but ended empty (your one-shot retry can cause this briefly)
-    if (!rLoading && rEmpty && recordsAutoRetried) {
-      return `NOAA is slow — retrying automatically…${suffix}`;
-    }
-
     return '';
-  }, [recordsEverResolved, rLoading, rEmpty, recordsAutoRetried, recordsElapsedSec]);
+  }, [recordsEverResolved, rLoading, recordsElapsedSec]);
 
   const recordsHint = useMemo(() => {
-    // A calm, steady reassurance line (only while loading/warming up)
     if (!hasPlace) return '';
-    if (!recordsEverResolved || rLoading || (!rLoading && rEmpty && recordsAutoRetried)) {
-      return 'First load can take a bit — we’ll keep trying.';
+    if (!recordsEverResolved || rLoading) {
+      return 'First load can take a bit — especially on a new station.';
     }
     return '';
-  }, [hasPlace, recordsEverResolved, rLoading, rEmpty, recordsAutoRetried]);
+  }, [hasPlace, recordsEverResolved, rLoading]);
 
-  /* ---------- refresh on place change (tabs stay mounted) ---------- */
-  useEffect(() => {
-    if (!hasPlace) return;
-    climo.refresh();
-    forecast.refresh();
-    (records as any).refresh?.();
-    if (mode === 'observed') dayCtx.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords?.lat, coords?.lon]);
+  /* ---------- normals availability ---------- */
+
+  const hasNormals = !!climo.data?.normals?.length;
+  const showNormalsHint = hasPlace && !hasNormals && !!climo.error && !climo.loading && !climo.refreshing;
 
   /* ---------- meta display ---------- */
 
@@ -354,7 +404,7 @@ export default function ClimoTab() {
     return approxMonthlyNormalForDate(normals as any, selectedIso);
   }, [climo.data?.normals, selectedIso]);
 
-  /* ---------- build tile ---------- */
+  /* ---------- build tile (selectedIso drives everything) ---------- */
 
   const tile = useMemo(() => {
     const base = {
@@ -432,7 +482,7 @@ export default function ClimoTab() {
     forecast.refresh();
     if (mode === 'observed') dayCtx.refresh();
     (records as any).refresh?.();
-  }, [climo, forecast, mode, dayCtx, records, hasPlace]);
+  }, [climo, forecast, mode, dayCtx, hasPlace, records]);
 
   const anyLoading =
     hasPlace &&
@@ -440,17 +490,22 @@ export default function ClimoTab() {
       (forecast.loading && !forecast.data) ||
       (mode === 'observed' && dayCtx.loading && !dayCtx.data));
 
+  const recordsRefreshing = !!(records as any)?.refreshing || !!(records as any)?.loading;
   const anyRefreshing =
-    hasPlace &&
-    (!!climo.refreshing || !!forecast.refreshing || !!dayCtx.refreshing || !!(records as any).refreshing);
+    hasPlace && (!!climo.refreshing || !!forecast.refreshing || !!dayCtx.refreshing || recordsRefreshing);
 
-  const markerLabel = useMemo(() => (selectedIso === todayIso ? 'Today' : fmtMonDay(selectedIso)), [selectedIso, todayIso]);
+  const markerLabel = useMemo(
+    () => (selectedIso === todayIso ? 'Today' : fmtMonDay(selectedIso)),
+    [selectedIso, todayIso]
+  );
   const selectedDoy = useMemo(() => isoToDoy(selectedIso), [selectedIso]);
 
   const recordsTitle = useMemo(() => {
     const name = (records as any)?.stationNameUsed;
-    return name ? `Records (${name})` : 'Records (nearby major station)';
-  }, [records]);
+    const y = (records as any)?.years as { from: number; to: number } | null;
+    const windowLabel = y?.from && y?.to ? ` • ${y.from}–${y.to}` : '';
+    return name ? `Records (${name}${windowLabel})` : `Records (nearby major station${windowLabel})`;
+  }, [(records as any)?.stationNameUsed, (records as any)?.years?.from, (records as any)?.years?.to]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -504,9 +559,9 @@ export default function ClimoTab() {
             </View>
           </View>
 
-          <Text style={styles.helper} numberOfLines={2}>
-            Single-tile day navigator: observed context (since {OBS_START_ISO}) • forecast window • seasonal averages.
-          </Text>
+          {showNormalsHint ? (
+            <Text style={[styles.helper, { marginTop: 8 }]}>Normals unavailable right now — we’ll keep trying.</Text>
+          ) : null}
         </View>
 
         {/* No place selected */}
@@ -528,25 +583,6 @@ export default function ClimoTab() {
         ) : null}
 
         {/* Errors */}
-        {climo.error ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Normals unavailable</Text>
-            <Text style={styles.errorText}>{climo.error}</Text>
-            <View style={styles.actionRow}>
-              <Pressable onPress={climo.refresh} style={styles.btn}>
-                <Text style={styles.btnText}>Retry</Text>
-              </Pressable>
-              {!climo.hasToken ? (
-                <View style={styles.hintBox}>
-                  <Text style={styles.hintText}>
-                    Add <Text style={{ fontWeight: '900' }}>EXPO_PUBLIC_NOAA_NCEI_TOKEN</Text> to enable NOAA normals.
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </Card>
-        ) : null}
-
         {forecast.error ? (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Forecast unavailable</Text>
@@ -571,195 +607,218 @@ export default function ClimoTab() {
           </Card>
         ) : null}
 
-        {(records as any).error ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Records unavailable</Text>
-            <Text style={styles.errorText}>{(records as any).error}</Text>
-            <View style={styles.actionRow}>
-              <Pressable onPress={() => (records as any).refresh?.()} style={styles.btn}>
-                <Text style={styles.btnText}>Retry</Text>
-              </Pressable>
-            </View>
-          </Card>
-        ) : null}
-
-        {/* Day tile */}
+        {/* Day tile (swipe left/right changes selectedIso => updates brief + normals + records) */}
         {hasPlace ? (
           <Card style={styles.dayCard}>
-            <View style={styles.dayTopRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.daySmall}>Day brief</Text>
-                <Text style={styles.dayTitle}>{tile.title}</Text>
-                <Text style={styles.daySub}>Station • {tile.station}</Text>
+            <Animated.View {...dayPanResponder.panHandlers} style={{ transform: [{ translateX: swipeX }] }}>
+              <View style={styles.dayTopRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.daySmall}>Day brief</Text>
+                  <Text style={styles.dayTitle}>{tile.title}</Text>
+                  <Text style={styles.daySub}>Station • {tile.station}</Text>
+                </View>
+
+                <View style={styles.normalPill}>
+                  <Text style={styles.normalPillLabel} numberOfLines={1}>
+                    Monthly normal
+                  </Text>
+                  <Text style={styles.normalPillValue}>
+                    {fmtTemp(tile.normalHi)} / {fmtTemp(tile.normalLo)}
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.normalPill}>
-                <Text style={styles.normalPillLabel}>Normal</Text>
-                <Text style={styles.normalPillValue}>
-                  {fmtTemp(tile.normalHi)} / {fmtTemp(tile.normalLo)}
+              <View style={styles.navRow}>
+                <Pressable
+                  onPress={() => bumpDay(-1)}
+                  disabled={!canBack}
+                  style={[styles.navBtn, !canBack && styles.navBtnDisabled]}
+                >
+                  <Text style={styles.navBtnText}>◀</Text>
+                </Pressable>
+
+                <Pressable onPress={jumpToday} style={styles.todayBtn}>
+                  <Text style={styles.todayBtnText}>Today</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => bumpDay(1)}
+                  disabled={!canFwd}
+                  style={[styles.navBtn, !canFwd && styles.navBtnDisabled]}
+                >
+                  <Text style={styles.navBtnText}>▶</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.kpiRow}>
+                <View style={styles.kpi}>
+                  <Text style={styles.kpiLabel}>High</Text>
+                  <Text style={styles.kpiVal}>{fmtTemp((tile as any).hi)}</Text>
+                </View>
+                <View style={styles.kpi}>
+                  <Text style={styles.kpiLabel}>Low</Text>
+                  <Text style={styles.kpiVal}>{fmtTemp((tile as any).lo)}</Text>
+                </View>
+                <View style={styles.kpi}>
+                  <Text style={styles.kpiLabel}>Rain</Text>
+                  <Text style={styles.kpiVal}>{fmtRain((tile as any).rain)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaRow2}>
+                <Text style={styles.metaText}>{(tile as any).condition}</Text>
+                <Text style={styles.dot}>•</Text>
+                <Text style={styles.metaText}>
+                  {(tile as any).cloudMin != null && (tile as any).cloudMax != null
+                    ? `Cloud ${Math.round((tile as any).cloudMin)}–${Math.round((tile as any).cloudMax)}%`
+                    : 'Cloud —'}
+                </Text>
+                <Text style={styles.dot}>•</Text>
+                <Text style={styles.metaText}>
+                  {(tile as any).windMax != null ? `Wind ${Math.round((tile as any).windMax)} mph` : 'Wind —'}
                 </Text>
               </View>
-            </View>
 
-            <View style={styles.navRow}>
-              <Pressable
-                onPress={() => bumpDay(-1)}
-                disabled={!canBack}
-                style={[styles.navBtn, !canBack && styles.navBtnDisabled]}
-              >
-                <Text style={styles.navBtnText}>◀</Text>
-              </Pressable>
+              {/* Records (selectedIso drives selectedRecord) */}
+              {(() => {
+                const showWarmup = !recordsEverResolved || (rLoading && !recordsEverResolved);
 
-              <Pressable onPress={jumpToday} style={styles.todayBtn}>
-                <Text style={styles.todayBtnText}>Today</Text>
-              </Pressable>
+                if (showWarmup || rLoading) {
+                  return (
+                    <View style={styles.recordsBox}>
+                      <Text style={styles.recordsTitle}>Records</Text>
+                      <Text style={styles.recordsItem}>
+                        {rProgress?.message ? rProgress.message : recordsStatus || 'Loading records…'}
+                      </Text>
 
-              <Pressable
-                onPress={() => bumpDay(1)}
-                disabled={!canFwd}
-                style={[styles.navBtn, !canFwd && styles.navBtnDisabled]}
-              >
-                <Text style={styles.navBtnText}>▶</Text>
-              </Pressable>
-            </View>
+                      {typeof rProgress?.pct === 'number' ? (
+                        <Text style={styles.recordsHint}>
+                          {Math.round(rProgress.pct * 100)}% • {rProgress.pages ?? 0} pages • {rProgress.rows ?? 0} rows
+                        </Text>
+                      ) : null}
 
-            <View style={styles.kpiRow}>
-              <View style={styles.kpi}>
-                <Text style={styles.kpiLabel}>High</Text>
-                <Text style={styles.kpiVal}>{fmtTemp((tile as any).hi)}</Text>
-              </View>
-              <View style={styles.kpi}>
-                <Text style={styles.kpiLabel}>Low</Text>
-                <Text style={styles.kpiVal}>{fmtTemp((tile as any).lo)}</Text>
-              </View>
-              <View style={styles.kpi}>
-                <Text style={styles.kpiLabel}>Rain</Text>
-                <Text style={styles.kpiVal}>{fmtRain((tile as any).rain)}</Text>
-              </View>
-            </View>
+                      {rProgress?.yearFrom && rProgress?.yearTo ? (
+                        <Text style={styles.recordsHint}>
+                          Window: {rProgress.yearFrom}–{rProgress.yearTo}
+                        </Text>
+                      ) : null}
 
-            <View style={styles.metaRow2}>
-              <Text style={styles.metaText}>{(tile as any).condition}</Text>
-              <Text style={styles.dot}>•</Text>
-              <Text style={styles.metaText}>
-                {(tile as any).cloudMin != null && (tile as any).cloudMax != null
-                  ? `Cloud ${Math.round((tile as any).cloudMin)}–${Math.round((tile as any).cloudMax)}%`
-                  : 'Cloud —'}
-              </Text>
-              <Text style={styles.dot}>•</Text>
-              <Text style={styles.metaText}>
-                {(tile as any).windMax != null ? `Wind ${Math.round((tile as any).windMax)} mph` : 'Wind —'}
-              </Text>
-            </View>
+                      {recordsHint ? <Text style={styles.recordsHint}>{recordsHint}</Text> : null}
 
-            {/* Records */}
-            {(() => {
-              // While warming up, show a reassuring loader instead of “No record data”.
-              const showWarmup = !recordsEverResolved || (rLoading && !recordsEverResolved);
-
-              if (showWarmup || rLoading || (!rLoading && rEmpty && recordsAutoRetried)) {
-                return (
-                  <View style={styles.recordsBox}>
-                    <Text style={styles.recordsTitle}>Records</Text>
-                    <Text style={styles.recordsItem}>{recordsStatus || 'Loading records…'}</Text>
-                    {recordsHint ? <Text style={styles.recordsHint}>{recordsHint}</Text> : null}
-
-                    <View style={styles.progressTrack}>
-                      <Animated.View
-                        style={[
-                          styles.progressIndeterminate,
-                          {
-                            transform: [
-                              {
-                                translateX: progAnim.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [-120, 220], // tune for typical phone widths
-                                }),
-                              },
-                            ],
-                          },
-                        ]}
-                      />
+                      <View style={styles.progressTrack}>
+                        <Animated.View
+                          style={[
+                            styles.progressIndeterminate,
+                            {
+                              transform: [
+                                {
+                                  translateX: progAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [-120, 220],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        />
+                      </View>
                     </View>
-                  </View>
-                );
-              }
+                  );
+                }
 
-              // Past warm-up: error/empty -> friendlier state + Retry
-              if (rErr || rEmpty) {
+                if (rErr || rEmpty) {
+                  return (
+                    <View style={styles.recordsBox}>
+                      <Text style={styles.recordsTitle}>{recordsTitle}</Text>
+                      <Text style={styles.recordsItem}>
+                        {rErr ? 'Couldn’t load records yet.' : 'No record data for this date.'}
+                      </Text>
+                      <View style={styles.actionRowTight}>
+                        <Pressable onPress={() => (records as any).refresh?.()} style={styles.btn}>
+                          <Text style={styles.btnText}>Retry</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                }
+
+                if (selectedRecord) {
+                  const win = (records as any)?.years as { from: number; to: number } | null;
+
+                  const hiYears = clampYearsToWindow(selectedRecord.recordHighYears, win);
+                  const loYears = clampYearsToWindow(selectedRecord.recordLowYears, win);
+                  const prYears = clampYearsToWindow(selectedRecord.recordPrecipYears, win);
+
+                  return (
+                    <View style={styles.recordsBox}>
+                      <Text style={styles.recordsTitle}>{recordsTitle}</Text>
+
+                      {selectedRecord.recordHighF != null ? (
+                        <Text style={styles.recordsItem}>
+                          High {Math.round(selectedRecord.recordHighF)}°
+                          {hiYears.length ? ` (${hiYears.join(', ')})` : ''}
+                        </Text>
+                      ) : null}
+
+                      {selectedRecord.recordLowF != null ? (
+                        <Text style={styles.recordsItem}>
+                          Low {Math.round(selectedRecord.recordLowF)}°
+                          {loYears.length ? ` (${loYears.join(', ')})` : ''}
+                        </Text>
+                      ) : null}
+
+                      {(() => {
+                        const p = selectedRecord.recordPrecipIn;
+                        // Hide “0.00″” (and basically-zero) precip records
+                        if (p == null) return null;
+                        if (!Number.isFinite(p)) return null;
+                        if (p <= 0.0049) return null; // anything that would display as 0.00"
+
+                        return (
+                          <Text style={styles.recordsItem}>
+                            Rain {p.toFixed(2)}″{prYears.length ? ` (${prYears.join(', ')})` : ''}
+                          </Text>
+                        );
+                      })()}
+                    </View>
+                  );
+                }
+
                 return (
                   <View style={styles.recordsBox}>
                     <Text style={styles.recordsTitle}>{recordsTitle}</Text>
-                    <Text style={styles.recordsItem}>
-                      {rErr ? 'Couldn’t load records yet.' : 'No record data for this date.'}
-                    </Text>
-                    <View style={styles.actionRowTight}>
-                      <Pressable onPress={() => (records as any).refresh?.()} style={styles.btn}>
-                        <Text style={styles.btnText}>Retry</Text>
-                      </Pressable>
-                    </View>
+                    <Text style={styles.recordsItem}>No record data for this date.</Text>
                   </View>
                 );
-              }
+              })()}
 
-              // Data available
-              if (selectedRecord) {
-                return (
-                  <View style={styles.recordsBox}>
-                    <Text style={styles.recordsTitle}>{recordsTitle}</Text>
+              <View style={styles.bottomNoteRow}>
+                <Text style={styles.bottomNote}>{(tile as any).footer}</Text>
 
-                    {selectedRecord.recordHighF != null ? (
-                      <Text style={styles.recordsItem}>
-                        High {Math.round(selectedRecord.recordHighF)}°
-                        {selectedRecord.recordHighYears?.length ? ` (${selectedRecord.recordHighYears.join(', ')})` : ''}
-                      </Text>
-                    ) : null}
-
-                    {selectedRecord.recordLowF != null ? (
-                      <Text style={styles.recordsItem}>
-                        Low {Math.round(selectedRecord.recordLowF)}°
-                        {selectedRecord.recordLowYears?.length ? ` (${selectedRecord.recordLowYears.join(', ')})` : ''}
-                      </Text>
-                    ) : null}
-
-                    {selectedRecord.recordPrecipIn != null ? (
-                      <Text style={styles.recordsItem}>
-                        Rain {selectedRecord.recordPrecipIn.toFixed(2)}″
-                        {selectedRecord.recordPrecipYears?.length ? ` (${selectedRecord.recordPrecipYears.join(', ')})` : ''}
-                      </Text>
-                    ) : null}
+                {(tile as any).mode === 'forecast' && (tile as any).precipChance != null ? (
+                  <View style={styles.chancePill}>
+                    <Text style={styles.chancePillText}>{Math.round((tile as any).precipChance)}% chance</Text>
                   </View>
-                );
-              }
-
-              return (
-                <View style={styles.recordsBox}>
-                  <Text style={styles.recordsTitle}>{recordsTitle}</Text>
-                  <Text style={styles.recordsItem}>No record data for this date.</Text>
-                </View>
-              );
-            })()}
-
-            <View style={styles.bottomNoteRow}>
-              <Text style={styles.bottomNote}>{(tile as any).footer}</Text>
-
-              {(tile as any).mode === 'forecast' && (tile as any).precipChance != null ? (
-                <View style={styles.chancePill}>
-                  <Text style={styles.chancePillText}>{Math.round((tile as any).precipChance)}% chance</Text>
-                </View>
-              ) : null}
-            </View>
+                ) : null}
+              </View>
+            </Animated.View>
           </Card>
         ) : null}
 
         {/* Curve */}
-        {hasPlace && climo.data?.normals?.length ? (
+        {hasPlace && hasNormals ? (
           <ClimatologyChart
             title="ALMANAC"
-            normals={climo.data.normals}
+            normals={climo.data!.normals}
             stationName={stationName ? `${stationName}` : undefined}
             selectedDoy={selectedDoy}
             markerLabel={markerLabel}
+            onSelectDoy={(doy: number) => {
+              const year = Number(selectedIso.slice(0, 4));
+              const iso = isoFromYearAndDoy(year, doy);
+              setSelectedIso(iso);
+            }}
+            precipMonthlyIn={(climo.data as any)?.precipMonthlyIn}
           />
         ) : null}
 
@@ -832,18 +891,6 @@ const styles = StyleSheet.create({
   },
   btnText: { color: 'white', fontWeight: '900', fontSize: 12 },
 
-  hintBox: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(160, 220, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(160, 220, 255, 0.14)',
-    flex: 1,
-    minWidth: 180,
-  },
-  hintText: { color: 'rgba(255,255,255,0.85)', fontWeight: '800', fontSize: 12, lineHeight: 16 },
-
   dayCard: { marginBottom: theme.spacing.lg, paddingVertical: 14 },
   dayTopRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
 
@@ -858,11 +905,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    minWidth: 112,
+    minWidth: 124,
     alignItems: 'flex-end',
   },
-  normalPillLabel: { fontSize: 11, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
-  normalPillValue: { marginTop: 3, fontSize: 13, color: 'white', fontWeight: '900' },
+  normalPillLabel: { fontSize: 10, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '900' },
+  normalPillValue: { marginTop: 2, fontSize: 13, color: 'white', fontWeight: '900' },
 
   navRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   navBtn: {
@@ -917,7 +964,6 @@ const styles = StyleSheet.create({
   recordsItem: { marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.80)', fontWeight: '800' },
   recordsHint: { marginTop: 4, fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '700' },
 
-  // progress bar (animated indeterminate)
   progressTrack: {
     marginTop: 8,
     height: 6,

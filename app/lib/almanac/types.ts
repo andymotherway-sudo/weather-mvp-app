@@ -1,38 +1,67 @@
-// app/lib/almanac/types.ts
+// app/lib/climatology/types.ts
 
-export type RecordTopItem = {
-  year: number;
-  valueF?: number;   // temperatures
-  valueIn?: number;  // precip/snow
+export type UnitSystem = 'us' | 'metric';
+
+export type StationCandidate = {
+  id: string; // CDO station id (e.g., "GHCND:USC00022782")
+  name?: string;
+  latitude?: number;
+  longitude?: number;
+  elevation?: number;
 };
 
-export type AlmanacDailyRecord = {
-  mmdd: string; // "MM-DD"
-
-  // ---- Classic records (TMAX/TMIN/PRCP) ----
-  recordHighF: number | null;        // highest daily max temp
-  recordHighYears?: number[];        // ties (all years that match recordHighF)
-
-  recordLowF: number | null;         // lowest daily min temp
-  recordLowYears?: number[];
-
-  recordPrecipIn?: number | null;    // max daily precip
-  recordPrecipYears?: number[];
-
-  // ---- “Almanac quality” extras ----
-  recordHighMinF?: number | null;    // warmest overnight low (highest TMIN)
-  recordHighMinYears?: number[];
-
-  recordLowMaxF?: number | null;     // coldest daytime high (lowest TMAX)
-  recordLowMaxYears?: number[];
-
-  // ---- Snow (depends on station reporting) ----
-  recordSnowIn?: number | null;      // max daily snowfall
-  recordSnowYears?: number[];
-
-  // ---- Optional “Top 10 for this MM-DD” ----
-  topHighsF?: RecordTopItem[];       // hottest TMAX for this MM-DD (desc)
-  topLowsF?: RecordTopItem[];        // coldest TMIN for this MM-DD (asc)
-  topPrecipIn?: RecordTopItem[];     // wettest PRCP for this MM-DD (desc)
-  topSnowIn?: RecordTopItem[];       // snowiest SNOW for this MM-DD (desc)
+export type MonthlyNormalsF = {
+  month: number; // 1-12
+  tavgF: number | null;
+  tminF: number | null;
+  tmaxF: number | null;
 };
+
+export type LastYearSeries = {
+  /**
+   * Daily arrays (length 365 ideally). If missing or wrong length, UI will ignore.
+   * Values are °F.
+   */
+  tminF?: number[];
+  tmaxF?: number[];
+};
+
+export type ClimatologyResult = {
+  station: StationCandidate;
+  normals: MonthlyNormalsF[];
+  source: 'noaa_cdo_normal_mly';
+
+  // metadata
+  fetchedAtIso: string;
+
+  /**
+   * Optional monthly precip normals (inches), 12 entries month=1..12.
+   * Used for the “precip mountain”.
+   */
+  precipMonthlyIn?: Array<number | null>;
+
+  /**
+   * Optional last-year daily series overlay.
+   * Used for comparing “last year range” vs normals.
+   */
+  lastYear?: LastYearSeries;
+};
+
+export type ClimoErrorCode =
+  | 'NO_TOKEN'
+  | 'STATION_NOT_FOUND'
+  | 'NO_DATA'
+  | 'NO_NORMALS'
+  | 'NETWORK'
+  | 'UNKNOWN';
+
+export class ClimoError extends Error {
+  code: ClimoErrorCode;
+  details?: any;
+
+  constructor(code: ClimoErrorCode, message: string, details?: any) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}

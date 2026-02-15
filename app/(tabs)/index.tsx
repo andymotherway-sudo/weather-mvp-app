@@ -1161,13 +1161,13 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
               <View style={styles.brandRow}>
                 <View style={styles.brandLeft}>
                   <View style={styles.brandMarkWrap}>
-                    <Image source={require('../../assets/brand/omniwx-mark.png')} style={styles.brandMark} />
+                    <Image
+                      source={require('../../assets/brand/omniwx-mark-word.png')} // ✅ new PNG with OMNIwx baked in
+                      style={styles.brandMark}
+                    />
                   </View>
+
                   <View style={{ flexShrink: 1 }}>
-                    <View style={styles.wordmarkRow}>
-                      <Text style={styles.wordmarkOmni}>OMNI</Text>
-                      <Text style={styles.wordmarkWxSup}>wx</Text>
-                    </View>
                     <View style={styles.domainPill}>
                       <Text style={styles.domainPillText}>Land Wx</Text>
                     </View>
@@ -1404,12 +1404,9 @@ const styles = StyleSheet.create({
   },
 
   brandRow: { marginBottom: 6 },
-  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandMark: { width: '100%', height: '100%', resizeMode: 'contain', backgroundColor: 'transparent', borderRadius: 21 },
-  brandMarkWrap: { width: 42, height: 42, backgroundColor: 'transparent' },
-  wordmarkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
-  wordmarkOmni: { color: 'white', fontSize: 18, fontWeight: '900', letterSpacing: 0.4 },
-  wordmarkWxSup: { marginLeft: 2, marginTop: 2, fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.75)' },
+  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  brandMarkWrap: { width: 54, height: 54, backgroundColor: 'transparent' },
+  brandMark: { width: '100%', height: '100%', resizeMode: 'contain', backgroundColor: 'transparent' },
 
   domainPill: {
     marginTop: 2,

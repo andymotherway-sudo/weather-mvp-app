@@ -1,10 +1,18 @@
 // app/lib/almanac/records.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClimoError } from '../climatology/types';
-import { readRecordsCache, writeRecordsCache } from './recordsCache';
+import {
+  makeRecordsCacheKey,
+  readRecordsCache,
+  writeRecordsCache,
+  type RecordsCacheMeta,
+} from './recordsCache';
 
-// NOAA CDO Web Services v2 base :contentReference[oaicite:2]{index=2}
-const BASE = 'https://www.ncdc.noaa.gov/cdo-web/api/v2';
+// NOAA CDO Web Services v2 base
+const BASE = 'https://www.ncei.noaa.gov/cdo-web/api/v2';
+
+const DEFAULT_ALGO_VERSION = 'v1-doy-records-yearly-chunk';
+const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 type FetchJsonOpts = { token?: string; signal?: AbortSignal };
 
@@ -42,7 +50,7 @@ function readToken(): string | undefined {
 type CdoDataRow = {
   date: string; // e.g. "1950-02-08T00:00:00"
   datatype: 'TMAX' | 'TMIN' | 'PRCP';
-  value: number; // units depend on datatype (see explainer)
+  value: number; // units depend on datatype (GHCND is typically tenths C and tenths mm)
 };
 
 export type DayOfYearRecord = {
@@ -64,7 +72,6 @@ export type StationRecordsByDoy = {
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
-
 function isLeapYear(y: number) {
   return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 }
@@ -88,18 +95,16 @@ function doy365(ymd: string): number | null {
   doy += d;
 
   // If leap year and date after Feb 28, and we ignored Feb 29, shift down by 1
-  if (isLeapYear(y) && (m > 2)) doy -= 1;
+  if (isLeapYear(y) && m > 2) doy -= 1;
 
   return clamp(doy, 1, 365);
 }
 
 /**
- * Units:
- * - TMAX/TMIN are in tenths of °C in GHCN-Daily
- * - PRCP is in tenths of mm in GHCN-Daily
- * (We convert to °F and inches.)
- *
- * This matches standard GHCN-Daily conventions documented by NOAA. :contentReference[oaicite:3]{index=3}
+ * Units (GHCN-Daily conventions):
+ * - TMAX/TMIN are in tenths of °C
+ * - PRCP is in tenths of mm
+ * Convert to °F and inches.
  */
 function c10ToF(vC10: number) {
   const c = vC10 / 10;
@@ -110,11 +115,31 @@ function mm10ToIn(vMm10: number) {
   return mm / 25.4;
 }
 
+function buildDataUrl(opts: { stationId: string; start: string; end: string; limit: number; offset: number }) {
+  const { stationId, start, end, limit, offset } = opts;
+
+  // IMPORTANT: CDO /data requires start/end and (for daily) effectively limits requests to <= 1 year.
+  // We'll enforce that at callsite (fetching year-by-year).
+  return (
+    `${BASE}/data` +
+    `?datasetid=GHCND` +
+    `&stationid=${encodeURIComponent(stationId)}` +
+    `&startdate=${encodeURIComponent(start)}` +
+    `&enddate=${encodeURIComponent(end)}` +
+    `&datatypeid=TMAX&datatypeid=TMIN&datatypeid=PRCP` +
+    `&sortfield=date&sortorder=asc` +
+    `&limit=${limit}` +
+    `&offset=${offset}`
+  );
+}
+
 /**
  * Fetch CDO daily data for a station within [start,end] inclusive.
- * Uses pagination (limit/offset) to safely retrieve all rows.
+ * Uses pagination (limit/offset).
+ *
+ * NOTE: Caller must keep start/end within a 1-year window for daily data. :contentReference[oaicite:1]{index=1}
  */
-async function fetchCdoDataAll(
+async function fetchCdoDataRangePaged(
   stationId: string,
   start: string,
   end: string,
@@ -126,18 +151,9 @@ async function fetchCdoDataAll(
   const out: CdoDataRow[] = [];
 
   while (true) {
-    const url =
-      `${BASE}/data` +
-      `?datasetid=GHCND` +
-      `&stationid=${encodeURIComponent(stationId)}` +
-      `&startdate=${encodeURIComponent(start)}` +
-      `&enddate=${encodeURIComponent(end)}` +
-      `&datatypeid=TMAX&datatypeid=TMIN&datatypeid=PRCP` +
-      `&units=standard` + // still returns base units for GHCND rows; we convert ourselves for safety
-      `&limit=${limit}` +
-      `&offset=${offset}`;
-
+    const url = buildDataUrl({ stationId, start, end, limit, offset });
     const json = await fetchJson(url, { token, signal });
+
     const results = (json?.results ?? []) as any[];
     for (const r of results) {
       if (!r?.date || !r?.datatype) continue;
@@ -148,7 +164,6 @@ async function fetchCdoDataAll(
       } as CdoDataRow);
     }
 
-    // pagination rule: if results length < limit, we're done
     if (!results.length || results.length < limit) break;
     offset += limit;
   }
@@ -157,8 +172,35 @@ async function fetchCdoDataAll(
 }
 
 /**
+ * Fetch year-by-year to satisfy CDO /data range limits for daily data. :contentReference[oaicite:2]{index=2}
+ */
+async function fetchCdoDataByYear(
+  stationId: string,
+  startYear: number,
+  endYear: number,
+  token: string,
+  signal?: AbortSignal,
+  endIsoOverrideForLastYear?: string
+): Promise<CdoDataRow[]> {
+  const out: CdoDataRow[] = [];
+
+  for (let y = startYear; y <= endYear; y++) {
+    const start = `${y}-01-01`;
+    const end =
+      y === endYear && endIsoOverrideForLastYear && endIsoOverrideForLastYear.startsWith(`${y}-`)
+        ? endIsoOverrideForLastYear
+        : `${y}-12-31`;
+
+    const rows = await fetchCdoDataRangePaged(stationId, start, end, token, signal);
+    out.push(...rows);
+  }
+
+  return out;
+}
+
+/**
  * Compute daily records by DOY.
- * Tie-break: if values are equal, keep the earliest year (more “historic-first”).
+ * Tie-break: if values are equal, keep the earliest year.
  */
 function computeRecords(rows: CdoDataRow[], startYear: number, endYear: number, stationId: string): StationRecordsByDoy {
   const mkArr = (): DayOfYearRecord[] =>
@@ -200,7 +242,6 @@ function computeRecords(rows: CdoDataRow[], startYear: number, endYear: number, 
     }
   }
 
-  // quick count years used (approx): we infer from range; actual coverage varies.
   const yearsUsed = Math.max(1, endYear - startYear + 1);
 
   return {
@@ -215,14 +256,29 @@ function computeRecords(rows: CdoDataRow[], startYear: number, endYear: number, 
 
 export function useStationRecordsByDoy(opts: {
   stationId?: string;
+  stationName?: string | null;
   enabled?: boolean;
   preferCache?: boolean;
-  startYear?: number; // optional clamp window
+  startYear?: number;
   endYear?: number;
+  algoVersion?: string;
+  ttlMs?: number;
+  // optional: if endYear is current year, you can clamp last-year end date (e.g., station maxdate or today)
+  endIsoForLastYear?: string;
 }) {
-  const { stationId, enabled = true, preferCache = true, startYear, endYear } = opts;
-  const token = useMemo(() => readToken(), []);
+  const {
+    stationId,
+    stationName = null,
+    enabled = true,
+    preferCache = true,
+    startYear,
+    endYear,
+    algoVersion = DEFAULT_ALGO_VERSION,
+    ttlMs = DEFAULT_TTL_MS,
+    endIsoForLastYear,
+  } = opts;
 
+  const token = useMemo(() => readToken(), []);
   const [data, setData] = useState<StationRecordsByDoy | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -233,6 +289,7 @@ export function useStationRecordsByDoy(opts: {
   const load = useCallback(
     async (mode: 'initial' | 'refresh') => {
       if (!enabled || !stationId) return;
+
       if (!token) {
         setError('Records need a NOAA token. Add EXPO_PUBLIC_NOAA_NCEI_TOKEN.');
         return;
@@ -248,38 +305,52 @@ export function useStationRecordsByDoy(opts: {
       setError(null);
 
       try {
-        if (preferCache) {
-          const cached = await readRecordsCache<StationRecordsByDoy>(stationId);
-          if (cached) {
-            setData(cached);
-            if (mode === 'initial') setLoading(false);
-            else setRefreshing(false);
-            return;
-          }
-        }
-
-        // Default window: “as much as practical” without killing the API.
-        // We clamp to 1900..currentYear by default (often still 100+ years).
-        // You can loosen later if you want, but this is a good MVP.
         const nowY = new Date().getFullYear();
         const sy = clamp(startYear ?? 1900, 1700, nowY);
         const ey = clamp(endYear ?? nowY, sy, nowY);
 
-        // Fetch in 10-year chunks to keep pagination manageable.
-        const chunkSize = 10;
-        const all: CdoDataRow[] = [];
+        const cacheKey = makeRecordsCacheKey({
+          stationId,
+          yearFrom: sy,
+          yearTo: ey,
+          algoVersion,
+        });
 
-        for (let y = sy; y <= ey; y += chunkSize) {
-          const y2 = Math.min(ey, y + chunkSize - 1);
-          const start = `${y}-01-01`;
-          const end = `${y2}-12-31`;
-          const rows = await fetchCdoDataAll(stationId, start, end, token, ac.signal);
-          all.push(...rows);
+        const wantMeta: RecordsCacheMeta = {
+          stationId,
+          stationName,
+          yearFrom: sy,
+          yearTo: ey,
+          algoVersion,
+        };
+
+        if (preferCache) {
+          const cached = await readRecordsCache<StationRecordsByDoy>(cacheKey);
+          if (cached && cached.data && cached.meta) {
+            // optional meta check (avoid collisions)
+            const m = cached.meta;
+            const metaOk =
+              m.stationId === wantMeta.stationId &&
+              m.yearFrom === wantMeta.yearFrom &&
+              m.yearTo === wantMeta.yearTo &&
+              m.algoVersion === wantMeta.algoVersion;
+
+            if (metaOk) {
+              setData(cached.data);
+              if (mode === 'initial') setLoading(false);
+              else setRefreshing(false);
+              return;
+            }
+          }
         }
 
-        const recs = computeRecords(all, sy, ey, stationId);
+        // ✅ Fetch year-by-year (CDO /data daily limit). :contentReference[oaicite:3]{index=3}
+        const rows = await fetchCdoDataByYear(stationId, sy, ey, token, ac.signal, endIsoForLastYear);
+
+        const recs = computeRecords(rows, sy, ey, stationId);
         setData(recs);
-        await writeRecordsCache(stationId, recs);
+
+        await writeRecordsCache(cacheKey, wantMeta, recs, ttlMs);
       } catch (e: any) {
         const ce = e instanceof ClimoError ? e : null;
         setError(ce?.message ?? 'Failed to load records.');
@@ -288,7 +359,7 @@ export function useStationRecordsByDoy(opts: {
         else setRefreshing(false);
       }
     },
-    [enabled, stationId, token, preferCache, startYear, endYear]
+    [enabled, stationId, stationName, token, preferCache, startYear, endYear, algoVersion, ttlMs, endIsoForLastYear]
   );
 
   useEffect(() => {
