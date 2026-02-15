@@ -2,6 +2,7 @@
 // ✅ Simplified: removes Range/Temp/Precip/Wind/Comfort/Sky/Fronts panels + tabs entirely
 // ✅ Keeps: midnight padding (no Date(iso) boundaries), Learn modal, Card header
 // ✅ Renders: only HourlyRangeChart (the “hourly work we did earlier”)
+// ✅ Adds: padding support for pressure + clouds (for new hourly enhancements)
 
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -71,6 +72,9 @@ function padSliceToMidnight(base: ForecastHour[]) {
         windMph: null,
         windGustMph: null,
 
+        // ✅ New: pressure support (you’re adding this to hourly now)
+        pressureHpa: null,
+
         ...({ __pad: true } as any),
       } as ForecastHour
     );
@@ -101,7 +105,9 @@ export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Hourly</Text>
-          <Text style={styles.subtitle}>Temp + Dew + RH + POP + Wind/Gust</Text>
+          <Text style={styles.subtitle}>
+            Temp + Dew + RH + POP + Wind/Gust + Clouds + Pressure
+          </Text>
         </View>
 
         <Pressable onPress={() => openLearn('data-availability')} style={styles.learnBtn}>
@@ -117,9 +123,19 @@ export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
       </View>
 
       {/* ✅ Only chart we keep */}
-      <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} />
+      <HourlyRangeChart
+        hours={slice}
+        maxHours={maxHours}
+        units={units}
+        // Optional: if your HourlyRangeChart supports this later, it won’t break now
+        {...({ expanded } as any)}
+      />
 
-      <LearnMoreModal visible={learnVisible} onClose={() => setLearnVisible(false)} initialTopicId={learnTopicId} />
+      <LearnMoreModal
+        visible={learnVisible}
+        onClose={() => setLearnVisible(false)}
+        initialTopicId={learnTopicId}
+      />
     </Card>
   );
 }
