@@ -30,9 +30,17 @@ function pick(h: ForecastHour, key: string): number | null {
     case 'dewF':
       return safeNum((h as any).dewPointF ?? (h as any).dewpointF ?? (h as any).dew);
     case 'popPct':
-      return clampPct((h as any).precipProbPct ?? (h as any).precipProbabilityPct ?? (h as any).popPct);
+      return clampPct(
+        (h as any).precipProbPct ??
+          (h as any).precipitation_probability ??
+          (h as any).precipProbabilityPct ??
+          (h as any).popPct ??
+          (h as any).pop
+      );
     case 'humidityPct':
-      return clampPct((h as any).humidityPct ?? (h as any).relativeHumidityPct ?? (h as any).rhPct);
+      return clampPct((h as any).humidityPct ?? (h as any).relativeHumidityPct ?? (h as any).rhPct ?? (h as any).rh);
+    case 'cloudCoverPct':
+      return clampPct((h as any).cloudCoverPct ?? (h as any).cloud_cover ?? (h as any).cloudcover ?? (h as any).clouds);
     case 'windMph':
       return safeNum((h as any).windMph ?? (h as any).windSpeedMph ?? (h as any).windSpeed);
     case 'gustMph':
@@ -113,6 +121,14 @@ export function HourlyRangeChart({
 }) {
   const all = useMemo(() => hours ?? [], [hours]);
 
+  // ✅ Daily-style pill toggles (below chart)
+  const [showTemp, setShowTemp] = useState(true);
+  const [showDew, setShowDew] = useState(true);
+  const [showRh, setShowRh] = useState(true);
+  const [showPrecip, setShowPrecip] = useState(true);
+  const [showWind, setShowWind] = useState(true);
+  const [showClouds, setShowClouds] = useState(true);
+
   // bump once per minute so "NOW" stays correct without reload
   const [nowTick, setNowTick] = useState(0);
   useEffect(() => {
@@ -141,7 +157,7 @@ export function HourlyRangeChart({
     return bestI;
   }, [all, nowTick]);
 
-  // ✅ show the 72h window starting at "now"
+  // ✅ show the window starting at "now"
   const data = useMemo(() => {
     if (!all.length) return [];
     const start = clampInt(nowIdx, 0, Math.max(0, all.length - 1));
@@ -183,8 +199,13 @@ export function HourlyRangeChart({
     grid: 'rgba(255,255,255,0.08)',
     tickTemp: 'rgba(255,255,255,0.48)',
     tickPct: 'rgba(255,255,255,0.28)',
+
+    // clouds band (exactly like Daily)
+    cloudFill: 'rgba(255,255,255,0.10)',
+    cloudOn: 'rgba(255,255,255,0.55)',
   };
 
+  // Geometry
   const TILE_W = 92;
   const GAP = 10;
   const padX = 14;
@@ -197,7 +218,6 @@ export function HourlyRangeChart({
   const H = 240;
 
   const axisL = 28;
-
   const padL = padX + axisL;
   const padR = padX;
 
@@ -207,9 +227,15 @@ export function HourlyRangeChart({
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
+  // Wind band
   const windBandH = 22;
   const windBandTop = padT + plotH + 10;
   const windBandBot = windBandTop + windBandH;
+
+  // ✅ Clouds band UNDER wind (same placement logic as Daily)
+  const cloudBandH = 14;
+  const cloudBandTop = windBandBot + 8;
+  const cloudBandBot = cloudBandTop + cloudBandH;
 
   const xForIdx = (i: number) => padL + i * step + TILE_W / 2;
 
@@ -278,9 +304,9 @@ export function HourlyRangeChart({
   const precipBaseY = padT + plotH;
   const precipArea =
     precipPts.length >= 2
-      ? `${precipTop} L ${precipPts[precipPts.length - 1].x.toFixed(2)} ${precipBaseY.toFixed(2)} L ${precipPts[0].x.toFixed(
+      ? `${precipTop} L ${precipPts[precipPts.length - 1].x.toFixed(2)} ${precipBaseY.toFixed(
           2
-        )} ${precipBaseY.toFixed(2)} Z`
+        )} L ${precipPts[0].x.toFixed(2)} ${precipBaseY.toFixed(2)} Z`
       : '';
 
   const yTicks = 4;
@@ -320,10 +346,6 @@ export function HourlyRangeChart({
 
   const selX = xForIdx(selIdx);
 
-  // ✅ TRULY FIXED label: does not depend on data values, only chart geometry
-  const windTextX = padL + plotW * 0.30;
-  const windTextY = windBandTop + windBandH / 2;
-
   const selScale = bump.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.06],
@@ -350,18 +372,15 @@ export function HourlyRangeChart({
   const unitsLabel = units === 'metric' ? '°C' : '°F';
   const windLabel = units === 'metric' ? 'kph' : 'mph';
 
+  const selCloudPct = (() => {
+    const v = data[selIdx] ? pick(data[selIdx], 'cloudCoverPct') : null;
+    return typeof v === 'number' ? clamp(v, 0, 100) : null;
+  })();
+
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
         <Text style={s.title}>HOURLY RANGE</Text>
-
-        <View style={s.legendRow}>
-          <LegendPill label={`Temp (${unitsLabel})`} kind="line" color={C.temp} />
-          <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
-          <LegendPill label="RH" kind="dot" color={C.rh} />
-          <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
-          <LegendPill label={`Wind/Gust (${windLabel})`} kind="bars2" color={C.gust} />
-        </View>
       </View>
 
       <ScrollView
@@ -394,7 +413,7 @@ export function HourlyRangeChart({
               const dayChanged = !!prevDk && !!dk && prevDk !== dk;
 
               const isSel = i === selIdx;
-              const isNow = i === 0; // ✅ window starts at NOW
+              const isNow = i === 0;
               const isPad = !!h.__pad;
 
               const tempV = pick(h, tempKey);
@@ -403,6 +422,7 @@ export function HourlyRangeChart({
               const popV = pick(h, 'popPct');
               const wV = pick(h, 'windMph');
               const gV = pick(h, 'gustMph');
+              const ccV = pick(h, 'cloudCoverPct');
 
               return (
                 <Pressable
@@ -428,6 +448,7 @@ export function HourlyRangeChart({
                     <View style={s.tileMeta}>
                       <Text style={s.tileLine}>DP {dewV == null ? '—' : `${Math.round(dewV)}°`}</Text>
                       <Text style={s.tileLine}>RH {rhV == null ? '—' : `${Math.round(rhV)}%`}</Text>
+                      <Text style={s.tileLine}>Clouds {ccV == null ? '—' : `${Math.round(ccV)}%`}</Text>
                     </View>
 
                     <Text style={s.sub}>💧 {fmtInt(popV, '%')}</Text>
@@ -464,7 +485,6 @@ export function HourlyRangeChart({
                 </SvgText>
               ))}
 
-              {/* Axis divider between °F labels and % labels */}
               <Line x1={padL + 2} x2={padL + 2} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
 
               <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="800" textAnchor="end">
@@ -474,19 +494,23 @@ export function HourlyRangeChart({
                 %
               </SvgText>
 
-              <Line x1={selX} x2={selX} y1={padT} y2={windBandBot} stroke={C.cursor} strokeWidth={2} />
+              {/* ✅ Cursor goes to the clouds band bottom (like Daily) */}
+              <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
-              {precipArea ? (
+              {/* precip */}
+              {showPrecip && precipArea ? (
                 <>
                   <Path d={precipArea} fill={C.precipFill} stroke="none" />
                   <Path d={precipTop} fill="none" stroke={C.precipStroke} strokeWidth={2} />
                 </>
               ) : null}
 
-              {pathT ? <Path d={pathT} stroke={C.temp} strokeWidth={3.2} fill="none" /> : null}
-              {pathD ? <Path d={pathD} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" /> : null}
-              {pathRh ? <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" /> : null}
+              {/* lines */}
+              {showTemp && pathT ? <Path d={pathT} stroke={C.temp} strokeWidth={3.2} fill="none" /> : null}
+              {showDew && pathD ? <Path d={pathD} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" /> : null}
+              {showRh && pathRh ? <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" /> : null}
 
+              {/* points */}
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
                 const tV = pick(h, tempKey);
@@ -499,74 +523,98 @@ export function HourlyRangeChart({
 
                 return (
                   <G key={`pt-${h.time}-${i}`}>
-                    {yT != null ? <Circle cx={x} cy={yT} r={5.0} fill="white" opacity={0.92} /> : null}
-                    {yD != null ? <Circle cx={x} cy={yD} r={3.6} fill={C.dew} opacity={0.85} /> : null}
-                    {yRh != null ? <Circle cx={x} cy={yRh} r={3.2} fill={C.rh} opacity={0.75} /> : null}
+                    {showTemp && yT != null ? <Circle cx={x} cy={yT} r={5.0} fill="white" opacity={0.92} /> : null}
+                    {showDew && yD != null ? <Circle cx={x} cy={yD} r={3.6} fill={C.dew} opacity={0.85} /> : null}
+                    {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={3.2} fill={C.rh} opacity={0.75} /> : null}
                   </G>
                 );
               })}
 
-              {/* Wind band background */}
+              {/* Wind band */}
               <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.03)" />
 
               {/* Wind/Gust bars */}
-              {data.map((h: any, i) => {
-                const x = xForIdx(i);
-                const wv = pick(h, 'windMph');
-                const gv = pick(h, 'gustMph');
+              {showWind
+                ? data.map((h: any, i) => {
+                    const x = xForIdx(i);
+                    const wv = pick(h, 'windMph');
+                    const gv = pick(h, 'gustMph');
 
-                const barW = 10;
-                const gap = 4;
+                    const barW = 10;
+                    const gap = 4;
 
-                const wH = wv != null ? clamp((wv / windStats.max) * windBandH, 0, windBandH) : 0;
-                const gH = gv != null ? clamp((gv / windStats.max) * windBandH, 0, windBandH) : 0;
+                    const wH = wv != null ? clamp((wv / windStats.max) * windBandH, 0, windBandH) : 0;
+                    const gH = gv != null ? clamp((gv / windStats.max) * windBandH, 0, windBandH) : 0;
 
-                const wX = x - (barW + gap / 2);
-                const gX = x + gap / 2;
+                    const wX = x - (barW + gap / 2);
+                    const gX = x + gap / 2;
 
-                const wY = windBandBot - wH;
-                const gY = windBandBot - gH;
+                    const wY = windBandBot - wH;
+                    const gY = windBandBot - gH;
 
-                const dir = pick(h, 'windDirDeg');
+                    const dir = pick(h, 'windDirDeg');
 
-                return (
-                  <G key={`wb-${h.time}-${i}`}>
-                    {wv != null ? <Rect x={wX} y={wY} width={barW} height={wH} rx={4} fill={C.wind} /> : null}
-                    {gv != null ? <Rect x={gX} y={gY} width={barW} height={gH} rx={4} fill={C.gust} /> : null}
+                    return (
+                      <G key={`wb-${h.time}-${i}`}>
+                        {wv != null ? <Rect x={wX} y={wY} width={barW} height={wH} rx={4} fill="rgba(255,255,255,0.30)" /> : null}
+                        {gv != null ? <Rect x={gX} y={gY} width={barW} height={gH} rx={4} fill="rgba(255,255,255,0.70)" /> : null}
 
-                    {wv != null && typeof dir === 'number' ? (
-                      <G rotation={dir} origin={`${x} ${windBandTop - 2}`}>
-                        <Path
-                          d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
-                          fill="rgba(160,220,255,0.55)"
-                        />
+                        {wv != null && typeof dir === 'number' ? (
+                          <G rotation={dir} origin={`${x} ${windBandTop - 2}`}>
+                            <Path
+                              d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
+                              fill="rgba(160,220,255,0.55)"
+                            />
+                          </G>
+                        ) : null}
                       </G>
-                    ) : null}
-                  </G>
-                );
-              })}
+                    );
+                  })
+                : null}
 
-              {/* ✅ Wind/Gust label in the left gutter (the circled area) */}
-              {(() => {
-                const x = padX; // left gutter starts at 0..padL; padX=14 is a nice inset
-                const y = windBandTop + windBandH / 2 + 4; // vertical center of wind band (Android-safe)
+              {/* Wind/Gust label in left gutter */}
+              <G>
+                <SvgText x={padX} y={windBandTop + windBandH / 2 + 4} fontSize="11" fontWeight="900" textAnchor="start" fill="rgba(255, 255, 255, 0.57)">
+                  Wind/Gust
+                </SvgText>
+              </G>
 
-                return (
+              {/* ✅ Clouds band (EXACT Daily pattern) */}
+              {showClouds ? (
+                <>
+                  <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.03)" />
+
+                  {data.map((h: any, i) => {
+                    const pct = pick(h, 'cloudCoverPct');
+                    const p = typeof pct === 'number' ? clamp(pct, 0, 100) : null;
+
+                    const tileLeft = padL + i * step; // <-- hourly step
+                    const innerPad = 10;
+                    const barW = TILE_W - innerPad * 2;
+                    const barH = 6;
+                    const barX = tileLeft + innerPad;
+                    const barY = cloudBandTop + (cloudBandH - barH) / 2;
+
+                    const fillW = p == null ? 0 : (barW * p) / 100;
+
+                    return (
+                      <G key={`cb-${h.time}-${i}`}>
+                        <Rect x={barX} y={barY} width={barW} height={barH} rx={999} fill={C.cloudFill} />
+                        {p != null ? <Rect x={barX} y={barY} width={fillW} height={barH} rx={999} fill={C.cloudOn} /> : null}
+                      </G>
+                    );
+                  })}
+
+                  {/* Clouds label in left gutter */}
                   <G>
-                    <SvgText
-                      x={x}
-                      y={y}
-                      fontSize="11"
-                      fontWeight="900"
-                      textAnchor="start"
-                      fill="rgba(255, 255, 255, 0.57)"
-                    >
-                      Wind/Gust
+                    <SvgText x={padX} y={cloudBandTop + cloudBandH / 2 + 4} fontSize="11" fontWeight="700" textAnchor="start" fill="rgba(255,255,255,0.40)">
+                      Clouds
                     </SvgText>
                   </G>
-                );
-              })()}
+                </>
+              ) : null}
 
+              {/* bottom labels */}
               {data.map((h: any, i) => {
                 if (!bottomLabelMask[i]) return null;
 
@@ -593,54 +641,92 @@ export function HourlyRangeChart({
                 );
               })}
             </Svg>
+
+            {/* (Optional) same readout pattern as Daily */}
+            {showClouds ? (
+              <View style={s.cloudReadoutRow}>
+                <Text style={s.cloudReadoutLabel}>Clouds</Text>
+                <Text style={s.cloudReadoutValue}>{selCloudPct == null ? '—' : `${Math.round(selCloudPct)}%`}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </ScrollView>
+
+      {/* ✅ Daily-style pills BELOW chart */}
+      <View style={s.pillSection}>
+        <Text style={s.pillSectionTitle}>HOURLY FORECAST</Text>
+
+        <View style={s.legendRow}>
+          <ToggleLegendPill
+            label={`Temp (${unitsLabel})`}
+            kind="line"
+            color="rgba(255,255,255,0.95)"
+            on={showTemp}
+            onPress={() => setShowTemp((v) => !v)}
+          />
+          <ToggleLegendPill label="Dew pt" kind="dashed" color="rgba(80,220,140,0.90)" on={showDew} onPress={() => setShowDew((v) => !v)} />
+          <ToggleLegendPill label="RH" kind="dot" color="rgba(190,120,255,0.80)" on={showRh} onPress={() => setShowRh((v) => !v)} />
+          <ToggleLegendPill label="Precip" kind="mountain" color="rgba(90,200,250,0.45)" on={showPrecip} onPress={() => setShowPrecip((v) => !v)} />
+          <ToggleLegendPill label={`Wind/Gust (${windLabel})`} kind="bars2" color="rgba(255,255,255,0.70)" on={showWind} onPress={() => setShowWind((v) => !v)} />
+          <ToggleLegendPill label="Clouds" kind="area" color="rgba(255,255,255,0.55)" on={showClouds} onPress={() => setShowClouds((v) => !v)} />
+        </View>
+      </View>
     </View>
   );
 }
 
-function LegendPill({
+function ToggleLegendPill({
   label,
   kind,
   color,
+  on,
+  onPress,
 }: {
   label: string;
-  kind: 'line' | 'dashed' | 'dot' | 'bars2' | 'mountain';
+  kind: 'line' | 'dashed' | 'dot' | 'area' | 'bars2' | 'mountain';
   color: string;
+  on: boolean;
+  onPress: () => void;
 }) {
   return (
-    <View style={s.legPill}>
+    <Pressable onPress={onPress} style={[s.legPill, !on && s.legPillOff]}>
       <View style={s.legSwatchWrap}>
-        {kind === 'line' ? <View style={[s.swLine, { backgroundColor: color }]} /> : null}
+        {kind === 'line' ? <View style={[s.swLine, { backgroundColor: color, opacity: on ? 1 : 0.25 }]} /> : null}
 
         {kind === 'dashed' ? (
           <View style={s.swDashRow}>
-            <View style={[s.swDash, { backgroundColor: color }]} />
-            <View style={[s.swDash, { backgroundColor: color }]} />
-            <View style={[s.swDash, { backgroundColor: color }]} />
+            <View style={[s.swDash, { backgroundColor: color, opacity: on ? 0.95 : 0.25 }]} />
+            <View style={[s.swDash, { backgroundColor: color, opacity: on ? 0.95 : 0.25 }]} />
+            <View style={[s.swDash, { backgroundColor: color, opacity: on ? 0.95 : 0.25 }]} />
           </View>
         ) : null}
 
-        {kind === 'dot' ? <View style={[s.swDot, { backgroundColor: color }]} /> : null}
+        {kind === 'dot' ? <View style={[s.swDot, { backgroundColor: color, opacity: on ? 0.9 : 0.2 }]} /> : null}
 
         {kind === 'bars2' ? (
           <View style={s.swBars2Wrap}>
-            <View style={[s.swBar2, s.swBar2Left, { backgroundColor: 'rgba(255,255,255,0.30)' }]} />
-            <View style={[s.swBar2, s.swBar2Right, { backgroundColor: color }]} />
+            <View style={[s.swBar2, s.swBar2Left, { backgroundColor: 'rgba(255,255,255,0.30)', opacity: on ? 0.75 : 0.2 }]} />
+            <View style={[s.swBar2, s.swBar2Right, { backgroundColor: color, opacity: on ? 0.95 : 0.2 }]} />
           </View>
         ) : null}
 
         {kind === 'mountain' ? (
           <View style={s.swMountainWrap}>
-            <View style={[s.swMountainFill, { backgroundColor: color }]} />
-            <View style={[s.swMountainRidge, { borderColor: color }]} />
+            <View style={[s.swMountainFill, { backgroundColor: color, opacity: on ? 0.18 : 0.06 }]} />
+            <View style={[s.swMountainRidge, { borderColor: color, opacity: on ? 0.55 : 0.18 }]} />
+          </View>
+        ) : null}
+
+        {kind === 'area' ? (
+          <View style={s.swAreaWrap}>
+            <View style={[s.swAreaFill, { backgroundColor: color, opacity: on ? 0.45 : 0.12 }]} />
           </View>
         ) : null}
       </View>
 
-      <Text style={s.legText}>{label}</Text>
-    </View>
+      <Text style={[s.legText, !on && { opacity: 0.55 }]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -652,10 +738,57 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     paddingTop: 12,
+    overflow: 'hidden',
   },
+
   headerRow: { paddingHorizontal: 12, gap: 8 },
   title: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
 
+  strip: { flexDirection: 'row', gap: 10, paddingTop: 10 },
+  hourTile: {
+    width: 92,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    minHeight: 168,
+  },
+  hourTileActive: {
+    borderColor: 'rgba(200,240,255,0.28)',
+    backgroundColor: 'rgba(160,220,255,0.08)',
+  },
+  hourTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12, letterSpacing: 0.4 },
+  hilo: { marginTop: 8, color: 'white', fontWeight: '900', fontSize: 18 },
+
+  sub: { marginTop: 6, color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 11 },
+
+  tileMeta: { marginTop: 6, alignItems: 'flex-start' },
+  tileLine: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.70)',
+    lineHeight: 15,
+  },
+
+  // ✅ Daily-style pill section container
+  pillSection: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+  },
+  pillSectionTitle: {
+    color: 'rgba(255,255,255,0.40)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.0,
+    marginBottom: 10,
+  },
+
+  // ✅ copy of Daily legend pill styles
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
   legPill: {
     flexDirection: 'row',
@@ -668,35 +801,46 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
+  legPillOff: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
   legText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 11 },
   legSwatchWrap: { width: 18, height: 10, justifyContent: 'center' },
 
-  strip: { flexDirection: 'row', gap: 10, paddingTop: 10 },
-  hourTile: {
-    width: 92,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    minHeight: 148,
-  },
-  hourTileActive: {
-    borderColor: 'rgba(200,240,255,0.28)',
-    backgroundColor: 'rgba(160,220,255,0.08)',
-  },
-  hourTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12, letterSpacing: 0.4 },
-  hilo: { marginTop: 8, color: 'white', fontWeight: '900', fontSize: 18 },
-
-  sub: { marginTop: 6, color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 11 },
-
   swLine: { height: 3, borderRadius: 2 },
+
   swDashRow: { width: 18, height: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   swDash: { width: 4, height: 2, borderRadius: 2, opacity: 0.95 },
+
   swDot: { width: 6, height: 6, borderRadius: 999, opacity: 0.9 },
 
-  swBars2Wrap: { width: 18, height: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 3 },
+  swAreaWrap: {
+    width: 18,
+    height: 10,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  swAreaFill: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 6,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 2,
+    opacity: 0.45,
+  },
+
+  swBars2Wrap: {
+    width: 18,
+    height: 10,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 3,
+  },
   swBar2: { width: 6, borderRadius: 3 },
   swBar2Left: { height: 7, opacity: 0.75 },
   swBar2Right: { height: 10, opacity: 0.95 },
@@ -731,12 +875,24 @@ const s = StyleSheet.create({
     transform: [{ skewX: '-10deg' }],
   },
 
-  tileMeta: { marginTop: 6, alignItems: 'flex-start' },
-  tileLine: {
-    fontSize: 11,
+  cloudReadoutRow: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cloudReadoutLabel: {
+    color: 'rgba(255,255,255,0.45)',
     fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  cloudReadoutValue: {
     color: 'rgba(255,255,255,0.70)',
-    lineHeight: 15,
+    fontWeight: '900',
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
   },
 });
 
