@@ -1,38 +1,13 @@
 // app/lib/almanac/observations.ts
 import { ClimoError } from '../climatology/types';
 
-const BASE = 'https://www.ncdc.noaa.gov/cdo-web/api/v2';
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
 
-type FetchJsonOpts = { token?: string; signal?: AbortSignal };
-
-async function fetchJson(url: string, opts: FetchJsonOpts) {
-  const headers: Record<string, string> = {};
-  if (opts.token) headers.token = opts.token;
-
-  let res: Response;
-  try {
-    res = await fetch(url, { headers, signal: opts.signal });
-  } catch (e: any) {
-    throw new ClimoError('NETWORK', 'Network error while contacting NOAA.', e);
-  }
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    if (res.status === 401 || res.status === 403) {
-      throw new ClimoError('NO_TOKEN', 'NOAA token missing/invalid for CDO API.', { status: res.status, text });
-    }
-    throw new ClimoError('NETWORK', `NOAA request failed (${res.status}).`, { status: res.status, text });
-  }
-
-  return res.json();
-}
-
-function readToken(): string | undefined {
-  return (
-    (process.env.EXPO_PUBLIC_NOAA_NCEI_TOKEN as any) ||
-    (process.env.EXPO_PUBLIC_NOAA_TOKEN as any) ||
-    undefined
-  );
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
 // CDO returns GHCND values in base GHCN-Daily units.
@@ -56,30 +31,58 @@ export type ObservedDay = {
   prcpIn: number | null;
 };
 
+async function fetchJson(url: string, signal?: AbortSignal) {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      signal,
+      headers: { accept: 'application/json' },
+    });
+  } catch (e: any) {
+    throw new ClimoError('NETWORK', 'Network error while contacting NOAA proxy.', e);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    // With Worker proxy, auth failures should be rare; treat as network/service error.
+    throw new ClimoError('NETWORK', `NOAA proxy request failed (${res.status}).`, { status: res.status, text });
+  }
+
+  try {
+    return await res.json();
+  } catch (e: any) {
+    throw new ClimoError('NETWORK', 'Failed to parse NOAA proxy JSON.', e);
+  }
+}
+
 export async function fetchObservedDaysRange(
   stationId: string,
   startDate: string, // YYYY-MM-DD
-  endDate: string,   // YYYY-MM-DD
+  endDate: string, // YYYY-MM-DD
   signal?: AbortSignal
 ): Promise<ObservedDay[]> {
-  const token = readToken();
-  if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for observed daily history.');
+  if (!API_BASE) {
+    throw new ClimoError('NETWORK', 'Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
+  }
 
   const limit = 1000;
   let offset = 1;
   const rows: Row[] = [];
 
   while (true) {
-    const url =
-      `${BASE}/data` +
-      `?datasetid=GHCND` +
-      `&stationid=${encodeURIComponent(stationId)}` +
-      `&startdate=${encodeURIComponent(startDate)}` +
-      `&enddate=${encodeURIComponent(endDate)}` +
-      `&datatypeid=TMAX&datatypeid=TMIN&datatypeid=PRCP` +
-      `&limit=${limit}&offset=${offset}`;
+    // Via Worker: /api/ncei/data -> https://www.ncei.noaa.gov/cdo-web/api/v2/data
+    const u = new URL(apiUrl('/api/ncei/data'));
+    u.searchParams.set('datasetid', 'GHCND');
+    u.searchParams.set('stationid', stationId);
+    u.searchParams.set('startdate', startDate);
+    u.searchParams.set('enddate', endDate);
+    u.searchParams.append('datatypeid', 'TMAX');
+    u.searchParams.append('datatypeid', 'TMIN');
+    u.searchParams.append('datatypeid', 'PRCP');
+    u.searchParams.set('limit', String(limit));
+    u.searchParams.set('offset', String(offset));
 
-    const json = await fetchJson(url, { token, signal });
+    const json = await fetchJson(u.toString(), signal);
     const res = (json?.results ?? []) as any[];
 
     for (const r of res) {

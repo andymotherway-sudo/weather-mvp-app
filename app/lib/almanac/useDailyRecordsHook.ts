@@ -12,6 +12,15 @@ import {
   type RecordsCacheMeta,
 } from './recordsCache';
 
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 // cache policy
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 60; // 60 days
 
@@ -25,7 +34,7 @@ const REQ_TIMEOUT_MS = 25_000;
 const RETRY_BACKOFF_MS = [300, 800, 1500, 2500, 4000];
 
 // bump when record-building logic changes
-const ALGO_VERSION = 'v5-30yr-window-yearly-chunked'; // ✅ bump because we changed fetch strategy
+const ALGO_VERSION = 'v6-30yr-window-yearly-chunked-worker-proxy'; // ✅ bump for Worker proxy
 
 // ✅ keep true while debugging; turn off once stable
 const DEBUG_RECORDS = true;
@@ -79,7 +88,8 @@ function clamp(n: number, a: number, b: number) {
 function buildDataUrl(opts: { stationId: string; start: string; end: string; offset: number }) {
   const { stationId, start, end, offset } = opts;
 
-  const u = new URL('https://www.ncei.noaa.gov/cdo-web/api/v2/data');
+  // Via Worker proxy
+  const u = new URL(apiUrl('/api/ncei/data'));
   u.searchParams.set('datasetid', 'GHCND');
   u.searchParams.append('datatypeid', 'TMAX');
   u.searchParams.append('datatypeid', 'TMIN');
@@ -282,18 +292,14 @@ export function useDailyRecords({
     setRefreshing(false);
   }, [locKey]);
 
-  const fetchJson = useCallback(async (url: string, token: string, ac: AbortController) => {
+  const fetchJson = useCallback(async (url: string, ac: AbortController) => {
     if (ac.signal.aborted) throw makeAbortError();
 
     return await noaaSchedule(async () => {
       if (ac.signal.aborted) throw makeAbortError();
 
       const t0 = Date.now();
-      const res = await withTimeout(
-        fetch(url, { headers: { token }, signal: ac.signal }),
-        REQ_TIMEOUT_MS,
-        'NOAA request timed out'
-      );
+      const res = await withTimeout(fetch(url, { signal: ac.signal }), REQ_TIMEOUT_MS, 'NOAA request timed out');
       const ms = Date.now() - t0;
 
       if (ac.signal.aborted) throw makeAbortError();
@@ -339,14 +345,14 @@ export function useDailyRecords({
   }, []);
 
   const fetchJsonWithRetry = useCallback(
-    async (url: string, token: string, ac: AbortController) => {
+    async (url: string, ac: AbortController) => {
       let lastErr: any = null;
 
       for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
         if (ac.signal.aborted) throw makeAbortError();
 
         try {
-          return await fetchJson(url, token, ac);
+          return await fetchJson(url, ac);
         } catch (e: any) {
           if (isAbortError(e) || ac.signal.aborted) throw makeAbortError();
           lastErr = e;
@@ -390,6 +396,11 @@ export function useDailyRecords({
     async (force = false) => {
       if (!enabled) return;
 
+      if (!API_BASE) {
+        setError('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
+        return;
+      }
+
       const myRunId = ++runIdRef.current;
       dbgRef.current.pages = 0;
       dbgRef.current.totalRows = 0;
@@ -411,11 +422,8 @@ export function useDailyRecords({
       };
 
       try {
-        const token = process.env.EXPO_PUBLIC_NOAA_NCEI_TOKEN || process.env.EXPO_PUBLIC_NOAA_TOKEN;
-        if (!token) throw new Error('NOAA token required for records');
-
-        // --- station resolve ---
-        const resolved: RecordStationResolved = await resolveRecordStation(lat, lon, token, ac.signal);
+        // --- station resolve (via Worker) ---
+        const resolved: RecordStationResolved = await resolveRecordStation(lat, lon, ac.signal);
         const stationId = resolved.id;
         const stationName = resolved.name ?? null;
 
@@ -495,8 +503,6 @@ export function useDailyRecords({
           }
         }
 
-        // CDO /data daily effectively requires <= 1-year date ranges.
-        // So we fetch year-by-year, paging within each year.
         const endOverallIso = minYmd(stationMaxIso, todayIso);
 
         safeSet(() =>
@@ -508,11 +514,11 @@ export function useDailyRecords({
           })
         );
 
-        // --- probe: just hit the first year (1 page) to validate token + endpoint ---
+        // --- probe: just hit the latest year (1 page) ---
         const probeStart = `${yearTo}-01-01`;
         const probeEnd = endOverallIso.startsWith(`${yearTo}-`) ? endOverallIso : `${yearTo}-12-31`;
         const probeUrl = buildDataUrl({ stationId, start: probeStart, end: probeEnd, offset: 1 });
-        const probeJson = await fetchJsonWithRetry(probeUrl, token, ac);
+        const probeJson = await fetchJsonWithRetry(probeUrl, ac);
 
         const probeTotal = Number(probeJson?.metadata?.resultset?.count ?? 0);
         const probeResults: any[] = probeJson?.results ?? [];
@@ -557,8 +563,6 @@ export function useDailyRecords({
           const start = `${y}-01-01`;
           const end = y === yearTo && endOverallIso.startsWith(`${y}-`) ? endOverallIso : `${y}-12-31`;
 
-          // If you're within current year and the station maxdate is earlier, endOverallIso already clamps it.
-
           let offset = 1;
           let yearRows = 0;
 
@@ -567,9 +571,10 @@ export function useDailyRecords({
 
             const url = buildDataUrl({ stationId, start, end, offset });
 
-            // reuse probe only if it matches this year/start/end/offset=1
             const json =
-              y === yearTo && offset === 1 && start === probeStart && end === probeEnd ? probeJson : await fetchJsonWithRetry(url, token, ac);
+              y === yearTo && offset === 1 && start === probeStart && end === probeEnd
+                ? probeJson
+                : await fetchJsonWithRetry(url, ac);
 
             const results: any[] = json?.results ?? [];
 
@@ -579,7 +584,6 @@ export function useDailyRecords({
             yearRows += results.length;
             totalRowsAllYears += results.length;
 
-            // rough progress: years completed + within-year paging is unknown, so use year fraction + small page nudges
             const yearIdx = y - yearFrom; // 0-based
             const pct = clamp((yearIdx + 0.15) / totalYears, 0, 1);
 
@@ -644,7 +648,6 @@ export function useDailyRecords({
             if (results.length < LIMIT) break;
             offset += LIMIT;
 
-            // yield to UI occasionally
             if (dbgRef.current.pages % 3 === 0) await sleep(0);
           }
 

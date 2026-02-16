@@ -1,5 +1,5 @@
 // app/lib/almanac/records.ts
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ClimoError } from '../climatology/types';
 import {
   makeRecordsCacheKey,
@@ -8,42 +8,37 @@ import {
   type RecordsCacheMeta,
 } from './recordsCache';
 
-// NOAA CDO Web Services v2 base
-const BASE = 'https://www.ncei.noaa.gov/cdo-web/api/v2';
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+// NOAA CDO Web Services v2 base (via Worker)
+const BASE = apiUrl('/api/ncei');
 
 const DEFAULT_ALGO_VERSION = 'v1-doy-records-yearly-chunk';
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-type FetchJsonOpts = { token?: string; signal?: AbortSignal };
+type FetchJsonOpts = { signal?: AbortSignal };
 
 async function fetchJson(url: string, opts: FetchJsonOpts) {
-  const headers: Record<string, string> = {};
-  if (opts.token) headers.token = opts.token;
-
   let res: Response;
   try {
-    res = await fetch(url, { headers, signal: opts.signal });
+    res = await fetch(url, { signal: opts.signal });
   } catch (e: any) {
     throw new ClimoError('NETWORK', 'Network error while contacting NOAA.', e);
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    if (res.status === 401 || res.status === 403) {
-      throw new ClimoError('NO_TOKEN', 'NOAA token missing/invalid for CDO API.', { status: res.status, text });
-    }
     throw new ClimoError('NETWORK', `NOAA request failed (${res.status}).`, { status: res.status, text });
   }
 
   return res.json();
-}
-
-function readToken(): string | undefined {
-  return (
-    (process.env.EXPO_PUBLIC_NOAA_NCEI_TOKEN as any) ||
-    (process.env.EXPO_PUBLIC_NOAA_TOKEN as any) ||
-    undefined
-  );
 }
 
 // GHCN-Daily uses DATE as yyyy-mm-dd in CDO results; datatypeid includes TMAX/TMIN/PRCP.
@@ -118,8 +113,6 @@ function mm10ToIn(vMm10: number) {
 function buildDataUrl(opts: { stationId: string; start: string; end: string; limit: number; offset: number }) {
   const { stationId, start, end, limit, offset } = opts;
 
-  // IMPORTANT: CDO /data requires start/end and (for daily) effectively limits requests to <= 1 year.
-  // We'll enforce that at callsite (fetching year-by-year).
   return (
     `${BASE}/data` +
     `?datasetid=GHCND` +
@@ -137,13 +130,12 @@ function buildDataUrl(opts: { stationId: string; start: string; end: string; lim
  * Fetch CDO daily data for a station within [start,end] inclusive.
  * Uses pagination (limit/offset).
  *
- * NOTE: Caller must keep start/end within a 1-year window for daily data. :contentReference[oaicite:1]{index=1}
+ * NOTE: Caller must keep start/end within a 1-year window for daily data.
  */
 async function fetchCdoDataRangePaged(
   stationId: string,
   start: string,
   end: string,
-  token: string,
   signal?: AbortSignal
 ): Promise<CdoDataRow[]> {
   const limit = 1000;
@@ -152,7 +144,7 @@ async function fetchCdoDataRangePaged(
 
   while (true) {
     const url = buildDataUrl({ stationId, start, end, limit, offset });
-    const json = await fetchJson(url, { token, signal });
+    const json = await fetchJson(url, { signal });
 
     const results = (json?.results ?? []) as any[];
     for (const r of results) {
@@ -172,13 +164,12 @@ async function fetchCdoDataRangePaged(
 }
 
 /**
- * Fetch year-by-year to satisfy CDO /data range limits for daily data. :contentReference[oaicite:2]{index=2}
+ * Fetch year-by-year to satisfy CDO /data range limits for daily data.
  */
 async function fetchCdoDataByYear(
   stationId: string,
   startYear: number,
   endYear: number,
-  token: string,
   signal?: AbortSignal,
   endIsoOverrideForLastYear?: string
 ): Promise<CdoDataRow[]> {
@@ -191,7 +182,7 @@ async function fetchCdoDataByYear(
         ? endIsoOverrideForLastYear
         : `${y}-12-31`;
 
-    const rows = await fetchCdoDataRangePaged(stationId, start, end, token, signal);
+    const rows = await fetchCdoDataRangePaged(stationId, start, end, signal);
     out.push(...rows);
   }
 
@@ -263,7 +254,6 @@ export function useStationRecordsByDoy(opts: {
   endYear?: number;
   algoVersion?: string;
   ttlMs?: number;
-  // optional: if endYear is current year, you can clamp last-year end date (e.g., station maxdate or today)
   endIsoForLastYear?: string;
 }) {
   const {
@@ -278,7 +268,6 @@ export function useStationRecordsByDoy(opts: {
     endIsoForLastYear,
   } = opts;
 
-  const token = useMemo(() => readToken(), []);
   const [data, setData] = useState<StationRecordsByDoy | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -290,8 +279,9 @@ export function useStationRecordsByDoy(opts: {
     async (mode: 'initial' | 'refresh') => {
       if (!enabled || !stationId) return;
 
-      if (!token) {
-        setError('Records need a NOAA token. Add EXPO_PUBLIC_NOAA_NCEI_TOKEN.');
+      // Ensure Worker base is present (token is server-side)
+      if (!API_BASE) {
+        setError('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
         return;
       }
 
@@ -327,7 +317,6 @@ export function useStationRecordsByDoy(opts: {
         if (preferCache) {
           const cached = await readRecordsCache<StationRecordsByDoy>(cacheKey);
           if (cached && cached.data && cached.meta) {
-            // optional meta check (avoid collisions)
             const m = cached.meta;
             const metaOk =
               m.stationId === wantMeta.stationId &&
@@ -344,9 +333,7 @@ export function useStationRecordsByDoy(opts: {
           }
         }
 
-        // ✅ Fetch year-by-year (CDO /data daily limit). :contentReference[oaicite:3]{index=3}
-        const rows = await fetchCdoDataByYear(stationId, sy, ey, token, ac.signal, endIsoForLastYear);
-
+        const rows = await fetchCdoDataByYear(stationId, sy, ey, ac.signal, endIsoForLastYear);
         const recs = computeRecords(rows, sy, ey, stationId);
         setData(recs);
 
@@ -359,7 +346,7 @@ export function useStationRecordsByDoy(opts: {
         else setRefreshing(false);
       }
     },
-    [enabled, stationId, stationName, token, preferCache, startYear, endYear, algoVersion, ttlMs, endIsoForLastYear]
+    [enabled, stationId, stationName, preferCache, startYear, endYear, algoVersion, ttlMs, endIsoForLastYear]
   );
 
   useEffect(() => {
@@ -369,5 +356,5 @@ export function useStationRecordsByDoy(opts: {
 
   const refresh = useCallback(() => load('refresh'), [load]);
 
-  return { data, loading, refreshing, error, refresh, hasToken: !!token };
+  return { data, loading, refreshing, error, refresh, hasToken: !!API_BASE };
 }

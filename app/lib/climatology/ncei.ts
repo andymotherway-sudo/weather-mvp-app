@@ -2,13 +2,24 @@
 import { noaaSchedule } from '../noaa/noaaRateLimiter';
 import { ClimoError } from './types';
 
-const BASE = 'https://www.ncei.noaa.gov/cdo-web/api/v2';
+// Worker base (token lives in Worker)
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+// CDO Web Services v2 base (via Worker proxy)
+const BASE = apiUrl('/api/ncei');
 
 // Keep defaults aligned with records hook
 const REQ_TIMEOUT_MS = 25_000; // normals endpoint is slower
 const RETRY_BACKOFF_MS = [750, 1500, 3000]; // 3 retries
 
 type FetchJsonOpts = {
+  // token is accepted for compatibility but NOT used (Worker handles auth)
   token?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -70,6 +81,7 @@ function parseRetryAfterSeconds(retryAfter: string | null): number | null {
 }
 
 function classifyHttpError(status: number, text: string) {
+  // With Worker proxy, 401/403 should be rare but keep classification
   if (status === 401 || status === 403) {
     return new ClimoError('NO_TOKEN', 'NOAA token missing/invalid for NCEI CDO API.', { status, text });
   }
@@ -90,7 +102,6 @@ function extractStatus(e: any): number | null {
   const n = Number(s);
   if (Number.isFinite(n)) return n;
 
-  // fallback: parse "HTTP ###" from message
   const msg = typeof e?.message === 'string' ? e.message : '';
   const m = msg.match(/HTTP\s+(\d{3})/i);
   if (!m) return null;
@@ -111,21 +122,17 @@ async function fetchJsonOnce(url: string, opts: FetchJsonOpts) {
     throw ae;
   }
 
-  const headers: Record<string, string> = {};
-  if (opts.token) headers.token = opts.token;
-
   const timeoutMs = opts.timeoutMs ?? REQ_TIMEOUT_MS;
 
   let res: Response;
   try {
-    // ✅ Schedule ALL NOAA calls through the global limiter
     res = await noaaSchedule(async () => {
       if (opts.signal?.aborted) {
         const ae: any = new Error('Aborted');
         ae.name = 'AbortError';
         throw ae;
       }
-      return await withTimeout(fetch(url, { headers, signal: opts.signal }), timeoutMs, 'NOAA request timed out');
+      return await withTimeout(fetch(url, { signal: opts.signal }), timeoutMs, 'NOAA request timed out');
     });
   } catch (e: any) {
     if (isAbortError(e) || opts.signal?.aborted) throw e;
@@ -136,11 +143,9 @@ async function fetchJsonOnce(url: string, opts: FetchJsonOpts) {
     const text = await safeReadText(res);
     const err: any = classifyHttpError(res.status, text);
 
-    // ✅ Always attach status so retry logic can classify reliably
     err.status = res.status;
     err.details = { ...(err.details ?? {}), status: res.status, text };
 
-    // ✅ Attach Retry-After for 429 if present
     if (res.status === 429) {
       err.retryAfterSec = parseRetryAfterSeconds(res.headers?.get?.('retry-after') ?? null);
     }
@@ -213,12 +218,12 @@ export function buildDataUrl(params: Record<string, string | number | undefined>
 }
 
 // ---------- public API ----------
-export async function nceiStations(params: Record<string, any>, token?: string, signal?: AbortSignal) {
+export async function nceiStations(params: Record<string, any>, _token?: string, signal?: AbortSignal) {
   const url = buildStationsUrl(params);
-  return fetchJsonWithRetry(url, { token, signal });
+  return fetchJsonWithRetry(url, { signal });
 }
 
-export async function nceiData(params: Record<string, any>, token?: string, signal?: AbortSignal) {
+export async function nceiData(params: Record<string, any>, _token?: string, signal?: AbortSignal) {
   const url = buildDataUrl(params);
-  return fetchJsonWithRetry(url, { token, signal });
+  return fetchJsonWithRetry(url, { signal });
 }

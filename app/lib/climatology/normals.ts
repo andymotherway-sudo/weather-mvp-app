@@ -5,27 +5,16 @@ import { ClimoError } from './types';
 
 /**
  * Monthly normals (temperature) from NORMAL_MLY (CDO API).
- * Datatypes:
- * - MLY-TAVG-NORMAL
- * - MLY-TMIN-NORMAL
- * - MLY-TMAX-NORMAL
- *
- * NOTE:
- * CDO can return values in different scalings depending on endpoint/metadata.
- * With units=standard, values are often already in °F (NOT tenths).
- * So we only divide by 10 when we have strong evidence it's "tenths".
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
  */
 export async function fetchMonthlyTempNormalsF(
   stationId: string,
   token?: string,
   signal?: AbortSignal
 ): Promise<MonthlyNormalsF[]> {
-  if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for normals fetch.');
-
   const startdate = '2010-01-01';
   const enddate = '2010-12-31';
 
-  // ✅ sequential calls to reduce cold-start flakiness
   const tavg = await nceiData(
     {
       datasetid: 'NORMAL_MLY',
@@ -72,7 +61,6 @@ export async function fetchMonthlyTempNormalsF(
     return String(u ?? '').trim().toLowerCase();
   }
 
-  // Try to pull units from common places; often it's missing, so we rely on heuristics too.
   function unitHintFromPayload(payload: any): string {
     return normUnits(payload?.metadata?.units || payload?.units || payload?.results?.[0]?.units);
   }
@@ -80,29 +68,21 @@ export async function fetchMonthlyTempNormalsF(
   function normalizeTempToF(valueRaw: number, unitsHint: string): number {
     const u = normUnits(unitsHint);
 
-    // 1) If units explicitly indicate tenths, scale first
     let v = valueRaw;
     if (u.includes('tenth') || u.includes('tenths')) v = v / 10;
 
-    // 2) If units explicitly indicate Celsius, convert
     if (u.includes('c') || u.includes('celsius') || u.includes('degc') || u.includes('°c')) {
       return (v * 9) / 5 + 32;
     }
 
-    // 3) If units explicitly indicate Fahrenheit, use as-is
     if (u.includes('f') || u.includes('fahrenheit') || u.includes('degf') || u.includes('°f')) {
       return v;
     }
 
-    // 4) Heuristics when units are missing/ambiguous:
-    // If it's very large magnitude, it's likely scaled (tenths) already.
-    // e.g. 780 => 78.0°F
     if (Math.abs(valueRaw) > 150) {
-      const scaled = valueRaw / 10;
-      return scaled;
+      return valueRaw / 10;
     }
 
-    // Otherwise assume it's already °F (this fixes your 78 -> 7.8 bug)
     return valueRaw;
   }
 
@@ -147,18 +127,13 @@ export async function fetchMonthlyTempNormalsF(
 
 /**
  * Monthly precip normals (inches) from NORMAL_MLY (CDO API).
- * Datatype:
- * - MLY-PRCP-NORMAL
- *
- * CDO returns "standard" values in tenths of inches. Divide by 10.
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
  */
 export async function fetchMonthlyPrecipNormalsIn(
   stationId: string,
   token?: string,
   signal?: AbortSignal
 ): Promise<Array<number | null>> {
-  if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for precip normals fetch.');
-
   const startdate = '2010-01-01';
   const enddate = '2010-12-31';
 

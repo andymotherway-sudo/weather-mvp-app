@@ -26,9 +26,10 @@ function isAbortError(err: any) {
 /**
  * Validate that a station actually returns NORMAL_MLY rows for core temp normals.
  * We probe a small 1-year window; dataset returns monthly normals.
+ *
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
  */
-async function stationHasTempNormals(stationId: string, token: string, signal?: AbortSignal): Promise<boolean> {
-  // a harmless placeholder year
+async function stationHasTempNormals(stationId: string, token?: string, signal?: AbortSignal): Promise<boolean> {
   const startdate = '2010-01-01';
   const enddate = '2010-12-31';
 
@@ -49,20 +50,16 @@ async function stationHasTempNormals(stationId: string, token: string, signal?: 
     const results = (json?.results ?? []) as any[];
     return results.length > 0;
   } catch (e: any) {
-    // If aborted, bubble up
     if (isAbortError(e) || signal?.aborted) throw e;
-
-    // Treat other errors as "no" so we can try next candidate
     return false;
   }
 }
 
 /**
  * Find the nearest station that actually supports usable NORMAL_MLY temp normals
- * near (lat, lon). Uses CDO /stations with datasetid=NORMAL_MLY + extent bounding box,
- * then validates candidates with a cheap /data probe so we don't pick "phantom" stations.
+ * near (lat, lon).
  *
- * NOTE: Requires NOAA token (NCEI CDO API).
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
  */
 export async function findNearestNormalsStation(
   lat: number,
@@ -70,8 +67,6 @@ export async function findNearestNormalsStation(
   token?: string,
   signal?: AbortSignal
 ): Promise<StationCandidate> {
-  if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for station lookup.');
-
   // Expand search outward if needed (some metros have sparse NORMAL_MLY coverage)
   const rings = [1.5, 2.5, 4.0, 6.0]; // degrees (~165km, 275km, 440km, 660km)
   const limit = 1000;
@@ -79,20 +74,30 @@ export async function findNearestNormalsStation(
   for (const d of rings) {
     const extent = `${lat - d},${lon - d},${lat + d},${lon + d}`;
 
-    const json = await nceiStations(
-      {
-        datasetid: 'NORMAL_MLY',
-        extent,
-        limit,
-      },
-      token,
-      signal
-    );
+    let json: any;
+    try {
+      json = await nceiStations(
+        {
+          datasetid: 'NORMAL_MLY',
+          extent,
+          limit,
+        },
+        token,
+        signal
+      );
+    } catch (e: any) {
+      if (isAbortError(e) || signal?.aborted) throw e;
+
+      // If a direct-call path is ever used and token is missing/invalid, surface a clean message.
+      if (e instanceof ClimoError && e.code === 'NO_TOKEN') throw e;
+
+      // Otherwise treat it like "no stations in this ring" and try the next ring.
+      continue;
+    }
 
     const results = (json?.results ?? []) as any[];
     if (!results.length) continue;
 
-    // Build and sort candidates by distance
     const candidates: Array<StationCandidate & { km: number }> = [];
 
     for (const r of results) {
@@ -113,9 +118,7 @@ export async function findNearestNormalsStation(
 
     candidates.sort((a, b) => a.km - b.km);
 
-    // Validate the nearest few first (fast)
     const MAX_VALIDATE = 12;
-
     for (let i = 0; i < Math.min(MAX_VALIDATE, candidates.length); i++) {
       if (signal?.aborted) {
         const ae: any = new Error('Aborted');
@@ -126,18 +129,11 @@ export async function findNearestNormalsStation(
       const c = candidates[i];
       const ok = await stationHasTempNormals(c.id, token, signal);
       if (ok) {
-        // strip km before returning
         const { km, ...station } = c;
         return station;
       }
     }
-
-    // If none of the nearest validated, try next ring
   }
 
-  throw new ClimoError(
-    'STATION_NOT_FOUND',
-    'No usable normals stations found near this location.',
-    { lat, lon }
-  );
+  throw new ClimoError('STATION_NOT_FOUND', 'No usable normals stations found near this location.', { lat, lon });
 }

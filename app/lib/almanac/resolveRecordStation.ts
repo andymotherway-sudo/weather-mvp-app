@@ -2,7 +2,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { noaaSchedule } from '../noaa/noaaRateLimiter';
 
-const KEY_PREFIX = 'omniwx:record-station:v6'; // ✅ bump (v6 fixes UTC "tomorrow" bug + URLSearchParams)
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+const KEY_PREFIX = 'omniwx:record-station:v7'; // ✅ bump because transport changed (Worker proxy)
 
 // flip off when stable
 const DEBUG_STATION = true;
@@ -154,20 +163,18 @@ function isAbortError(err: any) {
   );
 }
 
-async function fetchJsonScheduled(url: string, token: string, signal?: AbortSignal) {
+async function fetchJsonScheduled(url: string, signal?: AbortSignal) {
   if (signal?.aborted) throw makeAbortError();
 
   const res = await noaaSchedule(() =>
-    withTimeout(fetch(url, { headers: { token }, signal }), STATION_REQ_TIMEOUT_MS, 'Station lookup timed out')
+    withTimeout(fetch(url, { signal }), STATION_REQ_TIMEOUT_MS, 'Station lookup timed out')
   );
 
   if (signal?.aborted) throw makeAbortError();
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    const err: any = new Error(
-      `Station lookup failed (${res.status})${body ? `: ${body.slice(0, 160)}` : ''}`
-    );
+    const err: any = new Error(`Station lookup failed (${res.status})${body ? `: ${body.slice(0, 160)}` : ''}`);
     err.status = res.status;
     if (res.status === 429) {
       err.retryAfterSec = parseRetryAfterSeconds(res.headers?.get?.('retry-after') ?? null);
@@ -185,7 +192,8 @@ function buildStationsUrl(opts: { extentDeg: number; lat: number; lon: number; e
   const north = lat + extentDeg;
   const east = lon + extentDeg;
 
-  const u = new URL('https://www.ncei.noaa.gov/cdo-web/api/v2/stations');
+  // Via Worker proxy
+  const u = new URL(apiUrl('/api/ncei/stations'));
   u.searchParams.set('datasetid', 'GHCND');
   u.searchParams.append('datatypeid', 'TMAX');
   u.searchParams.append('datatypeid', 'TMIN');
@@ -203,7 +211,6 @@ function buildStationsUrl(opts: { extentDeg: number; lat: number; lon: number; e
 export async function resolveRecordStation(
   lat: number,
   lon: number,
-  token: string,
   signal?: AbortSignal
 ): Promise<RecordStationResolved> {
   const cacheKey = `${KEY_PREFIX}:${lat.toFixed(3)},${lon.toFixed(3)}`;
@@ -255,7 +262,7 @@ export async function resolveRecordStation(
       if (signal?.aborted) throw makeAbortError();
 
       try {
-        const json = await fetchJsonScheduled(url, token, signal);
+        const json = await fetchJsonScheduled(url, signal);
 
         const results: any[] = json?.results ?? [];
         if (!results.length) {

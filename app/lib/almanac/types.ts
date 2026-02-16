@@ -1,67 +1,38 @@
-// app/lib/climatology/types.ts
+// app/lib/almanac/types.ts
 
-export type UnitSystem = 'us' | 'metric';
+/**
+ * Almanac daily record bucket keyed by MM-DD (e.g., "02-09").
+ * Values are derived from NOAA GHCND (record station) and converted to:
+ * - Temperatures: °F
+ * - Precip/Snow: inches
+ */
+export type AlmanacDailyRecord = {
+  mmdd: string; // "MM-DD"
 
-export type StationCandidate = {
-  id: string; // CDO station id (e.g., "GHCND:USC00022782")
-  name?: string;
-  latitude?: number;
-  longitude?: number;
-  elevation?: number;
+  // Daily record highs/lows
+  recordHighF: number | null;
+  recordHighYears: number[];
+
+  recordLowF: number | null;
+  recordLowYears: number[];
+
+  // Daily precip record
+  recordPrecipIn: number | null;
+  recordPrecipYears: number[];
+
+  // Optional “secondary” records your UI/cards may show:
+  // - Highest daily minimum temp (warmest night)
+  recordHighMinF: number | null;
+  recordHighMinYears: number[];
+
+  // - Lowest daily maximum temp (coldest day)
+  recordLowMaxF: number | null;
+  recordLowMaxYears: number[];
+
+  // Snowfall (only if/when you implement it; kept for schema stability)
+  recordSnowIn: number | null;
+  recordSnowYears: number[];
 };
 
-export type MonthlyNormalsF = {
-  month: number; // 1-12
-  tavgF: number | null;
-  tminF: number | null;
-  tmaxF: number | null;
-};
-
-export type LastYearSeries = {
-  /**
-   * Daily arrays (length 365 ideally). If missing or wrong length, UI will ignore.
-   * Values are °F.
-   */
-  tminF?: number[];
-  tmaxF?: number[];
-};
-
-export type ClimatologyResult = {
-  station: StationCandidate;
-  normals: MonthlyNormalsF[];
-  source: 'noaa_cdo_normal_mly';
-
-  // metadata
-  fetchedAtIso: string;
-
-  /**
-   * Optional monthly precip normals (inches), 12 entries month=1..12.
-   * Used for the “precip mountain”.
-   */
-  precipMonthlyIn?: Array<number | null>;
-
-  /**
-   * Optional last-year daily series overlay.
-   * Used for comparing “last year range” vs normals.
-   */
-  lastYear?: LastYearSeries;
-};
-
-export type ClimoErrorCode =
-  | 'NO_TOKEN'
-  | 'STATION_NOT_FOUND'
-  | 'NO_DATA'
-  | 'NO_NORMALS'
-  | 'NETWORK'
-  | 'UNKNOWN';
-
-export class ClimoError extends Error {
-  code: ClimoErrorCode;
-  details?: any;
-
-  constructor(code: ClimoErrorCode, message: string, details?: any) {
-    super(message);
-    this.code = code;
-    this.details = details;
-  }
-}
+/** Convenience map type (MM-DD -> record) */
+export type AlmanacRecordsMap = Record<string, AlmanacDailyRecord>;

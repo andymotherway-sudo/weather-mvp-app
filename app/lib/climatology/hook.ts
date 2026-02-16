@@ -9,15 +9,11 @@ import { ClimoError } from './types';
 
 /**
  * US-only climatology hook (monthly normals).
- * Requires NOAA NCEI CDO token.
+ * ✅ Worker-proxied: does NOT require NOAA token in the app.
+ * Requires EXPO_PUBLIC_API_BASE to be set to your Worker base URL.
  */
-function readToken(): string | undefined {
-  return (
-    (process.env.EXPO_PUBLIC_NOAA_NCEI_TOKEN as any) ||
-    (process.env.EXPO_PUBLIC_NOAA_TOKEN as any) ||
-    undefined
-  );
-}
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
 
 function isAbortError(err: any) {
   return (
@@ -47,9 +43,6 @@ function normalizePrecipMonthlyIn(arr?: Array<number | null>) {
   const max = Math.max(...vals);
   const intLikeCount = vals.filter((v) => Math.abs(v - Math.round(v)) < 1e-6).length;
 
-  // Heuristic: "tenths" arrays often contain many integers (7, 21, 13, ...)
-  // and show unusually large max values.
-  // Example bad cached: [1.52, 1.32, 1.41, 0.48, 21, 7, 1.18, ...]
   const looksLikeTenths = max >= 18 && intLikeCount >= Math.max(1, Math.floor(vals.length * 0.25));
   if (!looksLikeTenths) return arr;
 
@@ -87,8 +80,6 @@ export function useClimatologyNormals({
   enabled?: boolean;
   preferCache?: boolean;
 }) {
-  const token = useMemo(() => readToken(), []);
-
   const [data, setData] = useState<ClimatologyResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -115,6 +106,12 @@ export function useClimatologyNormals({
     async (mode: 'initial' | 'refresh') => {
       if (!enabled) return;
 
+      // Worker base is required (no secrets in app)
+      if (!API_BASE) {
+        setError('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
+        return;
+      }
+
       const myRunId = ++runIdRef.current;
 
       abortRef.current?.abort();
@@ -130,7 +127,7 @@ export function useClimatologyNormals({
       safeSet(() => {
         if (mode === 'initial') setLoading(true);
         else setRefreshing(true);
-        setError(null); // clear old error for a new attempt
+        setError(null);
       });
 
       try {
@@ -140,7 +137,6 @@ export function useClimatologyNormals({
           if (cachedRaw) {
             const cached = normalizeClimoResult(cachedRaw);
 
-            // If we normalized, rewrite cache best-effort so we don't keep returning bad values.
             if (!precipArraysEqual(cachedRaw.precipMonthlyIn, cached.precipMonthlyIn)) {
               writeClimoCache(lat, lon, cached).catch(() => {});
             }
@@ -151,32 +147,30 @@ export function useClimatologyNormals({
               setLoading(false);
               setRefreshing(false);
             });
-            return; // ✅ safe early return (we already cleared flags)
+            return;
           }
         }
 
-        // 2) Token required
-        if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for normals fetch.');
-
-        // 3) Warmup: touch the same NOAA host once
+        // 2) Warmup: touch NOAA via Worker once
         if (!warmedRef.current) {
           warmedRef.current = true;
           try {
-            await nceiStations({ limit: 1 }, token, ac.signal);
+            // token is Worker-side; pass undefined for compatibility
+            await nceiStations({ limit: 1 }, undefined, ac.signal);
           } catch (e: any) {
             if (isAbortError(e) || ac.signal.aborted) throw e;
             // ignore warmup failures; main request may still succeed
           }
         }
 
-        // 4) Fetch station + normals
-        const station = await findNearestNormalsStation(lat, lon, token, ac.signal);
-        const normals = await fetchMonthlyTempNormalsF(station.id, token, ac.signal);
+        // 3) Fetch station + normals (Worker proxied)
+        const station = await findNearestNormalsStation(lat, lon, undefined as any, ac.signal);
+        const normals = await fetchMonthlyTempNormalsF(station.id, undefined as any, ac.signal);
 
         // Precip normals (inches) - optional
         let precipMonthlyIn: Array<number | null> | undefined = undefined;
         try {
-          precipMonthlyIn = await fetchMonthlyPrecipNormalsIn(station.id, token, ac.signal);
+          precipMonthlyIn = await fetchMonthlyPrecipNormalsIn(station.id, undefined as any, ac.signal);
         } catch {
           // soft-fail: precip is optional
         }
@@ -193,7 +187,6 @@ export function useClimatologyNormals({
           fetchedAtIso: new Date().toISOString(),
         };
 
-        // Normalize before setting + caching (guards against scale issues)
         const result = normalizeClimoResult(resultRaw);
 
         safeSet(() => {
@@ -208,20 +201,14 @@ export function useClimatologyNormals({
         const ce = e instanceof ClimoError ? e : null;
 
         safeSet(() => {
-          // ✅ Soft-fail behavior:
-          // If we already have usable normals on screen, DO NOT show the big error.
+          // Soft-fail: if we already have usable normals, keep UI calm.
           if (hasUsableNormals(data)) {
             setError(null);
             return;
           }
 
-          if (ce?.code === 'NO_TOKEN') {
-            setError(
-              'Climatology needs a NOAA token. Add EXPO_PUBLIC_NOAA_NCEI_TOKEN (NCEI CDO API) to enable monthly normals.'
-            );
-          } else {
-            setError(ce?.message ?? 'Failed to load climatology.');
-          }
+          // Worker model: no NO_TOKEN messaging anymore.
+          setError(ce?.message ?? 'Failed to load climatology.');
         });
       } finally {
         safeSet(() => {
@@ -230,7 +217,7 @@ export function useClimatologyNormals({
         });
       }
     },
-    [enabled, lat, lon, preferCache, token, data]
+    [enabled, lat, lon, preferCache, data]
   );
 
   useEffect(() => {
@@ -240,5 +227,13 @@ export function useClimatologyNormals({
 
   const refresh = useCallback(() => load('refresh'), [load]);
 
-  return { data, loading, refreshing, error, refresh, hasToken: !!token };
+  return {
+    data,
+    loading,
+    refreshing,
+    error,
+    refresh,
+    // keep field name for callers, but it now means “Worker base configured”
+    hasToken: !!API_BASE,
+  };
 }

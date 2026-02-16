@@ -21,7 +21,21 @@ export type NormalsSummary = {
   };
 };
 
-const BASE = 'https://www.ncei.noaa.gov/access/services/data/v1';
+// Default: direct to NCEI access services (no token)
+const DIRECT_BASE = 'https://www.ncei.noaa.gov/access/services/data/v1';
+
+// Optional: route through your Worker if you create an endpoint for it
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+const USE_WORKER_PROXY = false; // flip if you add a Worker proxy route for access services
+
+function baseUrl() {
+  if (!USE_WORKER_PROXY) return DIRECT_BASE;
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE (needed for Worker proxy).');
+  // You’d need to implement this Worker route if you flip USE_WORKER_PROXY on:
+  return `${API_BASE}/api/ncei-access`;
+}
+
 const DATASET = 'normals-monthly-1991-2020';
 
 type NceiRow = Record<string, string>;
@@ -43,7 +57,12 @@ function isAbortError(err: any) {
 
 function isTransientNetworkError(err: any) {
   const msg = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
-  return err instanceof TypeError || msg.includes('network request failed') || msg.includes('failed to fetch') || msg.includes('timed out');
+  return (
+    err instanceof TypeError ||
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('timed out')
+  );
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label = 'Request timed out') {
@@ -67,7 +86,6 @@ async function fetchWithRetry(url: string, signal?: AbortSignal) {
     try {
       const res = await withTimeout(fetch(url, { signal }), REQ_TIMEOUT_MS, 'Normals request timed out');
 
-      // retry 429 / 5xx
       if (!res.ok) {
         const status = res.status;
         const text = await res.text().catch(() => '');
@@ -117,7 +135,7 @@ function monthFromDateStr(s?: string) {
 
 function buildUrl(params: Record<string, string>) {
   const usp = new URLSearchParams(params);
-  return `${BASE}?${usp.toString()}`;
+  return `${baseUrl()}?${usp.toString()}`;
 }
 
 export async function fetchMonthlyNormals(stationId: string, signal?: AbortSignal): Promise<MonthlyNormals[]> {

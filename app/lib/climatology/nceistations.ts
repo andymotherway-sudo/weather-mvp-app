@@ -1,18 +1,13 @@
 // app/lib/climatology/nceiStations.ts
 // Nearest-station lookup using GHCN-D station inventory (ghcnd-stations.txt).
 // Inventory is large; we download once and cache. Then do fast nearest search.
-//
-// Source: GHCN-D station inventory download is listed on the dataset catalog page. :contentReference[oaicite:2]{index=2}
 
-
-// If you already have AsyncStorage in the project, use it.
-// If not, install: @react-native-async-storage/async-storage
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type GhcnStation = {
-  id: string;          // e.g., "USW00023183"
-  lat: number;         // decimal degrees
-  lon: number;         // decimal degrees
+  id: string; // e.g., "USW00023183"
+  lat: number; // decimal degrees
+  lon: number; // decimal degrees
   elevM: number | null;
   name: string;
   state?: string | null;
@@ -26,6 +21,30 @@ const CACHE_META_KEY = 'omniwx:ghcn:stations:v1:meta';
 
 // Reasonable defaults for MVP:
 const MAX_CACHE_AGE_DAYS = 90; // refresh quarterly
+
+// Fetch policy
+const REQ_TIMEOUT_MS = 25_000;
+const RETRY_BACKOFF_MS = [750, 1500];
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isAbortError(err: any) {
+  return (
+    err?.name === 'AbortError' ||
+    err?.code === 20 ||
+    (typeof err?.message === 'string' && err.message.toLowerCase().includes('abort'))
+  );
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label = 'Request timed out') {
+  let t: any;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
@@ -43,16 +62,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 /**
  * GHCN-D station inventory fixed-width columns.
- * Common format:
  * ID(11) LAT(9) LON(10) ELEV(7) STATE(3) NAME(…)
- *
- * Example parsing strategy:
- * - id:   [0..11)
- * - lat:  [12..20)
- * - lon:  [21..30)
- * - elev: [31..37)
- * - state:[38..40)
- * - name: [41..)
  */
 function parseStationsTxt(text: string): GhcnStation[] {
   const lines = text.split(/\r?\n/);
@@ -101,14 +111,32 @@ async function setCacheMeta(meta: { fetchedAtMs: number }) {
   }
 }
 
-async function fetchStationsText(): Promise<string> {
-  const res = await fetch(STATIONS_URL);
-  if (!res.ok) throw new Error(`Station inventory fetch failed (${res.status})`);
-  return await res.text();
+async function fetchStationsText(signal?: AbortSignal): Promise<string> {
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+    if (signal?.aborted) {
+      const ae: any = new Error('Aborted');
+      ae.name = 'AbortError';
+      throw ae;
+    }
+
+    try {
+      const res = await withTimeout(fetch(STATIONS_URL, { signal }), REQ_TIMEOUT_MS, 'Station inventory timed out');
+      if (!res.ok) throw new Error(`Station inventory fetch failed (${res.status})`);
+      return await res.text();
+    } catch (e: any) {
+      if (isAbortError(e) || signal?.aborted) throw e;
+      lastErr = e;
+      if (attempt === RETRY_BACKOFF_MS.length) break;
+      await sleep(RETRY_BACKOFF_MS[attempt]);
+    }
+  }
+
+  throw lastErr ?? new Error('Station inventory fetch failed');
 }
 
-export async function loadGhcnStations(): Promise<GhcnStation[]> {
-  // Check cache freshness
+export async function loadGhcnStations(signal?: AbortSignal): Promise<GhcnStation[]> {
   const meta = await getCacheMeta();
   const now = Date.now();
   const maxAgeMs = MAX_CACHE_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -124,10 +152,9 @@ export async function loadGhcnStations(): Promise<GhcnStation[]> {
     }
   }
 
-  // Try cached even if stale (offline-safe), then refetch in next call
+  // Try cached even if stale (offline-safe), then refetch opportunistically
   const stale = await AsyncStorage.getItem(CACHE_KEY);
   if (stale && (!meta?.fetchedAtMs || now - meta.fetchedAtMs >= maxAgeMs)) {
-    // Return stale immediately, but attempt refresh opportunistically
     refreshStationsCache().catch(() => {});
     try {
       return JSON.parse(stale) as GhcnStation[];
@@ -136,8 +163,7 @@ export async function loadGhcnStations(): Promise<GhcnStation[]> {
     }
   }
 
-  // Hard fetch
-  const txt = await fetchStationsText();
+  const txt = await fetchStationsText(signal);
   const stations = parseStationsTxt(txt);
 
   await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(stations));
@@ -146,21 +172,20 @@ export async function loadGhcnStations(): Promise<GhcnStation[]> {
   return stations;
 }
 
-export async function refreshStationsCache() {
-  const txt = await fetchStationsText();
+export async function refreshStationsCache(signal?: AbortSignal) {
+  const txt = await fetchStationsText(signal);
   const stations = parseStationsTxt(txt);
 
   await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(stations));
   await setCacheMeta({ fetchedAtMs: Date.now() });
 }
 
-export async function findNearestGhcnStation(lat: number, lon: number, opts?: { limitToUS?: boolean }) {
-  const stations = await loadGhcnStations();
+export async function findNearestGhcnStation(lat: number, lon: number, opts?: { limitToUS?: boolean; signal?: AbortSignal }) {
+  const stations = await loadGhcnStations(opts?.signal);
 
   let best: { s: GhcnStation; km: number } | null = null;
 
   for (const s of stations) {
-    // Optional: rough US filter (IDs often start with "US")
     if (opts?.limitToUS && !s.id.startsWith('US')) continue;
 
     const km = haversineKm(lat, lon, s.lat, s.lon);
