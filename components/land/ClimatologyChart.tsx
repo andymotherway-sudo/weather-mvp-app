@@ -1,16 +1,7 @@
 // components/land/ClimatologyChart.tsx
-import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, {
-  Defs,
-  G,
-  Line,
-  LinearGradient,
-  Path,
-  Rect,
-  Stop,
-  Text as SvgText,
-} from 'react-native-svg';
+import React, { useMemo, useRef, useState } from 'react';
+import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import Svg, { Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 
 import { theme } from '../../styles/theme';
 import { Card } from '../layout/Card';
@@ -21,14 +12,14 @@ type SeriesKey = 'tminF' | 'tavgF' | 'tmaxF';
 
 type Props = {
   title?: string;
-  normals: MonthlyNormalsF[]; // ideally 12 entries (or partial)
+  normals: MonthlyNormalsF[];
   stationName?: string;
 
-  /** Optional selected day-of-year marker (1..365). If omitted, no marker is drawn. */
-  selectedDoy?: number;
-
-  /** Optional label displayed near the marker (e.g., "Today", "Feb 8"). */
+  selectedDoy?: number; // 1..365
   markerLabel?: string;
+
+  /** NEW: called when user scrubs the chart */
+  onSelectDoy?: (doy: number) => void;
 
   /** Optional monthly precip normals (inches), 12 entries month=1..12 */
   precipMonthlyIn?: Array<number | null>;
@@ -40,17 +31,14 @@ type Props = {
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
-
 function norm(v: number, min: number, max: number) {
   if (max === min) return 0.5;
   return (v - min) / (max - min);
 }
-
 function buildPath(points: { x: number; y: number }[]) {
   if (!points.length) return '';
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
 }
-
 function monthLabel(m: number) {
   return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'][clamp(m, 1, 12) - 1];
 }
@@ -65,29 +53,21 @@ function lerp(a: number, b: number, t: number) {
 }
 
 function fillMissing12(vals: Array<number | null>) {
-  // simple forward/back fill so interpolation doesn't collapse on partial data
   const out = vals.slice();
-  // forward fill
   let last: number | null = null;
   for (let i = 0; i < out.length; i++) {
     if (out[i] == null && last != null) out[i] = last;
     if (out[i] != null) last = out[i]!;
   }
-  // backward fill
   last = null;
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i] == null && last != null) out[i] = last;
     if (out[i] != null) last = out[i]!;
   }
-  // if still null (all missing) set to 0
   for (let i = 0; i < out.length; i++) if (out[i] == null) out[i] = 0;
   return out as number[];
 }
 
-/**
- * Build a smooth daily series (length 365) by interpolating between monthly midpoint anchors.
- * Uses circular wrap (Dec -> Jan).
- */
 function interpolateDailyFromMonthly(monthly12: number[]) {
   const anchors = monthly12;
   const daily = new Array<number>(365);
@@ -96,8 +76,7 @@ function interpolateDailyFromMonthly(monthly12: number[]) {
     let j = 0;
     const du = d <= MONTH_MID_DOY[0] ? d + 365 : d;
 
-    const midsU = MONTH_MID_DOY.map((x) => x);
-    const midsU2 = midsU.concat([MONTH_MID_DOY[0] + 365]);
+    const midsU2 = MONTH_MID_DOY.concat([MONTH_MID_DOY[0] + 365]);
 
     for (let k = 0; k < 12; k++) {
       const a = midsU2[k];
@@ -126,16 +105,33 @@ function numOrNull(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
+function fmtInches(v: number | null | undefined) {
+  if (v == null) return '—';
+  if (!Number.isFinite(v)) return '—';
+  if (v < 0.005) return '0.00"';
+  return `${v.toFixed(2)}"`;
+}
+
+function monthFromDoy(doy1: number) {
+  const d = clamp(doy1, 1, 365);
+  for (let i = 11; i >= 0; i--) {
+    if (d >= MONTH_START_DOY[i]) return i + 1; // 1..12
+  }
+  return 1;
+}
+
 export function ClimatologyChart({
   title = 'Almanac',
   normals,
   stationName,
   selectedDoy,
   markerLabel,
+  onSelectDoy,
   precipMonthlyIn,
   lastYear,
 }: Props) {
-  const [focus, setFocus] = useState<SeriesKey>('tavgF');
+  const [scrubDoy, setScrubDoy] = useState<number | null>(null);
+  const scrubbingRef = useRef(false);
 
   const W = 360;
   const H = 240;
@@ -152,17 +148,22 @@ export function ClimatologyChart({
     return PAD_L + (d / 364) * innerW;
   };
 
+  const doyForX = (x: number) => {
+    // x is local within the SVG/view box (0..W)
+    const clamped = clamp(x, PAD_L, PAD_L + innerW);
+    const t = (clamped - PAD_L) / innerW; // 0..1
+    return clamp(1 + Math.round(t * 364), 1, 365);
+  };
+
   const monthly = useMemo(() => {
     const byMonth = new Array<MonthlyNormalsF | null>(12).fill(null);
     for (const m of normals) {
       const idx = clamp((m.month ?? 1) - 1, 0, 11);
       byMonth[idx] = m;
     }
-
     const tmin12 = fillMissing12(byMonth.map((m) => (m?.tminF ?? null) as number | null));
     const tavg12 = fillMissing12(byMonth.map((m) => (m?.tavgF ?? null) as number | null));
     const tmax12 = fillMissing12(byMonth.map((m) => (m?.tmaxF ?? null) as number | null));
-
     return { tmin12, tavg12, tmax12 };
   }, [normals]);
 
@@ -177,7 +178,6 @@ export function ClimatologyChart({
     const arr: number[] = [];
     for (let i = 0; i < 365; i++) arr.push(daily.tmin[i], daily.tavg[i], daily.tmax[i]);
 
-    // Include last-year values in scale if present (prevents last-year from clipping).
     if (lastYear?.tminF?.length && lastYear?.tmaxF?.length) {
       const a = lastYear.tminF.slice(0, 365).map(numOrNull).filter((x): x is number => x != null);
       const b = lastYear.tmaxF.slice(0, 365).map(numOrNull).filter((x): x is number => x != null);
@@ -224,7 +224,6 @@ export function ClimatologyChart({
     return `${buildPath(pts)} Z`;
   }, [seriesPts.tmax, seriesPts.tmin]);
 
-  // --- NEW: precip "mountain" (monthly precip normals) ---
   const precipPath = useMemo(() => {
     if (!precipMonthlyIn || precipMonthlyIn.length < 12) return '';
 
@@ -232,10 +231,9 @@ export function ClimatologyChart({
     const max = Math.max(...vals);
     if (!Number.isFinite(max) || max <= 0) return '';
 
-    const baseY = PAD_T + innerH; // bottom of chart area
-    const peakH = 28; // height of mountain
+    const baseY = PAD_T + innerH;
+    const peakH = 28;
 
-    // Use month starts for x placement
     const pts = vals.map((v, i) => {
       const x = xForDoy(MONTH_START_DOY[i]);
       const h = (v / max) * peakH;
@@ -243,18 +241,14 @@ export function ClimatologyChart({
       return { x, y };
     });
 
-    // Construct filled area (left base -> peaks -> right base)
-    const d = [
+    return [
       `M ${PAD_L.toFixed(2)} ${baseY.toFixed(2)}`,
       ...pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`),
       `L ${(PAD_L + innerW).toFixed(2)} ${baseY.toFixed(2)}`,
       'Z',
     ].join(' ');
-
-    return d;
   }, [precipMonthlyIn, innerW, innerH]);
 
-  // --- NEW: last year overlay band (daily min/max) ---
   const lastYearBandPath = useMemo(() => {
     const lyMin = lastYear?.tminF;
     const lyMax = lastYear?.tmaxF;
@@ -287,14 +281,68 @@ export function ClimatologyChart({
     return buildPath(pts);
   };
 
-  const strokeFor = (k: SeriesKey) => {
-    if (k === 'tminF') return 'rgba(255,255,255,0.45)';
-    if (k === 'tmaxF') return 'rgba(255,255,255,0.70)';
-    return 'rgba(255,255,255,0.92)';
-  };
+  const activeDoy = scrubDoy ?? selectedDoy ?? null;
+  const markerX = activeDoy ? xForDoy(activeDoy) : null;
 
-  const markerX = selectedDoy ? xForDoy(selectedDoy) : null;
-  const markerText = markerLabel ?? (selectedDoy ? 'Today' : undefined);
+  const markerText = useMemo(() => {
+    if (!activeDoy) return undefined;
+    if (scrubDoy != null) return 'Selected';
+    return markerLabel ?? 'Today';
+  }, [activeDoy, scrubDoy, markerLabel]);
+
+  const detail = useMemo(() => {
+    if (!activeDoy) return null;
+    const idx = clamp(activeDoy, 1, 365) - 1;
+
+    const tmin = daily.tmin[idx];
+    const tavg = daily.tavg[idx];
+    const tmax = daily.tmax[idx];
+
+    const m = monthFromDoy(activeDoy);
+    const p = precipMonthlyIn && precipMonthlyIn.length >= 12 ? precipMonthlyIn[m - 1] : null;
+
+    return {
+      tmin,
+      tavg,
+      tmax,
+      precip: typeof p === 'number' ? p : null,
+      month: m,
+    };
+  }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn]);
+
+  const panResponder = useMemo(() => {
+    if (!onSelectDoy) return null;
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+
+      onPanResponderGrant: (evt) => {
+        scrubbingRef.current = true;
+        const x = evt.nativeEvent.locationX;
+        const doy = doyForX(x);
+        setScrubDoy(doy);
+        onSelectDoy(doy);
+      },
+
+      onPanResponderMove: (evt) => {
+        if (!scrubbingRef.current) return;
+        const x = evt.nativeEvent.locationX;
+        const doy = doyForX(x);
+        setScrubDoy(doy);
+        onSelectDoy(doy);
+      },
+
+      onPanResponderRelease: () => {
+        scrubbingRef.current = false;
+        setScrubDoy(null);
+      },
+      onPanResponderTerminate: () => {
+        scrubbingRef.current = false;
+        setScrubDoy(null);
+      },
+    });
+  }, [onSelectDoy]);
 
   return (
     <Card style={styles.card}>
@@ -304,132 +352,109 @@ export function ClimatologyChart({
           <Text style={styles.subTitle} numberOfLines={1}>
             {stationName ? `30-yr normals • ${stationName}` : '30-yr monthly normals (interpolated daily)'}
           </Text>
-        </View>
 
-        <View style={styles.pills}>
-          <Pill label="Min" active={focus === 'tminF'} onPress={() => setFocus('tminF')} />
-          <Pill label="Avg" active={focus === 'tavgF'} onPress={() => setFocus('tavgF')} />
-          <Pill label="Max" active={focus === 'tmaxF'} onPress={() => setFocus('tmaxF')} />
+          {/* NEW: single detail line */}
+          {detail ? (
+            <Text style={styles.detailLine} numberOfLines={1}>
+              Typical low: {Math.round(detail.tmin)}°   Avg: {Math.round(detail.tavg)}°   Typical high: {Math.round(detail.tmax)}°
+              {'   '}Avg precip: {fmtInches(detail.precip)}
+            </Text>
+          ) : null}
         </View>
       </View>
 
-      <Svg width={W} height={H}>
-        <Defs>
-          <LinearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="rgba(255,255,255,0.10)" />
-            <Stop offset="1" stopColor="rgba(255,255,255,0.03)" />
-          </LinearGradient>
+      {/* Wrap the SVG in a View that receives touches */}
+      <View {...(panResponder ? panResponder.panHandlers : {})}>
+        <Svg width={W} height={H}>
+          <Defs>
+            <LinearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="rgba(255,255,255,0.10)" />
+              <Stop offset="1" stopColor="rgba(255,255,255,0.03)" />
+            </LinearGradient>
 
-          {/* precip gradient */}
-          <LinearGradient id="precipGrad" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="rgba(160,220,255,0.18)" />
-            <Stop offset="1" stopColor="rgba(160,220,255,0.04)" />
-          </LinearGradient>
-        </Defs>
+            <LinearGradient id="precipGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="rgba(160,220,255,0.18)" />
+              <Stop offset="1" stopColor="rgba(160,220,255,0.04)" />
+            </LinearGradient>
+          </Defs>
 
-        <Rect x={0} y={0} width={W} height={H} rx={18} fill="rgba(255,255,255,0.02)" />
+          <Rect x={0} y={0} width={W} height={H} rx={18} fill="rgba(255,255,255,0.02)" />
 
-        {/* precip mountain behind everything (subtle) */}
-        {precipPath ? <Path d={precipPath} fill="url(#precipGrad)" /> : null}
+          {/* precip mountain behind everything (subtle) */}
+          {precipPath ? <Path d={precipPath} fill="url(#precipGrad)" /> : null}
 
-        {/* last year overlay band (behind normals band) */}
-        {lastYearBandPath ? (
-          <Path d={lastYearBandPath} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
-        ) : null}
+          {/* last year overlay band (behind normals band) */}
+          {lastYearBandPath ? (
+            <Path d={lastYearBandPath} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
+          ) : null}
 
-        {/* normals band */}
-        <Path d={bandPath} fill="url(#bandGrad)" />
+          {/* normals band */}
+          <Path d={bandPath} fill="url(#bandGrad)" />
 
-        {/* grid + ticks */}
-        {ticks.map((t, idx) => {
-          const y = yForVal(t);
-          return (
-            <G key={`tick-${idx}`}>
-              <Line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
-              <SvgText
-                x={PAD_L - 6}
-                y={y + 3}
-                fontSize="9"
-                fill="rgba(255,255,255,0.40)"
-                fontWeight="800"
-                textAnchor="end"
-              >
-                {Math.round(t)}
-              </SvgText>
+          {/* grid + ticks */}
+          {ticks.map((t, idx) => {
+            const y = yForVal(t);
+            return (
+              <G key={`tick-${idx}`}>
+                <Line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
+                <SvgText
+                  x={PAD_L - 6}
+                  y={y + 3}
+                  fontSize="9"
+                  fill="rgba(255,255,255,0.40)"
+                  fontWeight="800"
+                  textAnchor="end"
+                >
+                  {Math.round(t)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          {/* month labels */}
+          {MONTH_START_DOY.map((doy, i) => (
+            <SvgText
+              key={`ml-${i}`}
+              x={xForDoy(doy)}
+              y={PAD_T + innerH + 22}
+              fontSize="10"
+              fill="rgba(255,255,255,0.55)"
+              fontWeight="900"
+              textAnchor="middle"
+            >
+              {monthLabel(i + 1)}
+            </SvgText>
+          ))}
+
+          {/* series lines (all 3, with avg emphasized) */}
+          {(['tminF', 'tavgF', 'tmaxF'] as SeriesKey[]).map((k) => {
+            const d = pathFor(k);
+            const isFocus = k === 'tavgF';
+            const stroke =
+              k === 'tminF' ? 'rgba(255,255,255,0.45)' : k === 'tmaxF' ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.92)';
+            return (
+              <Path key={k} d={d} stroke={stroke} strokeWidth={isFocus ? 2.8 : 1.6} opacity={isFocus ? 1 : 0.55} fill="none" />
+            );
+          })}
+
+          {/* marker line */}
+          {markerX != null ? (
+            <G>
+              <Line x1={markerX} y1={PAD_T} x2={markerX} y2={PAD_T + innerH} stroke="rgba(160,220,255,0.35)" strokeWidth={1.5} />
+              {markerText ? (
+                <SvgText x={markerX + 6} y={PAD_T + 12} fontSize="10" fill="rgba(160,220,255,0.75)" fontWeight="900" textAnchor="start">
+                  {markerText}
+                </SvgText>
+              ) : null}
             </G>
-          );
-        })}
-
-        {/* month labels */}
-        {MONTH_START_DOY.map((doy, i) => (
-          <SvgText
-            key={`ml-${i}`}
-            x={xForDoy(doy)}
-            y={PAD_T + innerH + 22}
-            fontSize="10"
-            fill="rgba(255,255,255,0.55)"
-            fontWeight="900"
-            textAnchor="middle"
-          >
-            {monthLabel(i + 1)}
-          </SvgText>
-        ))}
-
-        {/* series lines */}
-        {(['tminF', 'tavgF', 'tmaxF'] as SeriesKey[]).map((k) => {
-          const d = pathFor(k);
-          const isFocus = focus === k;
-          return (
-            <Path
-              key={k}
-              d={d}
-              stroke={strokeFor(k)}
-              strokeWidth={isFocus ? 2.8 : 1.6}
-              opacity={isFocus ? 1 : 0.55}
-              fill="none"
-            />
-          );
-        })}
-
-        {/* marker line */}
-        {markerX != null ? (
-          <G>
-            <Line
-              x1={markerX}
-              y1={PAD_T}
-              x2={markerX}
-              y2={PAD_T + innerH}
-              stroke="rgba(160,220,255,0.35)"
-              strokeWidth={1.5}
-            />
-            {markerText ? (
-              <SvgText
-                x={markerX + 6}
-                y={PAD_T + 12}
-                fontSize="10"
-                fill="rgba(160,220,255,0.75)"
-                fontWeight="900"
-                textAnchor="start"
-              >
-                {markerText}
-              </SvgText>
-            ) : null}
-          </G>
-        ) : null}
-      </Svg>
+          ) : null}
+        </Svg>
+      </View>
 
       <Text style={styles.footer}>
-        Tip: normals are a smooth “season curve” (monthly → daily). Precip + last year show when available.
+        Tip: drag on the chart to scrub days. Precip is monthly normal for the selected day’s month.
       </Text>
     </Card>
-  );
-}
-
-function Pill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}>
-      <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -439,21 +464,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 15, fontWeight: '900', color: theme.colors.textPrimary },
   subTitle: { marginTop: 2, fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '700' },
 
-  pills: { flexDirection: 'row', gap: 8 },
-  pill: {
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  detailLine: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.82)',
   },
-  pillActive: {
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  pillText: { fontSize: 12, fontWeight: '900', color: 'rgba(255,255,255,0.75)' },
-  pillTextActive: { color: 'white' },
 
   footer: { marginTop: 8, fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '700' },
 });

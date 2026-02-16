@@ -42,6 +42,16 @@ const GOES_XRAY_7D_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays
 const GOES_PROTONS_6H_URL =
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-6-hour.json';
 
+// ---------- Worker base (NASA DONKI / APOD / NCEI secrets live here) ----------
+
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 // ---------- Shared helpers ----------
 
 async function fetchJsonArray(url: string, label: string): Promise<any[]> {
@@ -165,7 +175,7 @@ async function loadMagWithFallbacks(): Promise<MagData> {
       const rows = table.slice(1);
       if (!rows.length) throw new Error('Mag response had no data rows');
 
-      // Header (confirmed): ["time_tag","bx_gsm","by_gsm","bz_gsm","lon_gsm","lat_gsm","bt"]
+      // Header: ["time_tag","bx_gsm","by_gsm","bz_gsm","lon_gsm","lat_gsm","bt"]
       const lastRow = rows[rows.length - 1] as any[];
       const timeRaw = String(lastRow[0] ?? '');
       const bz = parseFloat(String(lastRow[3] ?? ''));
@@ -325,12 +335,12 @@ async function fetchStrongestXray7d(): Promise<{ timeTag?: string; fluxWm2: numb
 type GoesProtonRow = {
   time_tag?: string;
   energy?: string; // ">=10 MeV"
-  flux?: number;   // pfu
+  flux?: number; // pfu
   satellite?: number;
 };
 
 function pfuToSScale(pfu10: number | null): ProtonNow['sScale'] | undefined {
-  // NOAA S-scale uses >=10 MeV flux in pfu thresholds (10, 100, 1000, 10000, 100000)
+  // NOAA S-scale uses >=10 MeV flux thresholds (10, 100, 1000, 10000, 100000)
   if (pfu10 == null || !Number.isFinite(pfu10)) return undefined;
   if (pfu10 < 10) return undefined;
   if (pfu10 < 100) return 'S1';
@@ -377,7 +387,6 @@ async function fetchMaxKp24h(): Promise<number | null> {
       if (!timeRaw || Number.isNaN(kp)) continue;
 
       const t = new Date(timeRaw).getTime();
-      // Observed Kp feed timestamps tend to be ISO-ish already; if parse fails, skip
       if (Number.isNaN(t)) continue;
       if (t < cutoff) continue;
 
@@ -392,7 +401,6 @@ async function fetchMaxKp24h(): Promise<number | null> {
 }
 
 async function fetchMaxWindSpeed24h(): Promise<number | null> {
-  // Use same plasma sources; scan last 24h if possible
   const urls = [PLASMA_PRIMARY, ...PLASMA_FALLBACKS];
 
   for (const url of urls) {
@@ -417,10 +425,7 @@ async function fetchMaxWindSpeed24h(): Promise<number | null> {
         if (max == null || speed > max) max = speed;
       }
 
-      // If we found anything within cutoff, return it
       if (max != null) return max;
-
-      // Otherwise try next URL
     } catch (e) {
       console.warn('[spaceweather] maxWindSpeed24h source failed', url, e);
     }
@@ -436,27 +441,11 @@ async function fetchFastestCme30d(): Promise<{ startTime?: string; speedKms: num
   const startDate = isoDate(start);
   const endDate = isoDate(end);
 
-  const apiKey =
-    (process.env.EXPO_PUBLIC_NASA_API_KEY as string | undefined) ??
-    (process.env.NASA_API_KEY as string | undefined) ??
-    'DEMO_KEY';
+  // ✅ Use Worker proxy (NASA key is private server-side)
+  const url = apiUrl(`/api/nasa/donki/CME?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 
-  const base = 'https://api.nasa.gov/DONKI';
-  const qs = `startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(
-    endDate
-  )}&api_key=${encodeURIComponent(apiKey)}`;
-
-  const url = `${base}/CME?${qs}`;
-
-  type DonkiCmeAnalysis = {
-    isMostAccurate?: boolean;
-    speed?: number;
-  };
-  type DonkiCme = {
-    cmeID: string;
-    startTime: string;
-    cmeAnalyses?: DonkiCmeAnalysis[];
-  };
+  type DonkiCmeAnalysis = { isMostAccurate?: boolean; speed?: number };
+  type DonkiCme = { cmeID: string; startTime: string; cmeAnalyses?: DonkiCmeAnalysis[] };
 
   try {
     const cmes = await fetchDonkiJson<DonkiCme[]>(url);
@@ -545,7 +534,7 @@ export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
 }
 
 // =============================
-// DONKI events (unchanged)
+// DONKI events (NOW via Worker)
 // =============================
 
 type DonkiFlr = {
@@ -630,21 +619,12 @@ export async function fetchSpaceWeatherEvents(days = 7): Promise<SpaceWeatherEve
   const startDate = isoDate(start);
   const endDate = isoDate(end);
 
-  const apiKey =
-    (process.env.EXPO_PUBLIC_NASA_API_KEY as string | undefined) ??
-    (process.env.NASA_API_KEY as string | undefined) ??
-    'DEMO_KEY';
-
-  const base = 'https://api.nasa.gov/DONKI';
-  const qs = `startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(
-    endDate
-  )}&api_key=${encodeURIComponent(apiKey)}`;
-
+  // ✅ Use Worker proxy routes (no client-side NASA key)
   const urls = {
-    FLR: `${base}/FLR?${qs}`,
-    CME: `${base}/CME?${qs}`,
-    SEP: `${base}/SEP?${qs}`,
-    GST: `${base}/GST?${qs}`,
+    FLR: apiUrl(`/api/nasa/donki/FLR?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    CME: apiUrl(`/api/nasa/donki/CME?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    SEP: apiUrl(`/api/nasa/donki/SEP?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
+    GST: apiUrl(`/api/nasa/donki/GST?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
   };
 
   const [flrRes, cmeRes, sepRes, gstRes] = await Promise.allSettled([

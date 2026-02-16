@@ -1,10 +1,26 @@
 // app/lib/almanac/resolveRecordStation.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { noaaSchedule } from '../noaa/noaaRateLimiter';
 
-const KEY_PREFIX = 'omniwx:record-station:v3';
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+const KEY_PREFIX = 'omniwx:record-station:v7'; // ✅ bump because transport changed (Worker proxy)
 
 // flip off when stable
 const DEBUG_STATION = true;
+
+// Request policy (mobile-safe)
+const STATION_REQ_TIMEOUT_MS = 20_000;
+
+// Policy knobs
+const RECENT_DAYS = 365 * 2; // must have data in last 2 years
 
 export type RecordStationResolved = {
   id: string; // "GHCND:USW00023183"
@@ -37,14 +53,22 @@ function toIsoDate(v: any): string | undefined {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : undefined;
 }
 
+/** ✅ Local YYYY-MM-DD (avoids UTC rolling into "tomorrow" at night) */
+function localYmd(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+  return localYmd();
 }
 
 function daysAgoIso(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return localYmd(d);
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -95,18 +119,106 @@ function parseCandidate(raw: any, lat: number, lon: number): Candidate | null {
 
 function isRecentEnough(maxdate?: string, recentCutoffIso?: string) {
   if (!maxdate || !recentCutoffIso) return false;
-  // ISO strings compare lexicographically for YYYY-MM-DD
-  return maxdate >= recentCutoffIso;
+  return maxdate >= recentCutoffIso; // ISO YYYY-MM-DD compares lexicographically
 }
 
-export async function resolveRecordStation(lat: number, lon: number, token: string): Promise<RecordStationResolved> {
+function parseRetryAfterSeconds(retryAfter: string | null): number | null {
+  if (!retryAfter) return null;
+  const s = retryAfter.trim();
+
+  const n = Number(s);
+  if (Number.isFinite(n) && n >= 0) return Math.min(30, n);
+
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return null;
+
+  const deltaSec = Math.ceil((ms - Date.now()) / 1000);
+  if (!Number.isFinite(deltaSec)) return null;
+  return Math.max(0, Math.min(30, deltaSec));
+}
+
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label = 'Request timed out') {
+  let t: any;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
+function makeAbortError() {
+  const e: any = new Error('Aborted');
+  e.name = 'AbortError';
+  return e;
+}
+
+function isAbortError(err: any) {
+  return (
+    err?.name === 'AbortError' ||
+    err?.code === 20 ||
+    (typeof err?.message === 'string' && err.message.toLowerCase().includes('abort'))
+  );
+}
+
+async function fetchJsonScheduled(url: string, signal?: AbortSignal) {
+  if (signal?.aborted) throw makeAbortError();
+
+  const res = await noaaSchedule(() =>
+    withTimeout(fetch(url, { signal }), STATION_REQ_TIMEOUT_MS, 'Station lookup timed out')
+  );
+
+  if (signal?.aborted) throw makeAbortError();
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err: any = new Error(`Station lookup failed (${res.status})${body ? `: ${body.slice(0, 160)}` : ''}`);
+    err.status = res.status;
+    if (res.status === 429) {
+      err.retryAfterSec = parseRetryAfterSeconds(res.headers?.get?.('retry-after') ?? null);
+    }
+    throw err;
+  }
+
+  return res.json();
+}
+
+function buildStationsUrl(opts: { extentDeg: number; lat: number; lon: number; enddate: string }) {
+  const { extentDeg, lat, lon, enddate } = opts;
+  const south = lat - extentDeg;
+  const west = lon - extentDeg;
+  const north = lat + extentDeg;
+  const east = lon + extentDeg;
+
+  // Via Worker proxy
+  const u = new URL(apiUrl('/api/ncei/stations'));
+  u.searchParams.set('datasetid', 'GHCND');
+  u.searchParams.append('datatypeid', 'TMAX');
+  u.searchParams.append('datatypeid', 'TMIN');
+  u.searchParams.append('datatypeid', 'PRCP');
+  u.searchParams.set('extent', `${south},${west},${north},${east}`);
+  u.searchParams.set('startdate', '1950-01-01');
+  u.searchParams.set('enddate', enddate); // already local YYYY-MM-DD
+  u.searchParams.set('limit', '1000');
+  u.searchParams.set('sortfield', 'datacoverage');
+  u.searchParams.set('sortorder', 'desc');
+
+  return u.toString();
+}
+
+export async function resolveRecordStation(
+  lat: number,
+  lon: number,
+  signal?: AbortSignal
+): Promise<RecordStationResolved> {
   const cacheKey = `${KEY_PREFIX}:${lat.toFixed(3)},${lon.toFixed(3)}`;
 
-  // Policy knobs
-  const RECENT_DAYS = 365 * 2; // must have data in last 2 years
   const recentCutoff = daysAgoIso(RECENT_DAYS);
+  const enddate = isoToday(); // ✅ local date
 
-  // ---- cache ----
+  // ---- cache (only accept if recent) ----
   const cached = await AsyncStorage.getItem(cacheKey);
   if (cached) {
     try {
@@ -120,126 +232,144 @@ export async function resolveRecordStation(lat: number, lon: number, token: stri
           datacoverage: typeof parsed.datacoverage === 'number' ? parsed.datacoverage : undefined,
         };
 
-        // ✅ reject cached stations that are not recent enough (prevents "Tempe Bridge" poison)
         if (isRecentEnough(resolved.maxdate, recentCutoff)) {
           if (DEBUG_STATION) console.log('[records] station cache hit', { cacheKey, resolved, recentCutoff });
           return resolved;
-        } else {
-          if (DEBUG_STATION) console.log('[records] station cache rejected (stale)', { cacheKey, resolved, recentCutoff });
         }
-      }
-      if (typeof parsed === 'string') {
-        // Old shape: we can’t validate recency, so ignore it
-        if (DEBUG_STATION) console.log('[records] station cache ignored (old shape string)', { cacheKey });
+
+        if (DEBUG_STATION) console.log('[records] station cache rejected (stale)', { cacheKey, resolved, recentCutoff });
       }
     } catch {
       if (DEBUG_STATION) console.log('[records] station cache parse failed', { cacheKey });
     }
   }
 
-  // Search box (you can widen this if you want more candidates)
-  const south = lat - 0.75;
-  const west = lon - 0.75;
-  const north = lat + 0.75;
-  const east = lon + 0.75;
+  // Expanding search extents (degrees)
+  const EXTENTS = [0.75, 1.5, 3.0];
 
-  // IMPORTANT:
-  // - Add datatypeid filters so we don’t pick stations missing TMAX/TMIN/PRCP entirely.
-  // - Use enddate=today so NOAA filters/coverage considers modern period.
-  const url =
-    `https://www.ncei.noaa.gov/cdo-web/api/v2/stations` +
-    `?datasetid=GHCND` +
-    `&datatypeid=TMAX&datatypeid=TMIN&datatypeid=PRCP` +
-    `&extent=${south},${west},${north},${east}` +
-    `&startdate=1950-01-01` +
-    `&enddate=${encodeURIComponent(isoToday())}` +
-    `&limit=100` +
-    `&sortfield=datacoverage` +
-    `&sortorder=desc`;
+  // 429-aware retry (modest; scheduler does most of the work)
+  const retryBackoff = [900, 1800];
 
-  if (DEBUG_STATION) console.log('[records] station lookup', { url, recentCutoff });
+  let lastErr: any = null;
 
-  const res = await fetch(url, { headers: { token } });
-  if (!res.ok) {
-    let body = '';
-    try {
-      body = await res.text();
-    } catch {}
-    console.error('[records] station lookup HTTP error', res.status, body);
-    throw new Error(`Station lookup failed (${res.status})`);
+  for (const extentDeg of EXTENTS) {
+    if (signal?.aborted) throw makeAbortError();
+
+    const url = buildStationsUrl({ extentDeg, lat, lon, enddate });
+    if (DEBUG_STATION) console.log('[records] station lookup', { extentDeg, url, recentCutoff });
+
+    for (let attempt = 0; attempt <= retryBackoff.length; attempt++) {
+      if (signal?.aborted) throw makeAbortError();
+
+      try {
+        const json = await fetchJsonScheduled(url, signal);
+
+        const results: any[] = json?.results ?? [];
+        if (!results.length) {
+          if (DEBUG_STATION) console.log('[records] no stations returned', { extentDeg });
+          break;
+        }
+
+        const candidates: Candidate[] = results
+          .map((r) => parseCandidate(r, lat, lon))
+          .filter((x): x is Candidate => !!x);
+
+        const recent = candidates.filter((c) => !!c.maxdate && isRecentEnough(c.maxdate, recentCutoff));
+
+        if (!recent.length) {
+          if (DEBUG_STATION) {
+            console.log('[records] no recent stations in extent', {
+              extentDeg,
+              total: candidates.length,
+              sampleMaxdates: candidates.slice(0, 8).map((c) => c.maxdate ?? null),
+              recentCutoff,
+            });
+          }
+          break;
+        }
+
+        const scored = recent.map((c) => {
+          const dc = c.datacoverage ?? 0;
+          const minY = yearFromIso(c.mindate) ?? 9999;
+          const longRecordBonus = minY <= 1950 ? 1 : minY <= 1970 ? 0.7 : minY <= 1990 ? 0.4 : 0;
+          const dist = c.distanceKm ?? 9999;
+          const distPenalty = Math.min(1, dist / 60);
+
+          const score = dc * 3 + longRecordBonus * 1.5 - distPenalty * 0.75;
+          return { ...c, score };
+        });
+
+        scored.sort((a, b) => (b.score ?? -999) - (a.score ?? -999));
+
+        if (DEBUG_STATION) {
+          console.log('[records] station candidates (top 10)', {
+            extentDeg,
+            recentCutoff,
+            total: candidates.length,
+            recent: recent.length,
+            top: scored.slice(0, 10).map((c) => ({
+              id: c.id,
+              name: c.name,
+              mindate: c.mindate,
+              maxdate: c.maxdate,
+              datacoverage: c.datacoverage,
+              distanceKm: c.distanceKm != null ? Math.round(c.distanceKm * 10) / 10 : null,
+              score: c.score != null ? Math.round(c.score * 1000) / 1000 : null,
+            })),
+          });
+        }
+
+        const best = scored[0];
+        if (!best) throw new Error('No suitable recent GHCND station found after scoring');
+
+        const resolved: RecordStationResolved = {
+          id: best.id,
+          name: best.name,
+          mindate: best.mindate,
+          maxdate: best.maxdate,
+          datacoverage: best.datacoverage,
+        };
+
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(resolved));
+        if (DEBUG_STATION) console.log('[records] station resolved (final)', { extentDeg, resolved });
+
+        return resolved;
+      } catch (e: any) {
+        if (isAbortError(e) || signal?.aborted) throw makeAbortError();
+
+        lastErr = e;
+
+        const status = Number(e?.status);
+        const is429 = status === 429 || (typeof e?.message === 'string' && e.message.includes('(429)'));
+
+        if (!is429 || attempt === retryBackoff.length) {
+          if (DEBUG_STATION) {
+            console.log('[records] station lookup error', {
+              extentDeg,
+              status: status || null,
+              msg: e?.message,
+            });
+          }
+          break;
+        }
+
+        const ra = e?.retryAfterSec;
+        if (typeof ra === 'number' && Number.isFinite(ra)) {
+          if (DEBUG_STATION) console.log('[records] station lookup 429 retry-after', { extentDeg, ra });
+          await sleep(ra * 1000);
+        } else {
+          const d = retryBackoff[attempt];
+          if (DEBUG_STATION) console.log('[records] station lookup 429 backoff', { extentDeg, delayMs: d });
+          await sleep(d);
+        }
+      }
+    }
   }
 
-  const json = await res.json();
-  const results: any[] = json?.results ?? [];
-  if (!results.length) throw new Error('No suitable GHCND station found');
-
-  // Parse + score
-  const candidates: Candidate[] = results
-    .map((r) => parseCandidate(r, lat, lon))
-    .filter((x): x is Candidate => !!x);
-
-  // Filter to stations with recent data
-  const recent = candidates.filter((c) => isRecentEnough(c.maxdate, recentCutoff));
-
-  // If none are recent, fall back to best candidate (but log loudly)
-  const pool = recent.length ? recent : candidates;
-
-  // Score:
-  // - Prefer high datacoverage
-  // - Prefer older mindate (longer record)
-  // - Prefer closer stations (soft)
-  const scored = pool.map((c) => {
-    const dc = c.datacoverage ?? 0;
-    const minY = yearFromIso(c.mindate) ?? 9999;
-    const longRecordBonus = minY <= 1950 ? 1 : minY <= 1970 ? 0.7 : minY <= 1990 ? 0.4 : 0;
-    const dist = c.distanceKm ?? 9999;
-    const distPenalty = Math.min(1, dist / 50); // 0..1 over ~50km
-
-    // higher is better
-    const score = dc * 3 + longRecordBonus * 1.5 - distPenalty * 0.75;
-
-    return { ...c, score };
-  });
-
-  scored.sort((a, b) => (b.score ?? -999) - (a.score ?? -999));
-
-  if (DEBUG_STATION) {
-    console.log('[records] station candidates (top 10)', {
-      recentCutoff,
-      total: candidates.length,
-      recent: recent.length,
-      top: scored.slice(0, 10).map((c) => ({
-        id: c.id,
-        name: c.name,
-        mindate: c.mindate,
-        maxdate: c.maxdate,
-        datacoverage: c.datacoverage,
-        distanceKm: c.distanceKm != null ? Math.round(c.distanceKm * 10) / 10 : null,
-        score: c.score != null ? Math.round(c.score * 1000) / 1000 : null,
-      })),
-    });
-  }
-
-  const best = scored[0];
-  if (!best) throw new Error('No suitable GHCND station found after filtering');
-
-  // If we had to fall back to non-recent pool, throw a clearer error
-  if (!recent.length) {
-    console.warn('[records] no recent stations found in extent; falling back to best non-recent candidate', {
-      best: { id: best.id, name: best.name, mindate: best.mindate, maxdate: best.maxdate, datacoverage: best.datacoverage },
-    });
-  }
-
-  const resolved: RecordStationResolved = {
-    id: best.id,
-    name: best.name,
-    mindate: best.mindate,
-    maxdate: best.maxdate,
-    datacoverage: best.datacoverage,
-  };
-
-  await AsyncStorage.setItem(cacheKey, JSON.stringify(resolved));
-  if (DEBUG_STATION) console.log('[records] station resolved (final)', { resolved });
-
-  return resolved;
+  throw (
+    lastErr ??
+    new Error(
+      `No RECENT GHCND station found near this location (needs data since ${recentCutoff}). Try again later or expand search.`
+    )
+  );
 }

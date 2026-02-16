@@ -4,71 +4,93 @@ import type { MonthlyNormalsF } from './types';
 import { ClimoError } from './types';
 
 /**
- * Monthly normals (temperature) from NORMAL_MLY.
- * Datatypes used:
- * - MLY-TAVG-NORMAL
- * - MLY-TMIN-NORMAL
- * - MLY-TMAX-NORMAL
- *
- * Values returned are in tenths of °F (divide by 10). :contentReference[oaicite:2]{index=2}
- *
- * Requires NOAA token. :contentReference[oaicite:3]{index=3}
+ * Monthly normals (temperature) from NORMAL_MLY (CDO API).
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
  */
 export async function fetchMonthlyTempNormalsF(
   stationId: string,
   token?: string,
   signal?: AbortSignal
 ): Promise<MonthlyNormalsF[]> {
-  if (!token) throw new ClimoError('NO_TOKEN', 'NOAA token is required for normals fetch.');
-
-  // NORMAL_MLY requires startdate/enddate in the request.
-  // A common pattern: use a single year window; the dataset returns monthly normals.
-  // We use 2010 as a harmless placeholder year.
   const startdate = '2010-01-01';
   const enddate = '2010-12-31';
 
-  const json = await nceiData(
+  const tavg = await nceiData(
     {
       datasetid: 'NORMAL_MLY',
       stationid: stationId,
       startdate,
       enddate,
+      datatypeid: 'MLY-TAVG-NORMAL',
+      units: 'standard',
       limit: 1000,
-      // Multiple datatypeid entries are allowed (repeat param)
-      // Our URL builder sets single values, so we’ll inline manually below if needed.
+    },
+    token,
+    signal
+  );
+  const tmin = await nceiData(
+    {
+      datasetid: 'NORMAL_MLY',
+      stationid: stationId,
+      startdate,
+      enddate,
+      datatypeid: 'MLY-TMIN-NORMAL',
+      units: 'standard',
+      limit: 1000,
+    },
+    token,
+    signal
+  );
+  const tmax = await nceiData(
+    {
+      datasetid: 'NORMAL_MLY',
+      stationid: stationId,
+      startdate,
+      enddate,
+      datatypeid: 'MLY-TMAX-NORMAL',
+      units: 'standard',
+      limit: 1000,
     },
     token,
     signal
   );
 
-  // If your NCEI instance doesn’t accept repeating datatypeid through our builder,
-  // re-request using manual URL build. Safer approach: do 3 calls.
-  // We'll do 3 calls (still fast + simple).
+  const rows = new MonthsGrid();
 
-  const [tavg, tmin, tmax] = await Promise.all([
-    nceiData(
-      { datasetid: 'NORMAL_MLY', stationid: stationId, startdate, enddate, datatypeid: 'MLY-TAVG-NORMAL', limit: 1000 },
-      token,
-      signal
-    ),
-    nceiData(
-      { datasetid: 'NORMAL_MLY', stationid: stationId, startdate, enddate, datatypeid: 'MLY-TMIN-NORMAL', limit: 1000 },
-      token,
-      signal
-    ),
-    nceiData(
-      { datasetid: 'NORMAL_MLY', stationid: stationId, startdate, enddate, datatypeid: 'MLY-TMAX-NORMAL', limit: 1000 },
-      token,
-      signal
-    ),
-  ]);
+  function normUnits(u: any): string {
+    return String(u ?? '').trim().toLowerCase();
+  }
 
-  const rows = new suggestsMonths();
+  function unitHintFromPayload(payload: any): string {
+    return normUnits(payload?.metadata?.units || payload?.units || payload?.results?.[0]?.units);
+  }
+
+  function normalizeTempToF(valueRaw: number, unitsHint: string): number {
+    const u = normUnits(unitsHint);
+
+    let v = valueRaw;
+    if (u.includes('tenth') || u.includes('tenths')) v = v / 10;
+
+    if (u.includes('c') || u.includes('celsius') || u.includes('degc') || u.includes('°c')) {
+      return (v * 9) / 5 + 32;
+    }
+
+    if (u.includes('f') || u.includes('fahrenheit') || u.includes('degf') || u.includes('°f')) {
+      return v;
+    }
+
+    if (Math.abs(valueRaw) > 150) {
+      return valueRaw / 10;
+    }
+
+    return valueRaw;
+  }
 
   function ingest(payload: any, kind: 'tavg' | 'tmin' | 'tmax') {
     const res = (payload?.results ?? []) as any[];
+    const payloadUnits = unitHintFromPayload(payload);
+
     for (const r of res) {
-      // r.date often looks like "2010-01-01T00:00:00"
       const dateStr = String(r.date ?? '');
       const m = parseMonthFromDate(dateStr);
       if (!m) continue;
@@ -76,8 +98,8 @@ export async function fetchMonthlyTempNormalsF(
       const v = Number(r.value);
       if (!Number.isFinite(v)) continue;
 
-      // tenths of °F -> °F
-      const f = v / 10;
+      const rowUnits = normUnits(r.units) || payloadUnits;
+      const f = normalizeTempToF(v, rowUnits);
 
       rows.set(kind, m, f);
     }
@@ -103,15 +125,63 @@ export async function fetchMonthlyTempNormalsF(
   return out;
 }
 
+/**
+ * Monthly precip normals (inches) from NORMAL_MLY (CDO API).
+ * ✅ Worker-proxied: token is optional (Worker holds the token).
+ */
+export async function fetchMonthlyPrecipNormalsIn(
+  stationId: string,
+  token?: string,
+  signal?: AbortSignal
+): Promise<Array<number | null>> {
+  const startdate = '2010-01-01';
+  const enddate = '2010-12-31';
+
+  const prcp = await nceiData(
+    {
+      datasetid: 'NORMAL_MLY',
+      stationid: stationId,
+      startdate,
+      enddate,
+      datatypeid: 'MLY-PRCP-NORMAL',
+      units: 'standard',
+      limit: 1000,
+    },
+    token,
+    signal
+  );
+
+  const out: Array<number | null> = Array.from({ length: 12 }, () => null);
+
+  const res = (prcp?.results ?? []) as any[];
+  for (const r of res) {
+    const dateStr = String(r.date ?? '');
+    const m = parseMonthFromDate(dateStr);
+    if (!m) continue;
+
+    const v = Number(r.value);
+    if (!Number.isFinite(v)) continue;
+
+    const inches = v / 10;
+    if (inches < 0) continue;
+
+    out[m - 1] = inches;
+  }
+
+  const any = out.some((x) => x != null);
+  if (!any) throw new ClimoError('NO_DATA', 'No precip normals returned by NOAA for this station.', { stationId });
+
+  return out;
+}
+
 function parseMonthFromDate(dateStr: string): number | null {
-  // "2010-01-01T00:00:00" -> 01
   if (!dateStr || dateStr.length < 7) return null;
   const m = Number(dateStr.slice(5, 7));
   if (!Number.isFinite(m) || m < 1 || m > 12) return null;
   return m;
 }
 
-class suggestsMonths {
+class MonthsGrid {
   private map = new Map<string, number>();
   set(kind: 'tavg' | 'tmin' | 'tmax', month: number, value: number) {
     this.map.set(`${kind}:${month}`, value);

@@ -1,5 +1,7 @@
 // app/(tabs)/index.tsx
 // Land Wx – Rich + Nerdy (Branded + Alpha polish)
+// ✅ Drop-in replacement: bigger Omni logo, remove "Land Wx", embed 72h hourly chart on Land,
+// ✅ keep /hourly route as “Full” fallback, and normalize pressure for hourly series.
 
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -43,6 +45,10 @@ import { AlertBanner } from '../../components/alerts/AlertBanner';
 import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
 
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
+import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
+
+// ✅ Animated background (Skia)
+import { AnimatedWeatherBackground, type WeatherScene } from '../../components/background/AnimatedWeatherBackground';
 
 // ✅ Wx Lab toggle replaces Simple/Nerdy mode
 import { useWxLab } from '../context/WxLabContext';
@@ -100,6 +106,10 @@ function formatUpdatedTime(observationTime: string | null) {
   const d = new Date(observationTime);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function clamp01(x: number) {
+  return Math.max(0, Math.min(1, x));
 }
 
 function LocationPickerModal({
@@ -351,10 +361,7 @@ function SimpleSummary({
 }) {
   const hasMoisture = dewpointF != null || humidityPct != null;
   const hasWind = !hideWind && (windMph != null || gustMph != null || windDirDeg != null);
-  const hasSky = cloudCoverPct != null || uvIndex != null;
   const hasPrecipVis = precipChancePct != null || visibilityMi != null || pressureHpa != null;
-
-  const showUv = uvIndex != null && uvIndex > 0;
 
   const dirToCompassLocal = (deg: number | null) => {
     if (deg == null) return null;
@@ -364,7 +371,6 @@ function SimpleSummary({
   };
 
   const windDirText = windDirDeg != null ? `${dirToCompassLocal(windDirDeg) ?? ''}`.trim() : '—';
-
   const fmt0 = (v: number | null, suffix = '') => (v == null ? '—' : `${Math.round(v)}${suffix}`);
   const fmt1 = (v: number | null, suffix = '') => (v == null ? '—' : `${v.toFixed(1)}${suffix}`);
 
@@ -520,7 +526,7 @@ function NerdyDeepDive({
   precipChancePct,
   visibilityMi,
   pressureHpa,
-  pressureInHg, 
+  pressureInHg,
 
   feelsDriverLabel,
   feelsDriverValue,
@@ -718,6 +724,7 @@ function NerdyDeepDive({
           </View>
         </View>
       </SectionCard>
+
       {/* SKY */}
       {(() => {
         const hasSky = cloudCoverPct != null || uvIndex != null;
@@ -854,18 +861,18 @@ const nd = StyleSheet.create({
   grid3: { flexDirection: 'row', gap: 8 },
 
   mutedLine: {
-  color: 'rgba(255,255,255,0.55)',
-  fontWeight: '700',
-  fontSize: 12,
-  lineHeight: 16,
-},
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 16,
+  },
 });
 
 export default function LandWeatherScreen() {
   // ✅ WxLab context drives "simple vs nerdy"
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
-  
+
   const placeCtx = usePlace() as any;
 
   const placeSetActive =
@@ -953,9 +960,8 @@ export default function LandWeatherScreen() {
     return `${DEFAULT_LOCATION.name}${DEFAULT_LOCATION.region ? `, ${DEFAULT_LOCATION.region}` : ''}`;
   }, [activeCoords, activeLabel]);
 
-    // ✅ Keep PlaceContext synced with whatever Land is currently showing
+  // ✅ Keep PlaceContext synced with whatever Land is currently showing
   useEffect(() => {
-    // Only push when you have a real activeCoords (not the DEFAULT fallback)
     if (!activeCoords) return;
     pushPlaceToContext(activeLabel, activeCoords.lat, activeCoords.lon);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1016,7 +1022,11 @@ export default function LandWeatherScreen() {
   const gustMph = safeNum(wx.windGustMph ?? wx.wind_gust_mph ?? wx.windGust ?? wx.gust);
   const windDirDeg = safeNum(wx.windDirection ?? wx.wind_dir ?? wx.wind_direction);
 
-   const popFromHourly = (() => {
+  const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover);
+  const visibilityMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
+  const uvIndex = safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv);
+
+  const popFromHourly = (() => {
     const hrs: any[] = forecastData?.hourly ?? [];
     if (!hrs.length) return null;
 
@@ -1034,25 +1044,32 @@ export default function LandWeatherScreen() {
       }
     }
 
-    return safeNum(
-      best?.precipitation_probability ??
-        best?.precipProbPct ??
-        best?.precipChancePct ??
-        best?.pop
-    );
+    return safeNum(best?.precipitation_probability ?? best?.precipProbPct ?? best?.precipChancePct ?? best?.pop);
   })();
-  const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover);
-  const popTodayPeak = safeNum(forecastData?.daily?.[0]?.precipProbMaxPct);
-  const popFromCurrent = safeNum(
-  wx.precipChancePct ?? wx.precip_probability ?? wx.precipProb ?? wx.pop
-);
 
-const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
+  const popTodayPeak = safeNum(forecastData?.daily?.[0]?.precipProbMaxPct);
+  const popFromCurrent = safeNum(wx.precipChancePct ?? wx.precip_probability ?? wx.precipProb ?? wx.pop);
+  const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
 
   const pressureHpa = safeNum(wx.pressureHpa ?? wx.pressure_hpa ?? wx.pressure);
-  const pressureInHg =  safeNum(wx.pressureInHg ?? wx.pressure_inhg) ??  (pressureHpa != null ? pressureHpa * 0.029529983071445 : null);
-  const visibilityMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
-  const uvIndex = safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv);
+  const pressureInHg =
+    safeNum(wx.pressureInHg ?? wx.pressure_inhg) ?? (pressureHpa != null ? pressureHpa * 0.029529983071445 : null);
+
+  // ✅ Background scene (computed after wind/cloud/vis exist)
+  const time: WeatherScene['time'] = isNight ? 'night' : isSunrise ? 'sunrise' : isSunset ? 'sunset' : 'day';
+  const fogFromVis = (vis: number | null) => {
+    if (vis == null) return 0;
+    if (vis <= 1) return 0.85;
+    if (vis <= 3) return 0.55;
+    if (vis <= 6) return 0.25;
+    return 0;
+  };
+  const scene: WeatherScene = {
+    time,
+    cloudiness: cloudCoverPct != null ? clamp01(cloudCoverPct / 100) : 0.25,
+    fog: fogFromVis(visibilityMi),
+    wind: windMph != null ? clamp01(windMph / 25) : 0.2,
+  };
 
   const condition = wx.shortForecast ?? wx.condition ?? wx.textDescription ?? wx.weather ?? '—';
   const observationTime: string | null = wx.observedAt ?? wx.timestamp ?? wx.datetime ?? null;
@@ -1063,13 +1080,29 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
   const gf = gustFactor(windMph, gustMph);
   const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
 
-  const dewLine =
-  dewpointF != null
-    ? `${Math.round(dewpointF)}°F${dpBand ? ` • ${dpBand}` : ''}`
-    : null;
+  const dewLine = dewpointF != null ? `${Math.round(dewpointF)}°F${dpBand ? ` • ${dpBand}` : ''}` : null;
 
   const daily = (forecastData?.daily ?? []).slice(0, 15);
-  const hourly = forecastData?.hourly ?? [];
+  const hourlyRaw: any[] = forecastData?.hourly ?? [];
+
+  // ✅ Normalize pressure for hourly so HourlyCharts72h can show it (if it supports it)
+  const hourly = useMemo(() => {
+    return (hourlyRaw ?? []).map((h: any) => {
+      const pressureHpaLocal =
+        safeNum(h.pressure_msl) ??
+        safeNum(h.pressureMslHpa) ??
+        safeNum(h.surface_pressure) ??
+        safeNum(h.pressureSurfaceHpa) ??
+        safeNum(h.pressure_hpa) ??
+        safeNum(h.pressureHpa) ??
+        null;
+
+      return {
+        ...h,
+        pressureHpa: pressureHpaLocal,
+      };
+    });
+  }, [hourlyRaw]);
 
   const insights: NerdyInsight[] = useMemo(() => {
     return buildNerdyInsights({ tempF, dewpointF, humidityPct, windMph, gustMph, hourly });
@@ -1122,6 +1155,7 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
   }, [hi, wc, feelsLikeF]);
 
   const updatedText = `Updated ${formatUpdatedTime(observationTime)}`;
+
   const onPressAlert = () => {
     setExplainPayload({
       title: primary?.event ?? 'Weather Alert',
@@ -1149,36 +1183,31 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
       : '—';
 
   return (
-    <>
+    <View style={styles.root}>
+      {/* ✅ animated background behind everything */}
+      <AnimatedWeatherBackground scene={scene} />
+
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ScrollView
           style={styles.container}
           contentContainerStyle={[styles.content, { paddingTop: Math.max(theme.spacing.md, insets.top * 0.15) }]}
           refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
         >
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <View style={styles.brandRow}>
-                <View style={styles.brandLeft}>
-                  <View style={styles.brandMarkWrap}>
-                    <Image source={require('../../assets/brand/omniwx-mark.png')} style={styles.brandMark} />
-                  </View>
-                  <View style={{ flexShrink: 1 }}>
-                    <View style={styles.wordmarkRow}>
-                      <Text style={styles.wordmarkOmni}>OMNI</Text>
-                      <Text style={styles.wordmarkWxSup}>wx</Text>
-                    </View>
-                    <View style={styles.domainPill}>
-                      <Text style={styles.domainPillText}>Land Wx</Text>
-                    </View>
-                  </View>
-
-                  <View style={{ flex: 1 }} />
+          {/* =========================
+              HEADER (Hero surface)
+          ========================= */}
+          <View style={styles.headerHeroWrap}>
+            <View style={styles.headerHeroSurface}>
+              <View style={styles.headerHeroTopRow}>
+                <View style={styles.headerHeroBrand}>
+                  <Image
+                    source={require('../../assets/brand/omniwx-mark-word.png')}
+                    style={styles.headerHeroLogo}
+                    resizeMode="contain"
+                  />
                 </View>
-              </View>
 
-              <View style={styles.locationRowNew}>
-                <Pressable onPress={() => setPickerOpen(true)} style={{ flex: 1 }}>
+                <Pressable onPress={() => setPickerOpen(true)} style={styles.headerHeroLocation}>
                   <Text style={styles.locationPrimary} numberOfLines={1}>
                     {locationLabel}
                   </Text>
@@ -1187,18 +1216,33 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
                   </Text>
                 </Pressable>
 
-                <Pressable
-                  onPress={onToggleFavorite}
-                  disabled={isFavorited}
-                  style={[styles.favoriteChip, isFavorited && styles.favoriteChipActive, isFavorited && { opacity: 0.85 }]}
-                >
-                  <Text style={[styles.favoriteChipText, isFavorited && { color: 'white' }]}>
-                    {isFavorited ? '★ Saved' : '☆ Save'}
-                  </Text>
-                </Pressable>
+                <View style={styles.headerHeroActions}>
+                  <Pressable
+                    onPress={onToggleFavorite}
+                    disabled={isFavorited}
+                    style={[
+                      styles.favoriteChip,
+                      isFavorited && styles.favoriteChipActive,
+                      isFavorited && { opacity: 0.85 },
+                    ]}
+                  >
+                    <Text style={[styles.favoriteChipText, isFavorited && { color: 'white' }]}>
+                      {isFavorited ? '★ Saved' : '☆ Save'}
+                    </Text>
+                  </Pressable>
+
+                  <WxLabToggle
+                    enabled={wxLab}
+                    onToggle={() => {
+                      if (toggleWxLab) return toggleWxLab();
+                      if (setWxLab) return setWxLab(!wxLab);
+                    }}
+                  />
+                </View>
               </View>
 
-              <View style={styles.quickNavRow}>
+              <View style={styles.headerHeroBottomRow}>
+                {/* Keep Hourly as a link for now, even if you hide the Hourly tab later */}
                 <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
                   <Text style={styles.quickNavText}>Hourly</Text>
                 </Pressable>
@@ -1207,28 +1251,13 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
                   <Text style={styles.quickNavText}>Climo</Text>
                 </Pressable>
 
-                {/* ✅ MapLibre test button removed */}
-              </View>
-
-              {wxLab ? (
-                <View style={styles.nerdyBannerRow}>
-                  <View style={styles.nerdyPill}>
-                    <Text style={styles.nerdyPillText}>WX Lab</Text>
+                {wxLab ? (
+                  <View style={styles.headerHeroLabHint}>
+                    <Text style={styles.headerHeroLabHintText}>WX Lab</Text>
                   </View>
-                  <Text style={styles.nerdyBannerHint} numberOfLines={1}>
-                    Panels + explainers • more data
-                  </Text>
-                </View>
-              ) : null}
+                ) : null}
+              </View>
             </View>
-
-            <WxLabToggle
-              enabled={wxLab}
-              onToggle={() => {
-                if (toggleWxLab) return toggleWxLab();
-                if (setWxLab) return setWxLab(!wxLab);
-              }}
-            />
           </View>
 
           {primary ? (
@@ -1325,7 +1354,7 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
                 precipChancePct={precipChancePct}
                 visibilityMi={visibilityMi}
                 pressureHpa={pressureHpa}
-                pressureInHg={pressureInHg} 
+                pressureInHg={pressureInHg}
                 feelsDriverLabel={feelsDriver.label}
                 feelsDriverValue={feelsDriver.value}
                 onExplain={openQuickExplain}
@@ -1335,16 +1364,29 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
             <Text style={styles.updatedText}>{updatedText}</Text>
           </Card>
 
+          {/* ✅ NEW: Hourly on Land (72h) */}
+          {hourly.length ? (
+            <Card style={styles.hourlyCard}>
+              <View style={styles.hourlyHeaderRow}>
+                <Text style={styles.cardTitle}>Next 72 hours</Text>
+                <Pressable onPress={() => router.push('/hourly')} style={styles.hourlyFullBtn}>
+                  <Text style={styles.hourlyFullText}>Full</Text>
+                </Pressable>
+              </View>
+
+              <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
+
+              <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
+            </Card>
+          ) : null}
+
           {daily.length > 0 ? (
             <Card style={styles.forecastCard}>
               <Text style={styles.cardTitle}>{wxLab ? 'Daily (Model Blend)' : '15-Day Forecast'}</Text>
 
-              {/* ✅ This is the key fix: remove the old "table" props.
-                  DailyRangeChart already reads wxLab from context and will
-                  show DP/RH/Clouds only when Lab Wx is enabled. */}
               <DailyRangeChart daily={daily} />
 
-               {wxLab ? (
+              {wxLab ? (
                 <NerdyInsightsCard
                   title="Insights"
                   dewpointLine={dewLine}
@@ -1386,44 +1428,19 @@ const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
       />
 
       <LearnMoreModal visible={learnOpen} onClose={() => setLearnOpen(false)} initialTopicId={learnTopicId} />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.background },
-  container: { flex: 1, backgroundColor: theme.colors.background },
+  root: { flex: 1, backgroundColor: theme.colors.background },
+
+  // ✅ transparent so background shows through
+  safe: { flex: 1, backgroundColor: 'transparent' },
+  container: { flex: 1, backgroundColor: 'transparent' },
+
   content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.lg,
-    gap: 12,
-  },
-
-  brandRow: { marginBottom: 6 },
-  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandMark: { width: '100%', height: '100%', resizeMode: 'contain', backgroundColor: 'transparent', borderRadius: 21 },
-  brandMarkWrap: { width: 42, height: 42, backgroundColor: 'transparent' },
-  wordmarkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
-  wordmarkOmni: { color: 'white', fontSize: 18, fontWeight: '900', letterSpacing: 0.4 },
-  wordmarkWxSup: { marginLeft: 2, marginTop: 2, fontSize: 10, fontWeight: '800', color: 'rgba(255,255,255,0.75)' },
-
-  domainPill: {
-    marginTop: 2,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  domainPillText: { fontSize: 11, fontWeight: '800', color: 'white' },
-
-  locationRowNew: { marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 10 },
   locationPrimary: { fontSize: 14, fontWeight: '900', color: 'white' },
   locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
 
@@ -1461,7 +1478,6 @@ const styles = StyleSheet.create({
   labText: { color: 'rgba(255,255,255,0.80)', fontWeight: '900', fontSize: 12 },
   labTextOn: { color: 'white' },
 
-  quickNavRow: { marginTop: 10, flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   quickNavBtn: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -1471,18 +1487,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   quickNavText: { color: 'white', fontWeight: '900', fontSize: 12 },
-
-  nerdyBannerRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  nerdyPill: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(200, 240, 255, 0.20)',
-    backgroundColor: 'rgba(160, 220, 255, 0.08)',
-  },
-  nerdyPillText: { color: 'white', fontWeight: '900', fontSize: 11, letterSpacing: 0.8 },
-  nerdyBannerHint: { fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: '700' },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   smallText: { ...typography.small, marginTop: theme.spacing.sm },
@@ -1519,7 +1523,78 @@ const styles = StyleSheet.create({
   heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
   heroMiniValue: { fontSize: 18, fontWeight: '900', color: theme.colors.textPrimary },
 
-  // inside: const styles = StyleSheet.create({
+  // ===== Header hero surface =====
+  headerHeroWrap: {
+    marginBottom: theme.spacing.lg,
+    position: 'relative',
+  },
+
+  headerHeroSurface: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+
+  headerHeroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  headerHeroBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 0,
+  },
+
+  // ✅ Bigger Omni logo
+  headerHeroLogo: {
+    width: 92,
+    height: 92,
+    backgroundColor: 'transparent',
+  },
+
+  headerHeroLocation: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  headerHeroActions: {
+    alignItems: 'flex-end',
+    gap: 10,
+    flexShrink: 0,
+  },
+
+  headerHeroBottomRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+
+  headerHeroLabHint: {
+    marginLeft: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(160, 220, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 240, 255, 0.18)',
+  },
+
+  headerHeroLabHintText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '900',
+    fontSize: 11,
+    letterSpacing: 0.6,
+  },
+
   statTile: {
     paddingVertical: 10,
     paddingHorizontal: 10,
@@ -1552,6 +1627,24 @@ const styles = StyleSheet.create({
 
   forecastCard: { marginBottom: theme.spacing.lg },
   cardTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 10 },
+
+  // ✅ Hourly card on Land
+  hourlyCard: { marginBottom: theme.spacing.lg },
+  hourlyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  hourlyFullBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  hourlyFullText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 12 },
 
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
   modalSheet: {

@@ -3,28 +3,11 @@
 export type UnitSystem = 'us' | 'metric';
 
 export type StationCandidate = {
-  id: string; // CDO station id (e.g., "GHCND:USW00023183")
+  id: string; // CDO station id (e.g., "GHCND:USC00022782")
   name?: string;
   latitude?: number;
   longitude?: number;
   elevation?: number;
-};
-
-// app/lib/almanac/types.ts
-
-export type AlmanacDailyRecord = {
-  mmdd: string; // "MM-DD"
-
-  // Temperatures are °F (already converted by the hook, or should be)
-  recordHighF: number;
-  recordHighYear: number;
-
-  recordLowF: number;
-  recordLowYear: number;
-
-  // Optional precip record
-  recordPrecipIn?: number;
-  recordPrecipYear?: number;
 };
 
 export type MonthlyNormalsF = {
@@ -68,16 +51,17 @@ export type ClimoErrorCode =
   | 'NO_TOKEN'
   | 'STATION_NOT_FOUND'
   | 'NO_DATA'
+  | 'NO_NORMALS'
   | 'NETWORK'
   | 'UNKNOWN';
 
 export class ClimoError extends Error {
   code: ClimoErrorCode;
   details?: any;
+
   constructor(code: ClimoErrorCode, message: string, details?: any) {
     super(message);
     this.code = code;
     this.details = details;
   }
-  
 }

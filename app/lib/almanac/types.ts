@@ -1,38 +1,38 @@
 // app/lib/almanac/types.ts
 
-export type RecordTopItem = {
-  year: number;
-  valueF?: number;   // temperatures
-  valueIn?: number;  // precip/snow
-};
-
+/**
+ * Almanac daily record bucket keyed by MM-DD (e.g., "02-09").
+ * Values are derived from NOAA GHCND (record station) and converted to:
+ * - Temperatures: °F
+ * - Precip/Snow: inches
+ */
 export type AlmanacDailyRecord = {
   mmdd: string; // "MM-DD"
 
-  // ---- Classic records (TMAX/TMIN/PRCP) ----
-  recordHighF: number | null;        // highest daily max temp
-  recordHighYears?: number[];        // ties (all years that match recordHighF)
+  // Daily record highs/lows
+  recordHighF: number | null;
+  recordHighYears: number[];
 
-  recordLowF: number | null;         // lowest daily min temp
-  recordLowYears?: number[];
+  recordLowF: number | null;
+  recordLowYears: number[];
 
-  recordPrecipIn?: number | null;    // max daily precip
-  recordPrecipYears?: number[];
+  // Daily precip record
+  recordPrecipIn: number | null;
+  recordPrecipYears: number[];
 
-  // ---- “Almanac quality” extras ----
-  recordHighMinF?: number | null;    // warmest overnight low (highest TMIN)
-  recordHighMinYears?: number[];
+  // Optional “secondary” records your UI/cards may show:
+  // - Highest daily minimum temp (warmest night)
+  recordHighMinF: number | null;
+  recordHighMinYears: number[];
 
-  recordLowMaxF?: number | null;     // coldest daytime high (lowest TMAX)
-  recordLowMaxYears?: number[];
+  // - Lowest daily maximum temp (coldest day)
+  recordLowMaxF: number | null;
+  recordLowMaxYears: number[];
 
-  // ---- Snow (depends on station reporting) ----
-  recordSnowIn?: number | null;      // max daily snowfall
-  recordSnowYears?: number[];
-
-  // ---- Optional “Top 10 for this MM-DD” ----
-  topHighsF?: RecordTopItem[];       // hottest TMAX for this MM-DD (desc)
-  topLowsF?: RecordTopItem[];        // coldest TMIN for this MM-DD (asc)
-  topPrecipIn?: RecordTopItem[];     // wettest PRCP for this MM-DD (desc)
-  topSnowIn?: RecordTopItem[];       // snowiest SNOW for this MM-DD (desc)
+  // Snowfall (only if/when you implement it; kept for schema stability)
+  recordSnowIn: number | null;
+  recordSnowYears: number[];
 };
+
+/** Convenience map type (MM-DD -> record) */
+export type AlmanacRecordsMap = Record<string, AlmanacDailyRecord>;

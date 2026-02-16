@@ -1,15 +1,11 @@
 // app/lib/climatology/nceiNormals.ts
-// NCEI Access Data Service API (no token) for climate normals. :contentReference[oaicite:4]{index=4}
-//
-// We'll pull monthly normals and compute "calendar-year" summaries (annual mean temp, annual precip, etc.)
+// NCEI Access Data Service API (no token) for climate normals.
 
 export type MonthlyNormals = {
   month: number; // 1..12
-  // F (or C if you choose metric later)
   tavgF: number | null;
   tminF: number | null;
   tmaxF: number | null;
-  // inches
   prcpIn: number | null;
 };
 
@@ -25,15 +21,93 @@ export type NormalsSummary = {
   };
 };
 
-// Access Data Service base (documented) :contentReference[oaicite:5]{index=5}
-const BASE = 'https://www.ncei.noaa.gov/access/services/data/v1';
+// Default: direct to NCEI access services (no token)
+const DIRECT_BASE = 'https://www.ncei.noaa.gov/access/services/data/v1';
 
-// Dataset name is discoverable via the API and commonly used as below.
-// If NOAA ever changes it, you can discover datasets via the search service,
-// but this is a solid MVP default.
+// Optional: route through your Worker if you create an endpoint for it
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+const USE_WORKER_PROXY = false; // flip if you add a Worker proxy route for access services
+
+function baseUrl() {
+  if (!USE_WORKER_PROXY) return DIRECT_BASE;
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE (needed for Worker proxy).');
+  // You’d need to implement this Worker route if you flip USE_WORKER_PROXY on:
+  return `${API_BASE}/api/ncei-access`;
+}
+
 const DATASET = 'normals-monthly-1991-2020';
 
 type NceiRow = Record<string, string>;
+
+const REQ_TIMEOUT_MS = 15_000;
+const RETRY_BACKOFF_MS = [650, 1200];
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isAbortError(err: any) {
+  return (
+    err?.name === 'AbortError' ||
+    err?.code === 20 ||
+    (typeof err?.message === 'string' && err.message.toLowerCase().includes('abort'))
+  );
+}
+
+function isTransientNetworkError(err: any) {
+  const msg = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
+  return (
+    err instanceof TypeError ||
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('timed out')
+  );
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label = 'Request timed out') {
+  let t: any;
+  const timeout = new Promise<T>((_, rej) => {
+    t = setTimeout(() => rej(new Error(label)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
+async function fetchWithRetry(url: string, signal?: AbortSignal) {
+  let lastErr: any = null;
+
+  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+    if (signal?.aborted) {
+      const ae: any = new Error('Aborted');
+      ae.name = 'AbortError';
+      throw ae;
+    }
+
+    try {
+      const res = await withTimeout(fetch(url, { signal }), REQ_TIMEOUT_MS, 'Normals request timed out');
+
+      if (!res.ok) {
+        const status = res.status;
+        const text = await res.text().catch(() => '');
+        if ((status === 429 || (status >= 500 && status <= 599)) && attempt < RETRY_BACKOFF_MS.length) {
+          await sleep(RETRY_BACKOFF_MS[attempt]);
+          continue;
+        }
+        throw new Error(`Normals fetch failed (${status})${text ? `: ${text.slice(0, 180)}` : ''}`);
+      }
+
+      return res;
+    } catch (e: any) {
+      if (isAbortError(e) || signal?.aborted) throw e;
+      lastErr = e;
+
+      if (!isTransientNetworkError(e) || attempt === RETRY_BACKOFF_MS.length) break;
+      await sleep(RETRY_BACKOFF_MS[attempt]);
+    }
+  }
+
+  throw lastErr ?? new Error('Normals fetch failed');
+}
 
 function numOrNull(v: any) {
   const n = typeof v === 'string' ? Number(v) : v;
@@ -48,23 +122,12 @@ function mmToIn(mm: number) {
   return mm / 25.4;
 }
 
-/**
- * NCEI normals data types (common ones):
- * - MLY-TAVG-NORMAL (°C)
- * - MLY-TMAX-NORMAL (°C)
- * - MLY-TMIN-NORMAL (°C)
- * - MLY-PRCP-NORMAL (mm)
- *
- * Returned field names depend on output format; JSON typically returns those
- * data type IDs as columns (strings).
- */
 const DT_TAVG = 'MLY-TAVG-NORMAL';
 const DT_TMAX = 'MLY-TMAX-NORMAL';
 const DT_TMIN = 'MLY-TMIN-NORMAL';
 const DT_PRCP = 'MLY-PRCP-NORMAL';
 
 function monthFromDateStr(s?: string) {
-  // Expecting something like "YYYY-MM-01" or "YYYY-MM"
   if (!s || s.length < 7) return null;
   const m = Number(s.slice(5, 7));
   return Number.isFinite(m) && m >= 1 && m <= 12 ? m : null;
@@ -72,29 +135,24 @@ function monthFromDateStr(s?: string) {
 
 function buildUrl(params: Record<string, string>) {
   const usp = new URLSearchParams(params);
-  return `${BASE}?${usp.toString()}`;
+  return `${baseUrl()}?${usp.toString()}`;
 }
 
-export async function fetchMonthlyNormals(stationId: string): Promise<MonthlyNormals[]> {
-  // Request JSON output (documented output formats include JSON/CSV) :contentReference[oaicite:6]{index=6}
+export async function fetchMonthlyNormals(stationId: string, signal?: AbortSignal): Promise<MonthlyNormals[]> {
   const url = buildUrl({
     dataset: DATASET,
     stations: stationId,
     dataTypes: [DT_TAVG, DT_TMAX, DT_TMIN, DT_PRCP].join(','),
     format: 'json',
     includeAttributes: 'false',
-    // Many normals datasets return one row per month.
-    // If needed later, you can add startDate/endDate, but normals are climatological monthly values.
   });
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Normals fetch failed (${res.status})`);
-
+  const res = await fetchWithRetry(url, signal);
   const rows = (await res.json()) as NceiRow[];
+
   const byMonth = new Map<number, MonthlyNormals>();
 
   for (const r of rows) {
-    // The service commonly includes a DATE column; if it differs, we handle a couple variants.
     const dateStr = (r.DATE ?? r.date ?? r.Date) as string | undefined;
     const m = monthFromDateStr(dateStr);
     if (!m) continue;
@@ -113,9 +171,10 @@ export async function fetchMonthlyNormals(stationId: string): Promise<MonthlyNor
     });
   }
 
-  // Ensure 1..12 ordering, with nulls if missing
   const out: MonthlyNormals[] = [];
-  for (let m = 1; m <= 12; m++) out.push(byMonth.get(m) ?? { month: m, tavgF: null, tminF: null, tmaxF: null, prcpIn: null });
+  for (let m = 1; m <= 12; m++) {
+    out.push(byMonth.get(m) ?? { month: m, tavgF: null, tminF: null, tmaxF: null, prcpIn: null });
+  }
   return out;
 }
 

@@ -1,34 +1,58 @@
 // app/lib/almanac/useDailyRecordsHook.ts
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { noaaSchedule } from '../noaa/noaaRateLimiter';
 
 import { resolveRecordStation, type RecordStationResolved } from './resolveRecordStation';
 import type { AlmanacDailyRecord } from './types';
 
-const KEY_PREFIX = 'omniwx:records:v5';
+import {
+  makeRecordsCacheKey,
+  readRecordsCache,
+  writeRecordsCache,
+  type RecordsCacheMeta,
+} from './recordsCache';
+
+// ---------- Worker base (NCEI token lives in Worker) ----------
+const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
+const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
+
+function apiUrl(path: string) {
+  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+// cache policy
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 60; // 60 days
+
+// request policy
 const LIMIT = 1000;
 
-// fetch can hang in RN; enforce a timeout
-const REQ_TIMEOUT_MS = 15_000;
-const RETRY_BACKOFF_MS = [650, 1200]; // two retries w/ backoff
+// NOAA can be slow; keep timeout generous
+const REQ_TIMEOUT_MS = 25_000;
 
-// ✅ keep logs fully disabled
-const DEBUG_RECORDS = false;
+// Retry/backoff: tuned for 429 + mobile flakiness
+const RETRY_BACKOFF_MS = [300, 800, 1500, 2500, 4000];
+
+// bump when record-building logic changes
+const ALGO_VERSION = 'v6-30yr-window-yearly-chunked-worker-proxy'; // ✅ bump for Worker proxy
+
+// ✅ keep true while debugging; turn off once stable
+const DEBUG_RECORDS = true;
 
 type RecordsMap = Record<string, AlmanacDailyRecord>;
+export type RecordsYears = { from: number; to: number } | null;
 
 export type RecordsProgress =
   | null
   | {
       phase: 'idle' | 'cache' | 'resolve-station' | 'probe' | 'build' | 'saving';
       message?: string;
-      year?: number;
-      yearsDone?: number;
-      yearsTotal?: number;
       pages?: number;
       rows?: number;
-      pct?: number; // 0..1
+      pct?: number; // 0..1 (rough)
+      yearFrom?: number;
+      yearTo?: number;
+      curYear?: number;
     };
 
 function mmddFromIso(isoLike: string) {
@@ -44,26 +68,49 @@ function prcp10mmToIn(v: number) {
   const mm = v / 10;
   return mm / 25.4;
 }
+
+/** ✅ Local YYYY-MM-DD (avoids UTC rolling into "tomorrow") */
+function localYmd(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function minYmd(a: string, b: string) {
+  return a <= b ? a : b; // ISO ymd sorts lexicographically
+}
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
+
 function buildDataUrl(opts: { stationId: string; start: string; end: string; offset: number }) {
   const { stationId, start, end, offset } = opts;
-  const base = 'https://www.ncei.noaa.gov/cdo-web/api/v2/data';
-  const qs =
-    `datasetid=GHCND` +
-    `&datatypeid=TMAX` +
-    `&datatypeid=TMIN` +
-    `&datatypeid=PRCP` +
-    `&stationid=${encodeURIComponent(stationId)}` +
-    `&startdate=${encodeURIComponent(start)}` +
-    `&enddate=${encodeURIComponent(end)}` +
-    `&limit=${LIMIT}` +
-    `&offset=${offset}`;
-  return `${base}?${qs}`;
+
+  // Via Worker proxy
+  const u = new URL(apiUrl('/api/ncei/data'));
+  u.searchParams.set('datasetid', 'GHCND');
+  u.searchParams.append('datatypeid', 'TMAX');
+  u.searchParams.append('datatypeid', 'TMIN');
+  u.searchParams.append('datatypeid', 'PRCP');
+  u.searchParams.set('stationid', stationId);
+  u.searchParams.set('startdate', start);
+  u.searchParams.set('enddate', end);
+  u.searchParams.set('sortfield', 'date');
+  u.searchParams.set('sortorder', 'asc');
+  u.searchParams.set('limit', String(LIMIT));
+  u.searchParams.set('offset', String(offset));
+
+  return u.toString();
 }
+
 function yearFromIso(iso?: string | null) {
   if (!iso) return null;
   const y = Number(String(iso).slice(0, 4));
   return Number.isFinite(y) ? y : null;
 }
+
 function initRec(mmdd: string): AlmanacDailyRecord {
   return {
     mmdd,
@@ -81,6 +128,28 @@ function initRec(mmdd: string): AlmanacDailyRecord {
     recordSnowYears: [],
   };
 }
+
+function summarizeYears(results: any[], yearFrom: number, yearTo: number) {
+  let min = Infinity;
+  let max = -Infinity;
+  let outOfWindow = 0;
+
+  for (const r of results) {
+    const y = Number(String(r?.date ?? '').slice(0, 4));
+    if (!Number.isFinite(y)) continue;
+    if (y < min) min = y;
+    if (y > max) max = y;
+    if (y < yearFrom || y > yearTo) outOfWindow++;
+  }
+
+  return {
+    minYear: Number.isFinite(min) ? min : null,
+    maxYear: Number.isFinite(max) ? max : null,
+    outOfWindow,
+    sampleCount: results.length,
+  };
+}
+
 function upsertTieBest(
   curValue: number | null,
   curYears: number[] | undefined,
@@ -106,24 +175,23 @@ function upsertTieBest(
     return { value: curValue, years };
   }
 }
-function clampIsoToYear(iso: string, year: number, which: 'start' | 'end') {
-  const y = String(year);
-  if (which === 'start') return iso < `${y}-01-01` ? `${y}-01-01` : iso;
-  return iso > `${y}-12-31` ? `${y}-12-31` : iso;
-}
+
 function httpErrMsg(status: number, body?: string) {
   const b = (body ?? '').trim();
   if (status === 400) return 'HTTP 400 (bad request)';
   return `HTTP ${status}${b ? `: ${b.slice(0, 180)}` : ''}`;
 }
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
 function makeAbortError() {
   const e: any = new Error('Aborted');
   e.name = 'AbortError';
   return e;
 }
+
 function isAbortError(err: any) {
   return (
     err?.name === 'AbortError' ||
@@ -131,17 +199,57 @@ function isAbortError(err: any) {
     (typeof err?.message === 'string' && err.message.toLowerCase().includes('abort'))
   );
 }
+
 function isTransientNetworkError(err: any) {
   const msg = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
-  // RN often throws TypeError('Network request failed')
-  return err instanceof TypeError || msg.includes('network request failed') || msg.includes('failed to fetch');
+  return (
+    err instanceof TypeError ||
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout')
+  );
 }
+
 function withTimeout<T>(p: Promise<T>, ms: number, label = 'Request timed out') {
   let t: any;
   const timeout = new Promise<T>((_, rej) => {
     t = setTimeout(() => rej(new Error(label)), ms);
   });
   return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+}
+
+function metaMatches(m: RecordsCacheMeta | undefined | null, want: RecordsCacheMeta) {
+  if (!m) return false;
+  return (
+    m.stationId === want.stationId &&
+    m.yearFrom === want.yearFrom &&
+    m.yearTo === want.yearTo &&
+    m.algoVersion === want.algoVersion
+  );
+}
+
+function errStatusFromMessage(msg?: string | null): number | null {
+  if (!msg) return null;
+  const m = String(msg).match(/HTTP\s+(\d{3})/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseRetryAfterSeconds(retryAfter: string | null): number | null {
+  if (!retryAfter) return null;
+  const s = retryAfter.trim();
+
+  const n = Number(s);
+  if (Number.isFinite(n) && n >= 0) return Math.min(30, n);
+
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return null;
+
+  const deltaSec = Math.ceil((ms - Date.now()) / 1000);
+  if (!Number.isFinite(deltaSec)) return null;
+  return Math.max(0, Math.min(30, deltaSec));
 }
 
 export function useDailyRecords({
@@ -156,66 +264,126 @@ export function useDailyRecords({
   const [records, setRecords] = useState<RecordsMap | null>(null);
   const [stationIdUsed, setStationIdUsed] = useState<string | null>(null);
   const [stationNameUsed, setStationNameUsed] = useState<string | null>(null);
+  const [years, setYears] = useState<RecordsYears>(null);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [progress, setProgress] = useState<RecordsProgress>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const haveRecordsRef = useRef(false);
+  const runIdRef = useRef(0);
 
-  const dbgRef = useRef({
-    runId: 0,
-    pages: 0,
-    totalRows: 0,
-    yearsTouched: 0,
-    lastYear: 0,
-    lastOffset: 0,
-  });
+  const dbgRef = useRef({ pages: 0, totalRows: 0 });
 
-  const cacheKey = useMemo(() => `${KEY_PREFIX}:${lat.toFixed(3)},${lon.toFixed(3)}`, [lat, lon]);
+  const locKey = useMemo(() => `${lat.toFixed(5)},${lon.toFixed(5)}`, [lat, lon]);
 
-  const fetchJson = useCallback(async (url: string, token: string, ac: AbortController) => {
+  useEffect(() => {
+    abortRef.current?.abort();
+    haveRecordsRef.current = false;
+    setRecords(null);
+    setStationIdUsed(null);
+    setStationNameUsed(null);
+    setYears(null);
+    setError(null);
+    setProgress(null);
+    setLoading(false);
+    setRefreshing(false);
+  }, [locKey]);
+
+  const fetchJson = useCallback(async (url: string, ac: AbortController) => {
     if (ac.signal.aborted) throw makeAbortError();
 
-    const res = await withTimeout(fetch(url, { headers: { token }, signal: ac.signal }), REQ_TIMEOUT_MS, 'NOAA request timed out');
-    if (ac.signal.aborted) throw makeAbortError();
+    return await noaaSchedule(async () => {
+      if (ac.signal.aborted) throw makeAbortError();
 
-    // @ts-ignore – fetch type union
-    if (!res.ok) {
-      let body = '';
-      try {
-        // @ts-ignore
-        body = await res.text();
-      } catch {}
-      // @ts-ignore
-      throw new Error(httpErrMsg(res.status, body));
-    }
+      const t0 = Date.now();
+      const res = await withTimeout(fetch(url, { signal: ac.signal }), REQ_TIMEOUT_MS, 'NOAA request timed out');
+      const ms = Date.now() - t0;
 
-    // @ts-ignore
-    return await res.json();
+      if (ac.signal.aborted) throw makeAbortError();
+
+      if (!res.ok) {
+        let body = '';
+        try {
+          body = await res.text();
+        } catch {}
+
+        const retryAfterSec =
+          res.status === 429 ? parseRetryAfterSeconds(res.headers?.get?.('retry-after') ?? null) : null;
+
+        if (DEBUG_RECORDS) {
+          // eslint-disable-next-line no-console
+          console.log('[records] http error', {
+            ms,
+            status: res.status,
+            retryAfterSec,
+            body: body.slice(0, 180),
+            url: url.slice(0, 220),
+          });
+        }
+
+        const err: any = new Error(httpErrMsg(res.status, body));
+        err.status = res.status;
+        err.body = body;
+        err.retryAfterSec = retryAfterSec;
+        throw err;
+      }
+
+      const json = await res.json();
+      if (DEBUG_RECORDS) {
+        // eslint-disable-next-line no-console
+        console.log('[records] http ok', {
+          ms,
+          count: json?.metadata?.resultset?.count ?? null,
+          url: url.slice(0, 160),
+        });
+      }
+      return json;
+    });
   }, []);
 
   const fetchJsonWithRetry = useCallback(
-    async (url: string, token: string, ac: AbortController) => {
+    async (url: string, ac: AbortController) => {
       let lastErr: any = null;
 
       for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
         if (ac.signal.aborted) throw makeAbortError();
 
         try {
-          return await fetchJson(url, token, ac);
+          return await fetchJson(url, ac);
         } catch (e: any) {
           if (isAbortError(e) || ac.signal.aborted) throw makeAbortError();
-
           lastErr = e;
 
-          const canRetry = isTransientNetworkError(e) || (typeof e?.message === 'string' && e.message.toLowerCase().includes('timed out'));
+          const status = typeof e?.status === 'number' ? e.status : errStatusFromMessage(e?.message);
+          const is429 = status === 429;
+          const is5xx = typeof status === 'number' && status >= 500 && status <= 599;
+
+          const canRetry =
+            is429 ||
+            is5xx ||
+            isTransientNetworkError(e) ||
+            (typeof e?.message === 'string' && e.message.toLowerCase().includes('timed out'));
+
           if (!canRetry || attempt === RETRY_BACKOFF_MS.length) break;
 
-          await sleep(RETRY_BACKOFF_MS[attempt]);
+          const ra = e?.retryAfterSec;
+          const baseDelay = RETRY_BACKOFF_MS[attempt] ?? 1500;
+          const backoff429 = [2000, 4000, 8000, 12000, 16000][attempt] ?? 16000;
+
+          const delay =
+            is429
+              ? (typeof ra === 'number' && Number.isFinite(ra) ? Math.max(1000, ra * 1000) : backoff429)
+              : baseDelay;
+
+          if (DEBUG_RECORDS) {
+            // eslint-disable-next-line no-console
+            console.log('[records] retry', { attempt: attempt + 1, status: status ?? null, delayMs: delay });
+          }
+
+          await sleep(delay);
         }
       }
 
@@ -228,15 +396,17 @@ export function useDailyRecords({
     async (force = false) => {
       if (!enabled) return;
 
-      const runId = ++dbgRef.current.runId;
+      if (!API_BASE) {
+        setError('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
+        return;
+      }
+
+      const myRunId = ++runIdRef.current;
       dbgRef.current.pages = 0;
       dbgRef.current.totalRows = 0;
-      dbgRef.current.yearsTouched = 0;
-      dbgRef.current.lastYear = 0;
-      dbgRef.current.lastOffset = 0;
 
       setError(null);
-      setProgress({ phase: 'cache', message: 'Checking cache…' });
+      setProgress({ phase: 'resolve-station', message: 'Finding nearby record station…' });
 
       setLoading(!force && !haveRecordsRef.current);
       setRefreshing(!!force);
@@ -245,146 +415,199 @@ export function useDailyRecords({
       const ac = new AbortController();
       abortRef.current = ac;
 
+      const safeSet = (fn: () => void) => {
+        if (runIdRef.current !== myRunId) return;
+        if (ac.signal.aborted) return;
+        fn();
+      };
+
       try {
-        // ✅ Cache: accept only if non-empty
-        if (!force) {
-          const cached = await AsyncStorage.getItem(cacheKey);
-          if (cached) {
-            try {
-              const parsed = JSON.parse(cached);
-              const ageMs = Date.now() - Number(parsed?.savedAt ?? 0);
-              const keys = Object.keys(parsed?.records ?? {}).length;
-
-              const fresh = ageMs < CACHE_TTL_MS;
-              const nonEmpty = keys > 0;
-
-              if (parsed?.records && fresh && nonEmpty) {
-                setRecords(parsed.records);
-                haveRecordsRef.current = true;
-                setStationIdUsed(parsed.stationIdUsed ?? null);
-                setStationNameUsed(parsed.stationNameUsed ?? null);
-                setLoading(false);
-                setRefreshing(false);
-                setProgress(null);
-                return;
-              }
-            } catch {
-              // ignore cache parse issues
-            }
-          }
-        }
-
-        const token = process.env.EXPO_PUBLIC_NOAA_NCEI_TOKEN || process.env.EXPO_PUBLIC_NOAA_TOKEN;
-        if (!token) throw new Error('NOAA token required for records');
-
-        setProgress({ phase: 'resolve-station', message: 'Finding nearby record station…' });
-
-        const resolved: RecordStationResolved = await resolveRecordStation(lat, lon, token);
+        // --- station resolve (via Worker) ---
+        const resolved: RecordStationResolved = await resolveRecordStation(lat, lon, ac.signal);
         const stationId = resolved.id;
         const stationName = resolved.name ?? null;
 
-        setStationIdUsed(stationId);
-        setStationNameUsed(stationName);
+        safeSet(() => {
+          setStationIdUsed(stationId);
+          setStationNameUsed(stationName);
+        });
 
-        const minY = yearFromIso(resolved.mindate) ?? 1950;
-        const maxY = yearFromIso(resolved.maxdate) ?? new Date().getFullYear();
-        const minIso = resolved.mindate ?? `${minY}-01-01`;
-        const maxIso = resolved.maxdate ?? new Date().toISOString().slice(0, 10);
+        const minYResolved = yearFromIso(resolved.mindate) ?? 1950;
 
-        const map: RecordsMap = {};
+        const stationMaxY = yearFromIso(resolved.maxdate) ?? new Date().getFullYear();
+        const stationMaxIso = resolved.maxdate ?? localYmd(); // ✅ local
 
-        // --- QUICK PROBE: find a recent year with any data (fast validation) ---
-        setProgress({ phase: 'probe', message: 'Validating station data…' });
+        const today = new Date();
+        const todayY = today.getFullYear();
+        const todayIso = localYmd(today); // ✅ local
 
-        let firstYearWithData: number | null = null;
-        const probeYears = 25; // look back up to 25 years
+        const yearTo = Math.min(todayY, stationMaxY);
+        let yearFrom = Math.max(minYResolved, yearTo - 29);
+        if (yearFrom > yearTo) yearFrom = yearTo;
 
-        for (let y = maxY; y >= Math.max(minY, maxY - probeYears); y--) {
-          if (ac.signal.aborted) throw makeAbortError();
+        safeSet(() => setYears({ from: yearFrom, to: yearTo }));
 
-          const start = clampIsoToYear(minIso, y, 'start');
-          const end = clampIsoToYear(maxIso, y, 'end');
-          if (start > end) continue;
+        const wantMeta: RecordsCacheMeta = {
+          stationId,
+          stationName,
+          yearFrom,
+          yearTo,
+          algoVersion: ALGO_VERSION,
+        };
 
-          const url = buildDataUrl({ stationId, start, end, offset: 1 });
-          const json = await fetchJsonWithRetry(url, token, ac);
-          const results: any[] = json?.results ?? [];
+        const cacheKey = makeRecordsCacheKey({
+          stationId,
+          yearFrom,
+          yearTo,
+          algoVersion: ALGO_VERSION,
+        });
 
-          if (results.length > 0) {
-            firstYearWithData = y;
-            break;
+        if (DEBUG_RECORDS) {
+          // eslint-disable-next-line no-console
+          console.log('[records] resolved', {
+            lat,
+            lon,
+            stationId,
+            stationName,
+            mindate: resolved.mindate,
+            maxdate: resolved.maxdate,
+            yearFrom,
+            yearTo,
+            cacheKey,
+          });
+        }
+
+        // --- cache ---
+        if (!force) {
+          safeSet(() => setProgress({ phase: 'cache', message: 'Checking cache…', yearFrom, yearTo }));
+          const cached = await readRecordsCache<RecordsMap>(cacheKey);
+
+          const keys = Object.keys(cached?.data ?? {}).length;
+          if (cached && metaMatches(cached.meta, wantMeta) && keys > 0) {
+            if (DEBUG_RECORDS) {
+              // eslint-disable-next-line no-console
+              console.log('[records] cache hit', { keys, meta: cached.meta });
+            }
+
+            safeSet(() => {
+              setRecords(cached.data);
+              haveRecordsRef.current = true;
+              setLoading(false);
+              setRefreshing(false);
+              setProgress(null);
+            });
+            return;
+          } else if (DEBUG_RECORDS && cached) {
+            // eslint-disable-next-line no-console
+            console.log('[records] cache miss (meta/empty)', { keys, cachedMeta: cached.meta, wantMeta });
           }
         }
 
-        if (firstYearWithData == null) {
-          throw new Error('No NOAA daily data found in recent years for this station.');
+        const endOverallIso = minYmd(stationMaxIso, todayIso);
+
+        safeSet(() =>
+          setProgress({
+            phase: 'probe',
+            message: 'Validating station data…',
+            yearFrom,
+            yearTo,
+          })
+        );
+
+        // --- probe: just hit the latest year (1 page) ---
+        const probeStart = `${yearTo}-01-01`;
+        const probeEnd = endOverallIso.startsWith(`${yearTo}-`) ? endOverallIso : `${yearTo}-12-31`;
+        const probeUrl = buildDataUrl({ stationId, start: probeStart, end: probeEnd, offset: 1 });
+        const probeJson = await fetchJsonWithRetry(probeUrl, ac);
+
+        const probeTotal = Number(probeJson?.metadata?.resultset?.count ?? 0);
+        const probeResults: any[] = probeJson?.results ?? [];
+
+        if (DEBUG_RECORDS) {
+          // eslint-disable-next-line no-console
+          console.log('[records] probe', {
+            probeStart,
+            probeEnd,
+            total: probeTotal,
+            years: summarizeYears(probeResults, yearFrom, yearTo),
+            firstRow: probeResults?.[0] ?? null,
+          });
         }
 
-        // --- MAIN LOOP: build records from firstYearWithData backward ---
-        const yearsTotal = Math.max(0, firstYearWithData - minY + 1);
-        let yearsDone = 0;
+        if (!probeResults.length && (!Number.isFinite(probeTotal) || probeTotal <= 0)) {
+          throw new Error('No NOAA daily data found for this station (probe returned empty).');
+        }
 
-        for (let y = firstYearWithData; y >= minY; y--) {
-          if (ac.signal.aborted) throw makeAbortError();
+        // --- build ---
+        const map: RecordsMap = {};
 
-          dbgRef.current.yearsTouched += 1;
-          dbgRef.current.lastYear = y;
-
-          yearsDone = firstYearWithData - y + 1;
-          const pct = yearsTotal > 0 ? Math.min(1, Math.max(0, yearsDone / yearsTotal)) : 0;
-
+        safeSet(() =>
           setProgress({
             phase: 'build',
-            message: `Building records… ${yearsDone}/${yearsTotal} yrs`,
-            year: y,
-            yearsDone,
-            yearsTotal,
-            pages: dbgRef.current.pages,
-            rows: dbgRef.current.totalRows,
-            pct,
-          });
+            message: `Building records… 0 pages`,
+            pages: 0,
+            rows: 0,
+            pct: 0,
+            yearFrom,
+            yearTo,
+            curYear: yearFrom,
+          })
+        );
 
-          // yield so the UI can paint / update the bar
-          if (yearsDone % 2 === 0) await sleep(0);
+        let totalRowsAllYears = 0;
+        const totalYears = Math.max(1, yearTo - yearFrom + 1);
 
-          const start = clampIsoToYear(minIso, y, 'start');
-          const end = clampIsoToYear(maxIso, y, 'end');
-          if (start > end) continue;
+        for (let y = yearFrom; y <= yearTo; y++) {
+          if (ac.signal.aborted) throw makeAbortError();
+
+          const start = `${y}-01-01`;
+          const end = y === yearTo && endOverallIso.startsWith(`${y}-`) ? endOverallIso : `${y}-12-31`;
 
           let offset = 1;
+          let yearRows = 0;
 
           while (true) {
             if (ac.signal.aborted) throw makeAbortError();
 
-            dbgRef.current.lastOffset = offset;
-
             const url = buildDataUrl({ stationId, start, end, offset });
-            const json = await fetchJsonWithRetry(url, token, ac);
+
+            const json =
+              y === yearTo && offset === 1 && start === probeStart && end === probeEnd
+                ? probeJson
+                : await fetchJsonWithRetry(url, ac);
+
             const results: any[] = json?.results ?? [];
 
             dbgRef.current.pages += 1;
             dbgRef.current.totalRows += results.length;
 
-            // update progress every couple pages so it never looks stuck
-            if (dbgRef.current.pages % 2 === 0) {
-              setProgress((p) =>
-                p && p.phase === 'build'
-                  ? {
-                      ...p,
-                      pages: dbgRef.current.pages,
-                      rows: dbgRef.current.totalRows,
-                      message: `Building records… ${yearsDone}/${yearsTotal} yrs • ${dbgRef.current.pages} pages`,
-                    }
-                  : p
-              );
-              await sleep(0);
-            }
+            yearRows += results.length;
+            totalRowsAllYears += results.length;
+
+            const yearIdx = y - yearFrom; // 0-based
+            const pct = clamp((yearIdx + 0.15) / totalYears, 0, 1);
+
+            safeSet(() =>
+              setProgress({
+                phase: 'build',
+                message: `Building records… ${dbgRef.current.pages} pages • ${dbgRef.current.totalRows} rows • year ${y}`,
+                pages: dbgRef.current.pages,
+                rows: dbgRef.current.totalRows,
+                pct,
+                yearFrom,
+                yearTo,
+                curYear: y,
+              })
+            );
 
             if (!results.length) break;
 
             for (const r of results) {
+              const year = Number(String(r?.date ?? '').slice(0, 4));
+              if (!Number.isFinite(year)) continue;
+              if (year < yearFrom || year > yearTo) continue;
+
               const mmdd = mmddFromIso(r.date);
-              const year = Number(String(r.date).slice(0, 4));
               const raw = Number(r.value);
 
               if (!map[mmdd]) map[mmdd] = initRec(mmdd);
@@ -392,6 +615,7 @@ export function useDailyRecords({
 
               if (r.datatype === 'TMAX' && Number.isFinite(raw)) {
                 const f = c10ToF(raw);
+
                 const hi = upsertTieBest(rec.recordHighF, rec.recordHighYears, f, year, 1);
                 rec.recordHighF = hi.value;
                 rec.recordHighYears = hi.years;
@@ -403,6 +627,7 @@ export function useDailyRecords({
 
               if (r.datatype === 'TMIN' && Number.isFinite(raw)) {
                 const f = c10ToF(raw);
+
                 const lo = upsertTieBest(rec.recordLowF, rec.recordLowYears, f, year, -1);
                 rec.recordLowF = lo.value;
                 rec.recordLowYears = lo.years;
@@ -422,38 +647,58 @@ export function useDailyRecords({
 
             if (results.length < LIMIT) break;
             offset += LIMIT;
+
+            if (dbgRef.current.pages % 3 === 0) await sleep(0);
+          }
+
+          if (DEBUG_RECORDS) {
+            // eslint-disable-next-line no-console
+            console.log('[records] year done', { y, yearRows, start, end });
           }
         }
 
-        const keys = Object.keys(map);
-        if (keys.length === 0) {
-          throw new Error('NOAA records returned 0 rows (mapKeys=0). Not caching.');
+        if (Object.keys(map).length === 0) {
+          throw new Error('NOAA records returned 0 usable rows for the last 30 years.');
         }
 
-        setProgress({ phase: 'saving', message: 'Saving records…' });
+        if (DEBUG_RECORDS) {
+          const sampleKey = Object.keys(map)[0];
+          // eslint-disable-next-line no-console
+          console.log('[records] built', {
+            days: Object.keys(map).length,
+            sampleDay: sampleKey,
+            sample: sampleKey ? map[sampleKey] : null,
+            pages: dbgRef.current.pages,
+            rows: dbgRef.current.totalRows,
+            totalRowsAllYears,
+          });
+        }
 
-        setRecords(map);
-        haveRecordsRef.current = true;
+        // --- save ---
+        safeSet(() => setProgress({ phase: 'saving', message: 'Saving records…', yearFrom, yearTo }));
 
-        await AsyncStorage.setItem(
-          cacheKey,
-          JSON.stringify({
-            savedAt: Date.now(),
-            stationIdUsed: stationId,
-            stationNameUsed: stationName,
-            records: map,
-          })
-        );
+        safeSet(() => {
+          setRecords(map);
+          haveRecordsRef.current = true;
+        });
 
-        setProgress(null);
+        await writeRecordsCache(cacheKey, wantMeta, map, CACHE_TTL_MS);
+
+        safeSet(() => setProgress(null));
       } catch (e: any) {
-        if (!isAbortError(e)) setError(e?.message ?? 'Failed to load records');
+        if (!isAbortError(e)) {
+          safeSet(() => setError(e?.message ?? 'Failed to load records'));
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (runIdRef.current === myRunId) {
+          safeSet(() => {
+            setLoading(false);
+            setRefreshing(false);
+          });
+        }
       }
     },
-    [enabled, lat, lon, cacheKey, fetchJsonWithRetry]
+    [enabled, lat, lon, fetchJsonWithRetry]
   );
 
   useEffect(() => {
@@ -461,9 +706,7 @@ export function useDailyRecords({
     return () => abortRef.current?.abort();
   }, [load]);
 
-  const refresh = useCallback(() => {
-    load(true);
-  }, [load]);
+  const refresh = useCallback(() => load(true), [load]);
 
-  return { records, stationIdUsed, stationNameUsed, loading, refreshing, error, refresh, progress };
+  return { records, stationIdUsed, stationNameUsed, years, loading, refreshing, error, refresh, progress };
 }

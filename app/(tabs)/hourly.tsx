@@ -1,4 +1,5 @@
 // app/(tabs)/hourly.tsx
+
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,8 +22,12 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 
-
 type UnitSystem = 'us' | 'metric';
+
+function safeNum(v: any): number | null {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
 
 export default function HourlyTab() {
   const insets = useSafeAreaInsets();
@@ -34,11 +39,9 @@ export default function HourlyTab() {
 
   // ✅ Only refresh GPS if the user is actually on "current" (avoid stomping favorites)
   useEffect(() => {
-    if (locState.active.kind === 'current') {
-      refreshCurrentLocation();
-    }
+    if (locState.active?.kind === 'current') refreshCurrentLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locState.active.kind]);
+  }, [locState.active?.kind]);
 
   const coords = useMemo(() => {
     if (activeCoords) return activeCoords;
@@ -46,23 +49,41 @@ export default function HourlyTab() {
   }, [activeCoords]);
 
   const locationLabel = useMemo(() => {
-  const raw = (activeCoords ? activeLabel : '')?.trim();
-  if (raw && raw.toLowerCase() !== 'current location') return raw;
+    const raw = (activeCoords ? activeLabel : '')?.trim();
+    if (raw && raw.toLowerCase() !== 'current location') return raw;
 
-  // fallback: show coordinates so it’s never misleading
-  const c = activeCoords ?? { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
-  return `Current location (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`;
-}, [activeCoords, activeLabel]);
+    // fallback: show coordinates so it’s never misleading
+    const c = activeCoords ?? { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
+    return `Current location (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`;
+  }, [activeCoords, activeLabel]);
 
-  // ✅ Always request enough days to cover 72h cleanly, regardless of "day edge"
-  // (Open-Meteo can return partial-day hourly sets depending on run/time)
+  // ✅ Always request enough days to cover 72h cleanly
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
     lon: coords.lon,
     days: 5,
   });
 
-  const hourly = data?.hourly ?? [];
+  const hourlyRaw: any[] = data?.hourly ?? [];
+
+  // ✅ Normalize pressure fields (Open-Meteo often provides pressure_msl)
+  const hourly = useMemo(() => {
+    return (hourlyRaw ?? []).map((h: any) => {
+      const pressureHpa =
+        safeNum(h.pressure_msl) ??
+        safeNum(h.pressureMslHpa) ??
+        safeNum(h.surface_pressure) ??
+        safeNum(h.pressureSurfaceHpa) ??
+        safeNum(h.pressure_hpa) ??
+        safeNum(h.pressureHpa) ??
+        null;
+
+      return {
+        ...h,
+        pressureHpa, // ✅ what our UI should standardize on
+      };
+    });
+  }, [hourlyRaw]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -79,8 +100,7 @@ export default function HourlyTab() {
           <Text style={styles.sub} numberOfLines={1}>
             {locationLabel}
           </Text>
-
-         </View>
+        </View>
 
         {loading && !data ? (
           <View style={styles.center}>
@@ -98,6 +118,7 @@ export default function HourlyTab() {
 
         {hourly.length ? (
           <>
+            {/* ✅ HourlyCharts72h will now have pressureHpa available on each hour */}
             <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
 
             <View style={{ marginTop: theme.spacing.sm }}>
@@ -106,6 +127,7 @@ export default function HourlyTab() {
               </Pressable>
             </View>
 
+            {/* ✅ Timeline gets the same normalized hour objects */}
             {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
           </>
         ) : null}
@@ -124,7 +146,6 @@ const styles = StyleSheet.create({
   header: { marginBottom: theme.spacing.md },
   title: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
-  hint: { marginTop: 6, color: 'rgba(255,255,255,0.65)', fontWeight: '800', fontSize: 12 },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   small: { ...typography.small, marginTop: theme.spacing.sm },
