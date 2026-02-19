@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 
@@ -118,13 +120,17 @@ export default function ExploreBuoysScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
-        <View>
-          <Text style={typography.title}>Buoy Explorer</Text>
-          <Text style={typography.subtitle}>
-            Live NOAA buoys (latest observations)
-          </Text>
+      <View style={styles.brandLeft}>
+        <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+        <View style={{ flex: 1 }}>
+          <View style={styles.domainPill}>
+            <Text style={styles.domainPillText}>Nautical</Text>
+          </View>
+          <Text style={styles.headerTitle}>Buoy Explorer</Text>
+          <Text style={styles.headerSubtitle}>Live NOAA buoys (latest observations)</Text>
         </View>
       </View>
+    </View>
 
       {loading && !data && (
         <View style={styles.center}>
@@ -168,6 +174,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: theme.spacing.lg,
   },
+  brandLeft: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  flex: 1,
+  },
+
+  brandWordmark: {
+    width: 92,
+    height: 92,
+    backgroundColor: 'transparent',
+  },
+
+  domainPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginBottom: 6,
+  },
+
+  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
+
+  headerTitle: { ...typography.title },
+  headerSubtitle: { ...typography.subtitle },
   center: {
     marginTop: theme.spacing['2xl'],
     alignItems: 'center',

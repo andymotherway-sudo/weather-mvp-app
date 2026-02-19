@@ -2,6 +2,7 @@
 // Land Wx – Rich + Nerdy (Branded + Alpha polish)
 // ✅ Drop-in replacement: bigger Omni logo, remove "Land Wx", embed 72h hourly chart on Land,
 // ✅ keep /hourly route as “Full” fallback, and normalize pressure for hourly series.
+// ✅ UPDATE: Replace Skia AnimatedWeatherBackground with condition video animations (clear/partly/overcast/rain/storm/snow)
 
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -47,8 +48,8 @@ import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 
-// ✅ Animated background (Skia)
-import { AnimatedWeatherBackground, type WeatherScene } from '../../components/background/AnimatedWeatherBackground';
+// ✅ Condition video background (your new animations)
+import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
 
 // ✅ Wx Lab toggle replaces Simple/Nerdy mode
 import { useWxLab } from '../context/WxLabContext';
@@ -106,10 +107,6 @@ function formatUpdatedTime(observationTime: string | null) {
   const d = new Date(observationTime);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
-function clamp01(x: number) {
-  return Math.max(0, Math.min(1, x));
 }
 
 function LocationPickerModal({
@@ -1055,21 +1052,48 @@ export default function LandWeatherScreen() {
   const pressureInHg =
     safeNum(wx.pressureInHg ?? wx.pressure_inhg) ?? (pressureHpa != null ? pressureHpa * 0.029529983071445 : null);
 
-  // ✅ Background scene (computed after wind/cloud/vis exist)
-  const time: WeatherScene['time'] = isNight ? 'night' : isSunrise ? 'sunrise' : isSunset ? 'sunset' : 'day';
-  const fogFromVis = (vis: number | null) => {
-    if (vis == null) return 0;
-    if (vis <= 1) return 0.85;
-    if (vis <= 3) return 0.55;
-    if (vis <= 6) return 0.25;
-    return 0;
-  };
-  const scene: WeatherScene = {
-    time,
-    cloudiness: cloudCoverPct != null ? clamp01(cloudCoverPct / 100) : 0.25,
-    fog: fogFromVis(visibilityMi),
-    wind: windMph != null ? clamp01(windMph / 25) : 0.2,
-  };
+  // ✅ Resolve weatherCode for video selection (current → fallback to nearest hourly)
+  const weatherCodeFromCurrent =
+    safeNum(
+      wx.weatherCode ??
+        wx.weathercode ??
+        wx.weather_code ??
+        wx.code ??
+        wx.iconCode ??
+        wx.icon_code ??
+        null
+    ) ?? null;
+
+  const weatherCodeFromHourly = (() => {
+    const hrs: any[] = forecastData?.hourly ?? [];
+    if (!hrs.length) return null;
+
+    const now = Date.now();
+    let best: any = null;
+    let bestDt = Infinity;
+
+    for (const h of hrs) {
+      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+      if (!Number.isFinite(t)) continue;
+      const dt = Math.abs(t - now);
+      if (dt < bestDt) {
+        bestDt = dt;
+        best = h;
+      }
+    }
+
+    return (
+      safeNum(
+        best?.weather_code ??
+          best?.weatherCode ??
+          best?.weathercode ??
+          best?.condition_code ??
+          null
+      ) ?? null
+    );
+  })();
+
+  const weatherCode = weatherCodeFromCurrent ?? weatherCodeFromHourly;
 
   const condition = wx.shortForecast ?? wx.condition ?? wx.textDescription ?? wx.weather ?? '—';
   const observationTime: string | null = wx.observedAt ?? wx.timestamp ?? wx.datetime ?? null;
@@ -1184,8 +1208,8 @@ export default function LandWeatherScreen() {
 
   return (
     <View style={styles.root}>
-      {/* ✅ animated background behind everything */}
-      <AnimatedWeatherBackground scene={scene} />
+      {/* ✅ NEW: condition-based animated video background behind everything */}
+      <WeatherVideoBackground weatherCode={weatherCode ?? undefined} />
 
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ScrollView
@@ -1364,7 +1388,7 @@ export default function LandWeatherScreen() {
             <Text style={styles.updatedText}>{updatedText}</Text>
           </Card>
 
-          {/* ✅ NEW: Hourly on Land (72h) */}
+          {/* ✅ Hourly on Land (72h) */}
           {hourly.length ? (
             <Card style={styles.hourlyCard}>
               <View style={styles.hourlyHeaderRow}>
@@ -1435,7 +1459,7 @@ export default function LandWeatherScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
 
-  // ✅ transparent so background shows through
+  // ✅ transparent so background video shows through
   safe: { flex: 1, backgroundColor: 'transparent' },
   container: { flex: 1, backgroundColor: 'transparent' },
 

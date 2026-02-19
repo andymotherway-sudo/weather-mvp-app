@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,6 +21,8 @@ import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 const MAX_ROWS = 10;
 
@@ -715,13 +718,23 @@ export default function ExtremesScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View style={styles.header}>
-        <Text style={typography.title}>Extremes</Text>
-        <Text style={typography.subtitle}>{headerSubtitle}</Text>
-
-        <View style={{ marginTop: theme.spacing.md }}>
-          <Segmented value={mode} onChange={setMode} />
+      <View style={styles.brandRow}>
+        <View style={styles.brandLeft}>
+          <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+          <View style={{ flex: 1 }}>
+            <View style={styles.domainPill}>
+              <Text style={styles.domainPillText}>Extremes</Text>
+            </View>
+            <Text style={styles.headerTitle}>Extremes</Text>
+            <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
+          </View>
         </View>
       </View>
+
+      <View style={{ marginTop: theme.spacing.md }}>
+        <Segmented value={mode} onChange={setMode} />
+      </View>
+    </View>
 
       {/* Loading / Error for marine */}
       {mode === 'marine' && loading && !data ? (
@@ -1008,7 +1021,29 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing['2xl'],
     alignItems: 'center',
   },
+  brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
 
+  brandWordmark: {
+    width: 92,
+    height: 92,
+    backgroundColor: 'transparent',
+  },
+
+  domainPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginBottom: 6,
+  },
+  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
+
+  headerTitle: { ...typography.title },
+  headerSubtitle: { ...typography.subtitle },
   segment: {
     flexDirection: 'row',
     backgroundColor: '#071226',

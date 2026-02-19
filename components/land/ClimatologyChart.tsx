@@ -1,7 +1,16 @@
 // components/land/ClimatologyChart.tsx
-import React, { useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
-import Svg, { Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import Svg, {
+  Defs,
+  G,
+  Line,
+  LinearGradient,
+  Path,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from 'react-native-svg';
 
 import { theme } from '../../styles/theme';
 import { Card } from '../layout/Card';
@@ -18,13 +27,9 @@ type Props = {
   selectedDoy?: number; // 1..365
   markerLabel?: string;
 
-  /** NEW: called when user scrubs the chart */
   onSelectDoy?: (doy: number) => void;
 
-  /** Optional monthly precip normals (inches), 12 entries month=1..12 */
   precipMonthlyIn?: Array<number | null>;
-
-  /** Optional last-year daily overlay (°F), arrays should be length 365 */
   lastYear?: LastYearSeries;
 };
 
@@ -43,9 +48,7 @@ function monthLabel(m: number) {
   return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'][clamp(m, 1, 12) - 1];
 }
 
-// Midpoints (day-of-year) for each month (non-leap). Used as anchors for interpolation.
 const MONTH_MID_DOY = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
-// Approx start-of-month doy for label placement
 const MONTH_START_DOY = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
 
 function lerp(a: number, b: number, t: number) {
@@ -75,7 +78,6 @@ function interpolateDailyFromMonthly(monthly12: number[]) {
   for (let d = 1; d <= 365; d++) {
     let j = 0;
     const du = d <= MONTH_MID_DOY[0] ? d + 365 : d;
-
     const midsU2 = MONTH_MID_DOY.concat([MONTH_MID_DOY[0] + 365]);
 
     for (let k = 0; k < 12; k++) {
@@ -115,10 +117,13 @@ function fmtInches(v: number | null | undefined) {
 function monthFromDoy(doy1: number) {
   const d = clamp(doy1, 1, 365);
   for (let i = 11; i >= 0; i--) {
-    if (d >= MONTH_START_DOY[i]) return i + 1; // 1..12
+    if (d >= MONTH_START_DOY[i]) return i + 1;
   }
   return 1;
 }
+
+// ✅ SVG animated components
+const AView = Animated.createAnimatedComponent(View);
 
 export function ClimatologyChart({
   title = 'Almanac',
@@ -133,6 +138,7 @@ export function ClimatologyChart({
   const [scrubDoy, setScrubDoy] = useState<number | null>(null);
   const scrubbingRef = useRef(false);
 
+  // ---- Layout
   const W = 360;
   const H = 240;
   const PAD_L = 36;
@@ -149,12 +155,12 @@ export function ClimatologyChart({
   };
 
   const doyForX = (x: number) => {
-    // x is local within the SVG/view box (0..W)
     const clamped = clamp(x, PAD_L, PAD_L + innerW);
-    const t = (clamped - PAD_L) / innerW; // 0..1
+    const t = (clamped - PAD_L) / innerW;
     return clamp(1 + Math.round(t * 364), 1, 365);
   };
 
+  // ---- Data prep
   const monthly = useMemo(() => {
     const byMonth = new Array<MonthlyNormalsF | null>(12).fill(null);
     for (const m of normals) {
@@ -224,30 +230,45 @@ export function ClimatologyChart({
     return `${buildPath(pts)} Z`;
   }, [seriesPts.tmax, seriesPts.tmin]);
 
-  const precipPath = useMemo(() => {
-    if (!precipMonthlyIn || precipMonthlyIn.length < 12) return '';
+// ✅ Hourly-style precip: area fill + ridge stroke (steel-blue) that spans full chart width
+const precipShape = useMemo(() => {
+  if (!precipMonthlyIn || precipMonthlyIn.length < 12) return { area: '', ridge: '' };
 
-    const vals = precipMonthlyIn.slice(0, 12).map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0));
-    const max = Math.max(...vals);
-    if (!Number.isFinite(max) || max <= 0) return '';
+  const vals = precipMonthlyIn
+    .slice(0, 12)
+    .map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0));
 
-    const baseY = PAD_T + innerH;
-    const peakH = 28;
+  const max = Math.max(...vals);
+  if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
-    const pts = vals.map((v, i) => {
-      const x = xForDoy(MONTH_START_DOY[i]);
-      const h = (v / max) * peakH;
-      const y = baseY - h;
-      return { x, y };
-    });
+  const baseY = PAD_T + innerH;
+  const peakH = 28;
 
-    return [
-      `M ${PAD_L.toFixed(2)} ${baseY.toFixed(2)}`,
-      ...pts.map((p) => `L ${p.x.toFixed(2)} ${p.y.toFixed(2)}`),
-      `L ${(PAD_L + innerW).toFixed(2)} ${baseY.toFixed(2)}`,
-      'Z',
-    ].join(' ');
-  }, [precipMonthlyIn, innerW, innerH]);
+  // Build month-start points
+  const monthPts = vals.map((v, i) => {
+    const x = xForDoy(MONTH_START_DOY[i]);
+    const h = (v / max) * peakH;
+    const y = baseY - h;
+    return { x, y };
+  });
+
+  // Anchor to full width so the mountain reaches both ends
+  const left = { x: PAD_L, y: monthPts[0]?.y ?? baseY };
+  const right = { x: PAD_L + innerW, y: monthPts[monthPts.length - 1]?.y ?? baseY };
+
+  const pts = [left, ...monthPts, right];
+
+  const ridge = buildPath(pts);
+
+  const area =
+    pts.length >= 2
+      ? `${ridge} L ${right.x.toFixed(2)} ${baseY.toFixed(2)} L ${left.x.toFixed(2)} ${baseY.toFixed(
+          2
+        )} Z`
+      : '';
+
+  return { area, ridge };
+}, [precipMonthlyIn, innerW, innerH]);
 
   const lastYearBandPath = useMemo(() => {
     const lyMin = lastYear?.tminF;
@@ -281,8 +302,28 @@ export function ClimatologyChart({
     return buildPath(pts);
   };
 
+  // ---- Premium motion: markerX eases instead of snapping
   const activeDoy = scrubDoy ?? selectedDoy ?? null;
-  const markerX = activeDoy ? xForDoy(activeDoy) : null;
+
+  const markerXValue = useRef(new Animated.Value(activeDoy ? xForDoy(activeDoy) : PAD_L)).current;
+  const markerAlpha = useRef(new Animated.Value(activeDoy ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (!activeDoy) {
+      Animated.timing(markerAlpha, { toValue: 0, duration: 140, useNativeDriver: true }).start();
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(markerAlpha, { toValue: 1, duration: 140, useNativeDriver: true }),
+      Animated.timing(markerXValue, {
+        toValue: xForDoy(activeDoy),
+        duration: scrubbingRef.current ? 70 : 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDoy]);
 
   const markerText = useMemo(() => {
     if (!activeDoy) return undefined;
@@ -310,6 +351,7 @@ export function ClimatologyChart({
     };
   }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn]);
 
+  // ---- Scrub handling
   const panResponder = useMemo(() => {
     if (!onSelectDoy) return null;
 
@@ -344,6 +386,29 @@ export function ClimatologyChart({
     });
   }, [onSelectDoy]);
 
+  // ---- Premium polish colors (subtler contrast)
+  const C = {
+    grid: 'rgba(255,255,255,0.07)',
+    tick: 'rgba(255,255,255,0.42)',
+    month: 'rgba(255,255,255,0.55)',
+
+    // lines
+    avg: 'rgba(210,220,230,0.70)',
+    min: 'rgba(170,190,210,0.50)',
+    max: 'rgba(210,225,240,0.66)',
+
+    // glow (reduced)
+    glow: 'rgba(0,0,0,0.00)',
+    glow2: 'rgba(0,0,0,0.00)',
+
+    // ✅ precip (steel-blue, like hourly chip)
+    precipFill: 'rgba(90, 140, 175, 0.18)',
+    precipStroke: 'rgba(90, 140, 175, 0.42)',
+
+    marker: 'rgba(125,210,255,0.55)',
+    markerText: 'rgba(170,235,255,0.90)',
+  };
+
   return (
     <Card style={styles.card}>
       <View style={styles.header}>
@@ -353,55 +418,78 @@ export function ClimatologyChart({
             {stationName ? `30-yr normals • ${stationName}` : '30-yr monthly normals (interpolated daily)'}
           </Text>
 
-          {/* NEW: single detail line */}
           {detail ? (
             <Text style={styles.detailLine} numberOfLines={1}>
-              Typical low: {Math.round(detail.tmin)}°   Avg: {Math.round(detail.tavg)}°   Typical high: {Math.round(detail.tmax)}°
-              {'   '}Avg precip: {fmtInches(detail.precip)}
+              Typical low: {Math.round(detail.tmin)}°   Avg: {Math.round(detail.tavg)}°   Typical high:{' '}
+              {Math.round(detail.tmax)}° {'   '}Avg precip: {fmtInches(detail.precip)}
             </Text>
           ) : null}
         </View>
       </View>
 
-      {/* Wrap the SVG in a View that receives touches */}
       <View {...(panResponder ? panResponder.panHandlers : {})}>
+        {/* subtle “glass” rim behind SVG */}
+        <View style={styles.glassFrame} />
+
         <Svg width={W} height={H}>
           <Defs>
-            <LinearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="rgba(255,255,255,0.10)" />
-              <Stop offset="1" stopColor="rgba(255,255,255,0.03)" />
+            {/* background gradient */}
+            <LinearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="rgba(255,255,255,0.045)" />
+              <Stop offset="1" stopColor="rgba(255,255,255,0.012)" />
             </LinearGradient>
 
-            <LinearGradient id="precipGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="rgba(160,220,255,0.18)" />
-              <Stop offset="1" stopColor="rgba(160,220,255,0.04)" />
+            {/* vignette */}
+            <LinearGradient id="vigGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="rgba(0,0,0,0.10)" />
+              <Stop offset="0.45" stopColor="rgba(0,0,0,0.00)" />
+              <Stop offset="1" stopColor="rgba(0,0,0,0.18)" />
+            </LinearGradient>
+
+            {/* normals band (temperature range — smoky grey glass) */}
+            <LinearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="rgba(255,255,255,0.08)" />
+              <Stop offset="0.55" stopColor="rgba(255,255,255,0.035)" />
+              <Stop offset="1" stopColor="rgba(255,255,255,0.010)" />
             </LinearGradient>
           </Defs>
 
-          <Rect x={0} y={0} width={W} height={H} rx={18} fill="rgba(255,255,255,0.02)" />
+          {/* premium background */}
+          <Rect x={0} y={0} width={W} height={H} rx={18} fill="url(#bgGrad)" />
+          <Rect x={0} y={0} width={W} height={H} rx={18} fill="url(#vigGrad)" opacity={0.9} />
 
-          {/* precip mountain behind everything (subtle) */}
-          {precipPath ? <Path d={precipPath} fill="url(#precipGrad)" /> : null}
-
-          {/* last year overlay band (behind normals band) */}
-          {lastYearBandPath ? (
-            <Path d={lastYearBandPath} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
+          {/* ✅ precip behind (hourly-style fill + ridge) */}
+          {precipShape.area ? (
+            <>
+              <Path d={precipShape.area} fill={C.precipFill} stroke="none" />
+              <Path d={precipShape.ridge} fill="none" stroke={C.precipStroke} strokeWidth={2} />
+            </>
           ) : null}
 
-          {/* normals band */}
-          <Path d={bandPath} fill="url(#bandGrad)" />
+          {/* last year overlay band */}
+          {lastYearBandPath ? (
+            <Path
+              d={lastYearBandPath}
+              fill="rgba(255,255,255,0.035)"
+              stroke="rgba(140,210,255,0.08)"
+              strokeWidth={1}
+            />
+          ) : null}
+
+          {/* normals band (transparent white) */}
+          <Path d={bandPath} fill="url(#bandGrad)" opacity={0.62} />
 
           {/* grid + ticks */}
           {ticks.map((t, idx) => {
             const y = yForVal(t);
             return (
               <G key={`tick-${idx}`}>
-                <Line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke="rgba(255,255,255,0.07)" strokeWidth={1} />
+                <Line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y} stroke={C.grid} strokeWidth={1} />
                 <SvgText
                   x={PAD_L - 6}
                   y={y + 3}
                   fontSize="9"
-                  fill="rgba(255,255,255,0.40)"
+                  fill={C.tick}
                   fontWeight="800"
                   textAnchor="end"
                 >
@@ -418,7 +506,7 @@ export function ClimatologyChart({
               x={xForDoy(doy)}
               y={PAD_T + innerH + 22}
               fontSize="10"
-              fill="rgba(255,255,255,0.55)"
+              fill={C.month}
               fontWeight="900"
               textAnchor="middle"
             >
@@ -426,29 +514,49 @@ export function ClimatologyChart({
             </SvgText>
           ))}
 
-          {/* series lines (all 3, with avg emphasized) */}
-          {(['tminF', 'tavgF', 'tmaxF'] as SeriesKey[]).map((k) => {
-            const d = pathFor(k);
-            const isFocus = k === 'tavgF';
-            const stroke =
-              k === 'tminF' ? 'rgba(255,255,255,0.45)' : k === 'tmaxF' ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.92)';
-            return (
-              <Path key={k} d={d} stroke={stroke} strokeWidth={isFocus ? 2.8 : 1.6} opacity={isFocus ? 1 : 0.55} fill="none" />
-            );
-          })}
+          {/* min/max (supporting) */}
+          <Path d={pathFor('tminF')} stroke={C.min} strokeWidth={1.5} opacity={0.85} fill="none" />
+          <Path d={pathFor('tmaxF')} stroke={C.max} strokeWidth={1.5} opacity={0.85} fill="none" />
 
-          {/* marker line */}
-          {markerX != null ? (
-            <G>
-              <Line x1={markerX} y1={PAD_T} x2={markerX} y2={PAD_T + innerH} stroke="rgba(160,220,255,0.35)" strokeWidth={1.5} />
-              {markerText ? (
-                <SvgText x={markerX + 6} y={PAD_T + 12} fontSize="10" fill="rgba(160,220,255,0.75)" fontWeight="900" textAnchor="start">
-                  {markerText}
-                </SvgText>
-              ) : null}
-            </G>
-          ) : null}
+          {/* avg glow stack (reduced so it’s not stark) */}
+          <Path d={pathFor('tavgF')} stroke={C.glow2} strokeWidth={6} opacity={0.7} fill="none" />
+          <Path d={pathFor('tavgF')} stroke={C.glow} strokeWidth={4} opacity={0.8} fill="none" />
+          <Path d={pathFor('tavgF')} stroke={C.avg} strokeWidth={2.1} opacity={0.95} fill="none" />
         </Svg>
+
+        {/* ✅ Marker overlay (native-driver smooth) */}
+        <AView
+          pointerEvents="none"
+          style={[
+            styles.markerOverlay,
+            {
+              opacity: markerAlpha,
+              transform: [{ translateX: markerXValue }],
+            },
+          ]}
+        >
+          <Svg width={W} height={H}>
+            <Line x1={0} y1={PAD_T} x2={0} y2={PAD_T + innerH} stroke={C.marker} strokeWidth={1.5} />
+
+            {/* premium dot */}
+            <Path
+              d={`M 0 ${(PAD_T + 18).toFixed(2)} m -3 0 a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`}
+              fill="rgba(170,235,255,0.95)"
+              opacity={0.85}
+            />
+            <Path
+              d={`M 0 ${(PAD_T + 18).toFixed(2)} m -7 0 a 7 7 0 1 0 14 0 a 7 7 0 1 0 -14 0`}
+              fill="rgba(120,200,255,0.14)"
+              opacity={0.85}
+            />
+
+            {markerText ? (
+              <SvgText x={8} y={PAD_T + 14} fontSize="10" fill={C.markerText} fontWeight="900" textAnchor="start">
+                {markerText}
+              </SvgText>
+            ) : null}
+          </Svg>
+        </AView>
       </View>
 
       <Text style={styles.footer}>
@@ -460,15 +568,49 @@ export function ClimatologyChart({
 
 const styles = StyleSheet.create({
   card: { marginBottom: theme.spacing.lg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
   title: { fontSize: 15, fontWeight: '900', color: theme.colors.textPrimary },
-  subTitle: { marginTop: 2, fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '700' },
+  subTitle: {
+    marginTop: 2,
+    fontSize: 12,
+    opacity: 0.7,
+    color: theme.colors.textSecondary,
+    fontWeight: '700',
+  },
 
   detailLine: {
     marginTop: 8,
     fontSize: 12,
     fontWeight: '900',
-    color: 'rgba(255,255,255,0.82)',
+    color: 'rgba(235,245,255,0.88)',
+  },
+
+  // “glass” rim (gives depth without changing Card)
+  glassFrame: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 360,
+    height: 240,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
+    zIndex: 0,
+  },
+
+  markerOverlay: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 360,
+    height: 240,
   },
 
   footer: { marginTop: 8, fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '700' },

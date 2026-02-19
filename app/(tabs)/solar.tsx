@@ -19,6 +19,8 @@ import { NerdyExplainModal, type ExplainPayload } from '../../components/common/
 import { useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
 
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
+
 function fmtUpdated(iso?: string) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -434,29 +436,16 @@ export default function SolarScreen() {
           contentContainerStyle={[styles.content, contentPad]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
         >
-          {/* Brand header (OMNIwx style) */}
+          {/* Brand header (shared OMNI wordmark) */}
           <View style={styles.headerRow}>
-            <View style={{ flex: 1 }}>
-              <View style={styles.brandRow}>
-                <View style={styles.brandLeft}>
-                  <View style={styles.brandMarkWrap}>
-                    <Image source={require('../../assets/brand/omniwx-mark.png')} style={styles.brandMark} />
-                  </View>
-
-                  <View style={{ flexShrink: 1 }}>
-                    <View style={styles.wordmarkRow}>
-                      <Text style={styles.wordmarkOmni}>OMNI</Text>
-                      <Text style={styles.wordmarkWxSup}>wx</Text>
-                    </View>
-
-                    <View style={styles.domainPill}>
-                      <Text style={styles.domainPillText}>Space Wx</Text>
-                    </View>
-                  </View>
-                </View>
+            <View style={styles.brandRow}>
+              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+              <View style={styles.domainPill}>
+                <Text style={styles.domainPillText}>Space Wx</Text>
               </View>
             </View>
           </View>
+
           <Text style={styles.subtitle}>Solar wind, geomagnetic activity, NOAA scale status, X-ray flux, and events</Text>
 
           {loading && !data ? (
@@ -674,7 +663,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  brandRow: { marginBottom: 6 },
+  brandRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  marginBottom: 6,
+  },
+
+  brandWordmark: {
+    width: 92,
+    height: 92,
+    backgroundColor: 'transparent',
+  },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
   brandMarkWrap: { width: 42, height: 42, backgroundColor: 'transparent' },
@@ -698,14 +698,13 @@ const styles = StyleSheet.create({
   wordmarkWx: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '800', marginBottom: 2 },
 
   domainPill: {
-    marginTop: 2,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+  alignSelf: 'center',
+  paddingHorizontal: 10,
+  paddingVertical: 5,
+  borderRadius: 12,
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.10)',
   },
   domainPillText: { fontSize: 11, fontWeight: '800', color: 'white' },
 

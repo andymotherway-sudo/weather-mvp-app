@@ -1,8 +1,8 @@
 // app/(tabs)/hourly.tsx
-
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +15,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { DEFAULT_LOCATION } from '../lib/weather/locations';
+
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 import { NerdyHourlyTimeline } from '../../components/land/NerdyHourlyTimeline';
@@ -34,10 +36,8 @@ export default function HourlyTab() {
   const units: UnitSystem = 'us';
   const [showDetails, setShowDetails] = useState(false);
 
-  // ✅ Pull global location state (so it matches Land)
   const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
 
-  // ✅ Only refresh GPS if the user is actually on "current" (avoid stomping favorites)
   useEffect(() => {
     if (locState.active?.kind === 'current') refreshCurrentLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,12 +52,10 @@ export default function HourlyTab() {
     const raw = (activeCoords ? activeLabel : '')?.trim();
     if (raw && raw.toLowerCase() !== 'current location') return raw;
 
-    // fallback: show coordinates so it’s never misleading
     const c = activeCoords ?? { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
     return `Current location (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`;
   }, [activeCoords, activeLabel]);
 
-  // ✅ Always request enough days to cover 72h cleanly
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
     lon: coords.lon,
@@ -66,7 +64,6 @@ export default function HourlyTab() {
 
   const hourlyRaw: any[] = data?.hourly ?? [];
 
-  // ✅ Normalize pressure fields (Open-Meteo often provides pressure_msl)
   const hourly = useMemo(() => {
     return (hourlyRaw ?? []).map((h: any) => {
       const pressureHpa =
@@ -78,10 +75,7 @@ export default function HourlyTab() {
         safeNum(h.pressureHpa) ??
         null;
 
-      return {
-        ...h,
-        pressureHpa, // ✅ what our UI should standardize on
-      };
+      return { ...h, pressureHpa };
     });
   }, [hourlyRaw]);
 
@@ -95,7 +89,9 @@ export default function HourlyTab() {
         ]}
         refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={refresh} />}
       >
+        {/* ✅ Header aligned with Land */}
         <View style={styles.header}>
+          <Image source={OMNI_MARK_WORD} style={styles.wordmark} resizeMode="contain" />
           <Text style={styles.title}>Hourly</Text>
           <Text style={styles.sub} numberOfLines={1}>
             {locationLabel}
@@ -118,16 +114,16 @@ export default function HourlyTab() {
 
         {hourly.length ? (
           <>
-            {/* ✅ HourlyCharts72h will now have pressureHpa available on each hour */}
             <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
 
             <View style={{ marginTop: theme.spacing.sm }}>
               <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>
-                <Text style={styles.toggleText}>{showDetails ? 'Hide hourly details' : 'Show hourly details'}</Text>
+                <Text style={styles.toggleText}>
+                  {showDetails ? 'Hide hourly details' : 'Show hourly details'}
+                </Text>
               </Pressable>
             </View>
 
-            {/* ✅ Timeline gets the same normalized hour objects */}
             {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
           </>
         ) : null}
@@ -144,6 +140,7 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
   header: { marginBottom: theme.spacing.md },
+  wordmark: { width: 92, height: 92, marginBottom: 6 }, // tweak if you want it bigger/smaller
   title: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
 

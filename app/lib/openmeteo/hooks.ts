@@ -12,6 +12,9 @@ export type ForecastHour = {
   windMph: number | null;
   windGustMph: number | null;
   windDirDeg?: number | null;
+
+  // ✅ NEW: Open-Meteo WMO weather code (0..99)
+  weatherCode?: number | null;
 };
 
 export type ForecastDay = {
@@ -29,6 +32,9 @@ export type ForecastDay = {
 
   cloudCoverMinPct: number | null;
   cloudCoverMaxPct: number | null;
+
+  // ✅ Optional (nice to have later): daily weather code
+  weatherCode?: number | null;
 };
 
 type ForecastData = {
@@ -102,6 +108,9 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'winddirection_10m_dominant',
           'cloudcover_mean',
           'dew_point_2m_max',
+
+          // ✅ Optional daily code (safe to request even if you don’t use it yet)
+          'weather_code',
         ].join(',');
 
         const hourlyVars = [
@@ -112,9 +121,11 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'precipitation_probability',
           'windspeed_10m',
           'wind_gusts_10m',
+
+          // ✅ THIS is the key missing piece for your background video
+          'weather_code',
         ].join(',');
 
-        // Open-Meteo supports past_days (archived) and up to ~16 forecast days depending on model/provider. :contentReference[oaicite:5]{index=5}
         const url =
           `https://api.open-meteo.com/v1/forecast` +
           `?latitude=${latKey}&longitude=${lonKey}` +
@@ -141,6 +152,9 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const hWind: any[] = h.windspeed_10m ?? [];
         const hGust: any[] = h.wind_gusts_10m ?? [];
 
+        // ✅ NEW
+        const hWmo: any[] = h.weather_code ?? [];
+
         const hourly: ForecastHour[] = hTimes.map((time, idx) => ({
           time,
           tempF: safeNum(hTemp[idx]),
@@ -150,6 +164,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           precipProbPct: safeNum(hPop[idx]),
           windMph: safeNum(hWind[idx]),
           windGustMph: safeNum(hGust[idx]),
+          weatherCode: safeNum(hWmo[idx]),
         }));
 
         // ---- Compute DAILY derived fields from HOURLY ----
@@ -189,6 +204,9 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const windMax: any[] = d.windspeed_10m_max ?? [];
         const windDir: any[] = d.winddirection_10m_dominant ?? [];
 
+        // ✅ Optional daily weather code
+        const dWmo: any[] = d.weather_code ?? [];
+
         const daily: ForecastDay[] = dTimes.map((date, idx) => ({
           date,
           tempMaxF: safeNum(tMax[idx]),
@@ -202,6 +220,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           humidityMaxPct: typeof rhMaxByDate[date] === 'number' ? rhMaxByDate[date] : null,
           cloudCoverMinPct: typeof cloudMinByDate[date] === 'number' ? cloudMinByDate[date] : null,
           cloudCoverMaxPct: typeof cloudMaxByDate[date] === 'number' ? cloudMaxByDate[date] : null,
+          weatherCode: safeNum(dWmo[idx]),
         }));
 
         setData({ daily, hourly });
