@@ -1,6 +1,10 @@
 // app/(tabs)/extremes.tsx
 // OMNIwx Extremes: Marine (global buoys) + Land (local/global) + Space (fun / Mars)
 // Keeps ranked rows you liked, but adds mode toggle, hero cards, and refresh.
+//
+// DROP-IN REPLACEMENT: Land now pulls from your Cloudflare Worker route:
+//   https://omniwx-api.omniwx.workers.dev/land-extremes?unit=F|C
+// This enables scaling to 250–500+ US sites without device fan-out.
 
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -25,6 +29,9 @@ import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 const MAX_ROWS = 10;
+
+// Worker endpoint (land extremes)
+const LAND_EXTREMES_WORKER_URL = 'https://omniwx-api.omniwx.workers.dev/land-extremes';
 
 type Severity = 'calm' | 'moderate' | 'rough' | 'extreme';
 type Mode = 'marine' | 'land' | 'space';
@@ -106,8 +113,7 @@ function getSeverityLabel(severity: Severity): string {
 
 /**
  * LAND + SPACE
- * Land is now wired to Open-Meteo "current" for a curated point set.
- * (Fast MVP. Later we can swap to station obs / records / NWS / backend aggregation.)
+ * Land is wired to your Cloudflare Worker /land-extremes route.
  */
 type LandExtremeKind = 'hot' | 'cold' | 'wind' | 'rain';
 
@@ -134,106 +140,75 @@ type LandHookResult = {
   refresh: () => Promise<void>;
 };
 
-type LandPoint = { id: string; name: string; lat: number; lon: number; badge?: string };
-
-// Curated points (MVP). You can grow this list over time or replace with a real aggregation feed.
-const LAND_POINTS: LandPoint[] = [
-  // Local-ish + big US metros
-  { id: 'phx', name: 'Phoenix, AZ', lat: 33.4484, lon: -112.074 },
-  { id: 'la', name: 'Los Angeles, CA', lat: 34.0522, lon: -118.2437, badge: 'US' },
-  { id: 'sf', name: 'San Francisco, CA', lat: 37.7749, lon: -122.4194, badge: 'US' },
-  { id: 'sea', name: 'Seattle, WA', lat: 47.6062, lon: -122.3321, badge: 'US' },
-  { id: 'den', name: 'Denver, CO', lat: 39.7392, lon: -104.9903, badge: 'US' },
-  { id: 'chi', name: 'Chicago, IL', lat: 41.8781, lon: -87.6298, badge: 'US' },
-  { id: 'nyc', name: 'New York, NY', lat: 40.7128, lon: -74.006, badge: 'US' },
-  { id: 'mia', name: 'Miami, FL', lat: 25.7617, lon: -80.1918, badge: 'US' },
-  { id: 'bos', name: 'Boston, MA', lat: 42.3601, lon: -71.0589, badge: 'US' },
-
-  // “Global flavor” points
-  { id: 'ldn', name: 'London, UK', lat: 51.5072, lon: -0.1276, badge: 'Global' },
-  { id: 'del', name: 'Delhi, IN', lat: 28.6139, lon: 77.209, badge: 'Global' },
-  { id: 'tok', name: 'Tokyo, JP', lat: 35.6762, lon: 139.6503, badge: 'Global' },
-  { id: 'syd', name: 'Sydney, AU', lat: -33.8688, lon: 151.2093, badge: 'Global' },
-  { id: 'cpt', name: 'Cape Town, ZA', lat: -33.9249, lon: 18.4241, badge: 'Global' },
-
-  // Some “extreme-prone” spots for fun
-  { id: 'mtw', name: 'Mount Washington, NH', lat: 44.2706, lon: -71.3033, badge: 'US' },
-  { id: 'dv', name: 'Death Valley, CA', lat: 36.5054, lon: -116.848, badge: 'US' },
-];
-
-type OpenMeteoCurrent = {
-  time?: string;
-  temperature_2m?: number;
-  precipitation?: number;
-  wind_speed_10m?: number;
-  wind_gusts_10m?: number;
-};
-
-async function fetchOpenMeteoCurrent(
-  lat: number,
-  lon: number,
-  unit: 'F' | 'C',
-): Promise<{ current: OpenMeteoCurrent | null; updatedAtIso: string | null }> {
-  // Use Open-Meteo “current” (fast, no keys).
-  // We request mph / inches when in US-style unit mode.
-  const temperatureUnit = unit === 'F' ? 'fahrenheit' : 'celsius';
-  const windUnit = unit === 'F' ? 'mph' : 'kmh';
-  const precipUnit = unit === 'F' ? 'inch' : 'mm';
-
-  const url =
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(lat)}` +
-    `&longitude=${encodeURIComponent(lon)}` +
-    `&current=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m` +
-    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
-    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
-    `&precipitation_unit=${encodeURIComponent(precipUnit)}` +
-    `&timezone=UTC`;
-
+async function fetchWorkerLandExtremes(unit: 'F' | 'C'): Promise<{
+  ok: boolean;
+  unit: 'F' | 'C';
+  updatedAt: string | null;
+  heroes: Partial<Record<LandExtremeKind, LandExtreme | null>>;
+  groups: LandGroup[];
+}> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 8500);
 
   try {
+    const url = `${LAND_EXTREMES_WORKER_URL}?unit=${encodeURIComponent(unit)}`;
     const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) return { current: null, updatedAtIso: null };
-    const json = await res.json();
-    const cur: OpenMeteoCurrent | null = json?.current ?? null;
-    const updatedAtIso: string | null = cur?.time ? String(cur.time) : null;
-    return { current: cur, updatedAtIso };
-  } catch {
-    return { current: null, updatedAtIso: null };
+    if (!res.ok) throw new Error(`land-extremes worker failed (${res.status})`);
+
+    const json = (await res.json()) as any;
+    return {
+      ok: !!json?.ok,
+      unit: json?.unit === 'C' ? 'C' : 'F',
+      updatedAt: typeof json?.updatedAt === 'string' ? json.updatedAt : null,
+      heroes: (json?.heroes && typeof json.heroes === 'object' ? json.heroes : {}) as any,
+      groups: (Array.isArray(json?.groups) ? json.groups : []) as any,
+    };
   } finally {
     clearTimeout(t);
   }
 }
 
-function fmtWind(v: number | null | undefined, unit: 'F' | 'C') {
-  if (v == null || !Number.isFinite(v)) return '—';
-  return unit === 'F' ? `${v.toFixed(0)} mph` : `${v.toFixed(0)} km/h`;
+function isWettestGroup(g: LandGroup) {
+  const title = String(g?.title ?? '').toLowerCase();
+  if (title.includes('wettest')) return true;
+
+  const items = Array.isArray(g?.items) ? g.items : [];
+  // Treat a group as "wettest" if most items are kind === 'rain'
+  const rainCount = items.filter((x) => x?.kind === 'rain').length;
+  return items.length > 0 && rainCount / items.length >= 0.6;
 }
-function fmtPrecip(v: number | null | undefined, unit: 'F' | 'C') {
-  if (v == null || !Number.isFinite(v)) return '—';
-  // This is “current precipitation” for the timestep (not a 24h total).
-  return unit === 'F' ? `${v.toFixed(2)} in` : `${v.toFixed(1)} mm`;
+
+function stripWettest(groups: LandGroup[]) {
+  return (groups ?? []).filter((g) => !isWettestGroup(g));
 }
-function fmtTempNumber(v: number | null | undefined, unit: 'F' | 'C') {
-  if (v == null || !Number.isFinite(v)) return '—';
-  return unit === 'F' ? `${v.toFixed(1)} °F` : `${v.toFixed(1)} °C`;
+
+function splitLandGroups(groups: LandGroup[]) {
+  const global: LandGroup[] = [];
+  const us: LandGroup[] = [];
+
+  for (const g of groups ?? []) {
+    const items = Array.isArray(g.items) ? g.items : [];
+
+    // Heuristic: a group is "global" if:
+    // - its title mentions "global", OR
+    // - >50% of items have badge === "Global"
+    const globalCount = items.filter((x) => String(x.badge || '').toLowerCase() === 'global').length;
+    const isGlobalByTitle = String(g.title || '').toLowerCase().includes('global');
+    const isGlobalByMix = items.length > 0 && globalCount / items.length >= 0.5;
+
+    if (isGlobalByTitle || isGlobalByMix) global.push(g);
+    else us.push(g);
+  }
+
+  return { us, global };
 }
 
 function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
   const cacheRef = useRef<{
     fetchedAt: number;
     updatedAt: string | null;
-    rows: Array<
-      LandPoint & {
-        t?: number | null;
-        wind?: number | null;
-        gust?: number | null;
-        precip?: number | null;
-        time?: string | null;
-      }
-    >;
+    heroes: Partial<Record<LandExtremeKind, LandExtreme | null>>;
+    groups: LandGroup[];
   } | null>(null);
 
   const [loading, setLoading] = useState(false);
@@ -248,92 +223,15 @@ function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
   ]);
   const [heroes, setHeroes] = useState<Partial<Record<LandExtremeKind, LandExtreme | null>>>({});
 
-  const build = useCallback(
-    (rows: NonNullable<typeof cacheRef.current>['rows'], bestUpdated: string | null) => {
-      const hotSorted = rows
-        .filter((r) => r.t != null && Number.isFinite(r.t as number))
-        .sort((a, b) => (b.t ?? -Infinity) - (a.t ?? -Infinity))
-        .slice(0, MAX_ROWS);
-
-      const coldSorted = rows
-        .filter((r) => r.t != null && Number.isFinite(r.t as number))
-        .sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity))
-        .slice(0, MAX_ROWS);
-
-      const windSorted = rows
-        .filter((r) => (r.gust ?? r.wind) != null && Number.isFinite((r.gust ?? r.wind) as number))
-        .sort((a, b) => ((b.gust ?? b.wind) ?? -Infinity) - ((a.gust ?? a.wind) ?? -Infinity))
-        .slice(0, MAX_ROWS);
-
-      const rainSorted = rows
-        .filter((r) => r.precip != null && Number.isFinite(r.precip as number))
-        .sort((a, b) => (b.precip ?? -Infinity) - (a.precip ?? -Infinity))
-        .slice(0, MAX_ROWS);
-
-      const toExtreme = (
-        kind: LandExtremeKind,
-        r: (typeof rows)[number],
-        valueText: string,
-        subtitle: string,
-      ): LandExtreme => ({
-        id: `${kind}:${r.id}`,
-        name: r.name,
-        lat: r.lat,
-        lon: r.lon,
-        updatedAt: r.time ?? bestUpdated ?? null,
-        valueText,
-        subtitle,
-        badge: r.badge,
-        kind,
-      });
-
-      const gHot: LandGroup = {
-        title: 'Hottest (Current)',
-        subtitle: 'Temperature right now (sampled points)',
-        items: hotSorted.map((r) => toExtreme('hot', r, fmtTempNumber(r.t ?? null, tempUnit), 'Hottest (current)')),
-      };
-      const gCold: LandGroup = {
-        title: 'Coldest (Current)',
-        subtitle: 'Temperature right now (sampled points)',
-        items: coldSorted.map((r) => toExtreme('cold', r, fmtTempNumber(r.t ?? null, tempUnit), 'Coldest (current)')),
-      };
-      const gWind: LandGroup = {
-        title: 'Windiest (Current Gust)',
-        subtitle: 'Wind gust right now (sampled points)',
-        items: windSorted.map((r) =>
-          toExtreme(
-            'wind',
-            r,
-            fmtWind((r.gust ?? r.wind) ?? null, tempUnit),
-            r.gust != null ? 'Strongest gust (current)' : 'Strongest wind (current)',
-          ),
-        ),
-      };
-      const gRain: LandGroup = {
-        title: 'Wettest (Current)',
-        subtitle: 'Precipitation right now (sampled points)',
-        items: rainSorted.map((r) => toExtreme('rain', r, fmtPrecip(r.precip ?? null, tempUnit), 'Wettest (current)')),
-      };
-
-      const heroHot = gHot.items[0] ?? null;
-      const heroCold = gCold.items[0] ?? null;
-      const heroWind = gWind.items[0] ?? null;
-      const heroRain = gRain.items[0] ?? null;
-
-      setGroups([gHot, gCold, gWind, gRain]);
-      setHeroes({ hot: heroHot, cold: heroCold, wind: heroWind, rain: heroRain });
-      setUpdatedAt(bestUpdated);
-    },
-    [tempUnit],
-  );
-
   const refresh = useCallback(async () => {
-    const TTL_MS = 1000 * 60 * 10; // 10 min
+    const TTL_MS = 1000 * 60 * 10; // 10 min (aligns to Worker cache)
     const now = Date.now();
 
     // Serve from cache fast
     if (cacheRef.current && now - cacheRef.current.fetchedAt < TTL_MS) {
-      build(cacheRef.current.rows, cacheRef.current.updatedAt);
+      setGroups(cacheRef.current.groups);
+      setHeroes(cacheRef.current.heroes);
+      setUpdatedAt(cacheRef.current.updatedAt);
       return;
     }
 
@@ -341,46 +239,54 @@ function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
     setError(null);
 
     try {
-      // Fetch all points in parallel (list is small)
-      const results = await Promise.all(
-        LAND_POINTS.map(async (p) => {
-          const { current, updatedAtIso } = await fetchOpenMeteoCurrent(p.lat, p.lon, tempUnit);
-          return {
-            ...p,
-            t: current?.temperature_2m ?? null,
-            wind: current?.wind_speed_10m ?? null,
-            gust: current?.wind_gusts_10m ?? null,
-            precip: current?.precipitation ?? null,
-            time: updatedAtIso,
-          };
-        }),
+      const json = await fetchWorkerLandExtremes(tempUnit);
+
+      const rawGroups: LandGroup[] = Array.isArray(json?.groups) ? json.groups : [];
+      const nextGroups = stripWettest(rawGroups);
+
+      const rawHeroes: Partial<Record<LandExtremeKind, LandExtreme | null>> =
+        json?.heroes && typeof json.heroes === 'object' ? json.heroes : {};
+
+      // Remove "wettest" hero
+      const nextHeroes: Partial<Record<LandExtremeKind, LandExtreme | null>> = {
+        hot: rawHeroes.hot ?? null,
+        cold: rawHeroes.cold ?? null,
+        wind: rawHeroes.wind ?? null,
+      };
+
+      const nextUpdatedAt: string | null = typeof json?.updatedAt === 'string' ? json.updatedAt : null;
+
+      setGroups(
+        nextGroups.length
+          ? nextGroups
+          : [
+              {
+                title: 'Land',
+                subtitle: 'No data',
+                items: [],
+              },
+            ],
       );
+      setHeroes(nextHeroes);
+      setUpdatedAt(nextUpdatedAt);
 
-      // Find a best “updatedAt” for the screen (most recent parsable time)
-      const bestUpdated =
-        results
-          .map((r) => r.time)
-          .filter(Boolean)
-          .sort()
-          .slice(-1)[0] ?? null;
-
-      cacheRef.current = { fetchedAt: now, updatedAt: bestUpdated, rows: results };
-      build(results, bestUpdated);
+      cacheRef.current = {
+        fetchedAt: now,
+        updatedAt: nextUpdatedAt,
+        heroes: nextHeroes,
+        groups: nextGroups,
+      };
     } catch (e: any) {
       setError(e?.message ? String(e.message) : 'Failed to load land extremes.');
     } finally {
       setLoading(false);
     }
-  }, [build, tempUnit]);
+  }, [tempUnit]);
 
-  // Initial build (lazy: first time user taps Land, refresh() is called from onRefresh,
-  // but we also want initial content without pull-to-refresh)
-  // We’ll trigger a one-time auto refresh when hook is used and cache is empty.
+  // Initial build
   const bootRef = useRef(false);
   if (!bootRef.current) {
     bootRef.current = true;
-    // Fire-and-forget; state updates are handled inside refresh
-    // (no async useEffect needed for this screen style)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     refresh();
   }
@@ -417,13 +323,7 @@ function useSpaceExtremes(): {
   };
 }
 
-function Segmented({
-  value,
-  onChange,
-}: {
-  value: Mode;
-  onChange: (m: Mode) => void;
-}) {
+function Segmented({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
   const options: Array<{ key: Mode; label: string }> = [
     { key: 'marine', label: 'Marine' },
     { key: 'land', label: 'Land' },
@@ -444,9 +344,7 @@ function Segmented({
               pressed && !active && { opacity: 0.85 },
             ]}
           >
-            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-              {o.label}
-            </Text>
+            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -485,10 +383,7 @@ function HeroExtreme({
       <Pressable
         onPress={onPress}
         disabled={!onPress}
-        style={({ pressed }) => [
-          styles.heroInner,
-          pressed && onPress && { backgroundColor: '#061024' },
-        ]}
+        style={({ pressed }) => [styles.heroInner, pressed && onPress && { backgroundColor: '#061024' }]}
       >
         <View style={{ flex: 1 }}>
           <Text style={styles.heroTitle}>{title}</Text>
@@ -550,11 +445,7 @@ function MarineSection({
             <View style={{ flex: 1 }}>
               <Text style={styles.buoyName}>{b.name ?? b.id}</Text>
               <Text style={styles.buoyMeta}>{formatLatLon(b.lat, b.lon)}</Text>
-              {b.updatedAt ? (
-                <Text style={styles.buoyMetaSmall}>
-                  {new Date(b.updatedAt).toLocaleString()}
-                </Text>
-              ) : null}
+              {b.updatedAt ? <Text style={styles.buoyMetaSmall}>{new Date(b.updatedAt).toLocaleString()}</Text> : null}
             </View>
 
             <SeverityPill severity={severity} />
@@ -567,15 +458,7 @@ function MarineSection({
   );
 }
 
-function LandSection({
-  title,
-  subtitle,
-  items,
-}: {
-  title: string;
-  subtitle: string;
-  items: LandExtreme[];
-}) {
+function LandSection({ title, subtitle, items }: { title: string; subtitle: string; items: LandExtreme[] }) {
   const router = useRouter();
 
   return (
@@ -591,9 +474,7 @@ function LandSection({
       {!items.length ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle}>No land extremes yet</Text>
-          <Text style={styles.emptyText}>
-            If Open-Meteo is blocked or offline, pull-to-refresh later.
-          </Text>
+          <Text style={styles.emptyText}>If the Worker is offline or blocked, pull-to-refresh later.</Text>
         </View>
       ) : (
         items.map((x, idx) => (
@@ -614,11 +495,7 @@ function LandSection({
             <View style={{ flex: 1 }}>
               <Text style={styles.buoyName}>{x.name}</Text>
               <Text style={styles.buoyMeta}>{formatLatLon(x.lat, x.lon)}</Text>
-              {x.updatedAt ? (
-                <Text style={styles.buoyMetaSmall}>
-                  {new Date(x.updatedAt).toLocaleString()}
-                </Text>
-              ) : null}
+              {x.updatedAt ? <Text style={styles.buoyMetaSmall}>{new Date(x.updatedAt).toLocaleString()}</Text> : null}
               <Text style={styles.buoyMetaSmall}>{x.subtitle}</Text>
             </View>
 
@@ -677,7 +554,6 @@ export default function ExtremesScreen() {
     () =>
       buoys
         .filter((b) => b.waterTempC != null)
-        // FIX: ascending (coldest first)
         .sort((a, b) => (a.waterTempC ?? Infinity) - (b.waterTempC ?? Infinity))
         .slice(0, MAX_ROWS),
     [buoys],
@@ -693,8 +569,6 @@ export default function ExtremesScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      // Marine: your buoy hook likely refreshes via its own cache/timer.
-      // Land/Space: scaffolded refresh calls for later.
       if (mode === 'land') await land.refresh();
       if (mode === 'space') await space.refresh();
     } finally {
@@ -706,7 +580,7 @@ export default function ExtremesScreen() {
     mode === 'marine'
       ? 'Biggest seas, strongest winds, and most extreme water temps'
       : mode === 'land'
-        ? 'Hottest, coldest, windiest, wettest… across land weather'
+        ? 'Hottest, coldest, windiest… across land weather'
         : 'Mars and beyond (because why not)';
 
   const landHeroMeta = land.updatedAt ? formatUpdatedAt(land.updatedAt) : null;
@@ -718,23 +592,23 @@ export default function ExtremesScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View style={styles.header}>
-      <View style={styles.brandRow}>
-        <View style={styles.brandLeft}>
-          <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
-          <View style={{ flex: 1 }}>
-            <View style={styles.domainPill}>
-              <Text style={styles.domainPillText}>Extremes</Text>
+        <View style={styles.brandRow}>
+          <View style={styles.brandLeft}>
+            <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+            <View style={{ flex: 1 }}>
+              <View style={styles.domainPill}>
+                <Text style={styles.domainPillText}>Extremes</Text>
+              </View>
+              <Text style={styles.headerTitle}>Extremes</Text>
+              <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
             </View>
-            <Text style={styles.headerTitle}>Extremes</Text>
-            <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
           </View>
         </View>
-      </View>
 
-      <View style={{ marginTop: theme.spacing.md }}>
-        <Segmented value={mode} onChange={setMode} />
+        <View style={{ marginTop: theme.spacing.md }}>
+          <Segmented value={mode} onChange={setMode} />
+        </View>
       </View>
-    </View>
 
       {/* Loading / Error for marine */}
       {mode === 'marine' && loading && !data ? (
@@ -754,23 +628,14 @@ export default function ExtremesScreen() {
       {/* MARINE */}
       {mode === 'marine' && !loading && !error ? (
         <>
-          {/* Hero cards */}
           <HeroExtreme
             title="Highest Waves (Right Now)"
             subtitle={topWave ? (topWave.name ?? topWave.id) : '—'}
-            primaryText={
-              topWave?.waveHeightM != null
-                ? `${(topWave.waveHeightM * 3.28084).toFixed(1)} ft`
-                : '—'
-            }
+            primaryText={topWave?.waveHeightM != null ? `${(topWave.waveHeightM * 3.28084).toFixed(1)} ft` : '—'}
             metaText={topWave?.updatedAt ? formatUpdatedAt(topWave.updatedAt) : null}
             onPress={topWave ? () => pushBuoyToNauticalMap(router, topWave) : undefined}
             rightPill={
-              topWave ? (
-                <SeverityPill
-                  severity={getSeverity(topWave.waveHeightM ?? null, topWave.windSpeedKts ?? null)}
-                />
-              ) : null
+              topWave ? <SeverityPill severity={getSeverity(topWave.waveHeightM ?? null, topWave.windSpeedKts ?? null)} /> : null
             }
           />
 
@@ -781,43 +646,14 @@ export default function ExtremesScreen() {
             metaText={topWind?.updatedAt ? formatUpdatedAt(topWind.updatedAt) : null}
             onPress={topWind ? () => pushBuoyToNauticalMap(router, topWind) : undefined}
             rightPill={
-              topWind ? (
-                <SeverityPill
-                  severity={getSeverity(topWind.waveHeightM ?? null, topWind.windSpeedKts ?? null)}
-                />
-              ) : null
+              topWind ? <SeverityPill severity={getSeverity(topWind.waveHeightM ?? null, topWind.windSpeedKts ?? null)} /> : null
             }
           />
 
-          <MarineSection
-            title="Highest Waves"
-            subtitle="Significant wave height (Hs)"
-            items={withWaves}
-            renderValue={(b) =>
-              b.waveHeightM != null ? `${(b.waveHeightM * 3.28084).toFixed(1)} ft` : '—'
-            }
-          />
-
-          <MarineSection
-            title="Strongest Winds"
-            subtitle="Sustained wind speed"
-            items={withWind}
-            renderValue={(b) => (b.windSpeedKts != null ? `${b.windSpeedKts.toFixed(0)} kt` : '—')}
-          />
-
-          <MarineSection
-            title="Warmest Water"
-            subtitle="Sea surface temperature"
-            items={withWarmWater}
-            renderValue={(b) => formatTemp(b.waterTempC, tempUnit)}
-          />
-
-          <MarineSection
-            title="Coldest Water"
-            subtitle="Sea surface temperature"
-            items={withColdWater}
-            renderValue={(b) => formatTemp(b.waterTempC, tempUnit)}
-          />
+          <MarineSection title="Highest Waves" subtitle="Significant wave height (Hs)" items={withWaves} renderValue={(b) => (b.waveHeightM != null ? `${(b.waveHeightM * 3.28084).toFixed(1)} ft` : '—')} />
+          <MarineSection title="Strongest Winds" subtitle="Sustained wind speed" items={withWind} renderValue={(b) => (b.windSpeedKts != null ? `${b.windSpeedKts.toFixed(0)} kt` : '—')} />
+          <MarineSection title="Warmest Water" subtitle="Sea surface temperature" items={withWarmWater} renderValue={(b) => formatTemp(b.waterTempC, tempUnit)} />
+          <MarineSection title="Coldest Water" subtitle="Sea surface temperature" items={withColdWater} renderValue={(b) => formatTemp(b.waterTempC, tempUnit)} />
 
           {!buoys.length ? (
             <View style={styles.center}>
@@ -837,7 +673,7 @@ export default function ExtremesScreen() {
             </Card>
           ) : null}
 
-          {/* LAND hero cards */}
+          {/* LAND hero cards (no Wettest) */}
           {!land.loading && !land.error ? (
             <>
               <HeroExtreme
@@ -850,11 +686,7 @@ export default function ExtremesScreen() {
                     ? () =>
                         router.push({
                           pathname: '/maps',
-                          params: {
-                            lat: String(land.heroes.hot!.lat),
-                            lon: String(land.heroes.hot!.lon),
-                            label: land.heroes.hot!.name,
-                          },
+                          params: { lat: String(land.heroes.hot!.lat), lon: String(land.heroes.hot!.lon), label: land.heroes.hot!.name },
                         })
                     : undefined
                 }
@@ -877,11 +709,7 @@ export default function ExtremesScreen() {
                     ? () =>
                         router.push({
                           pathname: '/maps',
-                          params: {
-                            lat: String(land.heroes.cold!.lat),
-                            lon: String(land.heroes.cold!.lon),
-                            label: land.heroes.cold!.name,
-                          },
+                          params: { lat: String(land.heroes.cold!.lat), lon: String(land.heroes.cold!.lon), label: land.heroes.cold!.name },
                         })
                     : undefined
                 }
@@ -904,11 +732,7 @@ export default function ExtremesScreen() {
                     ? () =>
                         router.push({
                           pathname: '/maps',
-                          params: {
-                            lat: String(land.heroes.wind!.lat),
-                            lon: String(land.heroes.wind!.lon),
-                            label: land.heroes.wind!.name,
-                          },
+                          params: { lat: String(land.heroes.wind!.lat), lon: String(land.heroes.wind!.lon), label: land.heroes.wind!.name },
                         })
                     : undefined
                 }
@@ -916,33 +740,6 @@ export default function ExtremesScreen() {
                   land.heroes.wind?.badge ? (
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{land.heroes.wind.badge}</Text>
-                    </View>
-                  ) : null
-                }
-              />
-
-              <HeroExtreme
-                title="Wettest (Current)"
-                subtitle={land.heroes.rain ? land.heroes.rain.name : '—'}
-                primaryText={land.heroes.rain ? land.heroes.rain.valueText : '—'}
-                metaText={landHeroMeta}
-                onPress={
-                  land.heroes.rain
-                    ? () =>
-                        router.push({
-                          pathname: '/maps',
-                          params: {
-                            lat: String(land.heroes.rain!.lat),
-                            lon: String(land.heroes.rain!.lon),
-                            label: land.heroes.rain!.name,
-                          },
-                        })
-                    : undefined
-                }
-                rightPill={
-                  land.heroes.rain?.badge ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{land.heroes.rain.badge}</Text>
                     </View>
                   ) : null
                 }
@@ -957,11 +754,59 @@ export default function ExtremesScreen() {
             </View>
           ) : null}
 
-          {!land.loading
-            ? land.groups.map((g) => (
-                <LandSection key={g.title} title={g.title} subtitle={g.subtitle} items={g.items} />
-              ))
-            : null}
+          {!land.loading && !land.error ? (
+            (() => {
+              const { us: usGroupsRaw, global: globalGroupsRaw } = splitLandGroups(land.groups);
+              const usGroups = stripWettest(usGroupsRaw);
+              const globalGroups = stripWettest(globalGroupsRaw);
+
+              return (
+                <>
+                  {/* US Extremes */}
+                  <Card style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>US Extremes</Text>
+                    <Text style={styles.sectionSubtitle}>
+                      Top rankings from US airports + capitals + major cities (and other US notables)
+                    </Text>
+                  </Card>
+
+                  {usGroups.length ? (
+                    usGroups.map((g) => (
+                      <LandSection key={`us-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
+                    ))
+                  ) : (
+                    <Card style={styles.sectionCard}>
+                      <View style={styles.emptyBox}>
+                        <Text style={styles.emptyTitle}>No US extremes yet</Text>
+                        <Text style={styles.emptyText}>Pull to refresh — the Worker may still be warming up.</Text>
+                      </View>
+                    </Card>
+                  )}
+
+                  {/* Global Extremes */}
+                  <Card style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Global Extremes</Text>
+                    <Text style={styles.sectionSubtitle}>
+                      Curated “interesting places” around the world (deserts, polar stations, etc.)
+                    </Text>
+                  </Card>
+
+                  {globalGroups.length ? (
+                    globalGroups.map((g) => (
+                      <LandSection key={`gl-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
+                    ))
+                  ) : (
+                    <Card style={styles.sectionCard}>
+                      <View style={styles.emptyBox}>
+                        <Text style={styles.emptyTitle}>No global extremes yet</Text>
+                        <Text style={styles.emptyText}>Pull to refresh — global groups will appear when available.</Text>
+                      </View>
+                    </Card>
+                  )}
+                </>
+              );
+            })()
+          ) : null}
         </>
       ) : null}
 

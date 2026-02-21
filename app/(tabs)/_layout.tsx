@@ -9,7 +9,6 @@ import { Colors } from '../../constants/theme';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 import { LocationProvider } from '../context/LocationContext';
 import { PlaceProvider } from '../context/PlaceContext';
-import { WxLabProvider } from '../context/WxLabContext';
 
 import { AppBoot } from '../../components/boot/AppBoot'; // ✅ add
 
@@ -43,129 +42,132 @@ export default function TabsLayout() {
 
   return (
     <AppBoot>
-      <WxLabProvider>
-        <LocationProvider>
-          <PlaceProvider>
-            <Tabs
-              screenOptions={{
-                headerShown: false,
-                tabBarActiveTintColor: tint,
-                tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
-                tabBarLabelStyle: {
-                  fontWeight: '800',
-                  fontSize: 11,
-                  marginTop: -2,
-                  marginBottom: 2,
-                },
-                tabBarIconStyle: { marginTop: 2 },
-                tabBarStyle: tabBarStyle,
-                tabBarHideOnKeyboard: true,
-                headerStyle: { backgroundColor: bgElev },
-                headerTintColor: 'white',
-                headerTitleStyle: { fontWeight: '900' },
+      <LocationProvider>
+        <PlaceProvider>
+          <Tabs
+            screenOptions={{
+              headerShown: false,
+              tabBarActiveTintColor: tint,
+              tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
+              tabBarLabelStyle: {
+                fontWeight: '800',
+                fontSize: 11,
+                marginTop: -2,
+                marginBottom: 2,
+              },
+              tabBarIconStyle: { marginTop: 2 },
+              tabBarStyle: tabBarStyle,
+              tabBarHideOnKeyboard: true,
+              headerStyle: { backgroundColor: bgElev },
+              headerTintColor: 'white',
+              headerTitleStyle: { fontWeight: '900' },
+            }}
+          >
+            {/* Land */}
+            <Tabs.Screen
+              name="index"
+              options={{
+                title: 'Land',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'partly-sunny' : 'partly-sunny-outline'} color={color} />
+                ),
               }}
-            >
-              {/* ...your existing Tabs.Screen entries unchanged... */}
-              <Tabs.Screen
-                name="index"
-                options={{
-                  title: 'Land Wx',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'partly-sunny' : 'partly-sunny-outline'} color={color} />
-                  ),
-                }}
-              />
+            />
 
-              <Tabs.Screen
-                name="hourly"
-                options={{
-                  title: 'Hourly',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'time' : 'time-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="climo"
-                options={{
-                  title: 'Climo',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'thermometer' : 'thermometer-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="maps"
-                options={{
-                  title: 'Map',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'map' : 'map-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="solar"
-                options={{
-                  title: 'Solar Wx',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'sunny' : 'sunny-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="explore"
-                options={{
-                  title: 'Explore',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'search' : 'search-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="nautical"
-                options={{
-                  title: 'Nautical Wx',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'boat' : 'boat-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="extremes"
-                options={{
-                  title: 'Extremes',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'thunderstorm' : 'thunderstorm-outline'} color={color} />
-                  ),
-                }}
-              />
-              <Tabs.Screen
-                name="settings"
-                options={{
-                  title: 'Settings',
-                  tabBarIcon: ({ color, focused }) => (
-                    <TabBarIcon name={focused ? 'settings' : 'settings-outline'} color={color} />
-                  ),
-                }}
-              />
+            {/* Hourly */}
+            <Tabs.Screen
+              name="hourly"
+              options={{
+                title: 'Hourly',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'time' : 'time-outline'} color={color} />
+                ),
+              }}
+            />
 
-              <Tabs.Screen name="mariner" options={{ href: null }} />
-              <Tabs.Screen name="astronomer" options={{ href: null }} />
-              <Tabs.Screen name="buoy-map" options={{ href: null }} />
-              <Tabs.Screen name="nautical-map" options={{ href: null }} />
-              <Tabs.Screen
-                name="astro-map"
-                options={
-                  {
-                    href: null,
-                    unmountOnBlur: true,
-                  } as any
-                }
-              />
-            </Tabs>
-          </PlaceProvider>
-        </LocationProvider>
-      </WxLabProvider>
+            {/* Almanac (keeps route name 'climo' to avoid renaming files) */}
+            <Tabs.Screen
+              name="climo"
+              options={{
+                title: 'Almanac',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'thermometer' : 'thermometer-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Maps */}
+            <Tabs.Screen
+              name="maps"
+              options={{
+                title: 'Maps',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'map' : 'map-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Space (uses existing 'solar' route) */}
+            <Tabs.Screen
+              name="solar"
+              options={{
+                title: 'Space',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'sunny' : 'sunny-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Nautical */}
+            <Tabs.Screen
+              name="nautical"
+              options={{
+                title: 'Nautical',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'boat' : 'boat-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Extremes */}
+            <Tabs.Screen
+              name="extremes"
+              options={{
+                title: 'Extremes',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'thunderstorm' : 'thunderstorm-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Settings */}
+            <Tabs.Screen
+              name="settings"
+              options={{
+                title: 'Settings',
+                tabBarIcon: ({ color, focused }) => (
+                  <TabBarIcon name={focused ? 'settings' : 'settings-outline'} color={color} />
+                ),
+              }}
+            />
+
+            {/* Keep hidden routes (still available by deep link/navigation) */}
+            <Tabs.Screen name="mariner" options={{ href: null }} />
+            <Tabs.Screen name="astronomer" options={{ href: null }} />
+            <Tabs.Screen name="buoy-map" options={{ href: null }} />
+            <Tabs.Screen name="nautical-map" options={{ href: null }} />
+            <Tabs.Screen
+              name="astro-map"
+              options={
+                {
+                  href: null,
+                  unmountOnBlur: true,
+                } as any
+              }
+            />
+          </Tabs>
+        </PlaceProvider>
+      </LocationProvider>
     </AppBoot>
   );
 }
