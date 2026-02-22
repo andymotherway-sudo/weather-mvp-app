@@ -239,15 +239,15 @@ export default function ClimoTab() {
   /* ---------- data hooks ---------- */
 
   const climo = useClimatologyNormals({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
-    enabled: hasPlace,
-    preferCache: true,
-  });
+  lat: coords?.lat ?? null,
+  lon: coords?.lon ?? null,
+  enabled: hasPlace && !!coords,
+  preferCache: true,
+  } as any);
 
   const forecast = useOpenMeteoForecast({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
+    lat: coords?.lat ?? null,
+    lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
   });
 
@@ -267,12 +267,12 @@ export default function ClimoTab() {
   }, [selectedIso, yesterdayIso, todayIso, lastForecastIso, forecastByDate]);
 
   const dayCtx = useOpenMeteoDayContext({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
-    date: selectedIso,
-    enabled: hasPlace && mode === 'observed',
-    preferCache: true,
-  });
+  lat: coords?.lat ?? null,
+  lon: coords?.lon ?? null,
+  date: selectedIso,
+  enabled: hasPlace && !!coords && mode === 'observed',
+  preferCache: true,
+} as any);
 
   /* ---------- records (selectedIso drives selectedRecord) ---------- */
 

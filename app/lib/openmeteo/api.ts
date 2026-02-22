@@ -1,6 +1,4 @@
 // app/lib/openmeteo/api.ts
-
-import { DEFAULT_LOCATION } from '../weather/locations';
 import type {
   OpenMeteoDaily,
   OpenMeteoForecast,
@@ -11,19 +9,31 @@ import type {
 // Docs: https://open-meteo.com/en/docs
 const BASE_URL = 'https://api.open-meteo.com/v1/forecast';
 
+function assertCoords(lat: number, lon: number) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error('fetchOpenMeteoForecast requires valid lat/lon');
+  }
+}
+
 export async function fetchOpenMeteoForecast(
+  lat: number,
+  lon: number,
   days: number = 3
 ): Promise<OpenMeteoForecast> {
+  assertCoords(lat, lon);
+
   const params = new URLSearchParams({
-    latitude: String(DEFAULT_LOCATION.lat),
-    longitude: String(DEFAULT_LOCATION.lon),
-    daily:
-      'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+    latitude: String(lat),
+    longitude: String(lon),
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
     timezone: 'auto',
+    temperature_unit: 'fahrenheit',
   });
 
-  const res = await fetch(`${BASE_URL}?${params.toString()}`);
+  // Optional: Open-Meteo supports forecast_days as a limiter; keep it aligned with `days`
+  params.set('forecast_days', String(Math.max(1, Math.min(16, days))));
 
+  const res = await fetch(`${BASE_URL}?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`Open-Meteo error: ${res.status} ${res.statusText}`);
   }

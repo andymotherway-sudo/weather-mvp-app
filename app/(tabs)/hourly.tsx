@@ -1,5 +1,10 @@
 // app/(tabs)/hourly.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+// ✅ Drop-in replacement
+// ✅ Keeps your existing useLocations + branded header + charts
+// ✅ Fixes RefreshControl (it was always false / not refreshing)
+// ✅ Refresh now refreshes forecast (and GPS only when needed)
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,7 +19,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
-import { DEFAULT_LOCATION } from '../lib/weather/locations';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
@@ -31,36 +35,35 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-export default function HourlyTab() {
-  const insets = useSafeAreaInsets();
+function HourlyWithCoords({
+  coords,
+  locationLabel,
+  onRefreshState,
+  registerRefresh,
+}: {
+  coords: { lat: number; lon: number };
+  locationLabel: string;
+  onRefreshState: (refreshing: boolean) => void;
+  registerRefresh: (fn: () => void) => void;
+}) {
   const units: UnitSystem = 'us';
   const [showDetails, setShowDetails] = useState(false);
-
-  const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
-
-  useEffect(() => {
-    if (locState.active?.kind === 'current') refreshCurrentLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locState.active?.kind]);
-
-  const coords = useMemo(() => {
-    if (activeCoords) return activeCoords;
-    return { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
-  }, [activeCoords]);
-
-  const locationLabel = useMemo(() => {
-    const raw = (activeCoords ? activeLabel : '')?.trim();
-    if (raw && raw.toLowerCase() !== 'current location') return raw;
-
-    const c = activeCoords ?? { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
-    return `Current location (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`;
-  }, [activeCoords, activeLabel]);
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
     lon: coords.lon,
     days: 5,
   });
+
+  // Let parent RefreshControl reflect actual refresh state
+  useEffect(() => {
+    onRefreshState(!!refreshing);
+  }, [refreshing, onRefreshState]);
+
+  // Give parent a callable refresh fn
+  useEffect(() => {
+    registerRefresh(() => refresh?.());
+  }, [refresh, registerRefresh]);
 
   const hourlyRaw: any[] = data?.hourly ?? [];
 
@@ -80,6 +83,78 @@ export default function HourlyTab() {
   }, [hourlyRaw]);
 
   return (
+    <>
+      {loading && !data ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.small}>Loading hourly forecast…</Text>
+        </View>
+      ) : null}
+
+      {error ? (
+        <Card style={styles.errorCard}>
+          <Text style={styles.errorTitle}>Error</Text>
+          <Text style={styles.errorText}>{error}</Text>
+        </Card>
+      ) : null}
+
+      {hourly.length ? (
+        <>
+          <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
+
+          <View style={{ marginTop: theme.spacing.sm }}>
+            <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>
+              <Text style={styles.toggleText}>{showDetails ? 'Hide hourly details' : 'Show hourly details'}</Text>
+            </Pressable>
+          </View>
+
+          {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
+        </>
+      ) : null}
+
+      {/* keep these to avoid unused warnings if you ever refactor */}
+      <View style={{ display: 'none' }}>
+        <Text>{locationLabel}</Text>
+        <Text>{String(refreshing)}</Text>
+        <Text>{String(refresh)}</Text>
+      </View>
+    </>
+  );
+}
+
+export default function HourlyTab() {
+  const insets = useSafeAreaInsets();
+  const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
+
+  // If we're in current mode, try to get GPS on mount (and when switching back to current)
+  useEffect(() => {
+    if (locState.active?.kind === 'current') refreshCurrentLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locState.active?.kind]);
+
+  const coords = useMemo(() => {
+    return activeCoords ?? null;
+  }, [activeCoords]);
+
+  const locationLabel = useMemo(() => {
+    const raw = (activeLabel ?? '').trim();
+    if (raw) return raw;
+    return coords ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})` : 'Getting location…';
+  }, [activeLabel, coords]);
+
+  // RefreshControl state + handler (wired to forecast refresh when coords exist)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshFnRef = React.useRef<null | (() => void)>(null);
+
+  const onPullToRefresh = useCallback(() => {
+    if (coords) {
+      refreshFnRef.current?.();
+      return;
+    }
+    refreshCurrentLocation();
+  }, [coords, refreshCurrentLocation]);
+
+  return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.container}
@@ -87,7 +162,7 @@ export default function HourlyTab() {
           styles.content,
           { paddingTop: Math.max(theme.spacing.md, Math.round(insets.top * 0.25)) },
         ]}
-        refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={refresh} />}
+        refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
       >
         {/* ✅ Header aligned with Land */}
         <View style={styles.header}>
@@ -98,35 +173,26 @@ export default function HourlyTab() {
           </Text>
         </View>
 
-        {loading && !data ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.small}>Loading hourly forecast…</Text>
-          </View>
-        ) : null}
-
-        {error ? (
+        {!coords ? (
           <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Error</Text>
-            <Text style={styles.errorText}>{error}</Text>
-          </Card>
-        ) : null}
-
-        {hourly.length ? (
-          <>
-            <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
-
-            <View style={{ marginTop: theme.spacing.sm }}>
-              <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>
-                <Text style={styles.toggleText}>
-                  {showDetails ? 'Hide hourly details' : 'Show hourly details'}
-                </Text>
+            <Text style={styles.errorTitle}>Getting your location…</Text>
+            <Text style={styles.errorText}>Enable GPS or pick a place in Land Wx.</Text>
+            <View style={{ marginTop: 12 }}>
+              <Pressable onPress={refreshCurrentLocation} style={styles.toggleBtn}>
+                <Text style={styles.toggleText}>Try again</Text>
               </Pressable>
             </View>
-
-            {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
-          </>
-        ) : null}
+          </Card>
+        ) : (
+          <HourlyWithCoords
+            coords={coords}
+            locationLabel={locationLabel}
+            onRefreshState={setIsRefreshing}
+            registerRefresh={(fn) => {
+              refreshFnRef.current = fn;
+            }}
+          />
+        )}
 
         <View style={{ height: Math.max(24, insets.bottom) }} />
       </ScrollView>
@@ -140,7 +206,7 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
   header: { marginBottom: theme.spacing.md },
-  wordmark: { width: 92, height: 92, marginBottom: 6 }, // tweak if you want it bigger/smaller
+  wordmark: { width: 92, height: 92, marginBottom: 6 },
   title: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
 

@@ -7,6 +7,7 @@ export interface Env {
 }
 
 type Unit = "F" | "C";
+type Units = "imperial" | "metric";
 type LandExtremeKind = "hot" | "cold" | "wind" | "rain";
 
 /**
@@ -63,6 +64,42 @@ type OpenMeteoCurrent = {
 
 type OpenMeteoBatchItem = { current?: OpenMeteoCurrent };
 type OpenMeteoBatchResponse = OpenMeteoBatchItem[] | { results: OpenMeteoBatchItem[] } | unknown;
+
+// ---- NEW: /api/current (single-point) types ----
+type OpenMeteoCurrentSingle = {
+  time?: string;
+  temperature_2m?: number;
+  apparent_temperature?: number;
+  dew_point_2m?: number;
+  relative_humidity_2m?: number;
+  weather_code?: number;
+  cloud_cover?: number;
+  wind_speed_10m?: number;
+  wind_gusts_10m?: number;
+  wind_direction_10m?: number;
+  pressure_msl?: number;
+};
+
+type OpenMeteoCurrentSingleResponse = {
+  current?: OpenMeteoCurrentSingle;
+};
+
+type CurrentResponse = {
+  ok: true;
+  source: "open-meteo";
+  time: string | null;
+  units: Units;
+  temp: number | null;
+  feels: number | null;
+  dewPoint: number | null;
+  humidityPct: number | null;
+  cloudCoverPct: number | null;
+  wind: number | null;
+  windGust: number | null;
+  windDir: number | null;
+  pressureMb: number | null;
+  weatherCode: number | null;
+};
 
 /**
  * CORS helpers (kept consistent with your current worker)
@@ -329,20 +366,15 @@ function buildLandExtremes(
   const gGlobalCold: LandGroup = {
     title: "Global Coldest (Current)",
     subtitle: "Curated iconic locations (polar stations, high latitude, etc.)",
-    items: globalColdSorted.map((r) =>
-      toExtreme("cold", r, fmtTemp(r.t, unit), "Global coldest (current)"),
-    ),
+    items: globalColdSorted.map((r) => toExtreme("cold", r, fmtTemp(r.t, unit), "Global coldest (current)")),
   };
   const gGlobalRain: LandGroup = {
     title: "Global Wettest (Current)",
     subtitle: "Curated iconic locations (monsoon / rainforest zones)",
-    items: globalRainSorted.map((r) =>
-      toExtreme("rain", r, fmtPrecip(r.precip, unit), "Global wettest (current)"),
-    ),
+    items: globalRainSorted.map((r) => toExtreme("rain", r, fmtPrecip(r.precip, unit), "Global wettest (current)")),
   };
 
   // Heroes remain “overall US-based leaders” like before (top of US lists).
-  // If you want heroes split by US/Global later, we can extend schema.
   const heroes: Partial<Record<LandExtremeKind, LandExtreme | null>> = {
     hot: gHot.items[0] ?? null,
     cold: gCold.items[0] ?? null,
@@ -364,6 +396,40 @@ function buildLandExtremes(
   };
 }
 
+// ---- NEW: /api/current helpers ----
+function parseUnits(s: string | null): Units {
+  const v = (s ?? "").toLowerCase();
+  return v === "metric" ? "metric" : "imperial";
+}
+
+function toOpenMeteoUrlCurrentSingle(lat: number, lon: number, units: Units) {
+  const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
+  const windUnit = units === "imperial" ? "mph" : "kmh";
+
+  const current = [
+    "temperature_2m",
+    "apparent_temperature",
+    "dew_point_2m",
+    "relative_humidity_2m",
+    "weather_code",
+    "cloud_cover",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+    "pressure_msl",
+  ].join(",");
+
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&current=${encodeURIComponent(current)}` +
+    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
+    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
+    `&timezone=auto`
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -371,6 +437,105 @@ export default {
     // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: withCors({}) });
+    }
+
+    // ==========================
+    // NEW: Current Weather endpoint
+    // ==========================
+    if (url.pathname === "/api/current") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      const units = parseUnits(url.searchParams.get("units"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const TTL = 60; // seconds (short edge cache for "current")
+      const cache = caches.default;
+
+      // Bucket cache keys to avoid fragmentation (0.01° ≈ ~1.1km)
+      const latKey = Math.round(lat * 100) / 100;
+      const lonKey = Math.round(lon * 100) / 100;
+
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.searchParams.set("lat", String(latKey));
+      cacheKeyUrl.searchParams.set("lon", String(lonKey));
+      cacheKeyUrl.searchParams.set("units", units);
+
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+      const cached = await cache.match(cacheKey);
+      if (cached) {
+        return new Response(cached.body, {
+          status: cached.status,
+          headers: withCors(Object.fromEntries(cached.headers.entries())),
+        });
+      }
+
+      const upstream = toOpenMeteoUrlCurrentSingle(lat, lon, units);
+
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+
+      try {
+        const res = await fetch(upstream, { signal: ctrl.signal });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              error: "Upstream error",
+              status: res.status,
+              body: txt.slice(0, 200),
+            }),
+            {
+              status: 502,
+              headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+            },
+          );
+        }
+
+        const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
+        const cur = json?.current ?? null;
+
+        const payload: CurrentResponse = {
+          ok: true,
+          source: "open-meteo",
+          time: cur?.time ? String(cur.time) : null,
+          units,
+          temp: cur?.temperature_2m ?? null,
+          feels: cur?.apparent_temperature ?? null,
+          dewPoint: cur?.dew_point_2m ?? null,
+          humidityPct: cur?.relative_humidity_2m ?? null,
+          cloudCoverPct: cur?.cloud_cover ?? null,
+          wind: cur?.wind_speed_10m ?? null,
+          windGust: cur?.wind_gusts_10m ?? null,
+          windDir: cur?.wind_direction_10m ?? null,
+          pressureMb: cur?.pressure_msl ?? null,
+          weatherCode: cur?.weather_code ?? null,
+        };
+
+        const out = new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: withCors({
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": `public, max-age=${TTL}`,
+          }),
+        });
+
+        await cache.put(cacheKey, out.clone());
+        return out;
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "Upstream fetch failed/timeout" }), {
+          status: 502,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      } finally {
+        clearTimeout(t);
+      }
     }
 
     // ==========================
@@ -529,6 +694,7 @@ export default {
         ok: true,
         routes: [
           "/land-extremes?unit=F|C",
+          "/api/current?lat=##&lon=##&units=imperial|metric",
           "/api/nasa/apod?date=YYYY-MM-DD",
           "/api/nasa/donki/<TYPE>?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD  (TYPE: FLR|CME|SEP|GST)",
           "/api/ncei/*",

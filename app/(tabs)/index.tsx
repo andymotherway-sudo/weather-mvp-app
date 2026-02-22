@@ -1,8 +1,9 @@
 // app/(tabs)/index.tsx
 // Land Wx – Rich + Nerdy (Branded + Alpha polish)
-// ✅ Drop-in replacement: bigger Omni logo, remove "Land Wx", embed 72h hourly chart on Land,
-// ✅ keep /hourly route as “Full” fallback, and normalize pressure for hourly series.
-// ✅ UPDATE: Replace Skia AnimatedWeatherBackground with condition video animations (clear/partly/overcast/rain/storm/snow)
+// ✅ Drop-in replacement (complete file)
+// ✅ No DEFAULT_LOCATION fallback (never fetch until coords exist)
+// ✅ Keeps: WxLab toggle, location picker, alerts, video bg, Daily above Hourly, nerdy explain + learn more.
+// ✅ Pressure polish: trend arrow + inHg hint (WX Lab + Simple)
 
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -25,7 +26,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePlace } from '../context/PlaceContext';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useCurrentWeather } from '../lib/weather/hooks';
-import { DEFAULT_LOCATION } from '../lib/weather/locations';
 
 import type { FavoriteLocation } from '../lib/locations/favorites';
 import { geocodePlaces } from '../lib/locations/geocode';
@@ -107,6 +107,55 @@ function formatUpdatedTime(observationTime: string | null) {
   const d = new Date(observationTime);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/* =========================
+   Pressure helpers (trend + units)
+========================= */
+function hpaToInHg(hpa: number) {
+  return hpa * 0.029529983071445;
+}
+
+function findClosestHour(hours: any[], targetMs: number) {
+  let best: any = null;
+  let bestDt = Infinity;
+
+  for (const h of hours ?? []) {
+    const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+    if (!Number.isFinite(t)) continue;
+
+    const dt = Math.abs(t - targetMs);
+    if (dt < bestDt) {
+      bestDt = dt;
+      best = h;
+    }
+  }
+
+  return best;
+}
+
+function pressureTrendFromHourly(hours: any[]) {
+  const nowMs = Date.now();
+  const now = findClosestHour(hours, nowMs);
+  const past = findClosestHour(hours, nowMs - 3 * 60 * 60 * 1000);
+
+  const pNow =
+    safeNum(now?.pressureHpa ?? now?.pressure_msl ?? now?.pressureMslHpa ?? now?.pressure_hpa ?? now?.pressure) ?? null;
+  const pPast =
+    safeNum(
+      past?.pressureHpa ?? past?.pressure_msl ?? past?.pressureMslHpa ?? past?.pressure_hpa ?? past?.pressure
+    ) ?? null;
+
+  if (pNow == null || pPast == null) {
+    return { arrow: '→' as const, deltaHpa: null as number | null, label: 'Steady' as const };
+  }
+
+  const delta = pNow - pPast;
+
+  // tuned to feel “real” without being noisy
+  if (delta >= 1.5) return { arrow: '↑' as const, deltaHpa: delta, label: 'Rising' as const };
+  if (delta <= -1.5) return { arrow: '↓' as const, deltaHpa: delta, label: 'Falling' as const };
+  return { arrow: '→' as const, deltaHpa: delta, label: 'Steady' as const };
 }
 
 function LocationPickerModal({
@@ -335,11 +384,14 @@ function SimpleSummary({
   windMph,
   gustMph,
   windDirDeg,
-  cloudCoverPct,
   uvIndex,
   precipChancePct,
   visibilityMi,
+
   pressureHpa,
+  pressureInHg,
+  pressureTrend,
+
   narrative,
   hideWind,
 }: {
@@ -348,17 +400,20 @@ function SimpleSummary({
   windMph: number | null;
   gustMph: number | null;
   windDirDeg: number | null;
-  cloudCoverPct: number | null;
   uvIndex: number | null;
   precipChancePct: number | null;
   visibilityMi: number | null;
+
   pressureHpa: number | null;
+  pressureInHg: number | null;
+  pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
+
   narrative?: string;
   hideWind?: boolean;
 }) {
   const hasMoisture = dewpointF != null || humidityPct != null;
   const hasWind = !hideWind && (windMph != null || gustMph != null || windDirDeg != null);
-  const hasPrecipVis = precipChancePct != null || visibilityMi != null || pressureHpa != null;
+  const hasPrecipVis = precipChancePct != null || visibilityMi != null || pressureHpa != null || pressureInHg != null;
 
   const dirToCompassLocal = (deg: number | null) => {
     if (deg == null) return null;
@@ -370,6 +425,16 @@ function SimpleSummary({
   const windDirText = windDirDeg != null ? `${dirToCompassLocal(windDirDeg) ?? ''}`.trim() : '—';
   const fmt0 = (v: number | null, suffix = '') => (v == null ? '—' : `${Math.round(v)}${suffix}`);
   const fmt1 = (v: number | null, suffix = '') => (v == null ? '—' : `${v.toFixed(1)}${suffix}`);
+
+  const pressurePrimary =
+    pressureInHg != null ? `${pressureInHg.toFixed(2)} inHg` : pressureHpa != null ? `${fmt0(pressureHpa)} hPa` : '—';
+
+  const trendLine =
+    pressureHpa != null
+      ? `${fmt0(pressureHpa)} hPa ${pressureTrend.arrow} ${pressureTrend.label}`
+      : pressureTrend.deltaHpa != null
+        ? `${pressureTrend.arrow} ${pressureTrend.label}`
+        : undefined;
 
   return (
     <View style={ss.wrap}>
@@ -404,7 +469,8 @@ function SimpleSummary({
             <View style={ss.cell}>
               <Text style={ss.k}>Speed</Text>
               <Text style={ss.v}>
-                {windMph != null ? `${Math.round(windMph)} mph` : '—'} <Text style={{ opacity: 0.7 }}> {windDirText}</Text>
+                {windMph != null ? `${Math.round(windMph)} mph` : '—'}{' '}
+                <Text style={{ opacity: 0.7 }}> {windDirText}</Text>
               </Text>
             </View>
             <View style={ss.cell}>
@@ -430,7 +496,10 @@ function SimpleSummary({
             </View>
             <View style={ss.cell}>
               <Text style={ss.k}>Pressure</Text>
-              <Text style={ss.v}>{pressureHpa != null ? fmt0(pressureHpa, ' hPa') : '—'}</Text>
+              <Text style={ss.v}>
+                {pressurePrimary} <Text style={{ opacity: 0.8 }}>{pressureTrend.arrow}</Text>
+              </Text>
+              {trendLine ? <Text style={ss.note}>{trendLine}</Text> : null}
             </View>
           </View>
         </View>
@@ -439,6 +508,24 @@ function SimpleSummary({
   );
 }
 
+  function wmoToCondition(code: number | null): string | null {
+    if (code == null) return null;
+
+    if (code === 0) return 'Clear';
+    if (code === 1) return 'Mostly clear';
+    if (code === 2) return 'Partly cloudy';
+    if (code === 3) return 'Overcast';
+
+    if (code === 45 || code === 48) return 'Fog';
+
+    if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
+    if ([61, 63, 65, 66, 67].includes(code)) return 'Rain';
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+    if ([80, 81, 82].includes(code)) return 'Showers';
+    if ([95, 96, 99].includes(code)) return 'Thunderstorm';
+
+    return 'Cloudy';
+  }
 const ss = StyleSheet.create({
   wrap: { marginTop: 10, gap: 10 },
 
@@ -489,9 +576,9 @@ const ss = StyleSheet.create({
   },
 
   note: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: '700',
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '800',
     color: 'rgba(255,255,255,0.55)',
   },
 });
@@ -524,6 +611,7 @@ function NerdyDeepDive({
   visibilityMi,
   pressureHpa,
   pressureInHg,
+  pressureTrend,
 
   feelsDriverLabel,
   feelsDriverValue,
@@ -548,6 +636,7 @@ function NerdyDeepDive({
   visibilityMi: number | null;
   pressureHpa: number | null;
   pressureInHg: number | null;
+  pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
 
   feelsDriverLabel: string;
   feelsDriverValue: string;
@@ -556,6 +645,11 @@ function NerdyDeepDive({
 }) {
   const dir = dirToCompass(windDirDeg);
   const dirText = windDirDeg != null ? `${dir ?? ''} ${Math.round(windDirDeg)}°`.trim() : '—';
+
+  const trendHint =
+    pressureTrend.deltaHpa == null
+      ? `${pressureTrend.arrow} ${pressureTrend.label}`
+      : `${pressureTrend.arrow} ${pressureTrend.label} • ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
 
   return (
     <View style={nd.wrap}>
@@ -775,6 +869,8 @@ function NerdyDeepDive({
         );
       })()}
 
+      
+
       <SectionCard title="Extras">
         <View style={nd.grid3}>
           <View style={nd.gridItem}>
@@ -814,14 +910,18 @@ function NerdyDeepDive({
           <View style={nd.gridItem}>
             <StatTile
               label="Pressure"
-              value={pressureHpa != null ? `${fmt(pressureHpa)} hPa` : '—'}
-              valueHint={pressureInHg != null ? `${pressureInHg.toFixed(2)} inHg` : undefined}
+              value={pressureHpa != null ? `${fmt(pressureHpa)} hPa ${pressureTrend.arrow}` : `— ${pressureTrend.arrow}`}
+              valueHint={
+                pressureInHg != null
+                  ? `${pressureInHg.toFixed(2)} inHg • ${trendHint}`
+                  : `${trendHint}${pressureHpa != null ? ` • ${fmt(pressureHpa)} hPa` : ''}`
+              }
               onPress={() =>
                 onExplain({
                   title: 'Pressure',
                   summary: 'Atmospheric pressure (often station or sea-level adjusted).',
                   whyItMatters: 'Trends can hint at larger-scale changes (fronts, lows/highs).',
-                  howComputed: 'From the current conditions provider when available.',
+                  howComputed: 'From current conditions when available; trend from recent hourly model pressure.',
                   confidence: pressureHpa != null ? 'medium' : undefined,
                   learnTopicId: 'pressure',
                 })
@@ -864,6 +964,426 @@ const nd = StyleSheet.create({
     lineHeight: 16,
   },
 });
+
+/* =========================
+   Inner component: only renders once coords exist
+   (prevents any weather hooks from running without GPS)
+========================= */
+function LandWeatherWithCoords({
+  coords,
+  activeLabel,
+  wxLab,
+  onPressAlert,
+  onPressInsight,
+  openQuickExplain,
+  setLearnOpen,
+  setLearnTopicId,
+  setExplainPayload,
+  setExplainOpen,
+  onWeatherCode,
+}: {
+  coords: { lat: number; lon: number };
+  activeLabel: string;
+  wxLab: boolean;
+
+  onPressAlert: (primary: any, alerts: any[]) => void;
+  onPressInsight: (it: NerdyInsight) => void;
+  openQuickExplain: (payload: ExplainPayload) => void;
+  setLearnOpen: (v: boolean) => void;
+  setLearnTopicId: (v: string | undefined) => void;
+  setExplainPayload: (p: ExplainPayload | null) => void;
+  setExplainOpen: (v: boolean) => void;
+
+  // ✅ report weatherCode up so root can render background behind header too
+  onWeatherCode: (code: number | null) => void;
+}) {
+  const units: UnitSystem = 'us';
+
+  const { primary, alerts } = useNwsAlerts({
+    lat: coords.lat,
+    lon: coords.lon,
+    enabled: true,
+  });
+
+  const {
+    data: currentData,
+    loading: currentLoading,
+    error: currentError,
+    refreshing: currentRefreshing,
+    refresh: currentRefresh,
+  } = useCurrentWeather({
+    lat: coords.lat,
+    lon: coords.lon,
+    units: 'imperial',
+  } as any);
+
+  const {
+    data: forecastData,
+    loading: forecastLoading,
+    error: forecastError,
+    refreshing: forecastRefreshing,
+    refresh: forecastRefresh,
+  } = useOpenMeteoForecast({
+    lat: coords.lat,
+    lon: coords.lon,
+    days: 15,
+  });
+
+  const loading = currentLoading || (wxLab && forecastLoading);
+  const refreshing = currentRefreshing || forecastRefreshing;
+
+  const onRefresh = () => {
+    currentRefresh?.();
+    forecastRefresh?.();
+  };
+
+  const wx: any = currentData ?? {};
+
+  const tempF = safeNum(wx.temperatureF ?? wx.temp_f ?? wx.temperature ?? wx.temp);
+  const feelsLikeF = safeNum(wx.apparentTemperatureF ?? wx.feels_like_f ?? wx.feels_like ?? wx.feels);
+
+  const dewpointF = safeNum(wx.dewpointF ?? wx.dewpoint_f ?? wx.dew_point ?? wx.dewPoint);
+  const humidityPct = safeNum(wx.humidity ?? wx.relativeHumidity ?? wx.relative_humidity ?? wx.rh ?? wx.humidityPct);
+
+  const windMph = safeNum(wx.windSpeedMph ?? wx.wind_speed_mph ?? wx.windSpeed ?? wx.wind);
+  const gustMph = safeNum(wx.windGustMph ?? wx.wind_gust_mph ?? wx.windGust ?? wx.gust ?? wx.windGust);
+  const windDirDeg = safeNum(wx.windDirection ?? wx.wind_dir ?? wx.wind_direction ?? wx.windDir);
+
+  const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
+
+  const daily = (forecastData?.daily ?? []).slice(0, 15);
+  const hourlyRaw: any[] = forecastData?.hourly ?? [];
+
+  // ✅ Your hook now includes pressure; keep a defensive normalize anyway.
+  const hourly = useMemo(() => {
+    return (hourlyRaw ?? []).map((h: any) => {
+      const pressureHpaLocal =
+        safeNum(h.pressureHpa) ??
+        safeNum(h.pressure_msl) ??
+        safeNum(h.pressureMslHpa) ??
+        safeNum(h.pressure_hpa) ??
+        safeNum(h.pressure) ??
+        null;
+
+      return {
+        ...h,
+        pressureHpa: pressureHpaLocal,
+      };
+    });
+  }, [hourlyRaw]);
+
+  const pressureTrend = useMemo(() => pressureTrendFromHourly(hourly), [hourly]);
+
+    const visibilityMi = (() => {
+    // try current first (if you ever add it to worker later)
+    const vMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
+    if (vMi != null) return vMi;
+
+    // fallback: nearest hourly Open-Meteo (meters → miles)
+    const hrs: any[] = forecastData?.hourly ?? [];
+    if (!hrs.length) return null;
+
+    const now = Date.now();
+    let best: any = null;
+    let bestDt = Infinity;
+
+    for (const h of hrs) {
+      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+      if (!Number.isFinite(t)) continue;
+      const dt = Math.abs(t - now);
+      if (dt < bestDt) {
+        bestDt = dt;
+        best = h;
+      }
+    }
+
+    const meters = safeNum(best?.visibility ?? best?.visibility_m);
+    if (meters == null) return null;
+
+    return meters / 1609.344;
+  })();
+
+  const uvIndexFromHourly = (() => {
+  const hrs: any[] = forecastData?.hourly ?? [];
+  if (!hrs.length) return null;
+
+  const now = Date.now();
+  let best: any = null;
+  let bestDt = Infinity;
+
+  for (const h of hrs) {
+    const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+    if (!Number.isFinite(t)) continue;
+    const dt = Math.abs(t - now);
+    if (dt < bestDt) {
+      bestDt = dt;
+      best = h;
+    }
+  }
+
+  // ✅ Your Open-Meteo hook uses `uvIndex`
+  return safeNum(best?.uvIndex ?? best?.uv_index ?? best?.uv);
+})();
+
+const uvIndexFromDailyMax = safeNum(forecastData?.daily?.[0]?.uvIndexMax);
+
+const uvIndex =
+  safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv) ??
+  uvIndexFromHourly ??
+  uvIndexFromDailyMax ??
+  null;
+
+  const pressureHpa =
+    safeNum(wx.pressureHpa ?? wx.pressure_hpa ?? wx.pressure) ??
+    safeNum(wx.pressureMb) ?? // mb == hPa numerically
+    null;
+
+  const pressureInHg =
+    safeNum(wx.pressureInHg ?? wx.pressure_inhg) ??
+    (pressureHpa != null ? hpaToInHg(pressureHpa) : null);
+
+  const popFromHourly = (() => {
+    const hrs: any[] = forecastData?.hourly ?? [];
+    if (!hrs.length) return null;
+
+    const now = Date.now();
+    let best: any = null;
+    let bestDt = Infinity;
+
+    for (const h of hrs) {
+      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+      if (!Number.isFinite(t)) continue;
+      const dt = Math.abs(t - now);
+      if (dt < bestDt) {
+        bestDt = dt;
+        best = h;
+      }
+    }
+
+    return safeNum(best?.precipitation_probability ?? best?.precipProbPct ?? best?.precipChancePct ?? best?.pop);
+  })();
+
+  const popTodayPeak = safeNum(forecastData?.daily?.[0]?.precipProbMaxPct);
+  const popFromCurrent = safeNum(wx.precipChancePct ?? wx.precip_probability ?? wx.precipProb ?? wx.pop);
+  const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
+
+  // ✅ Resolve weatherCode for video selection (current → fallback to nearest hourly)
+  // --- weatherCode + condition fallback (so hero shows "Overcast", etc.) ---
+const weatherCodeFromCurrent =
+  safeNum(wx.weatherCode ?? wx.weathercode ?? wx.weather_code ?? wx.code ?? wx.iconCode ?? wx.icon_code) ?? null;
+
+const weatherCodeFromHourly = (() => {
+  const hrs: any[] = forecastData?.hourly ?? [];
+  if (!hrs.length) return null;
+
+  const now = Date.now();
+  let best: any = null;
+  let bestDt = Infinity;
+
+  for (const h of hrs) {
+    const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+    if (!Number.isFinite(t)) continue;
+    const dt = Math.abs(t - now);
+    if (dt < bestDt) {
+      bestDt = dt;
+      best = h;
+    }
+  }
+
+  return (
+    safeNum(best?.weatherCode ?? best?.weather_code ?? best?.weathercode ?? best?.condition_code ?? best?.code) ?? null
+  );
+})();
+
+const weatherCode = weatherCodeFromCurrent ?? weatherCodeFromHourly;
+
+// push weatherCode to parent for background video selection
+useEffect(() => {
+  onWeatherCode(weatherCode);
+}, [weatherCode, onWeatherCode]);
+
+const condition =
+  wx.shortForecast ??
+  wx.condition ??
+  wx.textDescription ??
+  wx.weather ??
+  wmoToCondition(weatherCode) ??
+  '—';
+  useEffect(() => {
+    onWeatherCode(weatherCode);
+  }, [weatherCode, onWeatherCode]);
+
+  
+  const observationTime: string | null = wx.observedAt ?? wx.timestamp ?? wx.datetime ?? null;
+
+  const dpBand = dewpointF == null ? null : dewPointBandF(dewpointF);
+  const hi = tempF != null && humidityPct != null ? heatIndexF(tempF, humidityPct) : null;
+  const wc = tempF != null && windMph != null ? windChillF(tempF, windMph) : null;
+  const gf = gustFactor(windMph, gustMph);
+  const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
+
+  const dewLine = dewpointF != null ? `${Math.round(dewpointF)}°F${dpBand ? ` • ${dpBand}` : ''}` : null;
+
+  const insights: NerdyInsight[] = useMemo(() => {
+    return buildNerdyInsights({ tempF, dewpointF, humidityPct, windMph, gustMph, hourly });
+  }, [tempF, dewpointF, humidityPct, windMph, gustMph, hourly]);
+
+  const feelsDriver = useMemo(() => {
+    if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, conf: 'high' as const };
+    if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, conf: 'high' as const };
+    if (feelsLikeF != null) return { label: 'Feels Like', value: `${Math.round(feelsLikeF)}°F`, conf: 'medium' as const };
+    return { label: 'Feels', value: '—', conf: undefined };
+  }, [hi, wc, feelsLikeF]);
+
+  const updatedText = `Updated ${formatUpdatedTime(observationTime)}`;
+
+  const moistureHint =
+    dewpointF != null
+      ? dewpointF < 30
+        ? 'Very dry air • rapid cooling after sunset'
+        : dewpointF < 50
+          ? 'Comfortable moisture levels'
+          : 'Humid air • clouds linger'
+      : null;
+
+  const heroSummary =
+    dewpointF != null && windMph != null
+      ? `${dewpointF < 45 ? 'Dry air' : 'Moist air'} • ${windMph < 5 ? 'calm' : windMph < 15 ? 'breezy' : 'windy'}`
+      : '—';
+
+  return (
+    <>
+      {/* video background renders in parent */}
+
+      {primary ? (
+        <View style={{ marginTop: -6, marginBottom: theme.spacing.md }}>
+          <AlertBanner primary={primary} count={alerts.length} onPress={() => onPressAlert(primary, alerts)} />
+        </View>
+      ) : null}
+
+      {loading && !currentData ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.smallText}>Loading weather…</Text>
+        </View>
+      ) : null}
+
+      {currentError || forecastError ? (
+        <Card style={styles.errorCard}>
+          <Text style={styles.errorTitle}>Error</Text>
+          <Text style={styles.errorText}>{currentError || forecastError}</Text>
+        </Card>
+      ) : null}
+
+      <Card style={styles.heroCard}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFillObject} />
+
+        <View style={styles.heroTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+            <Text style={styles.heroCondition}>{condition}</Text>
+            <Text style={styles.heroSummary} numberOfLines={1}>
+              {heroSummary}
+            </Text>
+          </View>
+
+          <View style={styles.heroRight}>
+            <Text style={styles.heroMiniLabel}>Feels</Text>
+            <Text style={styles.heroMiniValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+          </View>
+        </View>
+
+        {!wxLab ? (
+          <SimpleSummary
+            dewpointF={dewpointF}
+            humidityPct={humidityPct}
+            windMph={windMph}
+            gustMph={gustMph}
+            windDirDeg={windDirDeg}
+            uvIndex={uvIndex}
+            precipChancePct={precipChancePct}
+            visibilityMi={visibilityMi}
+            pressureHpa={pressureHpa}
+            pressureInHg={pressureInHg}
+            pressureTrend={pressureTrend}
+            narrative={moistureHint ?? undefined}
+            hideWind
+          />
+        ) : (
+          <NerdyDeepDive
+            dewpointF={dewpointF}
+            humidityPct={humidityPct}
+            dpBand={dpBand}
+            spreadF={spreadF}
+            tempF={tempF}
+            windMph={windMph}
+            gustMph={gustMph}
+            windDirDeg={windDirDeg}
+            gf={gf}
+            cloudCoverPct={cloudCoverPct}
+            uvIndex={uvIndex}
+            precipChancePct={precipChancePct}
+            visibilityMi={visibilityMi}
+            pressureHpa={pressureHpa}
+            pressureInHg={pressureInHg}
+            pressureTrend={pressureTrend}
+            feelsDriverLabel={feelsDriver.label}
+            feelsDriverValue={feelsDriver.value}
+            onExplain={openQuickExplain}
+          />
+        )}
+
+        <Text style={styles.updatedText}>{updatedText}</Text>
+      </Card>
+
+      {/* DAILY ABOVE HOURLY */}
+      {daily.length > 0 ? (
+        <Card style={styles.forecastCard}>
+          <Text style={styles.cardTitle}>{wxLab ? 'Daily (Model Blend)' : '15-Day Forecast'}</Text>
+
+          <DailyRangeChart daily={daily} />
+
+          {wxLab ? (
+            <NerdyInsightsCard
+              title="Insights"
+              dewpointLine={dewLine}
+              insights={insights}
+              onPressInsight={(it) => onPressInsight(it)}
+              onPressLearn={() => {
+                setLearnTopicId(undefined);
+                setLearnOpen(true);
+              }}
+            />
+          ) : null}
+
+          <Text style={styles.updatedText}>Source: Open-Meteo (multi-model blend)</Text>
+        </Card>
+      ) : null}
+
+      {/* Hourly on Land (72h) */}
+      {hourly.length ? (
+        <Card style={styles.hourlyCard}>
+          <View style={styles.hourlyHeaderRow}>
+            <Text style={styles.cardTitle}>Next 72 hours</Text>
+          </View>
+
+          <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
+
+          <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
+        </Card>
+      ) : null}
+
+      {/* keep these to avoid unused warnings (and preserve prior intent) */}
+      <View style={{ display: 'none' }}>
+        <Text>{activeLabel}</Text>
+        <Text>{String(refreshing)}</Text>
+        <Text>{String(onRefresh)}</Text>
+        <Text>{String(!!setExplainOpen)}</Text>
+        <Text>{String(!!setExplainPayload)}</Text>
+      </View>
+    </>
+  );
+}
 
 export default function LandWeatherScreen() {
   // ✅ WxLab context drives "simple vs nerdy"
@@ -918,9 +1438,11 @@ export default function LandWeatherScreen() {
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
+  // video code comes from child, but video renders behind header
+  const [bgWeatherCode, setBgWeatherCode] = useState<number | null>(null);
+
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const units: UnitSystem = 'us';
 
   const glowAnim = useRef(new Animated.Value(0)).current;
 
@@ -943,196 +1465,37 @@ export default function LandWeatherScreen() {
   const { activeCoords, activeLabel, state: locState, refreshCurrentLocation, addOrActivateFavorite, setActiveCurrent } =
     useLocations();
 
+  // If we're in current mode, try to get GPS on mount (and when switching back to current)
   useEffect(() => {
     if (locState.active?.kind === 'current') refreshCurrentLocation();
   }, [refreshCurrentLocation, locState.active?.kind]);
 
+  // No hard-coded defaults: coords are either real GPS coords or null
   const coords = useMemo(() => {
-    if (activeCoords) return activeCoords;
-    return { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
+    return activeCoords ?? null;
   }, [activeCoords]);
 
   const locationLabel = useMemo(() => {
-    if (activeCoords) return activeLabel;
-    return `${DEFAULT_LOCATION.name}${DEFAULT_LOCATION.region ? `, ${DEFAULT_LOCATION.region}` : ''}`;
-  }, [activeCoords, activeLabel]);
+    const raw = (activeLabel ?? '').trim();
+    if (raw) return raw;
+    return coords ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})` : 'Getting location…';
+  }, [activeLabel, coords]);
 
-  // ✅ Keep PlaceContext synced with whatever Land is currently showing
+  // Keep PlaceContext synced with whatever Land is currently showing
   useEffect(() => {
-    if (!activeCoords) return;
-    pushPlaceToContext(activeLabel, activeCoords.lat, activeCoords.lon);
+    if (!coords) return;
+    pushPlaceToContext(locationLabel, coords.lat, coords.lon);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCoords?.lat, activeCoords?.lon, activeLabel]);
-
-  const { primary, alerts } = useNwsAlerts({
-    lat: coords.lat,
-    lon: coords.lon,
-    enabled: true,
-  });
+  }, [coords?.lat, coords?.lon, locationLabel]);
 
   const isFavorited = useMemo(() => {
+    if (!coords) return false;
     const favs = locState.favorites ?? [];
     return favs.some((f) => near(f.lat, coords.lat) && near(f.lon, coords.lon));
-  }, [locState.favorites, coords.lat, coords.lon]);
-
-  const {
-    data: currentData,
-    loading: currentLoading,
-    error: currentError,
-    refreshing: currentRefreshing,
-    refresh: currentRefresh,
-  } = useCurrentWeather({
-    lat: coords.lat,
-    lon: coords.lon,
-    units: 'imperial',
-  } as any);
-
-  const {
-    data: forecastData,
-    loading: forecastLoading,
-    error: forecastError,
-    refreshing: forecastRefreshing,
-    refresh: forecastRefresh,
-  } = useOpenMeteoForecast({
-    lat: coords.lat,
-    lon: coords.lon,
-    days: 15,
-  });
-
-  const loading = currentLoading || (wxLab && forecastLoading);
-  const refreshing = currentRefreshing || forecastRefreshing;
-
-  const onRefresh = () => {
-    currentRefresh?.();
-    forecastRefresh?.();
-  };
-
-  const wx: any = currentData ?? {};
-
-  const tempF = safeNum(wx.temperatureF ?? wx.temp_f ?? wx.temperature ?? wx.temp);
-  const feelsLikeF = safeNum(wx.apparentTemperatureF ?? wx.feels_like_f ?? wx.feels_like);
-
-  const dewpointF = safeNum(wx.dewpointF ?? wx.dewpoint_f ?? wx.dew_point);
-  const humidityPct = safeNum(wx.humidity ?? wx.relativeHumidity ?? wx.relative_humidity ?? wx.rh);
-
-  const windMph = safeNum(wx.windSpeedMph ?? wx.wind_speed_mph ?? wx.windSpeed);
-  const gustMph = safeNum(wx.windGustMph ?? wx.wind_gust_mph ?? wx.windGust ?? wx.gust);
-  const windDirDeg = safeNum(wx.windDirection ?? wx.wind_dir ?? wx.wind_direction);
-
-  const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover);
-  const visibilityMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
-  const uvIndex = safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv);
-
-  const popFromHourly = (() => {
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
-    return safeNum(best?.precipitation_probability ?? best?.precipProbPct ?? best?.precipChancePct ?? best?.pop);
-  })();
-
-  const popTodayPeak = safeNum(forecastData?.daily?.[0]?.precipProbMaxPct);
-  const popFromCurrent = safeNum(wx.precipChancePct ?? wx.precip_probability ?? wx.precipProb ?? wx.pop);
-  const precipChancePct = popTodayPeak ?? popFromCurrent ?? popFromHourly;
-
-  const pressureHpa = safeNum(wx.pressureHpa ?? wx.pressure_hpa ?? wx.pressure);
-  const pressureInHg =
-    safeNum(wx.pressureInHg ?? wx.pressure_inhg) ?? (pressureHpa != null ? pressureHpa * 0.029529983071445 : null);
-
-  // ✅ Resolve weatherCode for video selection (current → fallback to nearest hourly)
-  const weatherCodeFromCurrent =
-    safeNum(
-      wx.weatherCode ??
-        wx.weathercode ??
-        wx.weather_code ??
-        wx.code ??
-        wx.iconCode ??
-        wx.icon_code ??
-        null
-    ) ?? null;
-
-  const weatherCodeFromHourly = (() => {
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
-    return (
-      safeNum(
-        best?.weather_code ??
-          best?.weatherCode ??
-          best?.weathercode ??
-          best?.condition_code ??
-          null
-      ) ?? null
-    );
-  })();
-
-  const weatherCode = weatherCodeFromCurrent ?? weatherCodeFromHourly;
-
-  const condition = wx.shortForecast ?? wx.condition ?? wx.textDescription ?? wx.weather ?? '—';
-  const observationTime: string | null = wx.observedAt ?? wx.timestamp ?? wx.datetime ?? null;
-
-  const dpBand = dewpointF == null ? null : dewPointBandF(dewpointF);
-  const hi = tempF != null && humidityPct != null ? heatIndexF(tempF, humidityPct) : null;
-  const wc = tempF != null && windMph != null ? windChillF(tempF, windMph) : null;
-  const gf = gustFactor(windMph, gustMph);
-  const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
-
-  const dewLine = dewpointF != null ? `${Math.round(dewpointF)}°F${dpBand ? ` • ${dpBand}` : ''}` : null;
-
-  const daily = (forecastData?.daily ?? []).slice(0, 15);
-  const hourlyRaw: any[] = forecastData?.hourly ?? [];
-
-  // ✅ Normalize pressure for hourly so HourlyCharts72h can show it (if it supports it)
-  const hourly = useMemo(() => {
-    return (hourlyRaw ?? []).map((h: any) => {
-      const pressureHpaLocal =
-        safeNum(h.pressure_msl) ??
-        safeNum(h.pressureMslHpa) ??
-        safeNum(h.surface_pressure) ??
-        safeNum(h.pressureSurfaceHpa) ??
-        safeNum(h.pressure_hpa) ??
-        safeNum(h.pressureHpa) ??
-        null;
-
-      return {
-        ...h,
-        pressureHpa: pressureHpaLocal,
-      };
-    });
-  }, [hourlyRaw]);
-
-  const insights: NerdyInsight[] = useMemo(() => {
-    return buildNerdyInsights({ tempF, dewpointF, humidityPct, windMph, gustMph, hourly });
-  }, [tempF, dewpointF, humidityPct, windMph, gustMph, hourly]);
+  }, [locState.favorites, coords?.lat, coords?.lon, coords]);
 
   const onToggleFavorite = () => {
+    if (!coords) return;
     if (isFavorited) return;
     addOrActivateFavorite(locationLabel, coords.lat, coords.lon);
   };
@@ -1152,6 +1515,11 @@ export default function LandWeatherScreen() {
     setPickerOpen(false);
   };
 
+  const openQuickExplain = (payload: ExplainPayload) => {
+    setExplainPayload(payload);
+    setExplainOpen(true);
+  };
+
   const onPressInsight = (it: NerdyInsight) => {
     setExplainPayload({
       title: it.title,
@@ -1164,23 +1532,7 @@ export default function LandWeatherScreen() {
     setExplainOpen(true);
   };
 
-  const openQuickExplain = (payload: ExplainPayload) => {
-    setExplainPayload(payload);
-    setExplainOpen(true);
-  };
-
-  const favorites = locState.favorites ?? [];
-
-  const feelsDriver = useMemo(() => {
-    if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, conf: 'high' as const };
-    if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, conf: 'high' as const };
-    if (feelsLikeF != null) return { label: 'Feels Like', value: `${Math.round(feelsLikeF)}°F`, conf: 'medium' as const };
-    return { label: 'Feels', value: '—', conf: undefined };
-  }, [hi, wc, feelsLikeF]);
-
-  const updatedText = `Updated ${formatUpdatedTime(observationTime)}`;
-
-  const onPressAlert = () => {
+  const onPressAlert = (primary: any, alerts: any[]) => {
     setExplainPayload({
       title: primary?.event ?? 'Weather Alert',
       summary: primary?.headline ?? 'Active alert in this area.',
@@ -1192,34 +1544,28 @@ export default function LandWeatherScreen() {
     setExplainOpen(true);
   };
 
-  const moistureHint =
-    dewpointF != null
-      ? dewpointF < 30
-        ? 'Very dry air • rapid cooling after sunset'
-        : dewpointF < 50
-          ? 'Comfortable moisture levels'
-          : 'Humid air • clouds linger'
-      : null;
+  const favorites = locState.favorites ?? [];
 
-  const heroSummary =
-    dewpointF != null && windMph != null
-      ? `${dewpointF < 45 ? 'Dry air' : 'Moist air'} • ${windMph < 5 ? 'calm' : windMph < 15 ? 'breezy' : 'windy'}`
-      : '—';
+  // Parent refresh: if we have no coords, just request location again
+  const onRefresh = () => {
+    refreshCurrentLocation();
+  };
 
   return (
     <View style={styles.root}>
-      {/* ✅ NEW: condition-based animated video background behind everything */}
-      <WeatherVideoBackground weatherCode={weatherCode ?? undefined} />
+      {/* Background video: root absolute layer behind all UI */}
+      <View pointerEvents="none" style={styles.videoLayer}>
+        <WeatherVideoBackground weatherCode={bgWeatherCode ?? undefined} />
+      </View>
 
+      {/* Foreground UI */}
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ScrollView
           style={styles.container}
           contentContainerStyle={[styles.content, { paddingTop: Math.max(theme.spacing.md, insets.top * 0.15) }]}
-          refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} />}
         >
-          {/* =========================
-              HEADER (Hero surface)
-          ========================= */}
+          {/* HEADER */}
           <View style={styles.headerHeroWrap}>
             <View style={styles.headerHeroSurface}>
               <View style={styles.headerHeroTopRow}>
@@ -1243,11 +1589,11 @@ export default function LandWeatherScreen() {
                 <View style={styles.headerHeroActions}>
                   <Pressable
                     onPress={onToggleFavorite}
-                    disabled={isFavorited}
+                    disabled={!coords || isFavorited}
                     style={[
                       styles.favoriteChip,
                       isFavorited && styles.favoriteChipActive,
-                      isFavorited && { opacity: 0.85 },
+                      (!coords || isFavorited) && { opacity: 0.85 },
                     ]}
                   >
                     <Text style={[styles.favoriteChipText, isFavorited && { color: 'white' }]}>
@@ -1266,7 +1612,6 @@ export default function LandWeatherScreen() {
               </View>
 
               <View style={styles.headerHeroBottomRow}>
-                {/* Keep Hourly as a link for now, even if you hide the Hourly tab later */}
                 <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
                   <Text style={styles.quickNavText}>Hourly</Text>
                 </Pressable>
@@ -1284,148 +1629,57 @@ export default function LandWeatherScreen() {
             </View>
           </View>
 
-          {primary ? (
-            <View style={{ marginTop: -6, marginBottom: theme.spacing.md }}>
-              <AlertBanner primary={primary} count={alerts.length} onPress={onPressAlert} />
-            </View>
-          ) : null}
-
-          {loading && !currentData ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={styles.smallText}>Loading weather…</Text>
-            </View>
-          ) : null}
-
-          {currentError || forecastError ? (
+          {/* No coords yet: show "getting location" and DO NOT mount weather hooks */}
+          {!coords ? (
             <Card style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Error</Text>
-              <Text style={styles.errorText}>{currentError || forecastError}</Text>
-            </Card>
-          ) : null}
-
-          <Card style={styles.heroCard}>
-            <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
-              <Animated.View
-                style={[
-                  styles.heroBgSoftGlow,
-                  {
-                    backgroundColor: isNight
-                      ? 'rgba(120,160,255,0.10)'
-                      : isSunrise || isSunset
-                        ? 'rgba(255,180,120,0.14)'
-                        : 'rgba(160,220,255,0.10)',
-                    opacity: glowAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.55, 0.85],
-                    }),
-                  },
-                ]}
-              />
-              <View
-                style={[
-                  styles.heroBgHorizon,
-                  {
-                    backgroundColor: isNight ? 'rgba(80,120,200,0.08)' : 'rgba(255,190,120,0.05)',
-                  },
-                ]}
-              />
-            </View>
-
-            <View style={styles.heroTopRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
-                <Text style={styles.heroCondition}>{condition}</Text>
-                <Text style={styles.heroSummary} numberOfLines={1}>
-                  {heroSummary}
-                </Text>
-              </View>
-
-              <View style={styles.heroRight}>
-                <Text style={styles.heroMiniLabel}>Feels</Text>
-                <Text style={styles.heroMiniValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
-              </View>
-            </View>
-
-            {!wxLab ? (
-              <SimpleSummary
-                dewpointF={dewpointF}
-                humidityPct={humidityPct}
-                windMph={windMph}
-                gustMph={gustMph}
-                windDirDeg={windDirDeg}
-                cloudCoverPct={cloudCoverPct}
-                uvIndex={uvIndex}
-                precipChancePct={precipChancePct}
-                visibilityMi={visibilityMi}
-                pressureHpa={pressureHpa}
-                narrative={moistureHint ?? undefined}
-                hideWind
-              />
-            ) : (
-              <NerdyDeepDive
-                dewpointF={dewpointF}
-                humidityPct={humidityPct}
-                dpBand={dpBand}
-                spreadF={spreadF}
-                tempF={tempF}
-                windMph={windMph}
-                gustMph={gustMph}
-                windDirDeg={windDirDeg}
-                gf={gf}
-                cloudCoverPct={cloudCoverPct}
-                uvIndex={uvIndex}
-                precipChancePct={precipChancePct}
-                visibilityMi={visibilityMi}
-                pressureHpa={pressureHpa}
-                pressureInHg={pressureInHg}
-                feelsDriverLabel={feelsDriver.label}
-                feelsDriverValue={feelsDriver.value}
-                onExplain={openQuickExplain}
-              />
-            )}
-
-            <Text style={styles.updatedText}>{updatedText}</Text>
-          </Card>
-
-          {/* ✅ Hourly on Land (72h) */}
-          {hourly.length ? (
-            <Card style={styles.hourlyCard}>
-              <View style={styles.hourlyHeaderRow}>
-                <Text style={styles.cardTitle}>Next 72 hours</Text>
-                <Pressable onPress={() => router.push('/hourly')} style={styles.hourlyFullBtn}>
-                  <Text style={styles.hourlyFullText}>Full</Text>
+              <Text style={styles.errorTitle}>Getting your location…</Text>
+              <Text style={styles.errorText}>Enable GPS or pick a place to load weather.</Text>
+              <View style={{ marginTop: 12, flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                <Pressable onPress={refreshCurrentLocation} style={styles.quickNavBtn}>
+                  <Text style={styles.quickNavText}>Try again</Text>
+                </Pressable>
+                <Pressable onPress={() => setPickerOpen(true)} style={styles.quickNavBtn}>
+                  <Text style={styles.quickNavText}>Choose location</Text>
                 </Pressable>
               </View>
-
-              <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
-
-              <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
             </Card>
-          ) : null}
-
-          {daily.length > 0 ? (
-            <Card style={styles.forecastCard}>
-              <Text style={styles.cardTitle}>{wxLab ? 'Daily (Model Blend)' : '15-Day Forecast'}</Text>
-
-              <DailyRangeChart daily={daily} />
-
-              {wxLab ? (
-                <NerdyInsightsCard
-                  title="Insights"
-                  dewpointLine={dewLine}
-                  insights={insights}
-                  onPressInsight={onPressInsight}
-                  onPressLearn={() => {
-                    setLearnTopicId(undefined);
-                    setLearnOpen(true);
-                  }}
+          ) : (
+            <>
+              {/* Soft glow overlay behind hero card only */}
+              <View pointerEvents="none" style={{ height: 0 }}>
+                <Animated.View
+                  style={[
+                    styles.heroBgSoftGlow,
+                    {
+                      backgroundColor: isNight
+                        ? 'rgba(120,160,255,0.10)'
+                        : isSunrise || isSunset
+                          ? 'rgba(255,180,120,0.14)'
+                          : 'rgba(160,220,255,0.10)',
+                      opacity: glowAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.55, 0.85],
+                      }),
+                    },
+                  ]}
                 />
-              ) : null}
+              </View>
 
-              <Text style={styles.updatedText}>Source: Open-Meteo (multi-model blend)</Text>
-            </Card>
-          ) : null}
+              <LandWeatherWithCoords
+                coords={coords}
+                activeLabel={locationLabel}
+                wxLab={wxLab}
+                onPressAlert={onPressAlert}
+                onPressInsight={onPressInsight}
+                openQuickExplain={openQuickExplain}
+                setLearnOpen={setLearnOpen}
+                setLearnTopicId={setLearnTopicId}
+                setExplainPayload={setExplainPayload}
+                setExplainOpen={setExplainOpen}
+                onWeatherCode={(code) => setBgWeatherCode(code)}
+              />
+            </>
+          )}
 
           <View style={{ height: 26 }} />
         </ScrollView>
@@ -1459,8 +1713,14 @@ export default function LandWeatherScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
 
-  // ✅ transparent so background video shows through
-  safe: { flex: 1, backgroundColor: 'transparent' },
+  // video layer behind everything
+  videoLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+
+  // foreground UI above video
+  safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
 
   content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
@@ -1529,14 +1789,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(160,220,255,0.10)',
   },
-  heroBgHorizon: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -20,
-    height: 120,
-    backgroundColor: 'rgba(255, 190, 120, 0.05)',
-  },
 
   heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   heroTemp: { fontSize: 64, fontWeight: '900', color: theme.colors.textPrimary },
@@ -1547,7 +1799,7 @@ const styles = StyleSheet.create({
   heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
   heroMiniValue: { fontSize: 18, fontWeight: '900', color: theme.colors.textPrimary },
 
-  // ===== Header hero surface =====
+  // Header hero surface
   headerHeroWrap: {
     marginBottom: theme.spacing.lg,
     position: 'relative',
@@ -1576,7 +1828,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  // ✅ Bigger Omni logo
   headerHeroLogo: {
     width: 92,
     height: 92,
@@ -1652,7 +1903,6 @@ const styles = StyleSheet.create({
   forecastCard: { marginBottom: theme.spacing.lg },
   cardTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 10 },
 
-  // ✅ Hourly card on Land
   hourlyCard: { marginBottom: theme.spacing.lg },
   hourlyHeaderRow: {
     flexDirection: 'row',
@@ -1660,15 +1910,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 6,
   },
-  hourlyFullBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  hourlyFullText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 12 },
 
   modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
   modalSheet: {
@@ -1718,7 +1959,13 @@ const styles = StyleSheet.create({
     color: 'white',
   },
 
-  modalSection: { marginTop: 14, marginBottom: 8, fontSize: 12, fontWeight: '900', color: 'rgba(255,255,255,0.85)' },
+  modalSection: {
+    marginTop: 14,
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.85)',
+  },
   modalError: { marginTop: 8, fontSize: 12, color: '#FFB4B4', fontWeight: '800' },
 
   pickRow: {
