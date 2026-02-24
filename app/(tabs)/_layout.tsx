@@ -13,42 +13,57 @@ export default function TabsLayout() {
   const tint = Colors[colorScheme].tint;
   const insets = useSafeAreaInsets();
 
-  const bg = '#020617';
-  const bgElev = '#0B1220';
   const border = 'rgba(255,255,255,0.10)';
 
   const tabBarStyle = useMemo(() => {
     const baseHeight = Platform.select({ ios: 60, android: 56, default: 56 }) as number;
     const padTop = 8;
     const padBottom = Math.max(10, insets.bottom);
+
     return {
-      backgroundColor: bg,
+      backgroundColor: 'transparent',          // ✅ key
       borderTopColor: border,
       borderTopWidth: 1,
+
+      // ✅ float above content so background shows behind it
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+
       height: baseHeight + padBottom + padTop,
       paddingTop: padTop,
       paddingBottom: padBottom,
+
       shadowColor: '#000',
       shadowOpacity: 0.25,
       shadowRadius: 18,
       shadowOffset: { width: 0, height: -6 },
       elevation: 18,
     } as const;
-  }, [bg, border, insets.bottom]);
+  }, [border, insets.bottom]);
 
   return (
     <Tabs
       screenOptions={{
+        // ✅ the scene itself must be transparent so your screen background shows through
+        sceneStyle: { backgroundColor: 'transparent' },
+
         headerShown: false,
-        tabBarActiveTintColor: tint,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
+        headerTransparent: true,       
+        
         tabBarLabelStyle: { fontWeight: '800', fontSize: 11, marginTop: -2, marginBottom: 2 },
         tabBarIconStyle: { marginTop: 2 },
-        tabBarStyle,
+        tabBarStyle: {
+          backgroundColor: 'rgba(20,24,38,0.98)',
+          borderTopColor: 'rgba(255,255,255,0.06)',
+        },
+
+        tabBarActiveTintColor: 'white',
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
+
+        tabBarActiveBackgroundColor: 'rgba(255,255,255,0.06)',
         tabBarHideOnKeyboard: true,
-        headerStyle: { backgroundColor: bgElev },
-        headerTintColor: 'white',
-        headerTitleStyle: { fontWeight: '900' },
       }}
     >
       <Tabs.Screen
@@ -60,15 +75,18 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="hourly"
         options={{
+          headerTitle: '',
           title: 'Hourly',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'time' : 'time-outline'} color={color} />
           ),
         }}
       />
+
       <Tabs.Screen
         name="climo"
         options={{
@@ -78,6 +96,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="maps"
         options={{
@@ -87,6 +106,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="solar"
         options={{
@@ -96,6 +116,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="nautical"
         options={{
@@ -105,21 +126,13 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="extremes"
         options={{
           title: 'Extremes',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'thunderstorm' : 'thunderstorm-outline'} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'settings' : 'settings-outline'} color={color} />
           ),
         }}
       />

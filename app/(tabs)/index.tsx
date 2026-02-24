@@ -31,10 +31,10 @@ import type { FavoriteLocation } from '../lib/locations/favorites';
 import { geocodePlaces } from '../lib/locations/geocode';
 import { useLocations } from '../lib/locations/useLocations';
 
+import { Ionicons } from '@expo/vector-icons';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { NerdyExplainModal, type ExplainPayload } from '../../components/common/NerdyExplainModal';
 import { NerdyInsightsCard } from '../../components/land/NerdyInsightsCard';
-
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -1567,66 +1567,71 @@ export default function LandWeatherScreen() {
         >
           {/* HEADER */}
           <View style={styles.headerHeroWrap}>
-            <View style={styles.headerHeroSurface}>
-              <View style={styles.headerHeroTopRow}>
-                <View style={styles.headerHeroBrand}>
-                  <Image
-                    source={require('../../assets/brand/omniwx-mark-word.png')}
-                    style={styles.headerHeroLogo}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                <Pressable onPress={() => setPickerOpen(true)} style={styles.headerHeroLocation}>
-                  <Text style={styles.locationPrimary} numberOfLines={1}>
-                    {locationLabel}
-                  </Text>
-                  <Text style={styles.locationSecondary} numberOfLines={1}>
-                    📍 Change location
-                  </Text>
-                </Pressable>
-
-                <View style={styles.headerHeroActions}>
-                  <Pressable
-                    onPress={onToggleFavorite}
-                    disabled={!coords || isFavorited}
-                    style={[
-                      styles.favoriteChip,
-                      isFavorited && styles.favoriteChipActive,
-                      (!coords || isFavorited) && { opacity: 0.85 },
-                    ]}
-                  >
-                    <Text style={[styles.favoriteChipText, isFavorited && { color: 'white' }]}>
-                      {isFavorited ? '★ Saved' : '☆ Save'}
-                    </Text>
-                  </Pressable>
-
-                  <WxLabToggle
-                    enabled={wxLab}
-                    onToggle={() => {
-                      if (toggleWxLab) return toggleWxLab();
-                      if (setWxLab) return setWxLab(!wxLab);
-                    }}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.headerHeroBottomRow}>
-                <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
-                  <Text style={styles.quickNavText}>Hourly</Text>
-                </Pressable>
-
-                <Pressable onPress={() => router.push('/climo')} style={styles.quickNavBtn}>
-                  <Text style={styles.quickNavText}>Climo</Text>
-                </Pressable>
-
-                {wxLab ? (
-                  <View style={styles.headerHeroLabHint}>
-                    <Text style={styles.headerHeroLabHintText}>WX Lab</Text>
-                  </View>
-                ) : null}
-              </View>
+          <View style={styles.headerHeroSurface}>
+            {/* ROW 1: brand + tertiary settings */}
+            <View style={styles.headerRow1}>
+              <View style={styles.logoGlowWrap}>
+              <View style={styles.logoGlowHalo} />
+              <Image
+                source={require('../../assets/brand/omniwx-mark-word.png')}
+                style={styles.headerHeroLogo}
+                resizeMode="contain"
+              />
             </View>
+
+              <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={styles.settingsIconBtn}>
+              <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
+            </Pressable>
+            </View>
+
+            {/* ROW 2: PRIMARY location CTA */}
+            <Pressable onPress={() => setPickerOpen(true)} style={styles.locationCta}>
+              <Text style={styles.locationPrimary} numberOfLines={1}>
+                {locationLabel}
+              </Text>
+              <Text style={styles.locationSecondary} numberOfLines={1}>
+                📍 Change location
+              </Text>
+            </Pressable>
+
+            {/* ROW 3: SECONDARY actions */}
+            <View style={styles.actionRow}>
+              <Pressable
+                onPress={onToggleFavorite}
+                disabled={!coords || isFavorited}
+                style={[
+                  styles.actionPill,
+                  isFavorited && styles.actionPillOn,
+                  (!coords || isFavorited) && { opacity: 0.85 },
+                ]}
+              >
+                <Text style={styles.actionPillText}>{isFavorited ? '★ Saved' : '☆ Save'}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  if (toggleWxLab) return toggleWxLab();
+                  if (setWxLab) return setWxLab(!wxLab);
+                }}
+                style={[styles.actionPill, styles.actionPillPrimary, wxLab && styles.actionPillPrimaryOn]}
+              >
+                <Text style={[styles.actionPillText, { color: 'white' }]}>🧪 Wx Lab</Text>
+              </Pressable>
+            </View>
+
+            {/* ROW 4: quick nav */}
+            <View style={styles.headerHeroBottomRow}>
+              <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
+                <Text style={styles.quickNavText}>Hourly</Text>
+              </Pressable>
+
+              <Pressable onPress={() => router.push('/climo')} style={styles.quickNavBtn}>
+                <Text style={styles.quickNavText}>Climo</Text>
+              </Pressable>
+            </View>
+          </View>
+
+       
           </View>
 
           {/* No coords yet: show "getting location" and DO NOT mount weather hooks */}
@@ -1741,7 +1746,72 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(160,220,255,0.10)',
   },
   favoriteChipText: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12 },
+  headerRow1: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  },
 
+settingsIconBtn: {
+  width: 40,
+  height: 40,
+  borderRadius: 14,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.10)',
+},
+
+settingsIcon: { fontSize: 16, opacity: 0.9 },
+
+locationCta: {
+  marginTop: 10,
+  paddingVertical: 10,
+  paddingHorizontal: 12,
+  borderRadius: 18,
+  backgroundColor: 'rgba(0,0,0,0.12)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.10)',
+},
+
+actionRow: {
+  marginTop: 12,
+  flexDirection: 'row',
+  gap: 10,
+},
+
+actionPill: {
+  flex: 1,
+  height: 44,
+  borderRadius: 16,
+  paddingHorizontal: 12,
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.12)',
+},
+
+actionPillOn: {
+  backgroundColor: 'rgba(255,255,255,0.12)',
+  borderColor: 'rgba(255,255,255,0.18)',
+},
+
+actionPillPrimary: {
+  backgroundColor: 'rgba(37, 99, 235, 0.72)',
+  borderColor: 'rgba(255,255,255,0.16)',
+},
+
+actionPillPrimaryOn: {
+  backgroundColor: 'rgba(37, 99, 235, 0.92)',
+},
+
+actionPillText: {
+  color: 'rgba(255,255,255,0.90)',
+  fontWeight: '900',
+  fontSize: 12,
+},
   labToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1828,11 +1898,37 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  headerHeroLogo: {
-    width: 92,
-    height: 92,
-    backgroundColor: 'transparent',
-  },
+  logoGlowWrap: {
+  position: 'relative',
+  alignSelf: 'flex-start',
+},
+
+logoGlowHalo: {
+  position: 'absolute',
+  top: 20,
+  left: 20,
+  right: 20,
+  bottom: 20,
+  borderRadius: 999,
+  backgroundColor: 'rgba(125, 211, 252, 0.18)',
+  opacity: 0.6,
+},
+
+headerHeroLogo: {
+  width: 192,
+  height: 192,
+  opacity: 0.96,
+  backgroundColor: 'transparent',
+
+  // iOS shadow
+  shadowColor: '#7dd3fc',
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.25,
+  shadowRadius: 24,
+
+  // Android shadow
+  elevation: 8,
+},
 
   headerHeroLocation: {
     flex: 1,
