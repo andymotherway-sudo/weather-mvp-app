@@ -1,4 +1,7 @@
 // components/land/HourlyRangeChart.tsx
+// ✅ drop-in replacement: adds Daily-style ring around wind direction + moves it BELOW clouds band
+// ✅ removes duplicate Clouds readout row under the chart (keeps tile "Clouds %" + clouds band)
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
@@ -46,7 +49,12 @@ function pick(h: ForecastHour, key: string): number | null {
     case 'gustMph':
       return safeNum((h as any).gustMph ?? (h as any).windGustMph ?? (h as any).gust);
     case 'windDirDeg':
-      return safeNum((h as any).windDirDeg ?? (h as any).windDirectionDeg ?? (h as any).windDirection);
+      return safeNum(
+        (h as any).windDirDeg ??
+          (h as any).windDirectionDeg ??
+          (h as any).windDirection ??
+          (h as any).windDirDominantDeg
+      );
     default:
       return safeNum((h as any)[key]);
   }
@@ -110,6 +118,13 @@ function parseLocalMsStrict(iso: string): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
+function degToCardinal(deg?: number | null) {
+  if (deg == null) return '—';
+  const d = ((deg % 360) + 360) % 360;
+  const idx = Math.round(d / 45) % 8;
+  return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][idx];
+}
+
 export function HourlyRangeChart({
   hours,
   maxHours = 72,
@@ -121,7 +136,6 @@ export function HourlyRangeChart({
 }) {
   const all = useMemo(() => hours ?? [], [hours]);
 
-  // ✅ Daily-style pill toggles (below chart)
   const [showTemp, setShowTemp] = useState(true);
   const [showDew, setShowDew] = useState(true);
   const [showRh, setShowRh] = useState(true);
@@ -129,14 +143,12 @@ export function HourlyRangeChart({
   const [showWind, setShowWind] = useState(true);
   const [showClouds, setShowClouds] = useState(true);
 
-  // bump once per minute so "NOW" stays correct without reload
   const [nowTick, setNowTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setNowTick((x) => x + 1), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  // Find the forecast index closest to current time
   const nowIdx = useMemo(() => {
     if (!all.length) return 0;
 
@@ -157,7 +169,6 @@ export function HourlyRangeChart({
     return bestI;
   }, [all, nowTick]);
 
-  // ✅ show the window starting at "now"
   const data = useMemo(() => {
     if (!all.length) return [];
     const start = clampInt(nowIdx, 0, Math.max(0, all.length - 1));
@@ -169,14 +180,12 @@ export function HourlyRangeChart({
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
 
-  // Reset selection to NOW when the window changes (unless user tapped)
   useEffect(() => {
     if (selFromTapRef.current) return;
     lastSelIdxRef.current = 0;
     setSelIdx(0);
   }, [nowIdx, data.length]);
 
-  // bump on tap
   const bump = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!selFromTapRef.current) return;
@@ -199,10 +208,14 @@ export function HourlyRangeChart({
     grid: 'rgba(255,255,255,0.08)',
     tickTemp: 'rgba(255,255,255,0.48)',
     tickPct: 'rgba(255,255,255,0.28)',
-
-    // clouds band (exactly like Daily)
     cloudFill: 'rgba(255,255,255,0.10)',
     cloudOn: 'rgba(255,255,255,0.55)',
+
+    // Daily-ish wind ring
+    ringStroke: 'rgba(255,255,255,0.22)',
+    ringFill: 'rgba(255,255,255,0.02)',
+    arrow: 'rgba(160,220,255,0.55)',
+    dirText: 'rgba(255,255,255,0.70)',
   };
 
   // Geometry
@@ -215,14 +228,16 @@ export function HourlyRangeChart({
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-  const H = 240;
+
+  // ✅ give ourselves a little more vertical room for the wind-direction row (below clouds)
+  const H = 270;
 
   const axisL = 28;
   const padL = padX + axisL;
   const padR = padX;
 
   const padT = 18;
-  const padB = 78;
+  const padB = 114; // ✅ more bottom padding
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -232,10 +247,15 @@ export function HourlyRangeChart({
   const windBandTop = padT + plotH + 10;
   const windBandBot = windBandTop + windBandH;
 
-  // ✅ Clouds band UNDER wind (same placement logic as Daily)
+  // Clouds band (under wind)
   const cloudBandH = 14;
   const cloudBandTop = windBandBot + 8;
   const cloudBandBot = cloudBandTop + cloudBandH;
+
+  // ✅ Wind direction indicator row BELOW cloud band
+  const windDirRingR = 12;
+  const windDirCenterY = cloudBandBot + 28; // below clouds band
+  const windDirTextY = windDirCenterY - 16; // cardinal above ring
 
   const xForIdx = (i: number) => padL + i * step + TILE_W / 2;
 
@@ -372,11 +392,6 @@ export function HourlyRangeChart({
   const unitsLabel = units === 'metric' ? '°C' : '°F';
   const windLabel = units === 'metric' ? 'kph' : 'mph';
 
-  const selCloudPct = (() => {
-    const v = data[selIdx] ? pick(data[selIdx], 'cloudCoverPct') : null;
-    return typeof v === 'number' ? clamp(v, 0, 100) : null;
-  })();
-
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
@@ -441,7 +456,9 @@ export function HourlyRangeChart({
                       isPad && { opacity: 0.35 },
                     ]}
                   >
-                    <Text style={s.hourTop}>{isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}</Text>
+                    <Text style={s.hourTop}>
+                      {isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}
+                    </Text>
 
                     <Text style={s.hilo}>{fmtInt(tempV, '°')}</Text>
 
@@ -494,10 +511,8 @@ export function HourlyRangeChart({
                 %
               </SvgText>
 
-              {/* ✅ Cursor goes to the clouds band bottom (like Daily) */}
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
-              {/* precip */}
               {showPrecip && precipArea ? (
                 <>
                   <Path d={precipArea} fill={C.precipFill} stroke="none" />
@@ -505,12 +520,10 @@ export function HourlyRangeChart({
                 </>
               ) : null}
 
-              {/* lines */}
               {showTemp && pathT ? <Path d={pathT} stroke={C.temp} strokeWidth={3.2} fill="none" /> : null}
               {showDew && pathD ? <Path d={pathD} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" /> : null}
               {showRh && pathRh ? <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" /> : null}
 
-              {/* points */}
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
                 const tV = pick(h, tempKey);
@@ -552,21 +565,10 @@ export function HourlyRangeChart({
                     const wY = windBandBot - wH;
                     const gY = windBandBot - gH;
 
-                    const dir = pick(h, 'windDirDeg');
-
                     return (
                       <G key={`wb-${h.time}-${i}`}>
                         {wv != null ? <Rect x={wX} y={wY} width={barW} height={wH} rx={4} fill="rgba(255,255,255,0.30)" /> : null}
                         {gv != null ? <Rect x={gX} y={gY} width={barW} height={gH} rx={4} fill="rgba(255,255,255,0.70)" /> : null}
-
-                        {wv != null && typeof dir === 'number' ? (
-                          <G rotation={dir} origin={`${x} ${windBandTop - 2}`}>
-                            <Path
-                              d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
-                              fill="rgba(160,220,255,0.55)"
-                            />
-                          </G>
-                        ) : null}
                       </G>
                     );
                   })
@@ -579,7 +581,7 @@ export function HourlyRangeChart({
                 </SvgText>
               </G>
 
-              {/* ✅ Clouds band (EXACT Daily pattern) */}
+              {/* Clouds band */}
               {showClouds ? (
                 <>
                   <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.03)" />
@@ -588,7 +590,7 @@ export function HourlyRangeChart({
                     const pct = pick(h, 'cloudCoverPct');
                     const p = typeof pct === 'number' ? clamp(pct, 0, 100) : null;
 
-                    const tileLeft = padL + i * step; // <-- hourly step
+                    const tileLeft = padL + i * step;
                     const innerPad = 10;
                     const barW = TILE_W - innerPad * 2;
                     const barH = 6;
@@ -613,6 +615,42 @@ export function HourlyRangeChart({
                   </G>
                 </>
               ) : null}
+
+              {/* ✅ Wind direction indicator BELOW clouds band (Daily-style ring) */}
+              {showWind
+                ? data.map((h: any, i) => {
+                    const x = xForIdx(i);
+                    const wv = pick(h, 'windMph');
+                    const dir = pick(h, 'windDirDeg');
+                    if (wv == null || typeof dir !== 'number') return null;
+
+                    const cardinal = degToCardinal(dir);
+
+                    return (
+                      <G key={`wd-${h.time}-${i}`}>
+                        {/* cardinal above ring */}
+                        <SvgText x={x} y={windDirTextY} fontSize="10" fontWeight="800" textAnchor="middle" fill={C.dirText}>
+                          {cardinal}
+                        </SvgText>
+
+                        {/* ring */}
+                        <Circle
+                          cx={x}
+                          cy={windDirCenterY}
+                          r={windDirRingR}
+                          fill={C.ringFill}
+                          stroke={C.ringStroke}
+                          strokeWidth={1.2}
+                        />
+
+                        {/* arrow centered, translated to ring center, rotated meteorologically */}
+                        <G transform={`translate(${x} ${windDirCenterY}) rotate(${dir})`}>
+                          <Path d="M 0 -6 L -4 5 L 4 5 Z" fill={C.arrow} />
+                        </G>
+                      </G>
+                    );
+                  })
+                : null}
 
               {/* bottom labels */}
               {data.map((h: any, i) => {
@@ -641,19 +679,10 @@ export function HourlyRangeChart({
                 );
               })}
             </Svg>
-
-            {/* (Optional) same readout pattern as Daily */}
-            {showClouds ? (
-              <View style={s.cloudReadoutRow}>
-                <Text style={s.cloudReadoutLabel}>Clouds</Text>
-                <Text style={s.cloudReadoutValue}>{selCloudPct == null ? '—' : `${Math.round(selCloudPct)}%`}</Text>
-              </View>
-            ) : null}
           </View>
         </View>
       </ScrollView>
 
-      {/* ✅ Daily-style pills BELOW chart */}
       <View style={s.pillSection}>
         <Text style={s.pillSectionTitle}>HOURLY FORECAST</Text>
 
@@ -665,11 +694,41 @@ export function HourlyRangeChart({
             on={showTemp}
             onPress={() => setShowTemp((v) => !v)}
           />
-          <ToggleLegendPill label="Dew pt" kind="dashed" color="rgba(80,220,140,0.90)" on={showDew} onPress={() => setShowDew((v) => !v)} />
-          <ToggleLegendPill label="RH" kind="dot" color="rgba(190,120,255,0.80)" on={showRh} onPress={() => setShowRh((v) => !v)} />
-          <ToggleLegendPill label="Precip" kind="mountain" color="rgba(90,200,250,0.45)" on={showPrecip} onPress={() => setShowPrecip((v) => !v)} />
-          <ToggleLegendPill label={`Wind/Gust (${windLabel})`} kind="bars2" color="rgba(255,255,255,0.70)" on={showWind} onPress={() => setShowWind((v) => !v)} />
-          <ToggleLegendPill label="Clouds" kind="area" color="rgba(255,255,255,0.55)" on={showClouds} onPress={() => setShowClouds((v) => !v)} />
+          <ToggleLegendPill
+            label="Dew pt"
+            kind="dashed"
+            color="rgba(80,220,140,0.90)"
+            on={showDew}
+            onPress={() => setShowDew((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="RH"
+            kind="dot"
+            color="rgba(190,120,255,0.80)"
+            on={showRh}
+            onPress={() => setShowRh((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="Precip"
+            kind="mountain"
+            color="rgba(90,200,250,0.45)"
+            on={showPrecip}
+            onPress={() => setShowPrecip((v) => !v)}
+          />
+          <ToggleLegendPill
+            label={`Wind/Gust (${windLabel})`}
+            kind="bars2"
+            color="rgba(255,255,255,0.70)"
+            on={showWind}
+            onPress={() => setShowWind((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="Clouds"
+            kind="area"
+            color="rgba(255,255,255,0.55)"
+            on={showClouds}
+            onPress={() => setShowClouds((v) => !v)}
+          />
         </View>
       </View>
     </View>
@@ -772,7 +831,6 @@ const s = StyleSheet.create({
     lineHeight: 15,
   },
 
-  // ✅ Daily-style pill section container
   pillSection: {
     paddingHorizontal: 12,
     paddingTop: 10,
@@ -788,7 +846,6 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // ✅ copy of Daily legend pill styles
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
   legPill: {
     flexDirection: 'row',
@@ -873,26 +930,6 @@ const s = StyleSheet.create({
     borderTopWidth: 2,
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
-  },
-
-  cloudReadoutRow: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cloudReadoutLabel: {
-    color: 'rgba(255,255,255,0.45)',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.3,
-  },
-  cloudReadoutValue: {
-    color: 'rgba(255,255,255,0.70)',
-    fontWeight: '900',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
   },
 });
 

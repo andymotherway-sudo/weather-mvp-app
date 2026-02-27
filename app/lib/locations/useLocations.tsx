@@ -1,7 +1,15 @@
-// app/lib/locations/useLocations.ts
+// app/lib/locations/useLocations.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from 'react';
 
 export type FavoriteLocation = {
   id: string;
@@ -10,25 +18,26 @@ export type FavoriteLocation = {
   lon: number;
 };
 
-export type ActiveLocation =
-  | { kind: 'current' }
-  | { kind: 'favorite'; id: string };
+export type ActiveLocation = { kind: 'current' } | { kind: 'favorite'; id: string };
+
+type Coords = { lat: number; lon: number };
 
 type State = {
   favorites: FavoriteLocation[];
   active: ActiveLocation;
-  currentCoords: { lat: number; lon: number } | null;
+  currentCoords: Coords | null; // live current coords (or last-known)
   hydrated: boolean;
 };
 
 type Action =
-  | { type: 'HYDRATE'; favorites: FavoriteLocation[] }
+  | { type: 'HYDRATE'; favorites: FavoriteLocation[]; lastCoords: Coords | null }
   | { type: 'SET_ACTIVE'; active: ActiveLocation }
-  | { type: 'SET_CURRENT'; coords: { lat: number; lon: number } }
+  | { type: 'SET_CURRENT'; coords: Coords }
   | { type: 'UPSERT_FAVORITE'; favorite: FavoriteLocation; makeActive?: boolean }
   | { type: 'REMOVE_FAVORITE'; id: string };
 
-const STORAGE_KEY = 'omniwx:favorites:v1';
+const FAVORITES_KEY = 'omniwx:favorites:v1';
+const LAST_COORDS_KEY = 'omniwx:lastCoords:v1';
 
 const initialState: State = {
   favorites: [],
@@ -40,7 +49,12 @@ const initialState: State = {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'HYDRATE':
-      return { ...state, favorites: action.favorites ?? [], hydrated: true };
+      return {
+        ...state,
+        favorites: action.favorites ?? [],
+        currentCoords: action.lastCoords ?? state.currentCoords, // ✅ last-known coords = instant render
+        hydrated: true,
+      };
 
     case 'SET_ACTIVE':
       return { ...state, active: action.active };
@@ -50,8 +64,9 @@ function reducer(state: State, action: Action): State {
 
     case 'UPSERT_FAVORITE': {
       const next = upsertFavorite(state.favorites, action.favorite);
-      const nextActive: ActiveLocation =
-        action.makeActive ? { kind: 'favorite', id: action.favorite.id } : state.active;
+      const nextActive: ActiveLocation = action.makeActive
+        ? { kind: 'favorite', id: action.favorite.id }
+        : state.active;
       return { ...state, favorites: next, active: nextActive };
     }
 
@@ -84,9 +99,18 @@ function upsertFavorite(list: FavoriteLocation[], item: FavoriteLocation) {
   return [item, ...list];
 }
 
+function safeJsonParse<T>(s: string | null): T | null {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function loadFavorites(): Promise<FavoriteLocation[]> {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(FAVORITES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -105,29 +129,57 @@ async function loadFavorites(): Promise<FavoriteLocation[]> {
 
 async function saveFavorites(favs: FavoriteLocation[]) {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(favs ?? []));
+    await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(favs ?? []));
   } catch {
     // ignore
   }
 }
 
-export function useLocations() {
+async function loadLastCoords(): Promise<Coords | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_COORDS_KEY);
+    const parsed = safeJsonParse<any>(raw);
+    if (!parsed) return null;
+    const lat = Number(parsed.lat);
+    const lon = Number(parsed.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+  } catch {
+    return null;
+  }
+}
+
+async function saveLastCoords(coords: Coords) {
+  try {
+    await AsyncStorage.setItem(LAST_COORDS_KEY, JSON.stringify(coords));
+  } catch {
+    // ignore
+  }
+}
+
+// --- API + Context ----------------------------------------------------------
+
+type LocationsApi = ReturnType<typeof useLocationsImpl>;
+
+const LocationsContext = createContext<LocationsApi | null>(null);
+
+function useLocationsImpl() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // hydrate once
+  // hydrate once (favorites + last coords)
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const favs = await loadFavorites();
+      const [favs, lastCoords] = await Promise.all([loadFavorites(), loadLastCoords()]);
       if (!mounted) return;
-      dispatch({ type: 'HYDRATE', favorites: favs });
+      dispatch({ type: 'HYDRATE', favorites: favs, lastCoords });
     })();
     return () => {
       mounted = false;
     };
   }, []);
 
-  // persist after hydration
+  // persist favorites after hydration
   useEffect(() => {
     if (!state.hydrated) return;
     saveFavorites(state.favorites);
@@ -147,10 +199,10 @@ export function useLocations() {
       if (status !== 'granted') return;
 
       const pos = await Location.getCurrentPositionAsync({});
-      dispatch({
-        type: 'SET_CURRENT',
-        coords: { lat: pos.coords.latitude, lon: pos.coords.longitude },
-      });
+      const coords: Coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+
+      dispatch({ type: 'SET_CURRENT', coords });
+      saveLastCoords(coords); // ✅ persist last-known coords
     } catch {
       // ignore
     }
@@ -159,16 +211,16 @@ export function useLocations() {
   const addOrActivateFavorite = useCallback(
     (name: string, lat: number, lon: number) => {
       const existing = (state.favorites ?? []).find((f) => near(f.lat, lat) && near(f.lon, lon));
-      const favorite: FavoriteLocation = existing ?? {
-        id: makeId(lat, lon),
-        name,
-        lat,
-        lon,
-      };
+      const favorite: FavoriteLocation =
+        existing ??
+        ({
+          id: makeId(lat, lon),
+          name,
+          lat,
+          lon,
+        } as FavoriteLocation);
 
-      // if it exists, keep same id but update name if needed
       const updated: FavoriteLocation = existing ? { ...existing, name } : favorite;
-
       dispatch({ type: 'UPSERT_FAVORITE', favorite: updated, makeActive: true });
     },
     [state.favorites]
@@ -179,7 +231,6 @@ export function useLocations() {
   }, []);
 
   const activeFavorite = useMemo(() => {
-    // ✅ NO active.id unless kind === 'favorite'
     if (state.active.kind !== 'favorite') return null;
     return state.favorites.find((f) => f.id === state.active.id) ?? null;
   }, [state.active, state.favorites]);
@@ -211,4 +262,30 @@ export function useLocations() {
     addOrActivateFavorite,
     removeFavoriteById,
   };
+}
+
+export function LocationsProvider({ children }: { children: React.ReactNode }) {
+  const api = useLocationsImpl();
+
+  // ✅ Centralized GPS warmup: do it once per app launch (prevents repeated permission churn)
+  const warmedRef = useRef(false);
+
+  useEffect(() => {
+    if (warmedRef.current) return;
+    if (!api.state.hydrated) return;
+
+    warmedRef.current = true;
+    api.refreshCurrentLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.state.hydrated]);
+
+  return <LocationsContext.Provider value={api}>{children}</LocationsContext.Provider>;
+}
+
+export function useLocations() {
+  const ctx = useContext(LocationsContext);
+  if (!ctx) {
+    throw new Error('useLocations() must be used inside <LocationsProvider>. Wrap app/_layout.tsx.');
+  }
+  return ctx;
 }

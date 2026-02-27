@@ -1465,11 +1465,7 @@ export default function LandWeatherScreen() {
   const { activeCoords, activeLabel, state: locState, refreshCurrentLocation, addOrActivateFavorite, setActiveCurrent } =
     useLocations();
 
-  // If we're in current mode, try to get GPS on mount (and when switching back to current)
-  useEffect(() => {
-    if (locState.active?.kind === 'current') refreshCurrentLocation();
-  }, [refreshCurrentLocation, locState.active?.kind]);
-
+ 
   // No hard-coded defaults: coords are either real GPS coords or null
   const coords = useMemo(() => {
     return activeCoords ?? null;
@@ -1626,7 +1622,7 @@ export default function LandWeatherScreen() {
               </Pressable>
 
               <Pressable onPress={() => router.push('/climo')} style={styles.quickNavBtn}>
-                <Text style={styles.quickNavText}>Climo</Text>
+                <Text style={styles.quickNavText}>Almanac</Text>
               </Pressable>
             </View>
           </View>

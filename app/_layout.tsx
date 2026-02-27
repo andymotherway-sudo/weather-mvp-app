@@ -6,7 +6,10 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 
 import { AppBoot } from '../components/boot/AppBoot';
-import { LocationProvider } from './context/LocationContext';
+
+// ✅ NEW: app-wide locations provider (last-known coords + GPS warmup)
+import { LocationsProvider } from './lib/locations/useLocations';
+
 import { PlaceProvider } from './context/PlaceContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { WxLabProvider } from './context/WxLabContext';
@@ -23,14 +26,15 @@ export default function RootLayout() {
       <StatusBar style="light" translucent={false} backgroundColor={APP_BG} />
 
       <SettingsProvider>
-        <LocationProvider>
+        {/* ✅ replaces LocationProvider */}
+        <LocationsProvider>
           <PlaceProvider>
             <WxLabProvider>
               <AppBoot>
                 <Stack
                   screenOptions={{
                     headerShown: false,
-                    contentStyle: { backgroundColor: APP_BG }, // <-- KEY
+                    contentStyle: { backgroundColor: APP_BG },
                   }}
                 >
                   <Stack.Screen name="(onboarding)" />
@@ -40,7 +44,7 @@ export default function RootLayout() {
               </AppBoot>
             </WxLabProvider>
           </PlaceProvider>
-        </LocationProvider>
+        </LocationsProvider>
       </SettingsProvider>
     </View>
   );

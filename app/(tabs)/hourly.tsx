@@ -1,10 +1,11 @@
 // app/(tabs)/hourly.tsx
 // ✅ Drop-in replacement
-// ✅ Keeps your existing useLocations + branded header + charts
-// ✅ Fixes RefreshControl (it was always false / not refreshing)
-// ✅ Refresh now refreshes forecast (and GPS only when needed)
+// ✅ Keeps useLocations + branded header + charts
+// ✅ Pull-to-refresh refreshes forecast when coords exist; otherwise re-tries GPS
+// ✅ Removes "Show/Hide hourly details" (details always visible)
+// ✅ Removes hidden "display:none" unused-warnings block
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -35,19 +36,31 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
+function normalizeHourly(hourlyRaw: any[]) {
+  return (hourlyRaw ?? []).map((h: any) => {
+    const pressureHpa =
+      safeNum(h.pressure_msl) ??
+      safeNum(h.pressureMslHpa) ??
+      safeNum(h.surface_pressure) ??
+      safeNum(h.pressureSurfaceHpa) ??
+      safeNum(h.pressure_hpa) ??
+      safeNum(h.pressureHpa) ??
+      null;
+
+    return { ...h, pressureHpa };
+  });
+}
+
 function HourlyWithCoords({
   coords,
-  locationLabel,
-  onRefreshState,
-  registerRefresh,
+  onRefreshingChange,
+  setRefreshFn,
 }: {
   coords: { lat: number; lon: number };
-  locationLabel: string;
-  onRefreshState: (refreshing: boolean) => void;
-  registerRefresh: (fn: () => void) => void;
+  onRefreshingChange: (refreshing: boolean) => void;
+  setRefreshFn: (fn: null | (() => void)) => void;
 }) {
   const units: UnitSystem = 'us';
-  const [showDetails, setShowDetails] = useState(false);
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
@@ -57,67 +70,43 @@ function HourlyWithCoords({
 
   // Let parent RefreshControl reflect actual refresh state
   useEffect(() => {
-    onRefreshState(!!refreshing);
-  }, [refreshing, onRefreshState]);
+    onRefreshingChange(!!refreshing);
+  }, [refreshing, onRefreshingChange]);
 
-  // Give parent a callable refresh fn
+  // Give parent a callable refresh fn (or clear it)
   useEffect(() => {
-    registerRefresh(() => refresh?.());
-  }, [refresh, registerRefresh]);
+    setRefreshFn(refresh ? () => refresh() : null);
+    return () => setRefreshFn(null);
+  }, [refresh, setRefreshFn]);
 
   const hourlyRaw: any[] = data?.hourly ?? [];
 
-  const hourly = useMemo(() => {
-    return (hourlyRaw ?? []).map((h: any) => {
-      const pressureHpa =
-        safeNum(h.pressure_msl) ??
-        safeNum(h.pressureMslHpa) ??
-        safeNum(h.surface_pressure) ??
-        safeNum(h.pressureSurfaceHpa) ??
-        safeNum(h.pressure_hpa) ??
-        safeNum(h.pressureHpa) ??
-        null;
+  const hourly = useMemo(() => normalizeHourly(hourlyRaw), [hourlyRaw]);
 
-      return { ...h, pressureHpa };
-    });
-  }, [hourlyRaw]);
+  if (loading && !data) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.small}>Loading hourly forecast…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card style={styles.errorCard}>
+        <Text style={styles.errorTitle}>Error</Text>
+        <Text style={styles.errorText}>{String(error)}</Text>
+      </Card>
+    );
+  }
+
+  if (!hourly.length) return null;
 
   return (
     <>
-      {loading && !data ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.small}>Loading hourly forecast…</Text>
-        </View>
-      ) : null}
-
-      {error ? (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Error</Text>
-          <Text style={styles.errorText}>{error}</Text>
-        </Card>
-      ) : null}
-
-      {hourly.length ? (
-        <>
-          <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
-
-          <View style={{ marginTop: theme.spacing.sm }}>
-            <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>
-              <Text style={styles.toggleText}>{showDetails ? 'Hide hourly details' : 'Show hourly details'}</Text>
-            </Pressable>
-          </View>
-
-          {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
-        </>
-      ) : null}
-
-      {/* keep these to avoid unused warnings if you ever refactor */}
-      <View style={{ display: 'none' }}>
-        <Text>{locationLabel}</Text>
-        <Text>{String(refreshing)}</Text>
-        <Text>{String(refresh)}</Text>
-      </View>
+      <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
+      <NerdyHourlyTimeline hours={hourly} maxHours={72} />
     </>
   );
 }
@@ -126,15 +115,9 @@ export default function HourlyTab() {
   const insets = useSafeAreaInsets();
   const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
 
-  // If we're in current mode, try to get GPS on mount (and when switching back to current)
-  useEffect(() => {
-    if (locState.active?.kind === 'current') refreshCurrentLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locState.active?.kind]);
 
-  const coords = useMemo(() => {
-    return activeCoords ?? null;
-  }, [activeCoords]);
+
+  const coords = useMemo(() => activeCoords ?? null, [activeCoords]);
 
   const locationLabel = useMemo(() => {
     const raw = (activeLabel ?? '').trim();
@@ -142,13 +125,16 @@ export default function HourlyTab() {
     return coords ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})` : 'Getting location…';
   }, [activeLabel, coords]);
 
-  // RefreshControl state + handler (wired to forecast refresh when coords exist)
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const refreshFnRef = React.useRef<null | (() => void)>(null);
+  const refreshFnRef = useRef<null | (() => void)>(null);
+
+  const setRefreshFn = useCallback((fn: null | (() => void)) => {
+    refreshFnRef.current = fn;
+  }, []);
 
   const onPullToRefresh = useCallback(() => {
-    if (coords) {
-      refreshFnRef.current?.();
+    if (coords && refreshFnRef.current) {
+      refreshFnRef.current();
       return;
     }
     refreshCurrentLocation();
@@ -164,7 +150,7 @@ export default function HourlyTab() {
         ]}
         refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
       >
-        {/* ✅ Header aligned with Land */}
+        {/* Header aligned with Land */}
         <View style={styles.header}>
           <Image source={OMNI_MARK_WORD} style={styles.wordmark} resizeMode="contain" />
           <Text style={styles.title}>Hourly</Text>
@@ -178,19 +164,16 @@ export default function HourlyTab() {
             <Text style={styles.errorTitle}>Getting your location…</Text>
             <Text style={styles.errorText}>Enable GPS or pick a place in Land Wx.</Text>
             <View style={{ marginTop: 12 }}>
-              <Pressable onPress={refreshCurrentLocation} style={styles.toggleBtn}>
-                <Text style={styles.toggleText}>Try again</Text>
+              <Pressable onPress={refreshCurrentLocation} style={styles.retryBtn}>
+                <Text style={styles.retryText}>Try again</Text>
               </Pressable>
             </View>
           </Card>
         ) : (
           <HourlyWithCoords
             coords={coords}
-            locationLabel={locationLabel}
-            onRefreshState={setIsRefreshing}
-            registerRefresh={(fn) => {
-              refreshFnRef.current = fn;
-            }}
+            onRefreshingChange={setIsRefreshing}
+            setRefreshFn={setRefreshFn}
           />
         )}
 
@@ -213,11 +196,15 @@ const styles = StyleSheet.create({
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   small: { ...typography.small, marginTop: theme.spacing.sm },
 
-  errorCard: { backgroundColor: theme.colors.errorBg, borderColor: theme.colors.errorBg, marginBottom: theme.spacing.lg },
+  errorCard: {
+    backgroundColor: theme.colors.errorBg,
+    borderColor: theme.colors.errorBg,
+    marginBottom: theme.spacing.lg,
+  },
   errorTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.errorText, marginBottom: 4 },
   errorText: { fontSize: 13, color: theme.colors.errorText },
 
-  toggleBtn: {
+  retryBtn: {
     alignSelf: 'flex-start',
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -226,5 +213,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  toggleText: { color: 'white', fontWeight: '900', fontSize: 12, opacity: 0.9 },
+  retryText: { color: 'white', fontWeight: '900', fontSize: 12, opacity: 0.9 },
 });

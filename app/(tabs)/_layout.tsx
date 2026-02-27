@@ -13,19 +13,16 @@ export default function TabsLayout() {
   const tint = Colors[colorScheme].tint;
   const insets = useSafeAreaInsets();
 
-  const border = 'rgba(255,255,255,0.10)';
-
   const tabBarStyle = useMemo(() => {
     const baseHeight = Platform.select({ ios: 60, android: 56, default: 56 }) as number;
     const padTop = 8;
     const padBottom = Math.max(10, insets.bottom);
 
     return {
-      backgroundColor: 'transparent',          // ✅ key
-      borderTopColor: border,
+      backgroundColor: 'rgba(20,24,38,0.98)',
+      borderTopColor: 'rgba(255,255,255,0.06)',
       borderTopWidth: 1,
 
-      // ✅ float above content so background shows behind it
       position: 'absolute',
       left: 0,
       right: 0,
@@ -41,23 +38,20 @@ export default function TabsLayout() {
       shadowOffset: { width: 0, height: -6 },
       elevation: 18,
     } as const;
-  }, [border, insets.bottom]);
+  }, [insets.bottom]);
 
   return (
     <Tabs
       screenOptions={{
-        // ✅ the scene itself must be transparent so your screen background shows through
         sceneStyle: { backgroundColor: 'transparent' },
-
         headerShown: false,
-        headerTransparent: true,       
-        
+        headerTransparent: true,
+
         tabBarLabelStyle: { fontWeight: '800', fontSize: 11, marginTop: -2, marginBottom: 2 },
         tabBarIconStyle: { marginTop: 2 },
-        tabBarStyle: {
-          backgroundColor: 'rgba(20,24,38,0.98)',
-          borderTopColor: 'rgba(255,255,255,0.06)',
-        },
+
+        // ✅ use the computed style
+        tabBarStyle,
 
         tabBarActiveTintColor: 'white',
         tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',

@@ -1,8 +1,8 @@
 // components/land/HourlyCharts72h.tsx
-// ✅ Simplified: removes Range/Temp/Precip/Wind/Comfort/Sky/Fronts panels + tabs entirely
 // ✅ Keeps: midnight padding (no Date(iso) boundaries), Learn modal, Card header
-// ✅ Renders: only HourlyRangeChart (the “hourly work we did earlier”)
-// ✅ Adds: padding support for pressure + clouds (for new hourly enhancements)
+// ✅ Renders: HourlyRangeChart (which owns panels/graphs)
+// ✅ Adds: padding support for pressure + clouds + wind dir fields in padding
+// ❌ Removes: Expand button + expanded state + expanded prop spread
 
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -72,8 +72,12 @@ function padSliceToMidnight(base: ForecastHour[]) {
         windMph: null,
         windGustMph: null,
 
-        // ✅ New: pressure support (you’re adding this to hourly now)
+        // ✅ pressure support
         pressureHpa: null,
+
+        // ✅ Wind direction support (meteorological "from" degrees)
+        windDirDominantDeg: null as any,
+        windDirDeg: null as any,
 
         ...({ __pad: true } as any),
       } as ForecastHour
@@ -84,8 +88,6 @@ function padSliceToMidnight(base: ForecastHour[]) {
 }
 
 export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
   const [learnVisible, setLearnVisible] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
@@ -103,32 +105,20 @@ export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
   return (
     <Card style={styles.card}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Hourly</Text>
-          <Text style={styles.subtitle}>
-            Temp + Dew + RH + POP + Wind/Gust + Clouds + Pressure
-          </Text>
-        </View>
+        <View style={{ flex: 1 }} />
 
-        <Pressable onPress={() => openLearn('data-availability')} style={styles.learnBtn}>
-          <Text style={styles.learnText}>Learn</Text>
-        </Pressable>
-
-        {/* Keeping Expand because your UI already expects it.
-            If HourlyRangeChart ignores it, that’s fine.
-            If you later want it to actually change layout, we can wire it in. */}
-        <Pressable onPress={() => setExpanded((v) => !v)} style={styles.expandBtn}>
-          <Text style={styles.expandText}>{expanded ? 'Collapse' : 'Expand'}</Text>
+        <Pressable
+          onPress={() => openLearn('data-availability')}
+          style={styles.learnBtn}
+        >
+          <Text style={styles.learnText}>About this Data</Text>
         </Pressable>
       </View>
 
-      {/* ✅ Only chart we keep */}
       <HourlyRangeChart
         hours={slice}
         maxHours={maxHours}
         units={units}
-        // Optional: if your HourlyRangeChart supports this later, it won’t break now
-        {...({ expanded } as any)}
       />
 
       <LearnMoreModal
@@ -162,16 +152,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   learnText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
-
-  expandBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  expandText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
 });
 
 export default HourlyCharts72h;
