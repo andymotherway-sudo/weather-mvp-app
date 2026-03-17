@@ -2,17 +2,23 @@ import { ResizeMode, Video } from 'expo-av';
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { VIDEO_MAP, resolveVideoFromWeatherCode } from '../../app/lib/weather/backgroundVideo';
+import { resolveVideoFromWeatherCode } from '../../app/lib/weather/backgroundVideo';
 
 type Props = {
   weatherCode?: number;
+  isEvening?: boolean;
 };
 
-export default function WeatherVideoBackground({ weatherCode }: Props) {
+export default function WeatherVideoBackground({
+  weatherCode,
+  isEvening = false,
+}: Props) {
   const source = useMemo(() => {
-    const key = resolveVideoFromWeatherCode(weatherCode);
-    return VIDEO_MAP[key];
-  }, [weatherCode]);
+    return resolveVideoFromWeatherCode(
+      weatherCode,
+      isEvening ? 'evening' : 'day'
+    );
+  }, [weatherCode, isEvening]);
 
   return (
     <View style={StyleSheet.absoluteFill}>

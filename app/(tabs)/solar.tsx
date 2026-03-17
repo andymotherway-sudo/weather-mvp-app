@@ -1,5 +1,3 @@
-// app/(tabs)/solar.tsx
-
 import React, { useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,13 +11,23 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AstroHeroCard } from '../../components/astro/AstroHeroCard';
+import { AstroHourlyStrip } from '../../components/astro/AstroHourlyStrip';
+import { BestWindowCard } from '../../components/astro/BestWindowCard';
+import { MoonDarknessCard } from '../../components/astro/MoonDarknessCard';
+import { OpenAstroMapCard } from '../../components/astro/OpenAstroMapCard';
+import { SkyScoreChart } from '../../components/astro/SkyScoreChart';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
-import { NerdyExplainModal, type ExplainPayload } from '../../components/common/NerdyExplainModal';
+import {
+  NerdyExplainModal,
+  type ExplainPayload,
+} from '../../components/common/NerdyExplainModal';
 
+import { usePlace } from '../context/PlaceContext';
+import { useLocationAstroForecast } from '../lib/astro/locationAstro';
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
-
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 function fmtUpdated(iso?: string) {
   if (!iso) return '—';
@@ -52,10 +60,6 @@ function auroraChancePct(kp?: number) {
   if (kp < 8) return 90;
   return 98;
 }
-
-// ─────────────────────────────────────────────────────────────
-// Soft reference band calibration + NOAA-sync (G/R/S tint strength)
-// ─────────────────────────────────────────────────────────────
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -91,18 +95,25 @@ function computeSolarWindSpeedBands(speeds: number[]): SpeedBands {
   return { slowMax, typicalMax, max: 900 };
 }
 
-function getNoaaScaleLevel(raw: any): number {
-  // supports number OR { scale: number; text?: string }
+function getNoaaScaleLevel(raw: any): number | null {
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-  if (raw && typeof raw === 'object' && typeof raw.scale === 'number' && Number.isFinite(raw.scale)) return raw.scale;
-  return 0;
+
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    typeof raw.scale === 'number' &&
+    Number.isFinite(raw.scale)
+  ) {
+    return raw.scale;
+  }
+
+  return null;
 }
 
 function bandOpacitiesForLevel(level?: number) {
-  // subtle ramp (still OMNI), increases with severity
   const lv = level == null ? 0 : clamp(level, 0, 5);
-  const t = lv / 5; // 0..1
-  const base = 0.05 + t * 0.06; // 0.05..0.11
+  const t = lv / 5;
+  const base = 0.05 + t * 0.06;
   return {
     slow: base,
     typical: base + 0.02,
@@ -110,7 +121,21 @@ function bandOpacitiesForLevel(level?: number) {
   };
 }
 
-function LearnRow({ label = 'Learn', onPress }: { label?: string; onPress: () => void }) {
+function solarWindBand(speed: number) {
+  if (!Number.isFinite(speed)) return { label: 'Unknown', index: 0 };
+  if (speed < 350) return { label: 'Slow', index: 0 };
+  if (speed < 500) return { label: 'Typical', index: 1 };
+  if (speed < 700) return { label: 'Fast', index: 2 };
+  return { label: 'Very fast', index: 3 };
+}
+
+function LearnRow({
+  label = 'Learn',
+  onPress,
+}: {
+  label?: string;
+  onPress: () => void;
+}) {
   return (
     <Pressable onPress={onPress} style={styles.learnBtn} hitSlop={10}>
       <Text style={styles.learnBtnText}>{label}</Text>
@@ -120,17 +145,30 @@ function LearnRow({ label = 'Learn', onPress }: { label?: string; onPress: () =>
 
 export default function SolarScreen() {
   const insets = useSafeAreaInsets();
+  const { active } = usePlace();
 
   const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary();
+
   const { events, loading: eventsLoading } = useSpaceWeatherEvents(7);
 
-  // Reuse your Learn system
+  const {
+    data: astro,
+    loading: astroLoading,
+    refreshing: astroRefreshing,
+    error: astroError,
+    refresh: refreshAstro,
+  } = useLocationAstroForecast({
+    lat: active?.lat,
+    lon: active?.lon,
+    placeName: active?.name,
+    enabled: !!active,
+  });
+
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainPayload, setExplainPayload] = useState<ExplainPayload | null>(null);
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
-  // Smooth band thresholds across refreshes so they don’t “wiggle”
   const bandsRef = useRef<{ slowMax: number; typicalMax: number } | null>(null);
 
   const openExplain = (p: ExplainPayload) => {
@@ -138,13 +176,27 @@ export default function SolarScreen() {
     setExplainOpen(true);
   };
 
+  const onRefreshAll = async () => {
+    try {
+      await Promise.allSettled([
+        Promise.resolve(refresh()),
+        Promise.resolve(refreshAstro()),
+      ]);
+    } catch {
+      // no-op
+    }
+  };
+
+  const isRefreshing = refreshing || astroRefreshing;
+
   const renderKpGauge = (kp: number) => {
     const segments = Array.from({ length: 9 }, (_, i) => i + 1);
+
     return (
       <View style={styles.kpGaugeContainer}>
         <View style={styles.kpGaugeRow}>
           {segments.map((value) => {
-            const active = kp >= value - 0.5;
+            const activeSeg = kp >= value - 0.5;
             let color = '#16a34a';
             if (value >= 4 && value < 6) color = '#facc15';
             if (value >= 6 && value < 7) color = '#f97316';
@@ -156,7 +208,7 @@ export default function SolarScreen() {
                 style={[
                   styles.kpSegment,
                   {
-                    backgroundColor: active ? color : '#111827',
+                    backgroundColor: activeSeg ? color : '#111827',
                     borderColor: color,
                   },
                 ]}
@@ -164,6 +216,7 @@ export default function SolarScreen() {
             );
           })}
         </View>
+
         <View style={styles.kpGaugeLabels}>
           <Text style={styles.smallText}>0</Text>
           <Text style={styles.smallText}>3</Text>
@@ -176,22 +229,44 @@ export default function SolarScreen() {
   };
 
   const renderSpeedDial = (speed: number) => {
-    // keep simple here (the “frame of reference” is now the history bands)
-    const min = 250;
-    const max = 800;
-    const clamped = Math.min(Math.max(speed, min), max);
-    const pct = (clamped - min) / (max - min);
+    const band = solarWindBand(speed);
+    const bands = ['Slow', 'Typical', 'Fast', 'Very fast'];
 
     return (
-      <View style={styles.speedDialContainer}>
-        <View style={styles.speedDialTrack}>
-          <View style={[styles.speedDialFill, { flex: pct || 0.05 }]} />
-          <View style={{ flex: 1 - pct }} />
+      <View style={styles.speedMeterContainer}>
+        <View style={styles.speedMeterHeader}>
+          <Text style={styles.speedMeterValue}>{Math.round(speed)} km/s</Text>
+          <View style={styles.speedMeterBadge}>
+            <Text style={styles.speedMeterBadgeText}>{band.label}</Text>
+          </View>
         </View>
-        <View style={styles.speedDialLabels}>
+
+        <View style={styles.speedMeterRow}>
+          {bands.map((label, idx) => {
+            const activeSeg = idx <= band.index;
+            return (
+              <View
+                key={label}
+                style={[
+                  styles.speedMeterSeg,
+                  activeSeg && styles.speedMeterSegActive,
+                ]}
+              />
+            );
+          })}
+        </View>
+
+        <View style={styles.speedMeterLabels}>
           <Text style={styles.smallText}>Slow</Text>
+          <Text style={styles.smallText}>Typical</Text>
           <Text style={styles.smallText}>Fast</Text>
+          <Text style={styles.smallText}>Very fast</Text>
         </View>
+
+        <Text style={styles.smallText}>
+          Solar wind is the stream of charged particles from the Sun. Around
+          350–500 km/s is typical; above 500 km/s is increasingly fast.
+        </Text>
       </View>
     );
   };
@@ -199,6 +274,7 @@ export default function SolarScreen() {
   const renderAuroraBar = (kp: number) => {
     const chance = auroraChancePct(kp);
     const pct = Math.max(0.05, Math.min(chance / 100, 1));
+
     let color = '#16a34a';
     if (kp >= 4 && kp < 6) color = '#facc15';
     if (kp >= 6 && kp < 7) color = '#f97316';
@@ -207,24 +283,40 @@ export default function SolarScreen() {
     return (
       <View style={styles.auroraContainer}>
         <View style={styles.auroraTrack}>
-          <View style={[styles.auroraFill, { flex: pct, backgroundColor: color }]} />
+          <View
+            style={[styles.auroraFill, { flex: pct, backgroundColor: color }]}
+          />
           <View style={{ flex: 1 - pct }} />
         </View>
-        <Text style={styles.smallText}>Simple aurora likelihood estimate: {chance.toFixed(0)}%</Text>
+        <Text style={styles.smallText}>
+          Simple aurora likelihood estimate: {chance.toFixed(0)}%
+        </Text>
       </View>
     );
   };
 
   function renderable(v: any): string {
     if (v == null) return '—';
-    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean'
+    ) {
+      return String(v);
+    }
 
     if (typeof v === 'object') {
+      if (typeof (v as any).message === 'string' && (v as any).message) {
+        return (v as any).message;
+      }
+
       const scale = (v as any).scale;
       const text = (v as any).text;
+
       if (typeof scale === 'number') {
         return `${scale}${typeof text === 'string' && text ? ` • ${text}` : ''}`;
       }
+
       try {
         return JSON.stringify(v);
       } catch {
@@ -235,34 +327,30 @@ export default function SolarScreen() {
     return String(v);
   }
 
-  // ✅ UPDATED: Wind history now has calibrated soft reference bands + NOAA(G) synced tint
   const renderWindHistory = () => {
     if (!data?.windHistory?.length) return null;
 
     const history = data.windHistory;
+    const speeds = history
+      .map((s) => s.speed)
+      .filter((v) => Number.isFinite(v));
 
-    const speeds = history.map((s) => s.speed).filter((v) => Number.isFinite(v));
     const rawBands = computeSolarWindSpeedBands(speeds);
-
-    // smooth thresholds across refresh
     const prev = bandsRef.current;
+
     const slowMax = smooth(prev?.slowMax, rawBands.slowMax, 0.2);
     const typicalMax = smooth(prev?.typicalMax, rawBands.typicalMax, 0.2);
     bandsRef.current = { slowMax, typicalMax };
 
-    // severity-driven tint (Solar wind card uses G-scale)
     const gLevel =
       data && (data as any).noaaScales
         ? getNoaaScaleLevel((data as any).noaaScales?.G)
         : 0;
 
-    const op = bandOpacitiesForLevel(gLevel);
-
-    // stable chart max so bars don't "breathe" too much
-    const maxDisplay = rawBands.max; // 900
+    const op = bandOpacitiesForLevel(gLevel ?? undefined);
+    const maxDisplay = rawBands.max;
     const hMax = 54;
 
-    // band heights (top-down): slow, typical, fast
     const ySlow = (1 - slowMax / maxDisplay) * hMax;
     const yTypical = (1 - typicalMax / maxDisplay) * hMax;
 
@@ -274,7 +362,8 @@ export default function SolarScreen() {
             onPress={() =>
               openExplain({
                 title: 'Solar wind speed history',
-                summary: 'This mini chart shows recent upstream solar wind speed changes.',
+                summary:
+                  'This mini chart shows recent upstream solar wind speed changes.',
                 whyItMatters:
                   'Speed alone doesn’t guarantee geomagnetic activity, but rising speed can amplify impacts when Bz turns south.',
                 howComputed:
@@ -286,11 +375,8 @@ export default function SolarScreen() {
           />
         </View>
 
-        {/* soft reference bands + bars */}
         <View style={styles.historyGraph}>
-          {/* Bands (absolute behind bars) */}
           <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-            {/* FAST band (top) */}
             <View
               style={[
                 styles.band,
@@ -302,7 +388,6 @@ export default function SolarScreen() {
                 },
               ]}
             />
-            {/* TYPICAL band (middle) */}
             <View
               style={[
                 styles.band,
@@ -314,7 +399,6 @@ export default function SolarScreen() {
                 },
               ]}
             />
-            {/* SLOW band (bottom) */}
             <View
               style={[
                 styles.band,
@@ -327,7 +411,6 @@ export default function SolarScreen() {
               ]}
             />
 
-            {/* Threshold lines */}
             <View style={[styles.bandLine, { top: yTypical }]} />
             <View style={[styles.bandLine, { top: ySlow }]} />
           </View>
@@ -335,8 +418,6 @@ export default function SolarScreen() {
           {history.map((sample, idx) => {
             const h = Math.max(8, (sample.speed / maxDisplay) * hMax);
             const isLast = idx === history.length - 1;
-
-            // optional: classify bar for tiny “meaning” cue (still subtle)
             const alpha = isLast ? 1 : 0.65;
 
             return (
@@ -350,7 +431,8 @@ export default function SolarScreen() {
         <View style={styles.historyLabels}>
           <Text style={styles.smallText}>Earlier</Text>
           <Text style={styles.smallText}>
-            Bands: ≤{Math.round(slowMax)} (slow) • ≤{Math.round(typicalMax)} (typical) • &gt;{Math.round(typicalMax)} (fast)
+            Bands: ≤{Math.round(slowMax)} (slow) • ≤{Math.round(typicalMax)}{' '}
+            (typical) • &gt;{Math.round(typicalMax)} (fast)
           </Text>
           <Text style={styles.smallText}>Now</Text>
         </View>
@@ -368,9 +450,12 @@ export default function SolarScreen() {
               onPress={() =>
                 openExplain({
                   title: 'What are “events” here?',
-                  summary: 'These are notable space weather events reported by NASA DONKI.',
-                  whyItMatters: 'They add context beyond raw sensor data (flares, CMEs, storms, particle events).',
-                  howComputed: 'Pulled from NASA DONKI endpoints and normalized into a single feed.',
+                  summary:
+                    'These are notable space weather events reported by NASA DONKI.',
+                  whyItMatters:
+                    'They add context beyond raw sensor data (flares, CMEs, storms, particle events).',
+                  howComputed:
+                    'Pulled from NASA DONKI endpoints and normalized into a single feed.',
                   confidence: 'high',
                   learnTopicId: 'donki-events',
                 })
@@ -394,8 +479,10 @@ export default function SolarScreen() {
             onPress={() =>
               openExplain({
                 title: 'NASA DONKI events',
-                summary: 'A curated feed of notable events: flares, CMEs, particle events, and storm reports.',
-                whyItMatters: 'Helps you understand “why” conditions might change over the next 1–3 days.',
+                summary:
+                  'A curated feed of notable events: flares, CMEs, particle events, and storm reports.',
+                whyItMatters:
+                  'Helps you understand “why” conditions might change over the next 1–3 days.',
                 howComputed: 'NASA DONKI API queried over the last 7 days.',
                 confidence: 'high',
                 learnTopicId: 'donki-events',
@@ -411,7 +498,9 @@ export default function SolarScreen() {
               {e.level ? ` • ${e.level}` : ''}
             </Text>
             <Text style={styles.smallText}>{fmtEventTime(e.startTime)}</Text>
-            <Text style={{ color: '#D1D5DB', fontSize: 13, lineHeight: 18 }}>{e.summary}</Text>
+            <Text style={{ color: '#D1D5DB', fontSize: 13, lineHeight: 18 }}>
+              {e.summary}
+            </Text>
           </View>
         ))}
 
@@ -428,27 +517,82 @@ export default function SolarScreen() {
     [insets.top, insets.bottom]
   );
 
+  const astroReady = !!astro;
+  const showAstroLoading = astroLoading && !astro;
+  const showSpaceWeatherLoading = loading && !data;
+
   return (
     <>
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ScrollView
           style={styles.container}
           contentContainerStyle={[styles.content, contentPad]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefreshAll} />
+          }
         >
-          {/* Brand header (shared OMNI wordmark) */}
           <View style={styles.headerRow}>
             <View style={styles.brandRow}>
-              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+              <Image
+                source={OMNI_MARK_WORD}
+                style={styles.brandWordmark}
+                resizeMode="contain"
+              />
               <View style={styles.domainPill}>
-                <Text style={styles.domainPillText}>Space Wx</Text>
+                <Text style={styles.domainPillText}>Astro</Text>
               </View>
             </View>
           </View>
 
-          <Text style={styles.subtitle}>Solar wind, geomagnetic activity, NOAA scale status, X-ray flux, and events</Text>
+          <Text style={styles.subtitle}>
+            Night sky forecast, moonlight, observing conditions, aurora context,
+            and space weather
+          </Text>
 
-          {loading && !data ? (
+          {!active ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>No selected location</Text>
+              <Text style={styles.cardBody}>
+                Choose a location in OMNIwx to load an astro forecast for that
+                place.
+              </Text>
+            </View>
+          ) : null}
+
+          {showAstroLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" />
+              <Text style={styles.smallText}>Loading astro forecast…</Text>
+            </View>
+          ) : astroError && !astro ? (
+            <View style={styles.cardError}>
+              <Text style={styles.cardTitle}>Astro Forecast Error</Text>
+              <Text style={styles.cardValue}>{renderable(astroError)}</Text>
+            </View>
+          ) : astroReady ? (
+            <>
+              <AstroHeroCard forecast={astro} />
+              <SkyScoreChart hours={astro.hours} title="Sky Score Trend (72h)" />
+              <BestWindowCard forecast={astro} />
+              <AstroHourlyStrip hours={astro.tonightHours} />
+              <MoonDarknessCard forecast={astro} />
+              <OpenAstroMapCard
+                lat={astro.lat}
+                lon={astro.lon}
+                placeName={astro.placeName}
+              />
+            </>
+          ) : null}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Space Weather Context</Text>
+            <Text style={styles.sectionSubtitle}>
+              Solar and geomagnetic conditions that can influence aurora and
+              observing context
+            </Text>
+          </View>
+
+          {showSpaceWeatherLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
               <Text style={styles.smallText}>Loading space weather…</Text>
@@ -460,7 +604,6 @@ export default function SolarScreen() {
             </View>
           ) : data ? (
             <>
-              {/* NOAA Scale Status */}
               {'noaaScales' in data && (data as any).noaaScales ? (
                 <View style={styles.card}>
                   <View style={styles.cardHeaderRow}>
@@ -469,7 +612,8 @@ export default function SolarScreen() {
                       onPress={() =>
                         openExplain({
                           title: 'NOAA Scales (G / R / S)',
-                          summary: 'NOAA impact scales for geomagnetic, radio, and radiation storms.',
+                          summary:
+                            'NOAA impact scales for geomagnetic, radio, and radiation storms.',
                           whyItMatters: 'Quick readout of operational impacts.',
                           howComputed: 'From NOAA SWPC “noaa_scales” feed.',
                           confidence: 'high',
@@ -479,46 +623,59 @@ export default function SolarScreen() {
                     />
                   </View>
 
-                  <View style={styles.noaaRow}>
-                    {(['G', 'R', 'S'] as const).map((k) => {
-                      const raw = (data as any).noaaScales?.[k];
-                      const scale = getNoaaScaleLevel(raw);
-                      const text = raw && typeof raw === 'object' && typeof raw.text === 'string' ? raw.text : undefined;
+                      <View style={styles.noaaRow}>
+                  {(['G', 'R', 'S'] as const).map((k) => {
+                    const raw = (data as any).noaaScales?.[k];
+                    const scale = getNoaaScaleLevel(raw);
+                    
+                    const text =
+                      raw &&
+                      typeof raw === 'object' &&
+                      typeof raw.text === 'string'
+                        ? raw.text
+                        : undefined;
 
-                      return (
-                        <Pressable
-                          key={k}
-                          onPress={() =>
-                            openExplain({
-                              title: `NOAA ${k}-scale`,
-                              summary: `Current ${k}-scale status is ${k}${scale}.`,
-                              whyItMatters: 'These are impact-focused summary scales.',
-                              howComputed: 'From NOAA SWPC scales feed.',
-                              confidence: 'high',
-                              learnTopicId: 'noaa-scales',
-                            })
-                          }
-                          style={styles.noaaTile}
-                        >
-                          <Text style={styles.noaaVal}>
-                            {k}
-                            {scale}
-                          </Text>
+                    return (
+                      <Pressable
+                        key={k}
+                        onPress={() =>
+                          openExplain({
+                            title: `NOAA ${k}-scale`,
+                            summary:
+                              scale == null
+                                ? `Current ${k}-scale status is unavailable.`
+                                : `Current ${k}-scale status is ${k}${scale}.`,
+                            whyItMatters: 'These are impact-focused summary scales.',
+                            howComputed: 'From NOAA SWPC scales feed.',
+                            confidence: 'high',
+                            learnTopicId: 'noaa-scales',
+                          })
+                        }
+                        style={styles.noaaTile}
+                      >
+                        <Text style={styles.noaaVal}>
+                          {scale == null ? `${k}—` : `${k}${scale}`}
+                        </Text>
 
-                          <Text style={styles.noaaLbl}>
-                            {k === 'G' ? 'Geomagnetic' : k === 'R' ? 'Radio' : 'Radiation'}
-                            {text ? ` • ${text}` : ''}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                        <Text style={styles.noaaLbl}>
+                          {k === 'G'
+                            ? 'Geomagnetic'
+                            : k === 'R'
+                              ? 'Radio'
+                              : 'Radiation'}
+                          {text ? ` • ${text}` : ''}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                   </View>
 
-                  <Text style={styles.smallText}>Updated: {renderable((data as any).noaaScalesUpdatedAt)}</Text>
+                  <Text style={styles.smallText}>
+                    Updated: {(data as any).noaaScalesUpdatedAt ? fmtUpdated((data as any).noaaScalesUpdatedAt) : 'Unavailable'}
+                  </Text>
                 </View>
               ) : null}
 
-              {/* GOES X-ray Flux */}
               {'xrayFlux' in data && (data as any).xrayFlux ? (
                 <View style={styles.card}>
                   <View style={styles.cardHeaderRow}>
@@ -527,8 +684,10 @@ export default function SolarScreen() {
                       onPress={() =>
                         openExplain({
                           title: 'X-ray flux & flare class',
-                          summary: 'GOES satellites measure solar X-ray brightness; spikes indicate flares.',
-                          whyItMatters: 'Flares can cause radio blackouts and may precede eruptions.',
+                          summary:
+                            'GOES satellites measure solar X-ray brightness; spikes indicate flares.',
+                          whyItMatters:
+                            'Flares can cause radio blackouts and may precede eruptions.',
                           howComputed: 'From NOAA SWPC GOES X-ray flux feed.',
                           confidence: 'high',
                           learnTopicId: 'xray-flux',
@@ -540,18 +699,23 @@ export default function SolarScreen() {
                   <View style={styles.row}>
                     <View style={styles.col}>
                       <Text style={styles.label}>Current Flux</Text>
-                      <Text style={styles.cardValue}>{renderable((data as any).xrayFlux.value)}</Text>
-                      <Text style={styles.smallText}>Time: {renderable((data as any).xrayFlux.time)}</Text>
+                      <Text style={styles.cardValue}>
+                        {renderable((data as any).xrayFlux.value)}
+                      </Text>
+                      <Text style={styles.smallText}>
+                        Time: {renderable((data as any).xrayFlux.time)}
+                      </Text>
                     </View>
                     <View style={styles.col}>
                       <Text style={styles.label}>Flare Class</Text>
-                      <Text style={styles.flareClassText}>{(data as any).xrayFlux.classLabel}</Text>
+                      <Text style={styles.flareClassText}>
+                        {(data as any).xrayFlux.classLabel}
+                      </Text>
                     </View>
                   </View>
                 </View>
               ) : null}
 
-              {/* Solar Wind Card */}
               <View style={styles.card}>
                 <View style={styles.cardHeaderRow}>
                   <Text style={styles.cardTitle}>Solar Wind (L1)</Text>
@@ -559,9 +723,12 @@ export default function SolarScreen() {
                     onPress={() =>
                       openExplain({
                         title: 'Solar wind (L1)',
-                        summary: 'Upstream plasma readings: speed, density, temperature.',
-                        whyItMatters: 'Speed/density help estimate energy input, but Bz often controls coupling.',
-                        howComputed: 'NOAA SWPC plasma feed with fallbacks + a small recent history.',
+                        summary:
+                          'Upstream plasma readings: speed, density, temperature.',
+                        whyItMatters:
+                          'Speed/density help estimate energy input, but Bz often controls coupling.',
+                        howComputed:
+                          'NOAA SWPC plasma feed with fallbacks + a small recent history.',
                         confidence: 'high',
                         learnTopicId: 'solar-wind',
                       })
@@ -572,25 +739,30 @@ export default function SolarScreen() {
                 <View style={styles.row}>
                   <View style={styles.col}>
                     <Text style={styles.label}>Speed</Text>
-                    <Text style={styles.cardValue}>{data.solarWindSpeed.toFixed(1)} km/s</Text>
+                    <Text style={styles.cardValue}>
+                      {data.solarWindSpeed.toFixed(1)} km/s
+                    </Text>
                   </View>
                   <View style={styles.col}>
                     <Text style={styles.label}>Density</Text>
-                    <Text style={styles.cardValue}>{data.solarWindDensity.toFixed(2)} /cm³</Text>
+                    <Text style={styles.cardValue}>
+                      {data.solarWindDensity.toFixed(2)} /cm³
+                    </Text>
                   </View>
                 </View>
 
                 <View style={styles.row}>
                   <View style={styles.col}>
                     <Text style={styles.label}>Temperature</Text>
-                    <Text style={styles.cardValue}>{Math.round(data.solarWindTemp).toLocaleString()} K</Text>
+                    <Text style={styles.cardValue}>
+                      {Math.round(data.solarWindTemp).toLocaleString()} K
+                    </Text>
                   </View>
                 </View>
 
                 {renderSpeedDial(data.solarWindSpeed)}
               </View>
 
-              {/* Geomagnetic / Aurora Card */}
               <View style={styles.card}>
                 <View style={styles.cardHeaderRow}>
                   <Text style={styles.cardTitle}>Geomagnetic Activity</Text>
@@ -598,9 +770,12 @@ export default function SolarScreen() {
                     onPress={() =>
                       openExplain({
                         title: 'Kp index',
-                        summary: 'Kp is a 0–9 global score for geomagnetic disturbance.',
-                        whyItMatters: 'Higher Kp often means better aurora odds (latitude + sky conditions still matter).',
-                        howComputed: 'From NOAA SWPC Kp feeds (observed with forecast fallback).',
+                        summary:
+                          'Kp is a 0–9 global score for geomagnetic disturbance.',
+                        whyItMatters:
+                          'Higher Kp often means better aurora odds (latitude + sky conditions still matter).',
+                        howComputed:
+                          'From NOAA SWPC Kp feeds (observed with forecast fallback).',
                         confidence: 'high',
                         learnTopicId: 'kp',
                       })
@@ -621,13 +796,19 @@ export default function SolarScreen() {
               {renderWindHistory()}
 
               <View style={styles.footer}>
-                <Text style={styles.smallText}>Last updated: {fmtUpdated(data.updatedAt)}</Text>
-                <Text style={styles.smallText}>Data sources: NOAA SWPC (measurements) • NASA DONKI (events)</Text>
+                <Text style={styles.smallText}>
+                  Last updated: {fmtUpdated(data.updatedAt)}
+                </Text>
+                <Text style={styles.smallText}>
+                  Data sources: NOAA SWPC (measurements) • NASA DONKI (events)
+                </Text>
               </View>
             </>
           ) : (
             <View style={styles.center}>
-              <Text style={{ color: '#E5E7EB' }}>No space weather data available.</Text>
+              <Text style={{ color: '#E5E7EB' }}>
+                No space weather data available.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -644,7 +825,11 @@ export default function SolarScreen() {
         }}
       />
 
-      <LearnMoreModal visible={learnOpen} onClose={() => setLearnOpen(false)} initialTopicId={learnTopicId} />
+      <LearnMoreModal
+        visible={learnOpen}
+        onClose={() => setLearnOpen(false)}
+        initialTopicId={learnTopicId}
+      />
     </>
   );
 }
@@ -654,7 +839,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#020817' },
   content: { paddingHorizontal: 16 },
 
-  // Header
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -664,10 +848,10 @@ const styles = StyleSheet.create({
   },
 
   brandRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 10,
-  marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
   },
 
   brandWordmark: {
@@ -675,43 +859,53 @@ const styles = StyleSheet.create({
     height: 92,
     backgroundColor: 'transparent',
   },
-  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-
-  brandMarkWrap: { width: 42, height: 42, backgroundColor: 'transparent' },
-  brandMark: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'contain',
-    backgroundColor: 'transparent',
-    borderRadius: 21,
-  },
-
-  wordmarkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 2 },
-  wordmarkOmni: { color: 'white', fontSize: 18, fontWeight: '900', letterSpacing: 0.4 },
-  wordmarkWxSup: {
-    marginLeft: 2,
-    marginTop: 2,
-    fontSize: 10,
-    fontWeight: '800',
-    color: 'rgba(255,255,255,0.75)',
-  },
-  wordmarkWx: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '800', marginBottom: 2 },
 
   domainPill: {
-  alignSelf: 'center',
-  paddingHorizontal: 10,
-  paddingVertical: 5,
-  borderRadius: 12,
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderWidth: 1,
-  borderColor: 'rgba(255,255,255,0.10)',
+    alignSelf: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
-  domainPillText: { fontSize: 11, fontWeight: '800', color: 'white' },
 
-  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 14, lineHeight: 16 },
+  domainPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'white',
+  },
 
-  // Generic layout
-  center: { marginTop: 28, alignItems: 'center', justifyContent: 'center' },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 14,
+    lineHeight: 16,
+  },
+
+  sectionHeader: {
+    marginTop: 4,
+    marginBottom: 14,
+  },
+
+  sectionTitle: {
+    color: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+
+  sectionSubtitle: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+
+  center: {
+    marginTop: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   card: {
     backgroundColor: '#111827',
@@ -721,6 +915,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1F2937',
   },
+
   cardError: {
     backgroundColor: '#7F1D1D',
     borderRadius: 16,
@@ -736,9 +931,30 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#F9FAFB' },
-  label: { fontSize: 12, color: '#9CA3AF', marginBottom: 4 },
-  cardValue: { fontSize: 18, fontWeight: '700', color: '#E5E7EB' },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F9FAFB',
+  },
+
+  cardBody: {
+    color: '#D1D5DB',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+
+  label: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginBottom: 4,
+  },
+
+  cardValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
 
   learnBtn: {
     paddingVertical: 6,
@@ -748,13 +964,29 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  learnBtnText: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12 },
 
-  row: { flexDirection: 'row', marginTop: 8, gap: 16 },
-  col: { flex: 1 },
+  learnBtnText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '900',
+    fontSize: 12,
+  },
 
-  // NOAA tiles
-  noaaRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  row: {
+    flexDirection: 'row',
+    marginTop: 8,
+    gap: 16,
+  },
+
+  col: {
+    flex: 1,
+  },
+
+  noaaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+
   noaaTile: {
     flex: 1,
     borderRadius: 14,
@@ -764,23 +996,66 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(16,185,129,0.35)',
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  noaaVal: { color: 'white', fontWeight: '900', fontSize: 18 },
-  noaaLbl: { marginTop: 4, color: 'rgba(255,255,255,0.65)', fontWeight: '800', fontSize: 12 },
 
-  // Flare class
-  flareClassText: { fontSize: 36, fontWeight: '900', color: '#FBBF24', marginTop: 6 },
+  noaaVal: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 18,
+  },
 
-  // Kp
-  kpValue: { fontSize: 32, fontWeight: '900', color: '#FBBF24', marginTop: 4 },
-  kpDescription: { marginTop: 8, fontSize: 13, color: '#D1D5DB' },
+  noaaLbl: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '800',
+    fontSize: 12,
+  },
 
-  kpGaugeContainer: { marginTop: 8 },
-  kpGaugeRow: { flexDirection: 'row', gap: 4 },
-  kpSegment: { flex: 1, height: 12, borderRadius: 999, borderWidth: 1 },
-  kpGaugeLabels: { marginTop: 4, flexDirection: 'row', justifyContent: 'space-between' },
+  flareClassText: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#FBBF24',
+    marginTop: 6,
+  },
 
-  // Speed dial
-  speedDialContainer: { marginTop: 12 },
+  kpValue: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#FBBF24',
+    marginTop: 4,
+  },
+
+  kpDescription: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#D1D5DB',
+  },
+
+  kpGaugeContainer: {
+    marginTop: 8,
+  },
+
+  kpGaugeRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+
+  kpSegment: {
+    flex: 1,
+    height: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+
+  kpGaugeLabels: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  speedDialContainer: {
+    marginTop: 12,
+  },
+
   speedDialTrack: {
     flexDirection: 'row',
     height: 10,
@@ -788,11 +1063,81 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#020617',
   },
-  speedDialFill: { backgroundColor: '#38bdf8' },
-  speedDialLabels: { marginTop: 4, flexDirection: 'row', justifyContent: 'space-between' },
 
-  // Aurora bar
-  auroraContainer: { marginTop: 12 },
+  speedDialFill: {
+    backgroundColor: '#38bdf8',
+  },
+
+  speedDialLabels: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  speedMeterContainer: {
+    marginTop: 12,
+  },
+
+  speedMeterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 10,
+  },
+
+  speedMeterValue: {
+    color: '#E5E7EB',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+
+  speedMeterBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+  },
+
+  speedMeterBadgeText: {
+    color: '#BAE6FD',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  speedMeterRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+  },
+
+  speedMeterSeg: {
+    flex: 1,
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  speedMeterSegActive: {
+    backgroundColor: '#38bdf8',
+    borderColor: '#38bdf8',
+  },
+
+  speedMeterLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
+  },
+
+  auroraContainer: {
+    marginTop: 12,
+  },
+
   auroraTrack: {
     flexDirection: 'row',
     height: 10,
@@ -801,9 +1146,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#020617',
     marginBottom: 4,
   },
-  auroraFill: { borderRadius: 999 },
 
-  // History bars (+ bands)
+  auroraFill: {
+    borderRadius: 999,
+  },
+
   historyGraph: {
     position: 'relative',
     flexDirection: 'row',
@@ -811,13 +1158,14 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: 8,
     height: 60,
-    paddingVertical: 3, // gives the bands a little breathing room
+    paddingVertical: 3,
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#0B1220',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
+
   band: {
     position: 'absolute',
     left: 0,
@@ -825,6 +1173,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderBottomWidth: 1,
   },
+
   bandLine: {
     position: 'absolute',
     left: 0,
@@ -832,8 +1181,18 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  historyBarWrapper: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
-  historyBar: { width: 6, borderRadius: 999, backgroundColor: '#38bdf8' },
+
+  historyBarWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+
+  historyBar: {
+    width: 6,
+    borderRadius: 999,
+    backgroundColor: '#38bdf8',
+  },
 
   historyLabels: {
     marginTop: 6,
@@ -843,6 +1202,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  footer: { marginTop: 4, marginBottom: 6 },
-  smallText: { fontSize: 11, color: '#6B7280' },
+  footer: {
+    marginTop: 4,
+    marginBottom: 6,
+  },
+
+  smallText: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
 });

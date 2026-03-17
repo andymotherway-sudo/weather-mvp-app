@@ -242,17 +242,42 @@ function parseNoaaScalesNow(raw: any): NoaaScalesNow | null {
   const row = raw?.['0'];
   if (!row) return null;
 
-  const parseItem = (x: any) => ({
-    scale: Number(x?.Scale ?? 0) || 0,
-    text: String(x?.Text ?? 'none'),
-  });
+  const parseItem = (x: any) => {
+    if (!x || typeof x !== 'object') return null;
+
+    const rawScale = x?.Scale;
+    const scale =
+      typeof rawScale === 'number'
+        ? rawScale
+        : typeof rawScale === 'string'
+          ? Number(rawScale)
+          : NaN;
+
+    const text =
+      typeof x?.Text === 'string' && x.Text.trim()
+        ? x.Text.trim()
+        : undefined;
+
+    if (!Number.isFinite(scale) && !text) return null;
+
+    return {
+      scale: Number.isFinite(scale) ? scale : null,
+      text,
+    };
+  };
+
+  const g = parseItem(row?.G);
+  const r = parseItem(row?.R);
+  const s = parseItem(row?.S);
+
+  if (!g && !r && !s) return null;
 
   return {
-    dateStamp: row?.DateStamp,
-    timeStamp: row?.TimeStamp,
-    G: parseItem(row?.G),
-    R: parseItem(row?.R),
-    S: parseItem(row?.S),
+    dateStamp: row?.DateStamp ?? undefined,
+    timeStamp: row?.TimeStamp ?? undefined,
+    G: g,
+    R: r,
+    S: s,
   };
 }
 
@@ -518,6 +543,11 @@ export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
   const newest =
     !Number.isNaN(plasmaTime.getTime()) && plasmaTime > kpTime ? plasma.time : kp.time;
 
+  const noaaScalesUpdatedAt =
+    noaaScales?.dateStamp && noaaScales?.timeStamp
+      ? new Date(`${noaaScales.dateStamp}T${noaaScales.timeStamp}Z`).toISOString()
+      : undefined;
+
   return {
     solarWindSpeed: plasma.speed,
     solarWindDensity: plasma.density,
@@ -527,6 +557,7 @@ export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
     windHistory: plasma.history,
 
     noaaScales: noaaScales ?? undefined,
+    noaaScalesUpdatedAt,
     goesXray: goesXray ?? undefined,
     imf: imf ?? undefined,
     protons: protons ?? undefined,

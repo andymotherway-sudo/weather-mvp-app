@@ -1,11 +1,12 @@
 // components/land/NerdyHourlyTimeline.tsx
 // ✅ Drop-in replacement
+// ✅ Fixes timezone bug for naive hourly timestamps like 2026-03-17T14:00
+// ✅ Accepts explicit timeZone prop
 // ✅ Default mode = Simple
-// ✅ Simple mode right-side shows Pressure (kPa + inHg) to avoid cloud duplication
-// ✅ WxLab press auto-expands a tile (no second tap required)
+// ✅ Simple mode right-side shows Pressure (hPa + inHg) to avoid cloud duplication
+// ✅ WxLab press auto-expands a tile
 // ✅ Removes abbreviations → richer labels
-// ✅ Fixes precip chance showing "—" when it's actually 0% (we now show 0%)
-// ✅ Pressure shown in Simple (right side) + also in WxLab expanded section (hPa)
+// ✅ Fixes precip chance showing "—" when it's actually 0%
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -46,15 +47,71 @@ function round0(v: any): number | null {
   return Math.round(n);
 }
 
-function fmtHourLabel(t: any): string {
+function extractIsoWallClockParts(value: unknown): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
+  if (typeof value !== 'string') return null;
+
+  const s = value.trim();
+  if (!s) return null;
+
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (hour < 0 || hour > 23) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  return { year, month, day, hour, minute };
+}
+
+function formatHourLabel(t: any, timeZone?: string): string {
   try {
-    const d = typeof t === 'string' ? new Date(t) : new Date(String(t));
+    if (typeof t === 'string') {
+      const wall = extractIsoWallClockParts(t);
+
+      // For Open-Meteo style naive local timestamps, trust the wall-clock string
+      // instead of letting JS reinterpret it in the device timezone.
+      if (wall) {
+        let h = wall.hour;
+        const ap = h >= 12 ? 'PM' : 'AM';
+        h = h % 12;
+        if (h === 0) h = 12;
+        return `${h} ${ap}`;
+      }
+    }
+
+    const d = t instanceof Date ? t : new Date(String(t));
     if (Number.isNaN(d.getTime())) return String(t ?? '');
-    let h = d.getHours();
-    const ap = h >= 12 ? 'PM' : 'AM';
-    h = h % 12;
-    if (h === 0) h = 12;
-    return `${h} ${ap}`;
+
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: true,
+      timeZone,
+    }).format(d);
   } catch {
     return String(t ?? '');
   }
@@ -82,7 +139,6 @@ function barFrac(pct: number | null) {
   return clamp01(pct / 100);
 }
 
-// ✅ show 0% when value is present (do not hide zeros)
 function fmtPct(p: number | null) {
   return p == null ? '—' : `${p}%`;
 }
@@ -156,14 +212,13 @@ function ModeToggle({
 export function NerdyHourlyTimeline({
   hours,
   maxHours = 72,
+  timeZone,
 }: {
   hours: any[];
   maxHours?: number;
+  timeZone?: string;
 }) {
-  // ✅ Default to Simple (per your request)
   const [mode, setMode] = useState<Mode>('simple');
-
-  // single-expanded tile (cleaner UX + makes WxLab auto-expand easy)
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const rows = useMemo(() => {
@@ -184,7 +239,9 @@ export function NerdyHourlyTimeline({
       const gust = safeNum(h.windGustMph ?? h.wind_gusts_10m ?? h.windGustsMph);
       const wdir = safeNum(h.windDirDeg ?? h.wind_direction_10m);
 
-      const pressureHpa = safeNum(h.pressureHpa ?? h.pressure_msl ?? h.pressureMslHpa ?? h.surface_pressure);
+      const pressureHpa = safeNum(
+        h.pressureHpa ?? h.pressure_msl ?? h.pressureMslHpa ?? h.surface_pressure
+      );
 
       const spread = tF != null && dpF != null ? Math.round((tF - dpF) * 10) / 10 : null;
       const gustFactor =
@@ -195,7 +252,7 @@ export function NerdyHourlyTimeline({
 
       return {
         key,
-        timeLabel: fmtHourLabel(time),
+        timeLabel: formatHourLabel(time, timeZone),
         tF: round0(tF),
         feelsF: round0(feelsF),
         dpF: round0(dpF),
@@ -211,7 +268,7 @@ export function NerdyHourlyTimeline({
         fogRisk,
       };
     });
-  }, [hours, maxHours]);
+  }, [hours, maxHours, timeZone]);
 
   const firstRowKey = rows.length ? rows[0].key : null;
 
@@ -219,10 +276,8 @@ export function NerdyHourlyTimeline({
     if (m === mode) return;
 
     if (m === 'wxlab') {
-      // ✅ auto-expand something when entering WxLab
       setExpandedKey((k) => k ?? firstRowKey);
     } else {
-      // Simple mode = no expanded tile UI
       setExpandedKey(null);
     }
 
@@ -235,9 +290,6 @@ export function NerdyHourlyTimeline({
 
     const pressure = formatPressureFromHpa(item.pressureHpa);
 
-    // ✅ Right side:
-    // - WxLab: precip chance
-    // - Simple: pressure (kPa + inHg) to avoid duplicating cloud cover
     const rightLabel = mode === 'wxlab' ? 'Precip chance' : 'Pressure';
     const rightValueText = mode === 'wxlab' ? fmtPct(item.pop) : pressure?.hpaText ?? '—';
     const rightSubText = mode === 'wxlab' ? null : pressure?.inhgText ?? null;
@@ -245,7 +297,7 @@ export function NerdyHourlyTimeline({
     return (
       <Pressable
         onPress={() => {
-          if (mode !== 'wxlab') return; // simple mode = no expand interaction
+          if (mode !== 'wxlab') return;
           setExpandedKey((k) => (k === item.key ? null : item.key));
         }}
         style={{ marginBottom: theme.spacing.sm }}
@@ -287,7 +339,6 @@ export function NerdyHourlyTimeline({
             </View>
           </View>
 
-          {/* Bars: keep these; now POP shows 0% when present */}
           <View style={styles.bars}>
             <View style={styles.barItem}>
               <Text style={styles.barLabel}>Humidity</Text>
@@ -323,17 +374,23 @@ export function NerdyHourlyTimeline({
 
               <View style={styles.wxRow}>
                 <Text style={styles.wxKey}>Gust factor</Text>
-                <Text style={styles.wxVal}>{item.gustFactor == null ? '—' : `${item.gustFactor}×`}</Text>
+                <Text style={styles.wxVal}>
+                  {item.gustFactor == null ? '—' : `${item.gustFactor}×`}
+                </Text>
               </View>
 
               <View style={styles.wxRow}>
                 <Text style={styles.wxKey}>Fog risk</Text>
-                <Text style={styles.wxVal}>{item.fogRisk == null ? '—' : `${item.fogRisk}/100`}</Text>
+                <Text style={styles.wxVal}>
+                  {item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
+                </Text>
               </View>
 
               <View style={styles.wxRow}>
                 <Text style={styles.wxKey}>Pressure</Text>
-                <Text style={styles.wxVal}>{item.pressureHpa == null ? '—' : `${item.pressureHpa} hPa`}</Text>
+                <Text style={styles.wxVal}>
+                  {item.pressureHpa == null ? '—' : `${item.pressureHpa} hPa`}
+                </Text>
               </View>
             </View>
           ) : null}
@@ -360,7 +417,6 @@ export function NerdyHourlyTimeline({
   );
 }
 
-// ---- Typed StyleSheet to prevent ViewStyle/TextStyle union errors ----
 type Styles = {
   wrap: ViewStyle;
   headerRow: ViewStyle;

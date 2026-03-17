@@ -158,6 +158,109 @@ function pressureTrendFromHourly(hours: any[]) {
   return { arrow: '→' as const, deltaHpa: delta, label: 'Steady' as const };
 }
 
+type FavoriteWeatherPreview = {
+  emoji: string;
+  condition: string;
+  hi: number | null;
+  lo: number | null;
+};
+
+const FAVORITE_PREVIEW_TTL_MS = 10 * 60 * 1000;
+
+const favoritePreviewCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    data: FavoriteWeatherPreview;
+  }
+>();
+
+function favoritePreviewKey(lat: number, lon: number) {
+  return `${lat.toFixed(3)},${lon.toFixed(3)}`;
+}
+
+function weatherCodeToEmoji(code: number | null): string {
+  if (code == null) return '🌤️';
+  if (code === 0) return '☀️';
+  if (code === 1) return '🌤️';
+  if (code === 2) return '⛅';
+  if (code === 3) return '☁️';
+  if (code === 45 || code === 48) return '🌫️';
+  if ([51, 53, 55, 56, 57].includes(code)) return '🌦️';
+  if ([61, 63, 65, 66, 67].includes(code)) return '🌧️';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return '❄️';
+  if ([80, 81, 82].includes(code)) return '🌦️';
+  if ([95, 96, 99].includes(code)) return '⛈️';
+  return '☁️';
+}
+
+function weatherCodeToLabel(code: number | null): string {
+  if (code == null) return 'Weather';
+  if (code === 0) return 'Clear';
+  if (code === 1) return 'Mostly clear';
+  if (code === 2) return 'Partly cloudy';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
+  if ([61, 63, 65, 66, 67].includes(code)) return 'Rain';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Showers';
+  if ([95, 96, 99].includes(code)) return 'Thunderstorm';
+  return 'Cloudy';
+}
+
+async function fetchFavoriteWeatherPreview(lat: number, lon: number): Promise<FavoriteWeatherPreview> {
+  const key = favoritePreviewKey(lat, lon);
+  const cached = favoritePreviewCache.get(key);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  const url =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&current=weather_code` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
+    `&forecast_days=1` +
+    `&temperature_unit=fahrenheit` +
+    `&timezone=auto`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    return {
+      emoji: '🌤️',
+      condition: 'Weather',
+      hi: null,
+      lo: null,
+    };
+  }
+
+  const data = await res.json();
+
+  const currentCode = safeNum(data?.current?.weather_code);
+  const dailyCode = safeNum(data?.daily?.weather_code?.[0]);
+  const code = currentCode ?? dailyCode ?? null;
+
+  const hi = safeNum(data?.daily?.temperature_2m_max?.[0]);
+  const lo = safeNum(data?.daily?.temperature_2m_min?.[0]);
+
+  const preview: FavoriteWeatherPreview = {
+    emoji: weatherCodeToEmoji(code),
+    condition: weatherCodeToLabel(code),
+    hi,
+    lo,
+  };
+
+  favoritePreviewCache.set(key, {
+    expiresAt: Date.now() + FAVORITE_PREVIEW_TTL_MS,
+    data: preview,
+  });
+
+  return preview;
+}
+
 function LocationPickerModal({
   visible,
   onClose,
@@ -177,6 +280,7 @@ function LocationPickerModal({
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<SavedLocation[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [favoriteWeather, setFavoriteWeather] = useState<Record<string, FavoriteWeatherPreview>>({});
   const debounceRef = useRef<any>(null);
 
   useEffect(() => {
@@ -190,7 +294,55 @@ function LocationPickerModal({
   useEffect(() => {
     if (!visible) return;
 
+    let cancelled = false;
+
+    const loadFavoriteWeather = async () => {
+      const favs = favorites ?? [];
+      if (!favs.length) {
+        setFavoriteWeather({});
+        return;
+      }
+
+      try {
+        const entries = await Promise.all(
+          favs.map(async (fav) => {
+            try {
+              const preview = await fetchFavoriteWeatherPreview(fav.lat, fav.lon);
+              return [fav.id, preview] as const;
+            } catch {
+              return [
+                fav.id,
+                {
+                  emoji: '🌤️',
+                  condition: 'Weather',
+                  hi: null,
+                  lo: null,
+                } satisfies FavoriteWeatherPreview,
+              ] as const;
+            }
+          })
+        );
+
+        if (!cancelled) {
+          setFavoriteWeather(Object.fromEntries(entries));
+        }
+      } catch {
+        if (!cancelled) setFavoriteWeather({});
+      }
+    };
+
+    loadFavoriteWeather();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, favorites]);
+
+  useEffect(() => {
+    if (!visible) return;
+
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
     const query = q.trim();
     if (!query) {
       setResults([]);
@@ -203,7 +355,9 @@ function LocationPickerModal({
       try {
         setBusy(true);
         setErr(null);
+
         const r = await geocodePlaces(query);
+
         setResults(
           (r ?? []).map((x: any) => ({
             id: x.id ?? `geo:${x.lat.toFixed(4)},${x.lon.toFixed(4)}`,
@@ -228,11 +382,19 @@ function LocationPickerModal({
     };
   }, [q, visible]);
 
-  const favRows: Array<{ key: string; title: string; sub: string; onPress: () => void }> = (favorites ?? []).map(
-    (item) => ({
+  const queryActive = q.trim().length > 0;
+
+  const favRows: Array<any> = (favorites ?? []).map((item) => {
+    const preview = favoriteWeather[item.id];
+
+    return {
       key: item.id,
+      kind: 'favorite',
       title: item.name,
-      sub: `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
+      sub: preview?.condition ?? `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
+      emoji: preview?.emoji ?? '🌤️',
+      hi: preview?.hi ?? null,
+      lo: preview?.lo ?? null,
       onPress: () =>
         onPick({
           id: item.id,
@@ -240,36 +402,50 @@ function LocationPickerModal({
           lat: item.lat,
           lon: item.lon,
         }),
-    })
-  );
+    };
+  });
 
-  const resRows: Array<{ key: string; title: string; sub: string; onPress: () => void }> = (results ?? []).map(
-    (item) => ({
-      key: item.id,
-      title: formatLocLabel(item),
-      sub: `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
-      onPress: () => onPick(item),
-    })
-  );
+  const resRows: Array<any> = (results ?? []).map((item) => ({
+    key: item.id,
+    kind: 'result',
+    title: formatLocLabel(item),
+    sub: `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
+    onPress: () => onPick(item),
+  }));
 
   const sections = useMemo(() => {
-    const out: any[] = [];
-    out.push({
-      title: 'Favorites',
-      data: favRows.length
-        ? favRows
-        : [{ key: 'nofavs', title: 'No favorites yet', sub: 'Star a place to save it.', onPress: () => {} }],
-    });
-    out.push({
-      title: 'Search results',
-      data: q.trim()
-        ? resRows.length
+    const out: Array<{ title: string; data: any[] }> = [];
+
+    if (queryActive) {
+      out.push({
+        title: 'Search results',
+        data: resRows.length
           ? resRows
-          : [{ key: 'nomatch', title: 'No matches', sub: 'Try a different query.', onPress: () => {} }]
-        : [{ key: 'type', title: 'Start typing to search', sub: 'City, state, country…', onPress: () => {} }],
-    });
+          : [{ key: 'nomatch', kind: 'empty', title: 'No matches', sub: 'Try a different query.', onPress: () => {} }],
+      });
+
+      out.push({
+        title: 'Favorites',
+        data: favRows.length
+          ? favRows
+          : [{ key: 'nofavs', kind: 'empty', title: 'No favorites yet', sub: 'Star a place to save it.', onPress: () => {} }],
+      });
+    } else {
+      out.push({
+        title: 'Favorites',
+        data: favRows.length
+          ? favRows
+          : [{ key: 'nofavs', kind: 'empty', title: 'No favorites yet', sub: 'Star a place to save it.', onPress: () => {} }],
+      });
+
+      out.push({
+        title: 'Search',
+        data: [{ key: 'type', kind: 'empty', title: 'Start typing to search', sub: 'City, state, country…', onPress: () => {} }],
+      });
+    }
+
     return out;
-  }, [favRows.length, resRows.length, q]);
+  }, [favRows, resRows, queryActive]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -313,24 +489,50 @@ function LocationPickerModal({
           keyExtractor={(it: any) => it.key}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }: any) => <Text style={styles.modalSection}>{section.title}</Text>}
-          renderItem={({ item }: any) => (
-            <Pressable
-              onPress={item.onPress}
-              style={[
-                styles.pickRow,
-                (item.key === 'nofavs' || item.key === 'nomatch' || item.key === 'type') && { opacity: 0.75 },
-              ]}
-              disabled={item.key === 'nofavs' || item.key === 'nomatch' || item.key === 'type'}
-            >
-              <Text style={styles.pickTitle} numberOfLines={1}>
-                {item.title}
-              </Text>
-              <Text style={styles.pickSub} numberOfLines={1}>
-                {item.sub}
-              </Text>
-            </Pressable>
-          )}
+          renderItem={({ item }: any) => {
+            const isEmpty = item.kind === 'empty';
+
+            if (item.kind === 'favorite') {
+              return (
+                <Pressable onPress={item.onPress} style={styles.favoritePickRow}>
+                  <View style={styles.favoriteEmojiBadge}>
+                    <Text style={styles.favoriteEmoji}>{item.emoji}</Text>
+                  </View>
+
+                  <View style={styles.favoriteMain}>
+                    <Text style={styles.favoriteTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.favoriteSub} numberOfLines={1}>
+                      {item.sub}
+                    </Text>
+                  </View>
+
+                  <View style={styles.favoriteTempBlock}>
+                    <Text style={styles.favoriteHi}>{item.hi != null ? `${Math.round(item.hi)}°` : '—'}</Text>
+                    <Text style={styles.favoriteLo}>{item.lo != null ? `${Math.round(item.lo)}°` : '—'}</Text>
+                  </View>
+                </Pressable>
+              );
+            }
+
+            return (
+              <Pressable
+                onPress={item.onPress}
+                style={[styles.pickRow, isEmpty && { opacity: 0.75 }]}
+                disabled={isEmpty}
+              >
+                <Text style={styles.pickTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={styles.pickSub} numberOfLines={1}>
+                  {item.sub}
+                </Text>
+              </Pressable>
+            );
+          }}
           style={{ flex: 1, marginTop: 8 }}
+          keyboardShouldPersistTaps="handled"
         />
       </View>
     </Modal>
@@ -1198,10 +1400,6 @@ const weatherCodeFromHourly = (() => {
 const weatherCode = weatherCodeFromCurrent ?? weatherCodeFromHourly;
 
 // push weatherCode to parent for background video selection
-useEffect(() => {
-  onWeatherCode(weatherCode);
-}, [weatherCode, onWeatherCode]);
-
 const condition =
   wx.shortForecast ??
   wx.condition ??
@@ -1528,17 +1726,30 @@ export default function LandWeatherScreen() {
     setExplainOpen(true);
   };
 
-  const onPressAlert = (primary: any, alerts: any[]) => {
-    setExplainPayload({
-      title: primary?.event ?? 'Weather Alert',
-      summary: primary?.headline ?? 'Active alert in this area.',
-      whyItMatters: 'Weather alerts indicate hazards and recommended actions.',
-      howComputed: 'Provided by NWS alerts feed for the selected coordinates.',
-      confidence: 'high',
-      learnTopicId: 'nws-alerts',
-    });
-    setExplainOpen(true);
-  };
+    const onPressAlert = (primary: any, alerts: any[]) => {
+  const officialText =
+    primary?.fullText ??
+    [
+      primary?.headline,
+      primary?.description,
+      primary?.instruction ? `Instructions: ${primary.instruction}` : undefined,
+      primary?.note ? `Note: ${primary.note}` : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+
+  setExplainPayload({
+    title: primary?.event ?? 'Weather Alert',
+    summary: officialText || 'No detailed NWS alert text available.',
+    whyItMatters: undefined,
+    howComputed: undefined,
+    confidence: undefined,
+    learnTopicId: undefined,
+  });
+
+  setExplainOpen(true);
+};
 
   const favorites = locState.favorites ?? [];
 
@@ -1551,7 +1762,10 @@ export default function LandWeatherScreen() {
     <View style={styles.root}>
       {/* Background video: root absolute layer behind all UI */}
       <View pointerEvents="none" style={styles.videoLayer}>
-        <WeatherVideoBackground weatherCode={bgWeatherCode ?? undefined} />
+        <WeatherVideoBackground
+          weatherCode={bgWeatherCode ?? undefined}
+          isEvening={isNight || isSunset}
+        />
       </View>
 
       {/* Foreground UI */}
@@ -1991,6 +2205,71 @@ headerHeroLogo: {
   },
 
   updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.8 },
+  favoritePickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 8,
+    gap: 10,
+  },
+
+  favoriteEmojiBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+
+  favoriteEmoji: {
+    fontSize: 18,
+  },
+
+  favoriteMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  favoriteTitle: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+
+  favoriteSub: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  favoriteTempBlock: {
+    minWidth: 48,
+    alignItems: 'flex-end',
+  },
+
+  favoriteHi: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 16,
+    lineHeight: 18,
+  },
+
+  favoriteLo: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.56)',
+    fontWeight: '800',
+    fontSize: 12,
+    lineHeight: 14,
+  },
 
   forecastCard: { marginBottom: theme.spacing.lg },
   cardTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 10 },

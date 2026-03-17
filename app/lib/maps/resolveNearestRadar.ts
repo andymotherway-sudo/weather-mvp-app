@@ -5,19 +5,11 @@ export type NearestRadarResult = {
   site: NexradSite;
   distanceKm: number;
   distanceMi: number;
-  bearingDeg: number; // 0..360 from point -> radar
+  bearingDeg: number;
 };
 
 export type ResolveNearestRadarOptions = {
-  /**
-   * If set, returns null when the nearest site is farther than this.
-   * Useful for deciding "local radar" vs "regional/national fallback".
-   */
   maxDistanceKm?: number;
-
-  /**
-   * Provide a custom filter, e.g. (s) => s.ownerType === 'NEXRAD'
-   */
   filter?: (site: NexradSite) => boolean;
 };
 
@@ -26,9 +18,45 @@ const EARTH_RADIUS_KM = 6371;
 function deg2rad(d: number) {
   return (d * Math.PI) / 180;
 }
-
 function rad2deg(r: number) {
   return (r * 180) / Math.PI;
+}
+
+function isFiniteNumber(x: unknown): x is number {
+  return typeof x === 'number' && Number.isFinite(x);
+}
+
+/**
+ * Normalize longitude to best match the reference longitude.
+ * Handles:
+ *  - [-180..180] vs [0..360]
+ *  - mistaken sign (e.g. +80 vs -80)
+ */
+function normalizeLonToReference(lon: number, refLon: number) {
+  let candidates = [lon];
+
+  // If it's in 0..360 form, add wrapped form
+  if (lon > 180) candidates.push(lon - 360);
+  if (lon < -180) candidates.push(lon + 360);
+
+  // If sign might be wrong, try flipping sign
+  candidates.push(-lon);
+
+  // Also try wrapped + sign flip combos
+  candidates.push(-(lon - 360));
+  candidates.push(-(lon + 360));
+
+  // Pick candidate closest to refLon
+  let best = candidates[0];
+  let bestAbs = Math.abs(best - refLon);
+  for (const c of candidates) {
+    const a = Math.abs(c - refLon);
+    if (a < bestAbs) {
+      bestAbs = a;
+      best = c;
+    }
+  }
+  return best;
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -45,9 +73,6 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   return EARTH_RADIUS_KM * c;
 }
 
-/**
- * Initial bearing from (lat1, lon1) to (lat2, lon2) in degrees [0..360).
- */
 function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: number) {
   const φ1 = deg2rad(lat1);
   const φ2 = deg2rad(lat2);
@@ -60,48 +85,49 @@ function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: number) {
     Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
 
   const θ = Math.atan2(y, x);
-  const brng = (rad2deg(θ) + 360) % 360;
-  return brng;
-}
-
-function isFiniteNumber(x: unknown): x is number {
-  return typeof x === 'number' && Number.isFinite(x);
+  return (rad2deg(θ) + 360) % 360;
 }
 
 export function resolveNearestRadar(
   lat: number,
   lon: number,
-  opts: ResolveNearestRadarOptions = {}
+  opts: ResolveNearestRadarOptions = {},
 ): NearestRadarResult | null {
   if (!isFiniteNumber(lat) || !isFiniteNumber(lon)) return null;
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  if (lat < -90 || lat > 90) return null;
+
+  // normalize input lon to [-180..180]
+  let lonNorm = lon;
+  if (lonNorm > 180) lonNorm -= 360;
+  if (lonNorm < -180) lonNorm += 360;
 
   const { maxDistanceKm, filter } = opts;
 
   let bestSite: NexradSite | null = null;
   let bestDistanceKm = Infinity;
+  let bestBearing = 0;
 
   for (const s of NEXRAD_SITES) {
-    // Defensive: ensure the site has valid coordinates
     if (!isFiniteNumber(s.lat) || !isFiniteNumber(s.lon)) continue;
     if (filter && !filter(s)) continue;
 
-    const d = haversineKm(lat, lon, s.lat, s.lon);
+    const sLon = normalizeLonToReference(s.lon, lonNorm);
+    const d = haversineKm(lat, lonNorm, s.lat, sLon);
+
     if (d < bestDistanceKm) {
       bestDistanceKm = d;
       bestSite = s;
+      bestBearing = bearingDeg(lat, lonNorm, s.lat, sLon);
     }
   }
 
   if (!bestSite || !Number.isFinite(bestDistanceKm)) return null;
   if (isFiniteNumber(maxDistanceKm) && bestDistanceKm > maxDistanceKm) return null;
 
-  const b = bearingDeg(lat, lon, bestSite.lat, bestSite.lon);
-
   return {
     site: bestSite,
     distanceKm: bestDistanceKm,
     distanceMi: bestDistanceKm * 0.621371,
-    bearingDeg: b,
+    bearingDeg: bestBearing,
   };
 }

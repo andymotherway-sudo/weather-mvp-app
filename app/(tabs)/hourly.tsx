@@ -3,7 +3,8 @@
 // ✅ Keeps useLocations + branded header + charts
 // ✅ Pull-to-refresh refreshes forecast when coords exist; otherwise re-tries GPS
 // ✅ Removes "Show/Hide hourly details" (details always visible)
-// ✅ Removes hidden "display:none" unused-warnings block
+// ✅ Adds explicit forecast timezone plumbing for child components
+// ✅ Prefers forecast location timezone over device timezone
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -36,7 +37,11 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-function normalizeHourly(hourlyRaw: any[]) {
+function safeStr(v: any): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
   return (hourlyRaw ?? []).map((h: any) => {
     const pressureHpa =
       safeNum(h.pressure_msl) ??
@@ -47,8 +52,19 @@ function normalizeHourly(hourlyRaw: any[]) {
       safeNum(h.pressureHpa) ??
       null;
 
-    return { ...h, pressureHpa };
+    return {
+      ...h,
+      pressureHpa,
+      timeZone: safeStr(h.timeZone) ?? timeZone ?? undefined,
+      timezone: safeStr(h.timezone) ?? timeZone ?? undefined,
+    };
   });
+}
+
+function formatTzLabel(timeZone: string | null): string | null {
+  if (!timeZone) return null;
+  const parts = timeZone.split('/');
+  return parts[parts.length - 1]?.replace(/_/g, ' ') ?? timeZone;
 }
 
 function HourlyWithCoords({
@@ -68,20 +84,25 @@ function HourlyWithCoords({
     days: 5,
   });
 
-  // Let parent RefreshControl reflect actual refresh state
   useEffect(() => {
     onRefreshingChange(!!refreshing);
   }, [refreshing, onRefreshingChange]);
 
-  // Give parent a callable refresh fn (or clear it)
   useEffect(() => {
     setRefreshFn(refresh ? () => refresh() : null);
     return () => setRefreshFn(null);
   }, [refresh, setRefreshFn]);
 
+    const forecastTimeZone = useMemo(() => {
+    return safeStr(data?.timezone) ?? null;
+  }, [data]);
+
   const hourlyRaw: any[] = data?.hourly ?? [];
 
-  const hourly = useMemo(() => normalizeHourly(hourlyRaw), [hourlyRaw]);
+  const hourly = useMemo(
+    () => normalizeHourly(hourlyRaw, forecastTimeZone),
+    [hourlyRaw, forecastTimeZone]
+  );
 
   if (loading && !data) {
     return (
@@ -103,26 +124,45 @@ function HourlyWithCoords({
 
   if (!hourly.length) return null;
 
+  const tzLabel = formatTzLabel(forecastTimeZone);
+
   return (
     <>
-      <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
-      <NerdyHourlyTimeline hours={hourly} maxHours={72} />
+      {!!forecastTimeZone && (
+        <Text style={styles.tzNote}>
+          Times shown for {tzLabel ?? forecastTimeZone} ({forecastTimeZone})
+        </Text>
+      )}
+
+      <HourlyCharts72h
+        hours={hourly}
+        maxHours={72}
+        units={units}
+        initialPanel="range"
+        timeZone={forecastTimeZone ?? undefined}
+      />
+
+      <NerdyHourlyTimeline
+        hours={hourly}
+        maxHours={72}
+        timeZone={forecastTimeZone ?? undefined}
+      />
     </>
   );
 }
 
 export default function HourlyTab() {
   const insets = useSafeAreaInsets();
-  const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
-
-
+  const { activeCoords, activeLabel, refreshCurrentLocation } = useLocations();
 
   const coords = useMemo(() => activeCoords ?? null, [activeCoords]);
 
   const locationLabel = useMemo(() => {
     const raw = (activeLabel ?? '').trim();
     if (raw) return raw;
-    return coords ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})` : 'Getting location…';
+    return coords
+      ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})`
+      : 'Getting location…';
   }, [activeLabel, coords]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -150,7 +190,6 @@ export default function HourlyTab() {
         ]}
         refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
       >
-        {/* Header aligned with Land */}
         <View style={styles.header}>
           <Image source={OMNI_MARK_WORD} style={styles.wordmark} resizeMode="contain" />
           <Text style={styles.title}>Hourly</Text>
@@ -192,6 +231,12 @@ const styles = StyleSheet.create({
   wordmark: { width: 92, height: 92, marginBottom: 6 },
   title: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
+
+  tzNote: {
+    ...typography.small,
+    opacity: 0.7,
+    marginBottom: theme.spacing.sm,
+  },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   small: { ...typography.small, marginTop: theme.spacing.sm },

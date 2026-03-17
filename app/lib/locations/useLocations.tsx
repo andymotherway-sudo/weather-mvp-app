@@ -230,10 +230,11 @@ function useLocationsImpl() {
     dispatch({ type: 'REMOVE_FAVORITE', id });
   }, []);
 
-  const activeFavorite = useMemo(() => {
-    if (state.active.kind !== 'favorite') return null;
-    return state.favorites.find((f) => f.id === state.active.id) ?? null;
-  }, [state.active, state.favorites]);
+ const activeFavorite = useMemo(() => {
+  const active = state.active;
+  if (active.kind !== 'favorite') return null;
+  return state.favorites.find((f) => f.id === active.id) ?? null;
+}, [state.active, state.favorites]);
 
   const activeCoords = useMemo(() => {
     if (state.active.kind === 'favorite') {

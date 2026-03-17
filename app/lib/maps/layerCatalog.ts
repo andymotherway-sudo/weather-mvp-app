@@ -1,44 +1,55 @@
 // app/lib/maps/layerCatalog.ts
 import type { LayerId, NerdyVisibility, TimestampMode } from './types';
 
-export type LayerGroupId = 'weather' | 'fire' | 'storm' | 'aviation' | 'astro';
+export type LayerGroupId =
+  | 'weather'
+  | 'fireAir'
+  | 'aviation'
+  | 'marine'
+  | 'astronomy'
+  | 'reference';
 
 export type LayerCatalogItem = {
   id: LayerId;
   group: LayerGroupId;
   title: string;
-  subtitle?: string; // short “what is this”
+  subtitle?: string;
   visibility: NerdyVisibility;
   timestampMode: TimestampMode;
-  defaultOpacity: number; // 0..1
+  defaultOpacity: number;
   zIndex: number;
 
-  // “Settings” / info (optional)
-  legendKey?: 'reflectivity' | 'smoke' | 'perimeters' | 'hotspots' | 'lightning';
+  legendKey?:
+    | 'reflectivity'
+    | 'smoke'
+    | 'perimeters'
+    | 'hotspots'
+    | 'lightning'
+    | 'satelliteInfrared'
+    | 'satelliteWaterVapor';
   source?: {
     name: string;
-    details?: string; // “NWS/IEM/RainViewer…” etc
-    url?: string; // optional deep link later
+    details?: string;
+    url?: string;
   };
 
-  // allow toggling these UI affordances
-  supportsOpacity?: boolean; // default true
-  supportsLegend?: boolean; // default true if legendKey exists
-  supportsSourceInfo?: boolean; // default true if source exists
+  supportsOpacity?: boolean;
+  supportsLegend?: boolean;
+  supportsSourceInfo?: boolean;
 };
 
 export const LAYER_GROUPS: ReadonlyArray<{ id: LayerGroupId; title: string }> = [
   { id: 'weather', title: 'Weather' },
-  { id: 'fire', title: 'Fire' },
-  { id: 'storm', title: 'Storm' },
+  { id: 'fireAir', title: 'Fire & Air' },
   { id: 'aviation', title: 'Aviation' },
-  { id: 'astro', title: 'Astronomy' },
+  { id: 'marine', title: 'Marine' },
+  { id: 'astronomy', title: 'Astronomy' },
+  { id: 'reference', title: 'Reference' },
 ] as const;
 
 /**
  * Single source of truth.
  * If you add a new LayerId in types.ts, add it here ONCE.
- * TS will enforce correct LayerId strings.
  */
 export const LAYER_CATALOG = [
   {
@@ -51,66 +62,166 @@ export const LAYER_CATALOG = [
     defaultOpacity: 0.9,
     zIndex: 100,
     legendKey: 'reflectivity',
-    source: { name: 'RainViewer / IEM (adapter)', details: 'Radar mosaic + local when available' },
+    source: {
+      name: 'RainViewer / IEM',
+      details: 'Radar mosaic with local enhancement when available',
+    },
+    supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
   },
 
-  // ✅ NEW: Clouds (GOES visible, “ch02”) via your OverlayEngine WMS
   {
     id: 'sat.clouds',
     group: 'weather',
     title: 'Clouds',
-    subtitle: 'GOES visible (CONUS)',
+    subtitle: 'Visible',
     visibility: 'both',
     timestampMode: 'latest_snapshot',
     defaultOpacity: 0.85,
-    // Put it BELOW radar so radar stays readable on top
     zIndex: 60,
-    source: { name: 'IEM GOES (WMS)', details: 'GOES-East CONUS channel 02' },
+    source: {
+      name: 'IEM GOES-East',
+      details: 'Legacy CONUS visible satellite layer using GOES ABI Band 2 (conus_ch02)',
+    },
     supportsLegend: false,
     supportsOpacity: true,
+    supportsSourceInfo: true,
   },
 
   {
-    id: 'wildfire.smoke',
-    group: 'fire',
-    title: 'Smoke',
-    subtitle: 'Smoke extent',
+    id: 'sat.goesEast.geocolor',
+    group: 'weather',
+    title: 'GOES East',
+    subtitle: 'Visible',
     visibility: 'both',
     timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.55,
-    zIndex: 80,
-    legendKey: 'smoke',
-    source: { name: 'Provider TBD', details: 'Hook up to your chosen smoke feed' },
-  },
-  {
-    id: 'wildfire.perimeters',
-    group: 'fire',
-    title: 'Fire perimeters',
-    subtitle: 'Incident boundaries',
-    visibility: 'both',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.85,
-    zIndex: 85,
-    legendKey: 'perimeters',
-    source: { name: 'Provider TBD', details: 'Hook up to perimeter feed later' },
+    defaultOpacity: 0.92,
+    zIndex: 62,
+    source: {
+      name: 'GOES-East',
+      details: 'CONUS visible imagery using ABI Band 2 (conus_ch02). This is visible imagery, not true GeoColor.',
+    },
+    supportsLegend: false,
     supportsOpacity: true,
+    supportsSourceInfo: true,
   },
+
   {
-    id: 'wildfire.hotspots',
-    group: 'fire',
-    title: 'Hotspots',
-    subtitle: 'Thermal detections',
+    id: 'sat.goesWest.geocolor',
+    group: 'weather',
+    title: 'GOES West',
+    subtitle: 'Visible',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.92,
+    zIndex: 62,
+    source: {
+      name: 'GOES-West',
+      details: 'CONUS visible imagery using ABI Band 2 (conus_ch02). This is visible imagery, not true GeoColor.',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.goesEast.ir',
+    group: 'weather',
+    title: 'GOES East',
+    subtitle: 'Infrared',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.94,
+    zIndex: 63,
+    legendKey: 'satelliteInfrared',
+    source: {
+      name: 'GOES-East',
+      details: 'CONUS infrared imagery using ABI Band 13 (conus_ch13) for day/night cloud-top structure.',
+    },
+    supportsLegend: true,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.goesWest.ir',
+    group: 'weather',
+    title: 'GOES West',
+    subtitle: 'Infrared',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.94,
+    zIndex: 63,
+    legendKey: 'satelliteInfrared',
+    source: {
+      name: 'GOES-West',
+      details: 'CONUS infrared imagery using ABI Band 13 (conus_ch13) for Pacific systems and western U.S. cloud-top structure.',
+    },
+    supportsLegend: true,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.goesEast.wv',
+    group: 'weather',
+    title: 'GOES East',
+    subtitle: 'Water Vapor',
     visibility: 'nerdy',
     timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.9,
-    zIndex: 90,
-    legendKey: 'hotspots',
-    source: { name: 'Provider TBD', details: 'Hook up to hotspot feed later' },
+    defaultOpacity: 0.94,
+    zIndex: 64,
+    legendKey: 'satelliteWaterVapor',
+    source: {
+      name: 'GOES-East',
+      details: 'CONUS water vapor imagery using ABI Band 8 (conus_ch08) to show upper-level moisture and dry air.',
+    },
+    supportsLegend: true,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.goesWest.wv',
+    group: 'weather',
+    title: 'GOES West',
+    subtitle: 'Water Vapor',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.94,
+    zIndex: 64,
+    legendKey: 'satelliteWaterVapor',
+    source: {
+      name: 'GOES-West',
+      details: 'CONUS water vapor imagery using ABI Band 8 (conus_ch08) for Pacific moisture transport, jet features, and western U.S. setup.',
+    },
+    supportsLegend: true,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'alerts.polygons',
+    group: 'weather',
+    title: 'Alerts',
+    subtitle: 'Warnings and watches',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.95,
+    zIndex: 130,
+    source: {
+      name: 'NWS',
+      details: 'Active alert polygons',
+    },
+    supportsOpacity: true,
+    supportsLegend: false,
+    supportsSourceInfo: true,
   },
 
   {
     id: 'lightning.strikes',
-    group: 'storm',
+    group: 'weather',
     title: 'Lightning',
     subtitle: 'Recent strikes',
     visibility: 'nerdy',
@@ -118,62 +229,125 @@ export const LAYER_CATALOG = [
     defaultOpacity: 0.95,
     zIndex: 120,
     legendKey: 'lightning',
-    source: { name: 'Provider TBD', details: 'Hook up lightning later' },
+    source: {
+      name: 'Provider TBD',
+      details: 'Recent lightning detections',
+    },
     supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
   },
 
   {
-    id: 'alerts.polygons',
-    group: 'storm',
-    title: 'Alerts',
-    subtitle: 'Warnings / watches',
+    id: 'wildfire.smoke',
+    group: 'fireAir',
+    title: 'Smoke',
+    subtitle: 'Smoke extent',
     visibility: 'both',
     timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.95,
-    zIndex: 130,
-    source: { name: 'NWS', details: 'Active alerts polygons' },
+    defaultOpacity: 0.55,
+    zIndex: 80,
+    legendKey: 'smoke',
+    source: {
+      name: 'Provider TBD',
+      details: 'Smoke overlay feed',
+    },
     supportsOpacity: true,
-    supportsLegend: false,
+    supportsLegend: true,
+    supportsSourceInfo: true,
   },
+
   {
-  id: 'astro.skyScore',
-  group: 'astro',
-  title: 'Sky Score',
-  subtitle: 'Observing conditions heatmap',
-  visibility: 'both',
-  timestampMode: 'latest_snapshot',
-  defaultOpacity: 0.85,
-  zIndex: 70,
-  supportsLegend: false,
-  supportsOpacity: true,
-  source: { name: 'Omni Wx', details: 'Computed from clouds/moon/light metrics' },
-},
-{
-  id: 'space.aurora.prob',
-  group: 'astro',
-  title: 'Aurora',
-  subtitle: 'Visibility probability',
-  visibility: 'both',
-  timestampMode: 'latest_snapshot',
-  defaultOpacity: 0.75,
-  zIndex: 95,
-  supportsLegend: false,
-  supportsOpacity: true,
-  source: { name: 'NOAA SWPC', details: 'OVATION model (global probability grid)' },
-},
-{
-  id: 'space.aurora.oval',
-  group: 'astro',
-  title: 'Aurora Oval',
-  subtitle: 'Boundary contour',
-  visibility: 'nerdy',
-  timestampMode: 'latest_snapshot',
-  defaultOpacity: 0.9,
-  zIndex: 110,
-  supportsLegend: false,
-  supportsOpacity: true,
-  source: { name: 'NOAA SWPC', details: 'Derived contour from OVATION probabilities' },
-},
+    id: 'wildfire.perimeters',
+    group: 'fireAir',
+    title: 'Fire Perimeters',
+    subtitle: 'Incident boundaries',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.85,
+    zIndex: 85,
+    legendKey: 'perimeters',
+    source: {
+      name: 'Provider TBD',
+      details: 'Wildfire perimeter feed',
+    },
+    supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'wildfire.hotspots',
+    group: 'fireAir',
+    title: 'Hotspots',
+    subtitle: 'Thermal detections',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.9,
+    zIndex: 90,
+    legendKey: 'hotspots',
+    source: {
+      name: 'Provider TBD',
+      details: 'Thermal hotspot detections',
+    },
+    supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'astro.skyScore',
+    group: 'astronomy',
+    title: 'Sky Score',
+    subtitle: 'Observing conditions',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.85,
+    zIndex: 70,
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+    source: {
+      name: 'Omni Wx',
+      details: 'Computed from clouds, moonlight, and sky conditions',
+    },
+  },
+
+  {
+    id: 'space.aurora.prob',
+    group: 'astronomy',
+    title: 'Aurora',
+    subtitle: 'Visibility probability',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.75,
+    zIndex: 95,
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+    source: {
+      name: 'NOAA SWPC',
+      details: 'OVATION probability grid',
+    },
+  },
+
+  {
+    id: 'space.aurora.oval',
+    group: 'astronomy',
+    title: 'Aurora Oval',
+    subtitle: 'Boundary contour',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.9,
+    zIndex: 110,
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+    source: {
+      name: 'NOAA SWPC',
+      details: 'Derived contour from OVATION probabilities',
+    },
+  },
 ] as const satisfies ReadonlyArray<LayerCatalogItem>;
 
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(

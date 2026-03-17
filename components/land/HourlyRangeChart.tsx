@@ -1,5 +1,8 @@
 // components/land/HourlyRangeChart.tsx
-// ✅ drop-in replacement: adds Daily-style ring around wind direction + moves it BELOW clouds band
+// ✅ drop-in replacement
+// ✅ fixes timezone bug for "now" / hourly slice selection
+// ✅ accepts optional timeZone prop from parent
+// ✅ keeps Daily-style ring around wind direction + moves it BELOW clouds band
 // ✅ removes duplicate Clouds readout row under the chart (keeps tile "Clouds %" + clouds band)
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -41,9 +44,19 @@ function pick(h: ForecastHour, key: string): number | null {
           (h as any).pop
       );
     case 'humidityPct':
-      return clampPct((h as any).humidityPct ?? (h as any).relativeHumidityPct ?? (h as any).rhPct ?? (h as any).rh);
+      return clampPct(
+        (h as any).humidityPct ??
+          (h as any).relativeHumidityPct ??
+          (h as any).rhPct ??
+          (h as any).rh
+      );
     case 'cloudCoverPct':
-      return clampPct((h as any).cloudCoverPct ?? (h as any).cloud_cover ?? (h as any).cloudcover ?? (h as any).clouds);
+      return clampPct(
+        (h as any).cloudCoverPct ??
+          (h as any).cloud_cover ??
+          (h as any).cloudcover ??
+          (h as any).clouds
+      );
     case 'windMph':
       return safeNum((h as any).windMph ?? (h as any).windSpeedMph ?? (h as any).windSpeed);
     case 'gustMph':
@@ -60,20 +73,57 @@ function pick(h: ForecastHour, key: string): number | null {
   }
 }
 
-function dayKeyFromIso(iso: string): string {
-  if (!iso) return '';
-  return iso.slice(0, 10);
-}
-function parseHourMinute(iso: string): { h: number; m: number } | null {
+function extractIsoWallClockParts(iso: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
   if (!iso) return null;
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  const m = iso.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
   if (!m) return null;
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return { h: hh, m: mm };
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (hour < 0 || hour > 23) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  return { year, month, day, hour, minute };
 }
+
+function dayKeyFromIso(iso: string): string {
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return '';
+  return `${String(p.year).padStart(4, '0')}-${String(p.month).padStart(2, '0')}-${String(
+    p.day
+  ).padStart(2, '0')}`;
+}
+
+function parseHourMinute(iso: string): { h: number; m: number } | null {
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return null;
+  return { h: p.hour, m: p.minute };
+}
+
 function hourLabel(iso: string) {
   const hm = parseHourMinute(iso);
   if (!hm) return '—';
@@ -81,10 +131,17 @@ function hourLabel(iso: string) {
   const ampm = hm.h >= 12 ? 'PM' : 'AM';
   return `${hour12}${ampm}`;
 }
+
 function dayLabelFromKey(dayKey: string) {
   if (!dayKey) return '';
-  const d = new Date(`${dayKey}T00:00:00Z`);
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(d);
+  const m = dayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // Noon UTC avoids any weird midnight edge behavior.
+  const dt = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0, 0));
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(dt);
 }
 
 function buildPath(points: Array<{ x: number; y: number }>) {
@@ -97,25 +154,67 @@ function fmtInt(v: number | null, suffix = '') {
 }
 
 /**
- * Parse Open-Meteo "YYYY-MM-DDTHH:MM..." into LOCAL milliseconds safely across engines.
- * We intentionally ignore any timezone suffix and treat the hour/minute as local clock time.
+ * Convert wall-clock civil time to a sortable number without using the device timezone.
+ * This intentionally treats YYYY-MM-DD HH:mm as a plain local clock for comparison/grouping.
  */
+function wallClockToSortableMs(parts: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+}
+
 function parseLocalMsStrict(iso: string): number | null {
-  if (!iso) return null;
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (!m) return null;
+  const parts = extractIsoWallClockParts(iso);
+  if (!parts) return null;
+  return wallClockToSortableMs(parts);
+}
 
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
+function getNowWallClockParts(timeZone?: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  if (timeZone) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
 
-  if (![y, mo, d, hh, mm].every(Number.isFinite)) return null;
+    const parts = fmt.formatToParts(new Date());
+    const pickPart = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
 
-  const dt = new Date(y, mo - 1, d, hh, mm, 0, 0);
-  const t = dt.getTime();
-  return Number.isFinite(t) ? t : null;
+    return {
+      year: pickPart('year'),
+      month: pickPart('month'),
+      day: pickPart('day'),
+      hour: pickPart('hour'),
+      minute: pickPart('minute'),
+    };
+  }
+
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  };
+}
+
+function getNowSortableMs(timeZone?: string) {
+  return wallClockToSortableMs(getNowWallClockParts(timeZone));
 }
 
 function degToCardinal(deg?: number | null) {
@@ -129,10 +228,12 @@ export function HourlyRangeChart({
   hours,
   maxHours = 72,
   units = 'us',
+  timeZone,
 }: {
   hours: ForecastHour[];
   maxHours?: number;
   units?: UnitSystem;
+  timeZone?: string;
 }) {
   const all = useMemo(() => hours ?? [], [hours]);
 
@@ -152,7 +253,7 @@ export function HourlyRangeChart({
   const nowIdx = useMemo(() => {
     if (!all.length) return 0;
 
-    const now = Date.now();
+    const nowSortable = getNowSortableMs(timeZone);
     let bestI = 0;
     let bestD = Number.POSITIVE_INFINITY;
 
@@ -160,14 +261,14 @@ export function HourlyRangeChart({
       const t = (all[i] as any).time as string;
       const ms = parseLocalMsStrict(t);
       if (ms == null) continue;
-      const d = Math.abs(ms - now);
+      const d = Math.abs(ms - nowSortable);
       if (d < bestD) {
         bestD = d;
         bestI = i;
       }
     }
     return bestI;
-  }, [all, nowTick]);
+  }, [all, nowTick, timeZone]);
 
   const data = useMemo(() => {
     if (!all.length) return [];
@@ -211,14 +312,12 @@ export function HourlyRangeChart({
     cloudFill: 'rgba(255,255,255,0.10)',
     cloudOn: 'rgba(255,255,255,0.55)',
 
-    // Daily-ish wind ring
     ringStroke: 'rgba(255,255,255,0.22)',
     ringFill: 'rgba(255,255,255,0.02)',
     arrow: 'rgba(160,220,255,0.55)',
     dirText: 'rgba(255,255,255,0.70)',
   };
 
-  // Geometry
   const TILE_W = 92;
   const GAP = 10;
   const padX = 14;
@@ -228,8 +327,6 @@ export function HourlyRangeChart({
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-
-  // ✅ give ourselves a little more vertical room for the wind-direction row (below clouds)
   const H = 270;
 
   const axisL = 28;
@@ -237,25 +334,22 @@ export function HourlyRangeChart({
   const padR = padX;
 
   const padT = 18;
-  const padB = 114; // ✅ more bottom padding
+  const padB = 114;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  // Wind band
   const windBandH = 22;
   const windBandTop = padT + plotH + 10;
   const windBandBot = windBandTop + windBandH;
 
-  // Clouds band (under wind)
   const cloudBandH = 14;
   const cloudBandTop = windBandBot + 8;
   const cloudBandBot = cloudBandTop + cloudBandH;
 
-  // ✅ Wind direction indicator row BELOW cloud band
   const windDirRingR = 12;
-  const windDirCenterY = cloudBandBot + 28; // below clouds band
-  const windDirTextY = windDirCenterY - 16; // cardinal above ring
+  const windDirCenterY = cloudBandBot + 28;
+  const windDirTextY = windDirCenterY - 16;
 
   const xForIdx = (i: number) => padL + i * step + TILE_W / 2;
 
@@ -418,7 +512,6 @@ export function HourlyRangeChart({
         }}
       >
         <View style={{ width: contentW - padX * 2 }}>
-          {/* tiles */}
           <View style={[s.strip, { width: contentW - padX * 2 }]}>
             {data.map((h: any, i) => {
               const t = h.time as string;
@@ -484,7 +577,6 @@ export function HourlyRangeChart({
             })}
           </View>
 
-          {/* chart */}
           <View style={{ marginTop: 10 }}>
             <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
               {tempTickTemps.map((tk, idx) => (
@@ -497,7 +589,15 @@ export function HourlyRangeChart({
               ))}
 
               {pctTicks.map((tk, idx) => (
-                <SvgText key={`p-yt-${idx}`} x={pctAxisX} y={tk.y + 3} fontSize="9" fill={C.tickPct} fontWeight="900" textAnchor="start">
+                <SvgText
+                  key={`p-yt-${idx}`}
+                  x={pctAxisX}
+                  y={tk.y + 3}
+                  fontSize="9"
+                  fill={C.tickPct}
+                  fontWeight="900"
+                  textAnchor="start"
+                >
                   {`${tk.p}%`}
                 </SvgText>
               ))}
@@ -543,10 +643,8 @@ export function HourlyRangeChart({
                 );
               })}
 
-              {/* Wind band */}
               <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.03)" />
 
-              {/* Wind/Gust bars */}
               {showWind
                 ? data.map((h: any, i) => {
                     const x = xForIdx(i);
@@ -574,14 +672,12 @@ export function HourlyRangeChart({
                   })
                 : null}
 
-              {/* Wind/Gust label in left gutter */}
               <G>
                 <SvgText x={padX} y={windBandTop + windBandH / 2 + 4} fontSize="11" fontWeight="900" textAnchor="start" fill="rgba(255, 255, 255, 0.57)">
                   Wind/Gust
                 </SvgText>
               </G>
 
-              {/* Clouds band */}
               {showClouds ? (
                 <>
                   <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.03)" />
@@ -607,7 +703,6 @@ export function HourlyRangeChart({
                     );
                   })}
 
-                  {/* Clouds label in left gutter */}
                   <G>
                     <SvgText x={padX} y={cloudBandTop + cloudBandH / 2 + 4} fontSize="11" fontWeight="700" textAnchor="start" fill="rgba(255,255,255,0.40)">
                       Clouds
@@ -616,7 +711,6 @@ export function HourlyRangeChart({
                 </>
               ) : null}
 
-              {/* ✅ Wind direction indicator BELOW clouds band (Daily-style ring) */}
               {showWind
                 ? data.map((h: any, i) => {
                     const x = xForIdx(i);
@@ -628,12 +722,10 @@ export function HourlyRangeChart({
 
                     return (
                       <G key={`wd-${h.time}-${i}`}>
-                        {/* cardinal above ring */}
                         <SvgText x={x} y={windDirTextY} fontSize="10" fontWeight="800" textAnchor="middle" fill={C.dirText}>
                           {cardinal}
                         </SvgText>
 
-                        {/* ring */}
                         <Circle
                           cx={x}
                           cy={windDirCenterY}
@@ -643,7 +735,6 @@ export function HourlyRangeChart({
                           strokeWidth={1.2}
                         />
 
-                        {/* arrow centered, translated to ring center, rotated meteorologically */}
                         <G transform={`translate(${x} ${windDirCenterY}) rotate(${dir})`}>
                           <Path d="M 0 -6 L -4 5 L 4 5 Z" fill={C.arrow} />
                         </G>
@@ -652,7 +743,6 @@ export function HourlyRangeChart({
                   })
                 : null}
 
-              {/* bottom labels */}
               {data.map((h: any, i) => {
                 if (!bottomLabelMask[i]) return null;
 
@@ -765,7 +855,13 @@ function ToggleLegendPill({
 
         {kind === 'bars2' ? (
           <View style={s.swBars2Wrap}>
-            <View style={[s.swBar2, s.swBar2Left, { backgroundColor: 'rgba(255,255,255,0.30)', opacity: on ? 0.75 : 0.2 }]} />
+            <View
+              style={[
+                s.swBar2,
+                s.swBar2Left,
+                { backgroundColor: 'rgba(255,255,255,0.30)', opacity: on ? 0.75 : 0.2 },
+              ]}
+            />
             <View style={[s.swBar2, s.swBar2Right, { backgroundColor: color, opacity: on ? 0.95 : 0.2 }]} />
           </View>
         ) : null}

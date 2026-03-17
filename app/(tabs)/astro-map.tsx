@@ -2,19 +2,17 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { AlphaType, ColorType, Skia } from '@shopify/react-native-skia';
 import { Buffer } from 'buffer';
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-
 import { Glass } from '../../components/common/Glass';
 import { AtmosphericLegend } from '../../components/maps/AtmosphericLegend';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 
-// ✅ Use the shared aurora module
 import {
   boundsFromPoints as boundsFromOvationPoints,
   buildAuroraContourRings,
@@ -23,12 +21,12 @@ import {
   type OvationPoint as OvationPointLib,
 } from '../lib/aurora/ovation';
 
-/* =============================================================================
- * utils
- * ============================================================================= */
-
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
 }
 
 function toNum(x: unknown) {
@@ -52,413 +50,81 @@ function regionBounds(region: Region) {
   return { west, east, south, north };
 }
 
-function roundTo(x: number, step: number) {
-  return Math.round(x / step) * step;
+function hasValidBounds(b: { west: number; east: number; south: number; north: number }) {
+  return (
+    Number.isFinite(b.west) &&
+    Number.isFinite(b.east) &&
+    Number.isFinite(b.south) &&
+    Number.isFinite(b.north) &&
+    b.east > b.west &&
+    b.north > b.south &&
+    Math.abs(b.east - b.west) >= 0.01 &&
+    Math.abs(b.north - b.south) >= 0.01
+  );
 }
 
-function boundsKey(
-  b: { west: number; east: number; south: number; north: number },
-  zoom: number,
-  stepDeg: number,
-  hourOffset: number
-) {
-  const r = (v: number) => roundTo(v, 0.05).toFixed(2);
-  const zBucket = Math.round(zoom * 2) / 2; // 0.5 zoom buckets
-  return `b:${r(b.west)}:${r(b.east)}:${r(b.south)}:${r(b.north)}:z${zBucket}:s${stepDeg}:h${hourOffset}`;
-}
-
-// MapLibre safety helpers (prevents “latitude must be between…” crash)
 function clampLat(lat: number) {
   return clamp(lat, -85, 85);
 }
+
 function normLon(lon: number) {
   let x = lon;
   while (x > 180) x -= 360;
   while (x < -180) x += 360;
   return x;
 }
+
 function isValidNum(n: any) {
   return typeof n === 'number' && Number.isFinite(n);
 }
 
-/** Bounds containment for the MVP “coverage” message. */
 function pointInBounds(lat: number, lon: number, b: { west: number; east: number; south: number; north: number }) {
-  // Note: assumes bounds don’t cross the dateline. Good enough for MVP because fetched raster bounds won’t.
   return lon >= b.west && lon <= b.east && lat >= b.south && lat <= b.north;
 }
 
-/** Build a GeoJSON polygon feature from bounds (for coverage outline). */
 function boundsToPolygonFeature(b: { west: number; east: number; south: number; north: number }) {
   return {
     type: 'Feature',
     properties: { kind: 'skyscoreCoverage' },
     geometry: {
       type: 'Polygon',
-      coordinates: [
-        [
-          [b.west, b.south],
-          [b.east, b.south],
-          [b.east, b.north],
-          [b.west, b.north],
-          [b.west, b.south],
-        ],
-      ],
+      coordinates: [[
+        [b.west, b.south],
+        [b.east, b.south],
+        [b.east, b.north],
+        [b.west, b.north],
+        [b.west, b.south],
+      ]],
     },
   } as const;
 }
 
-/* =============================================================================
- * SkyScore inputs (Open-Meteo grid)
- * ============================================================================= */
+const OMNIWX_API_BASE =
+  (Constants.expoConfig?.extra as any)?.apiBaseUrl ??
+  'https://omniwx-api.omniwx.workers.dev';
 
-type AstroInputs = {
-  lat: number;
-  lon: number;
-  cloudTotal: number | null; // %
-  cloudLow: number | null; // %
-  cloudMid: number | null; // %
-  cloudHigh: number | null; // %
-  visibilityM: number | null;
-  wind: number | null;
-  gust: number | null;
-};
-
-type SkyPoint = {
-  lat: number;
-  lon: number;
-  score: number; // 0..100
-  score01: number; // 0..1
-  parts: { weather: number; darkness: number };
-  inputs: AstroInputs;
-};
-
-type AstroGridCacheEntry = { fetchedAt: number; stepUsed: number; inputs: AstroInputs[] };
-const ASTRO_GRID_CACHE = new Map<string, AstroGridCacheEntry>();
-
-// ✅ Backoff so 429s don't spiral when panning/scrubbing
 const OM_BACKOFF = { until: 0, lastStatus: 0, strikes: 0 };
 
-function chooseStepDeg(zoom: number) {
-  const z = clamp(zoom, 2, 12);
-  if (z <= 3) return 2;
-  if (z <= 5) return 1;
-  if (z <= 7) return 0.5;
-  if (z <= 9) return 0.25;
-  return 0.2;
+function formatHourLabel(h: number) {
+  if (h === 0) return 'Now';
+  return `+${h}h`;
 }
 
-function buildGrid(bounds: { west: number; east: number; south: number; north: number }, stepDeg: number, maxPts = 500) {
-  const pts: Array<{ lat: number; lon: number }> = [];
-
-  const latMin = Math.min(bounds.south, bounds.north);
-  const latMax = Math.max(bounds.south, bounds.north);
-  const lonMin = Math.min(bounds.west, bounds.east);
-  const lonMax = Math.max(bounds.west, bounds.east);
-
-  const estCount = (step: number) => {
-    const nLat = Math.max(1, Math.floor((latMax - latMin) / step) + 1);
-    const nLon = Math.max(1, Math.floor((lonMax - lonMin) / step) + 1);
-    return nLat * nLon;
-  };
-
-  let step = stepDeg;
-  while (estCount(step) > maxPts && step < 6) step *= 1.5;
-
-  const lat0 = Math.floor(latMin / step) * step;
-  const lon0 = Math.floor(lonMin / step) * step;
-
-  for (let lat = lat0; lat <= latMax + 1e-9; lat += step) {
-    for (let lon = lon0; lon <= lonMax + 1e-9; lon += step) {
-      pts.push({ lat, lon });
-    }
-  }
-
-  return { pts, stepUsed: step };
+function fmtPct(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return `${Math.round(n)}%`;
 }
 
-/**
- * Open-Meteo multi-point chunking.
- * hourOffset is index into hourly arrays (0 = now, 24 ~ 24h)
- */
-async function fetchAstroInputsGrid(args: {
-  bounds: { west: number; east: number; south: number; north: number };
-  zoom: number;
-  hourOffset: number;
-  ttlMs?: number;
-}): Promise<{ inputs: AstroInputs[]; stepUsed: number }> {
-  const ttlMs = args.ttlMs ?? 8 * 60_000;
-
-  const stepDeg = chooseStepDeg(args.zoom);
-
-  // 🔧 reduce point count to avoid 429s
-  const maxPts = args.zoom >= 8 ? 220 : args.zoom >= 6 ? 160 : 120;
-  const { pts, stepUsed } = buildGrid(args.bounds, stepDeg, maxPts);
-
-  const cacheKey = boundsKey(args.bounds, args.zoom, stepUsed, args.hourOffset);
-  const now = Date.now();
-  const cached = ASTRO_GRID_CACHE.get(cacheKey);
-  if (cached && now - cached.fetchedAt < ttlMs) return { inputs: cached.inputs, stepUsed };
-
-  // ✅ Backoff gate
-  if (OM_BACKOFF.until > now) {
-    const waitS = Math.ceil((OM_BACKOFF.until - now) / 1000);
-    throw new Error(`Open-Meteo cooling down (${waitS}s) after ${OM_BACKOFF.lastStatus || 429}.`);
-  }
-
-  const hourly = [
-    'cloud_cover',
-    'cloud_cover_low',
-    'cloud_cover_mid',
-    'cloud_cover_high',
-    'visibility',
-    'wind_speed_10m',
-    'wind_gusts_10m',
-  ].join(',');
-
-  const chunkSize = 20;
-  const chunks: Array<Array<{ lat: number; lon: number }>> = [];
-  for (let i = 0; i < pts.length; i += chunkSize) chunks.push(pts.slice(i, i + chunkSize));
-
-  const results: AstroInputs[] = [];
-  const concurrency = 1;
-  let idx = 0;
-
-  async function runOneChunk(chunk: Array<{ lat: number; lon: number }>) {
-    const lats = chunk.map((p) => p.lat.toFixed(3)).join(',');
-    const lons = chunk.map((p) => p.lon.toFixed(3)).join(',');
-
-    const url =
-      `https://api.open-meteo.com/v1/forecast` +
-      `?latitude=${encodeURIComponent(lats)}` +
-      `&longitude=${encodeURIComponent(lons)}` +
-      `&hourly=${encodeURIComponent(hourly)}` +
-      `&timezone=auto`;
-
-    const res = await fetch(url);
-
-    if (!res.ok) {
-      if (res.status === 429 || res.status >= 500) {
-        OM_BACKOFF.lastStatus = res.status;
-
-        if (res.status === 429) OM_BACKOFF.strikes = Math.min(6, OM_BACKOFF.strikes + 1);
-        else OM_BACKOFF.strikes = Math.min(3, OM_BACKOFF.strikes + 1);
-
-        const retryAfter = Number(res.headers.get('retry-after') ?? '');
-        const baseMs =
-          Number.isFinite(retryAfter) && retryAfter > 0
-            ? retryAfter * 1000
-            : res.status === 429
-              ? 20_000
-              : 8_000;
-
-        const jitter = Math.round(Math.random() * 600);
-        const penaltyMs = baseMs * Math.pow(2, OM_BACKOFF.strikes - 1) + jitter;
-
-        OM_BACKOFF.until = Date.now() + Math.min(penaltyMs, 3 * 60_000);
-      }
-
-      throw new Error(`Open-Meteo astro grid failed: ${res.status}`);
-    }
-
-    // ✅ success: reset strikes
-    OM_BACKOFF.strikes = 0;
-
-    const json = await res.json();
-    const rows: any[] = Array.isArray(json) ? json : [json];
-
-    const hourIdx = clamp(Math.floor(args.hourOffset), 0, 23);
-
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const h = r?.hourly ?? {};
-
-      const pick = (name: string) => {
-        const arr = h?.[name];
-        const v = Array.isArray(arr) ? arr[hourIdx] : null;
-        const n = Number(v);
-        return Number.isFinite(n) ? n : null;
-      };
-
-      const lat = chunk[i]?.lat ?? Number(r?.latitude);
-      const lon = chunk[i]?.lon ?? Number(r?.longitude);
-
-      results.push({
-        lat,
-        lon,
-        cloudTotal: pick('cloud_cover'),
-        cloudLow: pick('cloud_cover_low'),
-        cloudMid: pick('cloud_cover_mid'),
-        cloudHigh: pick('cloud_cover_high'),
-        visibilityM: pick('visibility'),
-        wind: pick('wind_speed_10m'),
-        gust: pick('wind_gusts_10m'),
-      });
-    }
-  }
-
-  const workers = Array.from({ length: concurrency }, async () => {
-    while (idx < chunks.length) {
-      const myIdx = idx++;
-      await runOneChunk(chunks[myIdx]);
-    }
-  });
-
-  await Promise.all(workers);
-
-  ASTRO_GRID_CACHE.set(cacheKey, { fetchedAt: now, stepUsed, inputs: results });
-  return { inputs: results, stepUsed };
+function isSkyFetchScaleOK(region: Region) {
+  const lonSpan = Math.abs(region.longitudeDelta);
+  const latSpan = Math.abs(region.latitudeDelta);
+  return !(lonSpan >= 60 || latSpan >= 45);
 }
 
-function computeSkyScoreGrid(args: {
-  inputs: AstroInputs[];
-  darknessScoreAt?: (lat: number, lon: number) => number; // 0..1
-  smokePenaltyAt?: (lat: number, lon: number) => number; // 0..1
-}): SkyPoint[] {
-  const darknessScoreAt = args.darknessScoreAt ?? (() => 1);
-  const smokePenaltyAt = args.smokePenaltyAt ?? (() => 0);
-
-  const pct01 = (p: number | null) => (p == null ? null : clamp(p / 100, 0, 1));
-
-  return args.inputs.map((p) => {
-    const low = pct01(p.cloudLow) ?? 0;
-    const mid = pct01(p.cloudMid) ?? 0;
-    const high = pct01(p.cloudHigh) ?? 0;
-
-    // heavier penalty for high clouds
-    const cloudPenalty = clamp(0.3 * low + 0.55 * mid + 0.9 * high, 0, 1);
-
-    const visKm = p.visibilityM != null ? p.visibilityM / 1000 : null;
-    const visPenalty = visKm == null ? 0.18 : clamp((20 - clamp(visKm, 0, 20)) / 20, 0, 1) * 0.55;
-
-    const gust = p.gust ?? p.wind ?? 0;
-    const windPenalty = clamp((gust - 6) / 16, 0, 1) * 0.35;
-
-    const smokePenaltyV = clamp(smokePenaltyAt(p.lat, p.lon), 0, 1) * 0.55;
-
-    const weather01 = clamp(1 - (cloudPenalty * 0.85 + visPenalty + windPenalty + smokePenaltyV), 0, 1);
-    const darkness01 = clamp(darknessScoreAt(p.lat, p.lon), 0, 1);
-
-    const score01 = clamp(weather01 * darkness01, 0, 1);
-    const score = Math.round(score01 * 100);
-
-    return {
-      lat: p.lat,
-      lon: p.lon,
-      score,
-      score01,
-      parts: { weather: weather01, darkness: darkness01 },
-      inputs: p,
-    };
-  });
-}
-
-/* =============================================================================
- * SkyScore raster (Skia) — Android-safe: write to file://
- * ============================================================================= */
-
-type RasterCacheEntry = { madeAt: number; fileUri: string; width: number; height: number };
-const SKY_RASTER_CACHE = new Map<string, RasterCacheEntry>();
-
-// SkyScore overlay intent:
-// - 0 = very bad -> strong colored overlay
-// - 100 = very good -> almost no overlay (transparent)
-const SKY_STOPS: Array<{ s: number; rgba: [number, number, number, number] }> = [
-  { s: 0, rgba: [110, 30, 200, 185] },
-  { s: 15, rgba: [95, 45, 215, 170] },
-  { s: 30, rgba: [70, 85, 235, 150] },
-  { s: 45, rgba: [45, 135, 245, 125] },
-  { s: 60, rgba: [40, 185, 235, 95] },
-  { s: 72, rgba: [35, 215, 195, 70] },
-  { s: 82, rgba: [25, 235, 150, 50] },
-  { s: 92, rgba: [15, 245, 110, 30] },
-  { s: 100, rgba: [0, 0, 0, 0] },
-];
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
-
-function colorForScore(score: number): [number, number, number, number] {
-  const s = clamp(score, 0, 100);
-  for (let i = 0; i < SKY_STOPS.length - 1; i++) {
-    const a = SKY_STOPS[i];
-    const b = SKY_STOPS[i + 1];
-    if (s >= a.s && s <= b.s) {
-      const t = (s - a.s) / Math.max(1e-9, b.s - a.s);
-      return [
-        Math.round(lerp(a.rgba[0], b.rgba[0], t)),
-        Math.round(lerp(a.rgba[1], b.rgba[1], t)),
-        Math.round(lerp(a.rgba[2], b.rgba[2], t)),
-        Math.round(lerp(a.rgba[3], b.rgba[3], t)),
-      ];
-    }
-  }
-  return SKY_STOPS[SKY_STOPS.length - 1].rgba;
-}
-
-function buildGridLookup(points: SkyPoint[], stepUsed: number) {
-  const key = (lat: number, lon: number) => `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  const m = new Map<string, SkyPoint>();
-  for (const p of points) {
-    const lat = Math.round(p.lat / stepUsed) * stepUsed;
-    const lon = Math.round(p.lon / stepUsed) * stepUsed;
-    m.set(key(lat, lon), p);
-  }
-  return {
-    get(lat: number, lon: number) {
-      const la = Math.round(lat / stepUsed) * stepUsed;
-      const lo = Math.round(lon / stepUsed) * stepUsed;
-      return m.get(key(la, lo)) ?? null;
-    },
-  };
-}
-
-function sampleScoreBilinear(
-  lookup: ReturnType<typeof buildGridLookup>,
-  stepUsed: number,
-  lat: number,
-  lon: number
-): number {
-  const lat0 = Math.floor(lat / stepUsed) * stepUsed;
-  const lat1 = lat0 + stepUsed;
-  const lon0 = Math.floor(lon / stepUsed) * stepUsed;
-  const lon1 = lon0 + stepUsed;
-
-  const q11 = lookup.get(lat0, lon0);
-  const q12 = lookup.get(lat0, lon1);
-  const q21 = lookup.get(lat1, lon0);
-  const q22 = lookup.get(lat1, lon1);
-
-  if (!q11 || !q12 || !q21 || !q22) {
-    const cand = [q11, q12, q21, q22].filter(Boolean) as SkyPoint[];
-    if (!cand.length) return 100;
-    let best = cand[0].score;
-    let bestD = Number.POSITIVE_INFINITY;
-    for (const c of cand) {
-      const d = Math.abs(c.lat - lat) + Math.abs(c.lon - lon);
-      if (d < bestD) {
-        bestD = d;
-        best = c.score;
-      }
-    }
-    return best;
-  }
-
-  const t = clamp((lon - lon0) / stepUsed, 0, 1);
-  const u = clamp((lat - lat0) / stepUsed, 0, 1);
-
-  const s11 = q11.score;
-  const s12 = q12.score;
-  const s21 = q21.score;
-  const s22 = q22.score;
-
-  const s1 = lerp(s11, s12, t);
-  const s2 = lerp(s21, s22, t);
-  return lerp(s1, s2, u);
-}
-
-function tick(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0));
+function chooseSkyGridSize(zoom: number) {
+  if (zoom >= 9) return 320;
+  if (zoom >= 7) return 256;
+  return 224;
 }
 
 function hashKey(s: string) {
@@ -467,82 +133,7 @@ function hashKey(s: string) {
   return (h >>> 0).toString(16);
 }
 
-/** Android-safe: returns a file:// URI */
-async function makeSkyRasterFileUri(args: {
-  bounds: { west: number; east: number; south: number; north: number };
-  points: SkyPoint[];
-  stepUsed: number;
-  width: number;
-  height: number;
-  cacheKey: string;
-  ttlMs?: number;
-}): Promise<string> {
-  const ttlMs = args.ttlMs ?? 8 * 60_000;
-  const now = Date.now();
-
-  const cached = SKY_RASTER_CACHE.get(args.cacheKey);
-  if (cached && now - cached.madeAt < ttlMs) return cached.fileUri;
-
-  const { bounds, points, stepUsed, width, height } = args;
-  if (!points.length) return '';
-
-  const lookup = buildGridLookup(points, stepUsed);
-  const pixels = new Uint8Array(width * height * 4);
-
-  const lonSpan = bounds.east - bounds.west;
-  const latSpan = bounds.north - bounds.south;
-
-  for (let y = 0; y < height; y++) {
-    const v = y / Math.max(1, height - 1);
-    const lat = bounds.north - v * latSpan;
-
-    for (let x = 0; x < width; x++) {
-      const u = x / Math.max(1, width - 1);
-      const lon = bounds.west + u * lonSpan;
-
-      const score = sampleScoreBilinear(lookup, stepUsed, lat, lon);
-      const [r, g, b, a] = colorForScore(score);
-
-      const i = (y * width + x) * 4;
-      pixels[i + 0] = r;
-      pixels[i + 1] = g;
-      pixels[i + 2] = b;
-      pixels[i + 3] = a;
-    }
-
-    if (y % 10 === 0) await tick();
-  }
-
-  const data = Skia.Data.fromBytes(pixels);
-  const img = Skia.Image.MakeImage(
-    { width, height, alphaType: AlphaType.Premul, colorType: ColorType.RGBA_8888 },
-    data,
-    width * 4
-  );
-
-  if (!img) {
-    throw new Error(`Skia.Image.MakeImage returned null (len=${pixels.length} expected=${width * height * 4})`);
-  }
-
-  const pngBytes = img.encodeToBytes();
-  if (!pngBytes) return '';
-
-  const b64 = Buffer.from(pngBytes).toString('base64');
-  const cacheDir = (FileSystem as any).cacheDirectory ?? 'file:///data/user/0/host.exp.exponent/cache/';
-  const fileName = `sky_${hashKey(args.cacheKey)}_${width}x${height}.png`;
-  const fileUri = `${cacheDir}${fileName}`;
-
-  await FileSystem.writeAsStringAsync(fileUri, b64, { encoding: 'base64' as any });
-
-  SKY_RASTER_CACHE.set(args.cacheKey, { madeAt: now, fileUri, width, height });
-  return fileUri;
-}
-/* =============================================================================
- * Aurora + Go Oval
- * ============================================================================= */
-
 type OvationPoint = { lat: number; lon: number; prob: number; prob01: number };
-
 type OvationCache = { fetchedAt: number; points: OvationPoint[] };
 const OVATION_CACHE: { cur: OvationCache | null } = { cur: null };
 
@@ -551,7 +142,6 @@ async function fetchOvationPoints(ttlMs = 2 * 60_000): Promise<OvationPoint[]> {
   if (OVATION_CACHE.cur && now - OVATION_CACHE.cur.fetchedAt < ttlMs) return OVATION_CACHE.cur.points;
 
   const ptsRaw: OvationPointLib[] = await fetchOvationPointsLib({ ttlMs });
-
   const pts: OvationPoint[] = ptsRaw
     .filter((p) => p.prob >= 1)
     .map((p) => ({ lat: p.lat, lon: p.lon, prob: p.prob, prob01: clamp(p.prob / 100, 0, 1) }));
@@ -561,13 +151,11 @@ async function fetchOvationPoints(ttlMs = 2 * 60_000): Promise<OvationPoint[]> {
 }
 
 function zoomFromLonDelta(lonDelta: number) {
-  // Similar to approxZoomFromLongitudeDelta but returns float.
   const d = clamp(lonDelta, 0.05, 360);
   return Math.log2(360 / d);
 }
 
 function midpointLon(a: number, b: number) {
-  // midpoint on a circle (-180..180)
   const aR = (a * Math.PI) / 180;
   const bR = (b * Math.PI) / 180;
   const x = Math.cos(aR) + Math.cos(bR);
@@ -599,17 +187,12 @@ function tryGoOval(
 
   const maxLat = clampLat(b.maxLat + padLat);
   const minLat = clampLat(b.minLat - padLat);
-
-  // Keep lons normalized but allow a dateline-safe span calc
   const rawMaxLon = normLon(b.maxLon + padLon);
   const rawMinLon = normLon(b.minLon - padLon);
 
-  // Determine whether it crosses the dateline by looking at wrapped span
   const spanLon = lonSpanWrapped(rawMinLon, rawMaxLon);
   const crossesDateline = spanLon > 180;
 
-  // For fitBounds, MapLibre expects ne/sw in the same lon domain; dateline crossing is tricky.
-  // We'll prefer center+zoom approach when crossing the dateline.
   const durationMs = opts?.durationMs ?? 650;
   const padding = opts?.padding ?? 40;
 
@@ -620,15 +203,12 @@ function tryGoOval(
   const span = Math.max(spanLon, latSpan * 1.35);
   const targetZoom = clamp(zoomFromLonDelta(span) - 0.4, 2, 8);
 
-  // ✅ If not crossing the dateline and fitBounds exists, use it…
-  // BUT: still follow with a tiny setCamera "nudge" to avoid the sticky/locked feel on some builds.
   if (!crossesDateline && typeof cameraRef.current?.fitBounds === 'function') {
     const ne: [number, number] = [rawMaxLon, maxLat];
     const sw: [number, number] = [rawMinLon, minLat];
 
     cameraRef.current.fitBounds(ne, sw, padding, durationMs);
 
-    // "unlock" nudge: after fit completes, re-assert a normal camera state
     setTimeout(() => {
       cameraRef.current?.setCamera?.({
         centerCoordinate: [centerLon, centerLat],
@@ -636,11 +216,9 @@ function tryGoOval(
         animationDuration: 120,
       });
     }, durationMs + 40);
-
     return;
   }
 
-  // ✅ Fallback / dateline-safe path: center + zoom (no bounds => no lock feel)
   cameraRef.current?.setCamera?.({
     centerCoordinate: [centerLon, centerLat],
     zoomLevel: targetZoom,
@@ -648,25 +226,14 @@ function tryGoOval(
   });
 }
 
-
-/* =============================================================================
- * Timeline slider (0..24h)
- * ============================================================================= */
-
-function formatHourLabel(h: number) {
-  if (h === 0) return 'Now';
-  return `+${h}h`;
-}
-
 function TimelineSlider(props: { value: number; onChange: (v: number) => void }) {
   const v = clamp(Math.round(props.value), 0, 24);
-
   const trackWRef = useRef(1);
+
   const setFromX = (x: number) => {
     const w = Math.max(1, trackWRef.current);
     const pct = clamp(x / w, 0, 1);
-    const next = Math.round(pct * 24);
-    props.onChange(next);
+    props.onChange(Math.round(pct * 24));
   };
 
   const pan = useMemo(
@@ -755,91 +322,26 @@ function TimelineSlider(props: { value: number; onChange: (v: number) => void })
   );
 }
 
-
-
-/** ---------- Small UI helpers ---------- */
-
-function fmtPct(n: number | null | undefined) {
-  if (n == null || !Number.isFinite(n)) return '—';
-  return `${Math.round(n)}%`;
-}
-function fmtNum(n: number | null | undefined, digits = 0) {
-  if (n == null || !Number.isFinite(n)) return '—';
-  return digits === 0 ? `${Math.round(n)}` : n.toFixed(digits);
-}
-function aqLabel(aqPct: number) {
-  // matches your legend: Ex 85–100, Good 70–85, Fair 50–70, Poor 0–50
-  if (aqPct >= 85) return 'Ex';
-  if (aqPct >= 70) return 'Good';
-  if (aqPct >= 50) return 'Fair';
-  return 'Poor';
-}
-
-function CloudsBar(props: { low: number | null; mid: number | null; high: number | null }) {
-  const l = Math.max(0, Math.min(100, Number(props.low ?? 0)));
-  const m = Math.max(0, Math.min(100, Number(props.mid ?? 0)));
-  const h = Math.max(0, Math.min(100, Number(props.high ?? 0)));
-
-  // weighted “felt” cloudiness: high clouds count more
-  const felt = Math.max(0, Math.min(100, 0.3 * l + 0.55 * m + 0.9 * h));
-  const w = Math.round(felt);
-
-  return (
-    <View style={{ width: 58 }}>
-      <View
-        style={{
-          height: 6,
-          borderRadius: 999,
-          backgroundColor: 'rgba(255,255,255,0.10)',
-          overflow: 'hidden',
-        }}
-      >
-        <View style={{ width: `${w}%`, height: 6, backgroundColor: 'rgba(120,255,210,0.40)' }} />
-      </View>
-      <Text style={{ marginTop: 4, color: 'rgba(255,255,255,0.70)', fontWeight: '900', fontSize: 11 }}>
-        {w}%
-      </Text>
-    </View>
-  );
-}
-
-function isSkyFetchScaleOK(region: Region) {
-  // Tune these thresholds to taste.
-  // Goal: don't call Open-Meteo when user is basically viewing continents/world.
-  const lonSpan = Math.abs(region.longitudeDelta);
-  const latSpan = Math.abs(region.latitudeDelta);
-
-  if (lonSpan >= 60 || latSpan >= 45) return false; // <- key guard
-  return true;
-}
-
-/** ---------- Bottom sheet ---------- */
-
 type SheetSnap = 'collapsed' | 'half' | 'full';
 
 function BottomSheet(props: {
   visible: boolean;
   header?: React.ReactNode;
   children: React.ReactNode;
-  snap?: SheetSnap;            // optional controlled snap
+  snap?: SheetSnap;
   bottomDock?: number;
-  draggable?: boolean;         // drag handle only
-  onSnapChange?: (s: SheetSnap) => void; // optional callback
+  draggable?: boolean;
+  onSnapChange?: (s: SheetSnap) => void;
 }) {
   const { visible, children, header, bottomDock = 0, draggable = false } = props;
-
-  // If parent provides snap, treat it as controlled; else internal
   const isControlled = props.snap != null;
   const [snapInternal, setSnapInternal] = React.useState<SheetSnap>(props.snap ?? 'collapsed');
   const snap = (isControlled ? props.snap : snapInternal) as SheetSnap;
 
   const screenH = Dimensions.get('window').height;
-
-  // snap top positions (Y from top)
-  const fullY = 90; // leave room for HUD
+  const fullY = 90;
   const halfY = Math.round(screenH * 0.48);
-  const collapsedY = screenH - (110 + bottomDock); // ✅ dock near bottom/tabbar
-
+  const collapsedY = screenH - (126 + bottomDock);
   const yForSnap = (s: SheetSnap) => (s === 'full' ? fullY : s === 'half' ? halfY : collapsedY);
 
   const translateY = React.useRef(new Animated.Value(yForSnap(snap))).current;
@@ -862,22 +364,17 @@ function BottomSheet(props: {
     [isControlled, props, translateY]
   );
 
-  // when the sheet becomes visible, jump to current snap (no animation)
   React.useEffect(() => {
     if (!visible) return;
     const y = yForSnap(snap);
     lastY.current = y;
     translateY.setValue(y);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, snap]);
 
-  // when controlled snap changes, animate to it
   React.useEffect(() => {
-    if (!visible) return;
-    if (!isControlled) return;
+    if (!visible || !isControlled) return;
     setSnap(snap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap, visible, isControlled]);
+  }, [snap, visible, isControlled, setSnap]);
 
   const pickSnap = (y: number) => {
     const candidates: Array<{ s: SheetSnap; y: number }> = [
@@ -914,7 +411,6 @@ function BottomSheet(props: {
 
   return (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}>
-      {/* scrim: let touches pass through to map/buttons */}
       <View
         pointerEvents="none"
         style={{
@@ -937,11 +433,10 @@ function BottomSheet(props: {
         }}
       >
         <Glass style={{ paddingVertical: 10, paddingHorizontal: 12, borderRadius: 20 }}>
-          {/* grab handle (tap toggles; drag optional) */}
           <View style={{ alignItems: 'center', paddingBottom: 8 }} {...(pan ? pan.panHandlers : {})}>
             <Pressable
               onPress={() => setSnap(snap === 'collapsed' ? 'half' : 'collapsed')}
-              style={{ paddingVertical: 6, paddingHorizontal: 20 }}
+              style={{ paddingVertical: 6, paddingHorizontal: 20, alignItems: 'center' }}
               hitSlop={12}
             >
               <View
@@ -952,12 +447,26 @@ function BottomSheet(props: {
                   backgroundColor: 'rgba(255,255,255,0.18)',
                 }}
               />
+              <Text
+                style={{
+                  marginTop: 4,
+                  color: 'rgba(255,255,255,0.42)',
+                  fontSize: 10,
+                  fontWeight: '900',
+                  letterSpacing: 0.7,
+                }}
+              >
+                DETAILS
+              </Text>
             </Pressable>
           </View>
 
           {header ? <View style={{ marginBottom: 8 }}>{header}</View> : null}
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 14 }}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: bottomDock + 64 }}
+          >
             {children}
           </ScrollView>
         </Glass>
@@ -965,7 +474,6 @@ function BottomSheet(props: {
     </View>
   );
 }
-
 
 function Row(props: { label: string; value: string }) {
   return (
@@ -978,9 +486,157 @@ function Row(props: { label: string; value: string }) {
   );
 }
 
-/* =============================================================================
- * screen
- * ============================================================================= */
+function ToggleChip(props: { label: string; active?: boolean; onPress: () => void }) {
+  const active = !!props.active;
+  return (
+    <Pressable
+      onPress={props.onPress}
+      style={{
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.14)',
+        backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
+        opacity: active ? 1 : 0.9,
+      }}
+    >
+      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+type SkyGridPayload = {
+  ok: true;
+  bounds: { west: number; south: number; east: number; north: number };
+  zoom: number;
+  hourOffset: number;
+  sourceStepDeg: number;
+  denseStepDeg: number;
+  width: number;
+  height: number;
+  scores: number[];
+  fetchedAt: string;
+};
+
+type SkyInspect = {
+  lat: number;
+  lon: number;
+  skyScore: number;
+  auroraProb: number;
+  visibleProb: number;
+};
+
+const SKY_STOPS: Array<{ s: number; rgba: [number, number, number, number] }> = [
+  { s: 0, rgba: [110, 30, 200, 188] },
+  { s: 15, rgba: [95, 45, 215, 172] },
+  { s: 30, rgba: [70, 85, 235, 152] },
+  { s: 45, rgba: [45, 135, 245, 124] },
+  { s: 60, rgba: [40, 185, 235, 92] },
+  { s: 72, rgba: [35, 215, 195, 68] },
+  { s: 82, rgba: [25, 235, 150, 46] },
+  { s: 92, rgba: [15, 245, 110, 24] },
+  { s: 100, rgba: [0, 0, 0, 0] },
+];
+
+function colorForScore(score: number): [number, number, number, number] {
+  const s = clamp(score, 0, 100);
+  for (let i = 0; i < SKY_STOPS.length - 1; i++) {
+    const a = SKY_STOPS[i];
+    const b = SKY_STOPS[i + 1];
+    if (s >= a.s && s <= b.s) {
+      const t = (s - a.s) / Math.max(1e-9, b.s - a.s);
+      return [
+        Math.round(lerp(a.rgba[0], b.rgba[0], t)),
+        Math.round(lerp(a.rgba[1], b.rgba[1], t)),
+        Math.round(lerp(a.rgba[2], b.rgba[2], t)),
+        Math.round(lerp(a.rgba[3], b.rgba[3], t)),
+      ];
+    }
+  }
+  return SKY_STOPS[SKY_STOPS.length - 1].rgba;
+}
+
+function sampleGridScore(grid: SkyGridPayload, lat: number, lon: number) {
+  const { bounds, width, height, scores } = grid;
+  if (!scores.length || width < 2 || height < 2) return null;
+
+  const spanLon = Math.max(1e-9, bounds.east - bounds.west);
+  const spanLat = Math.max(1e-9, bounds.north - bounds.south);
+
+  const u = clamp((lon - bounds.west) / spanLon, 0, 1);
+  const v = clamp((bounds.north - lat) / spanLat, 0, 1);
+
+  const x = u * (width - 1);
+  const y = v * (height - 1);
+
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+
+  const tx = x - x0;
+  const ty = y - y0;
+
+  const idx = (xx: number, yy: number) => yy * width + xx;
+
+  const q11 = scores[idx(x0, y0)] ?? 100;
+  const q12 = scores[idx(x1, y0)] ?? q11;
+  const q21 = scores[idx(x0, y1)] ?? q11;
+  const q22 = scores[idx(x1, y1)] ?? q11;
+
+  const s1 = lerp(q11, q12, tx);
+  const s2 = lerp(q21, q22, tx);
+  return Math.round(lerp(s1, s2, ty));
+}
+
+async function makeSkyRasterFromGrid(grid: SkyGridPayload, cacheKey: string) {
+  const fileName = `skygrid_${hashKey(cacheKey)}_${grid.width}x${grid.height}.png`;
+  const cacheDir =
+    (FileSystem as any).cacheDirectory ?? 'file:///data/user/0/host.exp.exponent/cache/';
+  const fileUri = `${cacheDir}${fileName}`;
+
+  try {
+    const info = await FileSystem.getInfoAsync(fileUri);
+    if (info.exists) return fileUri;
+  } catch {}
+
+  const pixels = new Uint8Array(grid.width * grid.height * 4);
+
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const score = grid.scores[y * grid.width + x] ?? 100;
+      const [r, g, b, a] = colorForScore(score);
+      const i = (y * grid.width + x) * 4;
+      pixels[i + 0] = r;
+      pixels[i + 1] = g;
+      pixels[i + 2] = b;
+      pixels[i + 3] = a;
+    }
+  }
+
+  const data = Skia.Data.fromBytes(pixels);
+  const img = Skia.Image.MakeImage(
+    {
+      width: grid.width,
+      height: grid.height,
+      alphaType: AlphaType.Premul,
+      colorType: ColorType.RGBA_8888,
+    },
+    data,
+    grid.width * 4
+  );
+
+  if (!img) throw new Error('Skia image creation failed');
+
+  const pngBytes = img.encodeToBytes();
+  if (!pngBytes) throw new Error('Sky raster encode failed');
+
+  const b64 = Buffer.from(pngBytes).toString('base64');
+  await FileSystem.writeAsStringAsync(fileUri, b64, { encoding: 'base64' as any });
+
+  return fileUri;
+}
 
 export default function AstroMapScreen() {
   const insets = useSafeAreaInsets();
@@ -998,25 +654,21 @@ export default function AstroMapScreen() {
 
   const navKey = String(params?.nav ?? '0');
 
-  // 🔧 Fix “white screen on return”: force MapLibre/MapRenderer to remount on focus
   const [focusKey, setFocusKey] = useState(0);
   const [renderMap, setRenderMap] = useState(true);
   const [instanceKey, setInstanceKey] = useState(0);
 
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastFetchKeyRef = useRef<string>('');
-  const rasterJobIdRef = useRef(0);
-
-  // ✅ Programmatic camera move guard (fixes “Go” snap-back / lock feel)
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchSerialRef = useRef(0);
+  const lastSkyGridKeyRef = useRef<string>('');
   const isProgrammaticMoveRef = useRef(false);
   const pendingPostGoRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const lastFetchRegionRef = useRef<Region | null>(null);
+  const lastRegionRef = useRef<Region | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      // Force a clean native surface remount (fixes all-white return)
       setRenderMap(false);
 
       const t = setTimeout(() => {
@@ -1027,27 +679,23 @@ export default function AstroMapScreen() {
 
       return () => {
         clearTimeout(t);
-
         setRenderMap(false);
 
         if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-        regionDebounceRef.current = null;
-
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-
         if (pendingPostGoRefreshRef.current) clearTimeout(pendingPostGoRefreshRef.current);
-        pendingPostGoRefreshRef.current = null;
+        if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
 
-        rasterJobIdRef.current += 1;
-        lastFetchKeyRef.current = '';
-        lastFetchRegionRef.current = null;
+        regionDebounceRef.current = null;
+        retryTimerRef.current = null;
+        pendingPostGoRefreshRef.current = null;
+        loadingTimerRef.current = null;
+        lastSkyGridKeyRef.current = '';
       };
     }, [])
   );
 
   const screenKey = `${navKey}:${focusKey}`;
-
   const lat = toNum(params.lat);
   const lon = toNum(params.lon);
   const latDelta = toNum(params.latDelta);
@@ -1085,41 +733,20 @@ export default function AstroMapScreen() {
   }, [lat, lon, latDelta, lonDelta, zoomParam]);
 
   const initialRegionRef = useRef<Region | null>(null);
-  const lastRegionRef = useRef<Region | null>(null);
 
   useEffect(() => {
     initialRegionRef.current = initialRegion;
     lastRegionRef.current = initialRegion;
-    lastFetchKeyRef.current = '';
-    lastFetchRegionRef.current = null;
+    lastSkyGridKeyRef.current = '';
   }, [screenKey, initialRegion]);
-
-  function shouldRefetch(prev: Region | null, next: Region, stepDeg: number) {
-    if (!prev) return true;
-
-    const moveLat = Math.abs(next.latitude - prev.latitude);
-    const moveLon = Math.abs(next.longitude - prev.longitude);
-
-    const zoomPrev = approxZoomFromLongitudeDelta(prev.longitudeDelta);
-    const zoomNext = approxZoomFromLongitudeDelta(next.longitudeDelta);
-    const zoomChanged = Math.abs(zoomNext - zoomPrev) >= 0.75;
-
-    return moveLat > stepDeg * 0.6 || moveLon > stepDeg * 0.6 || zoomChanged;
-  }
 
   const cameraRef = useRef<any>(null);
 
   const [baseMapStyle, setBaseMapStyle] = useState<'dark' | 'light'>('dark');
-
-  // 🔧 Android: default OFF to avoid 429 spiral and heavy rendering
-  const [showSkyScore, setShowSkyScore] = useState(Platform.OS === 'ios');
+  const [showSkyScore, setShowSkyScore] = useState(true);
   const [showAuroraProb, setShowAuroraProb] = useState(true);
   const [showAuroraOval, setShowAuroraOval] = useState(true);
-
   const [hourOffset, setHourOffset] = useState(0);
-
-  const [skyPoints, setSkyPoints] = useState<SkyPoint[]>([]);
-  const [skyMeta, setSkyMeta] = useState<{ stepDeg: number; updatedAt: number; zoom: number } | null>(null);
 
   const [ovationPoints, setOvationPoints] = useState<OvationPoint[]>([]);
   const [ovationUpdatedAt, setOvationUpdatedAt] = useState<number | null>(null);
@@ -1129,8 +756,6 @@ export default function AstroMapScreen() {
 
   const [skyRasterUri, setSkyRasterUri] = useState<string>('');
   const [skyRasterBounds, setSkyRasterBounds] = useState<[number, number][]>([]);
-
-  // ✅ Coverage: store last successful bounds so we can render an outline and show “global planned” messaging
   const [coverageBounds, setCoverageBounds] = useState<{
     west: number;
     east: number;
@@ -1138,36 +763,19 @@ export default function AstroMapScreen() {
     north: number;
   } | null>(null);
 
+  const [skyGrid, setSkyGrid] = useState<SkyGridPayload | null>(null);
+
   const [uiCompact, setUiCompact] = useState(true);
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('collapsed');
 
-  const [inspect, setInspect] = useState<{
-    lat: number;
-    lon: number;
-    score: number;
-    weather01: number;
-    darkness01: number;
-    cloudL: number | null;
-    cloudM: number | null;
-    cloudH: number | null;
-    cloudT: number | null;
-    visKm: number | null;
-    wind: number | null;
-    gust: number | null;
-    auroraProb: number;
-    visibleProb: number;
-    bortle?: string;
-    sqm?: string;
-  } | null>(null);
+  const [inspect, setInspect] = useState<SkyInspect | null>(null);
 
   const canShowSky =
     showSkyScore &&
     typeof skyRasterUri === 'string' &&
     skyRasterUri.length > 0 &&
-    skyRasterBounds.length === 4 &&
-    (Platform.OS !== 'android' || /^file:\/\//.test(skyRasterUri) || /^https?:\/\//.test(skyRasterUri));
+    skyRasterBounds.length === 4;
 
-  // ✅ “Where am I” for MVP coverage messaging
   const currentCenter = useMemo(() => {
     const r = lastRegionRef.current ?? initialRegion;
     return { lat: r.latitude, lon: r.longitude, lonDelta: r.longitudeDelta, latDelta: r.latitudeDelta };
@@ -1179,7 +787,6 @@ export default function AstroMapScreen() {
   }, [coverageBounds, currentCenter.lat, currentCenter.lon]);
 
   const isZoomedWayOut = useMemo(() => {
-    // When viewing most of the world, we don’t want the SkyScore panel to feel “wrong”
     return currentCenter.lonDelta >= 120 || currentCenter.latDelta >= 80;
   }, [currentCenter.lonDelta, currentCenter.latDelta]);
 
@@ -1188,34 +795,8 @@ export default function AstroMapScreen() {
     return { type: 'FeatureCollection', features: [boundsToPolygonFeature(coverageBounds)] } as any;
   }, [coverageBounds]);
 
-  // ✅ Lookup used for bilinear score sampling (so inspect matches raster)
-  const skyLookup = useMemo(() => {
-    if (!skyMeta?.stepDeg || !skyPoints.length) return null;
-    return buildGridLookup(skyPoints, skyMeta.stepDeg);
-  }, [skyPoints, skyMeta?.stepDeg]);
-
   const computeInspectAt = useCallback(
-    (latQ: number, lonQ: number) => {
-      if (!skyPoints.length) return null;
-
-      // nearest point for inputs/details
-      let best: SkyPoint | null = null;
-      let bestD = Number.POSITIVE_INFINITY;
-      for (const p of skyPoints) {
-        const d = Math.abs(p.lat - latQ) + Math.abs(p.lon - lonQ);
-        if (d < bestD) {
-          bestD = d;
-          best = p;
-        }
-      }
-      if (!best) return null;
-
-      // ✅ score sampled to match overlay
-      let score = best.score;
-      if (skyLookup && skyMeta?.stepDeg) {
-        score = Math.round(sampleScoreBilinear(skyLookup, skyMeta.stepDeg, latQ, lonQ));
-      }
-
+    (latQ: number, lonQ: number, gridOverride?: SkyGridPayload | null) => {
       const auroraProb = ovationPoints.length
         ? sampleOvationAt(
             ovationPoints.map((p) => ({ lat: p.lat, lon: p.lon, prob: p.prob })),
@@ -1224,29 +805,19 @@ export default function AstroMapScreen() {
           )
         : 0;
 
-      const visibleProb = Math.round(clamp((score / 100) * (auroraProb / 100), 0, 1) * 100);
-      const visKm = best.inputs.visibilityM != null ? best.inputs.visibilityM / 1000 : null;
+      const gridToUse = gridOverride ?? skyGrid;
+      const skyScore = gridToUse ? sampleGridScore(gridToUse, latQ, lonQ) ?? 0 : 0;
+      const visibleProb = Math.round(clamp((skyScore / 100) * (auroraProb / 100), 0, 1) * 100);
 
       return {
         lat: latQ,
         lon: lonQ,
-        score,
-        weather01: best.parts.weather,
-        darkness01: best.parts.darkness,
-        cloudL: best.inputs.cloudLow,
-        cloudM: best.inputs.cloudMid,
-        cloudH: best.inputs.cloudHigh,
-        cloudT: best.inputs.cloudTotal,
-        visKm,
-        wind: best.inputs.wind,
-        gust: best.inputs.gust,
+        skyScore,
         auroraProb,
         visibleProb,
-        bortle: '—',
-        sqm: '—',
       };
     },
-    [skyPoints, skyLookup, skyMeta?.stepDeg, ovationPoints]
+    [ovationPoints, skyGrid]
   );
 
   const scheduleRetryAfterCooldown = useCallback(
@@ -1260,7 +831,7 @@ export default function AstroMapScreen() {
 
       retryTimerRef.current = setTimeout(() => {
         retryTimerRef.current = null;
-        lastFetchKeyRef.current = '';
+        lastSkyGridKeyRef.current = '';
         retryFn();
       }, waitMs);
     },
@@ -1269,14 +840,15 @@ export default function AstroMapScreen() {
 
   const refreshForRegion = useCallback(
     (region: Region) => {
-      // If Sky is toggled off, don't hit Open-Meteo at all.
       if (!showSkyScore) {
         setStatusLine('SkyScore off');
         setErrorLine(null);
+        return;
+      }
 
-        const center = { lat: region.latitude, lon: region.longitude };
-        const ins = computeInspectAt(center.lat, center.lon);
-        if (ins) setInspect(ins);
+      if (!isSkyFetchScaleOK(region)) {
+        setErrorLine(null);
+        setStatusLine('Zoom in to load SkyScore (world view is display-only).');
         return;
       }
 
@@ -1285,130 +857,134 @@ export default function AstroMapScreen() {
         ? (region as any).zoom
         : approxZoomFromLongitudeDelta(region.longitudeDelta);
 
-      const stepGuess = chooseStepDeg(zoom);
-
-      if (!shouldRefetch(lastFetchRegionRef.current, region, stepGuess)) return;
-
-      // ✅ Avoid Open-Meteo at world scale (prevents 429 + "fails at this level")
-      if (!isSkyFetchScaleOK(region)) {
+      if (!hasValidBounds(b)) {
         setErrorLine(null);
-        setStatusLine('Zoom in to load SkyScore (world view is display-only).');
-        // Do NOT clear lastFetchKeyRef here; we just don't want to fetch at this scale.
+        setStatusLine('Waiting for valid map bounds…');
         return;
       }
 
-      // ✅ cooldown gate BEFORE “consuming” region
       const now = Date.now();
       if (OM_BACKOFF.until > now) {
         const waitS = Math.ceil((OM_BACKOFF.until - now) / 1000);
         setStatusLine(`Open-Meteo cooling down (${waitS}s) after ${OM_BACKOFF.lastStatus || 429}.`);
-        lastFetchKeyRef.current = '';
+        lastSkyGridKeyRef.current = '';
 
         scheduleRetryAfterCooldown(() => {
-          // ✅ ensure retry is not blocked by previous region
-          lastFetchRegionRef.current = null;
           const r = lastRegionRef.current;
           if (r) refreshForRegion(r);
         });
-
         return;
       }
 
-      // ✅ only now do we “consume” the region
-      lastFetchRegionRef.current = { ...region };
-
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+
       regionDebounceRef.current = setTimeout(async () => {
-        const jobId = ++rasterJobIdRef.current;
+        const fetchId = ++fetchSerialRef.current;
 
         try {
           setErrorLine(null);
-          setStatusLine(`Updating SkyScore (${formatHourLabel(hourOffset)})…`);
 
-          const { inputs, stepUsed } = await fetchAstroInputsGrid({
-            bounds: b,
-            zoom,
-            hourOffset,
-            ttlMs: 8 * 60_000,
-          });
+          const size = chooseSkyGridSize(zoom);
 
-          const scores = computeSkyScoreGrid({
-            inputs,
-            darknessScoreAt: () => 1,
-            smokePenaltyAt: () => 0,
-          });
+          const key =
+            `${b.west.toFixed(3)}:${b.south.toFixed(3)}:${b.east.toFixed(3)}:${b.north.toFixed(3)}` +
+            `:z${Math.round(zoom * 10) / 10}:h${hourOffset}:s${size}`;
 
-          // ✅ commit the *actual* key (uses stepUsed)
-          const kActual = boundsKey(b, zoom, stepUsed, hourOffset);
-          lastFetchKeyRef.current = kActual;
+          if (key === lastSkyGridKeyRef.current) return;
+          lastSkyGridKeyRef.current = key;
 
-          setSkyPoints(scores);
-          setSkyMeta({ stepDeg: stepUsed, updatedAt: Date.now(), zoom });
+          if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+          loadingTimerRef.current = setTimeout(() => {
+            if (fetchId === fetchSerialRef.current && !skyRasterUri) {
+              setStatusLine(`Updating SkyScore (${formatHourLabel(hourOffset)})…`);
+            }
+          }, 180);
 
-          // ✅ Update coverage on success (this is what we outline in world view)
-          setCoverageBounds(b);
+          const skyUrl =
+            `${OMNIWX_API_BASE}/api/astro/skyscore-grid` +
+            `?west=${encodeURIComponent(String(b.west))}` +
+            `&south=${encodeURIComponent(String(b.south))}` +
+            `&east=${encodeURIComponent(String(b.east))}` +
+            `&north=${encodeURIComponent(String(b.north))}` +
+            `&zoom=${encodeURIComponent(String(zoom))}` +
+            `&hour=${encodeURIComponent(String(hourOffset))}` +
+            `&w=${encodeURIComponent(String(size))}` +
+            `&h=${encodeURIComponent(String(size))}`;
 
-          const coords: [number, number][] = [
-            [b.west, b.north],
-            [b.east, b.north],
-            [b.east, b.south],
-            [b.west, b.south],
-          ];
-          setSkyRasterBounds(coords);
+          const res = await fetch(skyUrl);
 
-          const targetW = clamp(Math.round(180 + zoom * 10), 180, 300);
-          const targetH = targetW;
+          if (!res.ok) {
+            if (res.status === 429 || res.status >= 500) {
+              OM_BACKOFF.lastStatus = res.status;
+              OM_BACKOFF.strikes = Math.min(6, OM_BACKOFF.strikes + 1);
+              const retryAfter = Number(res.headers.get('retry-after') ?? '');
+              const baseMs =
+                Number.isFinite(retryAfter) && retryAfter > 0
+                  ? retryAfter * 1000
+                  : res.status === 429
+                    ? 20000
+                    : 8000;
+              OM_BACKOFF.until = Date.now() + Math.min(baseMs * Math.pow(2, OM_BACKOFF.strikes - 1), 180000);
+            }
+            throw new Error(`SkyScore grid failed: ${res.status}`);
+          }
 
-          // ✅ raster cache key MUST use kActual, not a guess key
-          const rasterKey = `${kActual}:w${targetW}:h${targetH}`;
+          OM_BACKOFF.strikes = 0;
 
-          const uri = await makeSkyRasterFileUri({
-            bounds: b,
-            points: scores,
-            stepUsed,
-            width: targetW,
-            height: targetH,
-            cacheKey: rasterKey,
-            ttlMs: 8 * 60_000,
-          });
+          const grid = (await res.json()) as SkyGridPayload;
+          if (!grid?.ok || !Array.isArray(grid.scores)) {
+            throw new Error('SkyScore grid payload invalid');
+          }
 
-          if (jobId !== rasterJobIdRef.current) return;
-          if (uri) setSkyRasterUri(uri);
+          if (!hasValidBounds(grid.bounds)) {
+            throw new Error('SkyScore grid returned invalid bounds');
+          }
+
+          const localUri = await makeSkyRasterFromGrid(grid, key);
+
+          setSkyGrid(grid);
+          setSkyRasterBounds([
+            [grid.bounds.west, grid.bounds.north],
+            [grid.bounds.east, grid.bounds.north],
+            [grid.bounds.east, grid.bounds.south],
+            [grid.bounds.west, grid.bounds.south],
+          ]);
+          setCoverageBounds(grid.bounds);
+          setSkyRasterUri(localUri);
 
           const center = { lat: region.latitude, lon: region.longitude };
-          const ins = computeInspectAt(center.lat, center.lon);
+          const ins = computeInspectAt(center.lat, center.lon, grid);
           if (ins) setInspect(ins);
 
-          setStatusLine(`SkyScore ready · ${formatHourLabel(hourOffset)} · step ${stepUsed}° · zoom ~ ${Math.round(zoom)}`);
+          setStatusLine(`SkyScore ready · ${formatHourLabel(hourOffset)}`);
         } catch (e: any) {
-          if (jobId !== rasterJobIdRef.current) return;
-
           const msg = String(e?.message ?? e ?? 'SkyScore failed');
 
-          // ✅ if 429/cooldown, keep last good raster and schedule a retry
           if (/cooling down/i.test(msg) || /\b429\b/.test(msg) || /failed:\s*429\b/i.test(msg)) {
             setStatusLine(msg);
             setErrorLine(null);
-            lastFetchKeyRef.current = '';
+            lastSkyGridKeyRef.current = '';
 
             scheduleRetryAfterCooldown(() => {
-              lastFetchRegionRef.current = null; // ✅ critical
               const r = lastRegionRef.current;
               if (r) refreshForRegion(r);
             });
-
             return;
           }
 
           setErrorLine(msg);
-          lastFetchKeyRef.current = '';
+          lastSkyGridKeyRef.current = '';
+        } finally {
+          if (loadingTimerRef.current) {
+            clearTimeout(loadingTimerRef.current);
+            loadingTimerRef.current = null;
+          }
         }
-      }, 1100);
+      }, 250);
     },
-    [hourOffset, computeInspectAt, showSkyScore, scheduleRetryAfterCooldown]
+    [hourOffset, computeInspectAt, scheduleRetryAfterCooldown, showSkyScore, skyRasterUri]
   );
 
-  // OVATION pull
   useEffect(() => {
     let cancelled = false;
 
@@ -1434,19 +1010,18 @@ export default function AstroMapScreen() {
     };
   }, []);
 
-  // Recompute when timeline changes
   useEffect(() => {
     const r = lastRegionRef.current;
     if (r) {
-      lastFetchKeyRef.current = '';
-      lastFetchRegionRef.current = null;
+      lastSkyGridKeyRef.current = '';
       refreshForRegion(r);
     }
   }, [hourOffset, refreshForRegion]);
 
   const auroraContoursGeojson = useMemo(() => {
-    if (!showAuroraOval) return { type: 'FeatureCollection', features: [] } as any;
-    if (!ovationPoints.length) return { type: 'FeatureCollection', features: [] } as any;
+    if (!showAuroraOval || !ovationPoints.length) {
+      return { type: 'FeatureCollection', features: [] } as any;
+    }
 
     const filtered = ovationPoints.filter((p) => p.prob >= 3);
     if (filtered.length < 60) return { type: 'FeatureCollection', features: [] } as any;
@@ -1464,22 +1039,15 @@ export default function AstroMapScreen() {
     }
 
     try {
-      // Guard only while the animation is happening
       isProgrammaticMoveRef.current = true;
 
-      // Cancel any prior guard timer
       if (pendingPostGoRefreshRef.current) clearTimeout(pendingPostGoRefreshRef.current);
-
       tryGoOval(cameraRef, ovationPoints, 5);
 
-      // ✅ IMPORTANT: do NOT trigger refreshForRegion here.
       pendingPostGoRefreshRef.current = setTimeout(() => {
         isProgrammaticMoveRef.current = false;
         pendingPostGoRefreshRef.current = null;
-
-        // clear so next user pan triggers refresh naturally
-        lastFetchKeyRef.current = '';
-        lastFetchRegionRef.current = null;
+        lastSkyGridKeyRef.current = '';
       }, 700);
     } catch (e: any) {
       isProgrammaticMoveRef.current = false;
@@ -1493,16 +1061,11 @@ export default function AstroMapScreen() {
       lineColor: [
         'match',
         ['get', 'thr'],
-        50,
-        'rgba(210,255,240,0.95)',
-        35,
-        'rgba(170,255,220,0.90)',
-        20,
-        'rgba(120,255,200,0.80)',
-        10,
-        'rgba(90,230,190,0.70)',
-        5,
-        'rgba(70,200,170,0.55)',
+        50, 'rgba(210,255,240,0.95)',
+        35, 'rgba(170,255,220,0.90)',
+        20, 'rgba(120,255,200,0.80)',
+        10, 'rgba(90,230,190,0.70)',
+        5, 'rgba(70,200,170,0.55)',
         'rgba(70,200,170,0.50)',
       ],
       lineWidth: ['interpolate', ['linear'], ['zoom'], 1, 2.0, 4, 2.5, 7, 3.0, 10, 3.5, 12, 4.0],
@@ -1512,6 +1075,7 @@ export default function AstroMapScreen() {
 
   const TAB_BAR_HEIGHT = Platform.select({ ios: 60, android: 56, default: 56 }) as number;
   const aurVisLabel = inspect?.visibleProb == null ? '—' : `${Math.round(inspect.visibleProb)}%`;
+  const hudSkyLabel = inspect?.skyScore == null ? '—' : `${Math.round(inspect.skyScore)}`;
 
   if (!renderMap) {
     return <View style={{ flex: 1, backgroundColor: '#020617' }} />;
@@ -1536,50 +1100,47 @@ export default function AstroMapScreen() {
               return;
             }
 
-            // Always track last region so user can pan freely after “Go”
             lastRegionRef.current = r;
-
-            // During programmatic moves, DO NOT kick off refresh loops.
             if (isProgrammaticMoveRef.current) return;
-
             refreshForRegion(r);
-
-            const z = isFiniteNum((r as any).zoom) ? (r as any).zoom : approxZoomFromLongitudeDelta(r.longitudeDelta);
-            if (!skyMeta) setStatusLine(`Astro · zoom ~ ${Math.round(z)}`);
           }}
           radar={{ enabled: false, templates: [null, null, null], opacities: [0, 0, 0], tileMaxZ: 0, localImage: null }}
           overlays={[]}
         >
-          {/* Coverage outline */}
           {coverageGeojson ? (
             <MapLibreGL.ShapeSource id={`skyCoverage-src-${screenKey}`} shape={coverageGeojson as any}>
               <MapLibreGL.FillLayer
                 id={`skyCoverage-fill-${screenKey}`}
                 style={{
-                  fillOpacity: 0.05,
+                  fillOpacity: 0.02,
                   fillColor: 'rgba(90,230,190,1)',
                 }}
               />
               <MapLibreGL.LineLayer
                 id={`skyCoverage-line-${screenKey}`}
                 style={{
-                  lineColor: 'rgba(90,230,190,0.95)',
-                  lineWidth: 1.5,
-                  lineOpacity: 0.85,
+                  lineColor: 'rgba(90,230,190,0.50)',
+                  lineWidth: 1.0,
+                  lineOpacity: 0.45,
                   lineDasharray: [2, 2],
                 }}
               />
             </MapLibreGL.ShapeSource>
           ) : null}
 
-          {/* SkyScore raster overlay */}
           {canShowSky ? (
             <MapLibreGL.ImageSource id={`skyRaster-src-${screenKey}`} url={skyRasterUri} coordinates={skyRasterBounds as any}>
-              <MapLibreGL.RasterLayer id={`skyRaster-${screenKey}`} style={{ rasterOpacity: 0.6, rasterResampling: 'linear' }} />
+              <MapLibreGL.RasterLayer
+                id={`skyRaster-${screenKey}`}
+                style={{
+                  rasterOpacity: 0.68,
+                  rasterResampling: 'linear',
+                  rasterFadeDuration: 220,
+                }}
+              />
             </MapLibreGL.ImageSource>
           ) : null}
 
-          {/* Oval lines */}
           {showAuroraOval ? (
             <MapLibreGL.ShapeSource id={`auroraOval-src-${screenKey}`} shape={auroraContoursGeojson as any}>
               <MapLibreGL.LineLayer id={`auroraOval-line-${screenKey}`} style={auroraContourStyle as any} />
@@ -1587,7 +1148,6 @@ export default function AstroMapScreen() {
           ) : null}
         </MapRenderer>
 
-        {/* Crosshair */}
         <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0 }}>
           <View
             style={{
@@ -1613,10 +1173,14 @@ export default function AstroMapScreen() {
           />
         </View>
 
-        {/* ===== Overlay layer (top of map) ===== */}
         {(() => {
-          const HUD_MAX_W = 260; // must match Glass maxWidth
+          const HUD_MAX_W = 260;
           const GAP = 10;
+          const hudActivityColor = errorLine
+            ? 'rgba(255,120,120,0.9)'
+            : statusLine.toLowerCase().includes('loading') || statusLine.toLowerCase().includes('updating')
+              ? 'rgba(255,210,110,0.95)'
+              : 'rgba(120,255,190,0.95)';
 
           return (
             <View
@@ -1630,7 +1194,6 @@ export default function AstroMapScreen() {
                 elevation: 1000,
               }}
             >
-              {/* LEFT: sliver legend, constrained to NOT enter HUD lane */}
               {showSkyScore ? (
                 <View
                   pointerEvents="none"
@@ -1638,14 +1201,14 @@ export default function AstroMapScreen() {
                     position: 'absolute',
                     top: insets.top + 4,
                     left: 10,
-                    right: 10 + HUD_MAX_W + GAP, // ✅ never overlaps HUD
+                    right: 10 + HUD_MAX_W + GAP,
                     alignSelf: 'flex-start',
                   }}
                 >
                   <AtmosphericLegend compact sliver />
                 </View>
               ) : null}
-              {/* RIGHT: HUD (status only — controls live in bottom sheet) */}
+
               <View
                 pointerEvents="none"
                 style={{
@@ -1658,30 +1221,38 @@ export default function AstroMapScreen() {
                 <Glass
                   style={{
                     maxWidth: HUD_MAX_W,
-                    minWidth: 170,
+                    minWidth: 176,
                     paddingVertical: 6,
                     paddingHorizontal: 8,
                     borderRadius: 16,
                     backgroundColor: 'rgba(5,12,10,0.72)',
                   }}
                 >
-                  {/* header row (no buttons) */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <Text
-                      style={{
-                        color: 'rgba(210,255,235,0.95)',
-                        fontSize: 12,
-                        fontWeight: '900',
-                        letterSpacing: 0.8,
-                        fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
-                        flexShrink: 1,
-                      }}
-                      numberOfLines={1}
-                    >
-                      ASTRO
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 1 }}>
+                      <View
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          backgroundColor: hudActivityColor,
+                        }}
+                      />
+                      <Text
+                        style={{
+                          color: 'rgba(210,255,235,0.95)',
+                          fontSize: 12,
+                          fontWeight: '900',
+                          letterSpacing: 0.8,
+                          fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+                          flexShrink: 1,
+                        }}
+                        numberOfLines={1}
+                      >
+                        SKY {hudSkyLabel}
+                      </Text>
+                    </View>
 
-                    {/* optional: tiny badge to indicate mode */}
                     <Text
                       style={{
                         color: 'rgba(255,255,255,0.55)',
@@ -1695,42 +1266,23 @@ export default function AstroMapScreen() {
                     </Text>
                   </View>
 
-                  {/* status */}
                   <Text
                     style={{
                       marginTop: 6,
-                      color: 'rgba(170,255,210,0.85)',
+                      color: errorLine ? 'rgba(255,140,140,0.95)' : 'rgba(170,255,210,0.85)',
                       fontSize: 11,
                       lineHeight: 14,
                       fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
                     }}
-                    numberOfLines={3}
+                    numberOfLines={2}
                     ellipsizeMode="tail"
                   >
-                    {statusLine}
+                    {errorLine ? `! ${errorLine}` : `Aur Vis ${aurVisLabel} · ${statusLine}`}
                   </Text>
 
-                  {/* error */}
-                  {errorLine ? (
-                    <Text
-                      style={{
-                        marginTop: 4,
-                        color: 'rgba(255,140,140,0.95)',
-                        fontSize: 11,
-                        lineHeight: 14,
-                        fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
-                      }}
-                      numberOfLines={2}
-                      ellipsizeMode="tail"
-                    >
-                      ! {errorLine}
-                    </Text>
-                  ) : null}
-
-                  {/* meta */}
                   {!uiCompact ? (
                     <View style={{ marginTop: 6, gap: 2 }}>
-                      {skyMeta ? (
+                      {skyGrid ? (
                         <Text
                           style={{
                             color: 'rgba(255,255,255,0.55)',
@@ -1740,7 +1292,7 @@ export default function AstroMapScreen() {
                           }}
                           numberOfLines={1}
                         >
-                          Sky {Math.round((Date.now() - skyMeta.updatedAt) / 1000)}s · step {skyMeta.stepDeg}°
+                          Sky src {skyGrid.sourceStepDeg.toFixed(2)}° · grid {skyGrid.width}×{skyGrid.height}
                         </Text>
                       ) : null}
 
@@ -1761,12 +1313,10 @@ export default function AstroMapScreen() {
                   ) : null}
                 </Glass>
               </View>
-
             </View>
           );
         })()}
 
-        {/* Bottom sheet */}
         <BottomSheet
           visible
           snap={sheetSnap}
@@ -1776,7 +1326,7 @@ export default function AstroMapScreen() {
           header={
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ color: 'white', fontWeight: '900', fontSize: 16 }}>
-                Sky {inspect?.score ?? '—'} · Aur Vis {aurVisLabel}
+                Sky {inspect?.skyScore ?? '—'} · Aur Vis {aurVisLabel}
               </Text>
 
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -1836,7 +1386,7 @@ export default function AstroMapScreen() {
                 label="Sky"
                 active={showSkyScore}
                 onPress={() => {
-                  if (!showSkyScore) setShowSkyScore(true);
+                  setShowSkyScore((v) => !v);
                   setSheetSnap('half');
                 }}
               />
@@ -1852,33 +1402,17 @@ export default function AstroMapScreen() {
             <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginTop: 4 }} />
           </View>
 
-          {/* Content */}
           {inspect ? (
             <View style={{ gap: 10 }}>
-              <Row
-                label="Clouds L/M/H"
-                value={`${inspect.cloudL ?? '—'}% / ${inspect.cloudM ?? '—'}% / ${inspect.cloudH ?? '—'}% (T ${
-                  inspect.cloudT ?? '—'
-                }%)`}
-              />
-              <Row label="Visibility" value={inspect.visKm != null ? `${inspect.visKm.toFixed(0)} km` : '—'} />
-              <Row
-                label="Wind / Gust"
-                value={`${inspect.wind != null ? inspect.wind.toFixed(0) : '—'} / ${
-                  inspect.gust != null ? inspect.gust.toFixed(0) : '—'
-                } mph`}
-              />
-              <Row label="Aurora Prob" value={fmtPct(inspect.auroraProb)} />
+              <Row label="Sky Score" value={`${inspect.skyScore}`} />
               <Row label="Aurora Vis" value={fmtPct(inspect.visibleProb)} />
-              <Row label="Atmospheric Quality" value={`Ex · ${Math.round(inspect.weather01 * 100)}%`} />
-              <Row label="Darkness" value={`${Math.round(inspect.darkness01 * 100)}%`} />
+              {showAuroraProb ? <Row label="Aurora Prob" value={fmtPct(inspect.auroraProb)} /> : null}
               <Row label="Center" value={`${inspect.lat.toFixed(3)}, ${inspect.lon.toFixed(3)}`} />
             </View>
           ) : (
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontWeight: '800' }}>Move the map to load SkyScore.</Text>
           )}
 
-          {/* coverage hint */}
           {(!isInCoverage || isZoomedWayOut) && (
             <View style={{ marginTop: 12 }}>
               <Text style={{ color: 'rgba(255,255,255,0.85)', fontWeight: '900' }}>
@@ -1894,25 +1428,5 @@ export default function AstroMapScreen() {
         </BottomSheet>
       </View>
     </SafeAreaView>
-  );
-}
-
-function ToggleChip(props: { label: string; active?: boolean; onPress: () => void }) {
-  const active = !!props.active;
-  return (
-    <Pressable
-      onPress={props.onPress}
-      style={{
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.14)',
-        backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-        opacity: active ? 1 : 0.9,
-      }}
-    >
-      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.label}</Text>
-    </Pressable>
   );
 }

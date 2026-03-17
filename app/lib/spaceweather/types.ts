@@ -6,16 +6,16 @@ export type SolarWindSample = {
 };
 
 export type NoaaScaleItem = {
-  scale: number; // 0-5
-  text: string; // "none", "minor", ...
+  scale: number | null;
+  text?: string;
 };
 
 export type NoaaScalesNow = {
   dateStamp?: string;
   timeStamp?: string;
-  G: NoaaScaleItem;
-  R: NoaaScaleItem;
-  S: NoaaScaleItem;
+  G: NoaaScaleItem | null;
+  R: NoaaScaleItem | null;
+  S: NoaaScaleItem | null;
 };
 
 export type GoesXrayNow = {
@@ -58,18 +58,14 @@ export type SpaceWeatherExtremes = {
 export type SpaceWeatherSummary = {
   solarWindSpeed: number;
   solarWindDensity: number;
-  solarWindTemp: number; // K
+  solarWindTemp: number;
   kp: number;
   updatedAt: string;
   windHistory: SolarWindSample[];
 
-  // Optional extras (fail-soft)
   noaaScales?: NoaaScalesNow;
+  noaaScalesUpdatedAt?: string;
   goesXray?: GoesXrayNow;
-
-  // C) IMF coupling
   imf?: ImfNow;
-
-  // D) Radiation / protons
   protons?: ProtonNow;
 };

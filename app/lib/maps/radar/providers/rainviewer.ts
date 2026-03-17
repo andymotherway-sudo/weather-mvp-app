@@ -13,8 +13,11 @@ type RainViewerMapsResponse = {
   };
 };
 
-// RainViewer’s docs emphasize you should use {host} + {path} returned by the API. :contentReference[oaicite:4]{index=4}
+// RainViewer timeline endpoint
 const MAPS_JSON = 'https://api.rainviewer.com/public/maps.json';
+
+// ✅ Your Cloudflare Worker base (RainViewer tiles are proxied/cached here)
+const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 function toFrame(t: number): RadarFrame {
   return { t, iso: new Date(t * 1000).toISOString() };
@@ -29,11 +32,33 @@ export function createRainViewerProvider(opts?: {
   maxFrames?: number;
   // set to 10 for “free-safe”; can increase when you’re on a paid plan
   maxZoom?: number;
+
+  /**
+   * Optional override for the Worker base URL.
+   * Useful for dev/staging or if you change the hostname later.
+   */
+  workerBaseUrl?: string;
+
+  /**
+   * Tile params forwarded to the Worker (which forwards to RainViewer).
+   * Defaults match what you tested.
+   */
+  tileSize?: 256 | 512;
+  color?: string; // RainViewer palette id (often "2")
+  smooth?: 0 | 1;
+  snow?: 0 | 1;
 }): RadarProvider {
   const ttlMs = opts?.ttlMs ?? 60_000;
   const includeNowcast = opts?.includeNowcast ?? true;
   const maxFrames = opts?.maxFrames ?? 12;
   const maxZoom = opts?.maxZoom ?? 10;
+
+  const workerBaseUrl = (opts?.workerBaseUrl ?? OMNIWX_WORKER_BASE).replace(/\/+$/, '');
+
+  const tileSize: 256 | 512 = opts?.tileSize === 512 ? 512 : 256;
+  const color = (opts?.color ?? '2').trim() || '2';
+  const smooth: 0 | 1 = opts?.smooth === 0 ? 0 : 1;
+  const snow: 0 | 1 = opts?.snow === 0 ? 0 : 1;
 
   async function fetchFrames(): Promise<{ frames: RadarFrame[]; host: string; paths: string[] }> {
     const res = await fetch(MAPS_JSON);
@@ -61,21 +86,22 @@ export function createRainViewerProvider(opts?: {
     return { frames, host, paths };
   }
 
-  // We return a template with {z}/{x}/{y}.png and bake frame-specific path into it.
-  // RainViewer wants you to use host+path from maps.json. :contentReference[oaicite:5]{index=5}
-  function tileTemplateFor(host: string, path: string) {
-    // Typical path already includes /v2/radar/{time}/.../256/...png variants depending on API version.
-    // Docs say: use {host}{path}/256/{z}/{x}/{y}/...png (varies by path). :contentReference[oaicite:6]{index=6}
-    // The simplest is: `{host}${path}/256/{z}/{x}/{y}/2/1_1.png` in older examples,
-    // but we avoid hardcoding by using the path returned.
-    //
-    // Many returned paths end with something like "/256/{z}/{x}/{y}/2/1_1.png" already.
-    // If not, we append a common suffix.
-    const looksLikeTemplate = path.includes('{z}') && path.includes('{x}') && path.includes('{y}');
-    if (looksLikeTemplate) return `${host}${path}`;
+  /**
+   * ✅ Worker-based tile template:
+   *   /v1/radar/rainviewer/tiles/{z}/{x}/{y}.png?ts=UNIX&size=512&color=2&smooth=1&snow=1
+   *
+   * Note: We do NOT need RainViewer host/path here — the Worker fetches by ts.
+   * We still keep cachedHost/cachedPaths to preserve structure + debugging continuity.
+   */
+  function workerTileTemplateForTs(ts: number) {
+    const qs =
+      `ts=${encodeURIComponent(String(ts))}` +
+      `&size=${encodeURIComponent(String(tileSize))}` +
+      `&color=${encodeURIComponent(color)}` +
+      `&smooth=${encodeURIComponent(String(smooth))}` +
+      `&snow=${encodeURIComponent(String(snow))}`;
 
-    // Safe fallback: assume path is a prefix and append a typical tile suffix.
-    return `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+    return `${workerBaseUrl}/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png?${qs}`;
   }
 
   let cachedHost: string | null = null;
@@ -84,6 +110,7 @@ export function createRainViewerProvider(opts?: {
   return {
     id: 'rainviewer',
     maxZoom,
+
     getFrames: async () => {
       const now = Date.now();
       if (cachedFrames && now < cacheExpiresAt && cachedHost && cachedPaths) return cachedFrames;
@@ -96,6 +123,7 @@ export function createRainViewerProvider(opts?: {
 
       return frames;
     },
+
     getTileUrlTemplate: (frame) => {
       // Find matching path by frame time
       if (!cachedFrames || !cachedPaths || !cachedHost) {
@@ -104,11 +132,19 @@ export function createRainViewerProvider(opts?: {
         throw new Error('RainViewer provider not initialized: call getFrames() first');
       }
 
-    const idx = cachedFrames.findIndex((f) => f.t === frame.t);
-    const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
-    const path = cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
+      const idx = cachedFrames.findIndex((f) => f.t === frame.t);
+      const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
 
-      return tileTemplateFor(cachedHost, path);
+      // We keep this for parity / debugging even though the Worker doesn't need it
+      void cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
+
+      const ts = cachedFrames[Math.max(0, Math.min(cachedFrames.length - 1, safeIdx))]?.t;
+
+      if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) {
+        throw new Error('RainViewer frame missing valid unix timestamp');
+      }
+
+      return workerTileTemplateForTs(ts);
     },
   };
 }

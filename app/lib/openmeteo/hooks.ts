@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 export type ForecastHour = {
-  time: string; // ISO
+  time: string; // ISO / local wall-clock time for requested timezone
   tempF: number | null;
   apparentTempF?: number | null;
   dewPointF: number | null;
@@ -34,7 +34,6 @@ export type ForecastDay = {
   cloudCoverMaxPct: number | null;
   weatherCode?: number | null;
 
-  // ✅ NEW
   sunrise?: string | null; // ISO (timezone=auto)
   sunset?: string | null; // ISO (timezone=auto)
   daylightDurationSec?: number | null;
@@ -42,9 +41,14 @@ export type ForecastDay = {
   uvIndexMax?: number | null;
 };
 
-type ForecastData = {
+export type ForecastData = {
   daily: ForecastDay[];
   hourly: ForecastHour[];
+
+  // ✅ timezone metadata from Open-Meteo
+  timezone?: string | null;
+  timezoneAbbreviation?: string | null;
+  utcOffsetSeconds?: number | null;
 };
 
 type ForecastState = {
@@ -73,6 +77,10 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
+function safeStr(v: any): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
 function toKey3(x: number) {
   return Number(x.toFixed(3));
 }
@@ -88,8 +96,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
       };
     }
 
-    // ✅ No hard-coded coords. Numeric form is just "days",
-    // but without coords we will wait (and NOT fetch).
     return { lat: null, lon: null, days: typeof arg === 'number' ? arg : 3, pastDays: 0 };
   }, [arg]);
 
@@ -106,7 +112,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
 
   const load = useCallback(
     async (isRefresh: boolean) => {
-      // ✅ Gate: never fetch without coords
       if (latKey == null || lonKey == null) {
         setError(null);
         setData(null);
@@ -121,7 +126,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
 
         setError(null);
 
-        // ✅ Add sun + uv_index_max + durations
         const dailyVars = [
           'temperature_2m_max',
           'temperature_2m_min',
@@ -132,8 +136,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'cloudcover_mean',
           'dew_point_2m_max',
           'weather_code',
-
-          // NEW
           'sunrise',
           'sunset',
           'daylight_duration',
@@ -141,7 +143,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'uv_index_max',
         ].join(',');
 
-        // ✅ Add hourly UV + wind direction + apparent temp (safe additions)
         const hourlyVars = [
           'temperature_2m',
           'apparent_temperature',
@@ -155,8 +156,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'wind_gusts_10m',
           'winddirection_10m',
           'weather_code',
-
-          // NEW
           'uv_index',
         ].join(',');
 
@@ -176,6 +175,10 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         console.log('[net] status:', res.status, url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
+
+        const timezone = safeStr(json?.timezone);
+        const timezoneAbbreviation = safeStr(json?.timezone_abbreviation);
+        const utcOffsetSeconds = safeNum(json?.utc_offset_seconds);
 
         // ---- Hourly parse ----
         const h = json.hourly ?? {};
@@ -249,7 +252,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const windDirDom: any[] = d.winddirection_10m_dominant ?? [];
         const dWmo: any[] = d.weather_code ?? [];
 
-        // NEW daily arrays
         const dSunrise: any[] = d.sunrise ?? [];
         const dSunset: any[] = d.sunset ?? [];
         const dDaylight: any[] = d.daylight_duration ?? [];
@@ -270,7 +272,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           cloudCoverMinPct: typeof cloudMinByDate[date] === 'number' ? cloudMinByDate[date] : null,
           cloudCoverMaxPct: typeof cloudMaxByDate[date] === 'number' ? cloudMaxByDate[date] : null,
           weatherCode: safeNum(dWmo[idx]),
-
           sunrise: typeof dSunrise[idx] === 'string' ? dSunrise[idx] : null,
           sunset: typeof dSunset[idx] === 'string' ? dSunset[idx] : null,
           daylightDurationSec: safeNum(dDaylight[idx]),
@@ -278,7 +279,13 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           uvIndexMax: safeNum(dUvMax[idx]),
         }));
 
-        setData({ daily, hourly });
+        setData({
+          daily,
+          hourly,
+          timezone,
+          timezoneAbbreviation,
+          utcOffsetSeconds,
+        });
       } catch (err: any) {
         console.error('useOpenMeteoForecast error', err);
         setError(err?.message ?? 'Failed to load forecast');

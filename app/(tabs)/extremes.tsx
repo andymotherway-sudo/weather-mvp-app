@@ -47,6 +47,23 @@ function pushBuoyToNauticalMap(router: ReturnType<typeof useRouter>, b: BuoyDeta
   });
 }
 
+function pushLandExtremeToMap(
+  router: ReturnType<typeof useRouter>,
+  x: { lat: number; lon: number; name: string },
+) {
+  router.push({
+    pathname: '/maps',
+    params: {
+      lat: String(x.lat),
+      lon: String(x.lon),
+      label: x.name,
+      focus: 'once',
+      source: 'extremes',
+      targetType: 'land',
+    },
+  });
+}
+
 function formatLatLon(lat: number, lon: number) {
   const ns = lat >= 0 ? 'N' : 'S';
   const ew = lon >= 0 ? 'E' : 'W';
@@ -480,12 +497,7 @@ function LandSection({ title, subtitle, items }: { title: string; subtitle: stri
         items.map((x, idx) => (
           <Pressable
             key={x.id}
-            onPress={() =>
-              router.push({
-                pathname: '/maps',
-                params: { lat: String(x.lat), lon: String(x.lon), label: x.name },
-              })
-            }
+            onPress={() => pushLandExtremeToMap(router, x)}
             style={({ pressed }) => [styles.row, pressed && { backgroundColor: '#020617' }]}
           >
             <View style={styles.rankCircle}>
@@ -681,15 +693,7 @@ export default function ExtremesScreen() {
                 subtitle={land.heroes.hot ? land.heroes.hot.name : '—'}
                 primaryText={land.heroes.hot ? land.heroes.hot.valueText : '—'}
                 metaText={landHeroMeta}
-                onPress={
-                  land.heroes.hot
-                    ? () =>
-                        router.push({
-                          pathname: '/maps',
-                          params: { lat: String(land.heroes.hot!.lat), lon: String(land.heroes.hot!.lon), label: land.heroes.hot!.name },
-                        })
-                    : undefined
-                }
+                onPress={land.heroes.hot ? () => pushLandExtremeToMap(router, land.heroes.hot!) : undefined}
                 rightPill={
                   land.heroes.hot?.badge ? (
                     <View style={styles.badge}>
@@ -704,15 +708,7 @@ export default function ExtremesScreen() {
                 subtitle={land.heroes.cold ? land.heroes.cold.name : '—'}
                 primaryText={land.heroes.cold ? land.heroes.cold.valueText : '—'}
                 metaText={landHeroMeta}
-                onPress={
-                  land.heroes.cold
-                    ? () =>
-                        router.push({
-                          pathname: '/maps',
-                          params: { lat: String(land.heroes.cold!.lat), lon: String(land.heroes.cold!.lon), label: land.heroes.cold!.name },
-                        })
-                    : undefined
-                }
+                onPress={land.heroes.cold ? () => pushLandExtremeToMap(router, land.heroes.cold!) : undefined}
                 rightPill={
                   land.heroes.cold?.badge ? (
                     <View style={styles.badge}>
@@ -727,15 +723,7 @@ export default function ExtremesScreen() {
                 subtitle={land.heroes.wind ? land.heroes.wind.name : '—'}
                 primaryText={land.heroes.wind ? land.heroes.wind.valueText : '—'}
                 metaText={landHeroMeta}
-                onPress={
-                  land.heroes.wind
-                    ? () =>
-                        router.push({
-                          pathname: '/maps',
-                          params: { lat: String(land.heroes.wind!.lat), lon: String(land.heroes.wind!.lon), label: land.heroes.wind!.name },
-                        })
-                    : undefined
-                }
+                onPress={land.heroes.wind ? () => pushLandExtremeToMap(router, land.heroes.wind!) : undefined}
                 rightPill={
                   land.heroes.wind?.badge ? (
                     <View style={styles.badge}>

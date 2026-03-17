@@ -5,7 +5,8 @@
 // ✅ Tap buoy -> selection sheet -> Open -> /buoy/[buoyId]
 // ✅ Tap extreme beacon -> also selects + shows sheet
 // ✅ Can start where Weather Map was (lat/lon + deltas/zoom) when coming from Maps
-// ✅ HARD reset per navigation token (nav) to avoid “camera lock” / reused instance issues
+// ✅ One-time focus for extremes / buoy deep-links
+// ✅ No forced lock after initial jump
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -134,7 +135,8 @@ export default function NauticalMapTab() {
     latDelta,
     lonDelta,
     zoom,
-    nav,
+    focus,
+    source,
   } = useLocalSearchParams<{
     buoyId?: string;
     lat?: string;
@@ -142,16 +144,10 @@ export default function NauticalMapTab() {
     latDelta?: string;
     lonDelta?: string;
     zoom?: string;
-    nav?: string;
+    focus?: string;
+    source?: string;
   }>();
 
-  // ✅ force remount of the MapRenderer (breaks “camera lock” / stale map state)
-  const mapKey = useMemo(() => {
-    const k = String(nav ?? '');
-    return k ? `nautical:${k}` : 'nautical:static';
-  }, [nav]);
-
-  // ✅ derive initial region from params if present
   const initialRegionFromParams: Region = useMemo(() => {
     const latN = lat != null ? Number(lat) : NaN;
     const lonN = lon != null ? Number(lon) : NaN;
@@ -173,7 +169,6 @@ export default function NauticalMapTab() {
     };
   }, [lat, lon, latDelta, lonDelta, zoom]);
 
-  // Region is for bbox fetch + HUD only
   const [region, setRegion] = useState<Region>(initialRegionFromParams);
   useEffect(() => setRegion(initialRegionFromParams), [initialRegionFromParams]);
 
@@ -189,7 +184,6 @@ export default function NauticalMapTab() {
     mapZoomRef.current = mapZoom;
   }, [mapZoom]);
 
-  // Pulse for extreme beacons
   const [pulse, setPulse] = useState(0);
   useEffect(() => {
     let alive = true;
@@ -206,7 +200,6 @@ export default function NauticalMapTab() {
     };
   }, []);
 
-  // Zones
   const zoomedInEnough = mapZoom >= 4;
   const bbox = zoomedInEnough ? regionToBbox(region) : null;
   const { zones, loading: zonesLoading, error: zonesError } = useMarineZonesByBbox(bbox);
@@ -218,7 +211,6 @@ export default function NauticalMapTab() {
   const zonesById = useMemo(() => new Map(visibleZones.map((z) => [z.id, z])), [visibleZones]);
   const zonesFC = useMemo(() => zonesToFeatureCollection(visibleZones), [visibleZones]);
 
-  // Buoys
   const { data: buoyData, loading: buoysLoading, error: buoysError } = useAllBuoyDetails();
 
   const buoysAll: BuoyDetailData[] = useMemo(
@@ -243,7 +235,6 @@ export default function NauticalMapTab() {
   const buoysFC = useMemo(() => buoysToFeatureCollection(normalBuoys), [normalBuoys]);
   const extremeBuoysFC = useMemo(() => buoysToFeatureCollection(extremeBuoys), [extremeBuoys]);
 
-  // Selection
   const [selected, setSelected] = useState<
     | { kind: 'buoy'; id: string }
     | { kind: 'zone'; id: string }
@@ -253,27 +244,38 @@ export default function NauticalMapTab() {
   const selectedBuoy = selected?.kind === 'buoy' ? buoysById.get(selected.id) ?? null : null;
   const selectedZone = selected?.kind === 'zone' ? zonesById.get(selected.id) ?? null : null;
 
-  // ✅ if a buoy deep-link is provided, center once after buoy list loads
-  const didCenterBuoyRef = useRef<string>('');
+  const didApplyInitialFocusRef = useRef<string>('');
+
   useEffect(() => {
     if (!targetBuoyId || !buoysAll.length) return;
 
-    const key = `buoy:${String(targetBuoyId).toUpperCase()}@nav:${String(nav ?? '')}`;
-    if (didCenterBuoyRef.current === key) return;
-
-    const match = buoysAll.find((b) => b.id.toUpperCase() === String(targetBuoyId).toUpperCase());
+    const normalizedId = String(targetBuoyId).toUpperCase();
+    const match = buoysAll.find((b) => b.id.toUpperCase() === normalizedId);
     if (!match) return;
 
-    didCenterBuoyRef.current = key;
+    const focusKey = [
+      normalizedId,
+      String(focus ?? ''),
+      String(source ?? ''),
+      Number(match.lat).toFixed(4),
+      Number(match.lon).toFixed(4),
+    ].join('|');
+
+    if (didApplyInitialFocusRef.current === focusKey) return;
+    didApplyInitialFocusRef.current = focusKey;
+
     setSelected({ kind: 'buoy', id: match.id });
 
-    const z = 6;
-    cameraRef.current?.setCamera?.({
-      centerCoordinate: [match.lon, match.lat],
-      zoomLevel: z,
-      animationDuration: 650,
-    });
-  }, [targetBuoyId, buoysAll, nav]);
+    const shouldOneTimeFocus = String(focus ?? '') === 'once' || String(source ?? '') === 'extremes';
+
+    if (shouldOneTimeFocus) {
+      cameraRef.current?.setCamera?.({
+        centerCoordinate: [match.lon, match.lat],
+        zoomLevel: 6,
+        animationDuration: 650,
+      });
+    }
+  }, [targetBuoyId, buoysAll, focus, source]);
 
   const buoyColorExpr: any = [
     'match',
@@ -287,13 +289,18 @@ export default function NauticalMapTab() {
 
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+    };
+  }, []);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
       <View style={{ flex: 1 }}>
         <MapRenderer
-          key={mapKey}                 // ✅ hard remount per nav
           engine="maplibre"
-          initialRegion={initialRegionFromParams} // ✅ start where caller asked
+          initialRegion={initialRegionFromParams}
           mapStyle="dark"
           radar={{ enabled: false, templates: [], opacities: [], tileMaxZ: 7, localImage: null }}
           overlays={[]}
@@ -313,7 +320,6 @@ export default function NauticalMapTab() {
             }, 150);
           }}
         >
-          {/* ZONES */}
           <MapLibreGL.ShapeSource
             id="marine-zones"
             shape={zonesFC as any}
@@ -332,7 +338,6 @@ export default function NauticalMapTab() {
             />
           </MapLibreGL.ShapeSource>
 
-          {/* EXTREME BUOYS */}
           <MapLibreGL.ShapeSource
             id="extreme-buoys"
             shape={extremeBuoysFC as any}
@@ -364,7 +369,6 @@ export default function NauticalMapTab() {
             />
           </MapLibreGL.ShapeSource>
 
-          {/* NORMAL BUOYS (CLUSTERED) */}
           <MapLibreGL.ShapeSource
             id="buoys"
             shape={buoysFC as any}
@@ -440,7 +444,6 @@ export default function NauticalMapTab() {
           </MapLibreGL.ShapeSource>
         </MapRenderer>
 
-        {/* Top HUD */}
         <View style={{ position: 'absolute', top: 12, left: 12, right: 12 }}>
           <View
             style={{
@@ -480,7 +483,6 @@ export default function NauticalMapTab() {
           </View>
         </View>
 
-        {/* Selection sheet */}
         {selectedBuoy ? (
           <View
             style={{
