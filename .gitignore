@@ -29,3 +29,5 @@ omniwx-api/.expo/
 # Misc
 dist/
 build/
+.vscode/
+expo-env.d.ts
