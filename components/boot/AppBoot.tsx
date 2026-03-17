@@ -1,6 +1,8 @@
 // components/boot/AppBoot.tsx
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Redirect, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,15 +10,35 @@ type Props = {
   children: React.ReactNode;
 };
 
+const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
+const APP_BG = '#020617';
+
+function safeJsonParse<T>(s: string | null): T | null {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * AppBoot does two things:
- * 1) Holds the native splash until our "boot tasks" finish (fonts, small local hydration).
- * 2) Shows a short in-app brand overlay that fades away to reveal the app behind it.
+ * AppBoot:
+ * - Holds native splash until boot tasks finish (fast local hydration)
+ * - Shows a short in-app brand overlay fade
+ * - Hard-gates into onboarding if default city is missing (no tab flash)
+ *
+ * NOTE:
+ * - Do NOT set StatusBar here; control StatusBar once at app/_layout.tsx.
  */
 export function AppBoot({ children }: Props) {
   const insets = useSafeAreaInsets();
+  const segments = useSegments();
+
   const [bootReady, setBootReady] = useState(false);
   const [overlayDone, setOverlayDone] = useState(false);
+
+  const [hasDefaultCity, setHasDefaultCity] = useState<boolean | null>(null);
 
   const fade = useRef(new Animated.Value(1)).current;
   const scale = useRef(new Animated.Value(0.98)).current;
@@ -27,37 +49,32 @@ export function AppBoot({ children }: Props) {
     let cancelled = false;
 
     async function boot() {
-      // ✅ Keep native splash on-screen until we're ready to render.
       try {
         await SplashScreen.preventAutoHideAsync();
       } catch {
-        // ignore (can throw if already prevented)
+        // ignore
       }
 
-      // ---- Boot tasks (keep these FAST + deterministic) ----
-      // Example placeholders:
-      // - load fonts (recommended)
-      // - read a couple keys from AsyncStorage (settings, last place)
-      // - warm caches
-      //
-      // IMPORTANT: do NOT await network calls here.
+      const raw = await AsyncStorage.getItem(DEFAULT_CITY_KEY);
+      const city = safeJsonParse<any>(raw);
 
-      // If you already load fonts elsewhere, remove this and just await that.
-      // (Leaving as a no-op to keep this drop-in safe.)
-      await new Promise((r) => setTimeout(r, 50));
+      const ok = !!(
+        city &&
+        (city.lat != null || city.latitude != null) &&
+        (city.lon != null || city.longitude != null)
+      );
 
       if (cancelled) return;
 
+      setHasDefaultCity(ok);
       setBootReady(true);
 
-      // ✅ Release native splash once React is ready.
       try {
         await SplashScreen.hideAsync();
       } catch {
         // ignore
       }
 
-      // ---- In-app overlay animation (short + sweet) ----
       Animated.parallel([
         Animated.timing(fade, { toValue: 0, duration: 550, useNativeDriver: true }),
         Animated.spring(scale, { toValue: 1, friction: 10, tension: 90, useNativeDriver: true }),
@@ -67,16 +84,18 @@ export function AppBoot({ children }: Props) {
     }
 
     boot();
-
     return () => {
       cancelled = true;
     };
   }, [fade, scale]);
 
-  // We still render children immediately; the overlay sits on top.
+  const gatePending = hasDefaultCity == null;
+  const inOnboarding = String(segments?.[0] ?? '') === '(onboarding)';
+  const mustOnboard = bootReady && hasDefaultCity === false && !inOnboarding;
+
   return (
     <View style={styles.root}>
-      {children}
+      {mustOnboard ? <Redirect href={'/(onboarding)/default-city' as any} /> : children}
 
       {!overlayDone && (
         <Animated.View
@@ -95,40 +114,31 @@ export function AppBoot({ children }: Props) {
             <Image source={OMNI_MARK} style={styles.logo} resizeMode="contain" />
           </View>
 
-          {/* Optional: a subtle “aurora shimmer” bar without extra libs */}
           <View style={styles.glowRow}>
             <View style={styles.glow} />
           </View>
         </Animated.View>
       )}
 
-      {/* If you ever want to hard-gate rendering until bootReady, you can.
-          But this pattern keeps your UI mounted behind the overlay for a seamless reveal. */}
-      {!bootReady && <View style={styles.bootGuard} />}
+      {(!bootReady || gatePending) && <View style={styles.bootGuard} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: APP_BG },
   bootGuard: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#020617',
+    backgroundColor: APP_BG,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#020617',
+    backgroundColor: APP_BG,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  center: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logo: {
-    width: 120,
-    height: 120,
-  },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 120, height: 120 },
   glowRow: {
     position: 'absolute',
     bottom: 80,
@@ -139,8 +149,5 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     opacity: 0.55,
   },
-  glow: {
-    flex: 1,
-    backgroundColor: 'rgba(80,200,255,0.25)',
-  },
+  glow: { flex: 1, backgroundColor: 'rgba(80,200,255,0.25)' },
 });

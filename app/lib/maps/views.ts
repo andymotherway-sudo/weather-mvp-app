@@ -3,27 +3,29 @@ import type { MapViewDefinition } from './types';
 
 export const MAP_VIEWS: MapViewDefinition[] = [
   {
-    id: 'clouds',
-    title: 'Clouds',
-    presetEnabledLayers: ['sat.clouds'],
-    timelineDriverLayer: 'sat.clouds',
-  },
-
-  {
     id: 'radar',
     title: 'Radar',
     presetEnabledLayers: ['radar.reflectivity'],
+    presetLayerOpacity: {
+      'radar.reflectivity': 0.9,
+    },
     timelineDriverLayer: 'radar.reflectivity',
+  },
+
+  {
+    id: 'clouds',
+    title: 'Clouds',
+    presetEnabledLayers: ['sat.clouds'],
+    presetLayerOpacity: {
+      'sat.clouds': 0.85,
+    },
+    timelineDriverLayer: 'sat.clouds',
   },
 
   {
     id: 'wildfire',
     title: 'Wildfire',
-    presetEnabledLayers: [
-      'radar.reflectivity',
-      'wildfire.smoke',
-      'wildfire.perimeters',
-    ],
+    presetEnabledLayers: ['radar.reflectivity', 'wildfire.smoke', 'wildfire.perimeters'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.85,
       'wildfire.smoke': 0.55,
@@ -35,10 +37,12 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'storm',
     title: 'Storm',
-    presetEnabledLayers: [
-      'radar.reflectivity',
-      'lightning.strikes',
-    ],
+    presetEnabledLayers: ['radar.reflectivity', 'lightning.strikes', 'alerts.polygons'],
+    presetLayerOpacity: {
+      'radar.reflectivity': 0.9,
+      'lightning.strikes': 0.95,
+      'alerts.polygons': 0.95,
+    },
     timelineDriverLayer: 'radar.reflectivity',
   },
 
@@ -46,35 +50,24 @@ export const MAP_VIEWS: MapViewDefinition[] = [
     id: 'aviation',
     title: 'Aviation',
     presetEnabledLayers: ['radar.reflectivity'],
+    presetLayerOpacity: {
+      'radar.reflectivity': 0.88,
+    },
     timelineDriverLayer: 'radar.reflectivity',
   },
 
-  // ✅ NEW: “Mariner view” (safe today; later we’ll add offshore/high-seas polygons + buoy flashes)
   {
     id: 'mariner',
-    title: 'Mariner',
-    presetEnabledLayers: [
-      'radar.reflectivity',
-      'alerts.polygons',
-      // Optional: if you want clouds on by default in Mariner
-      // 'sat.clouds',
-    ],
-    presetLayerOpacity: {
-      'radar.reflectivity': 0.9,
-      'alerts.polygons': 0.95,
-      // 'sat.clouds': 0.7,
-    },
-    timelineDriverLayer: 'radar.reflectivity',
+    title: 'Marine',
+    presetEnabledLayers: [],
   },
 
-  // ✅ NEW: “Astronomer view” (clouds first, because it’s the #1 astro signal)
   {
     id: 'astronomer',
-    title: 'Astronomer',
-    presetEnabledLayers: ['sat.clouds'],
+    title: 'Astronomy',
+    presetEnabledLayers: ['astro.skyScore'],
     presetLayerOpacity: {
-      'sat.clouds': 0.85,
+      'astro.skyScore': 0.85,
     },
-    timelineDriverLayer: 'sat.clouds',
   },
 ];

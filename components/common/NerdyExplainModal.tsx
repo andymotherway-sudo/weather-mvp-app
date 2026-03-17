@@ -24,9 +24,12 @@ export function NerdyExplainModal({
 }) {
   if (!payload) return null;
 
-  const conf = payload.confidence ?? 'medium';
-  const confText =
-    conf === 'high' ? 'High confidence' : conf === 'low' ? 'Low confidence' : 'Medium confidence';
+  const hasOnlySummary =
+    !!payload.summary &&
+    !payload.whyItMatters &&
+    !payload.howComputed &&
+    !payload.confidence &&
+    !payload.learnTopicId;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -40,26 +43,36 @@ export function NerdyExplainModal({
           </Pressable>
         </View>
 
-        <Text style={styles.conf}>{confText}</Text>
-
         <ScrollView style={{ marginTop: 10 }} showsVerticalScrollIndicator={false}>
-          {payload.summary ? (
-            <Section label="What it means" text={payload.summary} />
-          ) : null}
+          {hasOnlySummary ? (
+            <Text style={styles.alertText}>
+              {payload.summary}
+            </Text>
+          ) : (
+            <>
+              {!!payload.confidence && (
+                <Text style={styles.conf}>
+                  {payload.confidence === 'high'
+                    ? 'High confidence'
+                    : payload.confidence === 'low'
+                      ? 'Low confidence'
+                      : 'Medium confidence'}
+                </Text>
+              )}
 
-          {payload.whyItMatters ? (
-            <Section label="Why it matters" text={payload.whyItMatters} />
-          ) : null}
+              {!!payload.summary && <Section label="What it means" text={payload.summary} />}
 
-          {payload.howComputed ? (
-            <Section label="How it’s computed" text={payload.howComputed} />
-          ) : null}
+              {!!payload.whyItMatters && <Section label="Why it matters" text={payload.whyItMatters} />}
 
-          {payload.learnTopicId && onLearnMore ? (
-            <Pressable onPress={() => onLearnMore(payload.learnTopicId!)} style={styles.learnBtn}>
-              <Text style={styles.learnBtnText}>Learn more</Text>
-            </Pressable>
-          ) : null}
+              {!!payload.howComputed && <Section label="How it’s computed" text={payload.howComputed} />}
+
+              {!!payload.learnTopicId && !!onLearnMore && (
+                <Pressable onPress={() => onLearnMore(payload.learnTopicId!)} style={styles.learnBtn}>
+                  <Text style={styles.learnBtnText}>Learn more</Text>
+                </Pressable>
+              )}
+            </>
+          )}
 
           <View style={{ height: 12 }} />
         </ScrollView>
@@ -107,6 +120,14 @@ const styles = StyleSheet.create({
 
   sectionLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '900', marginBottom: 6 },
   sectionText: { color: 'rgba(255,255,255,0.72)', fontSize: 13, lineHeight: 18 },
+
+  alertText: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '600',
+    paddingTop: 2,
+  },
 
   learnBtn: {
     marginTop: 6,

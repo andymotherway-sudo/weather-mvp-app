@@ -7,6 +7,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -22,6 +23,8 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
+
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 import { useAllBuoyDetails, useBuoyDetail } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
@@ -684,14 +687,28 @@ export default function NauticalScreen() {
           <RefreshControl refreshing={!!refreshing} onRefresh={refresh} />
         }
       >
-        {/* HEADER */}
+        {/* HEADER (standard OMNI) */}
         <View style={styles.headerBlock}>
-          <Text style={typography.title}>Nautical Wx</Text>
-          <Text style={styles.headerLine}>{headerLine}</Text>
-          <Text style={styles.headerSubLine}>{headerSubLine}</Text>
+          <View style={styles.brandRow}>
+            <View style={styles.brandLeft}>
+              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+              <View style={{ flex: 1 }}>
+                <View style={styles.domainPill}>
+                  <Text style={styles.domainPillText}>Nautical</Text>
+                </View>
 
-          <View style={styles.modeToggleRow}>
-            <ModeToggle mode={mode} onChange={setMode} />
+                <Text style={styles.headerLine} numberOfLines={1}>
+                  {headerLine}
+                </Text>
+                <Text style={styles.headerSubLine} numberOfLines={1}>
+                  {headerSubLine}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.brandRight}>
+              <ModeToggle mode={mode} onChange={setMode} />
+            </View>
           </View>
         </View>
 
@@ -1079,11 +1096,34 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 2,
   },
-  modeToggleRow: {
-    marginTop: theme.spacing.sm,
+    brandRow: {
+    flexDirection: 'row',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
   },
-  searchBox: {
+  brandLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  brandRight: { alignItems: 'flex-end', justifyContent: 'center' },
+
+  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+
+  domainPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginBottom: 6,
+  },
+  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
+    searchBox: {
     marginTop: theme.spacing.sm,
     borderRadius: theme.radius.lg,
     borderWidth: 1,

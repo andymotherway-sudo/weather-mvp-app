@@ -27,7 +27,7 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 
-const OMNI_MARK = require('../../assets/brand/omniwx-mark.png');
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 const OBS_START_ISO = '2025-01-01';
 const FORECAST_DAYS = 15;
@@ -239,15 +239,15 @@ export default function ClimoTab() {
   /* ---------- data hooks ---------- */
 
   const climo = useClimatologyNormals({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
-    enabled: hasPlace,
-    preferCache: true,
-  });
+  lat: coords?.lat ?? null,
+  lon: coords?.lon ?? null,
+  enabled: hasPlace && !!coords,
+  preferCache: true,
+  } as any);
 
   const forecast = useOpenMeteoForecast({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
+    lat: coords?.lat ?? null,
+    lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
   });
 
@@ -267,12 +267,12 @@ export default function ClimoTab() {
   }, [selectedIso, yesterdayIso, todayIso, lastForecastIso, forecastByDate]);
 
   const dayCtx = useOpenMeteoDayContext({
-    lat: coords?.lat ?? 0,
-    lon: coords?.lon ?? 0,
-    date: selectedIso,
-    enabled: hasPlace && mode === 'observed',
-    preferCache: true,
-  });
+  lat: coords?.lat ?? null,
+  lon: coords?.lon ?? null,
+  date: selectedIso,
+  enabled: hasPlace && !!coords && mode === 'observed',
+  preferCache: true,
+} as any);
 
   /* ---------- records (selectedIso drives selectedRecord) ---------- */
 
@@ -517,15 +517,16 @@ export default function ClimoTab() {
         ]}
         refreshControl={<RefreshControl refreshing={!!anyRefreshing} onRefresh={onRefreshAll} />}
       >
-        {/* Header */}
+        {/* Header (standard OMNI wordmark) */}
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.brandLeft}>
-              <Image source={OMNI_MARK} style={styles.brandMark} resizeMode="contain" />
+              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>
-                  ALMANAC<Text style={styles.sup}>wx</Text>
-                </Text>
+                <View style={styles.domainPill}>
+                  <Text style={styles.domainPillText}>Almanac</Text>
+                </View>
+
                 <Text style={styles.sub} numberOfLines={1}>
                   {locationLabel}
                 </Text>
@@ -743,46 +744,46 @@ export default function ClimoTab() {
                 }
 
                 if (selectedRecord) {
-                  const win = (records as any)?.years as { from: number; to: number } | null;
+                const win = (records as any)?.years as { from: number; to: number } | null;
 
-                  const hiYears = clampYearsToWindow(selectedRecord.recordHighYears, win);
-                  const loYears = clampYearsToWindow(selectedRecord.recordLowYears, win);
-                  const prYears = clampYearsToWindow(selectedRecord.recordPrecipYears, win);
+                const hiYears = clampYearsToWindow(selectedRecord.recordHighYears, win);
+                const loYears = clampYearsToWindow(selectedRecord.recordLowYears, win);
 
-                  return (
-                    <View style={styles.recordsBox}>
-                      <Text style={styles.recordsTitle}>{recordsTitle}</Text>
+                // --- precip: ALWAYS render the line, but only show years if precip > 0
+                const pRaw = selectedRecord.recordPrecipIn;
+                const p = typeof pRaw === 'number' && Number.isFinite(pRaw) ? pRaw : 0;
 
-                      {selectedRecord.recordHighF != null ? (
-                        <Text style={styles.recordsItem}>
-                          High {Math.round(selectedRecord.recordHighF)}°
-                          {hiYears.length ? ` (${hiYears.join(', ')})` : ''}
-                        </Text>
-                      ) : null}
+                const showPrecipYears = p > 0.0049;
+                const prYears = showPrecipYears
+                  ? clampYearsToWindow(selectedRecord.recordPrecipYears, win)
+                  : [];
 
-                      {selectedRecord.recordLowF != null ? (
-                        <Text style={styles.recordsItem}>
-                          Low {Math.round(selectedRecord.recordLowF)}°
-                          {loYears.length ? ` (${loYears.join(', ')})` : ''}
-                        </Text>
-                      ) : null}
+                return (
+                  <View style={styles.recordsBox}>
+                    <Text style={styles.recordsTitle}>{recordsTitle}</Text>
 
-                      {(() => {
-                        const p = selectedRecord.recordPrecipIn;
-                        // Hide “0.00″” (and basically-zero) precip records
-                        if (p == null) return null;
-                        if (!Number.isFinite(p)) return null;
-                        if (p <= 0.0049) return null; // anything that would display as 0.00"
+                    {selectedRecord.recordHighF != null ? (
+                      <Text style={styles.recordsItem}>
+                        High {Math.round(selectedRecord.recordHighF)}°
+                        {hiYears.length ? ` (${hiYears.join(', ')})` : ''}
+                      </Text>
+                    ) : null}
 
-                        return (
-                          <Text style={styles.recordsItem}>
-                            Rain {p.toFixed(2)}″{prYears.length ? ` (${prYears.join(', ')})` : ''}
-                          </Text>
-                        );
-                      })()}
-                    </View>
-                  );
-                }
+                    {selectedRecord.recordLowF != null ? (
+                      <Text style={styles.recordsItem}>
+                        Low {Math.round(selectedRecord.recordLowF)}°
+                        {loYears.length ? ` (${loYears.join(', ')})` : ''}
+                      </Text>
+                    ) : null}
+
+                    {/* ✅ ALWAYS present for layout stability */}
+                    <Text style={styles.recordsItem}>
+                      Rain {fmtRain(p)}
+                      {showPrecipYears && prYears.length ? ` (${prYears.join(', ')})` : ''}
+                    </Text>
+                  </View>
+                );
+              }
 
                 return (
                   <View style={styles.recordsBox}>
@@ -838,11 +839,10 @@ const styles = StyleSheet.create({
   header: { marginBottom: theme.spacing.md },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  brandMark: { width: 28, height: 28, borderRadius: 8 },
   brandRight: { flexDirection: 'row', alignItems: 'center' },
 
-  title: { ...typography.title },
-  sup: { fontSize: 11, fontWeight: '900', opacity: 0.85, lineHeight: 18 },
+  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+
   sub: { ...typography.subtitle, opacity: 0.75 },
 
   badge: {
@@ -868,6 +868,17 @@ const styles = StyleSheet.create({
   },
   metaPillLabel: { fontSize: 11, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
   metaPillValue: { marginTop: 4, fontSize: 13, color: 'white', fontWeight: '900' },
+
+  domainPill: {
+  alignSelf: 'flex-start',
+  paddingHorizontal: 10,
+  paddingVertical: 5,
+  borderRadius: 12,
+  backgroundColor: 'rgba(255,255,255,0.06)',
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.10)',
+  },
+  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
 
   helper: { marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,0.60)', fontWeight: '700' },
 
@@ -924,6 +935,9 @@ const styles = StyleSheet.create({
   },
   navBtnDisabled: { opacity: 0.35 },
   navBtnText: { color: 'white', fontWeight: '900', fontSize: 16 },
+  recordsBoxStable: {
+    minHeight: 74, // tunes to ~3 lines at your font sizes
+  },
 
   todayBtn: {
     flex: 1,

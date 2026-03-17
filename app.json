@@ -6,6 +6,14 @@
     "orientation": "portrait",
     "icon": "./assets/brand/icon-alpha.png",
     "scheme": "weatherapp",
+    "androidStatusBar": {
+      "backgroundColor": "#020617",
+      "barStyle": "light-content"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#020617",
+      "barStyle": "light-content"
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -55,6 +63,7 @@
     },
     "extra": {
       "router": {},
+      "apiBaseUrl": "https://omniwx-api.omniwx.workers.dev",
       "eas": {
         "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3"
       }

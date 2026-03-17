@@ -1,7 +1,8 @@
 // app/context/PlaceContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from './LocationContext';
+
+import { useLocations } from '../lib/locations/useLocations';
 
 export type Place = {
   id: string; // stable key: `${lat.toFixed(4)},${lon.toFixed(4)}`
@@ -21,6 +22,8 @@ type PlaceState = {
 };
 
 const KEY = 'omniwx.place.v2';
+const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
+
 const Ctx = createContext<PlaceState | null>(null);
 
 function makeId(lat: number, lon: number) {
@@ -43,49 +46,109 @@ function looksLikeOldDefault(p: any) {
     Math.abs(lat - 42.0526) < 0.08 &&
     Math.abs(lon - -124.2836) < 0.08;
 
-  // cover “BROOKINGS, OR”, “SELMA 4 W, OR”, etc.
   const nameHint =
-    name.includes('brookings') || name.includes('selma') || (name.includes(', or') && name.includes('us'));
+    name.includes('brookings') ||
+    name.includes('selma') ||
+    (name.includes(', or') && name.includes('us'));
 
   return nearBrookings || nameHint;
 }
 
+type DefaultCity = {
+  name: string;
+  lat: number;
+  lon: number;
+  country?: string;
+  admin1?: string;
+};
+
+function formatCity(c: DefaultCity) {
+  return `${c.name}${c.admin1 ? `, ${c.admin1}` : ''}${c.country ? `, ${c.country}` : ''}`;
+}
+
+function placeFromDefaultCity(c: DefaultCity): Place {
+  return {
+    id: makeId(c.lat, c.lon),
+    name: formatCity(c),
+    lat: c.lat,
+    lon: c.lon,
+    source: 'search',
+  };
+}
+
+// Best-effort permission probe (no prompting)
+async function getPermissionStatus(): Promise<'unknown' | 'granted' | 'denied'> {
+  try {
+    const res = await (await import('expo-location')).getForegroundPermissionsAsync();
+    if (res.status === 'granted') return 'granted';
+    if (res.status === 'denied') return 'denied';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 export function PlaceProvider({ children }: { children: React.ReactNode }) {
-  const { location, permission, loading: locationLoading } = useLocation();
+  const { active: locActive, activeCoords, refreshCurrentLocation, state: locState } = useLocations();
+
+  // We expose a similar “permission/loading” semantics that PlaceContext used before
+  const [permission, setPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const locationLoading = !locState.hydrated;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const p = await getPermissionStatus();
+      if (mounted) setPermission(p);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [active, setActiveState] = useState<Place | null>(null);
   const [favorites, setFavorites] = useState<Place[]>([]);
 
+  // ✅ Default City presence + value (hydrated on boot)
+  const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
+  const [defaultCityChecked, setDefaultCityChecked] = useState(false);
+
   // Track hydration so we don’t overwrite saved state at boot
   const hydratedRef = useRef(false);
 
-  // load persisted
+  // load persisted + default city
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(KEY);
+        const [rawPlace, rawDefault] = await Promise.all([
+          AsyncStorage.getItem(KEY),
+          AsyncStorage.getItem(DEFAULT_CITY_KEY),
+        ]);
+
         if (!mounted) return;
 
-        if (!raw) {
-          hydratedRef.current = true;
-          return;
+        // Default city
+        try {
+          setDefaultCity(rawDefault ? (JSON.parse(rawDefault) as DefaultCity) : null);
+        } catch {
+          setDefaultCity(null);
+        } finally {
+          setDefaultCityChecked(true);
         }
 
-        const parsed = JSON.parse(raw);
-        const persistedFavs = Array.isArray(parsed?.favorites) ? parsed.favorites : [];
+        // Place state
+        if (!rawPlace) return;
 
-        // Normalize persisted active
+        const parsed = JSON.parse(rawPlace);
+        const persistedFavs = Array.isArray(parsed?.favorites) ? parsed.favorites : [];
         const persistedActive = parsed?.active ?? null;
 
         setFavorites(persistedFavs);
 
-        // ✅ If the persisted active is the old Brookings default, drop it so GPS becomes the boot choice.
         if (persistedActive && looksLikeOldDefault(persistedActive)) {
           setActiveState(null);
-
-          // Also fix storage so we don’t keep seeing it
           await AsyncStorage.setItem(KEY, JSON.stringify({ active: null, favorites: persistedFavs }));
         } else {
           setActiveState(persistedActive);
@@ -94,6 +157,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
         // ignore
       } finally {
         hydratedRef.current = true;
+        setDefaultCityChecked(true);
       }
     })();
 
@@ -102,50 +166,62 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // persist
+  // persist place state
   useEffect(() => {
     if (!hydratedRef.current) return;
     AsyncStorage.setItem(KEY, JSON.stringify({ active, favorites })).catch(() => {});
   }, [active, favorites]);
 
-  // ✅ Default-to-GPS behavior:
-  // - Only after hydration
-  // - Only when permission granted and we have an actual GPS/last-known fix
-  // - Only when user has not already chosen an active place
+  // ✅ If no active place after hydration, prefer Default City (if set).
   useEffect(() => {
     if (!hydratedRef.current) return;
+    if (!defaultCityChecked) return;
+    if (active) return;
+
+    if (defaultCity) setActiveState(placeFromDefaultCity(defaultCity));
+  }, [active, defaultCity, defaultCityChecked]);
+
+  // ✅ Default-to-GPS behavior (ONLY after default city exists):
+  // - Only after hydration
+  // - Only when active location mode is "current"
+  // - Only when we actually have coords (last-known or fresh)
+  // - Only when user has not already chosen an active place
+  // - Only when onboarding requirement is satisfied (default city exists)
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (!defaultCityChecked) return;
+    if (!defaultCity) return;
     if (active) return;
     if (locationLoading) return;
-    if (permission !== 'granted') return;
-    if (!location) return;
+    if (locActive.kind !== 'current') return;
+    if (!activeCoords) return;
 
     setActiveState({
-      id: makeId(location.lat, location.lon),
+      id: makeId(activeCoords.lat, activeCoords.lon),
       name: 'Current Location',
-      lat: location.lat,
-      lon: location.lon,
+      lat: activeCoords.lat,
+      lon: activeCoords.lon,
       source: 'gps',
     });
-  }, [active, location, permission, locationLoading]);
+  }, [active, activeCoords, locActive.kind, locationLoading, defaultCity, defaultCityChecked]);
 
   // ✅ Keep "Current Location" truly current (but only if user is in GPS mode)
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (!active || active.source !== 'gps') return;
-    if (permission !== 'granted') return;
-    if (!location) return;
+    if (locActive.kind !== 'current') return;
+    if (!activeCoords) return;
 
-    // Avoid jitter updates that cause reload/abort storms
-    if (nearlySame(active.lat, location.lat) && nearlySame(active.lon, location.lon)) return;
+    if (nearlySame(active.lat, activeCoords.lat) && nearlySame(active.lon, activeCoords.lon)) return;
 
     setActiveState({
-      id: makeId(location.lat, location.lon),
+      id: makeId(activeCoords.lat, activeCoords.lon),
       name: 'Current Location',
-      lat: location.lat,
-      lon: location.lon,
+      lat: activeCoords.lat,
+      lon: activeCoords.lon,
       source: 'gps',
     });
-  }, [active, location, permission]);
+  }, [active, activeCoords, locActive.kind]);
 
   const setActive = (p: Place) => setActiveState(p);
 
@@ -165,19 +241,31 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const useGPS = () => {
-    if (permission !== 'granted' || !location) return;
-    setActiveState({
-      id: makeId(location.lat, location.lon),
-      name: 'Current Location',
-      lat: location.lat,
-      lon: location.lon,
-      source: 'gps',
-    });
+    // Request a refresh (best effort). We still set from activeCoords if available immediately.
+    // If permission is denied, do nothing (matches prior behavior).
+    if (permission !== 'granted') return;
+
+    // Make sure the locations store is in "current" mode (PlaceContext doesn't control it directly)
+    // If it's currently a favorite, we still avoid forcing; user can switch back to Current in UI.
+    if (locActive.kind !== 'current') return;
+
+    if (activeCoords) {
+      setActiveState({
+        id: makeId(activeCoords.lat, activeCoords.lon),
+        name: 'Current Location',
+        lat: activeCoords.lat,
+        lon: activeCoords.lon,
+        source: 'gps',
+      });
+    }
+
+    // Also kick a refresh so it's truly current.
+    refreshCurrentLocation();
   };
 
   const value = useMemo<PlaceState>(
     () => ({ active, favorites, setActive, addFavorite, removeFavorite, useGPS }),
-    [active, favorites]
+    [active, favorites],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

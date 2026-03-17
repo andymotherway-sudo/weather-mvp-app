@@ -1,4 +1,10 @@
 // components/land/HourlyRangeChart.tsx
+// ✅ drop-in replacement
+// ✅ fixes timezone bug for "now" / hourly slice selection
+// ✅ accepts optional timeZone prop from parent
+// ✅ keeps Daily-style ring around wind direction + moves it BELOW clouds band
+// ✅ removes duplicate Clouds readout row under the chart (keeps tile "Clouds %" + clouds band)
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
@@ -38,34 +44,86 @@ function pick(h: ForecastHour, key: string): number | null {
           (h as any).pop
       );
     case 'humidityPct':
-      return clampPct((h as any).humidityPct ?? (h as any).relativeHumidityPct ?? (h as any).rhPct ?? (h as any).rh);
+      return clampPct(
+        (h as any).humidityPct ??
+          (h as any).relativeHumidityPct ??
+          (h as any).rhPct ??
+          (h as any).rh
+      );
     case 'cloudCoverPct':
-      return clampPct((h as any).cloudCoverPct ?? (h as any).cloud_cover ?? (h as any).cloudcover ?? (h as any).clouds);
+      return clampPct(
+        (h as any).cloudCoverPct ??
+          (h as any).cloud_cover ??
+          (h as any).cloudcover ??
+          (h as any).clouds
+      );
     case 'windMph':
       return safeNum((h as any).windMph ?? (h as any).windSpeedMph ?? (h as any).windSpeed);
     case 'gustMph':
       return safeNum((h as any).gustMph ?? (h as any).windGustMph ?? (h as any).gust);
     case 'windDirDeg':
-      return safeNum((h as any).windDirDeg ?? (h as any).windDirectionDeg ?? (h as any).windDirection);
+      return safeNum(
+        (h as any).windDirDeg ??
+          (h as any).windDirectionDeg ??
+          (h as any).windDirection ??
+          (h as any).windDirDominantDeg
+      );
     default:
       return safeNum((h as any)[key]);
   }
 }
 
-function dayKeyFromIso(iso: string): string {
-  if (!iso) return '';
-  return iso.slice(0, 10);
-}
-function parseHourMinute(iso: string): { h: number; m: number } | null {
+function extractIsoWallClockParts(iso: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
   if (!iso) return null;
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  const m = iso.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
   if (!m) return null;
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return { h: hh, m: mm };
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (hour < 0 || hour > 23) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  return { year, month, day, hour, minute };
 }
+
+function dayKeyFromIso(iso: string): string {
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return '';
+  return `${String(p.year).padStart(4, '0')}-${String(p.month).padStart(2, '0')}-${String(
+    p.day
+  ).padStart(2, '0')}`;
+}
+
+function parseHourMinute(iso: string): { h: number; m: number } | null {
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return null;
+  return { h: p.hour, m: p.minute };
+}
+
 function hourLabel(iso: string) {
   const hm = parseHourMinute(iso);
   if (!hm) return '—';
@@ -73,10 +131,17 @@ function hourLabel(iso: string) {
   const ampm = hm.h >= 12 ? 'PM' : 'AM';
   return `${hour12}${ampm}`;
 }
+
 function dayLabelFromKey(dayKey: string) {
   if (!dayKey) return '';
-  const d = new Date(`${dayKey}T00:00:00Z`);
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(d);
+  const m = dayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  // Noon UTC avoids any weird midnight edge behavior.
+  const dt = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0, 0));
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(dt);
 }
 
 function buildPath(points: Array<{ x: number; y: number }>) {
@@ -89,39 +154,89 @@ function fmtInt(v: number | null, suffix = '') {
 }
 
 /**
- * Parse Open-Meteo "YYYY-MM-DDTHH:MM..." into LOCAL milliseconds safely across engines.
- * We intentionally ignore any timezone suffix and treat the hour/minute as local clock time.
+ * Convert wall-clock civil time to a sortable number without using the device timezone.
+ * This intentionally treats YYYY-MM-DD HH:mm as a plain local clock for comparison/grouping.
  */
+function wallClockToSortableMs(parts: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+}
+
 function parseLocalMsStrict(iso: string): number | null {
-  if (!iso) return null;
-  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (!m) return null;
+  const parts = extractIsoWallClockParts(iso);
+  if (!parts) return null;
+  return wallClockToSortableMs(parts);
+}
 
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const hh = Number(m[4]);
-  const mm = Number(m[5]);
+function getNowWallClockParts(timeZone?: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  if (timeZone) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
 
-  if (![y, mo, d, hh, mm].every(Number.isFinite)) return null;
+    const parts = fmt.formatToParts(new Date());
+    const pickPart = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
 
-  const dt = new Date(y, mo - 1, d, hh, mm, 0, 0);
-  const t = dt.getTime();
-  return Number.isFinite(t) ? t : null;
+    return {
+      year: pickPart('year'),
+      month: pickPart('month'),
+      day: pickPart('day'),
+      hour: pickPart('hour'),
+      minute: pickPart('minute'),
+    };
+  }
+
+  const now = new Date();
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  };
+}
+
+function getNowSortableMs(timeZone?: string) {
+  return wallClockToSortableMs(getNowWallClockParts(timeZone));
+}
+
+function degToCardinal(deg?: number | null) {
+  if (deg == null) return '—';
+  const d = ((deg % 360) + 360) % 360;
+  const idx = Math.round(d / 45) % 8;
+  return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][idx];
 }
 
 export function HourlyRangeChart({
   hours,
   maxHours = 72,
   units = 'us',
+  timeZone,
 }: {
   hours: ForecastHour[];
   maxHours?: number;
   units?: UnitSystem;
+  timeZone?: string;
 }) {
   const all = useMemo(() => hours ?? [], [hours]);
 
-  // ✅ Daily-style pill toggles (below chart)
   const [showTemp, setShowTemp] = useState(true);
   const [showDew, setShowDew] = useState(true);
   const [showRh, setShowRh] = useState(true);
@@ -129,18 +244,16 @@ export function HourlyRangeChart({
   const [showWind, setShowWind] = useState(true);
   const [showClouds, setShowClouds] = useState(true);
 
-  // bump once per minute so "NOW" stays correct without reload
   const [nowTick, setNowTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setNowTick((x) => x + 1), 60_000);
     return () => clearInterval(id);
   }, []);
 
-  // Find the forecast index closest to current time
   const nowIdx = useMemo(() => {
     if (!all.length) return 0;
 
-    const now = Date.now();
+    const nowSortable = getNowSortableMs(timeZone);
     let bestI = 0;
     let bestD = Number.POSITIVE_INFINITY;
 
@@ -148,16 +261,15 @@ export function HourlyRangeChart({
       const t = (all[i] as any).time as string;
       const ms = parseLocalMsStrict(t);
       if (ms == null) continue;
-      const d = Math.abs(ms - now);
+      const d = Math.abs(ms - nowSortable);
       if (d < bestD) {
         bestD = d;
         bestI = i;
       }
     }
     return bestI;
-  }, [all, nowTick]);
+  }, [all, nowTick, timeZone]);
 
-  // ✅ show the window starting at "now"
   const data = useMemo(() => {
     if (!all.length) return [];
     const start = clampInt(nowIdx, 0, Math.max(0, all.length - 1));
@@ -169,14 +281,12 @@ export function HourlyRangeChart({
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
 
-  // Reset selection to NOW when the window changes (unless user tapped)
   useEffect(() => {
     if (selFromTapRef.current) return;
     lastSelIdxRef.current = 0;
     setSelIdx(0);
   }, [nowIdx, data.length]);
 
-  // bump on tap
   const bump = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!selFromTapRef.current) return;
@@ -199,13 +309,15 @@ export function HourlyRangeChart({
     grid: 'rgba(255,255,255,0.08)',
     tickTemp: 'rgba(255,255,255,0.48)',
     tickPct: 'rgba(255,255,255,0.28)',
-
-    // clouds band (exactly like Daily)
     cloudFill: 'rgba(255,255,255,0.10)',
     cloudOn: 'rgba(255,255,255,0.55)',
+
+    ringStroke: 'rgba(255,255,255,0.22)',
+    ringFill: 'rgba(255,255,255,0.02)',
+    arrow: 'rgba(160,220,255,0.55)',
+    dirText: 'rgba(255,255,255,0.70)',
   };
 
-  // Geometry
   const TILE_W = 92;
   const GAP = 10;
   const padX = 14;
@@ -215,27 +327,29 @@ export function HourlyRangeChart({
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-  const H = 240;
+  const H = 270;
 
   const axisL = 28;
   const padL = padX + axisL;
   const padR = padX;
 
   const padT = 18;
-  const padB = 78;
+  const padB = 114;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  // Wind band
   const windBandH = 22;
   const windBandTop = padT + plotH + 10;
   const windBandBot = windBandTop + windBandH;
 
-  // ✅ Clouds band UNDER wind (same placement logic as Daily)
   const cloudBandH = 14;
   const cloudBandTop = windBandBot + 8;
   const cloudBandBot = cloudBandTop + cloudBandH;
+
+  const windDirRingR = 12;
+  const windDirCenterY = cloudBandBot + 28;
+  const windDirTextY = windDirCenterY - 16;
 
   const xForIdx = (i: number) => padL + i * step + TILE_W / 2;
 
@@ -372,11 +486,6 @@ export function HourlyRangeChart({
   const unitsLabel = units === 'metric' ? '°C' : '°F';
   const windLabel = units === 'metric' ? 'kph' : 'mph';
 
-  const selCloudPct = (() => {
-    const v = data[selIdx] ? pick(data[selIdx], 'cloudCoverPct') : null;
-    return typeof v === 'number' ? clamp(v, 0, 100) : null;
-  })();
-
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
@@ -403,7 +512,6 @@ export function HourlyRangeChart({
         }}
       >
         <View style={{ width: contentW - padX * 2 }}>
-          {/* tiles */}
           <View style={[s.strip, { width: contentW - padX * 2 }]}>
             {data.map((h: any, i) => {
               const t = h.time as string;
@@ -441,7 +549,9 @@ export function HourlyRangeChart({
                       isPad && { opacity: 0.35 },
                     ]}
                   >
-                    <Text style={s.hourTop}>{isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}</Text>
+                    <Text style={s.hourTop}>
+                      {isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}
+                    </Text>
 
                     <Text style={s.hilo}>{fmtInt(tempV, '°')}</Text>
 
@@ -467,7 +577,6 @@ export function HourlyRangeChart({
             })}
           </View>
 
-          {/* chart */}
           <View style={{ marginTop: 10 }}>
             <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
               {tempTickTemps.map((tk, idx) => (
@@ -480,7 +589,15 @@ export function HourlyRangeChart({
               ))}
 
               {pctTicks.map((tk, idx) => (
-                <SvgText key={`p-yt-${idx}`} x={pctAxisX} y={tk.y + 3} fontSize="9" fill={C.tickPct} fontWeight="900" textAnchor="start">
+                <SvgText
+                  key={`p-yt-${idx}`}
+                  x={pctAxisX}
+                  y={tk.y + 3}
+                  fontSize="9"
+                  fill={C.tickPct}
+                  fontWeight="900"
+                  textAnchor="start"
+                >
                   {`${tk.p}%`}
                 </SvgText>
               ))}
@@ -494,10 +611,8 @@ export function HourlyRangeChart({
                 %
               </SvgText>
 
-              {/* ✅ Cursor goes to the clouds band bottom (like Daily) */}
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
-              {/* precip */}
               {showPrecip && precipArea ? (
                 <>
                   <Path d={precipArea} fill={C.precipFill} stroke="none" />
@@ -505,12 +620,10 @@ export function HourlyRangeChart({
                 </>
               ) : null}
 
-              {/* lines */}
               {showTemp && pathT ? <Path d={pathT} stroke={C.temp} strokeWidth={3.2} fill="none" /> : null}
               {showDew && pathD ? <Path d={pathD} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" /> : null}
               {showRh && pathRh ? <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" /> : null}
 
-              {/* points */}
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
                 const tV = pick(h, tempKey);
@@ -530,10 +643,8 @@ export function HourlyRangeChart({
                 );
               })}
 
-              {/* Wind band */}
               <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.03)" />
 
-              {/* Wind/Gust bars */}
               {showWind
                 ? data.map((h: any, i) => {
                     const x = xForIdx(i);
@@ -552,34 +663,21 @@ export function HourlyRangeChart({
                     const wY = windBandBot - wH;
                     const gY = windBandBot - gH;
 
-                    const dir = pick(h, 'windDirDeg');
-
                     return (
                       <G key={`wb-${h.time}-${i}`}>
                         {wv != null ? <Rect x={wX} y={wY} width={barW} height={wH} rx={4} fill="rgba(255,255,255,0.30)" /> : null}
                         {gv != null ? <Rect x={gX} y={gY} width={barW} height={gH} rx={4} fill="rgba(255,255,255,0.70)" /> : null}
-
-                        {wv != null && typeof dir === 'number' ? (
-                          <G rotation={dir} origin={`${x} ${windBandTop - 2}`}>
-                            <Path
-                              d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
-                              fill="rgba(160,220,255,0.55)"
-                            />
-                          </G>
-                        ) : null}
                       </G>
                     );
                   })
                 : null}
 
-              {/* Wind/Gust label in left gutter */}
               <G>
                 <SvgText x={padX} y={windBandTop + windBandH / 2 + 4} fontSize="11" fontWeight="900" textAnchor="start" fill="rgba(255, 255, 255, 0.57)">
                   Wind/Gust
                 </SvgText>
               </G>
 
-              {/* ✅ Clouds band (EXACT Daily pattern) */}
               {showClouds ? (
                 <>
                   <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.03)" />
@@ -588,7 +686,7 @@ export function HourlyRangeChart({
                     const pct = pick(h, 'cloudCoverPct');
                     const p = typeof pct === 'number' ? clamp(pct, 0, 100) : null;
 
-                    const tileLeft = padL + i * step; // <-- hourly step
+                    const tileLeft = padL + i * step;
                     const innerPad = 10;
                     const barW = TILE_W - innerPad * 2;
                     const barH = 6;
@@ -605,7 +703,6 @@ export function HourlyRangeChart({
                     );
                   })}
 
-                  {/* Clouds label in left gutter */}
                   <G>
                     <SvgText x={padX} y={cloudBandTop + cloudBandH / 2 + 4} fontSize="11" fontWeight="700" textAnchor="start" fill="rgba(255,255,255,0.40)">
                       Clouds
@@ -614,7 +711,38 @@ export function HourlyRangeChart({
                 </>
               ) : null}
 
-              {/* bottom labels */}
+              {showWind
+                ? data.map((h: any, i) => {
+                    const x = xForIdx(i);
+                    const wv = pick(h, 'windMph');
+                    const dir = pick(h, 'windDirDeg');
+                    if (wv == null || typeof dir !== 'number') return null;
+
+                    const cardinal = degToCardinal(dir);
+
+                    return (
+                      <G key={`wd-${h.time}-${i}`}>
+                        <SvgText x={x} y={windDirTextY} fontSize="10" fontWeight="800" textAnchor="middle" fill={C.dirText}>
+                          {cardinal}
+                        </SvgText>
+
+                        <Circle
+                          cx={x}
+                          cy={windDirCenterY}
+                          r={windDirRingR}
+                          fill={C.ringFill}
+                          stroke={C.ringStroke}
+                          strokeWidth={1.2}
+                        />
+
+                        <G transform={`translate(${x} ${windDirCenterY}) rotate(${dir})`}>
+                          <Path d="M 0 -6 L -4 5 L 4 5 Z" fill={C.arrow} />
+                        </G>
+                      </G>
+                    );
+                  })
+                : null}
+
               {data.map((h: any, i) => {
                 if (!bottomLabelMask[i]) return null;
 
@@ -641,19 +769,10 @@ export function HourlyRangeChart({
                 );
               })}
             </Svg>
-
-            {/* (Optional) same readout pattern as Daily */}
-            {showClouds ? (
-              <View style={s.cloudReadoutRow}>
-                <Text style={s.cloudReadoutLabel}>Clouds</Text>
-                <Text style={s.cloudReadoutValue}>{selCloudPct == null ? '—' : `${Math.round(selCloudPct)}%`}</Text>
-              </View>
-            ) : null}
           </View>
         </View>
       </ScrollView>
 
-      {/* ✅ Daily-style pills BELOW chart */}
       <View style={s.pillSection}>
         <Text style={s.pillSectionTitle}>HOURLY FORECAST</Text>
 
@@ -665,11 +784,41 @@ export function HourlyRangeChart({
             on={showTemp}
             onPress={() => setShowTemp((v) => !v)}
           />
-          <ToggleLegendPill label="Dew pt" kind="dashed" color="rgba(80,220,140,0.90)" on={showDew} onPress={() => setShowDew((v) => !v)} />
-          <ToggleLegendPill label="RH" kind="dot" color="rgba(190,120,255,0.80)" on={showRh} onPress={() => setShowRh((v) => !v)} />
-          <ToggleLegendPill label="Precip" kind="mountain" color="rgba(90,200,250,0.45)" on={showPrecip} onPress={() => setShowPrecip((v) => !v)} />
-          <ToggleLegendPill label={`Wind/Gust (${windLabel})`} kind="bars2" color="rgba(255,255,255,0.70)" on={showWind} onPress={() => setShowWind((v) => !v)} />
-          <ToggleLegendPill label="Clouds" kind="area" color="rgba(255,255,255,0.55)" on={showClouds} onPress={() => setShowClouds((v) => !v)} />
+          <ToggleLegendPill
+            label="Dew pt"
+            kind="dashed"
+            color="rgba(80,220,140,0.90)"
+            on={showDew}
+            onPress={() => setShowDew((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="RH"
+            kind="dot"
+            color="rgba(190,120,255,0.80)"
+            on={showRh}
+            onPress={() => setShowRh((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="Precip"
+            kind="mountain"
+            color="rgba(90,200,250,0.45)"
+            on={showPrecip}
+            onPress={() => setShowPrecip((v) => !v)}
+          />
+          <ToggleLegendPill
+            label={`Wind/Gust (${windLabel})`}
+            kind="bars2"
+            color="rgba(255,255,255,0.70)"
+            on={showWind}
+            onPress={() => setShowWind((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="Clouds"
+            kind="area"
+            color="rgba(255,255,255,0.55)"
+            on={showClouds}
+            onPress={() => setShowClouds((v) => !v)}
+          />
         </View>
       </View>
     </View>
@@ -706,7 +855,13 @@ function ToggleLegendPill({
 
         {kind === 'bars2' ? (
           <View style={s.swBars2Wrap}>
-            <View style={[s.swBar2, s.swBar2Left, { backgroundColor: 'rgba(255,255,255,0.30)', opacity: on ? 0.75 : 0.2 }]} />
+            <View
+              style={[
+                s.swBar2,
+                s.swBar2Left,
+                { backgroundColor: 'rgba(255,255,255,0.30)', opacity: on ? 0.75 : 0.2 },
+              ]}
+            />
             <View style={[s.swBar2, s.swBar2Right, { backgroundColor: color, opacity: on ? 0.95 : 0.2 }]} />
           </View>
         ) : null}
@@ -772,7 +927,6 @@ const s = StyleSheet.create({
     lineHeight: 15,
   },
 
-  // ✅ Daily-style pill section container
   pillSection: {
     paddingHorizontal: 12,
     paddingTop: 10,
@@ -788,7 +942,6 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
 
-  // ✅ copy of Daily legend pill styles
   legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
   legPill: {
     flexDirection: 'row',
@@ -873,26 +1026,6 @@ const s = StyleSheet.create({
     borderTopWidth: 2,
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
-  },
-
-  cloudReadoutRow: {
-    marginTop: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cloudReadoutLabel: {
-    color: 'rgba(255,255,255,0.45)',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.3,
-  },
-  cloudReadoutValue: {
-    color: 'rgba(255,255,255,0.70)',
-    fontWeight: '900',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
   },
 });
 

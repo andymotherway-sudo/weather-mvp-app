@@ -1,8 +1,9 @@
 // components/land/HourlyCharts72h.tsx
-// ✅ Simplified: removes Range/Temp/Precip/Wind/Comfort/Sky/Fronts panels + tabs entirely
-// ✅ Keeps: midnight padding (no Date(iso) boundaries), Learn modal, Card header
-// ✅ Renders: only HourlyRangeChart (the “hourly work we did earlier”)
-// ✅ Adds: padding support for pressure + clouds (for new hourly enhancements)
+// ✅ Keeps: midnight padding (no device-local Date boundary bugs), Learn modal, Card header
+// ✅ Renders: HourlyRangeChart (which owns panels/graphs)
+// ✅ Adds: timeZone prop compatibility with updated hourly screen
+// ✅ Adds: safer ISO wall-clock parsing for padding
+// ❌ Removes: Expand button + expanded state + expanded prop spread
 
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,27 +16,67 @@ import { HourlyRangeChart } from './HourlyRangeChart';
 
 type UnitSystem = 'us' | 'metric';
 
-// Keep props shape compatible with existing callers.
-// - initialPanel is ignored now (safe drop-in)
 type Props = {
   hours: ForecastHour[];
   maxHours?: number; // default 72
   units?: UnitSystem;
   initialPanel?: any;
+  timeZone?: string;
 };
 
+function extractIsoWallClockParts(value: unknown): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
+  if (typeof value !== 'string') return null;
+
+  const s = value.trim();
+  if (!s) return null;
+
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
+  if (hour < 0 || hour > 23) return null;
+  if (minute < 0 || minute > 59) return null;
+
+  return { year, month, day, hour, minute };
+}
+
 function dayKeyFromIso(iso: string): string {
-  if (!iso) return '';
-  return iso.slice(0, 10);
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return '';
+  return `${String(p.year).padStart(4, '0')}-${String(p.month).padStart(2, '0')}-${String(
+    p.day
+  ).padStart(2, '0')}`;
 }
 
 function parseHourMinute(iso: string): { h: number; m: number } | null {
-  if (!iso || iso.length < 16) return null;
-  const h = Number(iso.slice(11, 13));
-  const m = Number(iso.slice(14, 16));
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return { h, m };
+  const p = extractIsoWallClockParts(iso);
+  if (!p) return null;
+  return { h: p.hour, m: p.minute };
 }
 
 function isoAtHour(dayKey: string, hour: number) {
@@ -62,8 +103,6 @@ function padSliceToMidnight(base: ForecastHour[]) {
       {
         time: isoAtHour(dk, h),
 
-        // Keep the same fields you were padding before, so downstream components
-        // don’t crash if they expect them to exist.
         tempF: null,
         dewPointF: null,
         humidityPct: null,
@@ -71,9 +110,9 @@ function padSliceToMidnight(base: ForecastHour[]) {
         precipProbPct: null,
         windMph: null,
         windGustMph: null,
-
-        // ✅ New: pressure support (you’re adding this to hourly now)
         pressureHpa: null,
+        windDirDominantDeg: null as any,
+        windDirDeg: null as any,
 
         ...({ __pad: true } as any),
       } as ForecastHour
@@ -83,9 +122,11 @@ function padSliceToMidnight(base: ForecastHour[]) {
   return { padded: [...pad, ...base], padCount };
 }
 
-export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
+export function HourlyCharts72h({
+  hours,
+  maxHours = 72,
+  units = 'us',
+}: Props) {
   const [learnVisible, setLearnVisible] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
@@ -103,33 +144,14 @@ export function HourlyCharts72h({ hours, maxHours = 72, units = 'us' }: Props) {
   return (
     <Card style={styles.card}>
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Hourly</Text>
-          <Text style={styles.subtitle}>
-            Temp + Dew + RH + POP + Wind/Gust + Clouds + Pressure
-          </Text>
-        </View>
+        <View style={{ flex: 1 }} />
 
         <Pressable onPress={() => openLearn('data-availability')} style={styles.learnBtn}>
-          <Text style={styles.learnText}>Learn</Text>
-        </Pressable>
-
-        {/* Keeping Expand because your UI already expects it.
-            If HourlyRangeChart ignores it, that’s fine.
-            If you later want it to actually change layout, we can wire it in. */}
-        <Pressable onPress={() => setExpanded((v) => !v)} style={styles.expandBtn}>
-          <Text style={styles.expandText}>{expanded ? 'Collapse' : 'Expand'}</Text>
+          <Text style={styles.learnText}>About this Data</Text>
         </Pressable>
       </View>
 
-      {/* ✅ Only chart we keep */}
-      <HourlyRangeChart
-        hours={slice}
-        maxHours={maxHours}
-        units={units}
-        // Optional: if your HourlyRangeChart supports this later, it won’t break now
-        {...({ expanded } as any)}
-      />
+      <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} />
 
       <LearnMoreModal
         visible={learnVisible}
@@ -162,16 +184,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   learnText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
-
-  expandBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  expandText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
 });
 
 export default HourlyCharts72h;

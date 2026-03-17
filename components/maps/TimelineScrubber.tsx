@@ -1,4 +1,3 @@
-// components/maps/TimelineScrubber.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
@@ -7,8 +6,6 @@ import {
   Text,
   View,
 } from 'react-native';
-
-import type { MapRuntimeState } from '../../app/lib/maps/types';
 
 type FrameLike = { iso: string };
 
@@ -33,10 +30,6 @@ function formatRadarFrameLabel(iso: string) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/**
- * Fallback frames (used when real scan times are missing).
- * These let the UI scrub while you’re still wiring scan-times.
- */
 function buildFallbackFrames(opts?: { minutesBack?: number; stepMinutes?: number }): FrameLike[] {
   const minutesBack = opts?.minutesBack ?? 120;
   const stepMinutes = opts?.stepMinutes ?? 5;
@@ -77,37 +70,30 @@ function Btn(props: { label: string; onPress: () => void; disabled?: boolean; ac
   );
 }
 
-/**
- * Drop-in replacement (keeps props/behavior):
- * - IMPORTANT: removes internal playback timer (maps.tsx is the source of truth for playback)
- * - Adds a scrub bar:
- *   - drag to preview frames locally (no dispatch spam)
- *   - commits ONE onSetFrame on release (reduces jitter)
- *   - pauses playback on touch (you already handle resume rules in maps.tsx)
- */
-export function TimelineScrubber(props: {
-  state: MapRuntimeState;
-  frames?: FrameLike[]; // real frames (preferred)
+type TimelineScrubberProps = {
+  frameIndex: number;
+  playing: boolean;
+  frames?: FrameLike[];
   onSetFrame: (frameIndex: number) => void;
   onSetPlaying: (playing: boolean) => void;
-}) {
-  const { state, frames = [], onSetFrame, onSetPlaying } = props;
+};
+
+function TimelineScrubberInner(props: TimelineScrubberProps) {
+  const { frameIndex, playing, frames = [], onSetFrame, onSetPlaying } = props;
 
   const fallbackFrames = useMemo(() => buildFallbackFrames({ minutesBack: 120, stepMinutes: 5 }), []);
   const effectiveFrames = frames.length ? frames : fallbackFrames;
 
   const frameCount = effectiveFrames.length;
-  const idx = clamp(state.radarTime.frameIndex, frameCount);
+  const idx = clamp(frameIndex, frameCount);
 
   const hasRealFrames = frames.length > 0;
   const playDisabled = frameCount < 2;
 
-  // ---- Scrub UI state ----
   const [trackW, setTrackW] = useState(0);
   const [scrubbing, setScrubbing] = useState(false);
   const [previewIdx, setPreviewIdx] = useState<number>(idx);
 
-  // Keep preview aligned when not scrubbing
   useEffect(() => {
     if (!scrubbing) setPreviewIdx(idx);
   }, [idx, scrubbing]);
@@ -136,7 +122,6 @@ export function TimelineScrubber(props: {
     onSetFrame(clamp(i, frameCount));
   };
 
-  // Pause once when scrubbing begins (prevents “fight” with playback loop)
   const pausedOnceRef = useRef(false);
 
   const panResponder = useMemo(() => {
@@ -149,8 +134,7 @@ export function TimelineScrubber(props: {
         setScrubbing(true);
         pausedOnceRef.current = false;
 
-        // Pause playback immediately on touch (maps.tsx still enforces local-mode rules)
-        if (state.radarTime.playing && !pausedOnceRef.current) {
+        if (playing && !pausedOnceRef.current) {
           pausedOnceRef.current = true;
           onSetPlaying(false);
         }
@@ -172,11 +156,8 @@ export function TimelineScrubber(props: {
         commitFrame(previewIdx);
       },
     });
-    // NOTE: include only stable deps (state.radarTime.playing is okay; it’s boolean)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frameCount, trackW, previewIdx, state.radarTime.playing, onSetPlaying, onSetFrame]);
+  }, [frameCount, trackW, previewIdx, playing, onSetPlaying, onSetFrame]);
 
-  // ---- Knob position ----
   const knobLeft = useMemo(() => {
     if (frameCount <= 1 || trackW <= 1) return 0;
     const t = idxForUI / (frameCount - 1);
@@ -184,22 +165,19 @@ export function TimelineScrubber(props: {
   }, [idxForUI, frameCount, trackW]);
 
   return (
-    // NOTE: parent overlay (Glass) provides padding/borders
     <View style={{ gap: 10 }}>
-      {/* Row 1: controls */}
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
         <Btn
-          label={state.radarTime.playing ? 'Pause' : 'Play'}
-          onPress={() => onSetPlaying(!state.radarTime.playing)}
+          label={playing ? 'Pause' : 'Play'}
+          onPress={() => onSetPlaying(!playing)}
           disabled={playDisabled}
-          active={state.radarTime.playing}
+          active={playing}
         />
 
         <Btn
           label="◀"
           onPress={() => {
-            // stepping should pause (prevents the playback loop from immediately advancing)
-            if (state.radarTime.playing) onSetPlaying(false);
+            if (playing) onSetPlaying(false);
             commitFrame(prevFrameIndex(idx, frameCount));
           }}
           disabled={frameCount < 1}
@@ -208,7 +186,7 @@ export function TimelineScrubber(props: {
         <Btn
           label="▶"
           onPress={() => {
-            if (state.radarTime.playing) onSetPlaying(false);
+            if (playing) onSetPlaying(false);
             commitFrame(nextFrameIndex(idx, frameCount));
           }}
           disabled={frameCount < 1}
@@ -223,7 +201,6 @@ export function TimelineScrubber(props: {
         </View>
       </View>
 
-      {/* Row 2: scrub bar */}
       <View
         onLayout={onTrackLayout}
         {...panResponder.panHandlers}
@@ -237,7 +214,6 @@ export function TimelineScrubber(props: {
           overflow: 'hidden',
         }}
       >
-        {/* “filled” portion */}
         <View
           style={{
             position: 'absolute',
@@ -249,7 +225,6 @@ export function TimelineScrubber(props: {
           }}
         />
 
-        {/* knob */}
         <View
           style={{
             position: 'absolute',
@@ -266,3 +241,5 @@ export function TimelineScrubber(props: {
     </View>
   );
 }
+
+export const TimelineScrubber = React.memo(TimelineScrubberInner);

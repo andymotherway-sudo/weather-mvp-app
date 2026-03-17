@@ -11,6 +11,8 @@ import type { LayerId, MapRuntimeState } from '../../app/lib/maps/types';
 
 type Props = {
   state: MapRuntimeState;
+  allowedGroups?: LayerGroupId[];
+
   onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
   onSetOpacity: (layerId: LayerId, opacity: number) => void;
 
@@ -20,6 +22,7 @@ type Props = {
 
 function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
   const steps = [0.25, 0.4, 0.55, 0.7, 0.85, 1] as const;
+
   return (
     <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
       {steps.map((s) => {
@@ -29,16 +32,17 @@ function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
             key={s}
             onPress={() => props.onChange(s)}
             style={{
-              paddingVertical: 6,
-              paddingHorizontal: 10,
+              paddingVertical: 7,
+              paddingHorizontal: 11,
               borderRadius: 999,
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
+              borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)',
               backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-              opacity: active ? 1 : 0.9,
             }}
           >
-            <Text style={{ fontWeight: '900', color: 'white' }}>{Math.round(s * 100)}%</Text>
+            <Text style={{ fontWeight: active ? '900' : '800', color: 'white' }}>
+              {Math.round(s * 100)}%
+            </Text>
           </Pressable>
         );
       })}
@@ -48,33 +52,85 @@ function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
 
 function resolveSupports(layer: LayerCatalogItem) {
   const supportsOpacity = layer.supportsOpacity ?? true;
-  const supportsLegend = layer.supportsLegend ?? (layer.legendKey ? true : false);
-  const supportsSourceInfo = layer.supportsSourceInfo ?? (layer.source ? true : false);
+  const supportsLegend = layer.supportsLegend ?? !!layer.legendKey;
+  const supportsSourceInfo = layer.supportsSourceInfo ?? !!layer.source;
   return { supportsOpacity, supportsLegend, supportsSourceInfo };
 }
 
 function emptyGrouped(): Record<LayerGroupId, LayerCatalogItem[]> {
   return {
     weather: [],
-    fire: [],
-    storm: [],
+    fireAir: [],
     aviation: [],
+    marine: [],
+    astronomy: [],
+    reference: [],
   };
 }
 
+function Switch(props: { enabled: boolean; onPress: () => void }) {
+  const { enabled, onPress } = props;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      style={{
+        width: 52,
+        height: 30,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: enabled ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.14)',
+        backgroundColor: enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+        alignItems: enabled ? 'flex-end' : 'flex-start',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.18)',
+          backgroundColor: enabled ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
+        }}
+      />
+    </Pressable>
+  );
+}
+
+function ActionPill(props: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      style={{
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.14)',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+      }}
+    >
+      <Text style={{ fontWeight: '900', color: 'white' }}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
 export function LayerSheet(props: Props) {
-  // IMPORTANT: Hooks must run unconditionally on every render.
   const state = props?.state;
   const isNerdy = !!state?.nerdy;
 
   const [expanded, setExpanded] = useState<Partial<Record<LayerId, boolean>>>({});
 
   const grouped = useMemo(() => {
-    // If state isn't ready yet, return an empty grouping; UI can show a loading state below.
     if (!state) return emptyGrouped();
 
-    const visible = LAYER_CATALOG.filter((l) => {
-      if (l.visibility === 'nerdy') return isNerdy;
+    const visible = LAYER_CATALOG.filter((layer) => {
+      if (layer.visibility === 'nerdy' && !isNerdy) return false;
+      if (props.allowedGroups?.length && !props.allowedGroups.includes(layer.group)) return false;
       return true;
     });
 
@@ -89,11 +145,17 @@ export function LayerSheet(props: Props) {
     });
 
     return map;
-  }, [state, isNerdy]);
+  }, [state, isNerdy, props.allowedGroups]);
 
-  const toggleExpanded = (id: LayerId) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const visibleGroupOrder = useMemo(() => {
+    if (!props.allowedGroups?.length) return LAYER_GROUPS;
+    return LAYER_GROUPS.filter((g) => props.allowedGroups?.includes(g.id));
+  }, [props.allowedGroups]);
 
-  // Now that hooks have run, it's safe to early-return.
+  const toggleExpanded = (id: LayerId) => {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   if (!state) {
     return (
       <View style={{ padding: 12 }}>
@@ -104,28 +166,33 @@ export function LayerSheet(props: Props) {
   }
 
   return (
-    <View style={{ padding: 12, gap: 14 }}>
-      {LAYER_GROUPS.map((g) => {
-        const items = grouped[g.id] ?? [];
+    <View style={{ paddingHorizontal: 2, paddingTop: 2, paddingBottom: 6, gap: 16 }}>
+      {visibleGroupOrder.map((group) => {
+        const items = grouped[group.id] ?? [];
         if (!items.length) return null;
 
         return (
-          <View key={g.id} style={{ gap: 10 }}>
-            <Text style={{ fontSize: 13, fontWeight: '900', color: 'rgba(255,255,255,0.85)' }}>
-              {g.title}
+          <View key={group.id} style={{ gap: 10 }}>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '900',
+                color: 'rgba(255,255,255,0.82)',
+                paddingHorizontal: 2,
+              }}
+            >
+              {group.title}
             </Text>
 
             {items.map((layer) => {
               const runtime = state.layers?.[layer.id];
               const enabled = runtime?.enabled ?? false;
-              const opacity = runtime?.opacity ?? layer.defaultOpacity;
+              const opacity = runtime?.opacity ?? layer.defaultOpacity ?? 1;
 
               const { supportsOpacity, supportsLegend, supportsSourceInfo } = resolveSupports(layer);
-
               const canLegend = supportsLegend && !!layer.legendKey;
               const canSource = supportsSourceInfo && !!layer.source;
-              const anySettings = supportsOpacity || canLegend || canSource;
-
+              const hasExpandableContent = supportsOpacity || canLegend || canSource;
               const isExpanded = !!expanded[layer.id];
 
               return (
@@ -133,144 +200,141 @@ export function LayerSheet(props: Props) {
                   key={layer.id}
                   style={{
                     borderWidth: 1,
-                    borderRadius: 16,
+                    borderRadius: 18,
                     padding: 12,
-                    borderColor: 'rgba(255,255,255,0.10)',
-                    backgroundColor: 'rgba(2,6,23,0.45)',
+                    borderColor: enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)',
+                    backgroundColor: enabled ? 'rgba(2,6,23,0.52)' : 'rgba(2,6,23,0.34)',
                   }}
                 >
-                  {/* Primary row */}
-                  <Pressable
-                    onPress={() => props.onToggleLayer(layer.id, !enabled)}
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={{ fontWeight: '900', fontSize: 15, color: 'white' }}>
-                        {layer.title}
-                      </Text>
-                      {layer.subtitle ? (
-                        <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 2 }}>
-                          {layer.subtitle}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <View
-                      style={{
-                        width: 52,
-                        height: 30,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.16)',
-                        backgroundColor: enabled ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-                        alignItems: enabled ? 'flex-end' : 'flex-start',
-                        justifyContent: 'center',
-                        paddingHorizontal: 4,
-                        opacity: enabled ? 1 : 0.9,
-                      }}
-                    >
-                      <View
-                        style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.18)',
-                          backgroundColor: enabled ? 'rgba(255,255,255,0.18)' : 'transparent',
-                        }}
-                      />
-                    </View>
-                  </Pressable>
-
-                  {/* Secondary row */}
                   <View
                     style={{
                       flexDirection: 'row',
+                      alignItems: 'flex-start',
                       justifyContent: 'space-between',
-                      marginTop: 10,
-                      alignItems: 'center',
+                      gap: 10,
                     }}
                   >
-                    <Text style={{ color: 'rgba(255,255,255,0.70)' }}>
-                      {enabled ? `On · ${Math.round(opacity * 100)}%` : 'Off'}
-                    </Text>
-
-                    {anySettings ? (
-                      <Pressable
-                        onPress={() => toggleExpanded(layer.id)}
-                        style={{
-                          paddingVertical: 4,
-                          paddingHorizontal: 8,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.14)',
-                          backgroundColor: 'rgba(255,255,255,0.04)',
-                        }}
-                      >
-                        <Text style={{ fontWeight: '900', color: 'white' }}>
-                          {isExpanded ? 'Hide' : 'Settings'}
+                    <Pressable
+                      onPress={() => {
+                        if (hasExpandableContent) toggleExpanded(layer.id);
+                      }}
+                      style={{ flex: 1 }}
+                    >
+                      <View style={{ paddingRight: 4 }}>
+                        <Text
+                          style={{
+                            fontWeight: '900',
+                            fontSize: 15,
+                            color: 'white',
+                            opacity: enabled ? 1 : 0.92,
+                          }}
+                        >
+                          {layer.title}
                         </Text>
-                      </Pressable>
-                    ) : null}
+
+                        {layer.subtitle ? (
+                          <Text
+                            style={{
+                              color: 'rgba(255,255,255,0.68)',
+                              marginTop: 3,
+                              lineHeight: 18,
+                            }}
+                          >
+                            {layer.subtitle}
+                          </Text>
+                        ) : null}
+
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginTop: 8,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: enabled ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.55)',
+                              fontWeight: '700',
+                            }}
+                          >
+                            {enabled ? `On · ${Math.round(opacity * 100)}%` : 'Off'}
+                          </Text>
+
+                          {hasExpandableContent ? (
+                            <Text
+                              style={{
+                                color: 'rgba(255,255,255,0.50)',
+                                fontSize: 12,
+                                fontWeight: '700',
+                              }}
+                            >
+                              {isExpanded ? 'Hide details' : 'Show details'}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    </Pressable>
+
+                    <Switch
+                      enabled={enabled}
+                      onPress={() => props.onToggleLayer(layer.id, !enabled)}
+                    />
                   </View>
 
-                  {/* Expanded settings */}
                   {isExpanded ? (
-                    <View style={{ marginTop: 12 }}>
+                    <View
+                      style={{
+                        marginTop: 12,
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderTopColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
                       {supportsOpacity ? (
-                        <>
+                        <View>
                           <Text style={{ fontWeight: '900', color: 'rgba(255,255,255,0.85)' }}>
                             Opacity
                           </Text>
-                          <OpacityRow value={opacity} onChange={(v) => props.onSetOpacity(layer.id, v)} />
-                        </>
+                          <OpacityRow
+                            value={opacity}
+                            onChange={(v) => props.onSetOpacity(layer.id, v)}
+                          />
+                        </View>
                       ) : null}
 
                       {canLegend || canSource ? (
                         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                           {canLegend ? (
-                            <Pressable
+                            <ActionPill
+                              label="Legend"
                               onPress={() => props.onOpenLegend?.(layer.id)}
-                              style={{
-                                paddingVertical: 8,
-                                paddingHorizontal: 12,
-                                borderRadius: 999,
-                                borderWidth: 1,
-                                borderColor: 'rgba(255,255,255,0.14)',
-                                backgroundColor: 'rgba(255,255,255,0.04)',
-                              }}
-                            >
-                              <Text style={{ fontWeight: '900', color: 'white' }}>Legend</Text>
-                            </Pressable>
+                            />
                           ) : null}
 
                           {canSource ? (
-                            <Pressable
+                            <ActionPill
+                              label="Source"
                               onPress={() => props.onOpenSourceInfo?.(layer.id)}
-                              style={{
-                                paddingVertical: 8,
-                                paddingHorizontal: 12,
-                                borderRadius: 999,
-                                borderWidth: 1,
-                                borderColor: 'rgba(255,255,255,0.14)',
-                                backgroundColor: 'rgba(255,255,255,0.04)',
-                              }}
-                            >
-                              <Text style={{ fontWeight: '900', color: 'white' }}>Source</Text>
-                            </Pressable>
+                            />
                           ) : null}
                         </View>
                       ) : null}
 
                       {canSource && layer.source ? (
-                        <View style={{ marginTop: 10 }}>
-                          <Text style={{ fontWeight: '900', color: 'white' }}>{layer.source.name}</Text>
+                        <View style={{ marginTop: 12 }}>
+                          <Text style={{ fontWeight: '900', color: 'white' }}>
+                            {layer.source.name}
+                          </Text>
                           {layer.source.details ? (
-                            <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 2 }}>
+                            <Text
+                              style={{
+                                color: 'rgba(255,255,255,0.68)',
+                                marginTop: 3,
+                                lineHeight: 18,
+                              }}
+                            >
                               {layer.source.details}
                             </Text>
                           ) : null}

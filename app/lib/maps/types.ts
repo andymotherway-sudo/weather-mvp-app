@@ -7,11 +7,23 @@ export type MapViewId =
   | 'storm'
   | 'aviation'
   | 'mariner'
-  | 'astronomer';
+  | 'astronomer'
+  | 'satellite-east'
+  | 'satellite-west'
+  | 'satellite-east-ir'
+  | 'satellite-west-ir'
+  | 'satellite-east-wv'
+  | 'satellite-west-wv';
 
 export type LayerId =
   | 'radar.reflectivity'
   | 'sat.clouds'
+  | 'sat.goesEast.geocolor'
+  | 'sat.goesWest.geocolor'
+  | 'sat.goesEast.ir'
+  | 'sat.goesWest.ir'
+  | 'sat.goesEast.wv'
+  | 'sat.goesWest.wv'
   | 'wildfire.smoke'
   | 'wildfire.perimeters'
   | 'wildfire.hotspots'

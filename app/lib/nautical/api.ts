@@ -1,11 +1,11 @@
 // app/lib/nautical/api.ts
 
-import { DEFAULT_LOCATION } from '../../lib/weather/locations';
+
 import type { NauticalStation } from './stations';
 import type {
-    MarineConditions,
-    NauticalSummary,
-    TidePrediction,
+  MarineConditions,
+  NauticalSummary,
+  TidePrediction,
 } from './types';
 
 const MS_TO_KTS = 1.94384;
@@ -255,11 +255,21 @@ export async function fetchNauticalSummary(
 ): Promise<NauticalSummary> {
 
   const stationId = station.id;
-  const fallbackLat = station.latitude ?? DEFAULT_LOCATION.lat;
-  const fallbackLon = station.longitude ?? DEFAULT_LOCATION.lon;
+
+  // ✅ No default coords. If station doesn't have coords, we won't fetch conditions.
+  const hasCoords =
+    typeof station.latitude === 'number' &&
+    Number.isFinite(station.latitude) &&
+    typeof station.longitude === 'number' &&
+    Number.isFinite(station.longitude);
+
+  const lat = hasCoords ? (station.latitude as number) : null;
+  const lon = hasCoords ? (station.longitude as number) : null;
 
   const tidePromise = fetchTidePredictions(station);
-  const marinePromise = fetchMarineConditions(fallbackLat, fallbackLon);
+  const marinePromise = hasCoords && lat != null && lon != null
+    ? fetchMarineConditions(lat, lon)
+    : Promise.resolve(null);
 
   const [tides, marineConditionsRaw] = await Promise.all([
     tidePromise,
@@ -268,11 +278,11 @@ export async function fetchNauticalSummary(
 
   let conditions = marineConditionsRaw ?? null;
 
-  // If we don't have wind from marine endpoint, try global forecast as fallback
-  if (!conditions || conditions.windSpeedKts == null) {
+  // If we don't have wind from marine endpoint, try global forecast as fallback (only if coords exist)
+  if (hasCoords && ( !conditions || conditions.windSpeedKts == null)) {
     const fallbackWind = await fetchFallbackWindConditions(
-      tides.latitude ?? fallbackLat,
-      tides.longitude ?? fallbackLon,
+      (tides.latitude ?? lat)!,
+      (tides.longitude ?? lon)!,
     );
 
     if (fallbackWind) {
@@ -295,21 +305,13 @@ export async function fetchNauticalSummary(
           modelSource: fallbackWind.source,
         };
       } else {
-        if (conditions.windSpeedKts == null) {
-          conditions.windSpeedKts = fallbackWind.windSpeedKts;
-        }
-        if (conditions.windGustKts == null) {
-          conditions.windGustKts = fallbackWind.windGustKts;
-        }
-        if (conditions.windDirectionDeg == null) {
-          conditions.windDirectionDeg = fallbackWind.windDirectionDeg;
-        }
-        if (!conditions.observedAt) {
-          conditions.observedAt = fallbackWind.observedAt;
-        }
+        if (conditions.windSpeedKts == null) conditions.windSpeedKts = fallbackWind.windSpeedKts;
+        if (conditions.windGustKts == null) conditions.windGustKts = fallbackWind.windGustKts;
+        if (conditions.windDirectionDeg == null) conditions.windDirectionDeg = fallbackWind.windDirectionDeg;
+        if (!conditions.observedAt) conditions.observedAt = fallbackWind.observedAt;
+
         conditions.modelSource =
-          conditions.modelSource &&
-          conditions.modelSource !== fallbackWind.source
+          conditions.modelSource && conditions.modelSource !== fallbackWind.source
             ? `${conditions.modelSource} + ${fallbackWind.source}`
             : fallbackWind.source;
       }
@@ -319,8 +321,8 @@ export async function fetchNauticalSummary(
   return {
     stationId,
     stationName: tides.stationName,
-    latitude: tides.latitude ?? fallbackLat,
-    longitude: tides.longitude ?? fallbackLon,
+    latitude: tides.latitude ?? (lat ?? undefined),
+    longitude: tides.longitude ?? (lon ?? undefined),
     predictions: tides.predictions ?? [],
     conditions,
     generatedAt: new Date().toISOString(),

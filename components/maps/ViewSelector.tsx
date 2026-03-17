@@ -1,8 +1,17 @@
 // components/maps/ViewSelector.tsx
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { MapViewId } from '../../app/lib/maps/types';
 import { MAP_VIEWS } from '../../app/lib/maps/views';
+
+const VIEW_SELECTOR_IDS: MapViewId[] = [
+  'radar',
+  'wildfire',
+  'storm',
+  'aviation',
+  'mariner',
+  'astronomer',
+];
 
 export function ViewSelector(props: {
   value: MapViewId;
@@ -11,15 +20,16 @@ export function ViewSelector(props: {
 }) {
   const { value, onChange, nerdy } = props;
 
-  const views = MAP_VIEWS.filter((v: any) => {
-    // Preserve your existing rule
-    if (v.id === 'storm' && !nerdy) return false;
-
-    // Optional future rule (won’t affect anything unless you add nerdyOnly to MAP_VIEWS)
-    if (v.nerdyOnly && !nerdy) return false;
-
-    return true;
-  });
+  const views = useMemo(() => {
+    return VIEW_SELECTOR_IDS
+      .map((id) => MAP_VIEWS.find((v) => v.id === id))
+      .filter(Boolean)
+      .filter((v: any) => {
+        if (v.id === 'storm' && !nerdy) return false;
+        if (v.nerdyOnly && !nerdy) return false;
+        return true;
+      });
+  }, [nerdy]);
 
   return (
     <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -30,19 +40,19 @@ export function ViewSelector(props: {
             key={v.id}
             onPress={() => onChange(v.id)}
             style={{
-              paddingVertical: 6,
-              paddingHorizontal: 10,
+              paddingVertical: 7,
+              paddingHorizontal: 11,
               borderRadius: 999,
               borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
-              backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-              opacity: active ? 1 : 0.92,
+              borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)',
+              backgroundColor: active ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.04)',
+              opacity: active ? 1 : 0.94,
             }}
           >
             <Text
               style={{
                 color: 'white',
-                fontWeight: active ? '800' : '600',
+                fontWeight: active ? '800' : '700',
                 fontSize: 13,
                 letterSpacing: 0.2,
               }}

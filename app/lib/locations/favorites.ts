@@ -44,19 +44,24 @@ export const initialLocationState: LocationState = {
 export function locationReducer(state: LocationState, action: Action): LocationState {
   switch (action.type) {
     case 'hydrate': {
-      const merged: LocationState = {
-        ...state,
-        ...action.state,
-        favorites: action.state.favorites ?? state.favorites,
-        active: action.state.active ?? state.active,
-        current: action.state.current ?? state.current,
-      };
-      if (merged.active.kind === 'favorite') {
-        const ok = merged.favorites.some(f => f.id === merged.active.id);
-        if (!ok) merged.active = { kind: 'current' };
-      }
-      return merged;
+  const merged: LocationState = {
+    ...state,
+    ...action.state,
+    favorites: action.state.favorites ?? state.favorites,
+    active: action.state.active ?? state.active,
+    current: action.state.current ?? state.current,
+  };
+
+  const active = merged.active;
+  if (active.kind === 'favorite') {
+    const ok = merged.favorites.some((f) => f.id === active.id);
+    if (!ok) {
+      merged.active = { kind: 'current' };
     }
+  }
+
+  return merged;
+}
     case 'setCurrent':
       return { ...state, current: action.current };
     case 'setActive':

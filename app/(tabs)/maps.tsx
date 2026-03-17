@@ -1,15 +1,12 @@
 // app/(tabs)/maps.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, PixelRatio, Pressable, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// ✅ route params for deep-linking to views (mariner/astronomer/etc)
+import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-
-// ✅ validate view ids against your view registry
-import { MAP_VIEWS } from '../lib/maps/views';
-
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
+import { MAP_VIEWS } from '../lib/maps/views';
 
 import { Glass } from '../../components/common/Glass';
 import { LayerSheetModal, type LayerSheetValue } from '../../components/maps/LayerSheetModal';
@@ -18,15 +15,12 @@ import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
-import { ViewSelector } from '../../components/maps/ViewSelector';
 import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEngine';
 
-import { useLocation } from '../context/LocationContext';
-import { iemNationalMosaicTimestamps, resolveRadarLayer, type RadarScan } from '../lib/maps/radarIem';
-
-// RainViewer (unchanged)
-import { createRainViewerProvider } from '../lib/maps/radar/providers/rainviewer';
-import type { RadarFrame } from '../lib/maps/radar/providers/types';
+import { useLocations } from '../lib/locations/useLocations';
+import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
+import type { LayerId } from '../lib/maps/types';
+import { useRadarController } from '../lib/maps/useRadarController';
 
 /* ============================================================================ */
 
@@ -40,31 +34,29 @@ function approxZoomFromLongitudeDelta(lonDelta: number) {
 }
 
 function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs: number) {
+  const fnRef = useRef(fn);
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  return (...args: Parameters<T>) => {
-    if (tRef.current) clearTimeout(tRef.current);
-    tRef.current = setTimeout(() => fn(...args), waitMs);
-  };
-}
 
-function easeInOutCubic(t: number) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
+  useEffect(() => {
+    fnRef.current = fn;
+  }, [fn]);
 
-function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
-  const z = Math.max(2, Math.min(12, zoom));
-  if (raw) return { blendMs: 0, dwellMs: 700, opacityMult: 1.0, enableTemporal3: false, label: 'Raw' };
-  if (z <= 5)
-    return {
-      blendMs: 900,
-      dwellMs: nerdy ? 2000 : 2200,
-      opacityMult: nerdy ? 0.82 : 0.76,
-      enableTemporal3: true,
-      label: 'Smooth (wide)',
+  useEffect(() => {
+    return () => {
+      if (tRef.current) clearTimeout(tRef.current);
+      tRef.current = null;
     };
-  if (z <= 8)
-    return { blendMs: 700, dwellMs: nerdy ? 1650 : 1800, opacityMult: nerdy ? 0.92 : 0.86, enableTemporal3: false, label: 'Smooth' };
-  return { blendMs: 420, dwellMs: nerdy ? 1200 : 1350, opacityMult: 1.0, enableTemporal3: false, label: 'Smooth (local)' };
+  }, []);
+
+  return useCallback(
+    (...args: Parameters<T>) => {
+      if (tRef.current) clearTimeout(tRef.current);
+      tRef.current = setTimeout(() => {
+        fnRef.current(...args);
+      }, waitMs);
+    },
+    [waitMs],
+  );
 }
 
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
@@ -80,745 +72,549 @@ function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; r
   );
 }
 
-/* ============================================================================ */
-
-const IEM_WMS_BASE = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad';
-
-function lonLatToMercatorMeters(lon: number, lat: number) {
-  const x = (lon * 20037508.34) / 180;
-  let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
-  y = (y * 20037508.34) / 180;
-  return { x, y };
+function isRadarPrimaryView(viewId: string) {
+  return viewId === 'radar' || viewId === 'wildfire' || viewId === 'storm' || viewId === 'aviation';
 }
 
-function regionToBounds(region: Region) {
-  const west = region.longitude - region.longitudeDelta / 2;
-  const east = region.longitude + region.longitudeDelta / 2;
-  const south = region.latitude - region.latitudeDelta / 2;
-  const north = region.latitude + region.latitudeDelta / 2;
-  return { west, east, south, north };
-}
-
-function iemLayerForProduct(product: 'N0Q' | 'N0B' | 'N0Z') {
-  if (product === 'N0B') return 'nexrad-n0b-900913';
-  if (product === 'N0Z') return 'nexrad-n0z-900913';
-  return 'nexrad-n0q-900913';
-}
-
-function iemWmsEndpointForProduct(product: 'N0Q' | 'N0B' | 'N0Z') {
-  if (product === 'N0B') return `${IEM_WMS_BASE}/n0b.cgi`;
-  if (product === 'N0Z') return `${IEM_WMS_BASE}/n0z.cgi`;
-  return `${IEM_WMS_BASE}/n0q.cgi`;
-}
-
-function buildIemWmsGetMapUrl(args: {
-  product: 'N0Q' | 'N0B' | 'N0Z';
-  region: Region;
-  widthPx: number;
-  heightPx: number;
-  timeIso?: string | null;
+function getSimpleStatus(args: {
+  viewId: string;
+  radarEnabled: boolean;
+  cloudsEnabled: boolean;
+  wildfireEnabled: boolean;
+  goesEastGeoEnabled: boolean;
+  goesWestGeoEnabled: boolean;
+  goesEastIrEnabled: boolean;
+  goesWestIrEnabled: boolean;
+  goesEastWvEnabled: boolean;
+  goesWestWvEnabled: boolean;
+  playing: boolean;
+  frameCount: number;
 }) {
-  const { product, region, widthPx, heightPx, timeIso } = args;
-  const { west, east, south, north } = regionToBounds(region);
+  const {
+    viewId,
+    radarEnabled,
+    cloudsEnabled,
+    wildfireEnabled,
+    goesEastGeoEnabled,
+    goesWestGeoEnabled,
+    goesEastIrEnabled,
+    goesWestIrEnabled,
+    goesEastWvEnabled,
+    goesWestWvEnabled,
+    playing,
+    frameCount,
+  } = args;
 
-  const sw = lonLatToMercatorMeters(west, south);
-  const ne = lonLatToMercatorMeters(east, north);
+  if (goesEastGeoEnabled) return 'GOES East visible active';
+  if (goesWestGeoEnabled) return 'GOES West visible active';
+  if (goesEastIrEnabled) return 'GOES East infrared active';
+  if (goesWestIrEnabled) return 'GOES West infrared active';
+  if (goesEastWvEnabled) return 'GOES East water vapor active';
+  if (goesWestWvEnabled) return 'GOES West water vapor active';
 
-  const layer = iemLayerForProduct(product);
-  const endpoint = iemWmsEndpointForProduct(product);
+  if (viewId === 'clouds') {
+    return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
+  }
 
-  const params: Record<string, string> = {
-    service: 'WMS',
-    request: 'GetMap',
-    version: '1.1.1',
-    layers: layer,
-    styles: '',
-    format: 'image/png',
-    transparent: 'TRUE',
-    srs: 'EPSG:3857',
-    bbox: `${sw.x},${sw.y},${ne.x},${ne.y}`,
-    width: String(Math.max(256, Math.min(1536, Math.floor(widthPx)))),
-    height: String(Math.max(256, Math.min(1536, Math.floor(heightPx)))),
+  if (viewId === 'wildfire') {
+    return `${wildfireEnabled ? 'Wildfire overlays active' : 'Wildfire overlays off'}${radarEnabled ? ' · Radar on' : ''}`;
+  }
+
+  if (viewId === 'aviation') {
+    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · Aviation weather view` : 'Radar off';
+  }
+
+  if (viewId === 'storm') {
+    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · Storm weather view` : 'Radar off';
+  }
+
+  return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · ${frameCount} frames` : 'No active weather layer';
+}
+
+function getActiveLayerSummary(state: any) {
+  const enabledIds = Object.entries(state.layers ?? {})
+    .filter(([, runtime]: any) => runtime?.enabled)
+    .map(([id]) => id as LayerId);
+
+  if (!enabledIds.length) {
+    return {
+      title: 'Layers',
+      subtitle: 'No overlays enabled',
+      hasActiveLayers: false,
+    };
+  }
+
+  const ordered = enabledIds
+    .map((id) => LAYER_CATALOG_BY_ID[id])
+    .filter(Boolean)
+    .sort((a, b) => b.zIndex - a.zIndex);
+
+  const primary = ordered[0];
+  const extraCount = Math.max(0, ordered.length - 1);
+
+  return {
+    title: primary.title,
+    subtitle: extraCount > 0 ? `${primary.subtitle ?? 'Overlay'} · +${extraCount} more` : primary.subtitle,
+    hasActiveLayers: true,
   };
-
-  if (timeIso) params.time = timeIso;
-
-  const qs = Object.entries(params)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
-
-  return `${endpoint}?${qs}`;
 }
 
 /* ============================================================================ */
 
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
-
-  // ✅ read ?view=... (mariner / astronomer / radar / clouds / wildfire / ...)
-  const params = useLocalSearchParams<{ view?: string }>();
+  const params = useLocalSearchParams<{
+    view?: string;
+    lat?: string;
+    lon?: string;
+    label?: string;
+    focus?: string;
+    source?: string;
+    targetType?: string;
+  }>();
   const router = useRouter();
+  const isFocused = useIsFocused();
 
-  const [state, dispatch] = React.useReducer(mapReducer, undefined, () => createInitialMapState({ viewId: 'radar', nerdy: false }));
-  const { location, permission } = useLocation();
+  const [state, dispatch] = React.useReducer(mapReducer, undefined, () =>
+    createInitialMapState({ viewId: 'radar', nerdy: false }),
+  );
+
+  const loc = useLocations();
+  const permission = 'granted' as const;
+
+  const location = useMemo(() => {
+    const c = loc.state.currentCoords;
+    if (!c) return null;
+    return { lat: c.lat, lon: c.lon };
+  }, [loc.state.currentCoords?.lat, loc.state.currentCoords?.lon]);
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
-
   const [rawMode, setRawMode] = useState(false);
 
-  // ✅ external camera ref so we can imperatively recenter w/o fighting region state
   const mapCameraRef = useRef<any>(null);
+  const [region, setRegion] = useState<Region | null>(null);
 
-  // ✅ allow deep-link “views” (plus aliases) without adding new MapViewIds yet.
   useEffect(() => {
     const raw = params?.view ? String(params.view).toLowerCase() : '';
     if (!raw) return;
-
-    // Aliases until you add first-class view IDs in types.ts + views.ts
-    const mapped = raw === 'mariner' ? 'clouds' : raw === 'astronomer' ? 'clouds' : raw;
-
-    const valid = MAP_VIEWS.some((v) => v.id === mapped);
+    const valid = MAP_VIEWS.some((v) => v.id === raw);
     if (!valid) return;
-
-    dispatch({ type: 'SET_VIEW', viewId: mapped as any });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    dispatch({ type: 'SET_VIEW', viewId: raw as any });
   }, [params?.view]);
 
   useEffect(() => {
-    const enabled = !!state.layers?.['radar.reflectivity']?.enabled;
-    if (!enabled) {
-      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-      dispatch({ type: 'SET_LAYER_OPACITY', layerId: 'radar.reflectivity', opacity: 0.9 });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /* =========================================================================
-   * Interaction tracking
-   * ========================================================================= */
 
   const lastUserMoveAtRef = useRef<number>(0);
   const lastPanMarkRef = useRef<number>(0);
-  const lastTickReasonRef = useRef<string>('');
 
-  const markUserInteraction = () => {
+  const markUserInteraction = useCallback(() => {
     lastUserMoveAtRef.current = Date.now();
-  };
-  const isUserMovingNow = () => Date.now() - lastUserMoveAtRef.current < 140;
+  }, []);
 
-  /* ---------------- Anchor ---------------- */
-
-  type AnchorMode = 'gps' | 'map';
-  const [anchorMode, setAnchorMode] = useState<AnchorMode>('gps');
   const [anchorPoint, setAnchorPoint] = useState<{ lat: number; lon: number } | null>(null);
 
   useEffect(() => {
-    if (permission !== 'granted') return;
     if (!location) return;
-    if (anchorMode !== 'gps') return;
-    setAnchorPoint({ lat: location.lat, lon: location.lon });
-  }, [permission, location, anchorMode]);
+    setAnchorPoint((prev) => prev ?? { lat: location.lat, lon: location.lon });
+  }, [location]);
 
-  useEffect(() => {
-    if (anchorPoint) return;
-    if (permission !== 'granted') return;
-    if (!location) return;
-    setAnchorPoint({ lat: location.lat, lon: location.lon });
-  }, [anchorPoint, permission, location]);
-
-  const debouncedAnchorToMap = useDebouncedCallback((lat: number, lon: number) => {
-    if (anchorMode !== 'map') return;
-    setAnchorPoint({ lat, lon });
-  }, 160);
-
-  const selectionPoint = anchorPoint;
-  const centerForRadar = useMemo(() => selectionPoint ?? { lat: 39.5, lon: -98.35 }, [selectionPoint]);
-
-  /* =========================================================================
-   * Frames: IEM Mosaic vs RainViewer
-   * ========================================================================= */
+  const debouncedAnchorToMap = useDebouncedCallback(
+    (lat: number, lon: number) => {
+      setAnchorPoint((prev) => {
+        if (prev && prev.lat === lat && prev.lon === lon) return prev;
+        return { lat, lon };
+      });
+    },
+    160,
+  );
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const [product, setProduct] = useState<'N0Q' | 'N0B' | 'N0Z'>('N0Q');
 
-  const baseNowRef = useRef<number>(Date.now());
-  const stamps = useMemo(() => iemNationalMosaicTimestamps(), []);
-  const iemFrames: RadarScan[] = useMemo(() => {
-    const now = baseNowRef.current;
-    const usableMinutes = Array.from({ length: stamps.length }, (_, i) => (stamps.length - 1 - i) * 5);
-    return stamps.map((stamp, i) => ({ stamp, iso: new Date(now - usableMinutes[i] * 60_000).toISOString() }));
-  }, [stamps]);
-
-  const rvProviderRef = useRef(
-    createRainViewerProvider({
-      ttlMs: 60_000,
-      includeNowcast: true,
-      maxFrames: 12,
-      maxZoom: 10,
-    }),
-  );
-  const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
-  const [rvError, setRvError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (sheetValue.radarProvider !== 'rainviewer') return;
-      try {
-        setRvError(null);
-        const frames = await rvProviderRef.current.getFrames();
-        if (cancelled) return;
-        setRvFrames(frames);
-      } catch (e: any) {
-        if (cancelled) return;
-        setRvFrames(null);
-        setRvError(String(e?.message ?? e ?? 'RainViewer failed'));
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [sheetValue.radarProvider]);
-
-  const usingRainViewer = sheetValue.radarProvider === 'rainviewer' && !!rvFrames?.length;
-
-  /* =========================================================================
-   * Hyperlocal mode (single WMS image)
-   * ========================================================================= */
-
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
-
-  // Clouds are first-class in your catalog but state typing may not include it yet
-  const cloudsEnabled = !!(state.layers as any)?.['sat.clouds']?.enabled;
-  const cloudsOpacity = Number.isFinite((state.layers as any)?.['sat.clouds']?.opacity) ? (state.layers as any)['sat.clouds'].opacity : 0.85;
-
-  const localMinZoom = 9.5;
-  const usingLocalImage = sheetValue.radarProvider === 'iem' && radarEnabled && mapZoom >= localMinZoom;
-
-  const lastRegionRef = useRef<Region | null>(null);
-
-  const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
-  const [localImageCoords, setLocalImageCoords] = useState<[[number, number], [number, number], [number, number], [number, number]] | null>(null);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  const windowSize = Dimensions.get('window');
-  const dpr = PixelRatio.get();
-  const imageW = Math.min(1536, Math.max(512, Math.floor(windowSize.width * dpr)));
-  const imageH = Math.min(1536, Math.max(512, Math.floor(windowSize.height * dpr)));
-
-  const frameCountBase = usingRainViewer && rvFrames ? rvFrames.length : iemFrames.length;
-  const safeBaseIndex = clampIndex(state.radarTime.frameIndex, frameCountBase);
-  const drivingIso = usingRainViewer && rvFrames ? rvFrames[safeBaseIndex]?.iso : iemFrames[safeBaseIndex]?.iso;
-
-  const debouncedRefreshLocal = useDebouncedCallback(() => {
-    const r = lastRegionRef.current;
-    if (!r) return;
-
-    try {
-      setLocalError(null);
-
-      const url = buildIemWmsGetMapUrl({
-        product,
-        region: r,
-        widthPx: imageW,
-        heightPx: imageH,
-        timeIso: drivingIso ?? null,
-      });
-
-      const { west, east, south, north } = regionToBounds(r);
-      const coords: [[number, number], [number, number], [number, number], [number, number]] = [
-        [west, north],
-        [east, north],
-        [east, south],
-        [west, south],
-      ];
-
-      setLocalImageUrl(url);
-      setLocalImageCoords(coords);
-    } catch (e: any) {
-      setLocalError(String(e?.message ?? e ?? 'Local image build failed'));
-    }
-  }, 220);
-
-  useEffect(() => {
-    if (!usingLocalImage) return;
-    debouncedRefreshLocal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, product, imageW, imageH, drivingIso]);
-
-  /* =========================================================================
-   * Unified frames for scrubber
-   * ========================================================================= */
-
-  const uiFrames: Array<{ iso: string }> = useMemo(() => {
-    if (usingRainViewer && rvFrames) return rvFrames.map((f) => ({ iso: f.iso }));
-    return iemFrames.map((f) => ({ iso: f.iso }));
-  }, [usingRainViewer, rvFrames, iemFrames]);
-
-  const frameCount = uiFrames.length;
-  const safeFrameIndex = clampIndex(state.radarTime.frameIndex, frameCount);
-
-  useEffect(() => {
-    if (frameCount <= 0) return;
-    if (state.radarTime.frameIndex !== safeFrameIndex) {
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: safeFrameIndex });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frameCount, safeFrameIndex, usingRainViewer, sheetValue.radarProvider]);
-
-  useEffect(() => {
-    if (usingLocalImage && state.radarTime.playing) {
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-      lastTickReasonRef.current = 'paused:localImage';
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage]);
-
-  /* =========================================================================
-   * Templates for tile mode (national/mid zoom)
-   * ========================================================================= */
-
-  const computedTemplates = useMemo(() => {
-    if (!radarEnabled) return [] as Array<string | null>;
-    if (usingLocalImage) return [] as Array<string | null>;
-
-    if (usingRainViewer && rvFrames?.length) {
-      return rvFrames.map((f) => {
-        try {
-          return rvProviderRef.current.getTileUrlTemplate(f);
-        } catch {
-          return null;
-        }
-      });
-    }
-
-    return iemFrames.map((f) => {
-      const choice = resolveRadarLayer(centerForRadar.lat, centerForRadar.lon, {
-        zoom: mapZoom,
-        product,
-        localMinZoom,
-        maxLocalDistanceKm: 300,
-        nationalTimestamp: f.stamp,
-      });
-      return choice?.tileUrl ?? null;
-    });
-  }, [radarEnabled, usingLocalImage, usingRainViewer, rvFrames, iemFrames, centerForRadar.lat, centerForRadar.lon, mapZoom, product]);
-
-  const heldTemplatesRef = useRef<Array<string | null>>([]);
-  const [preloadTo, setPreloadTo] = useState<number | null>(null);
-
-  type XFadeState = { from: number; to: number; t: number };
-  const [xfade, setXfade] = useState<XFadeState>({ from: safeFrameIndex, to: safeFrameIndex, t: 1 });
-  const prevFrameRef = useRef<number>(safeFrameIndex);
-
-  const templates = useMemo(() => {
-    if (!computedTemplates.length) return [] as Array<string | null>;
-
-    if (!heldTemplatesRef.current.length) {
-      heldTemplatesRef.current = computedTemplates;
-      return computedTemplates;
-    }
-
-    const isBlendingNow = preloadTo !== null || (xfade.from !== xfade.to && xfade.t < 1);
-    if (isUserMovingNow() || isBlendingNow) return heldTemplatesRef.current;
-
-    heldTemplatesRef.current = computedTemplates;
-    return computedTemplates;
-  }, [computedTemplates, preloadTo, xfade.from, xfade.to, xfade.t]);
-
-  /* =========================================================================
-   * Crossfade + preload gate (tile mode only)
-   * ========================================================================= */
-
-  const profile = useMemo(() => getRadarProfile(mapZoom, rawMode, state.nerdy), [mapZoom, rawMode, state.nerdy]);
-
-  const radarOpacity = useMemo(() => {
-    const configured = state.layers?.['radar.reflectivity']?.opacity ?? 0.9;
-    const base = state.nerdy ? Math.min(1, Math.max(0.55, configured)) : Math.min(1, Math.max(0.75, configured));
-    return Math.max(0, Math.min(1, base * profile.opacityMult));
-  }, [state.layers, state.nerdy, profile.opacityMult]);
-
-  const preloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const xfadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (usingLocalImage) return;
-
-    const prev = prevFrameRef.current;
-    const next = safeFrameIndex;
-    if (prev === next) return;
-
-    const prevTpl = templates[clampIndex(prev, templates.length)];
-    const nextTpl = templates[clampIndex(next, templates.length)];
-    if (prevTpl && nextTpl && prevTpl === nextTpl) {
-      prevFrameRef.current = next;
-      setPreloadTo(null);
-      setXfade({ from: next, to: next, t: 1 });
-      return;
-    }
-
-    prevFrameRef.current = next;
-
-    if (xfadeTimerRef.current) {
-      clearInterval(xfadeTimerRef.current);
-      xfadeTimerRef.current = null;
-    }
-    if (preloadTimerRef.current) {
-      clearTimeout(preloadTimerRef.current);
-      preloadTimerRef.current = null;
-    }
-
-    if (profile.blendMs <= 0) {
-      setPreloadTo(null);
-      setXfade({ from: next, to: next, t: 1 });
-      return;
-    }
-
-    setPreloadTo(next);
-
-    const preloadMs = mapZoom <= 5 ? 320 : mapZoom <= 8 ? 260 : 220;
-
-    preloadTimerRef.current = setTimeout(() => {
-      setPreloadTo(null);
-
-      const start = Date.now();
-      const duration = profile.blendMs;
-
-      setXfade({ from: prev, to: next, t: 0 });
-
-      xfadeTimerRef.current = setInterval(() => {
-        const rawT = (Date.now() - start) / duration;
-        if (rawT >= 1) {
-          if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
-          xfadeTimerRef.current = null;
-          setXfade({ from: next, to: next, t: 1 });
-          return;
-        }
-        const t = easeInOutCubic(Math.max(0, Math.min(1, rawT)));
-        setXfade({ from: prev, to: next, t });
-      }, 33);
-    }, preloadMs);
-
-    return () => {
-      if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
-      preloadTimerRef.current = null;
-      if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
-      xfadeTimerRef.current = null;
-    };
-  }, [usingLocalImage, safeFrameIndex, profile.blendMs, mapZoom, templates, templates.length]);
-
-  const perFrameOpacities = useMemo(() => {
-    const n = templates.length;
-    if (!n) return [] as number[];
-
-    const out = new Array(n).fill(0);
-    const from = clampIndex(xfade.from, n);
-    const to = clampIndex(xfade.to, n);
-    const t = Math.max(0, Math.min(1, xfade.t));
-
-    const noBlend = profile.blendMs <= 0 || from === to;
-    if (noBlend) {
-      out[to] = radarOpacity;
-      return out;
-    }
-
-    out[from] = radarOpacity * (1 - t);
-    out[to] = radarOpacity * t;
-
-    if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
-      const back = clampIndex(to - 1, n);
-      if (back !== to) {
-        const tailMax = 0.08;
-        const tail = Math.min(tailMax, radarOpacity * 0.14 * (1 - t));
-        out[back] = Math.max(out[back], tail);
-      }
-    }
-
-    return out;
-  }, [templates.length, xfade.from, xfade.to, xfade.t, radarOpacity, profile.blendMs, profile.enableTemporal3, mapZoom]);
-
-  /* =========================================================================
-   * Active radar slots (tiles)
-   * ========================================================================= */
-
-  const slotHoldRef = useRef<Array<string | null>>([null, null, null]);
-
-  const activeRadar = useMemo(() => {
-    const n = templates.length;
-    const outTemplates: Array<string | null> = [null, null, null];
-    const outOpacities: number[] = [0, 0, 0];
-
-    if (usingLocalImage) {
-      return { templates: outTemplates, opacities: outOpacities };
-    }
-
-    if (!n) {
-      outTemplates[0] = slotHoldRef.current[0];
-      outTemplates[1] = slotHoldRef.current[1];
-      outTemplates[2] = slotHoldRef.current[2];
-      return { templates: outTemplates, opacities: outOpacities };
-    }
-
-    if (preloadTo !== null) {
-      const cur = clampIndex(xfade.to, n);
-      const pre = clampIndex(preloadTo, n);
-
-      outTemplates[0] = templates[cur] ?? slotHoldRef.current[0];
-      outOpacities[0] = radarOpacity;
-
-      if (pre !== cur) {
-        outTemplates[1] = templates[pre] ?? null;
-        outOpacities[1] = 0;
-      }
-
-      if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
-      slotHoldRef.current[1] = outTemplates[1];
-      slotHoldRef.current[2] = null;
-
-      return { templates: outTemplates, opacities: outOpacities };
-    }
-
-    const from = clampIndex(xfade.from, n);
-    const to = clampIndex(xfade.to, n);
-    const back = clampIndex(to - 1, n);
-
-    const noBlend = profile.blendMs <= 0 || from === to;
-    if (noBlend) {
-      outTemplates[0] = templates[to] ?? slotHoldRef.current[0];
-      outOpacities[0] = radarOpacity;
-
-      if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
-      slotHoldRef.current[1] = null;
-      slotHoldRef.current[2] = null;
-
-      return { templates: outTemplates, opacities: outOpacities };
-    }
-
-    outTemplates[0] = templates[from] ?? slotHoldRef.current[0];
-    outOpacities[0] = perFrameOpacities[from] ?? 0;
-
-    outTemplates[1] = templates[to] ?? slotHoldRef.current[1];
-    outOpacities[1] = perFrameOpacities[to] ?? 0;
-
-    if (profile.enableTemporal3 && mapZoom <= 5 && back !== to) {
-      const tailOp = perFrameOpacities[back] ?? 0;
-      if (tailOp > 0.02) {
-        outTemplates[2] = templates[back] ?? slotHoldRef.current[2];
-        outOpacities[2] = tailOp;
-      }
-    }
-
-    if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
-    if (outTemplates[1]) slotHoldRef.current[1] = outTemplates[1];
-    if (outTemplates[2]) slotHoldRef.current[2] = outTemplates[2];
-
-    return { templates: outTemplates, opacities: outOpacities };
-  }, [
-    usingLocalImage,
-    templates,
-    templates.length,
-    perFrameOpacities,
-    xfade.from,
-    xfade.to,
-    profile.enableTemporal3,
-    profile.blendMs,
-    radarOpacity,
-    preloadTo,
+  const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
+
+  const goesEastGeoEnabled = !!state.layers?.['sat.goesEast.geocolor']?.enabled;
+  const goesWestGeoEnabled = !!state.layers?.['sat.goesWest.geocolor']?.enabled;
+  const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
+  const goesWestIrEnabled = !!state.layers?.['sat.goesWest.ir']?.enabled;
+  const goesEastWvEnabled = !!state.layers?.['sat.goesEast.wv']?.enabled;
+  const goesWestWvEnabled = !!state.layers?.['sat.goesWest.wv']?.enabled;
+
+  const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
+    ? state.layers['sat.clouds'].opacity
+    : 0.85;
+
+  const goesEastGeoOpacity = Number.isFinite(state.layers?.['sat.goesEast.geocolor']?.opacity)
+    ? state.layers['sat.goesEast.geocolor'].opacity
+    : 0.92;
+
+  const goesWestGeoOpacity = Number.isFinite(state.layers?.['sat.goesWest.geocolor']?.opacity)
+    ? state.layers['sat.goesWest.geocolor'].opacity
+    : 0.92;
+
+  const goesEastIrOpacity = Number.isFinite(state.layers?.['sat.goesEast.ir']?.opacity)
+    ? state.layers['sat.goesEast.ir'].opacity
+    : 0.94;
+
+  const goesWestIrOpacity = Number.isFinite(state.layers?.['sat.goesWest.ir']?.opacity)
+    ? state.layers['sat.goesWest.ir'].opacity
+    : 0.94;
+
+  const goesEastWvOpacity = Number.isFinite(state.layers?.['sat.goesEast.wv']?.opacity)
+    ? state.layers['sat.goesEast.wv'].opacity
+    : 0.94;
+
+  const goesWestWvOpacity = Number.isFinite(state.layers?.['sat.goesWest.wv']?.opacity)
+    ? state.layers['sat.goesWest.wv'].opacity
+    : 0.94;
+
+  const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
+
+  const centerForRadar = useMemo(() => {
+    if (region) return { lat: region.latitude, lon: region.longitude };
+    return anchorPoint ?? { lat: 39.5, lon: -98.35 };
+  }, [region, anchorPoint]);
+
+  const radarCtl = useRadarController({
+    state,
+    dispatch,
+    sheetValue: { radarProvider: sheetValue.radarProvider },
+    centerForRadar,
     mapZoom,
-  ]);
+    product,
+    rawMode,
+    region,
+    localMinZoom: 7.8,
+    ridgeMinZoom: 99,
+  });
 
-  /* =========================================================================
-   * Playback (tiles only)
-   * ========================================================================= */
-
-  const PLAY_TICK_MS = 120;
-
-  const playingRef = useRef<boolean>(state.radarTime.playing);
-  const frameCountRef = useRef<number>(frameCount);
-  const safeFrameIndexRef = useRef<number>(safeFrameIndex);
-  const templatesRef = useRef<Array<string | null>>(templates);
-  const minDwellRef = useRef<number>(profile.dwellMs);
-  const radarEnabledRef = useRef<boolean>(radarEnabled);
-
-  useEffect(() => {
-    playingRef.current = state.radarTime.playing;
-  }, [state.radarTime.playing]);
-  useEffect(() => {
-    frameCountRef.current = frameCount;
-  }, [frameCount]);
-  useEffect(() => {
-    safeFrameIndexRef.current = safeFrameIndex;
-  }, [safeFrameIndex]);
-  useEffect(() => {
-    templatesRef.current = templates;
-  }, [templates]);
-  useEffect(() => {
-    minDwellRef.current = profile.dwellMs;
-  }, [profile.dwellMs]);
-  useEffect(() => {
-    radarEnabledRef.current = radarEnabled;
-  }, [radarEnabled]);
-
-  const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastAdvanceRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (playTimerRef.current) clearInterval(playTimerRef.current);
-    playTimerRef.current = null;
-
-    if (usingLocalImage) {
-      lastTickReasonRef.current = 'paused:localImage';
-      return;
-    }
-
-    if (!state.radarTime.playing) {
-      lastTickReasonRef.current = 'paused';
-      return;
-    }
-
-    if (frameCount < 2) {
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-      lastTickReasonRef.current = 'blocked:frameCount';
-      return;
-    }
-
-    playTimerRef.current = setInterval(() => {
-      if (!playingRef.current) {
-        lastTickReasonRef.current = 'paused';
-        return;
-      }
-      if (!radarEnabledRef.current) {
-        lastTickReasonRef.current = 'blocked:radarOff';
-        return;
-      }
-      if (isUserMovingNow()) {
-        lastTickReasonRef.current = 'blocked:userMoving';
-        return;
-      }
-      if (preloadTo !== null) {
-        lastTickReasonRef.current = 'blocked:preloading';
-        return;
-      }
-
-      const dwell = minDwellRef.current;
-      if (Date.now() - lastAdvanceRef.current < dwell) {
-        lastTickReasonRef.current = 'blocked:dwell';
-        return;
-      }
-
-      const fc = frameCountRef.current;
-      const cur = safeFrameIndexRef.current;
-      const next = (cur + 1) % fc;
-
-      const nextTemplate = templatesRef.current[next];
-      if (!nextTemplate) {
-        lastTickReasonRef.current = 'blocked:nextTemplateNull';
-        return;
-      }
-
-      lastTickReasonRef.current = 'advance';
-      lastAdvanceRef.current = Date.now();
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });
-    }, PLAY_TICK_MS);
-
-    return () => {
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
-      playTimerRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, state.radarTime.playing, frameCount, preloadTo]);
-
-  /* =========================================================================
-   * Labels + stable initial region
-   * ========================================================================= */
-
-  const timestampLabel = useMemo(() => {
-    const iso = uiFrames[safeFrameIndex]?.iso;
-    if (!iso) return 'Latest';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return 'Latest';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }, [uiFrames, safeFrameIndex]);
-
-  const [stableInitialRegion, setStableInitialRegion] = useState<Region>(() => ({
-    latitude: 39.5,
-    longitude: -98.35,
-    latitudeDelta: 4,
-    longitudeDelta: 4,
-  }));
-
-  useEffect(() => {
-    if (permission !== 'granted' || !location) return;
-    setStableInitialRegion((cur) => {
-      const isStillDefaultish = Math.abs(cur.latitude - 39.5) < 0.5 && Math.abs(cur.longitude + 98.35) < 0.5 && cur.longitudeDelta >= 3.5;
-      if (!isStillDefaultish) return cur;
-      return { latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 };
-    });
-  }, [permission, location]);
-
-  const recenterToGps = () => {
-    if (permission !== 'granted' || !location) return;
-
-    // state
-    setAnchorMode('gps');
-    setAnchorPoint({ lat: location.lat, lon: location.lon });
-    setStableInitialRegion({ latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 });
-    dispatch({ type: 'SET_VIEWPORT', viewport: { center: { lat: location.lat, lon: location.lon }, zoom: 9 } });
-    markUserInteraction();
-
-    // camera (immediate UX)
-    mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [location.lon, location.lat],
-      zoomLevel: 9,
-      animationDuration: 450,
-    });
-  };
-
+  const uiFrames = radarCtl.uiFrames;
+  const frameCount = radarCtl.frameCount;
+  const timestampLabel = radarCtl.timestampLabel;
   const canSwitchProduct = state.nerdy;
 
-  /* =========================================================================
-   * tileMaxZ selection (tiles only)
-   * ========================================================================= */
-
   const radarTileMaxZ = useMemo(() => {
-    if (usingRainViewer) return (rvProviderRef.current as any)?.maxZoom ?? 10;
-    if (usingLocalImage) return 10;
-    return 7;
-  }, [usingRainViewer, usingLocalImage]);
+    return Math.max(radarCtl.radarTileMaxZ, Math.ceil(mapZoom));
+  }, [radarCtl.radarTileMaxZ, mapZoom]);
 
-  const DOCK_ESTIMATED_HEIGHT = 78;
-  const dockBottom = 12 + insets.bottom;
+  const mapRadar = useMemo(() => {
+    if (!isFocused) {
+      return {
+        enabled: false,
+        templates: [null, null, null],
+        opacities: [0, 0, 0],
+        tileMaxZ: 0,
+        localImage: null,
+      };
+    }
 
-  /**
-   * WMS Overlays (Clouds / GOES)
-   * - gated by your layer state: sat.clouds
-   */
+    return {
+      ...radarCtl.radar,
+      tileMaxZ: radarTileMaxZ,
+    };
+  }, [isFocused, radarCtl.radar, radarTileMaxZ]);
+
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
-    if (!cloudsEnabled) return [];
-    const op = Math.max(0, Math.min(1, Number(cloudsOpacity)));
-    return [
-      {
+    const list: WmsOverlayConfig[] = [];
+
+    if (cloudsEnabled) {
+      list.push({
         id: 'goes-conus-ch02',
         url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
         layers: 'conus_ch02',
-        opacity: op,
+        opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 60,
         enabled: true,
         version: '1.1.1',
         crs: 'EPSG:3857',
         format: 'image/png',
         transparent: true,
+      });
+    }
+
+    if (goesEastGeoEnabled) {
+      list.push({
+        id: 'goes-east-geocolor',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        layers: 'conus_ch02',
+        opacity: Math.max(0, Math.min(1, Number(goesEastGeoOpacity))),
+        zIndex: 62,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    if (goesWestGeoEnabled) {
+      list.push({
+        id: 'goes-west-geocolor',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
+        layers: 'conus_ch02',
+        opacity: Math.max(0, Math.min(1, Number(goesWestGeoOpacity))),
+        zIndex: 62,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    if (goesEastIrEnabled) {
+      list.push({
+        id: 'goes-east-ir',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        layers: 'conus_ch13',
+        opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
+        zIndex: 63,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    if (goesWestIrEnabled) {
+      list.push({
+        id: 'goes-west-ir',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
+        layers: 'conus_ch13',
+        opacity: Math.max(0, Math.min(1, Number(goesWestIrOpacity))),
+        zIndex: 63,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    if (goesEastWvEnabled) {
+      list.push({
+        id: 'goes-east-wv',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        layers: 'conus_ch08',
+        opacity: Math.max(0, Math.min(1, Number(goesEastWvOpacity))),
+        zIndex: 64,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    if (goesWestWvEnabled) {
+      list.push({
+        id: 'goes-west-wv',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
+        layers: 'conus_ch08',
+        opacity: Math.max(0, Math.min(1, Number(goesWestWvOpacity))),
+        zIndex: 64,
+        enabled: true,
+        version: '1.1.1',
+        crs: 'EPSG:3857',
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
+    return list;
+  }, [
+    cloudsEnabled,
+    cloudsOpacity,
+    goesEastGeoEnabled,
+    goesEastGeoOpacity,
+    goesWestGeoEnabled,
+    goesWestGeoOpacity,
+    goesEastIrEnabled,
+    goesEastIrOpacity,
+    goesWestIrEnabled,
+    goesWestIrOpacity,
+    goesEastWvEnabled,
+    goesEastWvOpacity,
+    goesWestWvEnabled,
+    goesWestWvOpacity,
+  ]);
+
+  const [consumedRouteFocusKey, setConsumedRouteFocusKey] = useState<string | null>(null);
+
+  const routeFocusTarget = useMemo(() => {
+    const lat = params?.lat != null ? Number(params.lat) : NaN;
+    const lon = params?.lon != null ? Number(params.lon) : NaN;
+    const focus = String(params?.focus ?? '');
+
+    if (focus !== 'once') return null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    const key = [
+      focus,
+      Number(lat).toFixed(4),
+      Number(lon).toFixed(4),
+      String(params?.label ?? ''),
+      String(params?.source ?? ''),
+      String(params?.targetType ?? ''),
+    ].join('|');
+
+    if (consumedRouteFocusKey === key) return null;
+
+    return {
+      lat,
+      lon,
+      key,
+    };
+  }, [
+    params?.lat,
+    params?.lon,
+    params?.focus,
+    params?.label,
+    params?.source,
+    params?.targetType,
+    consumedRouteFocusKey,
+  ]);
+
+  const [stableInitialRegion, setStableInitialRegion] = useState<Region>(() => {
+    if (routeFocusTarget) {
+      return {
+        latitude: routeFocusTarget.lat,
+        longitude: routeFocusTarget.lon,
+        latitudeDelta: 4,
+        longitudeDelta: 4,
+      };
+    }
+
+    return {
+      latitude: 39.5,
+      longitude: -98.35,
+      latitudeDelta: 4,
+      longitudeDelta: 4,
+    };
+  });
+
+  useEffect(() => {
+    if (routeFocusTarget) return;
+    if (permission !== 'granted' || !location) return;
+
+    setStableInitialRegion((cur) => {
+      const isStillDefaultish =
+        Math.abs(cur.latitude - 39.5) < 0.5 &&
+        Math.abs(cur.longitude + 98.35) < 0.5 &&
+        cur.longitudeDelta >= 3.5;
+      if (!isStillDefaultish) return cur;
+      return { latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 };
+    });
+  }, [permission, location, routeFocusTarget]);
+
+  useEffect(() => {
+    if (!routeFocusTarget) return;
+    if (!mapCameraRef.current?.setCamera) return;
+
+    lastUserMoveAtRef.current = Date.now();
+
+    setAnchorPoint({ lat: routeFocusTarget.lat, lon: routeFocusTarget.lon });
+
+    dispatch({
+      type: 'SET_VIEWPORT',
+      viewport: {
+        center: { lat: routeFocusTarget.lat, lon: routeFocusTarget.lon },
+        zoom: 7,
       },
-    ];
-  }, [cloudsEnabled, cloudsOpacity]);
+    });
+
+    mapCameraRef.current.setCamera({
+      centerCoordinate: [routeFocusTarget.lon, routeFocusTarget.lat],
+      zoomLevel: 7,
+      animationDuration: 700,
+    });
+
+    setConsumedRouteFocusKey(routeFocusTarget.key);
+
+    requestAnimationFrame(() => {
+      router.setParams({
+        focus: undefined,
+        lat: undefined,
+        lon: undefined,
+        label: undefined,
+        source: undefined,
+        targetType: undefined,
+      });
+    });
+  }, [routeFocusTarget, router]);
+
+  const effectiveRegion = region ?? stableInitialRegion;
+
+  const pushSpecialMap = useCallback(
+    (pathname: '/astro-map' | '/nautical-map') => {
+      const r = effectiveRegion;
+      router.push({
+        pathname,
+        params: {
+          from: 'maps',
+          nav: String(Date.now()),
+          lat: String(r.latitude),
+          lon: String(r.longitude),
+          latDelta: String(r.latitudeDelta),
+          lonDelta: String(r.longitudeDelta),
+          zoom: String(Math.round(mapZoom * 10) / 10),
+        },
+      });
+    },
+    [router, effectiveRegion, mapZoom],
+  );
+
+  const recenterToGps = async () => {
+    await loc.refreshCurrentLocation();
+    const coords = loc.state.currentCoords;
+    if (!coords) return;
+
+    setAnchorPoint({ lat: coords.lat, lon: coords.lon });
+    lastUserMoveAtRef.current = Date.now();
+
+    dispatch({
+      type: 'SET_VIEWPORT',
+      viewport: { center: { lat: coords.lat, lon: coords.lon }, zoom: 9 },
+    });
+
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [coords.lon, coords.lat],
+      zoomLevel: 9,
+      animationDuration: 450,
+    });
+  };
+
+  const DOCK_ESTIMATED_HEIGHT = 78;
+  const dockBottom = 12 + insets.bottom;
+
+  const currentViewTitle = activeLayerSummary.hasActiveLayers
+    ? activeLayerSummary.title
+    : (MAP_VIEWS.find((v) => v.id === state.viewId)?.title ?? 'Maps');
+
+  const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId));
+
+  const simpleStatus = getSimpleStatus({
+    viewId: String(state.viewId),
+    radarEnabled,
+    cloudsEnabled,
+    wildfireEnabled,
+    goesEastGeoEnabled,
+    goesWestGeoEnabled,
+    goesEastIrEnabled,
+    goesWestIrEnabled,
+    goesEastWvEnabled,
+    goesWestWvEnabled,
+    playing: state.radarTime.playing,
+    frameCount,
+  });
+
+  const showTimeline = isFocused && radarEnabled && frameCount > 1;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
@@ -834,218 +630,183 @@ export default function MapsScreen() {
               lastPanMarkRef.current = now;
               markUserInteraction();
             }
-            if (anchorMode !== 'map') setAnchorMode('map');
           }}
           onRegionChangeComplete={(r: Region) => {
-            lastRegionRef.current = r;
+            setRegion(r);
 
             const zFloat =
-              typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : approxZoomFromLongitudeDelta(r.longitudeDelta);
+              typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom)
+                ? (r as any).zoom
+                : approxZoomFromLongitudeDelta(r.longitudeDelta);
 
             setMapZoom(zFloat);
 
-            dispatch({
-              type: 'SET_VIEWPORT',
-              viewport: { center: { lat: r.latitude, lon: r.longitude }, zoom: zFloat },
-            });
+            const userMovedRecently = Date.now() - lastUserMoveAtRef.current < 2000;
 
-            if (anchorMode === 'map') debouncedAnchorToMap(r.latitude, r.longitude);
-
-            if (sheetValue.radarProvider === 'iem' && radarEnabled && zFloat >= localMinZoom) {
-              debouncedRefreshLocal();
+            if (!userMovedRecently) {
+              dispatch({
+                type: 'SET_VIEWPORT',
+                viewport: { center: { lat: r.latitude, lon: r.longitude }, zoom: zFloat },
+              });
             }
+
+            debouncedAnchorToMap(r.latitude, r.longitude);
           }}
-          radar={{
-            enabled: radarEnabled,
-            templates: activeRadar.templates,
-            opacities: activeRadar.opacities,
-            tileMaxZ: radarTileMaxZ,
-            localImage: usingLocalImage && localImageUrl && localImageCoords ? { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity } : null,
-          }}
+          radar={mapRadar}
           overlays={overlays}
         />
 
-        {/* Top controls */}
-        <View style={{ position: 'absolute', left: 12, right: 12, top: 8, gap: 10 }}>
-          <Glass style={{ paddingVertical: 10 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ color: 'white', fontSize: 16, fontWeight: '900' }}>Maps</Text>
+        <View style={{ position: 'absolute', left: 12, right: 84, top: 8 }}>
+          <Glass style={{ paddingVertical: 10, paddingHorizontal: 12, borderRadius: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '900' }}>Maps</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 2, fontWeight: '800' }} numberOfLines={1}>
+                  {currentViewTitle} · {timestampLabel || 'Latest'}
+                </Text>
+              </View>
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.75)' }}>{timestampLabel}</Text>
-
-                {state.nerdy ? (
-                  <Pressable
-                    onPress={() => setRawMode((v) => !v)}
-                    style={{
-                      paddingVertical: 6,
-                      paddingHorizontal: 10,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.14)',
-                      backgroundColor: rawMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                    }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{rawMode ? 'Raw' : 'Smooth'}</Text>
-                  </Pressable>
-                ) : null}
-
+              {state.nerdy ? (
                 <Pressable
-                  onPress={() => {
-                    if (state.nerdy && rawMode) setRawMode(false);
-                    dispatch({ type: 'SET_NERDY', nerdy: !state.nerdy });
-                  }}
+                  onPress={() => setRawMode((v) => !v)}
                   style={{
                     paddingVertical: 6,
                     paddingHorizontal: 10,
                     borderRadius: 999,
                     borderWidth: 1,
                     borderColor: 'rgba(255,255,255,0.14)',
-                    backgroundColor: state.nerdy ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
+                    backgroundColor: rawMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
                   }}
                 >
-                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>{state.nerdy ? 'Nerdy' : 'Simple'}</Text>
+                  <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>
+                    {rawMode ? 'Raw' : 'Smooth'}
+                  </Text>
                 </Pressable>
-              </View>
+              ) : null}
             </View>
 
-            <View style={{ marginTop: 8 }}>
-              <ViewSelector
-                value={state.viewId}
-                nerdy={state.nerdy}
-                onChange={(id: any) => {
-                  const view = String(id).toLowerCase();
-
-                  // Special “Mariner” route -> Nautical Map
-                  if (view === 'mariner') {
-                    const r = lastRegionRef.current ?? stableInitialRegion;
-
-                    const z =
-                      typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
-
-                    router.push({
-                      pathname: '/nautical-map',
-                      params: {
-                        lat: String(r.latitude),
-                        lon: String(r.longitude),
-                        latDelta: String(r.latitudeDelta),
-                        lonDelta: String(r.longitudeDelta),
-                        zoom: String(z),
-                        from: 'maps',
-                        nav: String(Date.now()), 
-                      },
-                    });
-                    return;
-                  }
-
-                  if (view === 'astronomer') {
-              const r = lastRegionRef.current ?? stableInitialRegion;
-              const z =
-                typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom) ? (r as any).zoom : mapZoom;
-
-              router.push({
-                pathname: '/astro-map', // ✅ go straight to the MapLibre screen
-                params: {
-                  lat: String(r.latitude),
-                  lon: String(r.longitude),
-                  latDelta: String(r.latitudeDelta),
-                  lonDelta: String(r.longitudeDelta),
-                  zoom: String(z),
-                  from: 'maps',
-                  nav: String(Date.now()), // ✅ unique every time
-                },
-              });
-              return;
-            }
-
-                  dispatch({ type: 'SET_VIEW', viewId: id });
-                }}
-              />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <ChipDark label="Astro Map" onPress={() => pushSpecialMap('/astro-map')} />
+              <ChipDark label="Nautical Map" onPress={() => pushSpecialMap('/nautical-map')} />
+              <ChipDark label="My Location" onPress={recenterToGps} />
             </View>
 
-            {canSwitchProduct && sheetValue.radarProvider === 'iem' ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            {canSwitchProduct && sheetValue.radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                 <ChipDark active={product === 'N0Q'} label="N0Q" onPress={() => setProduct('N0Q')} />
                 <ChipDark active={product === 'N0B'} label="N0B" onPress={() => setProduct('N0B')} />
                 <ChipDark active={product === 'N0Z'} label="N0Z" onPress={() => setProduct('N0Z')} />
               </View>
             ) : null}
 
-            {/* Debug HUD */}
-            <View style={{ marginTop: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.78)' }}>
-                Provider: {sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM'}
-                {' · '}Mode: {usingLocalImage ? 'HYPERLOCAL IMAGE' : usingRainViewer ? 'TILES' : 'IEM MOSAIC TILES'}
-                {' · '}Frames: {frameCount}
-                {' · '}Zoom ~ {Math.round(mapZoom)}
-                {' · '}tileMaxZ {radarTileMaxZ}
-                {' · '}{state.radarTime.playing ? 'Playing' : 'Paused'}
-                {' · '}{lastTickReasonRef.current}
-                {isUserMovingNow() ? ' · interacting' : ''}
-                {' · '}{profile.label}
-                {cloudsEnabled ? ` · Clouds ON (${Math.round(cloudsOpacity * 100)}%)` : ''}
-                {rvError ? ` · RV error: ${rvError}` : ''}
-                {localError ? ` · Local error: ${localError}` : ''}
-              </Text>
+            <View style={{ marginTop: 10 }}>
+              {state.nerdy ? (
+                <Text style={{ color: 'rgba(255,255,255,0.78)' }} numberOfLines={2}>
+                  Provider: {sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM'}
+                  {' · '}Frames: {frameCount}
+                  {' · '}Zoom ~ {Math.round(mapZoom)}
+                  {' · '}{state.radarTime.playing ? 'Playing' : 'Paused'}
+                  {cloudsEnabled ? ` · Clouds ${Math.round(cloudsOpacity * 100)}%` : ''}
+                  {goesEastGeoEnabled ? ` · East Visible ${Math.round(goesEastGeoOpacity * 100)}%` : ''}
+                  {goesWestGeoEnabled ? ` · West Visible ${Math.round(goesWestGeoOpacity * 100)}%` : ''}
+                  {goesEastIrEnabled ? ` · East IR ${Math.round(goesEastIrOpacity * 100)}%` : ''}
+                  {goesWestIrEnabled ? ` · West IR ${Math.round(goesWestIrOpacity * 100)}%` : ''}
+                  {goesEastWvEnabled ? ` · East WV ${Math.round(goesEastWvOpacity * 100)}%` : ''}
+                  {goesWestWvEnabled ? ` · West WV ${Math.round(goesWestWvOpacity * 100)}%` : ''}
+                </Text>
+              ) : (
+                <Text style={{ color: 'rgba(255,255,255,0.78)', fontWeight: '800' }} numberOfLines={1}>
+                  {simpleStatus}
+                </Text>
+              )}
             </View>
-
-            {localError ? (
-              <View style={{ marginTop: 6 }}>
-                <Text style={{ color: 'rgba(255,180,180,0.9)' }}>Local: {localError}</Text>
-              </View>
-            ) : null}
           </Glass>
         </View>
 
-        {/* Right actions */}
-        <View style={{ position: 'absolute', right: 12, top: 140, gap: 10 }}>
-          <Fab label="Layers" onPress={() => setLayersSheetOpen(true)} />
-          <Fab label="GPS" onPress={recenterToGps} disabled={permission !== 'granted' || !location} />
-        </View>
+        <Pressable
+          onPress={() => setLayersSheetOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open layers"
+          style={{
+            position: 'absolute',
+            right: 12,
+            top: 18,
+            width: 56,
+            height: 56,
+            borderRadius: 18,
+            borderWidth: 1,
+            borderColor: activeLayerSummary.hasActiveLayers
+              ? 'rgba(255,255,255,0.22)'
+              : 'rgba(255,255,255,0.12)',
+            backgroundColor: 'rgba(2,6,23,0.84)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <View style={{ width: 24, gap: 4 }}>
+            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.95)' }} />
+            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.78)' }} />
+            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.62)' }} />
+          </View>
 
-        {/* Legend */}
-        <View style={{ position: 'absolute', left: 12, bottom: dockBottom + DOCK_ESTIMATED_HEIGHT + 10 }}>
-          <LegendChip title="dBZ">
-            <RadarLegend style="generic" />
-          </LegendChip>
-        </View>
+          {activeLayerSummary.hasActiveLayers ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                backgroundColor: 'white',
+              }}
+            />
+          ) : null}
+        </Pressable>
 
-        {/* Bottom scrubber */}
-        <BottomDock
-          center={
-            <Glass style={{ paddingVertical: 8 }}>
-              <TimelineScrubber
-                state={state}
-                frames={uiFrames as any}
-                onSetFrame={(frameIndex) => dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) })}
-                onSetPlaying={(playing) => {
-                  if (usingLocalImage && playing) {
-                    dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-                    return;
+        {showRadarLegend ? (
+          <View style={{ position: 'absolute', left: 12, bottom: dockBottom + DOCK_ESTIMATED_HEIGHT + 10 }}>
+            <LegendChip title="dBZ">
+              <RadarLegend style="generic" />
+            </LegendChip>
+          </View>
+        ) : null}
+
+        {showTimeline ? (
+          <BottomDock
+            center={
+              <Glass style={{ paddingVertical: 8 }}>
+                <TimelineScrubber
+                  frameIndex={state.radarTime.frameIndex}
+                  playing={state.radarTime.playing}
+                  frames={uiFrames as any}
+                  onSetFrame={(frameIndex) =>
+                    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) })
                   }
-                  if (playing && frameCount < 2) {
-                    dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-                    return;
-                  }
-                  dispatch({ type: 'SET_RADAR_PLAYING', playing });
-                }}
-              />
-            </Glass>
-          }
-        />
+                  onSetPlaying={(playing) => {
+                    if (playing && frameCount < 2) {
+                      dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
+                      return;
+                    }
 
-        {/* Layer Sheet */}
+                    dispatch({ type: 'SET_RADAR_PLAYING', playing });
+                  }}
+                />
+              </Glass>
+            }
+          />
+        ) : null}
+
         <LayerSheetModal
           visible={layersSheetOpen}
           onClose={() => setLayersSheetOpen(false)}
+          state={state}
+          viewId={state.viewId}
+          onChangeView={(viewId) => dispatch({ type: 'SET_VIEW', viewId })}
           nerdy={state.nerdy}
           value={sheetValue}
           onChange={(next) => setSheetValue(next)}
-          state={state}
-          radarEnabled={radarEnabled}
-          wildfireEnabled={wildfireEnabled}
-          onToggleRadar={(enabled: boolean) => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled })}
-          onToggleWildfire={(enabled: boolean) => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'wildfire.perimeters', enabled })}
+          allowedGroups={['weather', 'fireAir']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
         />
@@ -1053,8 +814,6 @@ export default function MapsScreen() {
     </SafeAreaView>
   );
 }
-
-/* ============================================================================ */
 
 function ChipDark(props: { label: string; active?: boolean; onPress: () => void }) {
   const active = !!props.active;
@@ -1072,30 +831,6 @@ function ChipDark(props: { label: string; active?: boolean; onPress: () => void 
       }}
     >
       <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
-function Fab(props: { label: string; onPress: () => void; disabled?: boolean }) {
-  return (
-    <Pressable
-      onPress={props.onPress}
-      disabled={props.disabled}
-      style={{
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.16)',
-        backgroundColor: 'rgba(2,6,23,0.72)',
-        opacity: props.disabled ? 0.5 : 1,
-        shadowColor: '#000',
-        shadowOpacity: 0.25,
-        shadowRadius: 12,
-        elevation: 10,
-      }}
-    >
-      <Text style={{ color: 'white', fontWeight: '900' }}>{props.label}</Text>
     </Pressable>
   );
 }

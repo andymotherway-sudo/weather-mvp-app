@@ -18,7 +18,9 @@ type DailyDatum = {
 
   windMaxMph: number | null; // sustained (daily max or avg)
   windGustMaxMph: number | null;
-  windDirDominantDeg: number | null; // 0..360
+
+  // Meteorological (FROM): 0..360 where 0/360 = North, 90 = East, 180 = South, 270 = West
+  windDirDominantDeg: number | null;
 
   cloudCoverAvgPct: number | null;
 };
@@ -86,6 +88,18 @@ function pickWxIcon(pop?: number | null, cloud?: number | null) {
   return '☀️';
 }
 
+// 16-point compass for small labels
+function degToCompass(degFrom: number) {
+  const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const d = (((degFrom % 360) + 360) % 360);
+  return dirs[Math.round(d / 22.5) % 16];
+}
+
+// Normalize to [0..360)
+function normDeg(deg: number) {
+  return (((deg % 360) + 360) % 360);
+}
+
 export function DailyRangeChart({
   daily,
   unitsLabel = '°F',
@@ -138,6 +152,12 @@ export function DailyRangeChart({
     grid: 'rgba(255,255,255,0.08)',
     tickTemp: 'rgba(255,255,255,0.48)',
     tickPct: 'rgba(255,255,255,0.28)',
+
+    // wind marker styling
+    wDiscFill: 'rgba(255,255,255,0.04)',
+    wDiscStroke: 'rgba(255,255,255,0.14)',
+    wArrowFill: 'rgba(255,255,255,0.75)',
+    wText: 'rgba(255,255,255,0.45)',
   };
 
   // Geometry
@@ -148,7 +168,8 @@ export function DailyRangeChart({
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
-  const W = contentW;
+  // ✅ Fix: svg width matches inner content width
+  const W = contentW - padX * 2;
   const H = 260;
 
   const axisL = 28; // left margin for °F ticks
@@ -212,9 +233,7 @@ export function DailyRangeChart({
     .filter(Boolean) as Array<{ x: number; y: number }>;
 
   const ptsRh = data
-    .map((d, i) =>
-      typeof d.humidityMaxPct === 'number' ? { x: xForIdx(i), y: yForPct(d.humidityMaxPct) } : null
-    )
+    .map((d, i) => (typeof d.humidityMaxPct === 'number' ? { x: xForIdx(i), y: yForPct(d.humidityMaxPct) } : null))
     .filter(Boolean) as Array<{ x: number; y: number }>;
 
   const pathMax = buildPath(ptsMax);
@@ -291,6 +310,10 @@ export function DailyRangeChart({
   const selCloudPct =
     typeof data[selIdx]?.cloudCoverAvgPct === 'number' ? clamp(data[selIdx]!.cloudCoverAvgPct!, 0, 100) : null;
 
+  // Wind marker placement (above bottom day labels)
+  const windMarkerY = H - 30; // circle center
+  const windMarkerLabelY = windMarkerY + 22; // compass text under circle
+
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
@@ -328,9 +351,9 @@ export function DailyRangeChart({
           }
         }}
       >
-        <View style={{ width: contentW - padX * 2 }}>
+        <View style={{ width: W }}>
           {/* Tiles */}
-          <View style={[s.strip, { width: contentW - padX * 2 }]}>
+          <View style={[s.strip, { width: W }]}>
             {data.map((d, i) => {
               const { day, md } = niceDayLabel(d.date);
               const isSel = i === selIdx;
@@ -356,7 +379,6 @@ export function DailyRangeChart({
                     <Text style={[s.dayTop, T.body]}>{isToday ? 'TODAY' : `${day} ${md.split(' ')[1]}`}</Text>
                     <Text style={s.icon}>{pickWxIcon(d.precipProbMaxPct, d.cloudCoverAvgPct)}</Text>
 
-                    {/* ✅ avoid Typography.primaryNumber dependency */}
                     <Text style={[s.hilo, T.title]}>
                       {fmtInt(d.tempMaxF)}
                       <Text style={{ opacity: 0.65 }}> | </Text>
@@ -517,15 +539,6 @@ export function DailyRangeChart({
                   <G key={`wb-${d.date}`}>
                     {w != null ? <Rect x={wX} y={wY} width={barW} height={wH} rx={4} fill={C.wind} /> : null}
                     {g != null ? <Rect x={gX} y={gY} width={barW} height={gH} rx={4} fill={C.gust} /> : null}
-
-                    {w != null && typeof d.windDirDominantDeg === 'number' ? (
-                      <G rotation={d.windDirDominantDeg} origin={`${x} ${windBandTop - 2}`}>
-                        <Path
-                          d={`M ${x} ${windBandTop - 8} L ${x + 6} ${windBandTop - 2} L ${x} ${windBandTop + 4} Z`}
-                          fill="rgba(160,220,255,0.55)"
-                        />
-                      </G>
-                    ) : null}
                   </G>
                 );
               })}
@@ -544,7 +557,7 @@ export function DailyRangeChart({
                 </SvgText>
               </G>
 
-              {/* Cloud band (under wind) */}
+              {/* Cloud band */}
               {showCloud ? (
                 <>
                   <Rect
@@ -578,21 +591,54 @@ export function DailyRangeChart({
                     );
                   })}
 
-                  {/* Clouds label in left gutter */}
-                  <G>
-                    <SvgText
-                      x={padX}
-                      y={cloudBandTop + cloudBandH / 2 + 4}
-                      fontSize="11"
-                      fontWeight="700"
-                      textAnchor="start"
-                      fill="rgba(255,255,255,0.40)"
-                    >
-                      Clouds
-                    </SvgText>
-                  </G>
                 </>
               ) : null}
+
+              {/* ✅ Wind direction markers (meteorological FROM) centered over each day */}
+              {data.map((d, i) => {
+                const degFrom = d.windDirDominantDeg;
+                if (typeof degFrom !== 'number') return null;
+
+                const x = xForIdx(i);
+                const y = windMarkerY;
+
+                // Meteorological FROM: keep as-is (0=N, 90=E, 180=S, 270=W)
+                // Our base arrow points UP (toward North), so rotate by degFrom.
+                const rot = normDeg(degFrom);
+                const dirLabel = degToCompass(rot);
+
+                return (
+                  <G key={`wdir-${d.date}`}>
+                    <Circle
+                      cx={x}
+                      cy={y}
+                      r={10}
+                      fill={C.wDiscFill}
+                      stroke={C.wDiscStroke}
+                      strokeWidth={1}
+                    />
+
+                    <G transform={`rotate(${rot} ${x} ${y})`}>
+                      {/* Triangle pointing "up" before rotation */}
+                      <Path
+                        d={`M ${x} ${y - 8} L ${x - 4.6} ${y + 5.2} L ${x + 4.6} ${y + 5.2} Z`}
+                        fill={C.wArrowFill}
+                      />
+                    </G>
+
+                    <SvgText
+                      x={x}
+                      y={y-14}
+                      fontSize="9"
+                      fill={C.wText}
+                      fontWeight="800"
+                      textAnchor="middle"
+                    >
+                      {dirLabel}
+                    </SvgText>
+                  </G>
+                );
+              })}
 
               {/* bottom labels */}
               {data.map((d, i) => {
@@ -617,7 +663,6 @@ export function DailyRangeChart({
               })}
             </Svg>
 
-            {/* ✅ Clouds % moved BELOW chart (no crowding) */}
             {showCloud ? (
               <View style={s.cloudReadoutRow}>
                 <Text style={s.cloudReadoutLabel}>Clouds</Text>

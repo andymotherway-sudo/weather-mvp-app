@@ -1,8 +1,15 @@
 // app/(tabs)/hourly.tsx
+// ✅ Drop-in replacement
+// ✅ Keeps useLocations + branded header + charts
+// ✅ Pull-to-refresh refreshes forecast when coords exist; otherwise re-tries GPS
+// ✅ Removes "Show/Hide hourly details" (details always visible)
+// ✅ Adds explicit forecast timezone plumbing for child components
+// ✅ Prefers forecast location timezone over device timezone
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,7 +21,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
-import { DEFAULT_LOCATION } from '../lib/weather/locations';
+
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 import { NerdyHourlyTimeline } from '../../components/land/NerdyHourlyTimeline';
@@ -29,61 +37,148 @@ function safeNum(v: any): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-export default function HourlyTab() {
-  const insets = useSafeAreaInsets();
+function safeStr(v: any): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
+  return (hourlyRaw ?? []).map((h: any) => {
+    const pressureHpa =
+      safeNum(h.pressure_msl) ??
+      safeNum(h.pressureMslHpa) ??
+      safeNum(h.surface_pressure) ??
+      safeNum(h.pressureSurfaceHpa) ??
+      safeNum(h.pressure_hpa) ??
+      safeNum(h.pressureHpa) ??
+      null;
+
+    return {
+      ...h,
+      pressureHpa,
+      timeZone: safeStr(h.timeZone) ?? timeZone ?? undefined,
+      timezone: safeStr(h.timezone) ?? timeZone ?? undefined,
+    };
+  });
+}
+
+function formatTzLabel(timeZone: string | null): string | null {
+  if (!timeZone) return null;
+  const parts = timeZone.split('/');
+  return parts[parts.length - 1]?.replace(/_/g, ' ') ?? timeZone;
+}
+
+function HourlyWithCoords({
+  coords,
+  onRefreshingChange,
+  setRefreshFn,
+}: {
+  coords: { lat: number; lon: number };
+  onRefreshingChange: (refreshing: boolean) => void;
+  setRefreshFn: (fn: null | (() => void)) => void;
+}) {
   const units: UnitSystem = 'us';
-  const [showDetails, setShowDetails] = useState(false);
 
-  // ✅ Pull global location state (so it matches Land)
-  const { activeCoords, activeLabel, state: locState, refreshCurrentLocation } = useLocations();
-
-  // ✅ Only refresh GPS if the user is actually on "current" (avoid stomping favorites)
-  useEffect(() => {
-    if (locState.active?.kind === 'current') refreshCurrentLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locState.active?.kind]);
-
-  const coords = useMemo(() => {
-    if (activeCoords) return activeCoords;
-    return { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
-  }, [activeCoords]);
-
-  const locationLabel = useMemo(() => {
-    const raw = (activeCoords ? activeLabel : '')?.trim();
-    if (raw && raw.toLowerCase() !== 'current location') return raw;
-
-    // fallback: show coordinates so it’s never misleading
-    const c = activeCoords ?? { lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon };
-    return `Current location (${c.lat.toFixed(2)}, ${c.lon.toFixed(2)})`;
-  }, [activeCoords, activeLabel]);
-
-  // ✅ Always request enough days to cover 72h cleanly
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
     lon: coords.lon,
     days: 5,
   });
 
+  useEffect(() => {
+    onRefreshingChange(!!refreshing);
+  }, [refreshing, onRefreshingChange]);
+
+  useEffect(() => {
+    setRefreshFn(refresh ? () => refresh() : null);
+    return () => setRefreshFn(null);
+  }, [refresh, setRefreshFn]);
+
+    const forecastTimeZone = useMemo(() => {
+    return safeStr(data?.timezone) ?? null;
+  }, [data]);
+
   const hourlyRaw: any[] = data?.hourly ?? [];
 
-  // ✅ Normalize pressure fields (Open-Meteo often provides pressure_msl)
-  const hourly = useMemo(() => {
-    return (hourlyRaw ?? []).map((h: any) => {
-      const pressureHpa =
-        safeNum(h.pressure_msl) ??
-        safeNum(h.pressureMslHpa) ??
-        safeNum(h.surface_pressure) ??
-        safeNum(h.pressureSurfaceHpa) ??
-        safeNum(h.pressure_hpa) ??
-        safeNum(h.pressureHpa) ??
-        null;
+  const hourly = useMemo(
+    () => normalizeHourly(hourlyRaw, forecastTimeZone),
+    [hourlyRaw, forecastTimeZone]
+  );
 
-      return {
-        ...h,
-        pressureHpa, // ✅ what our UI should standardize on
-      };
-    });
-  }, [hourlyRaw]);
+  if (loading && !data) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.small}>Loading hourly forecast…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card style={styles.errorCard}>
+        <Text style={styles.errorTitle}>Error</Text>
+        <Text style={styles.errorText}>{String(error)}</Text>
+      </Card>
+    );
+  }
+
+  if (!hourly.length) return null;
+
+  const tzLabel = formatTzLabel(forecastTimeZone);
+
+  return (
+    <>
+      {!!forecastTimeZone && (
+        <Text style={styles.tzNote}>
+          Times shown for {tzLabel ?? forecastTimeZone} ({forecastTimeZone})
+        </Text>
+      )}
+
+      <HourlyCharts72h
+        hours={hourly}
+        maxHours={72}
+        units={units}
+        initialPanel="range"
+        timeZone={forecastTimeZone ?? undefined}
+      />
+
+      <NerdyHourlyTimeline
+        hours={hourly}
+        maxHours={72}
+        timeZone={forecastTimeZone ?? undefined}
+      />
+    </>
+  );
+}
+
+export default function HourlyTab() {
+  const insets = useSafeAreaInsets();
+  const { activeCoords, activeLabel, refreshCurrentLocation } = useLocations();
+
+  const coords = useMemo(() => activeCoords ?? null, [activeCoords]);
+
+  const locationLabel = useMemo(() => {
+    const raw = (activeLabel ?? '').trim();
+    if (raw) return raw;
+    return coords
+      ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})`
+      : 'Getting location…';
+  }, [activeLabel, coords]);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshFnRef = useRef<null | (() => void)>(null);
+
+  const setRefreshFn = useCallback((fn: null | (() => void)) => {
+    refreshFnRef.current = fn;
+  }, []);
+
+  const onPullToRefresh = useCallback(() => {
+    if (coords && refreshFnRef.current) {
+      refreshFnRef.current();
+      return;
+    }
+    refreshCurrentLocation();
+  }, [coords, refreshCurrentLocation]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -93,44 +188,33 @@ export default function HourlyTab() {
           styles.content,
           { paddingTop: Math.max(theme.spacing.md, Math.round(insets.top * 0.25)) },
         ]}
-        refreshControl={<RefreshControl refreshing={!!refreshing} onRefresh={refresh} />}
+        refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
       >
         <View style={styles.header}>
+          <Image source={OMNI_MARK_WORD} style={styles.wordmark} resizeMode="contain" />
           <Text style={styles.title}>Hourly</Text>
           <Text style={styles.sub} numberOfLines={1}>
             {locationLabel}
           </Text>
         </View>
 
-        {loading && !data ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.small}>Loading hourly forecast…</Text>
-          </View>
-        ) : null}
-
-        {error ? (
+        {!coords ? (
           <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Error</Text>
-            <Text style={styles.errorText}>{error}</Text>
-          </Card>
-        ) : null}
-
-        {hourly.length ? (
-          <>
-            {/* ✅ HourlyCharts72h will now have pressureHpa available on each hour */}
-            <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
-
-            <View style={{ marginTop: theme.spacing.sm }}>
-              <Pressable onPress={() => setShowDetails((v) => !v)} style={styles.toggleBtn}>
-                <Text style={styles.toggleText}>{showDetails ? 'Hide hourly details' : 'Show hourly details'}</Text>
+            <Text style={styles.errorTitle}>Getting your location…</Text>
+            <Text style={styles.errorText}>Enable GPS or pick a place in Land Wx.</Text>
+            <View style={{ marginTop: 12 }}>
+              <Pressable onPress={refreshCurrentLocation} style={styles.retryBtn}>
+                <Text style={styles.retryText}>Try again</Text>
               </Pressable>
             </View>
-
-            {/* ✅ Timeline gets the same normalized hour objects */}
-            {showDetails ? <NerdyHourlyTimeline hours={hourly} maxHours={72} /> : null}
-          </>
-        ) : null}
+          </Card>
+        ) : (
+          <HourlyWithCoords
+            coords={coords}
+            onRefreshingChange={setIsRefreshing}
+            setRefreshFn={setRefreshFn}
+          />
+        )}
 
         <View style={{ height: Math.max(24, insets.bottom) }} />
       </ScrollView>
@@ -144,17 +228,28 @@ const styles = StyleSheet.create({
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
   header: { marginBottom: theme.spacing.md },
+  wordmark: { width: 92, height: 92, marginBottom: 6 },
   title: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
+
+  tzNote: {
+    ...typography.small,
+    opacity: 0.7,
+    marginBottom: theme.spacing.sm,
+  },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   small: { ...typography.small, marginTop: theme.spacing.sm },
 
-  errorCard: { backgroundColor: theme.colors.errorBg, borderColor: theme.colors.errorBg, marginBottom: theme.spacing.lg },
+  errorCard: {
+    backgroundColor: theme.colors.errorBg,
+    borderColor: theme.colors.errorBg,
+    marginBottom: theme.spacing.lg,
+  },
   errorTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.errorText, marginBottom: 4 },
   errorText: { fontSize: 13, color: theme.colors.errorText },
 
-  toggleBtn: {
+  retryBtn: {
     alignSelf: 'flex-start',
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -163,5 +258,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  toggleText: { color: 'white', fontWeight: '900', fontSize: 12, opacity: 0.9 },
+  retryText: { color: 'white', fontWeight: '900', fontSize: 12, opacity: 0.9 },
 });
