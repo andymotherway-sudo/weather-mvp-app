@@ -1,11 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+
+# Expo
+.expo/
+.expo-shared/
+
+# Build / native
+android/
+ios/
+
+# TypeScript
+*.tsbuildinfo
+
 # Local dev
 .vscode/
 
 # Test artifacts
 rv-test.png
 
-# Scripts (not needed in runtime)
+# Scripts / data
 omniwx-api/scripts/
-
-# Local data (generated / not required for app)
 omniwx-api/data/
+omniwx-api/.expo/
+
+# Misc
+dist/
+build/
