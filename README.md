@@ -1,30 +1,93 @@
-# Omni Wx
+# OMNIwx
 
-**Omni Wx** is a multi-lens weather intelligence application designed for land, sea, sky, and extreme conditions.
+OMNIwx is a next-generation weather application that brings together forecasting, radar, marine, and sky conditions into a single unified experience.
 
-The app combines radar, mapping, and domain-specific overlays into a single cohesive experience, with progressive disclosure from simple views to advanced, professional tools.
-
-## Current Focus
-- **Land Wx**: Animated radar with smooth timeline scrubbing
-- Docked map UI designed to avoid control overlap
-- Provider-agnostic radar architecture
-- Android native builds via Expo EAS
-
-## Planned Lenses
-- **Land** — radar, wildfire, surface conditions
-- **Nautical** — buoys, sea state, marine warnings
-- **Astro** — cloud cover, seeing, light pollution
-- **Chase** — hyper-local radar and storm tools (future)
-
-## Tech Stack
-- React Native (Expo)
-- Map rendering via RN Maps and MapLibre (abstracted)
-- Modular overlay system with performance guardrails
-- Android builds via EAS
-
-## Status
-Early development. Architecture and core radar workflows are being established before expanding overlays and professional tools.
+Built on a multi-lens approach, OMNIwx allows users to move seamlessly from simple, everyday weather to more advanced environmental insights.
 
 ---
 
-© Omni Wx. All rights reserved.
+## Alpha Release (v0.1.0)
+
+This Alpha release focuses on delivering a fast, intuitive core experience across weather, maps, and sky conditions.
+
+---
+
+## Core Features
+
+### Land Weather
+- Current conditions, hourly, and daily forecasts  
+- Clean and advanced (WxLab) views  
+- Dynamic weather backgrounds  
+
+### Maps and Radar
+- Smooth radar animation with timeline scrubbing  
+- Layered map system with multiple data sources  
+- Optimized rendering for performance and clarity  
+
+### Sky and Astronomy
+- SkyScore for observing conditions  
+- Cloud cover, light pollution (Bortle), and visibility  
+- Aurora and solar activity data  
+- Sun and moon information  
+
+### Locations
+- Global location search  
+- Save and manage favorites  
+- Fast switching between places  
+
+---
+
+## The OMNIwx Approach
+
+OMNIwx is built around a multi-lens system that enables exploration across different environments:
+
+- Land — forecast, radar, and surface conditions  
+- Nautical — marine conditions, buoys, and sea state (in progress)  
+- Astro — sky visibility, light pollution, and observing quality  
+- Extremes — global weather extremes and anomalies  
+- Chase — hyper-local radar and storm tools (planned)  
+
+---
+
+## Tech Stack
+
+- React Native (Expo)  
+- MapLibre GL with a custom rendering pipeline  
+- Modular overlay architecture  
+- Cloudflare Workers for data aggregation and caching  
+- Android builds via Expo EAS  
+
+---
+
+## Alpha Status
+
+OMNIwx is currently in private Alpha testing.
+
+You may encounter:
+- Minor UI inconsistencies  
+- Occasional radar or data gaps  
+- In-progress features across Astro and Nautical views  
+
+Feedback is essential and helps shape future releases.
+
+---
+
+## Roadmap
+
+- Improve stability and performance  
+- Expand global data coverage  
+- Enhance SkyScore and Astro modeling  
+- Add Nautical and Chase capabilities  
+- Refine UI and user experience  
+
+---
+
+## Author
+
+Andrew Motherway  
+
+---
+
+## License
+
+© OMNIwx. All rights reserved.

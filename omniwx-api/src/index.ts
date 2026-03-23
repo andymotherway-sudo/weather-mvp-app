@@ -3,8 +3,21 @@
 // Drop-in replacement
 // - Keeps existing radar / current / land-extremes / NASA / NOAA routes
 // - Keeps /api/astro/location (and /v1/astro/location)
-// - Replaces worker PNG rendering with /api/astro/skyscore-grid (and /v1/astro/skyscore-grid)
-// - Worker now returns dense SkyScore grid JSON; app should render the smooth gradient locally with Skia
+// - Keeps /api/astro/skyscore-grid (and /v1/astro/skyscore-grid)
+// - Adds astro grid query support for:
+//     mode=hero|regional
+//     density=auto|low|medium|high
+//     centerLat / centerLon
+// - Returns richer SkyScore point metadata while preserving compatibility
+// - App should continue rendering the smooth gradient locally with Skia
+//
+// Targeted fixes only:
+// - Makes SkyScore grid path consistently UTC/GMT
+// - Makes density=auto conservative instead of expensive
+// - Reduces SkyScore upstream batch size
+// - Adds coarser fallback pass instead of immediate 502
+// - Accepts sparse usable points instead of failing too aggressively
+// - Retains unrelated routes and logic
 
 import { lookupBortle } from "./bortleLookup";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
@@ -18,6 +31,8 @@ export interface Env {
 type Unit = "F" | "C";
 type Units = "imperial" | "metric";
 type LandExtremeKind = "hot" | "cold" | "wind" | "rain";
+type SkyGridMode = "hero" | "regional";
+type SkyGridDensity = "auto" | "low" | "medium" | "high";
 
 type LandPoint = {
   id: string;
@@ -173,6 +188,12 @@ type SkyGridPoint = {
   score: number;
   weather01: number;
   darkness01: number;
+  transparency01?: number;
+  seeing01?: number;
+  moon01?: number;
+  aerosols01?: number;
+  siteScore01?: number;
+  humidityPct?: number | null;
   cloudTotal: number | null;
   cloudLow: number | null;
   cloudMid: number | null;
@@ -180,6 +201,10 @@ type SkyGridPoint = {
   visibilityM: number | null;
   windMps: number | null;
   gustMps: number | null;
+  bortleClass?: number | null;
+  bortleLabel?: string | null;
+  elevationM?: number | null;
+  skyBrightness?: number | null;
 };
 
 type SkyScoreGridPayload = {
@@ -201,7 +226,42 @@ type SkyScoreGridPayload = {
   fetchedAt: string;
   diagnostics: {
     source: string;
+    mode?: SkyGridMode;
+    density?: SkyGridDensity;
+    sourcePoints?: number;
+    heroCenterLat?: number | null;
+    heroCenterLon?: number | null;
   };
+};
+
+type AstroInspectPayload = {
+  ok: true;
+  lat: number;
+  lon: number;
+  hourOffset: number;
+  skyScore: number;
+  weather01: number;
+  darkness01: number;
+  transparency01: number;
+  seeing01: number;
+  moon01: number;
+  aerosols01: number;
+  siteScore01: number;
+  humidityPct?: number | null;
+  cloudTotal: number | null;
+  cloudLow: number | null;
+  cloudMid: number | null;
+  cloudHigh: number | null;
+  visibilityM: number | null;
+  windMps: number | null;
+  gustMps: number | null;
+  site: {
+    elevationM?: number | null;
+    bortleClass?: number | null;
+    bortleLabel?: string | null;
+    skyBrightness?: number | null;
+  };
+  fetchedAt: string;
 };
 
 /* =============================================================================
@@ -405,9 +465,80 @@ const WMS_STALE_SECONDS = 24 * 3600;
 const OPEN_METEO_TIMEOUT_MS = 8500;
 const OPEN_METEO_BATCH_SIZE = 75;
 
+// Sky grid specific knobs
+const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
+const SKYGRID_PRIMARY_BATCH_SIZE = 16;
+const SKYGRID_FALLBACK_BATCH_SIZE = 8;
+const SKYGRID_MIN_USABLE_POINTS = 1;
+
 /* =============================================================================
  * Generic helpers
  * ============================================================================= */
+
+function toOpenMeteoUrlCurrentFallback(lat: number, lon: number, units: Units) {
+  const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
+  const windUnit = units === "imperial" ? "mph" : "kmh";
+
+  const hourly = [
+    "temperature_2m",
+    "apparent_temperature",
+    "dew_point_2m",
+    "relative_humidity_2m",
+    "weather_code",
+    "cloud_cover",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+    "pressure_msl",
+  ].join(",");
+
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&forecast_days=1` +
+    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
+    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
+    `&timezone=auto`
+  );
+}
+
+type OpenMeteoHourlyFallbackResponse = {
+  hourly?: {
+    time?: string[];
+    temperature_2m?: Array<number | null>;
+    apparent_temperature?: Array<number | null>;
+    dew_point_2m?: Array<number | null>;
+    relative_humidity_2m?: Array<number | null>;
+    weather_code?: Array<number | null>;
+    cloud_cover?: Array<number | null>;
+    wind_speed_10m?: Array<number | null>;
+    wind_gusts_10m?: Array<number | null>;
+    wind_direction_10m?: Array<number | null>;
+    pressure_msl?: Array<number | null>;
+  };
+};
+
+function pickClosestHourlyIndex(times: string[] | undefined) {
+  if (!times?.length) return -1;
+
+  const now = Date.now();
+  let bestIdx = 0;
+  let bestDiff = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < times.length; i++) {
+    const ms = new Date(times[i]).getTime();
+    if (!Number.isFinite(ms)) continue;
+    const diff = Math.abs(ms - now);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIdx = i;
+    }
+  }
+
+  return bestIdx;
+}
 
 function fmtTemp(v: number | null | undefined, unit: Unit) {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -461,6 +592,53 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
+
+function pct01Sky(p: number | null | undefined) {
+  if (p == null || !Number.isFinite(p)) return null;
+  return clamp01(p / 100);
+}
+
+function safeNum(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function midpoint(a: number, b: number) {
+  return (a + b) / 2;
+}
+
+function parseSkyGridMode(v: string | null): SkyGridMode {
+  return v === "hero" ? "hero" : "regional";
+}
+
+function parseSkyGridDensity(v: string | null): SkyGridDensity {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "low" || s === "medium" || s === "high") return s;
+  return "auto";
+}
+
+function resolveEffectiveSkyGridDensity(args: {
+  zoom: number;
+  mode: SkyGridMode;
+  density: SkyGridDensity;
+}): Exclude<SkyGridDensity, "auto"> {
+  const { zoom, mode, density } = args;
+  if (density !== "auto") return density;
+
+  if (mode === "regional") {
+    if (zoom <= 5) return "low";
+    if (zoom <= 7) return "medium";
+    return "medium";
+  }
+
+  if (zoom <= 6) return "low";
+  if (zoom <= 8) return "medium";
+  return "medium";
+}
+
 /* =============================================================================
  * Land extremes helpers
  * ============================================================================= */
@@ -478,7 +656,7 @@ function toOpenMeteoUrlBatch(lats: number[], lons: number[], unit: Unit) {
     `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
     `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
     `&precipitation_unit=${encodeURIComponent(precipUnit)}` +
-    `&timezone=UTC`
+    `&timezone=auto`
   );
 }
 
@@ -907,7 +1085,7 @@ function calcSolarEventUtcMinutes(args: {
   const t = isSunrise ? N + (6 - lngHour) / 24 : N + (18 - lngHour) / 24;
   const M = 0.9856 * t - 3.289;
 
-  let L = M + 1.916 * Math.sin(degToRad(M)) + 0.020 * Math.sin(degToRad(2 * M)) + 282.634;
+  let L = M + 1.916 * Math.sin(degToRad(M)) + 0.02 * Math.sin(degToRad(2 * M)) + 282.634;
   L = normalizeDegrees(L);
 
   let RA = radToDeg(Math.atan(0.91764 * Math.tan(degToRad(L))));
@@ -1061,23 +1239,107 @@ type SkyImagePoint = {
   visibilityM: number | null;
   windMps: number | null;
   gustMps: number | null;
+  humidityPct: number | null;
+
+  bortleClass?: number | null;
+  bortleLabel?: string | null;
+  elevationM?: number | null;
+  skyBrightness?: number | null;
 };
 
-function chooseSkyImageStepDeg(zoom: number) {
+type SkyScoredPoint = SkyImagePoint & {
+  score: number;
+  weather01: number;
+  darkness01: number;
+  transparency01: number;
+  seeing01: number;
+  moon01: number;
+  aerosols01: number;
+  siteScore01: number;
+};
+
+type SkySamplingPlan = {
+  mode: SkyGridMode;
+  density: SkyGridDensity;
+  sourceStepDeg: number;
+  heroStepDeg?: number;
+  heroRadiusDeg?: number;
+  maxRegionalPts: number;
+  maxHeroPts: number;
+};
+
+function chooseSkySamplingPlan(args: {
+  zoom: number;
+  mode: SkyGridMode;
+  density: SkyGridDensity;
+}): SkySamplingPlan {
+  const { zoom, mode, density } = args;
   const z = Math.max(2, Math.min(12, zoom));
-  if (z <= 3) return 1.5;
-  if (z <= 4) return 1.0;
-  if (z <= 5) return 0.5;
-  if (z <= 6) return 0.25;
-  if (z <= 7) return 0.2;
-  if (z <= 8) return 0.15;
-  return 0.1;
+
+  let regionalBase =
+    z <= 3 ? 1.5 :
+    z <= 4 ? 1.0 :
+    z <= 5 ? 0.5 :
+    z <= 6 ? 0.25 :
+    z <= 7 ? 0.20 :
+    z <= 8 ? 0.15 :
+    0.10;
+
+  if (density === "low") regionalBase *= 1.35;
+  else if (density === "high") regionalBase *= 0.72;
+
+  regionalBase = clampFloat(regionalBase, 0.04, 2.0, 0.2);
+
+  const maxRegionalPts =
+    density === "high" ? (mode === "hero" ? 360 : 260) :
+    density === "low" ? (mode === "hero" ? 180 : 120) :
+    mode === "hero" ? 260 : 180;
+
+  if (mode === "regional") {
+    return {
+      mode,
+      density,
+      sourceStepDeg: regionalBase,
+      maxRegionalPts,
+      maxHeroPts: 0,
+    };
+  }
+
+  let heroStepDeg = regionalBase * 0.45;
+  if (density === "high") heroStepDeg *= 0.82;
+  if (density === "low") heroStepDeg *= 1.18;
+  heroStepDeg = clampFloat(heroStepDeg, 0.025, 0.5, 0.08);
+
+  let heroRadiusDeg =
+    z >= 9 ? 1.2 :
+    z >= 8 ? 1.6 :
+    z >= 7 ? 2.0 :
+    z >= 6 ? 2.6 :
+    3.5;
+
+  if (density === "high") heroRadiusDeg *= 1.15;
+  if (density === "low") heroRadiusDeg *= 0.90;
+
+  const maxHeroPts =
+    density === "high" ? 420 :
+    density === "low" ? 180 :
+    280;
+
+  return {
+    mode,
+    density,
+    sourceStepDeg: regionalBase,
+    heroStepDeg,
+    heroRadiusDeg,
+    maxRegionalPts,
+    maxHeroPts,
+  };
 }
 
-function buildSkyImageGrid(
+function buildRegularGrid(
   bounds: { west: number; east: number; south: number; north: number },
   stepDeg: number,
-  maxPts = 900,
+  maxPts: number,
 ) {
   const pts: Array<{ lat: number; lon: number }> = [];
 
@@ -1093,7 +1355,7 @@ function buildSkyImageGrid(
   };
 
   let step = stepDeg;
-  while (estCount(step) > maxPts && step < 6) step *= 1.5;
+  while (estCount(step) > maxPts && step < 6) step *= 1.35;
 
   const lat0 = Math.floor(latMin / step) * step;
   const lon0 = Math.floor(lonMin / step) * step;
@@ -1107,130 +1369,309 @@ function buildSkyImageGrid(
   return { pts, stepUsed: step };
 }
 
+function buildHeroGrid(
+  bounds: { west: number; east: number; south: number; north: number },
+  centerLat: number,
+  centerLon: number,
+  stepDeg: number,
+  radiusDeg: number,
+  maxPts: number,
+) {
+  const pts: Array<{ lat: number; lon: number }> = [];
+
+  const latMin = Math.max(Math.min(bounds.south, bounds.north), centerLat - radiusDeg);
+  const latMax = Math.min(Math.max(bounds.south, bounds.north), centerLat + radiusDeg);
+  const lonMin = Math.max(Math.min(bounds.west, bounds.east), centerLon - radiusDeg);
+  const lonMax = Math.min(Math.max(bounds.west, bounds.east), centerLon + radiusDeg);
+
+  if (latMax < latMin || lonMax < lonMin) {
+    return { pts: [], stepUsed: stepDeg };
+  }
+
+  const estCount = (step: number) => {
+    const nLat = Math.max(1, Math.floor((latMax - latMin) / step) + 1);
+    const nLon = Math.max(1, Math.floor((lonMax - lonMin) / step) + 1);
+    return nLat * nLon;
+  };
+
+  let step = stepDeg;
+  while (estCount(step) > maxPts && step < 3) step *= 1.25;
+
+  const lat0 = Math.floor(latMin / step) * step;
+  const lon0 = Math.floor(lonMin / step) * step;
+
+  for (let lat = lat0; lat <= latMax + 1e-9; lat += step) {
+    for (let lon = lon0; lon <= lonMax + 1e-9; lon += step) {
+      const dLat = lat - centerLat;
+      const dLon = lon - centerLon;
+      const ellipse = (dLat * dLat) / (radiusDeg * radiusDeg) + (dLon * dLon) / (radiusDeg * radiusDeg);
+      if (ellipse <= 1.05) pts.push({ lat, lon });
+    }
+  }
+
+  return { pts, stepUsed: step };
+}
+
+function dedupeGridPoints(points: Array<{ lat: number; lon: number }>, keyStep = 0.0001) {
+  const out: Array<{ lat: number; lon: number }> = [];
+  const seen = new Set<string>();
+
+  for (const p of points) {
+    const key = `${roundCoordKey(p.lat, keyStep).toFixed(4)},${roundCoordKey(p.lon, keyStep).toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+
+  return out;
+}
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-async function fetchSkyImageGridPoints(args: {
-  bounds: { west: number; east: number; south: number; north: number };
-  zoom: number;
-  hourOffset: number;
-}) {
-  const stepDeg = chooseSkyImageStepDeg(args.zoom);
-  const maxPts =
-    args.zoom >= 9 ? 220 :
-    args.zoom >= 8 ? 180 :
-    args.zoom >= 7 ? 140 :
-    args.zoom >= 6 ? 110 :
-    80;
+function computeCloudPenaltyCanonical(p: SkyImagePoint) {
+  const low = pct01Sky(p.cloudLow) ?? 0;
+  const mid = pct01Sky(p.cloudMid) ?? 0;
+  const high = pct01Sky(p.cloudHigh) ?? 0;
+  const total = pct01Sky(p.cloudTotal);
 
-  const { pts, stepUsed } = buildSkyImageGrid(args.bounds, stepDeg, maxPts);
-  const chunks = chunkArray(pts, 48);
-  const out: SkyImagePoint[] = [];
+  const cloudPenaltyFromLayers = clamp01(0.36 * low + 0.62 * mid + 0.96 * high);
 
-  const hourly = [
-    "cloud_cover",
-    "cloud_cover_low",
-    "cloud_cover_mid",
-    "cloud_cover_high",
-    "visibility",
-    "wind_speed_10m",
-    "wind_gusts_10m",
-  ].join(",");
-
-  for (const chunk of chunks) {
-    const lats = chunk.map((p) => p.lat.toFixed(3)).join(",");
-    const lons = chunk.map((p) => p.lon.toFixed(3)).join(",");
-
-    const upstream =
-      `https://api.open-meteo.com/v1/forecast` +
-      `?latitude=${encodeURIComponent(lats)}` +
-      `&longitude=${encodeURIComponent(lons)}` +
-      `&hourly=${encodeURIComponent(hourly)}` +
-      `&wind_speed_unit=ms` +
-      `&timezone=GMT`;
-
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
-
-    try {
-      const res = await fetch(upstream, {
-        signal: ctrl.signal,
-        headers: { accept: "application/json" },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`SkyScore upstream failed: ${res.status} ${txt.slice(0, 120)}`);
-      }
-
-      const json: any = await res.json();
-      const rows: any[] = Array.isArray(json) ? json : [json];
-      const hourIdx = Math.max(0, Math.min(47, Math.floor(args.hourOffset)));
-
-      for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const h = r?.hourly ?? {};
-
-        const pick = (name: string) => {
-          const arr = h?.[name];
-          const v = Array.isArray(arr) ? arr[hourIdx] : null;
-          const n = Number(v);
-          return Number.isFinite(n) ? n : null;
-        };
-
-        out.push({
-          lat: chunk[i]?.lat ?? Number(r?.latitude),
-          lon: chunk[i]?.lon ?? Number(r?.longitude),
-          cloudTotal: pick("cloud_cover"),
-          cloudLow: pick("cloud_cover_low"),
-          cloudMid: pick("cloud_cover_mid"),
-          cloudHigh: pick("cloud_cover_high"),
-          visibilityM: pick("visibility"),
-          windMps: pick("wind_speed_10m"),
-          gustMps: pick("wind_gusts_10m"),
-        });
-      }
-    } finally {
-      clearTimeout(t);
-    }
-  }
-
-  return { points: out, stepUsed };
+  return Math.max(total ?? 0, cloudPenaltyFromLayers);
 }
 
-function pct01Sky(p: number | null) {
-  if (p == null || !Number.isFinite(p)) return 0;
-  return Math.max(0, Math.min(1, p / 100));
-}
-
-function computeSkyImageScore01(p: SkyImagePoint) {
-  const low = pct01Sky(p.cloudLow);
-  const mid = pct01Sky(p.cloudMid);
-  const high = pct01Sky(p.cloudHigh);
-
-  const cloudPenalty = Math.max(
-    pct01Sky(p.cloudTotal),
-    Math.max(0, Math.min(1, 0.3 * low + 0.55 * mid + 0.9 * high)),
-  );
+function computeTransparency01Canonical(p: SkyImagePoint) {
+  const cloudPenalty = computeCloudPenaltyCanonical(p);
 
   const visKm = p.visibilityM != null ? p.visibilityM / 1000 : null;
-  const visPenalty =
+  const visibilityPenalty =
     visKm == null
-      ? 0.18
-      : Math.max(0, Math.min(1, (20 - Math.max(0, Math.min(20, visKm))) / 20)) * 0.55;
+      ? 0.12
+      : clamp01((22 - Math.max(0, Math.min(22, visKm))) / 22) * 0.40;
 
-  const gust = p.gustMps ?? p.windMps ?? 0;
-  const windPenalty = Math.max(0, Math.min(1, (gust - 6) / 16)) * 0.35;
+  const humidity = p.humidityPct ?? null;
+  const humidityPenalty =
+    humidity == null
+      ? 0.05
+      : clamp01((humidity - 68) / 32) * 0.24;
 
-  return Math.max(0, Math.min(1, 1 - (cloudPenalty * 0.85 + visPenalty + windPenalty)));
+  let transparency01 = clamp01(1 - (cloudPenalty * 1.02 + visibilityPenalty + humidityPenalty));
+
+  const cloudTotalPct = p.cloudTotal ?? null;
+  if (cloudTotalPct != null) {
+    if (cloudTotalPct >= 100) transparency01 = Math.min(transparency01, 0.02);
+    else if (cloudTotalPct >= 98) transparency01 = Math.min(transparency01, 0.04);
+    else if (cloudTotalPct >= 95) transparency01 = Math.min(transparency01, 0.07);
+    else if (cloudTotalPct >= 90) transparency01 = Math.min(transparency01, 0.12);
+    else if (cloudTotalPct >= 85) transparency01 = Math.min(transparency01, 0.18);
+  }
+
+  if (cloudPenalty >= 0.95) transparency01 = Math.min(transparency01, 0.06);
+  else if (cloudPenalty >= 0.90) transparency01 = Math.min(transparency01, 0.12);
+  else if (cloudPenalty >= 0.85) transparency01 = Math.min(transparency01, 0.18);
+
+  return transparency01;
 }
 
-function buildSkyPointLookup(points: Array<SkyImagePoint & { score: number }>, stepUsed: number) {
+function computeSeeing01Canonical(p: SkyImagePoint) {
+  const wind = p.windMps ?? 0;
+  const gust = p.gustMps ?? wind;
+
+  const sustainedPenalty = clamp01((wind - 4) / 10) * 0.42;
+  const gustPenalty = clamp01((gust - 6) / 14) * 0.50;
+  const humidityPenalty = p.humidityPct == null ? 0 : clamp01((p.humidityPct - 85) / 15) * 0.08;
+
+  return clamp01(1 - (sustainedPenalty + gustPenalty + humidityPenalty));
+}
+
+function computeMoonScore01Canonical(args: {
+  moonIsUp: boolean;
+  moonIlluminationPct: number | null;
+  darknessScore: number;
+}) {
+  const { moonIsUp, moonIlluminationPct, darknessScore } = args;
+  if (!moonIsUp) return 1;
+
+  const illum01 = clamp01((moonIlluminationPct ?? 0) / 100);
+  const dark01 = clamp01(darknessScore);
+  const maxPenalty = 0.82 * dark01;
+
+  return clamp01(1 - illum01 * maxPenalty);
+}
+
+function computeAerosolScore01Canonical(_p: SkyImagePoint) {
+  return 0.75;
+}
+
+function bortleToScore01Canonical(bortle: number | null | undefined) {
+  if (bortle == null) return 0.5;
+
+  const b = Math.max(1, Math.min(9, bortle));
+  const map: Record<number, number> = {
+    1: 1.0,
+    2: 0.96,
+    3: 0.89,
+    4: 0.80,
+    5: 0.67,
+    6: 0.54,
+    7: 0.40,
+    8: 0.26,
+    9: 0.14,
+  };
+
+  return map[Math.round(b)] ?? 0.5;
+}
+
+function elevationBonus01Canonical(elevationM: number | null | undefined) {
+  if (elevationM == null) return 0;
+  return Math.max(0, Math.min(0.08, (elevationM / 2500) * 0.08));
+}
+
+function computeSiteScore01Canonical(lat: number, lon: number) {
+  const site = lookupBortle(lat, lon);
+  const bortle01 = bortleToScore01Canonical(site?.bortleClass ?? null);
+  const elevationBonus = elevationBonus01Canonical(site?.elevationM ?? null);
+  return clamp01(bortle01 + elevationBonus);
+}
+
+function computeDarknessScoreForHour(args: {
+  hourOffset: number;
+  pointDate0: string;
+  pointDate1: string;
+  lat: number;
+  lon: number;
+  offset: string;
+}) {
+  const { hourOffset, pointDate0, pointDate1, lat, lon, offset } = args;
+
+  const todaySunset = formatLocalIsoFromUtcMinutes({
+    date: pointDate0,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate0, lat, lon, zenithDeg: 90.833, isSunrise: false }) ?? NaN,
+    offset,
+  });
+
+  const todayCivilDusk = formatLocalIsoFromUtcMinutes({
+    date: pointDate0,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate0, lat, lon, zenithDeg: 96, isSunrise: false }) ?? NaN,
+    offset,
+  });
+
+  const todayNauticalDusk = formatLocalIsoFromUtcMinutes({
+    date: pointDate0,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate0, lat, lon, zenithDeg: 102, isSunrise: false }) ?? NaN,
+    offset,
+  });
+
+  const todayAstronomicalDusk = formatLocalIsoFromUtcMinutes({
+    date: pointDate0,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate0, lat, lon, zenithDeg: 108, isSunrise: false }) ?? NaN,
+    offset,
+  });
+
+  const tomorrowSunrise = formatLocalIsoFromUtcMinutes({
+    date: pointDate1,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate1, lat, lon, zenithDeg: 90.833, isSunrise: true }) ?? NaN,
+    offset,
+  });
+
+  const tomorrowCivilDawn = formatLocalIsoFromUtcMinutes({
+    date: pointDate1,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate1, lat, lon, zenithDeg: 96, isSunrise: true }) ?? NaN,
+    offset,
+  });
+
+  const tomorrowNauticalDawn = formatLocalIsoFromUtcMinutes({
+    date: pointDate1,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate1, lat, lon, zenithDeg: 102, isSunrise: true }) ?? NaN,
+    offset,
+  });
+
+  const tomorrowAstronomicalDawn = formatLocalIsoFromUtcMinutes({
+    date: pointDate1,
+    utcMinutes: calcSolarEventUtcMinutes({ date: pointDate1, lat, lon, zenithDeg: 108, isSunrise: true }) ?? NaN,
+    offset,
+  });
+
+  const base = new Date(`${pointDate0}T00:00:00${offset}`);
+  if (Number.isNaN(base.getTime())) return 1;
+
+  const t = new Date(base.getTime() + Math.max(0, Math.min(47, Math.floor(hourOffset))) * 3600_000);
+  const timeMs = t.getTime();
+
+  const isBetween = (start?: string | null, end?: string | null) => {
+    if (!start || !end) return false;
+    const ts = new Date(start).getTime();
+    const te = new Date(end).getTime();
+    if (!Number.isFinite(ts) || !Number.isFinite(te) || !Number.isFinite(timeMs)) return false;
+    return timeMs >= ts && timeMs <= te;
+  };
+
+  const isTrueDark = isBetween(todayAstronomicalDusk, tomorrowAstronomicalDawn);
+  const isAstronomicalTwilight =
+    isBetween(todayNauticalDusk, todayAstronomicalDusk) ||
+    isBetween(tomorrowAstronomicalDawn, tomorrowNauticalDawn);
+
+  const isNauticalTwilight =
+    isBetween(todayCivilDusk, todayNauticalDusk) ||
+    isBetween(tomorrowNauticalDawn, tomorrowCivilDawn);
+
+  const isCivilTwilight =
+    isBetween(todaySunset, todayCivilDusk) ||
+    isBetween(tomorrowCivilDawn, tomorrowSunrise);
+
+  const isNight = isBetween(todayCivilDusk, tomorrowSunrise);
+
+  if (isTrueDark) return 1.0;
+  if (isAstronomicalTwilight) return 0.78;
+  if (isNauticalTwilight) return 0.52;
+  if (isCivilTwilight) return 0.28;
+  if (isNight) return 0.85;
+  return 0.18;
+}
+
+function computeMoonApproxForGrid(args: {
+  hourOffset: number;
+  pointDate0: string;
+  offset: string;
+  lat: number;
+  lon: number;
+}) {
+  const { hourOffset, pointDate0, offset, lat, lon } = args;
+
+  const base = new Date(`${pointDate0}T00:00:00${offset}`);
+  if (Number.isNaN(base.getTime())) {
+    return { moonIsUp: false, moonIlluminationPct: null as number | null };
+  }
+
+  const t = new Date(base.getTime() + Math.max(0, Math.min(47, Math.floor(hourOffset))) * 3600_000);
+  const localHour = t.getUTCHours() + t.getUTCMinutes() / 60;
+
+  const phaseLookup = lookupBortle(lat, lon);
+  void phaseLookup;
+
+  const synodicDays = 29.530588853;
+  const refMs = Date.UTC(2000, 0, 6, 18, 14, 0, 0);
+  const ageDays = ((t.getTime() - refMs) / 86400000) % synodicDays;
+  const normalizedAge = ageDays < 0 ? ageDays + synodicDays : ageDays;
+  const illumPct = Math.round(((1 - Math.cos((2 * Math.PI * normalizedAge) / synodicDays)) / 2) * 100);
+
+  const riseApprox = (6 + (normalizedAge / synodicDays) * 24) % 24;
+  const setApprox = (riseApprox + 12) % 24;
+
+  const moonIsUp =
+    riseApprox <= setApprox
+      ? localHour >= riseApprox && localHour <= setApprox
+      : localHour >= riseApprox || localHour <= setApprox;
+
+  return { moonIsUp, moonIlluminationPct: illumPct };
+}
+
+function buildSkyPointLookup(points: SkyScoredPoint[], stepUsed: number) {
   const key = (lat: number, lon: number) => `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  const m = new Map<string, SkyImagePoint & { score: number }>();
+  const m = new Map<string, SkyScoredPoint>();
 
   for (const p of points) {
     const la = Math.round(p.lat / stepUsed) * stepUsed;
@@ -1264,7 +1705,7 @@ function sampleSkyScoreBilinear(
   const q22 = lookup.get(lat1, lon1);
 
   if (!q11 || !q12 || !q21 || !q22) {
-    const cand = [q11, q12, q21, q22].filter(Boolean) as Array<SkyImagePoint & { score: number }>;
+    const cand = [q11, q12, q21, q22].filter(Boolean) as SkyScoredPoint[];
     if (!cand.length) return 100;
 
     let best = cand[0].score;
@@ -1288,13 +1729,268 @@ function sampleSkyScoreBilinear(
 }
 
 function buildSkyScoreGridCacheKey(reqUrl: URL) {
-  const next = new URL(reqUrl.origin + "/__cache__/astro/skyscore-grid/v1");
-  const keys = ["west", "south", "east", "north", "zoom", "hour", "w", "h", "includePoints"];
+  const next = new URL(reqUrl.origin + "/__cache__/astro/skyscore-grid/v3");
+  const keys = [
+    "west",
+    "south",
+    "east",
+    "north",
+    "zoom",
+    "hour",
+    "w",
+    "h",
+    "includePoints",
+    "mode",
+    "density",
+    "centerLat",
+    "centerLon",
+  ];
   for (const k of keys) {
     const v = reqUrl.searchParams.get(k);
     if (v != null) next.searchParams.set(k, v);
   }
   return new Request(next.toString(), { method: "GET" });
+}
+
+function buildAstroInspectCacheKey(reqUrl: URL, lat: number, lon: number, hourOffset: number) {
+  const next = new URL(reqUrl.origin + "/__cache__/astro/inspect/v1");
+  next.searchParams.set("lat", String(Math.round(lat * 1000) / 1000));
+  next.searchParams.set("lon", String(Math.round(lon * 1000) / 1000));
+  next.searchParams.set("hour", String(clampInt(hourOffset, 0, 47)));
+  return new Request(next.toString(), { method: "GET" });
+}
+
+function buildUtcHourWindow(hourOffset: number, spanHours = 2) {
+  const base = new Date();
+  base.setUTCMinutes(0, 0, 0);
+
+  const safeHourOffset = Math.max(0, Math.min(47, Math.floor(hourOffset)));
+  const safeSpanHours = Math.max(1, Math.min(6, Math.floor(spanHours)));
+
+  const start = new Date(base.getTime() + safeHourOffset * 3600_000);
+  const end = new Date(start.getTime() + safeSpanHours * 3600_000);
+
+  const toHourIso = (d: Date) => {
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    const hh = String(d.getUTCHours()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T${hh}:00`;
+  };
+
+  return {
+    startHourIso: toHourIso(start),
+    endHourIso: toHourIso(end),
+  };
+}
+
+async function fetchSkyImageGridPointsPass(args: {
+  bounds: { west: number; east: number; south: number; north: number };
+  zoom: number;
+  hourOffset: number;
+  mode: SkyGridMode;
+  density: Exclude<SkyGridDensity, "auto">;
+  centerLat?: number | null;
+  centerLon?: number | null;
+  batchSize: number;
+  coarsenMultiplier?: number;
+}) {
+  const plan = chooseSkySamplingPlan({
+    zoom: args.zoom,
+    mode: args.mode,
+    density: args.density,
+  });
+
+  const coarsen = Math.max(1, args.coarsenMultiplier ?? 1);
+
+  const regional = buildRegularGrid(
+    args.bounds,
+    plan.sourceStepDeg * coarsen,
+    Math.max(16, Math.floor(plan.maxRegionalPts / coarsen))
+  );
+
+  let heroPts: Array<{ lat: number; lon: number }> = [];
+  let heroStepUsed: number | undefined;
+
+  const centerLat =
+    args.centerLat != null && Number.isFinite(args.centerLat)
+      ? args.centerLat
+      : midpoint(args.bounds.south, args.bounds.north);
+
+  const centerLon =
+    args.centerLon != null && Number.isFinite(args.centerLon)
+      ? args.centerLon
+      : midpoint(args.bounds.west, args.bounds.east);
+
+  if (args.mode === "hero" && plan.heroStepDeg && plan.heroRadiusDeg) {
+    const hero = buildHeroGrid(
+      args.bounds,
+      centerLat,
+      centerLon,
+      plan.heroStepDeg * coarsen,
+      plan.heroRadiusDeg,
+      Math.max(16, Math.floor(plan.maxHeroPts / coarsen))
+    );
+    heroPts = hero.pts;
+    heroStepUsed = hero.stepUsed;
+  }
+
+  const mergedPts = dedupeGridPoints([...regional.pts, ...heroPts], 0.0001);
+  const chunks = chunkArray(mergedPts, Math.max(1, Math.floor(args.batchSize)));
+  const out: SkyImagePoint[] = [];
+
+  const hourly = [
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "visibility",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "relative_humidity_2m",
+  ].join(",");
+
+  const { startHourIso, endHourIso } = buildUtcHourWindow(args.hourOffset, 2);
+
+  for (const block of chunks) {
+    const lats = block.map((p) => p.lat.toFixed(4)).join(",");
+    const lons = block.map((p) => p.lon.toFixed(4)).join(",");
+
+    const upstream =
+      `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${encodeURIComponent(lats)}` +
+      `&longitude=${encodeURIComponent(lons)}` +
+      `&hourly=${encodeURIComponent(hourly)}` +
+      `&wind_speed_unit=ms` +
+      `&timezone=GMT` +
+      `&start_hour=${encodeURIComponent(startHourIso)}` +
+      `&end_hour=${encodeURIComponent(endHourIso)}`;
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), OPEN_METEO_SKYGRID_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(upstream, {
+        signal: ctrl.signal,
+        headers: { accept: "application/json" },
+      });
+
+      if (!res.ok) {
+        continue;
+      }
+
+      const json: any = await res.json();
+      const rows: any[] = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.results)
+          ? json.results
+          : [json];
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const h = r?.hourly ?? {};
+        const times: string[] = Array.isArray(h?.time) ? h.time : [];
+
+        let hourIdx = times.findIndex((t: string) => String(t).slice(0, 13) === startHourIso.slice(0, 13));
+        if (hourIdx < 0) hourIdx = 0;
+
+        const pick = (name: string) => {
+          const arr = h?.[name];
+          const v = Array.isArray(arr) ? arr[hourIdx] : null;
+          return safeNum(v);
+        };
+
+        const latVal = block[i]?.lat ?? safeNum(r?.latitude) ?? null;
+        const lonVal = block[i]?.lon ?? safeNum(r?.longitude) ?? null;
+
+        if (latVal == null || lonVal == null) continue;
+
+        out.push({
+          lat: latVal,
+          lon: lonVal,
+          cloudTotal: pick("cloud_cover"),
+          cloudLow: pick("cloud_cover_low"),
+          cloudMid: pick("cloud_cover_mid"),
+          cloudHigh: pick("cloud_cover_high"),
+          visibilityM: pick("visibility"),
+          windMps: pick("wind_speed_10m"),
+          gustMps: pick("wind_gusts_10m"),
+          humidityPct: pick("relative_humidity_2m"),
+        });
+      }
+    } catch {
+      continue;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  return {
+    points: out,
+    stepUsed: Math.min(regional.stepUsed, heroStepUsed ?? regional.stepUsed),
+    plan,
+    heroCenterLat: args.mode === "hero" ? centerLat : null,
+    heroCenterLon: args.mode === "hero" ? centerLon : null,
+  };
+}
+
+async function fetchSkyImageGridPoints(args: {
+  bounds: { west: number; east: number; south: number; north: number };
+  zoom: number;
+  hourOffset: number;
+  mode: SkyGridMode;
+  density: SkyGridDensity;
+  centerLat?: number | null;
+  centerLon?: number | null;
+}) {
+  const effectiveDensity = resolveEffectiveSkyGridDensity({
+    zoom: args.zoom,
+    mode: args.mode,
+    density: args.density,
+  });
+
+  const primary = await fetchSkyImageGridPointsPass({
+    bounds: args.bounds,
+    zoom: args.zoom,
+    hourOffset: args.hourOffset,
+    mode: args.mode,
+    density: effectiveDensity,
+    centerLat: args.centerLat,
+    centerLon: args.centerLon,
+    batchSize: SKYGRID_PRIMARY_BATCH_SIZE,
+    coarsenMultiplier: 1,
+  });
+
+  if (primary.points.length >= SKYGRID_MIN_USABLE_POINTS) {
+    return {
+      ...primary,
+      plan: { ...primary.plan, density: effectiveDensity },
+    };
+  }
+
+  const fallbackDensity: Exclude<SkyGridDensity, "auto"> =
+    effectiveDensity === "high" ? "medium" : "low";
+
+  const fallback = await fetchSkyImageGridPointsPass({
+    bounds: args.bounds,
+    zoom: args.zoom,
+    hourOffset: args.hourOffset,
+    mode: args.mode,
+    density: fallbackDensity,
+    centerLat: args.centerLat,
+    centerLon: args.centerLon,
+    batchSize: SKYGRID_FALLBACK_BATCH_SIZE,
+    coarsenMultiplier: 2.0,
+  });
+
+  if (fallback.points.length >= SKYGRID_MIN_USABLE_POINTS) {
+    return {
+      ...fallback,
+      plan: { ...fallback.plan, density: fallbackDensity },
+    };
+  }
+
+  throw new Error("SkyScore upstream returned zero usable points");
 }
 
 async function buildSkyScoreGridPayload(args: {
@@ -1304,21 +2000,84 @@ async function buildSkyScoreGridPayload(args: {
   width: number;
   height: number;
   includePoints?: boolean;
+  mode: SkyGridMode;
+  density: SkyGridDensity;
+  centerLat?: number | null;
+  centerLon?: number | null;
 }): Promise<SkyScoreGridPayload> {
-  const { points, stepUsed } = await fetchSkyImageGridPoints({
+  const fetched = await fetchSkyImageGridPoints({
     bounds: args.bounds,
     zoom: args.zoom,
     hourOffset: args.hourOffset,
+    mode: args.mode,
+    density: args.density,
+    centerLat: args.centerLat,
+    centerLon: args.centerLon,
   });
 
-  const scored = points.map((p) => {
-    const weather01 = computeSkyImageScore01(p);
-    const score = Math.round(weather01 * 100);
+  const { points, stepUsed, plan, heroCenterLat, heroCenterLon } = fetched;
+
+  const now = new Date();
+  const pointDate0 = now.toISOString().slice(0, 10);
+  const pointDate1 = new Date(now.getTime() + 86400000).toISOString().slice(0, 10);
+
+  const offset = "+00:00";
+
+  const scored: SkyScoredPoint[] = points.map((p) => {
+    const transparency01 = computeTransparency01Canonical(p);
+    const seeing01 = computeSeeing01Canonical(p);
+    const darkness01 = computeDarknessScoreForHour({
+      hourOffset: args.hourOffset,
+      pointDate0,
+      pointDate1,
+      lat: p.lat,
+      lon: p.lon,
+      offset,
+    });
+
+    const moonApprox = computeMoonApproxForGrid({
+      hourOffset: args.hourOffset,
+      pointDate0,
+      offset,
+      lat: p.lat,
+      lon: p.lon,
+    });
+
+    const moon01 = computeMoonScore01Canonical({
+      moonIsUp: moonApprox.moonIsUp,
+      moonIlluminationPct: moonApprox.moonIlluminationPct,
+      darknessScore: darkness01,
+    });
+
+    const aerosols01 = computeAerosolScore01Canonical(p);
+    const siteLookup = lookupBortle(p.lat, p.lon);
+    const siteScore01 = computeSiteScore01Canonical(p.lat, p.lon);
+
+    const weather01 = clamp01(
+      transparency01 * 0.40 +
+      seeing01 * 0.16 +
+      darkness01 * 0.20 +
+      moon01 * 0.12 +
+      aerosols01 * 0.12
+    );
+
+    const observer01 = clamp01(weather01 * (0.35 + 0.65 * siteScore01));
+    const score = Math.round(observer01 * 100);
+
     return {
       ...p,
       score,
       weather01,
-      darkness01: 1,
+      darkness01,
+      transparency01,
+      seeing01,
+      moon01,
+      aerosols01,
+      siteScore01,
+      bortleClass: siteLookup?.bortleClass ?? null,
+      bortleLabel: siteLookup?.bortleLabel ?? null,
+      elevationM: siteLookup?.elevationM ?? null,
+      skyBrightness: siteLookup?.skyBrightness ?? null,
     };
   });
 
@@ -1345,7 +2104,10 @@ async function buildSkyScoreGridPayload(args: {
     zoom: args.zoom,
     hourOffset: args.hourOffset,
     sourceStepDeg: stepUsed,
-    denseStepDeg: Math.max(lonSpan / Math.max(1, args.width - 1), latSpan / Math.max(1, args.height - 1)),
+    denseStepDeg: Math.max(
+      lonSpan / Math.max(1, args.width - 1),
+      latSpan / Math.max(1, args.height - 1),
+    ),
     width: args.width,
     height: args.height,
     scores,
@@ -1356,6 +2118,16 @@ async function buildSkyScoreGridPayload(args: {
           score: p.score,
           weather01: p.weather01,
           darkness01: p.darkness01,
+          transparency01: p.transparency01,
+          seeing01: p.seeing01,
+          moon01: p.moon01,
+          aerosols01: p.aerosols01,
+          siteScore01: p.siteScore01,
+          humidityPct: p.humidityPct,
+          bortleClass: p.bortleClass ?? null,
+          bortleLabel: p.bortleLabel ?? null,
+          elevationM: p.elevationM ?? null,
+          skyBrightness: p.skyBrightness ?? null,
           cloudTotal: p.cloudTotal,
           cloudLow: p.cloudLow,
           cloudMid: p.cloudMid,
@@ -1367,8 +2139,163 @@ async function buildSkyScoreGridPayload(args: {
       : undefined,
     fetchedAt: new Date().toISOString(),
     diagnostics: {
-      source: "open-meteo worker dense grid",
+      source: "canonical sky score grid v3 utc-stable",
+      mode: plan.mode,
+      density: plan.density,
+      sourcePoints: scored.length,
+      heroCenterLat,
+      heroCenterLon,
     },
+  };
+}
+
+async function buildAstroInspectPayload(args: {
+  lat: number;
+  lon: number;
+  hourOffset: number;
+}): Promise<AstroInspectPayload> {
+  const { lat, lon, hourOffset } = args;
+  const hourly = [
+    "cloud_cover",
+    "cloud_cover_low",
+    "cloud_cover_mid",
+    "cloud_cover_high",
+    "visibility",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "relative_humidity_2m",
+  ].join(",");
+
+  const { startHourIso, endHourIso } = buildUtcHourWindow(hourOffset, 2);
+
+  const upstream =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&wind_speed_unit=ms` +
+    `&timezone=GMT` +
+    `&start_hour=${encodeURIComponent(startHourIso)}` +
+    `&end_hour=${encodeURIComponent(endHourIso)}`;
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OPEN_METEO_SKYGRID_TIMEOUT_MS);
+
+  let json: any;
+  try {
+    const res = await fetch(upstream, {
+      signal: ctrl.signal,
+      headers: { accept: "application/json" },
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(body ? `${res.status}: ${body}` : `${res.status}`);
+    }
+
+    json = await res.json();
+  } finally {
+    clearTimeout(t);
+  }
+
+  const row = Array.isArray(json) ? json[0] : Array.isArray(json?.results) ? json.results[0] : json;
+  const h = row?.hourly ?? {};
+  const times: string[] = Array.isArray(h?.time) ? h.time : [];
+  let hourIdx = times.findIndex((t: string) => String(t).slice(0, 13) === startHourIso.slice(0, 13));
+  if (hourIdx < 0) hourIdx = 0;
+
+  const pick = (name: string) => {
+    const arr = h?.[name];
+    const v = Array.isArray(arr) ? arr[hourIdx] : null;
+    return safeNum(v);
+  };
+
+  const point: SkyImagePoint = {
+    lat,
+    lon,
+    cloudTotal: pick("cloud_cover"),
+    cloudLow: pick("cloud_cover_low"),
+    cloudMid: pick("cloud_cover_mid"),
+    cloudHigh: pick("cloud_cover_high"),
+    visibilityM: pick("visibility"),
+    windMps: pick("wind_speed_10m"),
+    gustMps: pick("wind_gusts_10m"),
+    humidityPct: pick("relative_humidity_2m"),
+  };
+
+  const now = new Date();
+  const pointDate0 = now.toISOString().slice(0, 10);
+  const pointDate1 = new Date(now.getTime() + 86400000).toISOString().slice(0, 10);
+  const offset = "+00:00";
+
+  const transparency01 = computeTransparency01Canonical(point);
+  const seeing01 = computeSeeing01Canonical(point);
+  const darkness01 = computeDarknessScoreForHour({
+    hourOffset,
+    pointDate0,
+    pointDate1,
+    lat,
+    lon,
+    offset,
+  });
+
+  const moonApprox = computeMoonApproxForGrid({
+    hourOffset,
+    pointDate0,
+    offset,
+    lat,
+    lon,
+  });
+
+  const moon01 = computeMoonScore01Canonical({
+    moonIsUp: moonApprox.moonIsUp,
+    moonIlluminationPct: moonApprox.moonIlluminationPct,
+    darknessScore: darkness01,
+  });
+
+  const aerosols01 = computeAerosolScore01Canonical(point);
+  const site = lookupBortle(lat, lon);
+  const siteScore01 = computeSiteScore01Canonical(lat, lon);
+
+  const weather01 = clamp01(
+    transparency01 * 0.40 +
+    seeing01 * 0.16 +
+    darkness01 * 0.20 +
+    moon01 * 0.12 +
+    aerosols01 * 0.12
+  );
+
+  const observer01 = clamp01(weather01 * (0.35 + 0.65 * siteScore01));
+  const skyScore = Math.round(observer01 * 100);
+
+  return {
+    ok: true,
+    lat,
+    lon,
+    hourOffset,
+    skyScore,
+    weather01,
+    darkness01,
+    transparency01,
+    seeing01,
+    moon01,
+    aerosols01,
+    siteScore01,
+    humidityPct: point.humidityPct,
+    cloudTotal: point.cloudTotal,
+    cloudLow: point.cloudLow,
+    cloudMid: point.cloudMid,
+    cloudHigh: point.cloudHigh,
+    visibilityM: point.visibilityM,
+    windMps: point.windMps,
+    gustMps: point.gustMps,
+    site: {
+      elevationM: site?.elevationM ?? null,
+      bortleClass: site?.bortleClass ?? null,
+      bortleLabel: site?.bortleLabel ?? null,
+      skyBrightness: site?.skyBrightness ?? null,
+    },
+    fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -1646,19 +2573,51 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/astro/inspect" || url.pathname === "/v1/astro/inspect") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      const hourOffset = clampInt(Number(url.searchParams.get("hour") || "0"), 0, 47);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKey = buildAstroInspectCacheKey(url, lat, lon, hourOffset);
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: ASTRO_TTL_SECONDS,
+        staleSeconds: ASTRO_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildAstroInspectPayload({ lat, lon, hourOffset });
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
     if (url.pathname === "/api/astro/skyscore-grid" || url.pathname === "/v1/astro/skyscore-grid") {
       const west = Number(url.searchParams.get("west"));
       const south = Number(url.searchParams.get("south"));
       const east = Number(url.searchParams.get("east"));
       const north = Number(url.searchParams.get("north"));
-      const zoom = Number(url.searchParams.get("zoom") ?? "6");
-      const hourOffset = Number(url.searchParams.get("hour") ?? "0");
-      const width = Math.max(128, Math.min(640, Math.floor(Number(url.searchParams.get("w") ?? "320"))));
-      const height = Math.max(128, Math.min(640, Math.floor(Number(url.searchParams.get("h") ?? "320"))));
+      const zoom = clampFloat(Number(url.searchParams.get("zoom") || "6"), 2, 12, 6);
+      const hourOffset = clampInt(Number(url.searchParams.get("hour") || "0"), 0, 47);
+      const width = clampInt(Number(url.searchParams.get("w") || "160"), 64, 256);
+      const height = clampInt(Number(url.searchParams.get("h") || "160"), 64, 256);
       const includePoints = url.searchParams.get("includePoints") === "1";
+      const mode = parseSkyGridMode(url.searchParams.get("mode"));
+      const density = parseSkyGridDensity(url.searchParams.get("density"));
+      const centerLat = safeNum(url.searchParams.get("centerLat"));
+      const centerLon = safeNum(url.searchParams.get("centerLon"));
 
-      if (!Number.isFinite(west) || !Number.isFinite(south) || !Number.isFinite(east) || !Number.isFinite(north)) {
-        return new Response(JSON.stringify({ ok: false, error: "west,south,east,north are required numbers" }), {
+      if (![west, south, east, north].every(Number.isFinite) || east <= west || north <= south) {
+        return new Response(JSON.stringify({ ok: false, error: "valid west/south/east/north bounds are required" }), {
           status: 400,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
@@ -1671,33 +2630,23 @@ export default {
         ttlSeconds: ASTRO_TTL_SECONDS,
         staleSeconds: ASTRO_STALE_SECONDS,
         fetchUpstream: async () => {
-          try {
-            const payload = await buildSkyScoreGridPayload({
-              bounds: { west, south, east, north },
-              zoom,
-              hourOffset,
-              width,
-              height,
-              includePoints,
-            });
+          const payload = await buildSkyScoreGridPayload({
+            bounds: { west, south, east, north },
+            zoom,
+            hourOffset,
+            width,
+            height,
+            includePoints,
+            mode,
+            density,
+            centerLat,
+            centerLon,
+          });
 
-            return new Response(JSON.stringify(payload), {
-              status: 200,
-              headers: { "content-type": "application/json; charset=utf-8" },
-            });
-          } catch (error: any) {
-            return new Response(
-              JSON.stringify({
-                ok: false,
-                error: "SkyScore grid build failed",
-                body: error?.message ?? String(error),
-              }),
-              {
-                status: 502,
-                headers: { "content-type": "application/json; charset=utf-8" },
-              },
-            );
-          }
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
         },
       });
     }
@@ -1979,76 +2928,146 @@ export default {
     }
 
     if (url.pathname === "/api/current") {
-      const lat = Number(url.searchParams.get("lat"));
-      const lon = Number(url.searchParams.get("lon"));
-      const units = parseUnits(url.searchParams.get("units"));
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  const units = parseUnits(url.searchParams.get("units"));
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
 
-      const latKey = Math.round(lat * 100) / 100;
-      const lonKey = Math.round(lon * 100) / 100;
+  const latKey = Math.round(lat * 100) / 100;
+  const lonKey = Math.round(lon * 100) / 100;
 
-      const cacheKeyUrl = new URL(request.url);
-      cacheKeyUrl.pathname = "/__cache__/api/current";
-      cacheKeyUrl.searchParams.set("lat", String(latKey));
-      cacheKeyUrl.searchParams.set("lon", String(lonKey));
-      cacheKeyUrl.searchParams.set("units", units);
+  const cacheKeyUrl = new URL(request.url);
+  cacheKeyUrl.pathname = "/__cache__/api/current";
+  cacheKeyUrl.searchParams.set("lat", String(latKey));
+  cacheKeyUrl.searchParams.set("lon", String(lonKey));
+  cacheKeyUrl.searchParams.set("units", units);
 
-      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
-      const upstream = toOpenMeteoUrlCurrentSingle(lat, lon, units);
+  const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+  const upstream = toOpenMeteoUrlCurrentSingle(lat, lon, units);
+  const fallbackUpstream = toOpenMeteoUrlCurrentFallback(lat, lon, units);
 
-      return swrFetchJson(request, ctx, {
-        cacheKey,
-        ttlSeconds: CURRENT_TTL_SECONDS,
-        staleSeconds: CURRENT_STALE_SECONDS,
-        fetchUpstream: async () => {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+  return swrFetchJson(request, ctx, {
+    cacheKey,
+    ttlSeconds: CURRENT_TTL_SECONDS,
+    staleSeconds: CURRENT_STALE_SECONDS,
+    fetchUpstream: async () => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+
+      try {
+        const res = await fetch(upstream, { signal: ctrl.signal });
+
+        if (res.ok) {
+          const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
+          const cur = json?.current ?? null;
+
+          const payload: CurrentResponse = {
+            ok: true,
+            source: "open-meteo",
+            time: cur?.time ? String(cur.time) : null,
+            units,
+            temp: cur?.temperature_2m ?? null,
+            feels: cur?.apparent_temperature ?? null,
+            dewPoint: cur?.dew_point_2m ?? null,
+            humidityPct: cur?.relative_humidity_2m ?? null,
+            cloudCoverPct: cur?.cloud_cover ?? null,
+            wind: cur?.wind_speed_10m ?? null,
+            windGust: cur?.wind_gusts_10m ?? null,
+            windDir: cur?.wind_direction_10m ?? null,
+            pressureMb: cur?.pressure_msl ?? null,
+            weatherCode: cur?.weather_code ?? null,
+          };
+
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        }
+
+        const txt = await res.text().catch(() => "");
+
+        if (res.status === 429) {
+          const fbCtrl = new AbortController();
+          const fbTimer = setTimeout(() => fbCtrl.abort(), OPEN_METEO_TIMEOUT_MS);
+
           try {
-            const res = await fetch(upstream, { signal: ctrl.signal });
-            if (!res.ok) {
-              const txt = await res.text().catch(() => "");
+            const fbRes = await fetch(fallbackUpstream, { signal: fbCtrl.signal });
+
+            if (!fbRes.ok) {
+              const fbTxt = await fbRes.text().catch(() => "");
               return new Response(
-                JSON.stringify({ ok: false, error: "Upstream error", status: res.status, body: txt.slice(0, 200) }),
+                JSON.stringify({
+                  ok: false,
+                  error: "Upstream rate limited and fallback failed",
+                  status: fbRes.status,
+                  body: fbTxt.slice(0, 300),
+                }),
                 { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
               );
             }
 
-            const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
-            const cur = json?.current ?? null;
+            const fbJson = (await fbRes.json()) as OpenMeteoHourlyFallbackResponse;
+            const h = fbJson?.hourly ?? {};
+            const idx = pickClosestHourlyIndex(h.time);
+
+            if (idx < 0) {
+              return new Response(
+                JSON.stringify({
+                  ok: false,
+                  error: "Upstream rate limited and fallback missing hourly data",
+                }),
+                { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
+              );
+            }
+
+            const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
+              Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
 
             const payload: CurrentResponse = {
               ok: true,
               source: "open-meteo",
-              time: cur?.time ? String(cur.time) : null,
+              time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
               units,
-              temp: cur?.temperature_2m ?? null,
-              feels: cur?.apparent_temperature ?? null,
-              dewPoint: cur?.dew_point_2m ?? null,
-              humidityPct: cur?.relative_humidity_2m ?? null,
-              cloudCoverPct: cur?.cloud_cover ?? null,
-              wind: cur?.wind_speed_10m ?? null,
-              windGust: cur?.wind_gusts_10m ?? null,
-              windDir: cur?.wind_direction_10m ?? null,
-              pressureMb: cur?.pressure_msl ?? null,
-              weatherCode: cur?.weather_code ?? null,
+              temp: at(h.temperature_2m, idx),
+              feels: at(h.apparent_temperature, idx),
+              dewPoint: at(h.dew_point_2m, idx),
+              humidityPct: at(h.relative_humidity_2m, idx),
+              cloudCoverPct: at(h.cloud_cover, idx),
+              wind: at(h.wind_speed_10m, idx),
+              windGust: at(h.wind_gusts_10m, idx),
+              windDir: at(h.wind_direction_10m, idx),
+              pressureMb: at(h.pressure_msl, idx),
+              weatherCode: at(h.weather_code, idx),
             };
 
             return new Response(JSON.stringify(payload), {
               status: 200,
-              headers: { "content-type": "application/json; charset=utf-8" },
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "X-Omni-Current-Fallback": "hourly",
+              },
             });
           } finally {
-            clearTimeout(t);
+            clearTimeout(fbTimer);
           }
-        },
-      });
-    }
+        }
+
+        return new Response(
+          JSON.stringify({ ok: false, error: "Upstream error", status: res.status, body: txt.slice(0, 200) }),
+          { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      } finally {
+        clearTimeout(t);
+      }
+    },
+  });
+}
 
     if (url.pathname === "/land-extremes") {
       const unit: Unit = url.searchParams.get("unit") === "C" ? "C" : "F";
@@ -2180,7 +3199,8 @@ export default {
           "/api/current?lat=##&lon=##&units=imperial|metric",
           "/api/openmeteo/hourly?lat=..,..&lon=..,..&hourly=...&timezone=auto&units=imperial|metric",
           "/api/astro/location?lat=##&lon=##&placeName=Current%20location",
-          "/api/astro/skyscore-grid?west=..&south=..&east=..&north=..&zoom=6&hour=0&w=320&h=320",
+          "/api/astro/inspect?lat=##&lon=##&hour=0",
+          "/api/astro/skyscore-grid?west=..&south=..&east=..&north=..&zoom=7&hour=0&w=160&h=160&includePoints=1&mode=regional&density=auto",
           "/v1/radar/info",
           "/v1/radar/wms?product=N0Q|N0B|N0Z&bbox=minx,miny,maxx,maxy&width=1024&height=1024&time=ISO",
           "/v2/radar/wms?product=N0Q|N0B|N0Z&bbox=minx,miny,maxx,maxy&width=1024&height=1024&time=ISO&shrink=0.85&dpr=2&fmt=png32",

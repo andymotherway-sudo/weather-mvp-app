@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../common/Glass';
 import { LayerSheet } from './LayerSheet';
@@ -21,16 +22,61 @@ type SatellitePickId = 'east' | 'west' | 'east-ir' | 'west-ir' | 'east-wv' | 'we
 type SatellitePick = {
   id: SatellitePickId;
   label: string;
+  shortLabel: string;
+  family: 'visible' | 'infrared' | 'water-vapor';
+  region: 'east' | 'west';
   layerIds: LayerId[];
 };
 
 const SATELLITE_PICKS: SatellitePick[] = [
-  { id: 'east', label: 'East Visible', layerIds: ['sat.goesEast.geocolor'] },
-  { id: 'west', label: 'West Visible', layerIds: ['sat.goesWest.geocolor'] },
-  { id: 'east-ir', label: 'East IR', layerIds: ['sat.goesEast.ir'] },
-  { id: 'west-ir', label: 'West IR', layerIds: ['sat.goesWest.ir'] },
-  { id: 'east-wv', label: 'East WV', layerIds: ['sat.goesEast.wv'] },
-  { id: 'west-wv', label: 'West WV', layerIds: ['sat.goesWest.wv'] },
+  {
+    id: 'east',
+    label: 'GOES East Visible',
+    shortLabel: 'East Visible',
+    family: 'visible',
+    region: 'east',
+    layerIds: ['sat.goesEast.geocolor'],
+  },
+  {
+    id: 'west',
+    label: 'GOES West Visible',
+    shortLabel: 'West Visible',
+    family: 'visible',
+    region: 'west',
+    layerIds: ['sat.goesWest.geocolor'],
+  },
+  {
+    id: 'east-ir',
+    label: 'GOES East Infrared',
+    shortLabel: 'East IR',
+    family: 'infrared',
+    region: 'east',
+    layerIds: ['sat.goesEast.ir'],
+  },
+  {
+    id: 'west-ir',
+    label: 'GOES West Infrared',
+    shortLabel: 'West IR',
+    family: 'infrared',
+    region: 'west',
+    layerIds: ['sat.goesWest.ir'],
+  },
+  {
+    id: 'east-wv',
+    label: 'GOES East Water Vapor',
+    shortLabel: 'East WV',
+    family: 'water-vapor',
+    region: 'east',
+    layerIds: ['sat.goesEast.wv'],
+  },
+  {
+    id: 'west-wv',
+    label: 'GOES West Water Vapor',
+    shortLabel: 'West WV',
+    family: 'water-vapor',
+    region: 'west',
+    layerIds: ['sat.goesWest.wv'],
+  },
 ];
 
 const SATELLITE_LAYER_IDS: LayerId[] = [
@@ -49,8 +95,6 @@ const PRESET_IDS: MapViewId[] = [
   'wildfire',
   'storm',
   'aviation',
-  'mariner',
-  'astronomer',
 ];
 
 export function LayerSheetModal(props: {
@@ -73,7 +117,12 @@ export function LayerSheetModal(props: {
 
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
+
+  onOpenAstroMap?: () => void;
+  onOpenNauticalMap?: () => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   const {
     visible,
     onClose,
@@ -88,6 +137,8 @@ export function LayerSheetModal(props: {
     onSetOpacity,
     onOpenLegend,
     onOpenSourceInfo,
+    onOpenAstroMap,
+    onOpenNauticalMap,
   } = props;
 
   const allowedCatalogIds = useMemo(() => {
@@ -138,6 +189,13 @@ export function LayerSheetModal(props: {
     });
   }, [state.layers]);
 
+  const visiblePicks = useMemo(() => satellitePicks.filter((p) => p.family === 'visible'), [satellitePicks]);
+  const infraredPicks = useMemo(() => satellitePicks.filter((p) => p.family === 'infrared'), [satellitePicks]);
+  const waterVaporPicks = useMemo(() => satellitePicks.filter((p) => p.family === 'water-vapor'), [satellitePicks]);
+
+  const activeSatelliteCount = satellitePicks.filter((p) => p.active).length;
+  const activePresetTitle = presetViews.find((v: any) => v.id === viewId)?.title ?? 'Map mode';
+
   const disableLayers = (ids: LayerId[]) => {
     for (const id of ids) {
       if (!allowedCatalogIds.has(id)) continue;
@@ -155,11 +213,15 @@ export function LayerSheetModal(props: {
   };
 
   const applySatellitePick = (pick: SatellitePick) => {
-  onChangeView('clouds');
-  disableLayers(['radar.reflectivity']);
-  disableLayers(SATELLITE_LAYER_IDS);
-  enableLayers(pick.layerIds);
-};
+    onChangeView('clouds');
+    disableLayers(['radar.reflectivity']);
+    disableLayers(SATELLITE_LAYER_IDS);
+    enableLayers(pick.layerIds);
+  };
+
+  const clearSatellite = () => {
+    disableLayers(SATELLITE_LAYER_IDS);
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -167,15 +229,46 @@ export function LayerSheetModal(props: {
         onPress={onClose}
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.58)',
+          backgroundColor: 'rgba(0,0,0,0.62)',
           justifyContent: 'flex-end',
         }}
       >
-        <Pressable onPress={() => {}} style={{ padding: 12 }}>
-          <Glass style={{ borderRadius: 24, padding: 16, maxHeight: '90%' }}>
+        <Pressable
+          onPress={() => {}}
+          style={{
+            paddingHorizontal: 12,
+            paddingTop: 12,
+            paddingBottom: 12 + Math.max(insets.bottom, 6),
+          }}
+        >
+          <Glass
+            style={{
+              borderRadius: 28,
+              padding: 16,
+              maxHeight: '88%',
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                position: 'absolute',
+                left: 12,
+                right: 12,
+                top: 12,
+                height: 58,
+                borderRadius: 20,
+                backgroundColor: 'rgba(59,130,246,0.10)',
+              }}
+            />
+
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ color: 'white', fontWeight: '900', fontSize: 20 }}>Map controls</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Pill label="LIVE MAP CONTROLS" />
+                  <Pill label={activePresetTitle.toUpperCase()} subtle />
+                </View>
+
+                <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }}>Map controls</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', marginTop: 5, lineHeight: 19 }}>
                   Switch map modes, choose satellite products, and tune overlays.
                 </Text>
@@ -184,8 +277,8 @@ export function LayerSheetModal(props: {
               <Pressable
                 onPress={onClose}
                 style={{
-                  paddingVertical: 8,
-                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: 'rgba(255,255,255,0.14)',
@@ -196,112 +289,188 @@ export function LayerSheetModal(props: {
               </Pressable>
             </View>
 
-            <Section title="Presets">
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                {presetViews.map((v: any) => {
-                  const active = v.id === viewId;
-                  return (
-                    <Pressable
-                      key={v.id}
-                      onPress={() => onChangeView(v.id)}
-                      style={{
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 16,
-                        borderWidth: 1,
-                        borderColor: active ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.12)',
-                        backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontWeight: active ? '900' : '800', fontSize: 13 }}>
-                        {v.title}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </Section>
-
-            <Section title="Satellite">
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                {satellitePicks.map((pick) => (
+            <ScrollView
+              style={{ flexGrow: 0, marginTop: 14 }}
+              contentContainerStyle={{
+                paddingBottom: 24 + insets.bottom,
+              }}
+              showsVerticalScrollIndicator
+            >
+              <Section title="Special maps" subtitle="Open dedicated astronomy or nautical experiences">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   <Pressable
-                    key={pick.id}
-                    onPress={() => applySatellitePick(pick)}
+                    onPress={onOpenAstroMap}
                     style={{
-                      minWidth: 104,
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      borderRadius: 16,
+                      minWidth: 132,
+                      paddingVertical: 12,
+                      paddingHorizontal: 13,
+                      borderRadius: 18,
                       borderWidth: 1,
-                      borderColor: pick.active ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.12)',
-                      backgroundColor: pick.active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+                      borderColor: 'rgba(255,255,255,0.12)',
+                      backgroundColor: 'rgba(255,255,255,0.05)',
                     }}
                   >
-                    <Text style={{ color: 'white', fontWeight: pick.active ? '900' : '800', fontSize: 12 }}>
-                      {pick.label}
+                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>Astronomy Map</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 11, marginTop: 2 }}>
+                      Sky conditions
                     </Text>
                   </Pressable>
-                ))}
-              </View>
-            </Section>
 
-            <Section title="Map style">
-              <Segmented
-                options={[
-                  { id: 'dark', label: 'Dark' },
-                  { id: 'light', label: 'Light' },
-                ]}
-                value={value.baseMapStyle}
-                onChange={(id) => onChange({ ...value, baseMapStyle: id })}
-              />
-            </Section>
-
-            <Section title="Active layers">
-              {activeLayers.length ? (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {activeLayers.map((layer) => (
-                    <Pressable
-                      key={layer.id}
-                      onPress={() => onToggleLayer(layer.id, false)}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 12,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.14)',
-                        backgroundColor: 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontWeight: '800' }}>
-                        {layer.title}
-                        {layer.subtitle ? ` · ${layer.subtitle}` : ''}
-                        {` · ${Math.round(layer.opacity * 100)}%`}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  <Pressable
+                    onPress={onOpenNauticalMap}
+                    style={{
+                      minWidth: 132,
+                      paddingVertical: 12,
+                      paddingHorizontal: 13,
+                      borderRadius: 18,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.12)',
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>Nautical Map</Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 11, marginTop: 2 }}>
+                      Marine view
+                    </Text>
+                  </Pressable>
                 </View>
-              ) : (
-                <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  No overlays are currently enabled.
-                </Text>
-              )}
-            </Section>
+              </Section>
 
-            <View
-              style={{
-                height: 1,
-                backgroundColor: 'rgba(255,255,255,0.10)',
-                marginTop: 14,
-                marginBottom: 12,
-              }}
-            />
+              <Section
+                title="Presets"
+                badge={`${presetViews.length}`}
+                subtitle="Quick weather map modes"
+              >
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  {presetViews.map((v: any) => {
+                    const active = v.id === viewId;
+                    return (
+                      <Pressable
+                        key={v.id}
+                        onPress={() => onChangeView(v.id)}
+                        style={{
+                          minWidth: 108,
+                          paddingVertical: 12,
+                          paddingHorizontal: 13,
+                          borderRadius: 18,
+                          borderWidth: 1,
+                          borderColor: active ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.12)',
+                          backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontWeight: active ? '900' : '800', fontSize: 13 }}>
+                          {v.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </Section>
 
-            <ScrollView
-              style={{ flexGrow: 0 }}
-              contentContainerStyle={{ paddingBottom: 20 }}
-              showsVerticalScrollIndicator={false}
-            >
+              <Section
+                title="Satellite"
+                badge={activeSatelliteCount > 0 ? `${activeSatelliteCount} active` : undefined}
+                subtitle="Choose one GOES product at a time"
+              >
+                <SatelliteFamily title="Visible">
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {visiblePicks.map((pick) => (
+                      <SatelliteCard key={pick.id} pick={pick} onPress={() => applySatellitePick(pick)} />
+                    ))}
+                  </View>
+                </SatelliteFamily>
+
+                <SatelliteFamily title="Infrared">
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {infraredPicks.map((pick) => (
+                      <SatelliteCard key={pick.id} pick={pick} onPress={() => applySatellitePick(pick)} />
+                    ))}
+                  </View>
+                </SatelliteFamily>
+
+                <SatelliteFamily title="Water vapor">
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {waterVaporPicks.map((pick) => (
+                      <SatelliteCard key={pick.id} pick={pick} onPress={() => applySatellitePick(pick)} />
+                    ))}
+                  </View>
+                </SatelliteFamily>
+
+                <View style={{ marginTop: 12 }}>
+                  <Pressable
+                    onPress={clearSatellite}
+                    style={{
+                      alignSelf: 'flex-start',
+                      paddingVertical: 9,
+                      paddingHorizontal: 12,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.12)',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>
+                      Clear satellite layers
+                    </Text>
+                  </Pressable>
+                </View>
+              </Section>
+
+              <Section title="Map style" subtitle="Base map appearance">
+                <Segmented
+                  options={[
+                    { id: 'dark', label: 'Dark' },
+                    { id: 'light', label: 'Light' },
+                  ]}
+                  value={value.baseMapStyle}
+                  onChange={(id) => onChange({ ...value, baseMapStyle: id })}
+                />
+              </Section>
+
+              <Section
+                title="Active layers"
+                badge={activeLayers.length ? `${activeLayers.length}` : undefined}
+                subtitle="Tap any chip to turn that layer off"
+              >
+                {activeLayers.length ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {activeLayers.map((layer) => (
+                      <Pressable
+                        key={layer.id}
+                        onPress={() => onToggleLayer(layer.id, false)}
+                        style={{
+                          paddingVertical: 8,
+                          paddingHorizontal: 12,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.14)',
+                          backgroundColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontWeight: '800' }}>
+                          {layer.title}
+                          {layer.subtitle ? ` · ${layer.subtitle}` : ''}
+                          {` · ${Math.round(layer.opacity * 100)}%`}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
+                    No overlays are currently enabled.
+                  </Text>
+                )}
+              </Section>
+
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: 'rgba(255,255,255,0.10)',
+                  marginTop: 16,
+                  marginBottom: 14,
+                }}
+              />
+
               <LayerSheet
                 state={state}
                 allowedGroups={allowedGroups}
@@ -327,7 +496,7 @@ export function LayerSheetModal(props: {
                   <View
                     style={{
                       borderWidth: 1,
-                      borderRadius: 18,
+                      borderRadius: 20,
                       padding: 12,
                       borderColor: 'rgba(255,255,255,0.10)',
                       backgroundColor: 'rgba(2,6,23,0.40)',
@@ -361,23 +530,113 @@ export function LayerSheetModal(props: {
   );
 }
 
-function Section(props: { title: string; children: React.ReactNode }) {
+function Section(props: {
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  children: React.ReactNode;
+}) {
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: 'rgba(255,255,255,0.82)', fontWeight: '900', marginBottom: 8 }}>
-        {props.title}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 15 }}>
+            {props.title}
+          </Text>
+          {props.subtitle ? (
+            <Text style={{ color: 'rgba(255,255,255,0.60)', marginTop: 3, fontSize: 12, lineHeight: 17 }}>
+              {props.subtitle}
+            </Text>
+          ) : null}
+        </View>
+
+        {props.badge ? <Pill label={props.badge} subtle /> : null}
+      </View>
+
       <View
         style={{
           borderWidth: 1,
           borderColor: 'rgba(255,255,255,0.10)',
           backgroundColor: 'rgba(255,255,255,0.04)',
-          borderRadius: 18,
+          borderRadius: 20,
           padding: 12,
         }}
       >
         {props.children}
       </View>
+    </View>
+  );
+}
+
+function SatelliteFamily(props: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={{ marginTop: 10 }}>
+      <Text
+        style={{
+          color: 'rgba(255,255,255,0.72)',
+          fontWeight: '900',
+          fontSize: 12,
+          letterSpacing: 0.5,
+          marginBottom: 8,
+        }}
+      >
+        {props.title.toUpperCase()}
+      </Text>
+      {props.children}
+    </View>
+  );
+}
+
+function SatelliteCard(props: {
+  pick: SatellitePick & { active?: boolean };
+  onPress: () => void;
+}) {
+  const { pick, onPress } = props;
+  const active = !!pick.active;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        minWidth: 130,
+        paddingVertical: 11,
+        paddingHorizontal: 12,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: active ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.12)',
+        backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+      }}
+    >
+      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{pick.shortLabel}</Text>
+      <Text style={{ color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 11, marginTop: 2 }}>
+        {pick.region === 'east' ? 'Atlantic / East' : 'Pacific / West'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function Pill(props: { label: string; subtle?: boolean }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 9,
+        paddingVertical: 5,
+        borderRadius: 999,
+        backgroundColor: props.subtle ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.09)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+      }}
+    >
+      <Text
+        style={{
+          color: props.subtle ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.94)',
+          fontSize: 11,
+          fontWeight: '900',
+          letterSpacing: 0.6,
+        }}
+      >
+        {props.label}
+      </Text>
     </View>
   );
 }

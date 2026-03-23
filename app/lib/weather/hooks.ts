@@ -20,10 +20,147 @@ function isFiniteNum(v: any) {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
-function apiBase() {
-  const base = (process.env.EXPO_PUBLIC_API_BASE || '').trim().replace(/\/+$/, '');
-  if (!base) throw new Error('Missing EXPO_PUBLIC_API_BASE');
-  return base;
+function safeNum(v: any): number | null {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
+function nearestIndexForTime(times: string[]) {
+  if (!Array.isArray(times) || !times.length) return -1;
+
+  const now = Date.now();
+  let bestIdx = -1;
+  let bestDt = Infinity;
+
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (!Number.isFinite(t)) continue;
+
+    const dt = Math.abs(t - now);
+    if (dt < bestDt) {
+      bestDt = dt;
+      bestIdx = i;
+    }
+  }
+
+  return bestIdx;
+}
+
+function at<T = any>(arr: T[] | undefined, idx: number): T | null {
+  if (!Array.isArray(arr) || idx < 0 || idx >= arr.length) return null;
+  return arr[idx] ?? null;
+}
+
+function normalizeCurrentFromForecastJson(json: any, units: 'imperial' | 'metric') {
+  const current = json?.current ?? null;
+  const hourly = json?.hourly ?? {};
+  const hourlyTimes: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
+
+  const idx = nearestIndexForTime(hourlyTimes);
+
+  const time =
+    (typeof current?.time === 'string' && current.time) ||
+    (idx >= 0 ? (hourlyTimes[idx] ?? null) : null);
+
+  const temp =
+    safeNum(current?.temperature_2m) ??
+    safeNum(at(hourly?.temperature_2m, idx));
+
+  const feels =
+    safeNum(current?.apparent_temperature) ??
+    safeNum(at(hourly?.apparent_temperature, idx));
+
+  const dewPoint =
+    safeNum(current?.dew_point_2m) ??
+    safeNum(at(hourly?.dew_point_2m, idx));
+
+  const humidityPct =
+    safeNum(current?.relative_humidity_2m) ??
+    safeNum(at(hourly?.relative_humidity_2m, idx));
+
+  const cloudCoverPct =
+    safeNum(current?.cloud_cover) ??
+    safeNum(at(hourly?.cloud_cover, idx));
+
+  const wind =
+    safeNum(current?.wind_speed_10m) ??
+    safeNum(at(hourly?.wind_speed_10m, idx));
+
+  const windGust =
+    safeNum(current?.wind_gusts_10m) ??
+    safeNum(at(hourly?.wind_gusts_10m, idx));
+
+  const windDir =
+    safeNum(current?.wind_direction_10m) ??
+    safeNum(at(hourly?.wind_direction_10m, idx));
+
+  const pressureMb =
+    safeNum(current?.pressure_msl) ??
+    safeNum(at(hourly?.pressure_msl, idx));
+
+  const weatherCode =
+    safeNum(current?.weather_code) ??
+    safeNum(at(hourly?.weather_code, idx));
+
+  return {
+    ok: true,
+    source: 'open-meteo',
+    time: time ?? null,
+    units,
+    temp,
+    feels,
+    dewPoint,
+    humidityPct,
+    cloudCoverPct,
+    wind,
+    windGust,
+    windDir,
+    pressureMb,
+    weatherCode,
+  };
+}
+
+function buildOpenMeteoCurrentUrl(lat: number, lon: number, units: 'imperial' | 'metric') {
+  const temperatureUnit = units === 'imperial' ? 'fahrenheit' : 'celsius';
+  const windUnit = units === 'imperial' ? 'mph' : 'kmh';
+
+  const currentFields = [
+    'temperature_2m',
+    'apparent_temperature',
+    'dew_point_2m',
+    'relative_humidity_2m',
+    'weather_code',
+    'cloud_cover',
+    'wind_speed_10m',
+    'wind_gusts_10m',
+    'wind_direction_10m',
+    'pressure_msl',
+  ].join(',');
+
+  const hourlyFields = [
+    'temperature_2m',
+    'apparent_temperature',
+    'dew_point_2m',
+    'relative_humidity_2m',
+    'weather_code',
+    'cloud_cover',
+    'wind_speed_10m',
+    'wind_gusts_10m',
+    'wind_direction_10m',
+    'pressure_msl',
+  ].join(',');
+
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&current=${encodeURIComponent(currentFields)}` +
+    `&hourly=${encodeURIComponent(hourlyFields)}` +
+    `&forecast_days=1` +
+    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
+    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
+    `&timezone=auto`
+  );
 }
 
 export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherState {
@@ -58,14 +195,8 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
 
         setError(null);
 
-        const params = new URLSearchParams({
-          lat: String(lat),
-          lon: String(lon),
-          units,
-        });
-
-        const url = `${apiBase()}/api/current?${params.toString()}`;
-        console.log('[net] current requesting:', url);
+        const url = buildOpenMeteoCurrentUrl(lat, lon, units);
+        console.log('[net] current requesting (direct OM):', url);
 
         const res = await fetchWithTimeout(url, 12000, { signal: ac.signal });
         console.log('[net] current status:', res.status, url);
@@ -82,7 +213,8 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
           throw new Error('Current endpoint did not return JSON');
         }
 
-        setData(json);
+        const normalized = normalizeCurrentFromForecastJson(json, units);
+        setData(normalized);
       } catch (err: any) {
         if (err?.name === 'AbortError') return;
         setError(err?.message ?? 'Failed to load current weather');

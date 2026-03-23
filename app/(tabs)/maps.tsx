@@ -1,4 +1,3 @@
-// app/(tabs)/maps.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,7 +61,7 @@ function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs:
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 12, right: 12, bottom: 12 + insets.bottom }}>
+    <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, bottom: 12 + insets.bottom }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
         <View style={{ flexShrink: 0 }}>{props.left}</View>
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>{props.center}</View>
@@ -141,6 +140,7 @@ function getActiveLayerSummary(state: any) {
       title: 'Layers',
       subtitle: 'No overlays enabled',
       hasActiveLayers: false,
+      count: 0,
     };
   }
 
@@ -156,7 +156,24 @@ function getActiveLayerSummary(state: any) {
     title: primary.title,
     subtitle: extraCount > 0 ? `${primary.subtitle ?? 'Overlay'} · +${extraCount} more` : primary.subtitle,
     hasActiveLayers: true,
+    count: enabledIds.length,
   };
+}
+
+function getViewAccent(viewId: string) {
+  switch (viewId) {
+    case 'wildfire':
+      return 'rgba(251,146,60,0.22)';
+    case 'aviation':
+      return 'rgba(125,211,252,0.20)';
+    case 'storm':
+      return 'rgba(196,181,253,0.20)';
+    case 'clouds':
+      return 'rgba(148,163,184,0.22)';
+    case 'radar':
+    default:
+      return 'rgba(96,165,250,0.18)';
+  }
 }
 
 /* ============================================================================ */
@@ -616,6 +633,9 @@ export default function MapsScreen() {
 
   const showTimeline = isFocused && radarEnabled && frameCount > 1;
 
+  const accentBg = getViewAccent(String(state.viewId));
+  const activeOverlayCount = activeLayerSummary.count ?? 0;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
       <View style={{ flex: 1 }}>
@@ -657,51 +677,167 @@ export default function MapsScreen() {
         />
 
         <View style={{ position: 'absolute', left: 12, right: 84, top: 8 }}>
-          <Glass style={{ paddingVertical: 10, paddingHorizontal: 12, borderRadius: 20 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <Glass
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 10,
+              borderRadius: 22,
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 40,
+                right: 40,
+                top: 8,
+                height: 40,
+                borderRadius: 999,
+                backgroundColor: accentBg,
+                opacity: 0.25,
+              }}
+            />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: '900' }}>Maps</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 2, fontWeight: '800' }} numberOfLines={1}>
-                  {currentViewTitle} · {timestampLabel || 'Latest'}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(255,255,255,0.09)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.94)',
+                        fontSize: 10,
+                        fontWeight: '900',
+                        letterSpacing: 0.7,
+                      }}
+                    >
+                      LIVE MAPS
+                    </Text>
+                  </View>
+
+                  {activeOverlayCount > 0 ? (
+                    <View
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 999,
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 10, fontWeight: '800' }}>
+                        {activeOverlayCount} active
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <Text
+                  style={{
+                    color: 'white',
+                    fontSize: 16,
+                    fontWeight: '900',
+                    marginTop: 6,
+                    letterSpacing: -0.2,
+                  }}
+                >
+                  {currentViewTitle}
+                </Text>
+
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.72)',
+                    marginTop: 2,
+                    fontWeight: '800',
+                    fontSize: 11,
+                  }}
+                  numberOfLines={1}
+                >
+                  {timestampLabel || 'Latest update'}
                 </Text>
               </View>
 
-              {state.nerdy ? (
-                <Pressable
-                  onPress={() => setRawMode((v) => !v)}
+              <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                {state.nerdy ? (
+                  <Pressable
+                    onPress={() => setRawMode((v) => !v)}
+                    style={{
+                      paddingVertical: 6,
+                      paddingHorizontal: 10,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      backgroundColor: rawMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 12 }}>
+                      {rawMode ? 'Raw' : 'Smooth'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                <View
                   style={{
-                    paddingVertical: 6,
-                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    paddingHorizontal: 9,
                     borderRadius: 999,
+                    backgroundColor: 'rgba(255,255,255,0.04)',
                     borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.14)',
-                    backgroundColor: rawMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+                    borderColor: 'rgba(255,255,255,0.08)',
                   }}
                 >
-                  <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>
-                    {rawMode ? 'Raw' : 'Smooth'}
+                  <Text style={{ color: 'rgba(255,255,255,0.78)', fontWeight: '900', fontSize: 11 }}>
+                    {state.radarTime.playing ? 'Playing' : 'Paused'}
                   </Text>
-                </Pressable>
-              ) : null}
+                </View>
+              </View>
             </View>
 
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <ChipDark label="Astro Map" onPress={() => pushSpecialMap('/astro-map')} />
-              <ChipDark label="Nautical Map" onPress={() => pushSpecialMap('/nautical-map')} />
               <ChipDark label="My Location" onPress={recenterToGps} />
             </View>
 
             {canSwitchProduct && sheetValue.radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                <ChipDark active={product === 'N0Q'} label="N0Q" onPress={() => setProduct('N0Q')} />
-                <ChipDark active={product === 'N0B'} label="N0B" onPress={() => setProduct('N0B')} />
-                <ChipDark active={product === 'N0Z'} label="N0Z" onPress={() => setProduct('N0Z')} />
+              <View style={{ marginTop: 10 }}>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.66)',
+                    fontSize: 10,
+                    fontWeight: '900',
+                    letterSpacing: 0.7,
+                    marginBottom: 7,
+                  }}
+                >
+                  RADAR PRODUCT
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <ChipDark active={product === 'N0Q'} label="N0Q" onPress={() => setProduct('N0Q')} />
+                  <ChipDark active={product === 'N0B'} label="N0B" onPress={() => setProduct('N0B')} />
+                  <ChipDark active={product === 'N0Z'} label="N0Z" onPress={() => setProduct('N0Z')} />
+                </View>
               </View>
             ) : null}
 
-            <View style={{ marginTop: 10 }}>
+            <View
+              style={{
+                marginTop: 10,
+                paddingTop: 8,
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(255,255,255,0.08)',
+              }}
+            >
               {state.nerdy ? (
-                <Text style={{ color: 'rgba(255,255,255,0.78)' }} numberOfLines={2}>
+                <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 11 }} numberOfLines={2}>
                   Provider: {sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM'}
                   {' · '}Frames: {frameCount}
                   {' · '}Zoom ~ {Math.round(mapZoom)}
@@ -715,7 +851,7 @@ export default function MapsScreen() {
                   {goesWestWvEnabled ? ` · West WV ${Math.round(goesWestWvOpacity * 100)}%` : ''}
                 </Text>
               ) : (
-                <Text style={{ color: 'rgba(255,255,255,0.78)', fontWeight: '800' }} numberOfLines={1}>
+                <Text style={{ color: 'rgba(255,255,255,0.80)', fontWeight: '800', fontSize: 12 }} numberOfLines={1}>
                   {simpleStatus}
                 </Text>
               )}
@@ -731,9 +867,9 @@ export default function MapsScreen() {
             position: 'absolute',
             right: 12,
             top: 18,
-            width: 56,
-            height: 56,
-            borderRadius: 18,
+            width: 58,
+            height: 58,
+            borderRadius: 20,
             borderWidth: 1,
             borderColor: activeLayerSummary.hasActiveLayers
               ? 'rgba(255,255,255,0.22)'
@@ -741,8 +877,19 @@ export default function MapsScreen() {
             backgroundColor: 'rgba(2,6,23,0.84)',
             alignItems: 'center',
             justifyContent: 'center',
+            overflow: 'hidden',
           }}
         >
+          <View
+            style={{
+              position: 'absolute',
+              width: 34,
+              height: 34,
+              borderRadius: 999,
+              backgroundColor: accentBg,
+            }}
+          />
+
           <View style={{ width: 24, gap: 4 }}>
             <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.95)' }} />
             <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.78)' }} />
@@ -753,14 +900,21 @@ export default function MapsScreen() {
             <View
               style={{
                 position: 'absolute',
-                top: 8,
-                right: 8,
-                width: 10,
-                height: 10,
+                top: 7,
+                right: 7,
+                minWidth: 16,
+                height: 16,
+                paddingHorizontal: 3,
                 borderRadius: 999,
                 backgroundColor: 'white',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-            />
+            >
+              <Text style={{ color: '#020617', fontSize: 10, fontWeight: '900' }}>
+                {Math.min(99, activeOverlayCount)}
+              </Text>
+            </View>
           ) : null}
         </Pressable>
 
@@ -809,6 +963,14 @@ export default function MapsScreen() {
           allowedGroups={['weather', 'fireAir']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
+          onOpenAstroMap={() => {
+            setLayersSheetOpen(false);
+            pushSpecialMap('/astro-map');
+          }}
+          onOpenNauticalMap={() => {
+            setLayersSheetOpen(false);
+            pushSpecialMap('/nautical-map');
+          }}
         />
       </View>
     </SafeAreaView>
@@ -821,13 +983,13 @@ function ChipDark(props: { label: string; active?: boolean; onPress: () => void 
     <Pressable
       onPress={props.onPress}
       style={{
-        paddingVertical: 6,
-        paddingHorizontal: 10,
+        paddingVertical: 7,
+        paddingHorizontal: 11,
         borderRadius: 999,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.14)',
-        backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-        opacity: active ? 1 : 0.9,
+        borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.14)',
+        backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
+        opacity: active ? 1 : 0.92,
       }}
     >
       <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.label}</Text>
