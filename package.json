@@ -21,6 +21,7 @@
     "@shopify/react-native-skia": "2.2.12",
     "axios": "^1.13.2",
     "buffer": "^6.0.3",
+    "eas-cli": "^18.4.0",
     "expo": "~54.0.26",
     "expo-av": "~16.0.8",
     "expo-constants": "~18.0.10",

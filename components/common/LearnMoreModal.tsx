@@ -19,8 +19,6 @@ type LearnTopic = {
   title: string;
   body?: string;
   bullets?: string[];
-
-  // richer optional fields
   summary?: string;
   sections?: LearnSection[];
   references?: LearnReference[];
@@ -51,7 +49,7 @@ export function LearnMoreModal({
     if (!visible) return;
     setQ('');
     setSelectedId(initialTopicId ?? topics[0]?.id);
-    setShowTopics(true);
+    setShowTopics(!initialTopicId);
   }, [visible, initialTopicId, topics]);
 
   const filtered = useMemo(() => {
@@ -93,42 +91,59 @@ export function LearnMoreModal({
     setShowTopics(false);
   };
 
+  const topicCountLabel = `${filtered.length} topic${filtered.length === 1 ? '' : 's'}`;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
       <View style={styles.sheet}>
+        <View style={styles.handle} />
+
         <View style={styles.header}>
-          <Text style={styles.title}>Learn</Text>
+          <View>
+            <Text style={styles.eyebrow}>OMNI wx Learn</Text>
+            <Text style={styles.title}>Understand the weather</Text>
+          </View>
+
           <Pressable onPress={onClose} style={styles.doneBtn}>
             <Text style={styles.doneText}>Done</Text>
           </Pressable>
         </View>
 
-        <TextInput
-          value={q}
-          onChangeText={(t) => {
-            setQ(t);
-            setShowTopics(true);
-          }}
-          placeholder="Search topics…"
-          placeholderTextColor="rgba(255,255,255,0.35)"
-          autoCorrect={false}
-          autoCapitalize="none"
-          style={styles.search}
-        />
+        <View style={styles.searchWrap}>
+          <TextInput
+            value={q}
+            onChangeText={(t) => {
+              setQ(t);
+              setShowTopics(true);
+            }}
+            placeholder="Search topics…"
+            placeholderTextColor="rgba(255,255,255,0.35)"
+            autoCorrect={false}
+            autoCapitalize="none"
+            style={styles.search}
+          />
+        </View>
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {selected ? (
             <>
               <View style={styles.selectedHeaderRow}>
-                <Text style={styles.sectionLabel}>Selected</Text>
+                <View style={styles.selectedMeta}>
+                  <Text style={styles.sectionLabel}>Selected topic</Text>
+                  <Text style={styles.topicCount}>{topicCountLabel}</Text>
+                </View>
 
                 <Pressable onPress={() => setShowTopics((v) => !v)} style={styles.toggleBtn}>
-                  <Text style={styles.toggleText}>{showTopics ? 'Hide topics' : 'Show topics'}</Text>
+                  <Text style={styles.toggleText}>{showTopics ? 'Hide topics' : 'Browse topics'}</Text>
                 </Pressable>
               </View>
 
-              <View style={styles.contentCard}>
+              <View style={styles.heroCard}>
                 <Text style={styles.contentTitle}>{selected.title}</Text>
 
                 {selected.summary ? <Text style={styles.summary}>{selected.summary}</Text> : null}
@@ -156,7 +171,9 @@ export function LearnMoreModal({
                     <Text style={styles.blockTitle}>Quick takeaways</Text>
                     {selected.bullets.map((b, idx) => (
                       <View key={`${selected.id}-b-${idx}`} style={styles.bulletRow}>
-                        <Text style={styles.bulletDot}>•</Text>
+                        <View style={styles.bulletDotWrap}>
+                          <Text style={styles.bulletDot}>•</Text>
+                        </View>
                         <Text style={styles.bulletText}>{b}</Text>
                       </View>
                     ))}
@@ -165,6 +182,7 @@ export function LearnMoreModal({
 
                 {selected.body ? (
                   <View style={styles.block}>
+                    <Text style={styles.blockTitle}>Details</Text>
                     <Text style={styles.body}>{selected.body}</Text>
                   </View>
                 ) : null}
@@ -177,7 +195,9 @@ export function LearnMoreModal({
                     {sec.bullets?.length
                       ? sec.bullets.map((b, bulletIdx) => (
                           <View key={`${selected.id}-sec-${idx}-b-${bulletIdx}`} style={styles.bulletRow}>
-                            <Text style={styles.bulletDot}>•</Text>
+                            <View style={styles.bulletDotWrap}>
+                              <Text style={styles.bulletDot}>•</Text>
+                            </View>
                             <Text style={styles.bulletText}>{b}</Text>
                           </View>
                         ))
@@ -192,7 +212,10 @@ export function LearnMoreModal({
 
           {showTopics ? (
             <>
-              <Text style={[styles.sectionLabel, { marginTop: 14, marginBottom: 8 }]}>Topics</Text>
+              <View style={styles.topicHeaderRow}>
+                <Text style={styles.sectionLabel}>Browse topics</Text>
+                <Text style={styles.topicCount}>{topicCountLabel}</Text>
+              </View>
 
               <View style={styles.topicList}>
                 {filtered.map((t) => {
@@ -203,13 +226,17 @@ export function LearnMoreModal({
                       onPress={() => onPick(t.id)}
                       style={[styles.topicRow, active && styles.topicRowActive]}
                     >
-                      <Text style={[styles.topicText, active && styles.topicTextActive]} numberOfLines={2}>
-                        {t.title}
-                      </Text>
+                      <View style={styles.topicRowTop}>
+                        <Text style={[styles.topicText, active && styles.topicTextActive]} numberOfLines={2}>
+                          {t.title}
+                        </Text>
+                        {active ? <Text style={styles.activePill}>Open</Text> : null}
+                      </View>
+
                       {t.summary ? (
                         <Text
                           style={[styles.topicSubtext, active && styles.topicSubtextActive]}
-                          numberOfLines={2}
+                          numberOfLines={3}
                         >
                           {t.summary}
                         </Text>
@@ -219,8 +246,9 @@ export function LearnMoreModal({
                 })}
 
                 {!filtered.length ? (
-                  <View style={[styles.topicRow, { opacity: 0.7 }]}>
-                    <Text style={styles.topicText}>No matches. Try a different search.</Text>
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptyTitle}>No matches found</Text>
+                    <Text style={styles.emptyText}>Try a different search term or browse the full topic list.</Text>
                   </View>
                 ) : null}
               </View>
@@ -235,20 +263,31 @@ export function LearnMoreModal({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.62)',
   },
 
   sheet: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    top: 70,
-    bottom: 40,
-    borderRadius: 22,
-    backgroundColor: 'rgba(18, 22, 35, 0.98)',
+    left: 10,
+    right: 10,
+    top: 54,
+    bottom: 22,
+    borderRadius: 26,
+    backgroundColor: 'rgba(14, 18, 30, 0.985)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 10,
   },
 
   header: {
@@ -257,19 +296,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  eyebrow: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+
   title: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: '900',
+    marginTop: 2,
   },
 
   doneBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 13,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
 
   doneText: {
@@ -278,29 +326,65 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  search: {
+  searchWrap: {
     marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    marginBottom: 2,
+  },
+
+  search: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
     color: 'white',
+    fontSize: 15,
+  },
+
+  scrollContent: {
+    paddingBottom: 26,
   },
 
   selectedHeaderRow: {
     marginTop: 14,
-    marginBottom: 8,
+    marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+  },
+
+  selectedMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  topicHeaderRow: {
+    marginTop: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.88)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+
+  topicCount: {
+    marginLeft: 10,
+    color: 'rgba(255,255,255,0.48)',
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   toggleBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
@@ -308,61 +392,16 @@ const styles = StyleSheet.create({
   },
 
   toggleText: {
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(255,255,255,0.88)',
     fontWeight: '900',
     fontSize: 11,
   },
 
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.85)',
-  },
-
-  topicList: {
-    gap: 10,
-  },
-
-  topicRow: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-
-  topicRowActive: {
-    backgroundColor: 'rgba(160, 220, 255, 0.10)',
-    borderColor: 'rgba(160, 220, 255, 0.18)',
-  },
-
-  topicText: {
-    color: 'rgba(255,255,255,0.92)',
-    fontWeight: '900',
-  },
-
-  topicTextActive: {
-    color: 'white',
-  },
-
-  topicSubtext: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.60)',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '600',
-  },
-
-  topicSubtextActive: {
-    color: 'rgba(255,255,255,0.78)',
-  },
-
-  contentCard: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+  heroCard: {
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.045)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
@@ -370,23 +409,25 @@ const styles = StyleSheet.create({
   contentTitle: {
     color: 'white',
     fontWeight: '900',
-    fontSize: 18,
+    fontSize: 22,
+    lineHeight: 28,
   },
 
   summary: {
     marginTop: 8,
-    color: 'rgba(255,255,255,0.88)',
+    color: 'rgba(255,255,255,0.90)',
     fontWeight: '700',
-    lineHeight: 20,
+    lineHeight: 21,
+    fontSize: 15,
   },
 
   calloutCard: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(120, 190, 255, 0.10)',
+    marginTop: 14,
+    padding: 13,
+    borderRadius: 16,
+    backgroundColor: 'rgba(120, 190, 255, 0.11)',
     borderWidth: 1,
-    borderColor: 'rgba(120, 190, 255, 0.18)',
+    borderColor: 'rgba(120, 190, 255, 0.20)',
   },
 
   calloutLabel: {
@@ -394,25 +435,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.7,
   },
 
   calloutText: {
     marginTop: 6,
-    color: 'rgba(255,255,255,0.88)',
+    color: 'rgba(255,255,255,0.90)',
     fontWeight: '700',
-    lineHeight: 19,
+    lineHeight: 20,
+    fontSize: 14,
   },
 
   referenceWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
+    marginTop: 14,
   },
 
   referenceChip: {
-    minWidth: 110,
+    minWidth: 112,
+    marginRight: 8,
+    marginBottom: 8,
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 14,
@@ -422,7 +465,7 @@ const styles = StyleSheet.create({
   },
 
   referenceLabel: {
-    color: 'rgba(255,255,255,0.58)',
+    color: 'rgba(255,255,255,0.56)',
     fontSize: 11,
     fontWeight: '800',
   },
@@ -435,25 +478,28 @@ const styles = StyleSheet.create({
   },
 
   block: {
-    marginTop: 14,
+    marginTop: 16,
   },
 
   blockTitle: {
     color: 'white',
     fontWeight: '900',
     fontSize: 13,
-    marginBottom: 6,
+    marginBottom: 7,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 
   body: {
-    color: 'rgba(255,255,255,0.74)',
+    color: 'rgba(255,255,255,0.78)',
     fontWeight: '700',
-    lineHeight: 20,
+    lineHeight: 21,
+    fontSize: 14,
   },
 
   sectionCard: {
-    marginTop: 14,
-    paddingTop: 14,
+    marginTop: 16,
+    paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
   },
@@ -461,42 +507,130 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: 'white',
     fontWeight: '900',
-    fontSize: 14,
+    fontSize: 15,
     marginBottom: 6,
   },
 
   sectionBody: {
-    color: 'rgba(255,255,255,0.74)',
+    color: 'rgba(255,255,255,0.76)',
     fontWeight: '700',
-    lineHeight: 20,
+    lineHeight: 21,
+    fontSize: 14,
   },
 
   bulletRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
     alignItems: 'flex-start',
+    marginTop: 9,
+  },
+
+  bulletDotWrap: {
+    width: 16,
+    alignItems: 'center',
+    paddingTop: 1,
   },
 
   bulletDot: {
-    color: 'rgba(255,255,255,0.75)',
+    color: 'rgba(255,255,255,0.78)',
     fontWeight: '900',
-    marginTop: 1,
   },
 
   bulletText: {
     flex: 1,
-    color: 'rgba(255,255,255,0.78)',
+    color: 'rgba(255,255,255,0.80)',
     fontWeight: '700',
-    lineHeight: 18,
+    lineHeight: 19,
+    fontSize: 14,
   },
 
   footer: {
-    marginTop: 16,
-    color: 'rgba(255,255,255,0.52)',
+    marginTop: 18,
+    color: 'rgba(255,255,255,0.54)',
     fontWeight: '700',
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
+  },
+
+  topicList: {},
+
+  topicRow: {
+    paddingVertical: 13,
+    paddingHorizontal: 13,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 10,
+  },
+
+  topicRowActive: {
+    backgroundColor: 'rgba(160, 220, 255, 0.10)',
+    borderColor: 'rgba(160, 220, 255, 0.20)',
+  },
+
+  topicRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+
+  topicText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.94)',
+    fontWeight: '900',
+    fontSize: 14,
+    lineHeight: 19,
+    marginRight: 10,
+  },
+
+  topicTextActive: {
+    color: 'white',
+  },
+
+  activePill: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '900',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+
+  topicSubtext: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+
+  topicSubtextActive: {
+    color: 'rgba(255,255,255,0.80)',
+  },
+
+  emptyCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  emptyTitle: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+
+  emptyText: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.64)',
+    fontWeight: '700',
+    lineHeight: 18,
+    fontSize: 12,
   },
 });
 

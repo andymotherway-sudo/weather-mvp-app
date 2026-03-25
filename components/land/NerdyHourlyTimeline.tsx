@@ -7,6 +7,8 @@
 // ✅ WxLab press auto-expands a tile
 // ✅ Removes abbreviations → richer labels
 // ✅ Fixes precip chance showing "—" when it's actually 0%
+// ✅ Restores tap-to-learn behavior using onExplain → LearnModal pipeline
+// ✅ Removes old custom hint format in favor of learnTopicId mapping
 
 import React, { useMemo, useState } from 'react';
 import {
@@ -24,6 +26,11 @@ import { typography } from '../../styles/typography';
 import { Card } from '../layout/Card';
 
 type Mode = 'simple' | 'wxlab';
+
+export type HourlyExplainPayload = {
+  title: string;
+  learnTopicId?: string;
+};
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -209,14 +216,59 @@ function ModeToggle({
   );
 }
 
+function LearnableWxRow({
+  label,
+  value,
+  topicId,
+  onExplain,
+}: {
+  label: string;
+  value: string;
+  topicId?: string;
+  onExplain?: (payload: HourlyExplainPayload) => void;
+}) {
+  const canExplain = !!topicId && !!onExplain;
+
+  if (!canExplain) {
+    return (
+      <View style={styles.wxRow}>
+        <Text style={styles.wxKey}>{label}</Text>
+        <Text style={styles.wxVal}>{value}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={() =>
+        onExplain?.({
+          title: label,
+          learnTopicId: topicId,
+        })
+      }
+      style={({ pressed }) => [styles.wxRowPressable, pressed ? styles.wxRowPressableActive : null]}
+    >
+      <View style={styles.wxRow}>
+        <View style={styles.wxLeft}>
+          <Text style={styles.wxKey}>{label}</Text>
+          <Text style={styles.infoBadge}>ⓘ Learn more</Text>
+        </View>
+        <Text style={styles.wxVal}>{value}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 export function NerdyHourlyTimeline({
   hours,
   maxHours = 72,
   timeZone,
+  onExplain,
 }: {
   hours: any[];
   maxHours?: number;
   timeZone?: string;
+  onExplain?: (payload: HourlyExplainPayload) => void;
 }) {
   const [mode, setMode] = useState<Mode>('simple');
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -367,31 +419,33 @@ export function NerdyHourlyTimeline({
 
           {mode === 'wxlab' && isOpen ? (
             <View style={styles.wxlab}>
-              <View style={styles.wxRow}>
-                <Text style={styles.wxKey}>Spread (Temp − Dew)</Text>
-                <Text style={styles.wxVal}>{item.spread == null ? '—' : `${item.spread}°F`}</Text>
-              </View>
+              <LearnableWxRow
+                label="Spread (Temp − Dew)"
+                value={item.spread == null ? '—' : `${item.spread}°F`}
+                topicId="spread_temp_dew"
+                onExplain={onExplain}
+              />
 
-              <View style={styles.wxRow}>
-                <Text style={styles.wxKey}>Gust factor</Text>
-                <Text style={styles.wxVal}>
-                  {item.gustFactor == null ? '—' : `${item.gustFactor}×`}
-                </Text>
-              </View>
+              <LearnableWxRow
+                label="Gust factor"
+                value={item.gustFactor == null ? '—' : `${item.gustFactor}×`}
+                topicId="gust_factor"
+                onExplain={onExplain}
+              />
 
-              <View style={styles.wxRow}>
-                <Text style={styles.wxKey}>Fog risk</Text>
-                <Text style={styles.wxVal}>
-                  {item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
-                </Text>
-              </View>
+              <LearnableWxRow
+                label="Fog risk"
+                value={item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
+                topicId="fog_risk"
+                onExplain={onExplain}
+              />
 
-              <View style={styles.wxRow}>
-                <Text style={styles.wxKey}>Pressure</Text>
-                <Text style={styles.wxVal}>
-                  {item.pressureHpa == null ? '—' : `${item.pressureHpa} hPa`}
-                </Text>
-              </View>
+              <LearnableWxRow
+                label="Pressure"
+                value={item.pressureHpa == null ? '—' : `${item.pressureHpa} hPa`}
+                topicId="pressure"
+                onExplain={onExplain}
+              />
             </View>
           ) : null}
         </Card>
@@ -454,8 +508,12 @@ type Styles = {
   barVal: TextStyle;
 
   wxlab: ViewStyle;
+  wxRowPressable: ViewStyle;
+  wxRowPressableActive: ViewStyle;
   wxRow: ViewStyle;
+  wxLeft: ViewStyle;
   wxKey: TextStyle;
+  infoBadge: TextStyle;
   wxVal: TextStyle;
 };
 
@@ -538,8 +596,32 @@ const styles = StyleSheet.create<Styles>({
     borderTopColor: 'rgba(255,255,255,0.08)',
     gap: 8 as any,
   },
-  wxRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  wxRowPressable: {
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginHorizontal: -4,
+  },
+  wxRowPressableActive: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  wxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12 as any,
+  },
+  wxLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
   wxKey: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '800' },
+  infoBadge: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+  },
   wxVal: { color: 'white', fontSize: 12, fontWeight: '900' },
 });
 

@@ -2,7 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ExpoLocation from 'expo-location';
 import { router } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -18,6 +18,7 @@ import {
 import { usePlace, type Place } from '../context/PlaceContext';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
+const PENDING_GPS_KEY = 'omniwx:onboarding:pendingGps';
 
 type GeoResult = {
   id: number;
@@ -47,9 +48,8 @@ function placeFromCity(payload: {
   return { id, name: label, lat: payload.lat, lon: payload.lon, source: 'search' };
 }
 
-// Small helper to yield so state + storage writes settle before navigation
-function tick() {
-  return new Promise<void>((r) => setTimeout(r, 0));
+function tick(ms = 0) {
+  return new Promise<void>((r) => setTimeout(r, ms));
 }
 
 export default function DefaultCityScreen() {
@@ -62,14 +62,13 @@ export default function DefaultCityScreen() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ prevents “tap twice / state change / nothing happens”
   const navigatingRef = useRef(false);
-
-  // ✅ debounce search so we don't spam the API
-  const searchTimerRef = useRef<any>(null);
+  const gpsResolveInFlightRef = useRef(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const glow = useRef(new Animated.Value(0.35)).current;
-  React.useEffect(() => {
+
+  useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(glow, { toValue: 0.65, duration: 1400, useNativeDriver: true }),
@@ -80,24 +79,109 @@ export default function DefaultCityScreen() {
     return () => loop.stop();
   }, [glow]);
 
-  /**
-   * Navigate deterministically to Land Wx.
-   * Avoid dismissAll/popToTop (causes POP_TO_TOP warning when nothing to dismiss).
-   */
   async function completeToLand() {
-  await tick();
-
-  // Tabs "Land" is app/(tabs)/index.tsx which maps to "/"
-  router.replace('/' as any);
-}
-
-  async function persistAndActivate(payload: { name: string; lat: number; lon: number; country?: string; admin1?: string }) {
-    // ✅ write first so AppBoot gate sees it immediately
-    await AsyncStorage.setItem(DEFAULT_CITY_KEY, JSON.stringify(payload));
-
-    // ✅ then set active place
-    setActive(placeFromCity(payload));
+    await tick(150);
+    router.replace('/' as any);
   }
+
+  async function persistAndActivate(payload: {
+    name: string;
+    lat: number;
+    lon: number;
+    country?: string;
+    admin1?: string;
+  }) {
+    await AsyncStorage.setItem(DEFAULT_CITY_KEY, JSON.stringify(payload));
+    setActive(placeFromCity(payload));
+    await tick(100);
+  }
+
+  async function clearPendingGpsFlag() {
+    await AsyncStorage.removeItem(PENDING_GPS_KEY);
+  }
+
+  async function resolveGpsAndRoute() {
+    if (gpsResolveInFlightRef.current) return;
+    gpsResolveInFlightRef.current = true;
+    navigatingRef.current = true;
+
+    setGpsLoading(true);
+    setErr(null);
+
+    try {
+      await tick(250);
+
+      const lastKnown = await ExpoLocation.getLastKnownPositionAsync();
+      const pos =
+        lastKnown ??
+        (await ExpoLocation.getCurrentPositionAsync({
+          accuracy: ExpoLocation.Accuracy.Balanced,
+        }));
+
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      let name = 'Current Location';
+      let admin1: string | undefined;
+      let country: string | undefined;
+
+      try {
+        const rev = await ExpoLocation.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+        const top = rev?.[0];
+        if (top) {
+          name =
+            top.city ||
+            top.subregion ||
+            top.district ||
+            top.region ||
+            top.name ||
+            'Current Location';
+          admin1 = top.region || top.subregion || undefined;
+          country = top.country || undefined;
+        }
+      } catch {
+        // coords are enough
+      }
+
+      await persistAndActivate({ name, lat, lon, admin1, country });
+      await clearPendingGpsFlag();
+      await completeToLand();
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to use GPS city');
+      await clearPendingGpsFlag();
+    } finally {
+      gpsResolveInFlightRef.current = false;
+      navigatingRef.current = false;
+      setGpsLoading(false);
+    }
+  }
+
+  // On mount/resume of this screen, continue first-run GPS onboarding if needed.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function maybeResumePendingGps() {
+      try {
+        const pending = await AsyncStorage.getItem(PENDING_GPS_KEY);
+        if (cancelled || pending !== '1') return;
+
+        const perm = await ExpoLocation.getForegroundPermissionsAsync();
+        if (cancelled) return;
+
+        if (perm.status === 'granted') {
+          await resolveGpsAndRoute();
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    void maybeResumePendingGps();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function searchCitiesNow(q: string) {
     const trimmed = q.trim();
@@ -129,7 +213,7 @@ export default function DefaultCityScreen() {
   function searchCities(q: string) {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
-      searchCitiesNow(q);
+      void searchCitiesNow(q);
     }, 180);
   }
 
@@ -146,64 +230,48 @@ export default function DefaultCityScreen() {
         admin1: item.admin1,
       });
 
+      await clearPendingGpsFlag();
       await completeToLand();
     } catch (e: any) {
-      navigatingRef.current = false;
       setErr(e?.message ?? 'Failed to set default city');
+    } finally {
+      navigatingRef.current = false;
     }
   }
 
   async function useMyCurrentGpsCity() {
-    if (navigatingRef.current) return;
-    navigatingRef.current = true;
+    if (navigatingRef.current || gpsResolveInFlightRef.current) return;
 
     setGpsLoading(true);
     setErr(null);
 
     try {
-      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        navigatingRef.current = false;
-        setErr('Location permission is not granted. Enable it to use GPS city.');
+      const currentPerm = await ExpoLocation.getForegroundPermissionsAsync();
+
+      if (currentPerm.status === 'granted') {
+        await AsyncStorage.setItem(PENDING_GPS_KEY, '1');
+        await resolveGpsAndRoute();
         return;
       }
 
-      const pos = await ExpoLocation.getCurrentPositionAsync({
-        accuracy: ExpoLocation.Accuracy.Balanced,
-      });
+      // Persist intent before opening OS permission prompt.
+      await AsyncStorage.setItem(PENDING_GPS_KEY, '1');
 
-      const lat = pos.coords.latitude;
-      const lon = pos.coords.longitude;
+      const requested = await ExpoLocation.requestForegroundPermissionsAsync();
 
-      let name = 'Current Location';
-      let admin1: string | undefined;
-      let country: string | undefined;
-
-      try {
-        const rev = await ExpoLocation.reverseGeocodeAsync({ latitude: lat, longitude: lon });
-        const top = rev?.[0];
-        if (top) {
-          name =
-            top.city ||
-            top.subregion ||
-            top.district ||
-            top.region ||
-            top.name ||
-            'Current Location';
-          admin1 = top.region || top.subregion || undefined;
-          country = top.country || undefined;
-        }
-      } catch {
-        // ok
+      if (requested.status !== 'granted') {
+        await clearPendingGpsFlag();
+        setErr('Location permission is not granted. Enable it to use GPS city.');
+        setGpsLoading(false);
+        return;
       }
 
-      await persistAndActivate({ name, lat, lon, admin1, country });
-
-      await completeToLand();
+      // If the permission flow remounted the screen, the mount effect will continue it.
+      // If not, continue immediately here.
+      await resolveGpsAndRoute();
     } catch (e: any) {
-      navigatingRef.current = false;
+      await clearPendingGpsFlag();
       setErr(e?.message ?? 'Failed to use GPS city');
-    } finally {
       setGpsLoading(false);
     }
   }
@@ -253,7 +321,7 @@ export default function DefaultCityScreen() {
           autoCorrect={false}
           autoCapitalize="words"
           returnKeyType="search"
-          onSubmitEditing={() => searchCitiesNow(query)}
+          onSubmitEditing={() => void searchCitiesNow(query)}
         />
 
         {loading && (
@@ -272,7 +340,7 @@ export default function DefaultCityScreen() {
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => selectCity(item)} disabled={navigatingRef.current}>
+          <Pressable style={styles.row} onPress={() => void selectCity(item)} disabled={navigatingRef.current}>
             <View style={styles.pin}>
               <Text style={styles.pinText}>⌁</Text>
             </View>

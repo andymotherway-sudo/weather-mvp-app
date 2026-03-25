@@ -1,11 +1,3 @@
-// app/(tabs)/hourly.tsx
-// ✅ Drop-in replacement
-// ✅ Keeps useLocations + branded header + charts
-// ✅ Pull-to-refresh refreshes forecast when coords exist; otherwise re-tries GPS
-// ✅ Removes "Show/Hide hourly details" (details always visible)
-// ✅ Adds explicit forecast timezone plumbing for child components
-// ✅ Prefers forecast location timezone over device timezone
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +16,7 @@ import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
+import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 import { NerdyHourlyTimeline } from '../../components/land/NerdyHourlyTimeline';
 import { Card } from '../../components/layout/Card';
@@ -71,10 +64,12 @@ function HourlyWithCoords({
   coords,
   onRefreshingChange,
   setRefreshFn,
+  onOpenLearn,
 }: {
   coords: { lat: number; lon: number };
   onRefreshingChange: (refreshing: boolean) => void;
   setRefreshFn: (fn: null | (() => void)) => void;
+  onOpenLearn: (topicId?: string) => void;
 }) {
   const units: UnitSystem = 'us';
 
@@ -93,7 +88,7 @@ function HourlyWithCoords({
     return () => setRefreshFn(null);
   }, [refresh, setRefreshFn]);
 
-    const forecastTimeZone = useMemo(() => {
+  const forecastTimeZone = useMemo(() => {
     return safeStr(data?.timezone) ?? null;
   }, [data]);
 
@@ -146,6 +141,7 @@ function HourlyWithCoords({
         hours={hourly}
         maxHours={72}
         timeZone={forecastTimeZone ?? undefined}
+        onExplain={(payload) => onOpenLearn(payload.learnTopicId)}
       />
     </>
   );
@@ -168,6 +164,9 @@ export default function HourlyTab() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshFnRef = useRef<null | (() => void)>(null);
 
+  const [learnVisible, setLearnVisible] = useState(false);
+  const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
+
   const setRefreshFn = useCallback((fn: null | (() => void)) => {
     refreshFnRef.current = fn;
   }, []);
@@ -179,6 +178,11 @@ export default function HourlyTab() {
     }
     refreshCurrentLocation();
   }, [coords, refreshCurrentLocation]);
+
+  const openLearn = useCallback((topicId?: string) => {
+    setLearnTopicId(topicId);
+    setLearnVisible(true);
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -213,11 +217,18 @@ export default function HourlyTab() {
             coords={coords}
             onRefreshingChange={setIsRefreshing}
             setRefreshFn={setRefreshFn}
+            onOpenLearn={openLearn}
           />
         )}
 
         <View style={{ height: Math.max(24, insets.bottom) }} />
       </ScrollView>
+
+      <LearnMoreModal
+        visible={learnVisible}
+        onClose={() => setLearnVisible(false)}
+        initialTopicId={learnTopicId}
+      />
     </SafeAreaView>
   );
 }
@@ -246,8 +257,16 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.errorBg,
     marginBottom: theme.spacing.lg,
   },
-  errorTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.errorText, marginBottom: 4 },
-  errorText: { fontSize: 13, color: theme.colors.errorText },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.errorText,
+    marginBottom: 4,
+  },
+  errorText: {
+    fontSize: 13,
+    color: theme.colors.errorText,
+  },
 
   retryBtn: {
     alignSelf: 'flex-start',
@@ -258,5 +277,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  retryText: { color: 'white', fontWeight: '900', fontSize: 12, opacity: 0.9 },
+  retryText: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 12,
+    opacity: 0.9,
+  },
 });

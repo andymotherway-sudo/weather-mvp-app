@@ -1,5 +1,5 @@
 // app/(tabs)/climo.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -17,15 +17,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { usePlace } from '../context/PlaceContext';
 
+import ClimatologyChart from '../../components/land/ClimatologyChart';
+import { Card } from '../../components/layout/Card';
+import { theme } from '../../styles/theme';
+import { typography } from '../../styles/typography';
 import { useOpenMeteoDayContext } from '../lib/almanac/dayContextHook';
 import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 import { useClimatologyNormals } from '../lib/climatology/hook';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
-
-import { ClimatologyChart } from '../../components/land/ClimatologyChart';
-import { Card } from '../../components/layout/Card';
-import { theme } from '../../styles/theme';
-import { typography } from '../../styles/typography';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
@@ -807,7 +806,8 @@ export default function ClimoTab() {
         ) : null}
 
         {/* Curve */}
-        {hasPlace && hasNormals ? (
+
+          {hasPlace && hasNormals ? (
           <ClimatologyChart
             title="ALMANAC"
             normals={climo.data!.normals}

@@ -181,20 +181,45 @@ export function ClimatologyChart({
   }, [monthly.tmin12, monthly.tavg12, monthly.tmax12]);
 
   const values = useMemo(() => {
-    const arr: number[] = [];
-    for (let i = 0; i < 365; i++) arr.push(daily.tmin[i], daily.tavg[i], daily.tmax[i]);
+  const arr: number[] = [];
 
-    if (lastYear?.tminF?.length && lastYear?.tmaxF?.length) {
-      const a = lastYear.tminF.slice(0, 365).map(numOrNull).filter((x): x is number => x != null);
-      const b = lastYear.tmaxF.slice(0, 365).map(numOrNull).filter((x): x is number => x != null);
-      arr.push(...a, ...b);
-    }
+  for (let i = 0; i < 365; i++) {
+    const a = daily.tmin[i];
+    const b = daily.tavg[i];
+    const c = daily.tmax[i];
 
-    const min = Math.min(...arr);
-    const max = Math.max(...arr);
-    const pad = Math.max(6, (max - min) * 0.12);
-    return { min: min - pad, max: max + pad };
-  }, [daily.tmin, daily.tavg, daily.tmax, lastYear?.tminF, lastYear?.tmaxF]);
+    if (Number.isFinite(a)) arr.push(a);
+    if (Number.isFinite(b)) arr.push(b);
+    if (Number.isFinite(c)) arr.push(c);
+  }
+
+  if (lastYear?.tminF?.length && lastYear?.tmaxF?.length) {
+    const a = lastYear.tminF.slice(0, 365).map(numOrNull);
+    const b = lastYear.tmaxF.slice(0, 365).map(numOrNull);
+
+    for (const v of a) if (v != null && Number.isFinite(v)) arr.push(v);
+    for (const v of b) if (v != null && Number.isFinite(v)) arr.push(v);
+  }
+
+  if (arr.length < 2) {
+    return { min: 0, max: 100 };
+  }
+
+  let min = Math.min(...arr);
+  let max = Math.max(...arr);
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: 0, max: 100 };
+  }
+
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+
+  const pad = Math.max(6, (max - min) * 0.12);
+  return { min: min - pad, max: max + pad };
+}, [daily.tmin, daily.tavg, daily.tmax, lastYear?.tminF, lastYear?.tmaxF]);
 
   const yForVal = (v: number) => PAD_T + (1 - norm(v, values.min, values.max)) * innerH;
 
@@ -223,12 +248,16 @@ export function ClimatologyChart({
   }, [daily.tmin, daily.tavg, daily.tmax, values.min, values.max, innerW, innerH]);
 
   const bandPath = useMemo(() => {
-    const top = seriesPts.tmax;
-    const bot = seriesPts.tmin.slice().reverse();
-    const pts = top.concat(bot);
-    if (!pts.length) return '';
-    return `${buildPath(pts)} Z`;
-  }, [seriesPts.tmax, seriesPts.tmin]);
+  const top = seriesPts.tmax;
+  const bot = seriesPts.tmin.slice().reverse();
+
+  if (!top.length || !bot.length) return '';
+
+  const pts = top.concat(bot);
+  if (!pts.length) return '';
+
+  return `${buildPath(pts)} Z`;
+}, [seriesPts.tmax, seriesPts.tmin]);
 
 // ✅ Hourly-style precip: area fill + ridge stroke (steel-blue) that spans full chart width
 const precipShape = useMemo(() => {
@@ -238,8 +267,8 @@ const precipShape = useMemo(() => {
     .slice(0, 12)
     .map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0));
 
-  const max = Math.max(...vals);
-  if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
+  const max = vals.length ? Math.max(...vals) : 0;
+if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
   const baseY = PAD_T + innerH;
   const peakH = 28;
