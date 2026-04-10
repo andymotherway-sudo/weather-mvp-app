@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AstroInputs } from './openMeteoAstro';
 import { computeSkyScorePoint, skyScoreLabel, skyScoreSummary } from './skyScore';
@@ -736,6 +736,7 @@ export function useLocationAstroForecast(args: {
   enabled?: boolean;
 }) {
   const { lat, lon, placeName, enabled = true } = args;
+  const requestIdRef = useRef(0);
 
   const [state, setState] = useState<HookState>({
     data: null,
@@ -752,9 +753,12 @@ export function useLocationAstroForecast(args: {
       return;
     }
 
+    const requestId = ++requestIdRef.current;
+
     setState((prev) => ({
       ...prev,
-      loading: mode === 'initial' ? true : prev.loading,
+      data: mode === 'initial' ? null : prev.data,
+      loading: mode === 'initial',
       refreshing: mode === 'refresh',
       error: null,
     }));
@@ -766,6 +770,8 @@ export function useLocationAstroForecast(args: {
         placeName,
       });
 
+      if (requestId !== requestIdRef.current) return;
+
       setState({
         data,
         loading: false,
@@ -773,6 +779,8 @@ export function useLocationAstroForecast(args: {
         error: null,
       });
     } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+
       const message = errorToMessage(error);
       console.log('[astro] load failed', { message, raw: error });
 
@@ -803,3 +811,4 @@ export function useLocationAstroForecast(args: {
 }
 
 export { toLocalLabel };
+

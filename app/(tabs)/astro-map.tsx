@@ -1824,92 +1824,160 @@ regionDebounceRef.current = setTimeout(async () => {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+  let cancelled = false;
 
-    async function preloadActiveArea() {
-      if (!active?.lat || !active?.lon) return;
-      if (preloadInFlightRef.current) return;
+  async function syncActivePlaceToAstro() {
+    if (!active?.lat || !active?.lon) return;
+    if (preloadInFlightRef.current) return;
 
-      preloadInFlightRef.current = true;
-      setIsSkyLoading(true);
-      let astroForGrid: AstroLocationPayload | null = activeAstro;
-
-      try {
-        try {
-          const astro = await fetchAstroLocation(active.lat, active.lon, active.name);
-          astroForGrid = astro;
-          if (!cancelled) setActiveAstro(astro);
-        } catch (e: any) {
-          if (!cancelled) {
-            const msg = String(e?.message ?? e ?? 'Active astro load failed');
-            setErrorLine((cur) => cur ?? msg);
-          }
-        }
-
-        const heroKey = `hero:${active.lat.toFixed(3)}:${active.lon.toFixed(3)}:h${hourOffset}:client-hero`;
-        const heroGrid =
-          SKY_GRID_MEMORY_CACHE.get(heroKey) ??
-          (await fetchSkyGridPayload({
-            bounds: buildHeroBounds(active.lat, active.lon),
-            zoom: 7,
-            hourOffset,
-            size: 128,
-            includePoints: true,
-            mode: 'hero',
-            density: 'low',
-            centerLat: active.lat,
-            centerLon: active.lon,
-            astroContext: astroForGrid,
-          }));
-
-        if (cancelled) return;
-
-        const currentRegion = lastRegionRef.current ?? initialRegion;
-        const currentInsideHero = pointInBounds(
-          currentRegion.latitude,
-          currentRegion.longitude,
-          heroGrid.bounds
-        );
-
-        const heroFetchId = ++fetchSerialRef.current;
-
-        if (!hasValidBounds(heroGrid.bounds)) {
-          throw new Error('Hero SkyScore grid returned invalid bounds');
-        }
-
-       const shouldSeedHero =
-          !hasUsableSkyOverlay() &&
-          (!skyGrid || currentInsideHero);
-
-        if (shouldSeedHero) {
-          const heroFetchId = ++fetchSerialRef.current;
-
-          const applied = await applyGridToMap(heroGrid, heroKey, currentRegion, {
-            fetchId: heroFetchId,
-            source: 'hero',
-          });
-
-          if (applied) {
-            setIsSkyLoading(false);
-            setHasEverLoadedSky(true);
-            refreshInspectForRegion(currentRegion);
-            setStatusLine(`SkyScore ready for ${shortPlaceLabel(active.name)} · ${formatHourLabel(hourOffset)}`);
-          }
-        }
-      } catch {
-        setIsSkyLoading(false);
-        // keep astro location even if hero prefetch fails
-      } finally {
-        preloadInFlightRef.current = false;
-        didFinishInitialPreloadRef.current = true;
-      }
+    if (inspectDebounceRef.current) {
+  clearTimeout(inspectDebounceRef.current);
+  inspectDebounceRef.current = null;
+}
+    if (regionDebounceRef.current) {
+      clearTimeout(regionDebounceRef.current);
+      regionDebounceRef.current = null;
     }
 
-    preloadActiveArea();
-    return () => {
-      cancelled = true;
+    if (loadingTimerRef.current) {
+      clearTimeout(loadingTimerRef.current);
+      loadingTimerRef.current = null;
+    }
+
+    preloadInFlightRef.current = true;
+
+    const nextRegion: Region = {
+      latitude: active.lat,
+      longitude: active.lon,
+      latitudeDelta:
+        lastRegionRef.current?.latitudeDelta && Number.isFinite(lastRegionRef.current.latitudeDelta)
+          ? clamp(lastRegionRef.current.latitudeDelta, 0.08, 40)
+          : initialRegion.latitudeDelta,
+      longitudeDelta:
+        lastRegionRef.current?.longitudeDelta && Number.isFinite(lastRegionRef.current.longitudeDelta)
+          ? clamp(lastRegionRef.current.longitudeDelta, 0.08, 40)
+          : initialRegion.longitudeDelta,
     };
-  }, [active?.lat, active?.lon, active?.name, hourOffset, applyGridToMap, initialRegion, refreshInspectForRegion]);
+
+    try {
+      setErrorLine(null);
+      setIsSkyLoading(true);
+      setHasEverLoadedSky(false);
+      setStatusLine(`Loading SkyScore for ${shortPlaceLabel(active.name)}…`);
+
+      // This is the key fix: re-seed the Astro screen from shared place state.
+      lastRegionRef.current = nextRegion;
+      initialRegionRef.current = nextRegion;
+      lastSkyGridKeyRef.current = '';
+      didFinishInitialPreloadRef.current = false;
+
+      clearSkyState(false);
+
+      // Recenter camera so Astro follows the selected Land place immediately.
+      try {
+        cameraRef.current?.setCamera?.({
+          centerCoordinate: [active.lon, active.lat],
+          zoomLevel: clamp(
+            approxZoomFromLongitudeDelta(nextRegion.longitudeDelta),
+            3,
+            10
+          ),
+          animationDuration: 500,
+        });
+      } catch {
+        // no-op
+      }
+
+      let astroForGrid: AstroLocationPayload | null = null;
+
+      try {
+        const astro = await fetchAstroLocation(active.lat, active.lon, active.name);
+        astroForGrid = astro;
+        if (!cancelled) setActiveAstro(astro);
+      } catch (e: any) {
+        if (!cancelled) {
+          const msg = String(e?.message ?? e ?? 'Active astro load failed');
+          setErrorLine((cur) => cur ?? msg);
+        }
+      }
+
+      if (cancelled) return;
+
+      // Seed a local hero grid immediately for the newly selected place.
+      const heroKey = `hero:${active.lat.toFixed(3)}:${active.lon.toFixed(3)}:h${hourOffset}:client-hero`;
+      const heroGrid =
+        SKY_GRID_MEMORY_CACHE.get(heroKey) ??
+        (await fetchSkyGridPayload({
+          bounds: buildHeroBounds(active.lat, active.lon),
+          zoom: 7,
+          hourOffset,
+          size: 128,
+          includePoints: true,
+          mode: 'hero',
+          density: 'low',
+          centerLat: active.lat,
+          centerLon: active.lon,
+          astroContext: astroForGrid,
+        }));
+
+      if (cancelled) return;
+
+      if (!hasValidBounds(heroGrid.bounds)) {
+        throw new Error('Hero SkyScore grid returned invalid bounds');
+      }
+
+      const heroFetchId = ++fetchSerialRef.current;
+
+      const applied = await applyGridToMap(heroGrid, heroKey, nextRegion, {
+        fetchId: heroFetchId,
+        source: 'hero',
+      });
+
+      if (cancelled || !applied) return;
+
+      setIsSkyLoading(false);
+      setHasEverLoadedSky(true);
+      refreshInspectForRegion(nextRegion);
+      setStatusLine(`SkyScore ready for ${shortPlaceLabel(active.name)} · ${formatHourLabel(hourOffset)}`);
+
+      // Then request the broader regional overlay too, using the same seeded region.
+      lastSkyGridKeyRef.current = '';
+      refreshForRegion(nextRegion);
+    } catch (e: any) {
+      if (!cancelled) {
+        setIsSkyLoading(false);
+        setErrorLine((cur) => cur ?? String(e?.message ?? e ?? 'Astro sync failed'));
+      }
+    } finally {
+      preloadInFlightRef.current = false;
+      didFinishInitialPreloadRef.current = true;
+    }
+  }
+
+  syncActivePlaceToAstro();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  active?.id,
+  hourOffset,
+  applyGridToMap,
+  clearSkyState,
+  initialRegion,
+  refreshInspectForRegion,
+  refreshForRegion,
+]);
+
+useEffect(() => {
+  const r = lastRegionRef.current ?? initialRegion;
+  if (!r) return;
+  if (hasEverLoadedSky) return;
+  if (isSkyLoading) return;
+
+  lastSkyGridKeyRef.current = '';
+  refreshForRegion(r);
+}, [initialRegion, hasEverLoadedSky, isSkyLoading, refreshForRegion]);
 
   useEffect(() => {
     const r = lastRegionRef.current;
