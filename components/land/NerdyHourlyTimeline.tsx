@@ -1,16 +1,4 @@
-// components/land/NerdyHourlyTimeline.tsx
-// ✅ Drop-in replacement
-// ✅ Fixes timezone bug for naive hourly timestamps like 2026-03-17T14:00
-// ✅ Accepts explicit timeZone prop
-// ✅ Default mode = Simple
-// ✅ Simple mode right-side shows Pressure (hPa + inHg) to avoid cloud duplication
-// ✅ WxLab press auto-expands a tile
-// ✅ Removes abbreviations → richer labels
-// ✅ Fixes precip chance showing "—" when it's actually 0%
-// ✅ Restores tap-to-learn behavior using onExplain → LearnModal pipeline
-// ✅ Removes old custom hint format in favor of learnTopicId mapping
-
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -100,8 +88,6 @@ function formatHourLabel(t: any, timeZone?: string): string {
     if (typeof t === 'string') {
       const wall = extractIsoWallClockParts(t);
 
-      // For Open-Meteo style naive local timestamps, trust the wall-clock string
-      // instead of letting JS reinterpret it in the device timezone.
       if (wall) {
         let h = wall.hour;
         const ap = h >= 12 ? 'PM' : 'AM';
@@ -122,6 +108,14 @@ function formatHourLabel(t: any, timeZone?: string): string {
   } catch {
     return String(t ?? '');
   }
+}
+
+function formatDayLabel(t: any): string {
+  const wall = extractIsoWallClockParts(t);
+  if (!wall) return '';
+
+  const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day));
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date).toUpperCase();
 }
 
 function windArrowFromDeg(deg: number | null) {
@@ -187,6 +181,45 @@ function formatPressureFromHpa(hpa: number | null): { hpaText: string; inhgText:
     hpaText: `${hpa} hPa`,
     inhgText: `${inHg.toFixed(2)} inHg`,
   };
+}
+
+function formatPressureBucket(hpa: number | null): string {
+  if (hpa == null) return '—';
+  if (hpa <= 1008) return 'Lower';
+  if (hpa >= 1022) return 'Higher';
+  return 'Near normal';
+}
+
+function formatSpreadBucket(spread: number | null): string {
+  if (spread == null) return '—';
+  if (spread <= 3) return 'Very moist';
+  if (spread <= 8) return 'Moist';
+  if (spread <= 15) return 'Moderate';
+  return 'Dry';
+}
+
+function formatHumidityBucket(rh: number | null): string {
+  if (rh == null) return '—';
+  if (rh >= 85) return 'Very humid';
+  if (rh >= 65) return 'Humid';
+  if (rh >= 40) return 'Comfortable';
+  return 'Dry';
+}
+
+function formatCloudBucket(cloud: number | null): string {
+  if (cloud == null) return '—';
+  if (cloud <= 15) return 'Mostly clear';
+  if (cloud <= 45) return 'Partly cloudy';
+  if (cloud <= 75) return 'Mostly cloudy';
+  return 'Overcast';
+}
+
+function formatGustBucket(gustFactor: number | null): string {
+  if (gustFactor == null) return '—';
+  if (gustFactor >= 1.8) return 'Very gusty';
+  if (gustFactor >= 1.4) return 'Gusty';
+  if (gustFactor >= 1.15) return 'Some gusts';
+  return 'Steady wind';
 }
 
 function ModeToggle({
@@ -264,14 +297,20 @@ export function NerdyHourlyTimeline({
   maxHours = 72,
   timeZone,
   onExplain,
+  defaultMode = 'simple',
 }: {
   hours: any[];
   maxHours?: number;
   timeZone?: string;
   onExplain?: (payload: HourlyExplainPayload) => void;
+  defaultMode?: Mode;
 }) {
-  const [mode, setMode] = useState<Mode>('simple');
+  const [mode, setMode] = useState<Mode>(defaultMode);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMode(defaultMode);
+  }, [defaultMode]);
 
   const rows = useMemo(() => {
     const sliced = (hours ?? []).slice(0, maxHours);
@@ -284,7 +323,12 @@ export function NerdyHourlyTimeline({
       const dpF = safeNum(h.dewPointF ?? h.dewpointF ?? h.dew_point_2m ?? h.dew_point_2m_f);
 
       const rh = asPct(h.humidityPct ?? h.relativeHumidityPct ?? h.relative_humidity_2m);
-      const pop = asPct(h.precipProbPct ?? h.precip_probability ?? h.precipProbabilityPct);
+      const pop = asPct(
+        h.precipProbPct ??
+          h.precip_probability ??
+          h.precipitation_probability ??
+          h.precipProbabilityPct
+      );
       const cloud = asPct(h.cloudCoverPct ?? h.cloud_cover ?? h.cloudcoverPct);
 
       const wind = safeNum(h.windMph ?? h.windspeedMph ?? h.wind_speed_10m);
@@ -304,6 +348,7 @@ export function NerdyHourlyTimeline({
 
       return {
         key,
+        dayLabel: formatDayLabel(time),
         timeLabel: formatHourLabel(time, timeZone),
         tF: round0(tF),
         feelsF: round0(feelsF),
@@ -324,41 +369,41 @@ export function NerdyHourlyTimeline({
 
   const firstRowKey = rows.length ? rows[0].key : null;
 
+  useEffect(() => {
+    if (!rows.length) {
+      setExpandedKey(null);
+      return;
+    }
+
+    setExpandedKey((current) => {
+      const exists = rows.some((r) => r.key === current);
+      if (exists) return current;
+      return rows[0].key;
+    });
+  }, [rows]);
+
   const onChangeMode = (m: Mode) => {
     if (m === mode) return;
 
-    if (m === 'wxlab') {
-      setExpandedKey((k) => k ?? firstRowKey);
-    } else {
-      setExpandedKey(null);
-    }
-
+    setExpandedKey((current) => current ?? firstRowKey);
     setMode(m);
   };
 
   const renderItem = ({ item }: { item: any }) => {
-    const isOpen = mode === 'wxlab' && expandedKey === item.key;
+    const isOpen = expandedKey === item.key;
     const arrow = windArrowFromDeg(item.wdir);
-
     const pressure = formatPressureFromHpa(item.pressureHpa);
-
-    const rightLabel = mode === 'wxlab' ? 'Precip chance' : 'Pressure';
-    const rightValueText = mode === 'wxlab' ? fmtPct(item.pop) : pressure?.hpaText ?? '—';
-    const rightSubText = mode === 'wxlab' ? null : pressure?.inhgText ?? null;
 
     return (
       <Pressable
-        onPress={() => {
-          if (mode !== 'wxlab') return;
-          setExpandedKey((k) => (k === item.key ? null : item.key));
-        }}
+        onPress={() => setExpandedKey((current) => (current === item.key ? null : item.key))}
         style={{ marginBottom: theme.spacing.sm }}
       >
         <Card style={styles.card}>
           <View style={styles.rowTop}>
             <View style={styles.left}>
+              <Text style={styles.day}>{item.dayLabel}</Text>
               <Text style={styles.time}>{item.timeLabel}</Text>
-              <Text style={styles.subtle}>Temp</Text>
             </View>
 
             <View style={styles.mid}>
@@ -370,9 +415,8 @@ export function NerdyHourlyTimeline({
                 </Text>
               ) : (
                 <Text style={styles.meta}>
-                  Wind {chip(item.wind)}
-                  {item.wind != null ? ' mph' : ''} {arrow}
-                  {item.gust != null ? ` • Gust ${item.gust}` : ''}
+                  {fmtPct(item.pop)} precip • {chip(item.wind)}
+                  {item.wind != null ? ' mph wind' : ''}
                 </Text>
               )}
             </View>
@@ -384,69 +428,130 @@ export function NerdyHourlyTimeline({
               </Text>
 
               <View style={styles.rightMeta}>
-                <Text style={styles.rightVal}>{rightValueText}</Text>
-                {rightSubText ? <Text style={styles.rightSub}>{rightSubText}</Text> : null}
-                <Text style={styles.rightLabel}>{rightLabel}</Text>
+                {mode === 'wxlab' ? (
+                  <>
+                    <Text style={styles.rightVal}>{fmtPct(item.pop)}</Text>
+                    <Text style={styles.rightLabel}>Precip chance</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.rightVal}>{pressure?.hpaText ?? '—'}</Text>
+                    {pressure?.inhgText ? <Text style={styles.rightSub}>{pressure.inhgText}</Text> : null}
+                    <Text style={styles.rightLabel}>Pressure</Text>
+                  </>
+                )}
               </View>
             </View>
           </View>
 
-          <View style={styles.bars}>
-            <View style={styles.barItem}>
-              <Text style={styles.barLabel}>Humidity</Text>
-              <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${barFrac(item.rh) * 100}%` }]} />
+          {isOpen ? (
+            <>
+              <View style={styles.bars}>
+                <View style={styles.barItem}>
+                  <Text style={styles.barLabel}>Humidity</Text>
+                  <View style={styles.barTrack}>
+                    <View style={[styles.barFill, { width: `${barFrac(item.rh) * 100}%` }]} />
+                  </View>
+                  <Text style={styles.barVal}>{fmtPct(item.rh)}</Text>
+                </View>
+
+                <View style={styles.barItem}>
+                  <Text style={styles.barLabel}>Cloud cover</Text>
+                  <View style={styles.barTrack}>
+                    <View style={[styles.barFill, { width: `${barFrac(item.cloud) * 100}%` }]} />
+                  </View>
+                  <Text style={styles.barVal}>{fmtPct(item.cloud)}</Text>
+                </View>
+
+                <View style={styles.barItem}>
+                  <Text style={styles.barLabel}>Precip chance</Text>
+                  <View style={styles.barTrack}>
+                    <View style={[styles.barFill, { width: `${barFrac(item.pop) * 100}%` }]} />
+                  </View>
+                  <Text style={styles.barVal}>{fmtPct(item.pop)}</Text>
+                </View>
               </View>
-              <Text style={styles.barVal}>{fmtPct(item.rh)}</Text>
-            </View>
 
-            <View style={styles.barItem}>
-              <Text style={styles.barLabel}>Cloud cover</Text>
-              <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${barFrac(item.cloud) * 100}%` }]} />
-              </View>
-              <Text style={styles.barVal}>{fmtPct(item.cloud)}</Text>
-            </View>
+              {mode === 'simple' ? (
+                <View style={styles.simpleExpanded}>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Feels like</Text>
+                    <Text style={styles.simpleStatValue}>{chip(item.feelsF, '°')}</Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Dew point</Text>
+                    <Text style={styles.simpleStatValue}>{chip(item.dpF, '°')}</Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Humidity</Text>
+                    <Text style={styles.simpleStatValue}>{formatHumidityBucket(item.rh)}</Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Sky</Text>
+                    <Text style={styles.simpleStatValue}>{formatCloudBucket(item.cloud)}</Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Wind feel</Text>
+                    <Text style={styles.simpleStatValue}>{formatGustBucket(item.gustFactor)}</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.wxlab}>
+                  <LearnableWxRow
+                    label="Spread (Temp - Dew)"
+                    value={item.spread == null ? '—' : `${item.spread}°F`}
+                    topicId="spread_temp_dew"
+                    onExplain={onExplain}
+                  />
 
-            <View style={styles.barItem}>
-              <Text style={styles.barLabel}>Precip chance</Text>
-              <View style={styles.barTrack}>
-                <View style={[styles.barFill, { width: `${barFrac(item.pop) * 100}%` }]} />
-              </View>
-              <Text style={styles.barVal}>{fmtPct(item.pop)}</Text>
-            </View>
-          </View>
+                  <LearnableWxRow
+                    label="Humidity regime"
+                    value={formatHumidityBucket(item.rh)}
+                    topicId="humidity"
+                    onExplain={onExplain}
+                  />
 
-          {mode === 'wxlab' && isOpen ? (
-            <View style={styles.wxlab}>
-              <LearnableWxRow
-                label="Spread (Temp − Dew)"
-                value={item.spread == null ? '—' : `${item.spread}°F`}
-                topicId="spread_temp_dew"
-                onExplain={onExplain}
-              />
+                  <LearnableWxRow
+                    label="Sky regime"
+                    value={formatCloudBucket(item.cloud)}
+                    topicId="cloud_cover"
+                    onExplain={onExplain}
+                  />
 
-              <LearnableWxRow
-                label="Gust factor"
-                value={item.gustFactor == null ? '—' : `${item.gustFactor}×`}
-                topicId="gust_factor"
-                onExplain={onExplain}
-              />
+                  <LearnableWxRow
+                    label="Gust factor"
+                    value={item.gustFactor == null ? '—' : `${item.gustFactor}×`}
+                    topicId="gust_factor"
+                    onExplain={onExplain}
+                  />
 
-              <LearnableWxRow
-                label="Fog risk"
-                value={item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
-                topicId="fog_risk"
-                onExplain={onExplain}
-              />
+                  <LearnableWxRow
+                    label="Pressure"
+                    value={
+                      item.pressureHpa == null
+                        ? '—'
+                        : `${item.pressureHpa} hPa • ${formatPressureBucket(item.pressureHpa)}`
+                    }
+                    topicId="pressure"
+                    onExplain={onExplain}
+                  />
 
-              <LearnableWxRow
-                label="Pressure"
-                value={item.pressureHpa == null ? '—' : `${item.pressureHpa} hPa`}
-                topicId="pressure"
-                onExplain={onExplain}
-              />
-            </View>
+                  <LearnableWxRow
+                    label="Fog risk"
+                    value={item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
+                    topicId="fog_risk"
+                    onExplain={onExplain}
+                  />
+
+                  <LearnableWxRow
+                    label="Air dryness"
+                    value={formatSpreadBucket(item.spread)}
+                    topicId="spread_temp_dew"
+                    onExplain={onExplain}
+                  />
+                </View>
+              )}
+            </>
           ) : null}
         </Card>
       </Pressable>
@@ -486,8 +591,8 @@ type Styles = {
 
   rowTop: ViewStyle;
   left: ViewStyle;
+  day: TextStyle;
   time: TextStyle;
-  subtle: TextStyle;
 
   mid: ViewStyle;
   temp: TextStyle;
@@ -506,6 +611,11 @@ type Styles = {
   barTrack: ViewStyle;
   barFill: ViewStyle;
   barVal: TextStyle;
+
+  simpleExpanded: ViewStyle;
+  simpleStatRow: ViewStyle;
+  simpleStatLabel: TextStyle;
+  simpleStatValue: TextStyle;
 
   wxlab: ViewStyle;
   wxRowPressable: ViewStyle;
@@ -543,24 +653,29 @@ const styles = StyleSheet.create<Styles>({
 
   card: {
     padding: theme.spacing.md,
-    borderRadius: 18,
+    borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
   rowTop: { flexDirection: 'row', alignItems: 'center' },
   left: { width: 76 },
-  time: { color: 'white', fontWeight: '900', fontSize: 13 },
-  subtle: { color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 },
+  day: {
+    color: 'rgba(255,255,255,0.52)',
+    fontWeight: '900',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  time: { color: 'white', fontWeight: '900', fontSize: 18 },
 
   mid: { flex: 1, paddingHorizontal: 10 },
-  temp: { color: 'white', fontWeight: '900', fontSize: 22, letterSpacing: -0.5 },
+  temp: { color: 'white', fontWeight: '900', fontSize: 28, letterSpacing: -0.6 },
   meta: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 2 },
 
-  right: { alignItems: 'flex-end', width: 118 },
+  right: { alignItems: 'flex-end', width: 120 },
   wind: { color: 'white', fontWeight: '900', fontSize: 13 },
   rightMeta: { marginTop: 4, alignItems: 'flex-end' },
-  rightVal: { color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '900' },
+  rightVal: { color: 'rgba(255,255,255,0.82)', fontSize: 12, fontWeight: '900' },
   rightSub: { color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: '800', marginTop: 1 },
   rightLabel: { color: 'rgba(255,255,255,0.50)', fontSize: 11, fontWeight: '800', marginTop: 1 },
 
@@ -587,6 +702,30 @@ const styles = StyleSheet.create<Styles>({
     fontSize: 12,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
+  },
+
+  simpleExpanded: {
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 8 as any,
+  },
+  simpleStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12 as any,
+  },
+  simpleStatLabel: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  simpleStatValue: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '900',
   },
 
   wxlab: {

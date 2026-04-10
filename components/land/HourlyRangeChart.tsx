@@ -512,8 +512,10 @@ export function HourlyRangeChart({
         }}
       >
         <View style={{ width: contentW - padX * 2 }}>
-          <View style={[s.strip, { width: contentW - padX * 2 }]}>
+          <View style={{ width: contentW - padX * 2, height: 180 }}>
             {data.map((h: any, i) => {
+              const x = xForIdx(i);
+
               const t = h.time as string;
               const dk = dayKeyFromIso(t);
               const prevT = i > 0 ? ((data[i - 1] as any).time as string) : '';
@@ -540,6 +542,11 @@ export function HourlyRangeChart({
                     lastSelIdxRef.current = i;
                     setSelIdx(i);
                   }}
+                  style={{
+                    position: 'absolute',
+                    left: x - TILE_W / 2,
+                    width: TILE_W,
+                  }}
                 >
                   <Animated.View
                     style={[
@@ -550,7 +557,9 @@ export function HourlyRangeChart({
                     ]}
                   >
                     <Text style={s.hourTop}>
-                      {isNow ? 'NOW' : dayChanged ? dayLabelFromKey(dk).toUpperCase() : hourLabel(t)}
+                      {isNow
+                        ? `Now · ${dayLabelFromKey(dk)}`
+                        : `${dayLabelFromKey(dk)} ${hourLabel(t)}`}
                     </Text>
 
                     <Text style={s.hilo}>{fmtInt(tempV, '°')}</Text>
@@ -626,6 +635,12 @@ export function HourlyRangeChart({
 
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
+                const t = h.time as string;
+                const dk = dayKeyFromIso(t);
+                const prevT = i > 0 ? ((data[i - 1] as any).time as string) : '';
+                const prevDk = prevT ? dayKeyFromIso(prevT) : '';
+                const dayChanged = !!prevDk && !!dk && prevDk !== dk;
+
                 const tV = pick(h, tempKey);
                 const dV = pick(h, dewKey);
                 const rhV = pick(h, 'humidityPct');
@@ -636,6 +651,17 @@ export function HourlyRangeChart({
 
                 return (
                   <G key={`pt-${h.time}-${i}`}>
+                    {dayChanged ? (
+                      <Line
+                        x1={x}
+                        x2={x}
+                        y1={padT}
+                        y2={cloudBandBot}
+                        stroke="rgba(255,255,255,0.18)"
+                        strokeWidth={2}
+                      />
+                    ) : null}
+
                     {showTemp && yT != null ? <Circle cx={x} cy={yT} r={5.0} fill="white" opacity={0.92} /> : null}
                     {showDew && yD != null ? <Circle cx={x} cy={yD} r={3.6} fill={C.dew} opacity={0.85} /> : null}
                     {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={3.2} fill={C.rh} opacity={0.75} /> : null}
@@ -680,7 +706,7 @@ export function HourlyRangeChart({
 
               {showClouds ? (
                 <>
-                  <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.03)" />
+                  <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(32, 4, 4, 0.03)" />
 
                   {data.map((h: any, i) => {
                     const pct = pick(h, 'cloudCoverPct');

@@ -1,4 +1,3 @@
-// components/common/LearnMoreModal.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LEARN_TOPICS } from '../../app/lib/learn/topics';
@@ -24,12 +23,17 @@ type LearnTopic = {
   references?: LearnReference[];
   callout?: string;
   footer?: string;
+  formula?: string;
+  formulaLabel?: string;
+  insight?: string;
 };
 
 function asTopicArray(input: unknown): LearnTopic[] {
   if (!Array.isArray(input)) return [];
   return input as LearnTopic[];
 }
+
+type Mode = 'browse' | 'topic';
 
 export function LearnMoreModal({
   visible,
@@ -43,14 +47,21 @@ export function LearnMoreModal({
   const topics = useMemo(() => asTopicArray(LEARN_TOPICS), []);
   const [q, setQ] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [showTopics, setShowTopics] = useState(true);
+  const [mode, setMode] = useState<Mode>('browse');
 
   useEffect(() => {
     if (!visible) return;
+
     setQ('');
-    setSelectedId(initialTopicId ?? topics[0]?.id);
-    setShowTopics(!initialTopicId);
-  }, [visible, initialTopicId, topics]);
+
+    if (initialTopicId) {
+      setSelectedId(initialTopicId);
+      setMode('topic');
+    } else {
+      setSelectedId(undefined);
+      setMode('browse');
+    }
+  }, [visible, initialTopicId]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -62,7 +73,10 @@ export function LearnMoreModal({
         t.summary ?? '',
         t.body ?? '',
         t.callout ?? '',
+        t.insight ?? '',
         t.footer ?? '',
+        t.formula ?? '',
+        t.formulaLabel ?? '',
         ...(t.bullets ?? []),
         ...(t.sections ?? []).flatMap((s) => [s.title ?? '', s.body ?? '', ...(s.bullets ?? [])]),
         ...(t.references ?? []).flatMap((r) => [r.label ?? '', r.value ?? '']),
@@ -75,20 +89,18 @@ export function LearnMoreModal({
     });
   }, [q, topics]);
 
-  useEffect(() => {
-    if (!visible) return;
-    if (!filtered.length) return;
-    const stillThere = filtered.some((t) => t.id === selectedId);
-    if (!stillThere) setSelectedId(filtered[0].id);
-  }, [visible, filtered, selectedId]);
-
   const selected = useMemo(() => {
-    return topics.find((t) => t.id === selectedId) ?? filtered[0];
-  }, [topics, selectedId, filtered]);
+    if (!selectedId) return undefined;
+    return topics.find((t) => t.id === selectedId);
+  }, [topics, selectedId]);
 
   const onPick = (id: string) => {
     setSelectedId(id);
-    setShowTopics(false);
+    setMode('topic');
+  };
+
+  const onBackToBrowse = () => {
+    setMode('browse');
   };
 
   const topicCountLabel = `${filtered.length} topic${filtered.length === 1 ? '' : 's'}`;
@@ -100,9 +112,17 @@ export function LearnMoreModal({
         <View style={styles.handle} />
 
         <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>OMNI wx Learn</Text>
-            <Text style={styles.title}>Understand the weather</Text>
+          <View style={styles.headerLeft}>
+            {mode === 'topic' ? (
+              <Pressable onPress={onBackToBrowse} style={styles.backBtn}>
+                <Text style={styles.backText}>Browse Topics</Text>
+              </Pressable>
+            ) : (
+              <View>
+                <Text style={styles.eyebrow}>OMNI wx Learn</Text>
+                <Text style={styles.title}>Understand the weather</Text>
+              </View>
+            )}
           </View>
 
           <Pressable onPress={onClose} style={styles.doneBtn}>
@@ -110,151 +130,155 @@ export function LearnMoreModal({
           </Pressable>
         </View>
 
-        <View style={styles.searchWrap}>
-          <TextInput
-            value={q}
-            onChangeText={(t) => {
-              setQ(t);
-              setShowTopics(true);
-            }}
-            placeholder="Search topics…"
-            placeholderTextColor="rgba(255,255,255,0.35)"
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.search}
-          />
-        </View>
+        {mode === 'browse' ? (
+          <>
+            <View style={styles.searchWrap}>
+              <TextInput
+                value={q}
+                onChangeText={setQ}
+                placeholder="Search topics…"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                autoCorrect={false}
+                autoCapitalize="none"
+                style={styles.search}
+              />
+            </View>
 
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {selected ? (
-            <>
-              <View style={styles.selectedHeaderRow}>
-                <View style={styles.selectedMeta}>
-                  <Text style={styles.sectionLabel}>Selected topic</Text>
-                  <Text style={styles.topicCount}>{topicCountLabel}</Text>
-                </View>
+            <View style={styles.browseMetaRow}>
+              <Text style={styles.sectionLabel}>Browse topics</Text>
+              <Text style={styles.topicCount}>{topicCountLabel}</Text>
+            </View>
 
-                <Pressable onPress={() => setShowTopics((v) => !v)} style={styles.toggleBtn}>
-                  <Text style={styles.toggleText}>{showTopics ? 'Hide topics' : 'Browse topics'}</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.heroCard}>
-                <Text style={styles.contentTitle}>{selected.title}</Text>
-
-                {selected.summary ? <Text style={styles.summary}>{selected.summary}</Text> : null}
-
-                {selected.callout ? (
-                  <View style={styles.calloutCard}>
-                    <Text style={styles.calloutLabel}>Why it matters</Text>
-                    <Text style={styles.calloutText}>{selected.callout}</Text>
-                  </View>
-                ) : null}
-
-                {selected.references?.length ? (
-                  <View style={styles.referenceWrap}>
-                    {selected.references.map((ref, idx) => (
-                      <View key={`${selected.id}-ref-${idx}`} style={styles.referenceChip}>
-                        <Text style={styles.referenceLabel}>{ref.label}</Text>
-                        <Text style={styles.referenceValue}>{ref.value}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-
-                {selected.bullets?.length ? (
-                  <View style={styles.block}>
-                    <Text style={styles.blockTitle}>Quick takeaways</Text>
-                    {selected.bullets.map((b, idx) => (
-                      <View key={`${selected.id}-b-${idx}`} style={styles.bulletRow}>
-                        <View style={styles.bulletDotWrap}>
-                          <Text style={styles.bulletDot}>•</Text>
-                        </View>
-                        <Text style={styles.bulletText}>{b}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-
-                {selected.body ? (
-                  <View style={styles.block}>
-                    <Text style={styles.blockTitle}>Details</Text>
-                    <Text style={styles.body}>{selected.body}</Text>
-                  </View>
-                ) : null}
-
-                {selected.sections?.map((sec, idx) => (
-                  <View key={`${selected.id}-sec-${idx}`} style={styles.sectionCard}>
-                    {sec.title ? <Text style={styles.sectionTitle}>{sec.title}</Text> : null}
-                    {sec.body ? <Text style={styles.sectionBody}>{sec.body}</Text> : null}
-
-                    {sec.bullets?.length
-                      ? sec.bullets.map((b, bulletIdx) => (
-                          <View key={`${selected.id}-sec-${idx}-b-${bulletIdx}`} style={styles.bulletRow}>
-                            <View style={styles.bulletDotWrap}>
-                              <Text style={styles.bulletDot}>•</Text>
-                            </View>
-                            <Text style={styles.bulletText}>{b}</Text>
-                          </View>
-                        ))
-                      : null}
-                  </View>
-                ))}
-
-                {selected.footer ? <Text style={styles.footer}>{selected.footer}</Text> : null}
-              </View>
-            </>
-          ) : null}
-
-          {showTopics ? (
-            <>
-              <View style={styles.topicHeaderRow}>
-                <Text style={styles.sectionLabel}>Browse topics</Text>
-                <Text style={styles.topicCount}>{topicCountLabel}</Text>
-              </View>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {!!q.trim() && filtered.length > 0 ? (
+                <Text style={styles.helperText}>Results for “{q.trim()}”</Text>
+              ) : null}
 
               <View style={styles.topicList}>
-                {filtered.map((t) => {
-                  const active = t.id === selected?.id;
-                  return (
-                    <Pressable
-                      key={t.id}
-                      onPress={() => onPick(t.id)}
-                      style={[styles.topicRow, active && styles.topicRowActive]}
-                    >
-                      <View style={styles.topicRowTop}>
-                        <Text style={[styles.topicText, active && styles.topicTextActive]} numberOfLines={2}>
-                          {t.title}
-                        </Text>
-                        {active ? <Text style={styles.activePill}>Open</Text> : null}
-                      </View>
+                {filtered.map((t) => (
+                  <Pressable
+                    key={t.id}
+                    onPress={() => onPick(t.id)}
+                    style={styles.topicRow}
+                  >
+                    <View style={styles.topicRowTop}>
+                      <Text style={styles.topicText} numberOfLines={2}>
+                        {t.title}
+                      </Text>
+                      <Text style={styles.openHint}>Open</Text>
+                    </View>
 
-                      {t.summary ? (
-                        <Text
-                          style={[styles.topicSubtext, active && styles.topicSubtextActive]}
-                          numberOfLines={3}
-                        >
-                          {t.summary}
-                        </Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
+                    {t.summary ? (
+                      <Text style={styles.topicSubtext} numberOfLines={3}>
+                        {t.summary}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ))}
 
                 {!filtered.length ? (
                   <View style={styles.emptyCard}>
                     <Text style={styles.emptyTitle}>No matches found</Text>
-                    <Text style={styles.emptyText}>Try a different search term or browse the full topic list.</Text>
+                    <Text style={styles.emptyText}>
+                      Try a simpler term like heat, wind, pressure, clouds, or humidity.
+                    </Text>
                   </View>
                 ) : null}
               </View>
-            </>
-          ) : null}
-        </ScrollView>
+            </ScrollView>
+          </>
+        ) : selected ? (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.heroCard}>
+              <Text style={styles.contentTitle}>{selected.title}</Text>
+
+              {selected.summary ? <Text style={styles.summary}>{selected.summary}</Text> : null}
+
+              {selected.callout ? (
+                <View style={styles.calloutCard}>
+                  <Text style={styles.calloutLabel}>Why it matters</Text>
+                  <Text style={styles.calloutText}>{selected.callout}</Text>
+                </View>
+              ) : null}
+
+              {selected.references?.length ? (
+                <View style={styles.referenceWrap}>
+                  {selected.references.map((ref, idx) => (
+                    <View key={`${selected.id}-ref-${idx}`} style={styles.referenceChip}>
+                      <Text style={styles.referenceLabel}>{ref.label}</Text>
+                      <Text style={styles.referenceValue}>{ref.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {selected.bullets?.length ? (
+                <View style={styles.block}>
+                  <Text style={styles.blockTitle}>Quick takeaways</Text>
+                  {selected.bullets.map((b, idx) => (
+                    <View key={`${selected.id}-b-${idx}`} style={styles.bulletRow}>
+                      <View style={styles.bulletDotWrap}>
+                        <Text style={styles.bulletDot}>•</Text>
+                      </View>
+                      <Text style={styles.bulletText}>{b}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {selected.body ? (
+                <View style={styles.block}>
+                  <Text style={styles.blockTitle}>Details</Text>
+                  <Text style={styles.body}>{selected.body}</Text>
+                </View>
+              ) : null}
+
+              {selected.formula ? (
+                <View style={styles.block}>
+                  <Text style={styles.blockTitle}>{selected.formulaLabel ?? 'Formula'}</Text>
+                  <View style={styles.formulaCard}>
+                    <Text style={styles.formulaText}>{selected.formula}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {selected.insight ? (
+                <View style={styles.insightCard}>
+                  <Text style={styles.insightLabel}>Insight</Text>
+                  <Text style={styles.insightText}>{selected.insight}</Text>
+                </View>
+              ) : null}
+
+              {selected.sections?.map((sec, idx) => (
+                <View key={`${selected.id}-sec-${idx}`} style={styles.sectionCard}>
+                  {sec.title ? <Text style={styles.sectionTitle}>{sec.title}</Text> : null}
+                  {sec.body ? <Text style={styles.sectionBody}>{sec.body}</Text> : null}
+
+                  {sec.bullets?.length
+                    ? sec.bullets.map((b, bulletIdx) => (
+                        <View key={`${selected.id}-sec-${idx}-b-${bulletIdx}`} style={styles.bulletRow}>
+                          <View style={styles.bulletDotWrap}>
+                            <Text style={styles.bulletDot}>•</Text>
+                          </View>
+                          <Text style={styles.bulletText}>{b}</Text>
+                        </View>
+                      ))
+                    : null}
+                </View>
+              ))}
+
+              {selected.footer ? <Text style={styles.footer}>{selected.footer}</Text> : null}
+            </View>
+          </ScrollView>
+        ) : null}
       </View>
     </Modal>
   );
@@ -296,6 +320,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  headerLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
   eyebrow: {
     color: 'rgba(255,255,255,0.55)',
     fontSize: 11,
@@ -309,6 +338,22 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     marginTop: 2,
+  },
+
+  backBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+
+  backText: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 12,
   },
 
   doneBtn: {
@@ -342,24 +387,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  scrollContent: {
-    paddingBottom: 26,
-  },
-
-  selectedHeaderRow: {
-    marginTop: 14,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-
-  selectedMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  topicHeaderRow: {
+  browseMetaRow: {
     marginTop: 16,
     marginBottom: 10,
     flexDirection: 'row',
@@ -376,28 +404,24 @@ const styles = StyleSheet.create({
   },
 
   topicCount: {
-    marginLeft: 10,
     color: 'rgba(255,255,255,0.48)',
     fontSize: 12,
     fontWeight: '800',
   },
 
-  toggleBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+  helperText: {
+    marginBottom: 10,
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
-  toggleText: {
-    color: 'rgba(255,255,255,0.88)',
-    fontWeight: '900',
-    fontSize: 11,
+  scrollContent: {
+    paddingBottom: 26,
   },
 
   heroCard: {
+    marginTop: 14,
     paddingVertical: 16,
     paddingHorizontal: 14,
     borderRadius: 20,
@@ -497,6 +521,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  formulaCard: {
+    marginTop: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10, 14, 24, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(120, 190, 255, 0.22)',
+  },
+
+  formulaText: {
+    color: 'rgba(150, 220, 255, 0.95)',
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+
+  insightCard: {
+    marginTop: 16,
+    padding: 13,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 220, 120, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 220, 120, 0.22)',
+  },
+
+  insightLabel: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+
+  insightText: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.92)',
+    fontWeight: '700',
+    lineHeight: 20,
+    fontSize: 14,
+  },
+
   sectionCard: {
     marginTop: 16,
     paddingTop: 16,
@@ -563,11 +629,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
-  topicRowActive: {
-    backgroundColor: 'rgba(160, 220, 255, 0.10)',
-    borderColor: 'rgba(160, 220, 255, 0.20)',
-  },
-
   topicRowTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -583,19 +644,10 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  topicTextActive: {
-    color: 'white',
-  },
-
-  activePill: {
-    color: 'white',
-    fontSize: 10,
+  openHint: {
+    color: 'rgba(255,255,255,0.60)',
+    fontSize: 11,
     fontWeight: '900',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.10)',
   },
 
   topicSubtext: {
@@ -604,10 +656,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontWeight: '600',
-  },
-
-  topicSubtextActive: {
-    color: 'rgba(255,255,255,0.80)',
   },
 
   emptyCard: {

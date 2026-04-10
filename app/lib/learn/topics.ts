@@ -17,6 +17,9 @@ export type LearnTopic = {
   references?: LearnReference[];
   bullets?: string[];
   body?: string;
+  formula?: string;
+  formulaNotes?: string[];
+  insight?: string;
 };
 
 export const LEARN_TOPICS: LearnTopic[] = [
@@ -42,6 +45,16 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Dew point is the temperature the air would need to cool to in order to become saturated. That makes it one of the most practical “what does the air really feel like?” weather fields.',
+      formula:
+    'Td ≈ T - ((100 - RH) / 5)',
+
+    formulaNotes: [
+    'Approximation only',
+    'Td = dew point',
+],
+
+  insight:
+    'Dew point is the closest thing to a “true moisture” variable in everyday weather.',
   },
 
   {
@@ -81,26 +94,45 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Temperature tells you how warm the air is, while dew point tells you how much moisture it contains. The difference between them is the amount of cooling still needed before condensation begins.',
+    formula: 'Spread = Temperature − Dew Point',
+
+    insight:
+    'This is one of the best quick signals for fog risk and near-surface moisture behavior. Small spread = things are about to happen.',
   },
 
   {
-    id: 'heat-index',
-    title: 'Heat Index',
-    summary:
-      'Heat Index estimates how hot it feels when humidity makes it harder for sweat to evaporate and cool the body.',
-    references: [
-      { label: 'Caution', value: '80s–90s+' },
-      { label: 'Extreme caution', value: '90s–100s+' },
-      { label: 'Danger', value: '103°F+' },
-      { label: 'Extreme danger', value: '125°F+' },
-    ],
-    bullets: [
-      'Most relevant in warm to hot, humid weather.',
-      'Humidity is what makes heat feel oppressive.',
-      'High dew point often helps drive high heat index values.',
-    ],
-    body:
-      'Heat Index is the “it feels worse than the thermometer says” number for hot, humid weather. It reflects how the body struggles more when sweat cannot evaporate efficiently.',
+  id: 'heat-index',
+  title: 'Heat Index (Why humidity makes heat feel worse)',
+  summary:
+    'Heat Index estimates how hot it feels when humidity slows down sweat evaporation — your body’s main cooling system.',
+
+  references: [
+    { label: 'Caution', value: '80–90°F' },
+    { label: 'Extreme caution', value: '90–103°F' },
+    { label: 'Danger', value: '103–124°F' },
+    { label: 'Extreme danger', value: '125°F+' },
+  ],
+
+  bullets: [
+    'Your body cools by evaporating sweat — humidity slows that process.',
+    'Higher dew point = less efficient cooling = higher heat stress.',
+    'Most meaningful in hot + humid conditions.',
+  ],
+
+  body:
+    'Heat Index reflects how heat and moisture interact with the human body. When the air is humid, sweat cannot evaporate efficiently, so your body struggles to cool itself — making it feel hotter than the actual temperature.',
+
+  formula:
+    'HI ≈ -42.379 + 2.049T + 10.143RH - 0.224TRH - 0.00684T² - 0.0548RH² + 0.00123T²RH + 0.000852TRH² - 0.000002T²RH²',
+
+  formulaNotes: [
+    'T = temperature (°F)',
+    'RH = relative humidity (%)',
+    'NOAA/NWS regression formula',
+  ],
+
+  insight:
+    'Two days with the same temperature can feel completely different depending on humidity — that’s why Phoenix heat and Miami heat feel so different.',
   },
 
   {
@@ -120,6 +152,16 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Wind chill is about exposed skin and body heat loss. It does not mean objects become colder than the air just because wind is blowing.',
+    formula:
+    'WC = 35.74 + 0.6215T - 35.75V^{0.16} + 0.4275T·V^{0.16}',
+
+    formulaNotes: [
+      'T = temperature (°F)',
+      'V = wind speed (mph)',
+    ],
+
+    insight:
+      'Wind doesn’t lower the air temperature — it increases heat loss from your skin.',
   },
 
   {
@@ -231,6 +273,10 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'This alias matches the newer hourly deep-link key. It describes the texture of the wind, not just its average speed.',
+    formula: 'Gust Factor = Gust Speed ÷ Sustained Wind',
+
+    insight:
+      'Two days with the same wind speed can feel completely different depending on gust factor. High gust factor = chaotic, jumpy wind.',
   },
 
   {
@@ -271,6 +317,8 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Clouds can act like a sunshade by day and a blanket by night. That makes cloud cover one of the most important “feel and forecast evolution” fields.',
+    insight:
+  'Clouds are one of the strongest controls on temperature swings — they regulate both heating (day) and cooling (night).',
   },
 
   {
@@ -307,6 +355,11 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'This is a more diagnostic concept than a simple weather number, but it helps explain why the atmosphere behaves differently between day and night or between clear and cloudy setups.',
+    formula:
+    'Net Radiation = Incoming Solar − Outgoing Infrared',
+
+    insight:
+    'Radiational regimes explain WHY conditions feel stable vs active — not just what is happening.',
   },
 
   {
@@ -348,6 +401,8 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'A rapid drop in visibility often matters more to daily life than a technical weather label because it changes travel and safety conditions immediately.',
+    insight:
+    'Visibility drops when particles (water droplets, smoke, dust) scatter light — not just when “weather is bad.”',
   },
 
   {

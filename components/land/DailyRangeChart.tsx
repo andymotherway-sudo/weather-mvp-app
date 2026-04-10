@@ -23,6 +23,7 @@ type DailyDatum = {
   windDirDominantDeg: number | null;
 
   cloudCoverAvgPct: number | null;
+  weatherCode?: number | null; 
 };
 
 type Props = {
@@ -77,15 +78,19 @@ function buildPath(points: Array<{ x: number; y: number }>) {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
 }
 
-function pickWxIcon(pop?: number | null, cloud?: number | null) {
-  const p = typeof pop === 'number' ? pop : 0;
-  const c = typeof cloud === 'number' ? cloud : 0;
-
-  if (p >= 70) return '🌧️';
-  if (p >= 35) return '🌦️';
-  if (c >= 85) return '☁️';
-  if (c >= 45) return '⛅';
-  return '☀️';
+function pickWxIconFromCode(code?: number | null) {
+  if (code == null) return '🌤️';
+  if (code === 0) return '☀️';
+  if (code === 1) return '🌤️';
+  if (code === 2) return '⛅';
+  if (code === 3) return '☁️';
+  if (code === 45 || code === 48) return '🌫️';
+  if ([51, 53, 55, 56, 57].includes(code)) return '🌦️';
+  if ([61, 63, 65, 66, 67].includes(code)) return '🌧️';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return '❄️';
+  if ([80, 81, 82].includes(code)) return '🌦️';
+  if ([95, 96, 99].includes(code)) return '⛈️';
+  return '☁️';
 }
 
 // 16-point compass for small labels
@@ -170,14 +175,14 @@ export function DailyRangeChart({
 
   // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
-  const H = 260;
+  const H = 360;
 
   const axisL = 28; // left margin for °F ticks
   const padL = padX + axisL;
   const padR = padX;
 
   const padT = 18;
-  const padB = 98;
+  const padB = 142;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -304,14 +309,14 @@ export function DailyRangeChart({
 
   const selScale = bump.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.06],
+    outputRange: [1, 1.02],
   });
 
   const selCloudPct =
     typeof data[selIdx]?.cloudCoverAvgPct === 'number' ? clamp(data[selIdx]!.cloudCoverAvgPct!, 0, 100) : null;
 
   // Wind marker placement (above bottom day labels)
-  const windMarkerY = H - 30; // circle center
+  const windMarkerY = H - 52; // circle center
   const windMarkerLabelY = windMarkerY + 22; // compass text under circle
 
   return (
@@ -353,12 +358,14 @@ export function DailyRangeChart({
       >
         <View style={{ width: W }}>
           {/* Tiles */}
-          <View style={[s.strip, { width: W }]}>
+          <View style={{ width: W, minHeight: 212, marginBottom: 18, overflow: 'visible'  }}>
             {data.map((d, i) => {
               const { day, md } = niceDayLabel(d.date);
               const isSel = i === selIdx;
               const todayISO = todayISODateLocal();
               const isToday = d.date === todayISO;
+
+              const x = xForIdx(i);
 
               return (
                 <Pressable
@@ -367,6 +374,11 @@ export function DailyRangeChart({
                     selFromTapRef.current = true;
                     lastSelIdxRef.current = i;
                     setSelIdx(i);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: x - TILE_W / 2,
+                    width: TILE_W,
                   }}
                 >
                   <Animated.View
@@ -377,7 +389,7 @@ export function DailyRangeChart({
                     ]}
                   >
                     <Text style={[s.dayTop, T.body]}>{isToday ? 'TODAY' : `${day} ${md.split(' ')[1]}`}</Text>
-                    <Text style={s.icon}>{pickWxIcon(d.precipProbMaxPct, d.cloudCoverAvgPct)}</Text>
+                    <Text style={s.icon}> {pickWxIconFromCode(d.weatherCode)}</Text>
 
                     <Text style={[s.hilo, T.title]}>
                       {fmtInt(d.tempMaxF)}
@@ -406,7 +418,7 @@ export function DailyRangeChart({
           </View>
 
           {/* Chart */}
-          <View style={{ marginTop: 10 }}>
+          <View style={{ marginTop: 8, paddingBottom: 12 }}>
             <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
               {/* TEMP axis grid + labels (left) */}
               {tempTickTemps.map((tk, idx) => (
@@ -568,7 +580,18 @@ export function DailyRangeChart({
                     rx={8}
                     fill="rgba(255,255,255,0.03)"
                   />
-
+                  <G>
+                <SvgText
+                  x={padX}
+                  y={cloudBandTop + cloudBandH / 2 + 4}
+                  fontSize="11"
+                  fontWeight={wxLab ? '700' : '900'}
+                  textAnchor="start"
+                  fill="rgba(255,255,255,0.40)"
+                >
+                  Clouds
+                </SvgText>
+              </G>
                   {data.map((d, i) => {
                     const pct = typeof d.cloudCoverAvgPct === 'number' ? clamp(d.cloudCoverAvgPct, 0, 100) : null;
 
@@ -651,7 +674,7 @@ export function DailyRangeChart({
                   <SvgText
                     key={`lbl-${d.date}`}
                     x={xForIdx(i)}
-                    y={H - 14}
+                    y={H - 16}
                     fontSize="11"
                     fill={isSel ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.55)'}
                     fontWeight={isSel ? (wxLab ? '800' : '900') : wxLab ? '600' : '800'}
@@ -663,13 +686,7 @@ export function DailyRangeChart({
               })}
             </Svg>
 
-            {showCloud ? (
-              <View style={s.cloudReadoutRow}>
-                <Text style={s.cloudReadoutLabel}>Clouds</Text>
-                <Text style={s.cloudReadoutValue}>{selCloudPct == null ? '—' : `${Math.round(selCloudPct)}%`}</Text>
-              </View>
-            ) : null}
-          </View>
+            </View>
         </View>
       </ScrollView>
     </View>
