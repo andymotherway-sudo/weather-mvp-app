@@ -200,35 +200,60 @@ async function loadMagWithFallbacks(): Promise<MagData> {
 type KpSample = { kp: number; time: string };
 
 async function loadKpWithFallbacks(): Promise<KpSample> {
+  const tryParse = (rows: any[]): KpSample | null => {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+
+      // Current NOAA shape: object rows
+      if (row && typeof row === 'object' && !Array.isArray(row)) {
+        const time = String(row.time_tag ?? row.time ?? '').trim();
+        const kp = Number(row.Kp ?? row.kp ?? row.planetary_k_index);
+
+        if (time && Number.isFinite(kp)) {
+          return { kp, time };
+        }
+      }
+
+      // Older/table shape: array rows
+      if (Array.isArray(row) && row.length >= 2) {
+        const time = String(row[0] ?? '').trim();
+        if (!time) continue;
+
+        let kp = parseFloat(String(row[1] ?? ''));
+
+        if (Number.isNaN(kp)) {
+          for (let j = 1; j < row.length; j++) {
+            const n = parseFloat(String(row[j] ?? ''));
+            if (!Number.isNaN(n)) {
+              kp = n;
+              break;
+            }
+          }
+        }
+
+        if (!Number.isNaN(kp)) {
+          return { kp, time };
+        }
+      }
+    }
+
+    return null;
+  };
+
   try {
     const table = await fetchJsonArray(KP_PRIMARY, 'Kp (observed)');
-    const rows = table.slice(1);
-    if (!rows.length) throw new Error('No Kp rows in observed feed');
-
-    const lastRow = rows[rows.length - 1] as [string, string, string, string];
-    const [time, kpStr] = lastRow;
-    const kp = parseFloat(kpStr);
-    if (Number.isNaN(kp) || !time) throw new Error('Kp row contained invalid numbers');
-
-    return { kp, time };
+    const parsed = tryParse(table);
+    if (parsed) return parsed;
+    throw new Error('Unable to parse observed Kp');
   } catch (err) {
     console.warn('[spaceweather] primary Kp source failed', err);
   }
 
   try {
     const table = await fetchJsonArray(KP_FALLBACK_FORECAST, 'Kp (forecast)');
-    const rows = table.slice(1) as [string, string, string, unknown][];
-
-    const preferred = rows.filter((row) => row[2] === 'observed' || row[2] === 'estimated');
-    const effectiveRows = preferred.length ? preferred : rows;
-    if (!effectiveRows.length) throw new Error('No Kp rows in forecast feed');
-
-    const lastRow = effectiveRows[effectiveRows.length - 1];
-    const [time, kpStr] = lastRow;
-    const kp = parseFloat(kpStr);
-    if (Number.isNaN(kp) || !time) throw new Error('Kp forecast row contained invalid numbers');
-
-    return { kp, time };
+    const parsed = tryParse(table);
+    if (parsed) return parsed;
+    throw new Error('Unable to parse forecast Kp');
   } catch (err) {
     console.warn('[spaceweather] forecast Kp source failed', err);
   }
@@ -771,6 +796,14 @@ export async function fetchSpaceWeatherEvents(days = 7): Promise<SpaceWeatherEve
     seen.add(e.id);
     deduped.push(e);
   }
+    const allFailed =
+    flrRes.status === 'rejected' &&
+    cmeRes.status === 'rejected' &&
+    sepRes.status === 'rejected' &&
+    gstRes.status === 'rejected';
 
+  if (allFailed) {
+    throw new Error('All DONKI sources failed');
+  }
   return deduped;
 }

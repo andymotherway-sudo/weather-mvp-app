@@ -148,8 +148,7 @@ export default function SolarScreen() {
   const { active } = usePlace();
 
   const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary();
-
-  const { events, loading: eventsLoading } = useSpaceWeatherEvents(7);
+  const { events, loading: eventsLoading, error: eventsError } = useSpaceWeatherEvents(7);
 
   const {
     data: astro,
@@ -441,73 +440,60 @@ export default function SolarScreen() {
   };
 
   const renderRecentEvents = () => {
-    if (eventsLoading) {
-      return (
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Recent Space Events</Text>
-            <LearnRow
-              onPress={() =>
-                openExplain({
-                  title: 'What are “events” here?',
-                  summary:
-                    'These are notable space weather events reported by NASA DONKI.',
-                  whyItMatters:
-                    'They add context beyond raw sensor data (flares, CMEs, storms, particle events).',
-                  howComputed:
-                    'Pulled from NASA DONKI endpoints and normalized into a single feed.',
-                  confidence: 'high',
-                  learnTopicId: 'donki-events',
-                })
-              }
-            />
-          </View>
-          <Text style={styles.smallText}>Loading events…</Text>
-        </View>
-      );
-    }
-
-    if (!events?.length) return null;
-
-    const recent = events.slice(0, 4);
-
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>Recent Space Events</Text>
-          <LearnRow
-            onPress={() =>
-              openExplain({
-                title: 'NASA DONKI events',
-                summary:
-                  'A curated feed of notable events: flares, CMEs, particle events, and storm reports.',
-                whyItMatters:
-                  'Helps you understand “why” conditions might change over the next 1–3 days.',
-                howComputed: 'NASA DONKI API queried over the last 7 days.',
-                confidence: 'high',
-                learnTopicId: 'donki-events',
-              })
-            }
-          />
-        </View>
-
-        {recent.map((e) => (
-          <View key={e.id} style={{ marginBottom: 10 }}>
-            <Text style={{ color: '#E5E7EB', fontWeight: '700' }}>
-              {e.type}
-              {e.level ? ` • ${e.level}` : ''}
-            </Text>
-            <Text style={styles.smallText}>{fmtEventTime(e.startTime)}</Text>
-            <Text style={{ color: '#D1D5DB', fontSize: 13, lineHeight: 18 }}>
-              {e.summary}
-            </Text>
-          </View>
-        ))}
-
-        <Text style={styles.smallText}>Source: NASA DONKI</Text>
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeaderRow}>
+        <Text style={styles.cardTitle}>Recent Space Events</Text>
+        <LearnRow
+          onPress={() =>
+            openExplain({
+              title: 'NASA DONKI events',
+              summary:
+                'A curated feed of notable events: flares, CMEs, particle events, and storm reports.',
+              whyItMatters:
+                'Helps you understand why conditions might change over the next 1–3 days.',
+              howComputed: 'NASA DONKI API queried over the last 7 days.',
+              confidence: 'high',
+              learnTopicId: 'donki-events',
+            })
+          }
+        />
       </View>
-    );
-  };
+
+      {eventsLoading ? (
+        <Text style={styles.smallText}>Loading events…</Text>
+      ) : eventsError ? (
+        <>
+          <Text style={styles.smallText}>{eventsError}</Text>
+          <Text style={styles.smallText}>Source: NASA DONKI</Text>
+        </>
+      ) : events?.length ? (
+        <>
+          {events.slice(0, 4).map((e) => (
+            <View key={e.id} style={{ marginBottom: 10 }}>
+              <Text style={{ color: '#E5E7EB', fontWeight: '700' }}>
+                {e.type}
+                {e.level ? ` • ${e.level}` : ''}
+              </Text>
+              <Text style={styles.smallText}>{fmtEventTime(e.startTime)}</Text>
+              <Text style={{ color: '#D1D5DB', fontSize: 13, lineHeight: 18 }}>
+                {e.summary}
+              </Text>
+            </View>
+          ))}
+          <Text style={styles.smallText}>Source: NASA DONKI</Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.smallText}>
+            No recent events returned for the last 7 days.
+          </Text>
+          <Text style={styles.smallText}>Source: NASA DONKI</Text>
+        </>
+      )}
+    </View>
+  );
+};
 
   const contentPad = useMemo(
     () => ({
@@ -623,55 +609,58 @@ export default function SolarScreen() {
                     />
                   </View>
 
-                      <View style={styles.noaaRow}>
-                  {(['G', 'R', 'S'] as const).map((k) => {
-                    const raw = (data as any).noaaScales?.[k];
-                    const scale = getNoaaScaleLevel(raw);
-                    
-                    const text =
-                      raw &&
-                      typeof raw === 'object' &&
-                      typeof raw.text === 'string'
-                        ? raw.text
-                        : undefined;
+                  <View style={styles.noaaRow}>
+                    {(['G', 'R', 'S'] as const).map((k) => {
+                      const raw = (data as any).noaaScales?.[k];
+                      const scale = getNoaaScaleLevel(raw);
 
-                    return (
-                      <Pressable
-                        key={k}
-                        onPress={() =>
-                          openExplain({
-                            title: `NOAA ${k}-scale`,
-                            summary:
-                              scale == null
-                                ? `Current ${k}-scale status is unavailable.`
-                                : `Current ${k}-scale status is ${k}${scale}.`,
-                            whyItMatters: 'These are impact-focused summary scales.',
-                            howComputed: 'From NOAA SWPC scales feed.',
-                            confidence: 'high',
-                            learnTopicId: 'noaa-scales',
-                          })
-                        }
-                        style={styles.noaaTile}
-                      >
-                        <Text style={styles.noaaVal}>
-                          {scale == null ? `${k}—` : `${k}${scale}`}
-                        </Text>
+                      const text =
+                        raw &&
+                        typeof raw === 'object' &&
+                        typeof raw.text === 'string'
+                          ? raw.text
+                          : undefined;
 
-                        <Text style={styles.noaaLbl}>
-                          {k === 'G'
-                            ? 'Geomagnetic'
-                            : k === 'R'
-                              ? 'Radio'
-                              : 'Radiation'}
-                          {text ? ` • ${text}` : ''}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                      return (
+                        <Pressable
+                          key={k}
+                          onPress={() =>
+                            openExplain({
+                              title: `NOAA ${k}-scale`,
+                              summary:
+                                scale == null
+                                  ? `Current ${k}-scale status is unavailable.`
+                                  : `Current ${k}-scale status is ${k}${scale}.`,
+                              whyItMatters: 'These are impact-focused summary scales.',
+                              howComputed: 'From NOAA SWPC scales feed.',
+                              confidence: 'high',
+                              learnTopicId: 'noaa-scales',
+                            })
+                          }
+                          style={styles.noaaTile}
+                        >
+                          <Text style={styles.noaaVal}>
+                            {scale == null ? `${k}—` : `${k}${scale}`}
+                          </Text>
+
+                          <Text style={styles.noaaLbl}>
+                            {k === 'G'
+                              ? 'Geomagnetic'
+                              : k === 'R'
+                                ? 'Radio'
+                                : 'Radiation'}
+                            {text ? ` • ${text}` : ''}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
 
                   <Text style={styles.smallText}>
-                    Updated: {(data as any).noaaScalesUpdatedAt ? fmtUpdated((data as any).noaaScalesUpdatedAt) : 'Unavailable'}
+                    Updated:{' '}
+                    {(data as any).noaaScalesUpdatedAt
+                      ? fmtUpdated((data as any).noaaScalesUpdatedAt)
+                      : 'Unavailable'}
                   </Text>
                 </View>
               ) : null}
