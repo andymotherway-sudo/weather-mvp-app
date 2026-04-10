@@ -1,4 +1,4 @@
-// app/(tabs)/climo.tsx
+// app/(tabs)/almanac.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,16 +17,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { usePlace } from '../context/PlaceContext';
 
-import ClimatologyChart from '../../components/land/ClimatologyChart';
+import { ClimatologyChart } from '../../components/land/ClimatologyChart';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useOpenMeteoDayContext } from '../lib/almanac/dayContextHook';
 import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useClimatologyNormals } from '../lib/climatology/hook';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
-
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 const OBS_START_ISO = '2025-01-01';
 const FORECAST_DAYS = 15;
@@ -44,6 +43,7 @@ function isoTodayLocal() {
 
 function addDaysIso(iso: string, days: number) {
   const d = new Date(`${iso}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return isoTodayLocal();
   d.setDate(d.getDate() + days);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -53,24 +53,31 @@ function addDaysIso(iso: string, days: number) {
 
 function isoToDoy(iso: string) {
   const d = new Date(`${iso}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return 1;
   const start = new Date(d.getFullYear(), 0, 0);
-  return Math.floor((d.getTime() - start.getTime()) / DAY_MS); // 1..366
+  const diff = d.getTime() - start.getTime();
+  const doy = Math.floor(diff / DAY_MS);
+  return Number.isFinite(doy) && doy >= 1 ? doy : 1;
 }
 
 function fmtDow(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+  const d = new Date(`${iso}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { weekday: 'short' });
 }
 
 function fmtMonDay(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const d = new Date(`${iso}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function fmtTemp(v: number | null | undefined) {
-  return v == null ? '—' : `${Math.round(v)}°`;
+  return typeof v === 'number' && Number.isFinite(v) ? `${Math.round(v)}°` : '—';
 }
 
 function fmtRain(v: number | null | undefined) {
-  if (v == null) return '—';
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
   if (v < 0.005) return '0.00"';
   return `${v.toFixed(2)}"`;
 }
@@ -99,12 +106,13 @@ function approxMonthlyNormalForDate(
   normals: Array<{ month: number; tminF: number | null; tmaxF: number | null; tavgF: number | null }>,
   iso: string
 ) {
-  const m = new Date(`${iso}T12:00:00`).getMonth() + 1;
-  const found = normals.find((x) => x.month === m);
+  const d = new Date(`${iso}T12:00:00`);
+  const m = Number.isFinite(d.getTime()) ? d.getMonth() + 1 : 1;
+  const found = normals.find((x) => x?.month === m);
   return {
-    normalHiF: found?.tmaxF ?? null,
-    normalLoF: found?.tminF ?? null,
-    normalAvgF: found?.tavgF ?? null,
+    normalHiF: typeof found?.tmaxF === 'number' && Number.isFinite(found.tmaxF) ? found.tmaxF : null,
+    normalLoF: typeof found?.tminF === 'number' && Number.isFinite(found.tminF) ? found.tminF : null,
+    normalAvgF: typeof found?.tavgF === 'number' && Number.isFinite(found.tavgF) ? found.tavgF : null,
   };
 }
 
@@ -126,9 +134,10 @@ function clampYearsToWindow(years: number[] | undefined, win?: { from: number; t
 }
 
 function isoFromYearAndDoy(year: number, doy1: number) {
+  const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
   const doy = Math.round(clamp(doy1, 1, 366));
-  const d = new Date(year, 0, 1); // Jan 1
-  d.setDate(d.getDate() + (doy - 1)); // move forward doy-1 days
+  const d = new Date(safeYear, 0, 1);
+  d.setDate(d.getDate() + (doy - 1));
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -139,30 +148,39 @@ function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
 
+function safeFiniteNumber(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function safeString(v: unknown, fallback = '—') {
+  return typeof v === 'string' && v.trim() ? v : fallback;
+}
+
 /* ---------------- component ---------------- */
 
 export default function ClimoTab() {
   const insets = useSafeAreaInsets();
 
-  // ✅ single source of truth
   const { active } = usePlace();
   const hasPlace = !!active;
 
   const coords = useMemo(() => {
-    return active ? { lat: active.lat, lon: active.lon } : null;
+    if (!active) return null;
+    const lat = safeFiniteNumber(active.lat);
+    const lon = safeFiniteNumber(active.lon);
+    if (lat == null || lon == null) return null;
+    return { lat, lon };
   }, [active?.lat, active?.lon]);
 
   const locationLabel = useMemo(() => {
-    return active ? active.name : 'Select a location…';
+    return active?.name ? active.name : 'Select a location…';
   }, [active]);
 
   /* ---------- date navigation ---------- */
 
-  // ✅ DO NOT memoize "today" forever; tab stays mounted
   const todayIso = isoTodayLocal();
   const [selectedIso, setSelectedIso] = useState(todayIso);
 
-  // Keep selected date sane if app stays open across midnight
   useEffect(() => {
     setSelectedIso((cur) => (cur ? cur : todayIso));
   }, [todayIso]);
@@ -176,18 +194,19 @@ export default function ClimoTab() {
   const bumpDay = useCallback(
     (delta: number) => {
       setSelectedIso((cur) => {
-        const next = addDaysIso(cur, delta);
+        const base = cur || todayIso;
+        const next = addDaysIso(base, delta);
         if (next < minSelectable) return minSelectable;
         if (next > maxSelectable) return maxSelectable;
         return next;
       });
     },
-    [maxSelectable]
+    [maxSelectable, minSelectable, todayIso]
   );
 
   const jumpToday = useCallback(() => setSelectedIso(todayIso), [todayIso]);
 
-  /* ---------- swipe "day carousel" (affects brief + normals + records) ---------- */
+  /* ---------- swipe "day carousel" ---------- */
 
   const swipeX = useRef(new Animated.Value(0)).current;
 
@@ -197,7 +216,6 @@ export default function ClimoTab() {
   const dayPanResponder = useMemo(() => {
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_evt, g) => {
-        // capture mostly-horizontal gestures so ScrollView keeps vertical scroll
         const dx = Math.abs(g.dx);
         const dy = Math.abs(g.dy);
         return dx > 10 && dx > dy * 1.25;
@@ -212,7 +230,6 @@ export default function ClimoTab() {
       onPanResponderRelease: (_evt, g) => {
         const dx = g.dx;
 
-        // snap back
         Animated.timing(swipeX, {
           toValue: 0,
           duration: 160,
@@ -220,7 +237,6 @@ export default function ClimoTab() {
           useNativeDriver: true,
         }).start();
 
-        // swipe left => next day, swipe right => prev day
         if (dx <= -SWIPE_TRIGGER_PX) bumpDay(+1);
         else if (dx >= SWIPE_TRIGGER_PX) bumpDay(-1);
       },
@@ -238,10 +254,10 @@ export default function ClimoTab() {
   /* ---------- data hooks ---------- */
 
   const climo = useClimatologyNormals({
-  lat: coords?.lat ?? null,
-  lon: coords?.lon ?? null,
-  enabled: hasPlace && !!coords,
-  preferCache: true,
+    lat: coords?.lat ?? null,
+    lon: coords?.lon ?? null,
+    enabled: hasPlace && !!coords,
+    preferCache: true,
   } as any);
 
   const forecast = useOpenMeteoForecast({
@@ -250,12 +266,22 @@ export default function ClimoTab() {
     days: FORECAST_DAYS,
   });
 
-  const forecastByDate = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const d of forecast.data?.daily ?? []) m.set(d.date, d);
-    return m;
+  const safeForecastDaily = useMemo(() => {
+    const raw = forecast.data?.daily;
+    return Array.isArray(raw) ? raw.filter(Boolean) : [];
   }, [forecast.data?.daily]);
 
+  const forecastByDate = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const d of safeForecastDaily) {
+      if (typeof d?.date === 'string' && d.date) {
+        m.set(d.date, d);
+      }
+    }
+    return m;
+  }, [safeForecastDaily]);
+
+  
   const yesterdayIso = useMemo(() => addDaysIso(todayIso, -1), [todayIso]);
   const lastForecastIso = useMemo(() => addDaysIso(todayIso, FORECAST_DAYS - 1), [todayIso]);
 
@@ -266,29 +292,31 @@ export default function ClimoTab() {
   }, [selectedIso, yesterdayIso, todayIso, lastForecastIso, forecastByDate]);
 
   const dayCtx = useOpenMeteoDayContext({
-  lat: coords?.lat ?? null,
-  lon: coords?.lon ?? null,
-  date: selectedIso,
-  enabled: hasPlace && !!coords && mode === 'observed',
-  preferCache: true,
-} as any);
+    lat: coords?.lat ?? null,
+    lon: coords?.lon ?? null,
+    date: selectedIso,
+    enabled: hasPlace && !!coords && mode === 'observed',
+    preferCache: true,
+  } as any);
 
-  /* ---------- records (selectedIso drives selectedRecord) ---------- */
+  /* ---------- records ---------- */
 
   const records = useDailyRecords({
     lat: coords?.lat ?? 0,
     lon: coords?.lon ?? 0,
-    enabled: hasPlace,
+    enabled: hasPlace && !!coords,
   });
 
-  const recordsMap = (records as any)?.records ?? null;
+  const recordsMap = useMemo(() => {
+    const raw = (records as any)?.records;
+    return raw && typeof raw === 'object' ? raw : null;
+  }, [(records as any)?.records]);
 
   const selectedRecord = useMemo(() => {
-    const key = `${selectedIso.slice(5, 7)}-${selectedIso.slice(8, 10)}`; // "MM-DD"
+    const key = `${selectedIso.slice(5, 7)}-${selectedIso.slice(8, 10)}`;
     return recordsMap?.[key] ?? null;
   }, [recordsMap, selectedIso]);
 
-  // Track "did records ever resolve" so we don't show "No record data" while still warming up.
   const [recordsEverResolved, setRecordsEverResolved] = useState(false);
 
   useEffect(() => {
@@ -302,7 +330,7 @@ export default function ClimoTab() {
     if (!loading && (err || map)) setRecordsEverResolved(true);
   }, [(records as any)?.loading, (records as any)?.error, (records as any)?.records]);
 
-  /* ---------- Records UX: elapsed timer + animated progress bar ---------- */
+  /* ---------- Records UX ---------- */
 
   const rLoading = !!(records as any)?.loading;
   const rErr = (records as any)?.error;
@@ -331,14 +359,13 @@ export default function ClimoTab() {
   useEffect(() => {
     if (rLoading) {
       setRecordsStartedAt((cur) => cur ?? Date.now());
-      return;
     }
   }, [rLoading]);
 
   useEffect(() => {
     if (!recordsStartedAt) return;
     const id = setInterval(() => {
-      setRecordsElapsedSec((_) => Math.max(0, (Date.now() - recordsStartedAt) / 1000));
+      setRecordsElapsedSec(Math.max(0, (Date.now() - recordsStartedAt) / 1000));
     }, 400);
     return () => clearInterval(id);
   }, [recordsStartedAt]);
@@ -389,21 +416,37 @@ export default function ClimoTab() {
 
   /* ---------- normals availability ---------- */
 
-  const hasNormals = !!climo.data?.normals?.length;
+  const chartNormals = useMemo(() => {
+  const raw = climo.data?.normals;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (n: any) =>
+        n &&
+        Number.isFinite(n.month) &&
+        n.month >= 1 &&
+        n.month <= 12
+    )
+    .sort((a: any, b: any) => a.month - b.month);
+}, [climo.data?.normals]);
+
+const hasNormals = chartNormals.length > 0;
   const showNormalsHint = hasPlace && !hasNormals && !!climo.error && !climo.loading && !climo.refreshing;
 
   /* ---------- meta display ---------- */
 
-  const stationName = useMemo(() => climo.data?.station?.name ?? undefined, [climo.data?.station?.name]);
-  const normalsCount = climo.data?.normals?.length ?? 0;
+  const stationName = useMemo(() => {
+    return typeof climo.data?.station?.name === 'string' ? climo.data.station.name : undefined;
+  }, [climo.data?.station?.name]);
+
+  const normalsCount = chartNormals.length;
   const updatedLabel = useMemo(() => fmtUpdatedFromIso(climo.data?.fetchedAtIso), [climo.data?.fetchedAtIso]);
 
   const normalsForSelected = useMemo(() => {
-    const normals = climo.data?.normals ?? [];
-    return approxMonthlyNormalForDate(normals as any, selectedIso);
-  }, [climo.data?.normals, selectedIso]);
+    return approxMonthlyNormalForDate(chartNormals as any, selectedIso);
+  }, [chartNormals, selectedIso]);
 
-  /* ---------- build tile (selectedIso drives everything) ---------- */
+  /* ---------- build tile ---------- */
 
   const tile = useMemo(() => {
     const base = {
@@ -414,20 +457,20 @@ export default function ClimoTab() {
     };
 
     if (mode === 'observed') {
-      const hi = (dayCtx.data as any)?.tempMaxF ?? null;
-      const lo = (dayCtx.data as any)?.tempMinF ?? null;
+      const hi = safeFiniteNumber((dayCtx.data as any)?.tempMaxF);
+      const lo = safeFiniteNumber((dayCtx.data as any)?.tempMinF);
 
       return {
         ...base,
         mode,
         hi,
         lo,
-        rain: dayCtx.data?.precipTotalIn ?? null,
+        rain: safeFiniteNumber(dayCtx.data?.precipTotalIn),
         precipChance: null as number | null,
-        condition: dayCtx.data?.conditionLabel ?? '—',
-        cloudMin: dayCtx.data?.cloudMinPct ?? null,
-        cloudMax: dayCtx.data?.cloudMaxPct ?? null,
-        windMax: dayCtx.data?.windMaxMph ?? null,
+        condition: safeString(dayCtx.data?.conditionLabel),
+        cloudMin: safeFiniteNumber(dayCtx.data?.cloudMinPct),
+        cloudMax: safeFiniteNumber(dayCtx.data?.cloudMaxPct),
+        windMax: safeFiniteNumber(dayCtx.data?.windMaxMph),
         footer: 'Observed: Open-Meteo Archive • Normals: NOAA',
       };
     }
@@ -438,14 +481,14 @@ export default function ClimoTab() {
       return {
         ...base,
         mode,
-        hi: f?.tempMaxF ?? null,
-        lo: f?.tempMinF ?? null,
-        rain: (f?.precipTotalIn ?? null) as number | null,
-        precipChance: f?.precipProbMaxPct ?? null,
+        hi: safeFiniteNumber(f?.tempMaxF),
+        lo: safeFiniteNumber(f?.tempMinF),
+        rain: safeFiniteNumber(f?.precipTotalIn),
+        precipChance: safeFiniteNumber(f?.precipProbMaxPct),
         condition: 'Forecast conditions',
-        cloudMin: typeof f?.cloudCoverMinPct === 'number' ? f.cloudCoverMinPct : null,
-        cloudMax: typeof f?.cloudCoverMaxPct === 'number' ? f.cloudCoverMaxPct : null,
-        windMax: typeof f?.windMaxMph === 'number' ? f.windMaxMph : null,
+        cloudMin: safeFiniteNumber(f?.cloudCoverMinPct),
+        cloudMax: safeFiniteNumber(f?.cloudCoverMaxPct),
+        windMax: safeFiniteNumber(f?.windMaxMph),
         footer: 'Forecast: Open-Meteo • Normals: NOAA',
       };
     }
@@ -463,25 +506,31 @@ export default function ClimoTab() {
       windMax: null as number | null,
       footer: 'Normals: NOAA (monthly)',
     };
-  }, [
-    selectedIso,
-    stationName,
-    normalsForSelected.normalHiF,
-    normalsForSelected.normalLoF,
-    mode,
-    dayCtx.data,
-    forecastByDate,
-  ]);
+  }, [selectedIso, stationName, normalsForSelected.normalHiF, normalsForSelected.normalLoF, mode, dayCtx.data, forecastByDate]);
 
   /* ---------- refresh ---------- */
 
   const onRefreshAll = useCallback(() => {
-    if (!hasPlace) return;
-    climo.refresh();
-    forecast.refresh();
-    if (mode === 'observed') dayCtx.refresh();
-    (records as any).refresh?.();
-  }, [climo, forecast, mode, dayCtx, hasPlace, records]);
+    if (!hasPlace || !coords) return;
+
+    try {
+      climo.refresh?.();
+    } catch {}
+
+    try {
+      forecast.refresh?.();
+    } catch {}
+
+    if (mode === 'observed') {
+      try {
+        dayCtx.refresh?.();
+      } catch {}
+    }
+
+    try {
+      (records as any).refresh?.();
+    } catch {}
+  }, [climo, forecast, mode, dayCtx, hasPlace, coords, records]);
 
   const anyLoading =
     hasPlace &&
@@ -497,7 +546,9 @@ export default function ClimoTab() {
     () => (selectedIso === todayIso ? 'Today' : fmtMonDay(selectedIso)),
     [selectedIso, todayIso]
   );
+
   const selectedDoy = useMemo(() => isoToDoy(selectedIso), [selectedIso]);
+  const safeSelectedDoy = Number.isFinite(selectedDoy) ? clamp(selectedDoy, 1, 366) : 1;
 
   const recordsTitle = useMemo(() => {
     const name = (records as any)?.stationNameUsed;
@@ -505,6 +556,17 @@ export default function ClimoTab() {
     const windowLabel = y?.from && y?.to ? ` • ${y.from}–${y.to}` : '';
     return name ? `Records (${name}${windowLabel})` : `Records (nearby major station${windowLabel})`;
   }, [(records as any)?.stationNameUsed, (records as any)?.years?.from, (records as any)?.years?.to]);
+
+  const chartPrecip = useMemo(() => {
+  const raw = (climo.data as any)?.precipMonthlyIn;
+  return Array.isArray(raw) && raw.length === 12 ? raw : undefined;
+}, [(climo.data as any)?.precipMonthlyIn]);
+
+  const canRenderChart =
+  hasPlace &&
+  chartNormals.length === 12 &&
+  safeSelectedDoy >= 1 &&
+  safeSelectedDoy <= 366;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -516,7 +578,6 @@ export default function ClimoTab() {
         ]}
         refreshControl={<RefreshControl refreshing={!!anyRefreshing} onRefresh={onRefreshAll} />}
       >
-        {/* Header (standard OMNI wordmark) */}
         <View style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.brandLeft}>
@@ -539,7 +600,6 @@ export default function ClimoTab() {
             </View>
           </View>
 
-          {/* Meta pills */}
           <View style={styles.metaRow}>
             <View style={styles.metaPill}>
               <Text style={styles.metaPillLabel}>Station</Text>
@@ -564,7 +624,6 @@ export default function ClimoTab() {
           ) : null}
         </View>
 
-        {/* No place selected */}
         {!hasPlace ? (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Select a location</Text>
@@ -574,7 +633,6 @@ export default function ClimoTab() {
           </Card>
         ) : null}
 
-        {/* Loading */}
         {anyLoading ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" />
@@ -582,13 +640,12 @@ export default function ClimoTab() {
           </View>
         ) : null}
 
-        {/* Errors */}
         {forecast.error ? (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Forecast unavailable</Text>
-            <Text style={styles.errorText}>{forecast.error}</Text>
+            <Text style={styles.errorText}>{String(forecast.error)}</Text>
             <View style={styles.actionRow}>
-              <Pressable onPress={forecast.refresh} style={styles.btn}>
+              <Pressable onPress={() => forecast.refresh?.()} style={styles.btn}>
                 <Text style={styles.btnText}>Retry</Text>
               </Pressable>
             </View>
@@ -598,16 +655,15 @@ export default function ClimoTab() {
         {dayCtx.error && mode === 'observed' ? (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Observed day unavailable</Text>
-            <Text style={styles.errorText}>{dayCtx.error}</Text>
+            <Text style={styles.errorText}>{String(dayCtx.error)}</Text>
             <View style={styles.actionRow}>
-              <Pressable onPress={dayCtx.refresh} style={styles.btn}>
+              <Pressable onPress={() => dayCtx.refresh?.()} style={styles.btn}>
                 <Text style={styles.btnText}>Retry</Text>
               </Pressable>
             </View>
           </Card>
         ) : null}
 
-        {/* Day tile (swipe left/right changes selectedIso => updates brief + normals + records) */}
         {hasPlace ? (
           <Card style={styles.dayCard}>
             <Animated.View {...dayPanResponder.panHandlers} style={{ transform: [{ translateX: swipeX }] }}>
@@ -653,33 +709,32 @@ export default function ClimoTab() {
               <View style={styles.kpiRow}>
                 <View style={styles.kpi}>
                   <Text style={styles.kpiLabel}>High</Text>
-                  <Text style={styles.kpiVal}>{fmtTemp((tile as any).hi)}</Text>
+                  <Text style={styles.kpiVal}>{fmtTemp(tile.hi)}</Text>
                 </View>
                 <View style={styles.kpi}>
                   <Text style={styles.kpiLabel}>Low</Text>
-                  <Text style={styles.kpiVal}>{fmtTemp((tile as any).lo)}</Text>
+                  <Text style={styles.kpiVal}>{fmtTemp(tile.lo)}</Text>
                 </View>
                 <View style={styles.kpi}>
                   <Text style={styles.kpiLabel}>Rain</Text>
-                  <Text style={styles.kpiVal}>{fmtRain((tile as any).rain)}</Text>
+                  <Text style={styles.kpiVal}>{fmtRain(tile.rain)}</Text>
                 </View>
               </View>
 
               <View style={styles.metaRow2}>
-                <Text style={styles.metaText}>{(tile as any).condition}</Text>
+                <Text style={styles.metaText}>{tile.condition}</Text>
                 <Text style={styles.dot}>•</Text>
                 <Text style={styles.metaText}>
-                  {(tile as any).cloudMin != null && (tile as any).cloudMax != null
-                    ? `Cloud ${Math.round((tile as any).cloudMin)}–${Math.round((tile as any).cloudMax)}%`
+                  {tile.cloudMin != null && tile.cloudMax != null
+                    ? `Cloud ${Math.round(tile.cloudMin)}–${Math.round(tile.cloudMax)}%`
                     : 'Cloud —'}
                 </Text>
                 <Text style={styles.dot}>•</Text>
                 <Text style={styles.metaText}>
-                  {(tile as any).windMax != null ? `Wind ${Math.round((tile as any).windMax)} mph` : 'Wind —'}
+                  {tile.windMax != null ? `Wind ${Math.round(tile.windMax)} mph` : 'Wind —'}
                 </Text>
               </View>
 
-              {/* Records (selectedIso drives selectedRecord) */}
               {(() => {
                 const showWarmup = !recordsEverResolved || (rLoading && !recordsEverResolved);
 
@@ -743,46 +798,44 @@ export default function ClimoTab() {
                 }
 
                 if (selectedRecord) {
-                const win = (records as any)?.years as { from: number; to: number } | null;
+                  const win = (records as any)?.years as { from: number; to: number } | null;
 
-                const hiYears = clampYearsToWindow(selectedRecord.recordHighYears, win);
-                const loYears = clampYearsToWindow(selectedRecord.recordLowYears, win);
+                  const hiYears = clampYearsToWindow(selectedRecord.recordHighYears, win);
+                  const loYears = clampYearsToWindow(selectedRecord.recordLowYears, win);
 
-                // --- precip: ALWAYS render the line, but only show years if precip > 0
-                const pRaw = selectedRecord.recordPrecipIn;
-                const p = typeof pRaw === 'number' && Number.isFinite(pRaw) ? pRaw : 0;
+                  const pRaw = selectedRecord.recordPrecipIn;
+                  const p = typeof pRaw === 'number' && Number.isFinite(pRaw) ? pRaw : 0;
 
-                const showPrecipYears = p > 0.0049;
-                const prYears = showPrecipYears
-                  ? clampYearsToWindow(selectedRecord.recordPrecipYears, win)
-                  : [];
+                  const showPrecipYears = p > 0.0049;
+                  const prYears = showPrecipYears
+                    ? clampYearsToWindow(selectedRecord.recordPrecipYears, win)
+                    : [];
 
-                return (
-                  <View style={styles.recordsBox}>
-                    <Text style={styles.recordsTitle}>{recordsTitle}</Text>
+                  return (
+                    <View style={styles.recordsBox}>
+                      <Text style={styles.recordsTitle}>{recordsTitle}</Text>
 
-                    {selectedRecord.recordHighF != null ? (
+                      {selectedRecord.recordHighF != null ? (
+                        <Text style={styles.recordsItem}>
+                          High {Math.round(selectedRecord.recordHighF)}°
+                          {hiYears.length ? ` (${hiYears.join(', ')})` : ''}
+                        </Text>
+                      ) : null}
+
+                      {selectedRecord.recordLowF != null ? (
+                        <Text style={styles.recordsItem}>
+                          Low {Math.round(selectedRecord.recordLowF)}°
+                          {loYears.length ? ` (${loYears.join(', ')})` : ''}
+                        </Text>
+                      ) : null}
+
                       <Text style={styles.recordsItem}>
-                        High {Math.round(selectedRecord.recordHighF)}°
-                        {hiYears.length ? ` (${hiYears.join(', ')})` : ''}
+                        Rain {fmtRain(p)}
+                        {showPrecipYears && prYears.length ? ` (${prYears.join(', ')})` : ''}
                       </Text>
-                    ) : null}
-
-                    {selectedRecord.recordLowF != null ? (
-                      <Text style={styles.recordsItem}>
-                        Low {Math.round(selectedRecord.recordLowF)}°
-                        {loYears.length ? ` (${loYears.join(', ')})` : ''}
-                      </Text>
-                    ) : null}
-
-                    {/* ✅ ALWAYS present for layout stability */}
-                    <Text style={styles.recordsItem}>
-                      Rain {fmtRain(p)}
-                      {showPrecipYears && prYears.length ? ` (${prYears.join(', ')})` : ''}
-                    </Text>
-                  </View>
-                );
-              }
+                    </View>
+                  );
+                }
 
                 return (
                   <View style={styles.recordsBox}>
@@ -793,11 +846,11 @@ export default function ClimoTab() {
               })()}
 
               <View style={styles.bottomNoteRow}>
-                <Text style={styles.bottomNote}>{(tile as any).footer}</Text>
+                <Text style={styles.bottomNote}>{tile.footer}</Text>
 
-                {(tile as any).mode === 'forecast' && (tile as any).precipChance != null ? (
+                {tile.mode === 'forecast' && tile.precipChance != null ? (
                   <View style={styles.chancePill}>
-                    <Text style={styles.chancePillText}>{Math.round((tile as any).precipChance)}% chance</Text>
+                    <Text style={styles.chancePillText}>{Math.round(tile.precipChance)}% chance</Text>
                   </View>
                 ) : null}
               </View>
@@ -805,24 +858,33 @@ export default function ClimoTab() {
           </Card>
         ) : null}
 
-        {/* Curve */}
-
-          {hasPlace && hasNormals ? (
-          <ClimatologyChart
-            title="ALMANAC"
-            normals={climo.data!.normals}
-            stationName={stationName ? `${stationName}` : undefined}
-            selectedDoy={selectedDoy}
-            markerLabel={markerLabel}
-            onSelectDoy={(doy: number) => {
-              const year = Number(selectedIso.slice(0, 4));
-              const iso = isoFromYearAndDoy(year, doy);
-              setSelectedIso(iso);
-            }}
-            precipMonthlyIn={(climo.data as any)?.precipMonthlyIn}
-          />
+        {canRenderChart ? (
+          <View style={{ marginBottom: theme.spacing.lg }}>
+            <ClimatologyChart
+              title="ALMANAC"
+              normals={chartNormals}
+              stationName={stationName ? `${stationName}` : undefined}
+              selectedDoy={safeSelectedDoy}
+              markerLabel={markerLabel}
+              onSelectDoy={(doy: number) => {
+                const year = Number(selectedIso.slice(0, 4));
+                const iso = isoFromYearAndDoy(year, doy);
+                setSelectedIso(iso);
+              }}
+              precipMonthlyIn={chartPrecip}
+            />
+          </View>
+        ) : hasPlace ? (
+          <Card style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Chart warming up</Text>
+            <Text style={styles.errorText}>
+              The climatology chart will appear once monthly normals finish loading.
+            </Text>
+            <Text style={styles.errorText}>
+              Normals: {chartNormals.length} / 12 • DOY: {safeSelectedDoy}
+            </Text>
+          </Card>
         ) : null}
-
         <View style={{ height: Math.max(24, insets.bottom) }} />
       </ScrollView>
     </SafeAreaView>
@@ -870,13 +932,13 @@ const styles = StyleSheet.create({
   metaPillValue: { marginTop: 4, fontSize: 13, color: 'white', fontWeight: '900' },
 
   domainPill: {
-  alignSelf: 'flex-start',
-  paddingHorizontal: 10,
-  paddingVertical: 5,
-  borderRadius: 12,
-  backgroundColor: 'rgba(255,255,255,0.06)',
-  borderWidth: 1,
-  borderColor: 'rgba(255,255,255,0.10)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
 
@@ -935,9 +997,6 @@ const styles = StyleSheet.create({
   },
   navBtnDisabled: { opacity: 0.35 },
   navBtnText: { color: 'white', fontWeight: '900', fontSize: 16 },
-  recordsBoxStable: {
-    minHeight: 74, // tunes to ~3 lines at your font sizes
-  },
 
   todayBtn: {
     flex: 1,

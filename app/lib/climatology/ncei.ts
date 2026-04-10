@@ -7,12 +7,11 @@ const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ??
 const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
 
 function apiUrl(path: string) {
-  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
+  if (!API_BASE) {
+    throw new ClimoError('NETWORK', 'Missing EXPO_PUBLIC_API_BASE. Set it in .env and rebuild the app.');
+  }
   return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 }
-
-// CDO Web Services v2 base (via Worker proxy)
-const BASE = apiUrl('/api/ncei');
 
 // Keep defaults aligned with records hook
 const REQ_TIMEOUT_MS = 25_000; // normals endpoint is slower
@@ -200,7 +199,7 @@ async function fetchJsonWithRetry(url: string, opts: FetchJsonOpts) {
 
 // ---------- URL builders ----------
 export function buildStationsUrl(params: Record<string, string | number | undefined>) {
-  const u = new URL(`${BASE}/stations`);
+  const u = new URL(apiUrl('/api/ncei/stations'));
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue;
     u.searchParams.set(k, String(v));
@@ -209,7 +208,7 @@ export function buildStationsUrl(params: Record<string, string | number | undefi
 }
 
 export function buildDataUrl(params: Record<string, string | number | undefined>) {
-  const u = new URL(`${BASE}/data`);
+  const u = new URL(apiUrl('/api/ncei/data'));
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue;
     u.searchParams.set(k, String(v));

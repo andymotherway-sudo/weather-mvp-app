@@ -9,7 +9,7 @@ import { ClimoError } from './types';
 
 /**
  * US-only climatology hook (monthly normals).
- * ✅ Worker-proxied: does NOT require NOAA token in the app.
+ * Worker-proxied: does NOT require NOAA token in the app.
  * Requires EXPO_PUBLIC_API_BASE to be set to your Worker base URL.
  */
 const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
@@ -23,17 +23,21 @@ function isAbortError(err: any) {
   );
 }
 
+const DEBUG_CLIMO_PHASE:
+  | 'cache'
+  | 'station'
+  | 'temp'
+  | 'precip'
+  | 'full' = 'cache';
+  
+function isFiniteCoord(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
 function hasUsableNormals(d: ClimatologyResult | null) {
   return !!d && Array.isArray(d.normals) && d.normals.length > 0;
 }
 
-/**
- * Robust precip normalization:
- * - If cached values were stored in "tenths of inches" (e.g., 21 meaning 2.1"),
- *   detect + normalize to inches.
- * - Avoid breaking legit wet climates: only normalize when the array "looks like tenths"
- *   (high max + many integer-ish entries).
- */
 function normalizePrecipMonthlyIn(arr?: Array<number | null>) {
   if (!Array.isArray(arr) || arr.length !== 12) return arr;
 
@@ -75,8 +79,8 @@ export function useClimatologyNormals({
   enabled = true,
   preferCache = true,
 }: {
-  lat: number;
-  lon: number;
+  lat: number | null;
+  lon: number | null;
   enabled?: boolean;
   preferCache?: boolean;
 }) {
@@ -87,26 +91,27 @@ export function useClimatologyNormals({
 
   const abortRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
-
-  // one-time warmup per session (helps Android cold-start flakiness)
   const warmedRef = useRef(false);
 
-  // IMPORTANT: clear stale state synchronously when coords change
-  const locKey = useMemo(() => `${lat.toFixed(4)},${lon.toFixed(4)}`, [lat, lon]);
+  const hasValidCoords = isFiniteCoord(lat) && isFiniteCoord(lon);
+
+  const locKey = useMemo(() => {
+    if (!hasValidCoords) return 'invalid';
+    return `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  }, [hasValidCoords, lat, lon]);
+
   useEffect(() => {
     abortRef.current?.abort();
     setData(null);
     setError(null);
     setLoading(false);
     setRefreshing(false);
-    // do NOT reset warmedRef; keep it warm for the session
   }, [locKey]);
 
   const load = useCallback(
     async (mode: 'initial' | 'refresh') => {
-      if (!enabled) return;
+      if (!enabled || !hasValidCoords) return;
 
-      // Worker base is required (no secrets in app)
       if (!API_BASE) {
         setError('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
         return;
@@ -121,7 +126,11 @@ export function useClimatologyNormals({
       const safeSet = (fn: () => void) => {
         if (runIdRef.current !== myRunId) return;
         if (ac.signal.aborted) return;
-        fn();
+        try {
+          fn();
+        } catch {
+          // never let state transitions throw into render timing
+        }
       };
 
       safeSet(() => {
@@ -130,102 +139,183 @@ export function useClimatologyNormals({
         setError(null);
       });
 
+   try {
+  // 1) Cache first
+  if (preferCache) {
+    let cachedRaw: ClimatologyResult | null = null;
+    try {
+      cachedRaw = await readClimoCache(lat, lon);
+    } catch {
+      cachedRaw = null;
+    }
+
+    if (cachedRaw) {
+      let cached = cachedRaw;
       try {
-        // 1) Cache first (with self-healing migration)
-        if (preferCache) {
-          const cachedRaw = await readClimoCache(lat, lon);
-          if (cachedRaw) {
-            const cached = normalizeClimoResult(cachedRaw);
+        cached = normalizeClimoResult(cachedRaw);
+      } catch {}
 
-            if (!precipArraysEqual(cachedRaw.precipMonthlyIn, cached.precipMonthlyIn)) {
-              writeClimoCache(lat, lon, cached).catch(() => {});
-            }
+      safeSet(() => {
+        setData(cached);
+        setError(null);
+        setLoading(false);
+        setRefreshing(false);
+      });
+      return;
+    }
+  }
 
-            safeSet(() => {
-              setData(cached);
-              setError(null);
-              setLoading(false);
-              setRefreshing(false);
-            });
-            return;
-          }
-        }
+  if (DEBUG_CLIMO_PHASE === 'full') {
+    safeSet(() => {
+      setData({
+        station: {
+          id: 'CACHE_TEST',
+          name: 'Cache Phase',
+          latitude: lat,
+          longitude: lon,
+        } as any,
+        normals: Array.from({ length: 12 }, (_, i) => ({
+          month: i + 1,
+          tavgF: null,
+          tminF: null,
+          tmaxF: null,
+        })),
+        precipMonthlyIn: undefined,
+        source: 'noaa_cdo_normal_mly',
+        fetchedAtIso: new Date().toISOString(),
+      });
+      setError(null);
+    });
+    return;
+  }
 
-        // 2) Warmup: touch NOAA via Worker once
-        if (!warmedRef.current) {
-          warmedRef.current = true;
-          try {
-            // token is Worker-side; pass undefined for compatibility
-            await nceiStations({ limit: 1 }, undefined, ac.signal);
-          } catch (e: any) {
-            if (isAbortError(e) || ac.signal.aborted) throw e;
-            // ignore warmup failures; main request may still succeed
-          }
-        }
+  // 2) Warmup
+  if (!warmedRef.current) {
+    warmedRef.current = true;
+    try {
+      await nceiStations({ limit: 1 }, undefined, ac.signal);
+    } catch (e: any) {
+      if (isAbortError(e) || ac.signal.aborted) throw e;
+    }
+  }
 
-        // 3) Fetch station + normals (Worker proxied)
-        const station = await findNearestNormalsStation(lat, lon, undefined as any, ac.signal);
-        const normals = await fetchMonthlyTempNormalsF(station.id, undefined as any, ac.signal);
+  // 3) Station lookup
+  const station = await findNearestNormalsStation(lat, lon, undefined as any, ac.signal);
 
-        // Precip normals (inches) - optional
-        let precipMonthlyIn: Array<number | null> | undefined = undefined;
-        try {
-          precipMonthlyIn = await fetchMonthlyPrecipNormalsIn(station.id, undefined as any, ac.signal);
-        } catch {
-          // soft-fail: precip is optional
-        }
+  if (DEBUG_CLIMO_PHASE === 'station') {
+    safeSet(() => {
+      setData({
+        station,
+        normals: Array.from({ length: 12 }, (_, i) => ({
+          month: i + 1,
+          tavgF: null,
+          tminF: null,
+          tmaxF: null,
+        })),
+        precipMonthlyIn: undefined,
+        source: 'noaa_cdo_normal_mly',
+        fetchedAtIso: new Date().toISOString(),
+      });
+      setError(null);
+    });
+    return;
+  }
 
-        if (!Array.isArray(normals) || normals.length === 0) {
-          throw new ClimoError('NO_NORMALS', 'No monthly normals returned by NOAA for this station.');
-        }
+  // 4) Temp normals
+  const normals = await fetchMonthlyTempNormalsF(station.id, undefined as any, ac.signal);
 
-        const resultRaw: ClimatologyResult = {
-          station,
-          normals,
-          precipMonthlyIn,
-          source: 'noaa_cdo_normal_mly',
-          fetchedAtIso: new Date().toISOString(),
-        };
+  if (!Array.isArray(normals) || normals.length === 0) {
+    throw new ClimoError('NO_NORMALS', 'No monthly normals returned by NOAA for this station.');
+  }
 
-        const result = normalizeClimoResult(resultRaw);
+  if (DEBUG_CLIMO_PHASE === 'temp') {
+    safeSet(() => {
+      setData({
+        station,
+        normals,
+        precipMonthlyIn: undefined,
+        source: 'noaa_cdo_normal_mly',
+        fetchedAtIso: new Date().toISOString(),
+      });
+      setError(null);
+    });
+    return;
+  }
 
-        safeSet(() => {
-          setData(result);
-          setError(null);
-        });
+  // 5) Precip normals
+  let precipMonthlyIn: Array<number | null> | undefined = undefined;
+  try {
+    precipMonthlyIn = await fetchMonthlyPrecipNormalsIn(station.id, undefined as any, ac.signal);
+  } catch {
+    precipMonthlyIn = undefined;
+  }
 
-        await writeClimoCache(lat, lon, result);
-      } catch (e: any) {
-        if (isAbortError(e) || ac.signal.aborted) return;
+  if (DEBUG_CLIMO_PHASE === 'precip') {
+    safeSet(() => {
+      setData({
+        station,
+        normals,
+        precipMonthlyIn,
+        source: 'noaa_cdo_normal_mly',
+        fetchedAtIso: new Date().toISOString(),
+      });
+      setError(null);
+    });
+    return;
+  }
 
-        const ce = e instanceof ClimoError ? e : null;
+  const resultRaw: ClimatologyResult = {
+    station,
+    normals,
+    precipMonthlyIn,
+    source: 'noaa_cdo_normal_mly',
+    fetchedAtIso: new Date().toISOString(),
+  };
 
-        safeSet(() => {
-          // Soft-fail: if we already have usable normals, keep UI calm.
-          if (hasUsableNormals(data)) {
-            setError(null);
-            return;
-          }
+  const result = normalizeClimoResult(resultRaw);
 
-          // Worker model: no NO_TOKEN messaging anymore.
-          setError(ce?.message ?? 'Failed to load climatology.');
-        });
-      } finally {
+  safeSet(() => {
+    setData(result);
+    setError(null);
+  });
+
+  try {
+    await writeClimoCache(lat, lon, result);
+  } catch {}
+} catch (e: any) {
+  if (isAbortError(e) || ac.signal.aborted) return;
+
+  const ce = e instanceof ClimoError ? e : null;
+
+  safeSet(() => {
+    if (hasUsableNormals(data)) {
+      setError(null);
+      return;
+    }
+    setError(ce?.message ?? 'Failed to load climatology.');
+  });
+}
+      
+      finally {
         safeSet(() => {
           if (mode === 'initial') setLoading(false);
           else setRefreshing(false);
         });
       }
     },
-    [enabled, lat, lon, preferCache, data]
+    [enabled, hasValidCoords, lat, lon, preferCache, data]
   );
 
   useEffect(() => {
+    if (!enabled || !hasValidCoords) return;
     load('initial');
     return () => abortRef.current?.abort();
-  }, [load]);
+  }, [enabled, hasValidCoords, load]);
 
-  const refresh = useCallback(() => load('refresh'), [load]);
+  const refresh = useCallback(() => {
+    if (!enabled || !hasValidCoords) return Promise.resolve();
+    return load('refresh');
+  }, [enabled, hasValidCoords, load]);
 
   return {
     data,
@@ -233,7 +323,6 @@ export function useClimatologyNormals({
     refreshing,
     error,
     refresh,
-    // keep field name for callers, but it now means “Worker base configured”
     hasToken: !!API_BASE,
   };
 }

@@ -81,15 +81,15 @@ export default function TabsLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="climo"
-        options={{
-          title: 'Almanac',
-          tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name={focused ? 'thermometer' : 'thermometer-outline'} color={color} />
-          ),
-        }}
-      />
+     <Tabs.Screen
+  name="almanac"
+  options={{
+    title: 'Almanac',
+    tabBarIcon: ({ color, focused }) => (
+      <TabBarIcon name={focused ? 'thermometer' : 'thermometer-outline'} color={color} />
+    ),
+  }}
+/>
 
       <Tabs.Screen
         name="maps"
