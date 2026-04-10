@@ -2,7 +2,7 @@
   "expo": {
     "name": "OMNIwx Alpha",
     "slug": "weather-app",
-    "version": "1.0.0",
+    "version": "1.1.6",
     "orientation": "portrait",
     "icon": "./assets/brand/icon-alpha.png",
     "scheme": "weatherapp",
@@ -15,7 +15,6 @@
       "barStyle": "light-content"
     },
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -24,7 +23,7 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "edgeToEdgeEnabled": true,
+      "versionCode": 8,
       "predictiveBackGestureEnabled": false,
       "config": {
         "googleMaps": {
@@ -64,8 +63,11 @@
     "extra": {
       "router": {},
       "apiBaseUrl": "https://omniwx-api.omniwx.workers.dev",
+      "buildLabel": "almanac-aab-test-1",
+      
       "eas": {
-        "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3"
+        "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3",
+       "almanacSafeMode": true
       }
     }
   }
