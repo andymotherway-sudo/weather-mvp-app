@@ -38,7 +38,7 @@ export type LayerCatalogItem = {
   supportsSourceInfo?: boolean;
 };
 
-export const LAYER_GROUPS: ReadonlyArray<{ id: LayerGroupId; title: string }> = [
+export const LAYER_GROUPS: readonly { id: LayerGroupId; title: string }[] = [
   { id: 'weather', title: 'Weather' },
   { id: 'fireAir', title: 'Fire & Air' },
   { id: 'aviation', title: 'Aviation' },
@@ -119,6 +119,25 @@ export const LAYER_CATALOG = [
     source: {
       name: 'GOES-West',
       details: 'CONUS visible imagery using ABI Band 2 (conus_ch02). This is visible imagery, not true GeoColor.',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.goes.truecolor',
+    group: 'weather',
+    title: 'GOES True Color',
+    subtitle: 'Merged GeoColor',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.96,
+    zIndex: 62,
+    source: {
+      name: 'NOAA NESDIS',
+      details: 'Merged GOES East and West GeoColor image service with the latest imagery.',
+      url: 'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGED_GeoColor/ImageServer',
     },
     supportsLegend: false,
     supportsOpacity: true,
@@ -348,7 +367,7 @@ export const LAYER_CATALOG = [
       details: 'Derived contour from OVATION probabilities',
     },
   },
-] as const satisfies ReadonlyArray<LayerCatalogItem>;
+] as const satisfies readonly LayerCatalogItem[];
 
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(
   LAYER_CATALOG.map((x) => [x.id, x]),

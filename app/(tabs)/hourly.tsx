@@ -13,9 +13,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useWxLab } from '../context/WxLabContext';
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
+
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
@@ -27,6 +28,13 @@ import { typography } from '../../styles/typography';
 
 type UnitSystem = 'us' | 'metric';
 
+type VisualState = {
+  weatherCode: number | null;
+  isNight: boolean;
+  isSunrise: boolean;
+  isSunset: boolean;
+};
+
 function safeNum(v: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v;
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
@@ -34,6 +42,21 @@ function safeNum(v: any): number | null {
 
 function safeStr(v: any): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function weatherCodeToLabel(code: number | null): string {
+  if (code == null) return 'Weather';
+  if (code === 0) return 'Clear';
+  if (code === 1) return 'Mostly clear';
+  if (code === 2) return 'Partly cloudy';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
+  if ([61, 63, 65, 66, 67].includes(code)) return 'Rain';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Showers';
+  if ([95, 96, 99].includes(code)) return 'Thunderstorm';
+  return 'Cloudy';
 }
 
 function formatTzLabel(timeZone: string | null): string | null {
@@ -59,6 +82,12 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       safeNum(h.temperature_2m) ??
       safeNum(h.temperature) ??
       safeNum(h.temp) ??
+      null;
+
+    const apparentTemperatureF =
+      safeNum(h.apparentTempF) ??
+      safeNum(h.apparent_temperature_f) ??
+      safeNum(h.apparent_temperature) ??
       null;
 
     const precipChancePct =
@@ -96,6 +125,7 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       ...h,
       pressureHpa,
       temperatureF,
+      apparentTemperatureF,
       precipChancePct,
       windMph,
       windGustMph,
@@ -165,7 +195,8 @@ function getForecastStartIndex(hours: any[], timeZone?: string | null) {
   }
 
   for (let i = 0; i < hours.length; i += 1) {
-    const wall = extractIsoWallClockParts(hours[i]?.time);
+    const raw = hours[i]?.time;
+    const wall = extractIsoWallClockParts(raw);
     if (!wall) continue;
 
     const rowDayKey = `${wall.year}-${String(wall.month).padStart(2, '0')}-${String(wall.day).padStart(
@@ -180,20 +211,58 @@ function getForecastStartIndex(hours: any[], timeZone?: string | null) {
   return 0;
 }
 
+function getClockState(timeZone?: string | null): Omit<VisualState, 'weatherCode'> {
+  let hour = new Date().getHours();
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || undefined,
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+
+    hour = Number(parts.find((part) => part.type === 'hour')?.value ?? hour);
+  } catch {
+    hour = new Date().getHours();
+  }
+
+  return {
+    isNight: hour < 6 || hour >= 19,
+    isSunrise: hour >= 6 && hour < 8,
+    isSunset: hour >= 17 && hour < 19,
+  };
+}
+
+function formatHeroSummary(hour: any) {
+  const precipChance = safeNum(hour?.precipChancePct);
+  const windMph = safeNum(hour?.windMph);
+  const parts: string[] = [];
+
+  if (precipChance != null) parts.push(`${Math.round(precipChance)}% precip chance`);
+  if (windMph != null) parts.push(`${Math.round(windMph)} mph wind`);
+
+  return parts.length ? parts.join(' • ') : 'Forecast details ready';
+}
+
+function formatHeroMetricValue(value: number | null, suffix = '', digits = 0) {
+  if (value == null) return '—';
+  return `${digits > 0 ? value.toFixed(digits) : Math.round(value)}${suffix}`;
+}
+
 function HourlyWithCoords({
   coords,
   wxLab,
   onRefreshingChange,
   setRefreshFn,
   onOpenLearn,
-  onWeatherCode,
+  onVisualStateChange,
 }: {
   coords: { lat: number; lon: number };
   wxLab: boolean;
   onRefreshingChange: (refreshing: boolean) => void;
   setRefreshFn: (fn: null | (() => void)) => void;
   onOpenLearn: (topicId?: string) => void;
-  onWeatherCode: (code: number | null) => void;
+  onVisualStateChange: (state: VisualState) => void;
 }) {
   const units: UnitSystem = 'us';
 
@@ -213,7 +282,6 @@ function HourlyWithCoords({
   }, [refresh, setRefreshFn]);
 
   const forecastTimeZone = useMemo(() => safeStr(data?.timezone) ?? null, [data]);
-
   const hourly = useMemo(
     () => normalizeHourly(data?.hourly ?? [], forecastTimeZone),
     [data?.hourly, forecastTimeZone]
@@ -225,22 +293,15 @@ function HourlyWithCoords({
   );
 
   const visibleHourly = useMemo(() => hourly.slice(startIndex), [hourly, startIndex]);
-  const backgroundWeatherCode = useMemo(
-    () => safeNum(visibleHourly[0]?.weatherCode ?? hourly[0]?.weatherCode) ?? null,
-    [visibleHourly, hourly]
-  );
-  const leadHour = visibleHourly[0] ?? null;
-  const leadTemp = safeNum(leadHour?.temperatureF);
-  const leadFeels = safeNum(
-    leadHour?.apparentTempF ?? leadHour?.apparent_temperature ?? leadHour?.apparent_temperature_f
-  );
-  const leadPop = safeNum(leadHour?.precipChancePct ?? leadHour?.precipitation_probability);
-  const leadWind = safeNum(leadHour?.windMph);
-  const leadCondition = safeStr(leadHour?.condition) ?? 'Hourly forecast';
+  const leadHour = visibleHourly[0] ?? hourly[0] ?? null;
 
   useEffect(() => {
-    onWeatherCode(backgroundWeatherCode);
-  }, [backgroundWeatherCode, onWeatherCode]);
+    const clockState = getClockState(forecastTimeZone);
+    onVisualStateChange({
+      weatherCode: safeNum(leadHour?.weatherCode),
+      ...clockState,
+    });
+  }, [forecastTimeZone, leadHour, onVisualStateChange]);
 
   if (loading && !data) {
     return (
@@ -260,43 +321,75 @@ function HourlyWithCoords({
     );
   }
 
-  if (!visibleHourly.length) return null;
+  if (!visibleHourly.length || !leadHour) return null;
 
   const tzLabel = formatTzLabel(forecastTimeZone);
+  const heroTemp = safeNum(leadHour.temperatureF);
+  const heroFeels = safeNum(leadHour.apparentTemperatureF);
+  const heroCondition = weatherCodeToLabel(safeNum(leadHour.weatherCode));
+  const heroSummary = formatHeroSummary(leadHour);
+  const heroPrecip = safeNum(leadHour.precipChancePct);
+  const heroWind = safeNum(leadHour.windMph);
+  const heroGust = safeNum(leadHour.windGustMph);
+  const heroPressure = safeNum(leadHour.pressureHpa);
 
   return (
     <>
-      <Card style={styles.heroCard}>
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject} />
+      <View style={styles.heroCard}>
+        <View pointerEvents="none" style={styles.cardGlow} />
 
         <View style={styles.heroTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroTemp}>{leadTemp != null ? `${Math.round(leadTemp)}°` : '—'}</Text>
-            <Text style={styles.heroCondition}>{leadCondition}</Text>
-            <Text style={styles.heroSummary} numberOfLines={1}>
-              {leadPop != null ? `${Math.round(leadPop)}% precip chance` : 'Precip signal unavailable'}
-              {leadWind != null ? ` • ${Math.round(leadWind)} mph wind` : ''}
-            </Text>
+          <View style={styles.heroMain}>
+            <View style={styles.heroBadgeRow}>
+              <View style={styles.heroNowBadge}>
+                <Text style={styles.heroNowBadgeText}>NOW</Text>
+              </View>
+              <Text style={styles.heroNowText}>Current hourly condition</Text>
+            </View>
+            <Text style={styles.heroTemp}>{heroTemp != null ? `${Math.round(heroTemp)}°` : '—'}</Text>
+            <Text style={styles.heroCondition}>{heroCondition}</Text>
+            <Text style={styles.heroSummary}>{heroSummary}</Text>
           </View>
 
           <View style={styles.heroRight}>
             <Text style={styles.heroMiniLabel}>Feels</Text>
-            <Text style={styles.heroMiniValue}>{leadFeels != null ? `${Math.round(leadFeels)}°` : '—'}</Text>
+            <Text style={styles.heroMiniValue}>{heroFeels != null ? `${Math.round(heroFeels)}°` : '—'}</Text>
           </View>
         </View>
 
-        {!!forecastTimeZone && (
+        <View style={styles.heroQuickStats}>
+          <View style={styles.heroQuickStat}>
+            <Text style={styles.heroQuickLabel}>Precip</Text>
+            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroPrecip, '%')}</Text>
+          </View>
+          <View style={styles.heroQuickStat}>
+            <Text style={styles.heroQuickLabel}>Wind</Text>
+            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroWind, ' mph')}</Text>
+          </View>
+          <View style={styles.heroQuickStat}>
+            <Text style={styles.heroQuickLabel}>Gust</Text>
+            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroGust, ' mph')}</Text>
+          </View>
+          <View style={styles.heroQuickStat}>
+            <Text style={styles.heroQuickLabel}>Pressure</Text>
+            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroPressure, ' hPa')}</Text>
+          </View>
+        </View>
+
+        {forecastTimeZone ? (
           <Text style={styles.updatedText}>
             Times shown for {tzLabel ?? forecastTimeZone} ({forecastTimeZone})
           </Text>
-        )}
-      </Card>
+        ) : null}
+      </View>
+
+      {!wxLab ? <Text style={styles.sectionLead}>Next 24 hours</Text> : null}
 
       {wxLab ? (
-        <Card style={styles.chartShellCard}>
-          <View style={styles.wxLabHeader}>
+        <View style={styles.chartBlock}>
+          <View style={styles.chartHeader}>
             <Text style={styles.sectionTitle}>Wx Lab</Text>
-            <Text style={styles.wxLabSub}>Expanded analysis view</Text>
+            <Text style={styles.sectionSub}>Expanded hourly analysis</Text>
           </View>
 
           <HourlyCharts72h
@@ -306,27 +399,16 @@ function HourlyWithCoords({
             initialPanel="range"
             timeZone={forecastTimeZone ?? undefined}
           />
-          <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
-        </Card>
-      ) : (
-        <Card style={styles.sectionIntroCard}>
-          <Text style={styles.sectionTitle}>Next 24 hours</Text>
-          <Text style={styles.wxLabSub}>Expandable hour-by-hour details</Text>
-        </Card>
-      )}
+        </View>
+      ) : null}
 
-      <Card style={styles.timelineShellCard}>
-        <NerdyHourlyTimeline
-          hours={visibleHourly}
-          maxHours={wxLab ? 72 : 24}
-          timeZone={forecastTimeZone ?? undefined}
-          defaultMode={wxLab ? 'wxlab' : 'simple'}
-          onExplain={(payload) => onOpenLearn(payload.learnTopicId)}
-        />
-        <Text style={styles.updatedText}>
-          {wxLab ? 'Source: Open-Meteo (hourly timeline)' : 'Source: Open-Meteo (next 24 hours)'}
-        </Text>
-      </Card>
+      <NerdyHourlyTimeline
+        hours={visibleHourly}
+        maxHours={wxLab ? 72 : 24}
+        timeZone={forecastTimeZone ?? undefined}
+        defaultMode={wxLab ? 'wxlab' : 'simple'}
+        onExplain={(payload) => onOpenLearn(payload.learnTopicId)}
+      />
     </>
   );
 }
@@ -335,8 +417,6 @@ export default function HourlyTab() {
   const insets = useSafeAreaInsets();
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
-  const [bgWeatherCode, setBgWeatherCode] = useState<number | null>(null);
-  const glowAnim = useRef(new Animated.Value(0)).current;
 
   const { activeCoords, activeLabel, refreshCurrentLocation } = useLocations();
 
@@ -346,15 +426,32 @@ export default function HourlyTab() {
     const raw = (activeLabel ?? '').trim();
     if (raw) return raw;
     return coords
-      ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})`
+      ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}`
       : 'Getting location...';
   }, [activeLabel, coords]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshFnRef = useRef<null | (() => void)>(null);
-
   const [learnVisible, setLearnVisible] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
+  const [visualState, setVisualState] = useState<VisualState>({
+    weatherCode: null,
+    ...getClockState(null),
+  });
+
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, { toValue: 1, duration: 6000, useNativeDriver: true }),
+        Animated.timing(glowAnim, { toValue: 0, duration: 6000, useNativeDriver: true }),
+      ])
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [glowAnim]);
 
   const setRefreshFn = useCallback((fn: null | (() => void)) => {
     refreshFnRef.current = fn;
@@ -373,26 +470,13 @@ export default function HourlyTab() {
     setLearnVisible(true);
   }, []);
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1, duration: 6000, useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0, duration: 6000, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [glowAnim]);
-
-  const hour = new Date().getHours();
-  const isNight = hour < 6 || hour >= 19;
-  const isSunrise = hour >= 6 && hour < 8;
-  const isSunset = hour >= 17 && hour < 19;
-
   return (
     <View style={styles.root}>
-      <View style={styles.videoLayer}>
-        <WeatherVideoBackground weatherCode={bgWeatherCode ?? undefined} isEvening={isNight || isSunset} />
+      <View pointerEvents="none" style={styles.videoLayer}>
+        <WeatherVideoBackground
+          weatherCode={visualState.weatherCode ?? undefined}
+          isEvening={visualState.isNight || visualState.isSunset}
+        />
       </View>
 
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -402,6 +486,7 @@ export default function HourlyTab() {
             styles.content,
             {
               paddingTop: Math.max(theme.spacing.sm, insets.top * 0.1),
+              flexGrow: 1,
             },
           ]}
           refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
@@ -409,17 +494,16 @@ export default function HourlyTab() {
           <View style={styles.headerHeroWrap}>
             <View style={styles.headerHeroSurface}>
               <View style={styles.headerCompactTopRow}>
-                <View style={styles.headerCompactLeft}>
-                  <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
-                  <View style={styles.headerCompactLocation}>
-                    <Text style={styles.locationEyebrow}>Hourly</Text>
-                    <Text style={styles.locationPrimary} numberOfLines={1}>
-                      {locationLabel}
-                    </Text>
-                    <Text style={styles.locationSecondary}>
-                      {wxLab ? 'Wx Lab expanded view' : 'Simple expanded view'}
-                    </Text>
-                  </View>
+                <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
+
+                <View style={styles.headerCompactLocation}>
+                  <Text style={styles.headerEyebrow}>Hourly</Text>
+                  <Text style={styles.locationPrimary} numberOfLines={1}>
+                    {locationLabel}
+                  </Text>
+                  <Text style={styles.locationSecondary}>
+                    {wxLab ? 'Wx Lab expanded view' : 'Simple expanded view'}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -442,9 +526,9 @@ export default function HourlyTab() {
                   style={[
                     styles.heroBgSoftGlow,
                     {
-                      backgroundColor: isNight
+                      backgroundColor: visualState.isNight
                         ? 'rgba(120,160,255,0.10)'
-                        : isSunrise || isSunset
+                        : visualState.isSunrise || visualState.isSunset
                           ? 'rgba(255,180,120,0.14)'
                           : 'rgba(160,220,255,0.10)',
                       opacity: glowAnim.interpolate({
@@ -462,41 +546,41 @@ export default function HourlyTab() {
                 onRefreshingChange={setIsRefreshing}
                 setRefreshFn={setRefreshFn}
                 onOpenLearn={openLearn}
-                onWeatherCode={setBgWeatherCode}
+                onVisualStateChange={setVisualState}
               />
             </>
           )}
 
-          <View style={{ height: Math.max(40, insets.bottom + 16) }} />
+          <View style={{ height: 120 }} />
         </ScrollView>
-
-        <LearnMoreModal
-          visible={learnVisible}
-          onClose={() => setLearnVisible(false)}
-          initialTopicId={learnTopicId}
-        />
       </SafeAreaView>
+
+      <LearnMoreModal
+        visible={learnVisible}
+        onClose={() => setLearnVisible(false)}
+        initialTopicId={learnTopicId}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.colors.background },
+
   videoLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
   },
+
   safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
-  content: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing['2xl'],
-  },
+  content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
   headerHeroWrap: {
     marginBottom: theme.spacing.md,
     position: 'relative',
   },
+
   headerHeroSurface: {
     paddingVertical: 10,
     paddingHorizontal: 8,
@@ -506,44 +590,155 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
   },
+
   headerCompactTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
   },
-  headerCompactLeft: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
+
   headerCompactLogo: {
     width: 80,
     height: 80,
     opacity: 0.96,
   },
+
   headerCompactLocation: {
     flex: 1,
     minWidth: 0,
-    marginRight: 4,
     paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    borderRadius: 18,
     backgroundColor: 'rgba(0,0,0,0.12)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
   },
-  locationEyebrow: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
-    fontWeight: '900',
+
+  headerEyebrow: {
+    fontSize: 10,
+    letterSpacing: 1,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.54)',
+    fontWeight: '900',
+    marginBottom: 4,
   },
-  locationPrimary: { fontSize: 13, fontWeight: '900', color: 'white', marginTop: 2 },
+
+  locationPrimary: { fontSize: 15, fontWeight: '900', color: 'white' },
   locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
+
+  heroCard: {
+    position: 'relative',
+    overflow: 'hidden',
+    marginBottom: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: 28,
+    backgroundColor: 'rgba(20, 33, 56, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+
+  cardGlow: {
+    position: 'absolute',
+    left: -72,
+    top: -94,
+    width: 220,
+    height: 220,
+    borderRadius: 999,
+    backgroundColor: 'rgba(130, 168, 240, 0.14)',
+  },
+
+  heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  heroMain: { flex: 1 },
+  heroBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  heroNowBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(140, 190, 255, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(170, 220, 255, 0.28)',
+  },
+  heroNowBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    color: 'rgba(255,255,255,0.96)',
+  },
+  heroNowText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.56)',
+  },
+  heroTemp: { fontSize: 64, fontWeight: '900', color: theme.colors.textPrimary },
+  heroCondition: { fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 4 },
+  heroSummary: { marginTop: 8, fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.58)' },
+
+  heroRight: { alignItems: 'flex-end' },
+  heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
+  heroMiniValue: { fontSize: 18, fontWeight: '900', color: theme.colors.textPrimary },
+  heroQuickStats: {
+    marginTop: theme.spacing.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  heroQuickStat: {
+    minWidth: 88,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  heroQuickLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.46)',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  heroQuickValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.92)',
+  },
+
+  updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.6, fontWeight: '700' },
+
+  chartBlock: {
+    marginBottom: theme.spacing.sm,
+  },
+
+  chartHeader: {
+    marginBottom: theme.spacing.sm,
+  },
+
+  sectionLead: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.colors.textPrimary,
+    marginBottom: theme.spacing.sm,
+  },
+
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: theme.colors.textPrimary,
+  },
+
+  sectionSub: {
+    ...typography.small,
+    opacity: 0.72,
+    marginTop: 2,
+  },
 
   heroBgSoftGlow: {
     position: 'absolute',
@@ -553,30 +748,6 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 999,
     backgroundColor: 'rgba(160,220,255,0.10)',
-  },
-
-  tzNote: {
-    ...typography.small,
-    opacity: 0.7,
-    marginBottom: theme.spacing.sm,
-  },
-
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: theme.colors.textPrimary,
-    marginBottom: 10,
-  },
-
-  wxLabHeader: {
-    marginBottom: 8,
-  },
-
-  wxLabSub: {
-    ...typography.small,
-    opacity: 0.7,
-    marginTop: -2,
-    marginBottom: 10,
   },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
@@ -612,54 +783,5 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 12,
     opacity: 0.9,
-  },
-
-  heroCard: { marginBottom: theme.spacing.lg, overflow: 'hidden' },
-  heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  heroTemp: { fontSize: 64, fontWeight: '900', color: theme.colors.textPrimary },
-  heroCondition: { fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary, marginTop: 4 },
-  heroSummary: { marginTop: 8, fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
-  heroRight: { alignItems: 'flex-end' },
-  heroMiniLabel: { fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
-  heroMiniValue: { fontSize: 18, fontWeight: '900', color: theme.colors.textPrimary },
-  updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.6, fontWeight: '700' },
-  sectionIntroCard: {
-    marginBottom: theme.spacing.md,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 26,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
-  chartShellCard: {
-    marginBottom: theme.spacing.lg,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 26,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
-  },
-  timelineShellCard: {
-    marginBottom: theme.spacing.lg,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderRadius: 26,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 0,
   },
 });

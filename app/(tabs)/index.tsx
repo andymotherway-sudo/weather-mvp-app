@@ -212,12 +212,13 @@ function formatDailyLabel(dateValue: any) {
     const month = Number(m[2]);
     const day = Number(m[3]);
 
-    const d = new Date(year, month - 1, day, 12, 0, 0);
+    const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
 
     return d.toLocaleDateString([], {
       weekday: 'short',
       month: 'numeric',
       day: 'numeric',
+      timeZone: 'UTC',
     });
   }
 
@@ -1102,9 +1103,9 @@ const ss = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.035)',
   },
   sectionTitle: {
     fontSize: 11,
@@ -1121,9 +1122,9 @@ const ss = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(255,255,255,0.028)',
   },
   k: {
     fontSize: 10,
@@ -1397,9 +1398,9 @@ const nd = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.03)',
   },
   sectionTitle: {
     fontSize: 11,
@@ -1898,7 +1899,7 @@ export default function LandWeatherScreen() {
   const locationLabel = useMemo(() => {
     const raw = (activeLabel ?? '').trim();
     if (raw) return raw;
-    return coords ? `Current location (${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)})` : 'Getting location…';
+    return coords ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}` : 'Getting location…';
   }, [activeLabel, coords]);
 
   useEffect(() => {
@@ -2324,8 +2325,8 @@ const styles = StyleSheet.create({
   updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.6, fontWeight: '700' },
 
   dailyList: {
-    gap: 6,
-    paddingHorizontal: 4,
+    gap: 10,
+    paddingHorizontal: 2,
   },
 
   dailyLeft: {
@@ -2378,17 +2379,24 @@ const styles = StyleSheet.create({
   },
 
   dailyRow: {
+    position: 'relative',
+    overflow: 'hidden',
     paddingVertical: 18,
     paddingHorizontal: 16,
-    borderRadius: 24,
-    backgroundColor: 'transparent',
+    borderRadius: 26,
+    backgroundColor: 'rgba(21, 35, 60, 0.68)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.05)',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
 
   dailyRowExpanded: {
-    backgroundColor: 'rgba(160,190,235,0.14)',
-     borderRadius: 24,
+    backgroundColor: 'rgba(27, 44, 74, 0.80)',
+    borderColor: 'rgba(255,255,255,0.065)',
   },
 
   dailyRowTop: {
@@ -2491,9 +2499,9 @@ wxLabNavBtnOn: {
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: 'rgba(255,255,255,0.032)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(255,255,255,0.028)',
   },
 
   dailyExpandedLabel: {

@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { createInitialMapState, mapReducer } from '../lib/maps/state';
-import { MAP_VIEWS } from '../lib/maps/views';
 
 import { Glass } from '../../components/common/Glass';
 import { LayerSheetModal, type LayerSheetValue } from '../../components/maps/LayerSheetModal';
@@ -18,10 +16,10 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 
 import { useLocations } from '../lib/locations/useLocations';
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
+import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
 import { useRadarController } from '../lib/maps/useRadarController';
-
-/* ============================================================================ */
+import { MAP_VIEWS } from '../lib/maps/views';
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -34,7 +32,7 @@ function approxZoomFromLongitudeDelta(lonDelta: number) {
 
 function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs: number) {
   const fnRef = useRef(fn);
-  const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fnRef.current = fn;
@@ -42,15 +40,15 @@ function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs:
 
   useEffect(() => {
     return () => {
-      if (tRef.current) clearTimeout(tRef.current);
-      tRef.current = null;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
     };
   }, []);
 
   return useCallback(
     (...args: Parameters<T>) => {
-      if (tRef.current) clearTimeout(tRef.current);
-      tRef.current = setTimeout(() => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
         fnRef.current(...args);
       }, waitMs);
     },
@@ -60,8 +58,9 @@ function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs:
 
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
   const insets = useSafeAreaInsets();
+
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 12, right: 12, bottom: 12 + insets.bottom }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 12, right: 12, bottom: 12 + insets.bottom }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
         <View style={{ flexShrink: 0 }}>{props.left}</View>
         <View style={{ flex: 1, justifyContent: 'flex-end' }}>{props.center}</View>
@@ -80,6 +79,7 @@ function getSimpleStatus(args: {
   radarEnabled: boolean;
   cloudsEnabled: boolean;
   wildfireEnabled: boolean;
+  goesTrueColorEnabled: boolean;
   goesEastGeoEnabled: boolean;
   goesWestGeoEnabled: boolean;
   goesEastIrEnabled: boolean;
@@ -94,6 +94,7 @@ function getSimpleStatus(args: {
     radarEnabled,
     cloudsEnabled,
     wildfireEnabled,
+    goesTrueColorEnabled,
     goesEastGeoEnabled,
     goesWestGeoEnabled,
     goesEastIrEnabled,
@@ -104,6 +105,7 @@ function getSimpleStatus(args: {
     frameCount,
   } = args;
 
+  if (goesTrueColorEnabled) return 'GOES true color active';
   if (goesEastGeoEnabled) return 'GOES East visible active';
   if (goesWestGeoEnabled) return 'GOES West visible active';
   if (goesEastIrEnabled) return 'GOES East infrared active';
@@ -116,18 +118,18 @@ function getSimpleStatus(args: {
   }
 
   if (viewId === 'wildfire') {
-    return `${wildfireEnabled ? 'Wildfire overlays active' : 'Wildfire overlays off'}${radarEnabled ? ' · Radar on' : ''}`;
+    return `${wildfireEnabled ? 'Wildfire overlays active' : 'Wildfire overlays off'}${radarEnabled ? ' / Radar on' : ''}`;
   }
 
   if (viewId === 'aviation') {
-    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · Aviation weather view` : 'Radar off';
+    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / Aviation weather view` : 'Radar off';
   }
 
   if (viewId === 'storm') {
-    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · Storm weather view` : 'Radar off';
+    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / Storm weather view` : 'Radar off';
   }
 
-  return radarEnabled ? `${playing ? 'Animating' : 'Paused'} · ${frameCount} frames` : 'No active weather layer';
+  return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / ${frameCount} frames` : 'No active weather layer';
 }
 
 function getActiveLayerSummary(state: any) {
@@ -154,7 +156,7 @@ function getActiveLayerSummary(state: any) {
 
   return {
     title: primary.title,
-    subtitle: extraCount > 0 ? `${primary.subtitle ?? 'Overlay'} · +${extraCount} more` : primary.subtitle,
+    subtitle: extraCount > 0 ? `${primary.subtitle ?? 'Overlay'} / +${extraCount} more` : primary.subtitle,
     hasActiveLayers: true,
     count: enabledIds.length,
   };
@@ -176,7 +178,8 @@ function getViewAccent(viewId: string) {
   }
 }
 
-/* ============================================================================ */
+const NESDIS_GEOCOLOR_TILE_TEMPLATE =
+  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGED_GeoColor/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
@@ -200,10 +203,10 @@ export default function MapsScreen() {
   const permission = 'granted' as const;
 
   const location = useMemo(() => {
-    const c = loc.state.currentCoords;
-    if (!c) return null;
-    return { lat: c.lat, lon: c.lon };
-  }, [loc.state.currentCoords?.lat, loc.state.currentCoords?.lon]);
+    const coords = loc.state.currentCoords;
+    if (!coords) return null;
+    return { lat: coords.lat, lon: coords.lon };
+  }, [loc.state.currentCoords]);
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
@@ -213,11 +216,13 @@ export default function MapsScreen() {
   const [region, setRegion] = useState<Region | null>(null);
 
   useEffect(() => {
-    const raw = params?.view ? String(params.view).toLowerCase() : '';
-    if (!raw) return;
-    const valid = MAP_VIEWS.some((v) => v.id === raw);
+    const rawView = params?.view ? String(params.view).toLowerCase() : '';
+    if (!rawView) return;
+
+    const valid = MAP_VIEWS.some((view) => view.id === rawView);
     if (!valid) return;
-    dispatch({ type: 'SET_VIEW', viewId: raw as any });
+
+    dispatch({ type: 'SET_VIEW', viewId: rawView as any });
   }, [params?.view]);
 
   useEffect(() => {
@@ -238,15 +243,12 @@ export default function MapsScreen() {
     setAnchorPoint((prev) => prev ?? { lat: location.lat, lon: location.lon });
   }, [location]);
 
-  const debouncedAnchorToMap = useDebouncedCallback(
-    (lat: number, lon: number) => {
-      setAnchorPoint((prev) => {
-        if (prev && prev.lat === lat && prev.lon === lon) return prev;
-        return { lat, lon };
-      });
-    },
-    160,
-  );
+  const debouncedAnchorToMap = useDebouncedCallback((lat: number, lon: number) => {
+    setAnchorPoint((prev) => {
+      if (prev && prev.lat === lat && prev.lon === lon) return prev;
+      return { lat, lon };
+    });
+  }, 160);
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const [product, setProduct] = useState<'N0Q' | 'N0B' | 'N0Z'>('N0Q');
@@ -255,6 +257,7 @@ export default function MapsScreen() {
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
 
+  const goesTrueColorEnabled = !!state.layers?.['sat.goes.truecolor']?.enabled;
   const goesEastGeoEnabled = !!state.layers?.['sat.goesEast.geocolor']?.enabled;
   const goesWestGeoEnabled = !!state.layers?.['sat.goesWest.geocolor']?.enabled;
   const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
@@ -265,6 +268,10 @@ export default function MapsScreen() {
   const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
     ? state.layers['sat.clouds'].opacity
     : 0.85;
+
+  const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
+    ? state.layers['sat.goes.truecolor'].opacity
+    : 0.96;
 
   const goesEastGeoOpacity = Number.isFinite(state.layers?.['sat.goesEast.geocolor']?.opacity)
     ? state.layers['sat.goesEast.geocolor'].opacity
@@ -339,6 +346,32 @@ export default function MapsScreen() {
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     const list: WmsOverlayConfig[] = [];
 
+    const shared = {
+      enabled: true,
+      version: '1.1.1' as const,
+      crs: 'EPSG:3857' as const,
+      format: 'image/png',
+      transparent: true,
+      tileSize: 512 as const,
+      maxZoomLevel: 12,
+      fadeDurationMs: 90,
+      resampling: 'linear' as const,
+    };
+
+    if (goesTrueColorEnabled) {
+      list.push({
+        id: 'goes-truecolor',
+        tileUrlTemplates: [NESDIS_GEOCOLOR_TILE_TEMPLATE],
+        opacity: Math.max(0, Math.min(1, Number(goesTrueColorOpacity))),
+        zIndex: 62,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 8,
+        fadeDurationMs: 150,
+        resampling: 'linear',
+      });
+    }
+
     if (cloudsEnabled) {
       list.push({
         id: 'goes-conus-ch02',
@@ -346,11 +379,7 @@ export default function MapsScreen() {
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 60,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -361,11 +390,7 @@ export default function MapsScreen() {
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(goesEastGeoOpacity))),
         zIndex: 62,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -376,11 +401,7 @@ export default function MapsScreen() {
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(goesWestGeoOpacity))),
         zIndex: 62,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -391,11 +412,7 @@ export default function MapsScreen() {
         layers: 'conus_ch13',
         opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
         zIndex: 63,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -406,11 +423,7 @@ export default function MapsScreen() {
         layers: 'conus_ch13',
         opacity: Math.max(0, Math.min(1, Number(goesWestIrOpacity))),
         zIndex: 63,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -421,11 +434,7 @@ export default function MapsScreen() {
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesEastWvOpacity))),
         zIndex: 64,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -436,11 +445,7 @@ export default function MapsScreen() {
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesWestWvOpacity))),
         zIndex: 64,
-        enabled: true,
-        version: '1.1.1',
-        crs: 'EPSG:3857',
-        format: 'image/png',
-        transparent: true,
+        ...shared,
       });
     }
 
@@ -448,6 +453,8 @@ export default function MapsScreen() {
   }, [
     cloudsEnabled,
     cloudsOpacity,
+    goesTrueColorEnabled,
+    goesTrueColorOpacity,
     goesEastGeoEnabled,
     goesEastGeoOpacity,
     goesWestGeoEnabled,
@@ -465,8 +472,8 @@ export default function MapsScreen() {
   const [consumedRouteFocusKey, setConsumedRouteFocusKey] = useState<string | null>(null);
 
   const routeFocusTarget = useMemo(() => {
-    const lat = params?.lat != null ? Number(params.lat) : NaN;
-    const lon = params?.lon != null ? Number(params.lon) : NaN;
+    const lat = params?.lat != null ? Number(params.lat) : Number.NaN;
+    const lon = params?.lon != null ? Number(params.lon) : Number.NaN;
     const focus = String(params?.focus ?? '');
 
     if (focus !== 'once') return null;
@@ -483,11 +490,7 @@ export default function MapsScreen() {
 
     if (consumedRouteFocusKey === key) return null;
 
-    return {
-      lat,
-      lon,
-      key,
-    };
+    return { lat, lon, key };
   }, [
     params?.lat,
     params?.lon,
@@ -520,12 +523,13 @@ export default function MapsScreen() {
     if (routeFocusTarget) return;
     if (permission !== 'granted' || !location) return;
 
-    setStableInitialRegion((cur) => {
+    setStableInitialRegion((current) => {
       const isStillDefaultish =
-        Math.abs(cur.latitude - 39.5) < 0.5 &&
-        Math.abs(cur.longitude + 98.35) < 0.5 &&
-        cur.longitudeDelta >= 3.5;
-      if (!isStillDefaultish) return cur;
+        Math.abs(current.latitude - 39.5) < 0.5 &&
+        Math.abs(current.longitude + 98.35) < 0.5 &&
+        current.longitudeDelta >= 3.5;
+
+      if (!isStillDefaultish) return current;
       return { latitude: location.lat, longitude: location.lon, latitudeDelta: 4, longitudeDelta: 4 };
     });
   }, [permission, location, routeFocusTarget]);
@@ -570,16 +574,17 @@ export default function MapsScreen() {
 
   const pushSpecialMap = useCallback(
     (pathname: '/astro-map' | '/nautical-map') => {
-      const r = effectiveRegion;
+      const currentRegion = effectiveRegion;
+
       router.push({
         pathname,
         params: {
           from: 'maps',
           nav: String(Date.now()),
-          lat: String(r.latitude),
-          lon: String(r.longitude),
-          latDelta: String(r.latitudeDelta),
-          lonDelta: String(r.longitudeDelta),
+          lat: String(currentRegion.latitude),
+          lon: String(currentRegion.longitude),
+          latDelta: String(currentRegion.latitudeDelta),
+          lonDelta: String(currentRegion.longitudeDelta),
           zoom: String(Math.round(mapZoom * 10) / 10),
         },
       });
@@ -607,12 +612,9 @@ export default function MapsScreen() {
     });
   };
 
-  const DOCK_ESTIMATED_HEIGHT = 78;
-  const dockBottom = 12 + insets.bottom;
-
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
-    : (MAP_VIEWS.find((v) => v.id === state.viewId)?.title ?? 'Maps');
+    : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
 
   const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId));
 
@@ -621,6 +623,7 @@ export default function MapsScreen() {
     radarEnabled,
     cloudsEnabled,
     wildfireEnabled,
+    goesTrueColorEnabled,
     goesEastGeoEnabled,
     goesWestGeoEnabled,
     goesEastIrEnabled,
@@ -632,17 +635,35 @@ export default function MapsScreen() {
   });
 
   const showTimeline = isFocused && radarEnabled && frameCount > 1;
+  const dockBottom = 12 + insets.bottom;
+  const DOCK_ESTIMATED_HEIGHT = 114;
+  const legendBottom = showTimeline ? dockBottom + DOCK_ESTIMATED_HEIGHT + 10 : dockBottom + 6;
 
   const accentBg = getViewAccent(String(state.viewId));
   const activeOverlayCount = activeLayerSummary.count ?? 0;
+  const boundaryReliefTone =
+    goesEastIrEnabled || goesWestIrEnabled
+      ? 'orange'
+      : cloudsEnabled || goesTrueColorEnabled || goesEastGeoEnabled || goesWestGeoEnabled
+        ? 'teal'
+        : null;
+
+  const overlaySummaryText = activeLayerSummary.hasActiveLayers
+    ? activeLayerSummary.subtitle ?? simpleStatus
+    : simpleStatus;
+
+  const providerLabel = sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
+  const timelineStateLabel = !radarEnabled ? 'Layers only' : state.radarTime.playing ? 'Looping' : 'Holding';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
-      <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.screen}>
         <MapRenderer
           engine="maplibre"
           initialRegion={stableInitialRegion}
           mapStyle={sheetValue.baseMapStyle}
+          boundaryReliefTone={boundaryReliefTone}
           cameraRef={mapCameraRef}
           onPanDrag={() => {
             const now = Date.now();
@@ -651,13 +672,13 @@ export default function MapsScreen() {
               markUserInteraction();
             }
           }}
-          onRegionChangeComplete={(r: Region) => {
-            setRegion(r);
+          onRegionChangeComplete={(nextRegion: Region) => {
+            setRegion(nextRegion);
 
             const zFloat =
-              typeof (r as any).zoom === 'number' && Number.isFinite((r as any).zoom)
-                ? (r as any).zoom
-                : approxZoomFromLongitudeDelta(r.longitudeDelta);
+              typeof (nextRegion as any).zoom === 'number' && Number.isFinite((nextRegion as any).zoom)
+                ? (nextRegion as any).zoom
+                : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
             setMapZoom(zFloat);
 
@@ -666,260 +687,69 @@ export default function MapsScreen() {
             if (!userMovedRecently) {
               dispatch({
                 type: 'SET_VIEWPORT',
-                viewport: { center: { lat: r.latitude, lon: r.longitude }, zoom: zFloat },
+                viewport: { center: { lat: nextRegion.latitude, lon: nextRegion.longitude }, zoom: zFloat },
               });
             }
 
-            debouncedAnchorToMap(r.latitude, r.longitude);
+            debouncedAnchorToMap(nextRegion.latitude, nextRegion.longitude);
+            radarCtl.refreshLocalIfNeeded();
           }}
           radar={mapRadar}
           overlays={overlays}
         />
 
-        <View style={{ position: 'absolute', left: 12, right: 84, top: 8 }}>
-          <Glass
-            style={{
-              paddingVertical: 10,
-              paddingHorizontal: 10,
-              borderRadius: 22,
-              overflow: 'hidden',
-            }}
-          >
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                left: 40,
-                right: 40,
-                top: 8,
-                height: 40,
-                borderRadius: 999,
-                backgroundColor: accentBg,
-                opacity: 0.25,
-              }}
-            />
+        <View pointerEvents="box-none" style={styles.topChrome}>
+          <Glass style={styles.summaryCard}>
+            <View pointerEvents="none" style={[styles.summaryGlow, { backgroundColor: accentBg }]} />
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <View
-                    style={{
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderRadius: 999,
-                      backgroundColor: 'rgba(255,255,255,0.09)',
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.10)',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: 'rgba(255,255,255,0.94)',
-                        fontSize: 10,
-                        fontWeight: '900',
-                        letterSpacing: 0.7,
-                      }}
-                    >
-                      LIVE MAPS
-                    </Text>
-                  </View>
-
-                  {activeOverlayCount > 0 ? (
-                    <View
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 999,
-                        backgroundColor: 'rgba(255,255,255,0.06)',
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 10, fontWeight: '800' }}>
-                        {activeOverlayCount} active
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <Text
-                  style={{
-                    color: 'white',
-                    fontSize: 16,
-                    fontWeight: '900',
-                    marginTop: 6,
-                    letterSpacing: -0.2,
-                  }}
-                >
-                  {currentViewTitle}
-                </Text>
-
-                <Text
-                  style={{
-                    color: 'rgba(255,255,255,0.72)',
-                    marginTop: 2,
-                    fontWeight: '800',
-                    fontSize: 11,
-                  }}
-                  numberOfLines={1}
-                >
-                  {timestampLabel || 'Latest update'}
-                </Text>
+            <View style={styles.summaryHeader}>
+              <View style={styles.summaryBadgeRow}>
+                <HudBadge label={currentViewTitle.toUpperCase()} strong />
+                {activeOverlayCount > 0 ? <HudBadge label={`${activeOverlayCount} layers`} /> : null}
               </View>
-
-              <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                {state.nerdy ? (
-                  <Pressable
-                    onPress={() => setRawMode((v) => !v)}
-                    style={{
-                      paddingVertical: 6,
-                      paddingHorizontal: 10,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.14)',
-                      backgroundColor: rawMode ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-                    }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 12 }}>
-                      {rawMode ? 'Raw' : 'Smooth'}
-                    </Text>
-                  </Pressable>
-                ) : null}
-
-                <View
-                  style={{
-                    paddingVertical: 5,
-                    paddingHorizontal: 9,
-                    borderRadius: 999,
-                    backgroundColor: 'rgba(255,255,255,0.04)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.08)',
-                  }}
-                >
-                  <Text style={{ color: 'rgba(255,255,255,0.78)', fontWeight: '900', fontSize: 11 }}>
-                    {state.radarTime.playing ? 'Playing' : 'Paused'}
-                  </Text>
-                </View>
-              </View>
+              <StatusPill label={timelineStateLabel} active={state.radarTime.playing && radarEnabled} />
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <ChipDark label="My Location" onPress={recenterToGps} />
+            <Text style={styles.summaryTitle}>{currentViewTitle}</Text>
+            <Text style={styles.summaryMeta} numberOfLines={2}>
+              {overlaySummaryText || 'Layer stack ready'}
+            </Text>
+            <Text style={styles.summaryTimestamp}>
+              {timestampLabel || 'Latest update'}
+              {radarCtl.profileLabel ? ` / ${radarCtl.profileLabel}` : ''}
+            </Text>
+
+            <View style={styles.summaryFooter}>
+              <InfoPill label={providerLabel} />
+              <InfoPill label={zoomLabel} />
+              {radarEnabled ? <InfoPill label={`${frameCount} frames`} /> : null}
+              {state.nerdy ? (
+                <MiniToggle label={rawMode ? 'Raw' : 'Smooth'} active={rawMode} onPress={() => setRawMode((v) => !v)} />
+              ) : null}
             </View>
 
             {canSwitchProduct && sheetValue.radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? (
-              <View style={{ marginTop: 10 }}>
-                <Text
-                  style={{
-                    color: 'rgba(255,255,255,0.66)',
-                    fontSize: 10,
-                    fontWeight: '900',
-                    letterSpacing: 0.7,
-                    marginBottom: 7,
-                  }}
-                >
-                  RADAR PRODUCT
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <ChipDark active={product === 'N0Q'} label="N0Q" onPress={() => setProduct('N0Q')} />
-                  <ChipDark active={product === 'N0B'} label="N0B" onPress={() => setProduct('N0B')} />
-                  <ChipDark active={product === 'N0Z'} label="N0Z" onPress={() => setProduct('N0Z')} />
-                </View>
+              <View style={styles.productRowCompact}>
+                <ChipDark active={product === 'N0Q'} label="N0Q" onPress={() => setProduct('N0Q')} />
+                <ChipDark active={product === 'N0B'} label="N0B" onPress={() => setProduct('N0B')} />
+                <ChipDark active={product === 'N0Z'} label="N0Z" onPress={() => setProduct('N0Z')} />
               </View>
             ) : null}
-
-            <View
-              style={{
-                marginTop: 10,
-                paddingTop: 8,
-                borderTopWidth: 1,
-                borderTopColor: 'rgba(255,255,255,0.08)',
-              }}
-            >
-              {state.nerdy ? (
-                <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 11 }} numberOfLines={2}>
-                  Provider: {sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM'}
-                  {' · '}Frames: {frameCount}
-                  {' · '}Zoom ~ {Math.round(mapZoom)}
-                  {' · '}{state.radarTime.playing ? 'Playing' : 'Paused'}
-                  {cloudsEnabled ? ` · Clouds ${Math.round(cloudsOpacity * 100)}%` : ''}
-                  {goesEastGeoEnabled ? ` · East Visible ${Math.round(goesEastGeoOpacity * 100)}%` : ''}
-                  {goesWestGeoEnabled ? ` · West Visible ${Math.round(goesWestGeoOpacity * 100)}%` : ''}
-                  {goesEastIrEnabled ? ` · East IR ${Math.round(goesEastIrOpacity * 100)}%` : ''}
-                  {goesWestIrEnabled ? ` · West IR ${Math.round(goesWestIrOpacity * 100)}%` : ''}
-                  {goesEastWvEnabled ? ` · East WV ${Math.round(goesEastWvOpacity * 100)}%` : ''}
-                  {goesWestWvEnabled ? ` · West WV ${Math.round(goesWestWvOpacity * 100)}%` : ''}
-                </Text>
-              ) : (
-                <Text style={{ color: 'rgba(255,255,255,0.80)', fontWeight: '800', fontSize: 12 }} numberOfLines={1}>
-                  {simpleStatus}
-                </Text>
-              )}
-            </View>
           </Glass>
+
+          <View style={styles.quickActions}>
+            <MapActionButton
+              label="Layers"
+              onPress={() => setLayersSheetOpen(true)}
+              badge={activeOverlayCount > 0 ? String(Math.min(99, activeOverlayCount)) : undefined}
+              active={layersSheetOpen}
+            />
+            <MapActionButton label="Locate" onPress={recenterToGps} />
+          </View>
         </View>
 
-        <Pressable
-          onPress={() => setLayersSheetOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Open layers"
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: 18,
-            width: 58,
-            height: 58,
-            borderRadius: 20,
-            borderWidth: 1,
-            borderColor: activeLayerSummary.hasActiveLayers
-              ? 'rgba(255,255,255,0.22)'
-              : 'rgba(255,255,255,0.12)',
-            backgroundColor: 'rgba(2,6,23,0.84)',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}
-        >
-          <View
-            style={{
-              position: 'absolute',
-              width: 34,
-              height: 34,
-              borderRadius: 999,
-              backgroundColor: accentBg,
-            }}
-          />
-
-          <View style={{ width: 24, gap: 4 }}>
-            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.95)' }} />
-            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.78)' }} />
-            <View style={{ height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.62)' }} />
-          </View>
-
-          {activeLayerSummary.hasActiveLayers ? (
-            <View
-              style={{
-                position: 'absolute',
-                top: 7,
-                right: 7,
-                minWidth: 16,
-                height: 16,
-                paddingHorizontal: 3,
-                borderRadius: 999,
-                backgroundColor: 'white',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ color: '#020617', fontSize: 10, fontWeight: '900' }}>
-                {Math.min(99, activeOverlayCount)}
-              </Text>
-            </View>
-          ) : null}
-        </Pressable>
-
         {showRadarLegend ? (
-          <View style={{ position: 'absolute', left: 12, bottom: dockBottom + DOCK_ESTIMATED_HEIGHT + 10 }}>
+          <View style={[styles.legendWrap, { bottom: legendBottom }]}>
             <LegendChip title="dBZ">
               <RadarLegend style="generic" />
             </LegendChip>
@@ -929,7 +759,7 @@ export default function MapsScreen() {
         {showTimeline ? (
           <BottomDock
             center={
-              <Glass style={{ paddingVertical: 8 }}>
+              <Glass style={styles.timelineDock}>
                 <TimelineScrubber
                   frameIndex={state.radarTime.frameIndex}
                   playing={state.radarTime.playing}
@@ -977,22 +807,269 @@ export default function MapsScreen() {
   );
 }
 
-function ChipDark(props: { label: string; active?: boolean; onPress: () => void }) {
-  const active = !!props.active;
+function HudBadge(props: { label: string; strong?: boolean }) {
   return (
-    <Pressable
-      onPress={props.onPress}
-      style={{
-        paddingVertical: 7,
-        paddingHorizontal: 11,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.14)',
-        backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)',
-        opacity: active ? 1 : 0.92,
-      }}
-    >
-      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.label}</Text>
+    <View style={[styles.hudBadge, props.strong ? styles.hudBadgeStrong : null]}>
+      <Text style={[styles.hudBadgeText, props.strong ? styles.hudBadgeTextStrong : null]}>{props.label}</Text>
+    </View>
+  );
+}
+
+function StatusPill(props: { label: string; active?: boolean }) {
+  return (
+    <View style={[styles.statusPill, props.active ? styles.statusPillActive : null]}>
+      <Text style={styles.statusPillText}>{props.label}</Text>
+    </View>
+  );
+}
+
+function MiniToggle(props: { label: string; active?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={props.onPress} style={[styles.statusPill, props.active ? styles.statusPillActive : null]}>
+      <Text style={styles.statusPillText}>{props.label}</Text>
     </Pressable>
   );
 }
+
+function InfoPill(props: { label: string }) {
+  return (
+    <View style={styles.infoPill}>
+      <Text style={styles.infoPillText}>{props.label}</Text>
+    </View>
+  );
+}
+
+function MapActionButton(props: {
+  label: string;
+  onPress: () => void;
+  badge?: string;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  const disabled = !!props.disabled;
+
+  return (
+    <Pressable
+      onPress={props.onPress}
+      disabled={disabled}
+      style={[styles.actionButton, props.active ? styles.actionButtonActive : null, disabled ? styles.disabled : null]}
+    >
+      <Text style={styles.actionButtonText}>{props.label}</Text>
+      {props.badge ? (
+        <View style={styles.actionBadge}>
+          <Text style={styles.actionBadgeText}>{props.badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ChipDark(props: { label: string; active?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={props.onPress} style={[styles.productChip, props.active ? styles.productChipActive : null]}>
+      <Text style={styles.productChipText}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#020617',
+  },
+  screen: {
+    flex: 1,
+  },
+  topChrome: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  summaryCard: {
+    flex: 1,
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    overflow: 'hidden',
+  },
+  summaryGlow: {
+    position: 'absolute',
+    top: -18,
+    right: 18,
+    width: 112,
+    height: 112,
+    borderRadius: 999,
+    opacity: 0.28,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  summaryBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+  },
+  hudBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  hudBadgeStrong: {
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  hudBadgeText: {
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  hudBadgeTextStrong: {
+    color: 'rgba(255,255,255,0.96)',
+  },
+  statusPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  statusPillActive: {
+    borderColor: 'rgba(125,211,252,0.24)',
+    backgroundColor: 'rgba(96,165,250,0.16)',
+  },
+  statusPillText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  summaryTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    marginTop: 10,
+  },
+  summaryMeta: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  summaryTimestamp: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  summaryFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  productRowCompact: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  productChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  productChipActive: {
+    borderColor: 'rgba(255,255,255,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  productChipText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  infoPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  infoPillText: {
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  quickActions: {
+    width: 58,
+    gap: 8,
+  },
+  actionButton: {
+    width: 58,
+    minHeight: 58,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(2,6,23,0.84)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  actionButtonActive: {
+    borderColor: 'rgba(125,211,252,0.26)',
+    backgroundColor: 'rgba(15,23,42,0.92)',
+  },
+  actionButtonText: {
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 10,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 12,
+  },
+  actionBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 999,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBadgeText: {
+    color: '#020617',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  disabled: {
+    opacity: 0.45,
+  },
+  legendWrap: {
+    position: 'absolute',
+    left: 12,
+  },
+  timelineDock: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 22,
+  },
+});

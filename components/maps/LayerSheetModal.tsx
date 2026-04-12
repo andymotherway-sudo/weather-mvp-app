@@ -17,14 +17,14 @@ export type LayerSheetValue = {
   radarProvider: 'rainviewer' | 'iem';
 };
 
-type SatellitePickId = 'east' | 'west' | 'east-ir' | 'west-ir' | 'east-wv' | 'west-wv';
+type SatellitePickId = 'east' | 'west' | 'merged-truecolor' | 'east-ir' | 'west-ir' | 'east-wv' | 'west-wv';
 
 type SatellitePick = {
   id: SatellitePickId;
   label: string;
   shortLabel: string;
-  family: 'visible' | 'infrared' | 'water-vapor';
-  region: 'east' | 'west';
+  family: 'visible' | 'true-color' | 'infrared' | 'water-vapor';
+  region: 'east' | 'west' | 'merged';
   layerIds: LayerId[];
 };
 
@@ -44,6 +44,14 @@ const SATELLITE_PICKS: SatellitePick[] = [
     family: 'visible',
     region: 'west',
     layerIds: ['sat.goesWest.geocolor'],
+  },
+  {
+    id: 'merged-truecolor',
+    label: 'GOES True Color',
+    shortLabel: 'Merged GeoColor',
+    family: 'true-color',
+    region: 'merged',
+    layerIds: ['sat.goes.truecolor'],
   },
   {
     id: 'east-ir',
@@ -83,6 +91,7 @@ const SATELLITE_LAYER_IDS: LayerId[] = [
   'sat.clouds',
   'sat.goesEast.geocolor',
   'sat.goesWest.geocolor',
+  'sat.goes.truecolor',
   'sat.goesEast.ir',
   'sat.goesWest.ir',
   'sat.goesEast.wv',
@@ -174,7 +183,7 @@ export function LayerSheetModal(props: {
           opacity: runtime?.opacity ?? catalog.defaultOpacity ?? 1,
         };
       })
-      .filter(Boolean) as Array<{ id: LayerId; title: string; subtitle?: string; opacity: number }>;
+      .filter(Boolean) as { id: LayerId; title: string; subtitle?: string; opacity: number }[];
 
     return entries.sort((a, b) => a.title.localeCompare(b.title));
   }, [state.layers, allowedGroups]);
@@ -190,6 +199,7 @@ export function LayerSheetModal(props: {
   }, [state.layers]);
 
   const visiblePicks = useMemo(() => satellitePicks.filter((p) => p.family === 'visible'), [satellitePicks]);
+  const trueColorPicks = useMemo(() => satellitePicks.filter((p) => p.family === 'true-color'), [satellitePicks]);
   const infraredPicks = useMemo(() => satellitePicks.filter((p) => p.family === 'infrared'), [satellitePicks]);
   const waterVaporPicks = useMemo(() => satellitePicks.filter((p) => p.family === 'water-vapor'), [satellitePicks]);
 
@@ -225,64 +235,79 @@ export function LayerSheetModal(props: {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable
-        onPress={onClose}
+      <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.62)',
           justifyContent: 'flex-end',
+          backgroundColor: 'rgba(0,0,0,0.62)',
         }}
       >
-        <Pressable
-          onPress={() => {}}
+        <Pressable onPress={onClose} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+
+        <View
           style={{
-            paddingHorizontal: 12,
+            paddingHorizontal: 10,
             paddingTop: 12,
-            paddingBottom: 12 + Math.max(insets.bottom, 6),
+            paddingBottom: 10 + Math.max(insets.bottom, 6),
           }}
         >
           <Glass
             style={{
               borderRadius: 28,
-              padding: 16,
-              maxHeight: '88%',
+              paddingHorizontal: 14,
+              paddingTop: 12,
+              paddingBottom: 0,
+              maxHeight: '92%',
+              minHeight: '68%',
               overflow: 'hidden',
             }}
           >
             <View
               style={{
-                position: 'absolute',
-                left: 12,
-                right: 12,
-                top: 12,
-                height: 58,
-                borderRadius: 20,
-                backgroundColor: 'rgba(59,130,246,0.10)',
+                alignSelf: 'center',
+                width: 44,
+                height: 5,
+                borderRadius: 999,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+                marginBottom: 12,
               }}
             />
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <Pill label="LIVE MAP CONTROLS" />
+            <View
+              style={{
+                position: 'absolute',
+                left: 12,
+                right: 12,
+                top: 16,
+                height: 46,
+                borderRadius: 18,
+                backgroundColor: 'rgba(59,130,246,0.08)',
+              }}
+            />
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <Pill label="MAP CONTROLS" />
                   <Pill label={activePresetTitle.toUpperCase()} subtle />
                 </View>
 
-                <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }}>Map controls</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.72)', marginTop: 5, lineHeight: 19 }}>
-                  Switch map modes, choose satellite products, and tune overlays.
+                <Text style={{ color: 'white', fontWeight: '900', fontSize: 20 }}>Map controls</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 4, lineHeight: 18 }}>
+                  Switch modes, manage layers, and jump into specialty maps.
                 </Text>
               </View>
 
               <Pressable
                 onPress={onClose}
+                hitSlop={8}
                 style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 14,
+                  paddingVertical: 9,
+                  paddingHorizontal: 13,
                   borderRadius: 999,
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.14)',
-                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderColor: 'rgba(255,255,255,0.12)',
+                  backgroundColor: 'rgba(255,255,255,0.05)',
                 }}
               >
                 <Text style={{ color: 'white', fontWeight: '900' }}>Done</Text>
@@ -290,10 +315,14 @@ export function LayerSheetModal(props: {
             </View>
 
             <ScrollView
-              style={{ flexGrow: 0, marginTop: 14 }}
+              style={{ flex: 1, marginTop: 14 }}
               contentContainerStyle={{
                 paddingBottom: 24 + insets.bottom,
               }}
+              nestedScrollEnabled
+              bounces
+              alwaysBounceVertical
+              keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
               <Section title="Special maps" subtitle="Open dedicated astronomy or nautical experiences">
@@ -375,6 +404,14 @@ export function LayerSheetModal(props: {
                 <SatelliteFamily title="Visible">
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                     {visiblePicks.map((pick) => (
+                      <SatelliteCard key={pick.id} pick={pick} onPress={() => applySatellitePick(pick)} />
+                    ))}
+                  </View>
+                </SatelliteFamily>
+
+                <SatelliteFamily title="True color">
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {trueColorPicks.map((pick) => (
                       <SatelliteCard key={pick.id} pick={pick} onPress={() => applySatellitePick(pick)} />
                     ))}
                   </View>
@@ -524,8 +561,8 @@ export function LayerSheetModal(props: {
               ) : null}
             </ScrollView>
           </Glass>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -609,7 +646,7 @@ function SatelliteCard(props: {
     >
       <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{pick.shortLabel}</Text>
       <Text style={{ color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 11, marginTop: 2 }}>
-        {pick.region === 'east' ? 'Atlantic / East' : 'Pacific / West'}
+        {pick.region === 'merged' ? 'East + West blend' : pick.region === 'east' ? 'Atlantic / East' : 'Pacific / West'}
       </Text>
     </Pressable>
   );
@@ -642,7 +679,7 @@ function Pill(props: { label: string; subtle?: boolean }) {
 }
 
 function Segmented<T extends string>(props: {
-  options: Array<{ id: T; label: string }>;
+  options: { id: T; label: string }[];
   value: T;
   onChange: (id: T) => void;
 }) {

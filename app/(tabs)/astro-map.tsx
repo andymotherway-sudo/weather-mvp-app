@@ -4,13 +4,12 @@ import { AlphaType, ColorType, Skia } from '@shopify/react-native-skia';
 import { Buffer } from 'buffer';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../../components/common/Glass';
-import { AtmosphericLegend } from '../../components/maps/AtmosphericLegend';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 import { usePlace } from '../context/PlaceContext';
@@ -242,8 +241,11 @@ async function readErrorText(res: Response) {
   }
 }
 
-async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000): Promise<T> {
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000, externalSignal?: AbortSignal): Promise<T> {
   const ctrl = new AbortController();
+  const handleExternalAbort = () => ctrl.abort();
+  if (externalSignal?.aborted) ctrl.abort();
+  externalSignal?.addEventListener('abort', handleExternalAbort);
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
 
   try {
@@ -255,6 +257,7 @@ async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000): Promise<
     return (await res.json()) as T;
   } finally {
     clearTimeout(t);
+    externalSignal?.removeEventListener('abort', handleExternalAbort);
   }
 }
 
@@ -675,6 +678,7 @@ function BottomSheet(props: {
   const fullY = 150;
   const collapsedPeek = 82;
   const collapsedY = screenH - (collapsedPeek + bottomDock);
+  const showBody = snap !== 'collapsed';
 
   const yForSnap = (s: SheetSnap) => (s === 'collapsed' ? collapsedY : fullY);
 
@@ -793,12 +797,14 @@ function BottomSheet(props: {
 
           {header ? <View style={{ marginBottom: 10 }}>{header}</View> : null}
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: bottomDock + 140 }}
-          >
-            {children}
-          </ScrollView>
+          {showBody ? (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: bottomDock + 140 }}
+            >
+              {children}
+            </ScrollView>
+          ) : null}
         </Glass>
       </Animated.View>
     </View>
@@ -1018,16 +1024,59 @@ type SkyInspect = {
 };
 
 const SKY_STOPS: Array<{ s: number; rgba: [number, number, number, number] }> = [
-  { s: 0, rgba: [110, 30, 200, 188] },
-  { s: 15, rgba: [95, 45, 215, 172] },
-  { s: 30, rgba: [70, 85, 235, 152] },
-  { s: 45, rgba: [45, 135, 245, 124] },
-  { s: 60, rgba: [40, 185, 235, 92] },
-  { s: 72, rgba: [35, 215, 195, 68] },
-  { s: 82, rgba: [25, 235, 150, 46] },
-  { s: 92, rgba: [15, 245, 110, 24] },
-  { s: 100, rgba: [0, 0, 0, 0] },
+  { s: 0, rgba: [255, 92, 92, 218] },
+  { s: 18, rgba: [255, 146, 82, 204] },
+  { s: 36, rgba: [204, 112, 224, 192] },
+  { s: 54, rgba: [112, 113, 255, 178] },
+  { s: 70, rgba: [66, 154, 255, 164] },
+  { s: 84, rgba: [34, 211, 181, 150] },
+  { s: 94, rgba: [74, 222, 128, 142] },
+  { s: 100, rgba: [187, 247, 208, 134] },
 ];
+
+const SKY_LEGEND_SWATCHES = [
+  'rgba(255,92,92,0.88)',
+  'rgba(255,146,82,0.84)',
+  'rgba(204,112,224,0.80)',
+  'rgba(112,113,255,0.78)',
+  'rgba(66,154,255,0.74)',
+  'rgba(34,211,181,0.70)',
+  'rgba(74,222,128,0.68)',
+  'rgba(187,247,208,0.64)',
+] as const;
+
+function SkyScoreLegendSliver() {
+  return (
+    <Glass
+      style={{
+        paddingVertical: 7,
+        paddingHorizontal: 8,
+        borderRadius: 12,
+        alignSelf: 'flex-start',
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 9, fontWeight: '900' }}>WORST</Text>
+        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+          {SKY_LEGEND_SWATCHES.map((color, idx) => (
+            <View
+              key={`sky-legend-${idx}`}
+              style={{
+                width: 24,
+                height: 5,
+                borderRadius: 999,
+                backgroundColor: color,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.16)',
+              }}
+            />
+          ))}
+        </View>
+        <Text style={{ color: 'rgba(187,247,208,0.92)', fontSize: 9, fontWeight: '900' }}>BEST</Text>
+      </View>
+    </Glass>
+  );
+}
 
 function colorForScore(score: number): [number, number, number, number] {
   const s = clamp(score, 0, 100);
@@ -1144,14 +1193,14 @@ async function makeSkyRasterFromGrid(grid: SkyGridPayload, cacheKey: string) {
   return fileUri;
 }
 
-async function fetchAstroLocation(lat: number, lon: number, placeName?: string) {
+async function fetchAstroLocation(lat: number, lon: number, placeName?: string, signal?: AbortSignal) {
   const url =
     `${OMNIWX_API_BASE}/api/astro/location` +
     `?lat=${encodeURIComponent(String(lat))}` +
     `&lon=${encodeURIComponent(String(lon))}` +
     (placeName ? `&placeName=${encodeURIComponent(placeName)}` : '');
 
-  return fetchJsonWithTimeout<AstroLocationPayload>(url, 12000);
+  return fetchJsonWithTimeout<AstroLocationPayload>(url, 12000, signal);
 }
 
 async function fetchOpenMeteoGridChunk(args: {
@@ -1220,6 +1269,7 @@ async function fetchSkyGridPayload(args: {
   centerLat?: number | null;
   centerLon?: number | null;
   astroContext?: AstroLocationPayload | null;
+  signal?: AbortSignal;
 }): Promise<SkyGridPayload> {
   const {
     bounds,
@@ -1231,6 +1281,7 @@ async function fetchSkyGridPayload(args: {
     density = 'auto',
     centerLat,
     centerLon,
+    signal,
   } = args;
 
   const url =
@@ -1249,13 +1300,14 @@ async function fetchSkyGridPayload(args: {
     (centerLat != null ? `&centerLat=${encodeURIComponent(String(centerLat))}` : '') +
     (centerLon != null ? `&centerLon=${encodeURIComponent(String(centerLon))}` : '');
 
-  return fetchJsonWithTimeout<SkyGridPayload>(url, 15000);
+  return fetchJsonWithTimeout<SkyGridPayload>(url, 15000, signal);
 }
 
 async function fetchAstroInspect(args: {
   lat: number;
   lon: number;
   hourOffset: number;
+  signal?: AbortSignal;
 }): Promise<AstroInspectPayload> {
   const url =
     `${OMNIWX_API_BASE}/api/astro/inspect` +
@@ -1263,7 +1315,7 @@ async function fetchAstroInspect(args: {
     `&lon=${encodeURIComponent(String(args.lon))}` +
     `&hour=${encodeURIComponent(String(args.hourOffset))}`;
 
-  return fetchJsonWithTimeout<AstroInspectPayload>(url, 10000);
+  return fetchJsonWithTimeout<AstroInspectPayload>(url, 10000, args.signal);
 }
 
 function buildHeroBounds(lat: number, lon: number) {
@@ -1315,56 +1367,43 @@ export default function AstroMapScreen() {
   }>();
 
   const navKey = String(params?.nav ?? '0');
-
-  const [focusKey, setFocusKey] = useState(0);
-  const [renderMap, setRenderMap] = useState(true);
-  const [instanceKey, setInstanceKey] = useState(0);
+  const routeLat = toNum(params.lat);
+  const routeLon = toNum(params.lon);
+  const routeLatDelta = toNum(params.latDelta);
+  const routeLonDelta = toNum(params.lonDelta);
+  const routeZoom = toNum(params.zoom);
+  const hasExplicitEntryTarget = routeLat != null && routeLon != null;
 
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inspectDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skyFetchAbortRef = useRef<AbortController | null>(null);
+  const inspectAbortRef = useRef<AbortController | null>(null);
+  const inspectSerialRef = useRef(0);
   const fetchSerialRef = useRef(0);
   const lastSkyGridKeyRef = useRef<string>('');
   const lastRegionRef = useRef<Region | null>(null);
   const preloadInFlightRef = useRef(false);
   const didFinishInitialPreloadRef = useRef(false);
-  
+  const activeSnapshotRef = useRef(active);
 
-  useFocusEffect(
-    useCallback(() => {
-      setRenderMap(false);
+  const screenKey = navKey;
+  const activeSource = active?.source ?? null;
+  const activeId = active?.id ?? null;
+  const [entrySeed, setEntrySeed] = useState(() => ({
+    lat: routeLat ?? active?.lat ?? null,
+    lon: routeLon ?? active?.lon ?? null,
+    latDelta: routeLatDelta,
+    lonDelta: routeLonDelta,
+    zoom: routeZoom,
+  }));
 
-      const t = setTimeout(() => {
-        setRenderMap(true);
-        setFocusKey((k) => k + 1);
-        setInstanceKey((k) => k + 1);
-      }, 180);
-
-      return () => {
-        clearTimeout(t);
-        setRenderMap(false);
-
-        if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-        if (inspectDebounceRef.current) clearTimeout(inspectDebounceRef.current);
-        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-        if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
-
-        regionDebounceRef.current = null;
-        inspectDebounceRef.current = null;
-        retryTimerRef.current = null;
-        loadingTimerRef.current = null;
-        lastSkyGridKeyRef.current = '';
-      };
-    }, [])
-  );
-
-  const screenKey = `${navKey}:${focusKey}`;
-  const lat = toNum(params.lat) ?? active?.lat ?? null;
-  const lon = toNum(params.lon) ?? active?.lon ?? null;
-  const latDelta = toNum(params.latDelta);
-  const lonDelta = toNum(params.lonDelta);
-  const zoomParam = toNum(params.zoom);
+  const activeFollowKey = useMemo(() => {
+    if (!activeSource || hasExplicitEntryTarget) return 'none';
+    if (activeSource === 'gps') return `gps:${screenKey}`;
+    return `${activeSource}:${activeId}`;
+  }, [activeId, activeSource, hasExplicitEntryTarget, screenKey]);
 
   const initialRegion: Region = useMemo(() => {
     const fallback: Region = {
@@ -1374,34 +1413,49 @@ export default function AstroMapScreen() {
       longitudeDelta: 6,
     };
 
-    if (lat == null || lon == null) return fallback;
+    if (entrySeed.lat == null || entrySeed.lon == null) return fallback;
 
-    if (latDelta != null && lonDelta != null) {
+    if (entrySeed.latDelta != null && entrySeed.lonDelta != null) {
       return {
-        latitude: lat,
-        longitude: lon,
-        latitudeDelta: clamp(latDelta, 0.05, 80),
-        longitudeDelta: clamp(lonDelta, 0.05, 80),
+        latitude: entrySeed.lat,
+        longitude: entrySeed.lon,
+        latitudeDelta: clamp(entrySeed.latDelta, 0.05, 80),
+        longitudeDelta: clamp(entrySeed.lonDelta, 0.05, 80),
       };
     }
 
-    const z = zoomParam != null ? clamp(zoomParam, 2, 12) : 7;
+    const z = entrySeed.zoom != null ? clamp(entrySeed.zoom, 2, 12) : 7;
     const d = clamp(360 / Math.pow(2, z), 0.1, 60);
 
     return {
-      latitude: lat,
-      longitude: lon,
+      latitude: entrySeed.lat,
+      longitude: entrySeed.lon,
       latitudeDelta: d,
       longitudeDelta: d,
     };
-  }, [lat, lon, latDelta, lonDelta, zoomParam]);
+  }, [entrySeed]);
 
   const initialRegionRef = useRef<Region | null>(null);
+
+  useEffect(() => {
+    activeSnapshotRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    setEntrySeed({
+      lat: routeLat ?? activeSnapshotRef.current?.lat ?? null,
+      lon: routeLon ?? activeSnapshotRef.current?.lon ?? null,
+      latDelta: routeLatDelta,
+      lonDelta: routeLonDelta,
+      zoom: routeZoom,
+    });
+  }, [screenKey, routeLat, routeLon, routeLatDelta, routeLonDelta, routeZoom]);
 
   useEffect(() => {
     initialRegionRef.current = initialRegion;
     lastRegionRef.current = initialRegion;
     lastSkyGridKeyRef.current = '';
+    setViewRegion(initialRegion);
   }, [screenKey, initialRegion]);
 
   const cameraRef = useRef<any>(null);
@@ -1411,6 +1465,7 @@ export default function AstroMapScreen() {
   const [showAuroraProb, setShowAuroraProb] = useState(true);
   const [showAuroraOval, setShowAuroraOval] = useState(true);
   const [hourOffset, setHourOffset] = useState(0);
+  const hourOffsetRef = useRef(hourOffset);
   const [isSkyLoading, setIsSkyLoading] = useState(false);
   const [hasEverLoadedSky, setHasEverLoadedSky] = useState(false);
 
@@ -1435,17 +1490,28 @@ export default function AstroMapScreen() {
 
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('collapsed');
   const [inspect, setInspect] = useState<SkyInspect | null>(null);
+  const [viewRegion, setViewRegion] = useState<Region>(initialRegion);
+
+  useEffect(() => {
+    hourOffsetRef.current = hourOffset;
+  }, [hourOffset]);
 
   const canShowSky =
     showSkyScore &&
     typeof skyRasterUri === 'string' &&
     skyRasterUri.length > 0 &&
     skyRasterBounds.length === 4;
+  const hasResolvedSky = canShowSky || inspect?.skyScore != null;
+  const showSkyLoadingHud = isSkyLoading && !hasResolvedSky;
 
   const currentCenter = useMemo(() => {
-    const r = lastRegionRef.current ?? initialRegion;
-    return { lat: r.latitude, lon: r.longitude, lonDelta: r.longitudeDelta, latDelta: r.latitudeDelta };
-  }, [initialRegion, screenKey, instanceKey]);
+    return {
+      lat: viewRegion.latitude,
+      lon: viewRegion.longitude,
+      lonDelta: viewRegion.longitudeDelta,
+      latDelta: viewRegion.latitudeDelta,
+    };
+  }, [viewRegion]);
 
   const isInCoverage = useMemo(() => {
     if (!coverageBounds) return false;
@@ -1462,20 +1528,19 @@ export default function AstroMapScreen() {
   }, [coverageBounds]);
 
   const hasUsableSkyOverlay = useCallback(() => {
-  return (
-    typeof skyRasterUri === 'string' &&
-    skyRasterUri.length > 0 &&
-    skyRasterBounds.length === 4 &&
-    !!skyGrid
-  );
-}, [skyRasterUri, skyRasterBounds, skyGrid]);
+    return (
+      typeof skyRasterUri === 'string' &&
+      skyRasterUri.length > 0 &&
+      skyRasterBounds.length === 4 &&
+      !!skyGrid
+    );
+  }, [skyRasterUri, skyRasterBounds, skyGrid]);
 
   const loadingCoverageGeojson = useMemo(() => {
-  const r = lastRegionRef.current ?? initialRegion;
-  const b = regionBounds(r);
-  if (!hasValidBounds(b)) return null;
-  return { type: 'FeatureCollection', features: [boundsToPolygonFeature(b)] } as any;
-}, [initialRegion, screenKey, instanceKey]);
+    const b = regionBounds(viewRegion);
+    if (!hasValidBounds(b)) return null;
+    return { type: 'FeatureCollection', features: [boundsToPolygonFeature(b)] } as any;
+  }, [viewRegion]);
 
   const activeHourIndex = useMemo(() => pickAstroHourIndex(activeAstro, hourOffset), [activeAstro, hourOffset]);
 
@@ -1495,15 +1560,14 @@ export default function AstroMapScreen() {
     };
   }, [activeAstro, activeHourIndex]);
 
+  const ovationSamplePoints = useMemo(
+    () => ovationPoints.map((p) => ({ lat: p.lat, lon: p.lon, prob: p.prob })),
+    [ovationPoints]
+  );
+
   const computeInspectAt = useCallback(
     (latQ: number, lonQ: number, gridOverride?: SkyGridPayload | null) => {
-      const auroraProb = ovationPoints.length
-        ? sampleOvationAt(
-            ovationPoints.map((p) => ({ lat: p.lat, lon: p.lon, prob: p.prob })),
-            latQ,
-            lonQ
-          )
-        : 0;
+      const auroraProb = ovationSamplePoints.length ? sampleOvationAt(ovationSamplePoints, latQ, lonQ) : 0;
 
       const gridToUse = gridOverride ?? skyGrid;
       const skyScore = gridToUse ? sampleGridScore(gridToUse, latQ, lonQ) ?? 0 : 0;
@@ -1518,7 +1582,7 @@ export default function AstroMapScreen() {
         nearestPoint: nearestGridPoint(gridToUse, latQ, lonQ),
       };
     },
-    [ovationPoints, skyGrid]
+    [ovationSamplePoints, skyGrid]
   );
 
   const clearSkyState = useCallback((preserveAstro = true) => {
@@ -1530,6 +1594,34 @@ export default function AstroMapScreen() {
     setInspectDetail(null);
     if (!preserveAstro) setActiveAstro(null);
     lastSkyGridKeyRef.current = '';
+  }, []);
+
+  const cancelPendingInspect = useCallback(() => {
+    inspectSerialRef.current += 1;
+    if (inspectDebounceRef.current) {
+      clearTimeout(inspectDebounceRef.current);
+      inspectDebounceRef.current = null;
+    }
+    if (inspectAbortRef.current) {
+      inspectAbortRef.current.abort();
+      inspectAbortRef.current = null;
+    }
+  }, []);
+
+  const cancelPendingSkyFetch = useCallback(() => {
+    fetchSerialRef.current += 1;
+    if (regionDebounceRef.current) {
+      clearTimeout(regionDebounceRef.current);
+      regionDebounceRef.current = null;
+    }
+    if (loadingTimerRef.current) {
+      clearTimeout(loadingTimerRef.current);
+      loadingTimerRef.current = null;
+    }
+    if (skyFetchAbortRef.current) {
+      skyFetchAbortRef.current.abort();
+      skyFetchAbortRef.current = null;
+    }
   }, []);
 
   const scheduleRetryAfterCooldown = useCallback(
@@ -1590,15 +1682,21 @@ export default function AstroMapScreen() {
 
   const refreshInspectForRegion = useCallback(
     (region: Region) => {
-      if (inspectDebounceRef.current) clearTimeout(inspectDebounceRef.current);
+      cancelPendingInspect();
 
       inspectDebounceRef.current = setTimeout(async () => {
+        const requestId = inspectSerialRef.current;
+        const ctrl = new AbortController();
+        inspectAbortRef.current = ctrl;
+
         try {
           const detail = await fetchAstroInspect({
             lat: region.latitude,
             lon: region.longitude,
             hourOffset,
+            signal: ctrl.signal,
           });
+          if (requestId !== inspectSerialRef.current || ctrl.signal.aborted) return;
           setInspectDetail(detail);
           setInspect((cur) => {
             const base = cur ?? computeInspectAt(region.latitude, region.longitude, skyGrid);
@@ -1611,12 +1709,19 @@ export default function AstroMapScreen() {
               visibleProb,
             };
           });
-        } catch {
+        } catch (e: any) {
+          if (ctrl.signal.aborted || requestId !== inspectSerialRef.current || /aborted|aborterror/i.test(String(e?.message ?? e ?? ''))) {
+            return;
+          }
           // keep sampled grid inspect if exact inspect fails
+        } finally {
+          if (inspectAbortRef.current === ctrl) {
+            inspectAbortRef.current = null;
+          }
         }
       }, 280);
     },
-    [hourOffset, computeInspectAt, skyGrid]
+    [hourOffset, cancelPendingInspect, computeInspectAt, skyGrid]
   );
 
   const refreshForRegion = useCallback(
@@ -1661,11 +1766,18 @@ export default function AstroMapScreen() {
         return;
       }
 
-     if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-setIsSkyLoading(true);
+      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+      if (skyFetchAbortRef.current) {
+        fetchSerialRef.current += 1;
+        skyFetchAbortRef.current.abort();
+        skyFetchAbortRef.current = null;
+      }
+      setIsSkyLoading(true);
 
-regionDebounceRef.current = setTimeout(async () => {
-  const fetchId = ++fetchSerialRef.current;
+      regionDebounceRef.current = setTimeout(async () => {
+        const fetchId = ++fetchSerialRef.current;
+        const ctrl = new AbortController();
+        skyFetchAbortRef.current = ctrl;
 
   try {
     setErrorLine(null);
@@ -1697,9 +1809,10 @@ regionDebounceRef.current = setTimeout(async () => {
       mode: 'regional',
       density: 'auto',
       astroContext: activeAstro,
+      signal: ctrl.signal,
     });
 
-    if (fetchId !== fetchSerialRef.current) {
+    if (fetchId !== fetchSerialRef.current || ctrl.signal.aborted) {
       return;
     }
 
@@ -1726,7 +1839,7 @@ regionDebounceRef.current = setTimeout(async () => {
     refreshInspectForRegion(region);
     setStatusLine(`Sky map ready · ${formatHourLabel(hourOffset)}`);
   } catch (e: any) {
-    if (fetchId !== fetchSerialRef.current) {
+    if (fetchId !== fetchSerialRef.current || ctrl.signal.aborted) {
       return;
     }
 
@@ -1736,7 +1849,11 @@ regionDebounceRef.current = setTimeout(async () => {
     const is502 = /\b502\b/.test(msg);
     const isAbort = /aborted|aborterror/i.test(msg);
 
-    if (is429 || is502 || isAbort) {
+    if (isAbort) {
+      return;
+    }
+
+    if (is429 || is502) {
       OM_BACKOFF.lastStatus = is429 ? 429 : 502;
       OM_BACKOFF.strikes = Math.min(6, OM_BACKOFF.strikes + 1);
       OM_BACKOFF.until = Date.now() + Math.min(12000 * Math.pow(2, OM_BACKOFF.strikes - 1), 120000);
@@ -1783,6 +1900,10 @@ regionDebounceRef.current = setTimeout(async () => {
         : `Sky map unavailable · ${formatHourLabel(hourOffset)}`
     );
   } finally {
+    if (skyFetchAbortRef.current === ctrl) {
+      skyFetchAbortRef.current = null;
+    }
+
     if (fetchId === fetchSerialRef.current) {
       setIsSkyLoading(false);
     }
@@ -1796,6 +1917,18 @@ regionDebounceRef.current = setTimeout(async () => {
     },
     [hourOffset, applyGridToMap, scheduleRetryAfterCooldown, showSkyScore, clearSkyState, skyGrid, activeAstro, refreshInspectForRegion, hasUsableSkyOverlay]
   );
+
+  useEffect(() => {
+    return () => {
+      cancelPendingInspect();
+      cancelPendingSkyFetch();
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      lastSkyGridKeyRef.current = '';
+    };
+  }, [cancelPendingInspect, cancelPendingSkyFetch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1824,31 +1957,23 @@ regionDebounceRef.current = setTimeout(async () => {
   }, []);
 
   useEffect(() => {
-  let cancelled = false;
+    let cancelled = false;
 
   async function syncActivePlaceToAstro() {
-    if (!active?.lat || !active?.lon) return;
+    const activePlace = activeSnapshotRef.current;
+    if (activeFollowKey === 'none') return;
+    if (!activePlace?.lat || !activePlace?.lon) return;
     if (preloadInFlightRef.current) return;
 
-    if (inspectDebounceRef.current) {
-  clearTimeout(inspectDebounceRef.current);
-  inspectDebounceRef.current = null;
-}
-    if (regionDebounceRef.current) {
-      clearTimeout(regionDebounceRef.current);
-      regionDebounceRef.current = null;
-    }
-
-    if (loadingTimerRef.current) {
-      clearTimeout(loadingTimerRef.current);
-      loadingTimerRef.current = null;
-    }
+    cancelPendingInspect();
+    cancelPendingSkyFetch();
+    const activeHourOffset = hourOffsetRef.current;
 
     preloadInFlightRef.current = true;
 
     const nextRegion: Region = {
-      latitude: active.lat,
-      longitude: active.lon,
+      latitude: activePlace.lat,
+      longitude: activePlace.lon,
       latitudeDelta:
         lastRegionRef.current?.latitudeDelta && Number.isFinite(lastRegionRef.current.latitudeDelta)
           ? clamp(lastRegionRef.current.latitudeDelta, 0.08, 40)
@@ -1863,23 +1988,22 @@ regionDebounceRef.current = setTimeout(async () => {
       setErrorLine(null);
       setIsSkyLoading(true);
       setHasEverLoadedSky(false);
-      setStatusLine(`Loading SkyScore for ${shortPlaceLabel(active.name)}…`);
+      setStatusLine(`Loading SkyScore for ${shortPlaceLabel(activePlace.name)}…`);
 
-      // This is the key fix: re-seed the Astro screen from shared place state.
       lastRegionRef.current = nextRegion;
       initialRegionRef.current = nextRegion;
       lastSkyGridKeyRef.current = '';
       didFinishInitialPreloadRef.current = false;
+      setViewRegion(nextRegion);
 
       clearSkyState(false);
 
-      // Recenter camera so Astro follows the selected Land place immediately.
-      try {
-        cameraRef.current?.setCamera?.({
-          centerCoordinate: [active.lon, active.lat],
-          zoomLevel: clamp(
-            approxZoomFromLongitudeDelta(nextRegion.longitudeDelta),
-            3,
+        try {
+          cameraRef.current?.setCamera?.({
+            centerCoordinate: [activePlace.lon, activePlace.lat],
+            zoomLevel: clamp(
+              approxZoomFromLongitudeDelta(nextRegion.longitudeDelta),
+              3,
             10
           ),
           animationDuration: 500,
@@ -1891,7 +2015,7 @@ regionDebounceRef.current = setTimeout(async () => {
       let astroForGrid: AstroLocationPayload | null = null;
 
       try {
-        const astro = await fetchAstroLocation(active.lat, active.lon, active.name);
+        const astro = await fetchAstroLocation(activePlace.lat, activePlace.lon, activePlace.name);
         astroForGrid = astro;
         if (!cancelled) setActiveAstro(astro);
       } catch (e: any) {
@@ -1904,19 +2028,19 @@ regionDebounceRef.current = setTimeout(async () => {
       if (cancelled) return;
 
       // Seed a local hero grid immediately for the newly selected place.
-      const heroKey = `hero:${active.lat.toFixed(3)}:${active.lon.toFixed(3)}:h${hourOffset}:client-hero`;
+      const heroKey = `hero:${activePlace.lat.toFixed(3)}:${activePlace.lon.toFixed(3)}:h${activeHourOffset}:client-hero`;
       const heroGrid =
         SKY_GRID_MEMORY_CACHE.get(heroKey) ??
         (await fetchSkyGridPayload({
-          bounds: buildHeroBounds(active.lat, active.lon),
+          bounds: buildHeroBounds(activePlace.lat, activePlace.lon),
           zoom: 7,
-          hourOffset,
+          hourOffset: activeHourOffset,
           size: 128,
           includePoints: true,
           mode: 'hero',
           density: 'low',
-          centerLat: active.lat,
-          centerLon: active.lon,
+          centerLat: activePlace.lat,
+          centerLon: activePlace.lon,
           astroContext: astroForGrid,
         }));
 
@@ -1938,7 +2062,7 @@ regionDebounceRef.current = setTimeout(async () => {
       setIsSkyLoading(false);
       setHasEverLoadedSky(true);
       refreshInspectForRegion(nextRegion);
-      setStatusLine(`SkyScore ready for ${shortPlaceLabel(active.name)} · ${formatHourLabel(hourOffset)}`);
+      setStatusLine(`SkyScore ready for ${shortPlaceLabel(activePlace.name)} - ${formatHourLabel(activeHourOffset)}`);
 
       // Then request the broader regional overlay too, using the same seeded region.
       lastSkyGridKeyRef.current = '';
@@ -1960,9 +2084,10 @@ regionDebounceRef.current = setTimeout(async () => {
     cancelled = true;
   };
 }, [
-  active?.id,
-  hourOffset,
+  activeFollowKey,
   applyGridToMap,
+  cancelPendingInspect,
+  cancelPendingSkyFetch,
   clearSkyState,
   initialRegion,
   refreshInspectForRegion,
@@ -2048,18 +2173,15 @@ useEffect(() => {
   const TAB_BAR_HEIGHT = 56;
   void ovationUpdatedAt;
 
-  if (!renderMap) {
-    return <View style={{ flex: 1, backgroundColor: '#020617' }} />;
-  }
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
       <View style={{ flex: 1 }}>
         <MapRenderer
-          key={`astro-map-${screenKey}-${instanceKey}`}
+          key={`astro-map-${screenKey}`}
           engine="maplibre"
           initialRegion={initialRegionRef.current ?? initialRegion}
           mapStyle={baseMapStyle}
+          regionEventMode="settled"
           cameraRef={cameraRef}
           onRegionChangeComplete={(r: Region) => {
             if (
@@ -2073,6 +2195,7 @@ useEffect(() => {
 
             const prev = lastRegionRef.current;
             lastRegionRef.current = r;
+            setViewRegion(r);
 
             setInspect(computeInspectAt(r.latitude, r.longitude));
             refreshInspectForRegion(r);
@@ -2104,7 +2227,7 @@ useEffect(() => {
               />
             </MapLibreGL.ShapeSource>
           ) : null}
-          {!canShowSky && isSkyLoading && loadingCoverageGeojson ? (
+          {showSkyLoadingHud && loadingCoverageGeojson ? (
           <MapLibreGL.ShapeSource id={`skyLoading-src-${screenKey}`} shape={loadingCoverageGeojson as any}>
             <MapLibreGL.FillLayer
               id={`skyLoading-fill-${screenKey}`}
@@ -2130,7 +2253,7 @@ useEffect(() => {
               <MapLibreGL.RasterLayer
                 id={`skyRaster-${screenKey}`}
                 style={{
-                  rasterOpacity: 0.72,
+                  rasterOpacity: 0.8,
                   rasterResampling: 'linear',
                   rasterFadeDuration: 220,
                 }}
@@ -2192,7 +2315,7 @@ useEffect(() => {
                 alignSelf: 'flex-start',
               }}
             >
-              <AtmosphericLegend compact sliver />
+              <SkyScoreLegendSliver />
             </View>
           ) : null}
 
@@ -2224,7 +2347,7 @@ useEffect(() => {
                       borderRadius: 999,
                       backgroundColor: errorLine
                         ? 'rgba(255,120,120,0.9)'
-                        : statusLine.toLowerCase().includes('loading') || statusLine.toLowerCase().includes('updating')
+                        : showSkyLoadingHud
                           ? 'rgba(255,210,110,0.95)'
                           : 'rgba(120,255,190,0.95)',
                     }}
@@ -2243,7 +2366,7 @@ useEffect(() => {
                   </Text>
                 </View>
 
-                {isSkyLoading && !canShowSky ? (
+                {showSkyLoadingHud ? (
                   <View
                     style={{
                       alignSelf: 'flex-start',
@@ -2264,7 +2387,7 @@ useEffect(() => {
                         letterSpacing: 0.4,
                       }}
                     >
-                      Loading SkyScore…
+                      {statusLine}
                     </Text>
                   </View>
                 ) : null}

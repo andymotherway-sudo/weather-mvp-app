@@ -1,4 +1,3 @@
-// app/lib/locations/useLocations.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import React, {
@@ -10,6 +9,7 @@ import React, {
   useReducer,
   useRef,
 } from 'react';
+import { formatCompactLocation } from './formats';
 
 export type FavoriteLocation = {
   id: string;
@@ -25,14 +25,15 @@ type Coords = { lat: number; lon: number };
 type State = {
   favorites: FavoriteLocation[];
   active: ActiveLocation;
-  currentCoords: Coords | null; // live current coords (or last-known)
+  currentCoords: Coords | null;
+  currentLabel: string | null;
   hydrated: boolean;
 };
 
 type Action =
-  | { type: 'HYDRATE'; favorites: FavoriteLocation[]; lastCoords: Coords | null }
+  | { type: 'HYDRATE'; favorites: FavoriteLocation[]; lastCoords: Coords | null; lastLabel: string | null }
   | { type: 'SET_ACTIVE'; active: ActiveLocation }
-  | { type: 'SET_CURRENT'; coords: Coords }
+  | { type: 'SET_CURRENT'; coords: Coords; label?: string | null }
   | { type: 'UPSERT_FAVORITE'; favorite: FavoriteLocation; makeActive?: boolean }
   | { type: 'REMOVE_FAVORITE'; id: string };
 
@@ -43,6 +44,7 @@ const initialState: State = {
   favorites: [],
   active: { kind: 'current' },
   currentCoords: null,
+  currentLabel: null,
   hydrated: false,
 };
 
@@ -52,7 +54,8 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         favorites: action.favorites ?? [],
-        currentCoords: action.lastCoords ?? state.currentCoords, // ✅ last-known coords = instant render
+        currentCoords: action.lastCoords ?? state.currentCoords,
+        currentLabel: action.lastLabel ?? state.currentLabel,
         hydrated: true,
       };
 
@@ -60,7 +63,11 @@ function reducer(state: State, action: Action): State {
       return { ...state, active: action.active };
 
     case 'SET_CURRENT':
-      return { ...state, currentCoords: action.coords };
+      return {
+        ...state,
+        currentCoords: action.coords,
+        currentLabel: action.label === undefined ? state.currentLabel : action.label,
+      };
 
     case 'UPSERT_FAVORITE': {
       const next = upsertFavorite(state.favorites, action.favorite);
@@ -149,15 +156,50 @@ async function loadLastCoords(): Promise<Coords | null> {
   }
 }
 
-async function saveLastCoords(coords: Coords) {
+async function loadLastLabel(): Promise<string | null> {
   try {
-    await AsyncStorage.setItem(LAST_COORDS_KEY, JSON.stringify(coords));
+    const raw = await AsyncStorage.getItem(LAST_COORDS_KEY);
+    const parsed = safeJsonParse<any>(raw);
+    const label = typeof parsed?.label === 'string' ? parsed.label.trim() : '';
+    return label || null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveLastCoords(coords: Coords, label?: string | null) {
+  try {
+    await AsyncStorage.setItem(
+      LAST_COORDS_KEY,
+      JSON.stringify({
+        ...coords,
+        label: typeof label === 'string' && label.trim() ? label.trim() : undefined,
+      })
+    );
   } catch {
     // ignore
   }
 }
 
-// --- API + Context ----------------------------------------------------------
+function formatCurrentLocationLabel(addresses: Location.LocationGeocodedAddress[] | null | undefined) {
+  const first = addresses?.[0];
+  if (!first) return null;
+
+  const name =
+    first.city?.trim() ||
+    first.district?.trim() ||
+    first.subregion?.trim() ||
+    first.region?.trim() ||
+    first.name?.trim();
+
+  if (!name) return null;
+
+  return formatCompactLocation({
+    name,
+    admin1: first.region?.trim() || undefined,
+    country: first.country?.trim() || undefined,
+  });
+}
 
 type LocationsApi = ReturnType<typeof useLocationsImpl>;
 
@@ -166,20 +208,22 @@ const LocationsContext = createContext<LocationsApi | null>(null);
 function useLocationsImpl() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // hydrate once (favorites + last coords)
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [favs, lastCoords] = await Promise.all([loadFavorites(), loadLastCoords()]);
+      const [favs, lastCoords, lastLabel] = await Promise.all([
+        loadFavorites(),
+        loadLastCoords(),
+        loadLastLabel(),
+      ]);
       if (!mounted) return;
-      dispatch({ type: 'HYDRATE', favorites: favs, lastCoords });
+      dispatch({ type: 'HYDRATE', favorites: favs, lastCoords, lastLabel });
     })();
     return () => {
       mounted = false;
     };
   }, []);
 
-  // persist favorites after hydration
   useEffect(() => {
     if (!state.hydrated) return;
     saveFavorites(state.favorites);
@@ -200,9 +244,20 @@ function useLocationsImpl() {
 
       const pos = await Location.getCurrentPositionAsync({});
       const coords: Coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      let label: string | null = null;
 
-      dispatch({ type: 'SET_CURRENT', coords });
-      saveLastCoords(coords); // ✅ persist last-known coords
+      try {
+        const addresses = await Location.reverseGeocodeAsync({
+          latitude: coords.lat,
+          longitude: coords.lon,
+        });
+        label = formatCurrentLocationLabel(addresses);
+      } catch {
+        label = null;
+      }
+
+      dispatch({ type: 'SET_CURRENT', coords, label });
+      saveLastCoords(coords, label);
     } catch {
       // ignore
     }
@@ -230,11 +285,11 @@ function useLocationsImpl() {
     dispatch({ type: 'REMOVE_FAVORITE', id });
   }, []);
 
- const activeFavorite = useMemo(() => {
-  const active = state.active;
-  if (active.kind !== 'favorite') return null;
-  return state.favorites.find((f) => f.id === active.id) ?? null;
-}, [state.active, state.favorites]);
+  const activeFavorite = useMemo(() => {
+    const active = state.active;
+    if (active.kind !== 'favorite') return null;
+    return state.favorites.find((f) => f.id === active.id) ?? null;
+  }, [state.active, state.favorites]);
 
   const activeCoords = useMemo(() => {
     if (state.active.kind === 'favorite') {
@@ -245,8 +300,8 @@ function useLocationsImpl() {
 
   const activeLabel = useMemo(() => {
     if (state.active.kind === 'favorite') return activeFavorite?.name ?? 'Saved location';
-    return 'Current location';
-  }, [state.active, activeFavorite]);
+    return state.currentLabel?.trim() || '';
+  }, [state.active, activeFavorite, state.currentLabel]);
 
   return {
     state,
@@ -268,7 +323,6 @@ function useLocationsImpl() {
 export function LocationsProvider({ children }: { children: React.ReactNode }) {
   const api = useLocationsImpl();
 
-  // ✅ Centralized GPS warmup: do it once per app launch (prevents repeated permission churn)
   const warmedRef = useRef(false);
 
   useEffect(() => {
@@ -277,8 +331,7 @@ export function LocationsProvider({ children }: { children: React.ReactNode }) {
 
     warmedRef.current = true;
     api.refreshCurrentLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.state.hydrated]);
+  }, [api]);
 
   return <LocationsContext.Provider value={api}>{children}</LocationsContext.Provider>;
 }

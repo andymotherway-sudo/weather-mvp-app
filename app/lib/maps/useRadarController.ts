@@ -720,7 +720,6 @@ export function useRadarController(args: {
   }, [
     usingLocalImage,
     effectiveTemplates,
-    effectiveTemplates.length,
     perFrameOpacities,
     xfade.from,
     xfade.to,
@@ -778,8 +777,25 @@ export function useRadarController(args: {
     directionRef.current = 1;
   }, [sheetValue.radarProvider, product]);
 
+  useEffect(() => {
+    if (safeFrameIndex <= 0) {
+      directionRef.current = 1;
+      return;
+    }
+
+    if (safeFrameIndex >= Math.max(0, frameCount - 1)) {
+      directionRef.current = -1;
+    }
+  }, [safeFrameIndex, frameCount]);
+
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAdvanceRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (state.radarTime.playing) {
+      lastAdvanceRef.current = Date.now();
+    }
+  }, [state.radarTime.playing]);
 
   useEffect(() => {
     if (playTimerRef.current) clearInterval(playTimerRef.current);
@@ -830,10 +846,21 @@ export function useRadarController(args: {
       const dwellNow = atEdge ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
       if (Date.now() - lastAdvanceRef.current < dwellNow) return;
 
-     const next = cur >= fc - 1 ? 0 : cur + 1;
+      let nextDir = dir;
+      let next = cur + dir;
+
+      if (next >= fc) {
+        nextDir = -1;
+        next = fc > 1 ? fc - 2 : 0;
+      } else if (next < 0) {
+        nextDir = 1;
+        next = fc > 1 ? 1 : 0;
+      }
+
       const nextTemplate = templatesRef.current[next];
       if (!nextTemplate) return;
 
+      directionRef.current = nextDir;
       lastAdvanceRef.current = Date.now();
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });
     }, PLAY_TICK_MS);

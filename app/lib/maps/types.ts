@@ -20,6 +20,7 @@ export type LayerId =
   | 'sat.clouds'
   | 'sat.goesEast.geocolor'
   | 'sat.goesWest.geocolor'
+  | 'sat.goes.truecolor'
   | 'sat.goesEast.ir'
   | 'sat.goesWest.ir'
   | 'sat.goesEast.wv'

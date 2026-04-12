@@ -11,7 +11,6 @@ import {
 
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
-import { Card } from '../layout/Card';
 
 type Mode = 'simple' | 'wxlab';
 
@@ -114,8 +113,10 @@ function formatDayLabel(t: any): string {
   const wall = extractIsoWallClockParts(t);
   if (!wall) return '';
 
-  const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day));
-  return new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date).toUpperCase();
+  // Use a UTC-noon anchor and format in UTC so naive forecast wall dates do not
+  // shift backward a day in negative offsets like America/Phoenix.
+  const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day, 12));
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(date).toUpperCase();
 }
 
 function windArrowFromDeg(deg: number | null) {
@@ -399,7 +400,7 @@ export function NerdyHourlyTimeline({
         onPress={() => setExpandedKey((current) => (current === item.key ? null : item.key))}
         style={{ marginBottom: theme.spacing.sm }}
       >
-        <Card style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.rowTop}>
             <View style={styles.left}>
               <Text style={styles.day}>{item.dayLabel}</Text>
@@ -424,7 +425,7 @@ export function NerdyHourlyTimeline({
             <View style={styles.right}>
               <Text style={styles.wind}>
                 {arrow} {chip(item.wind)}
-                {item.gust != null ? `→${item.gust}` : ''}
+                {item.wind != null ? ' mph' : ''}
               </Text>
 
               <View style={styles.rightMeta}>
@@ -491,6 +492,12 @@ export function NerdyHourlyTimeline({
                     <Text style={styles.simpleStatValue}>{formatCloudBucket(item.cloud)}</Text>
                   </View>
                   <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>Wind gusts</Text>
+                    <Text style={styles.simpleStatValue}>
+                      {item.gust == null ? '—' : `${item.gust} mph`}
+                    </Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Wind feel</Text>
                     <Text style={styles.simpleStatValue}>{formatGustBucket(item.gustFactor)}</Text>
                   </View>
@@ -515,6 +522,13 @@ export function NerdyHourlyTimeline({
                     label="Sky regime"
                     value={formatCloudBucket(item.cloud)}
                     topicId="cloud_cover"
+                    onExplain={onExplain}
+                  />
+
+                  <LearnableWxRow
+                    label="Wind gusts"
+                    value={item.gust == null ? '—' : `${item.gust} mph`}
+                    topicId="wind"
                     onExplain={onExplain}
                   />
 
@@ -553,7 +567,7 @@ export function NerdyHourlyTimeline({
               )}
             </>
           ) : null}
-        </Card>
+        </View>
       </Pressable>
     );
   };
@@ -644,18 +658,26 @@ const styles = StyleSheet.create<Styles>({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   modeBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
-  modeBtnActive: { backgroundColor: 'rgba(255,255,255,0.10)' },
+  modeBtnActive: { backgroundColor: 'rgba(70,130,220,0.22)', },
   modeText: { color: 'rgba(255,255,255,0.70)', fontWeight: '800', fontSize: 12 },
   modeTextActive: { color: 'white' },
 
   card: {
+    position: 'relative',
+    overflow: 'hidden',
     padding: theme.spacing.md,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 26,
+    backgroundColor: 'rgba(21, 35, 60, 0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
 
   rowTop: { flexDirection: 'row', alignItems: 'center' },
@@ -691,10 +713,10 @@ const styles = StyleSheet.create<Styles>({
     flex: 1,
     height: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
     overflow: 'hidden',
   },
-  barFill: { height: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.30)' },
+  barFill: { height: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.22)' },
   barVal: {
     width: 48,
     textAlign: 'right',
@@ -708,7 +730,7 @@ const styles = StyleSheet.create<Styles>({
     marginTop: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.04)',
     gap: 8 as any,
   },
   simpleStatRow: {
@@ -732,7 +754,7 @@ const styles = StyleSheet.create<Styles>({
     marginTop: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.04)',
     gap: 8 as any,
   },
   wxRowPressable: {
@@ -742,7 +764,7 @@ const styles = StyleSheet.create<Styles>({
     marginHorizontal: -4,
   },
   wxRowPressableActive: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   wxRow: {
     flexDirection: 'row',

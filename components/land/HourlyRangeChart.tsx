@@ -669,7 +669,7 @@ export function HourlyRangeChart({
                 );
               })}
 
-              <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.03)" />
+              <Rect x={padL} y={windBandTop} width={plotW} height={windBandH} rx={10} fill="rgba(255,255,255,0.05)" />
 
               {showWind
                 ? data.map((h: any, i) => {
@@ -706,7 +706,7 @@ export function HourlyRangeChart({
 
               {showClouds ? (
                 <>
-                  <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(32, 4, 4, 0.03)" />
+                  <Rect x={padL} y={cloudBandTop} width={plotW} height={cloudBandH} rx={8} fill="rgba(255,255,255,0.05)" />
 
                   {data.map((h: any, i) => {
                     const pct = pick(h, 'cloudCoverPct');
@@ -915,7 +915,7 @@ const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(18, 28, 45, 0.72)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     paddingTop: 12,
@@ -931,14 +931,14 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     minHeight: 168,
   },
   hourTileActive: {
-    borderColor: 'rgba(200,240,255,0.28)',
-    backgroundColor: 'rgba(160,220,255,0.08)',
+    backgroundColor: 'rgba(70,130,220,0.22)',
+    borderColor: 'rgba(150,210,255,0.26)',
   },
   hourTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12, letterSpacing: 0.4 },
   hilo: { marginTop: 8, color: 'white', fontWeight: '900', fontSize: 18 },
@@ -976,12 +976,12 @@ const s = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
   legPillOff: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
     borderColor: 'rgba(255,255,255,0.06)',
   },
   legText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 11 },

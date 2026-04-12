@@ -1,7 +1,7 @@
 // components/maps/MapRenderer.tsx
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { PixelRatio, View } from 'react-native';
+import { View } from 'react-native';
 
 import { OverlayEngine, type WmsOverlayConfig } from './overlays/OverlayEngine';
 
@@ -21,7 +21,7 @@ export type RadarLocalImage = {
 
 export type RadarOverlay = {
   enabled: boolean;
-  templates: Array<string | null>;
+  templates: (string | null)[];
   opacities: number[];
   tileMaxZ: number;
   localImage?: RadarLocalImage | null;
@@ -32,6 +32,8 @@ export type MapRendererProps = {
   initialRegion: Region;
   mapStyle: 'dark' | 'light';
   customMapStyle?: any[];
+  boundaryReliefTone?: 'teal' | 'orange' | null;
+  regionEventMode?: 'continuous' | 'settled';
   onRegionChangeComplete: (r: Region) => void;
   onPanDrag?: () => void;
   radar: RadarOverlay;
@@ -132,9 +134,104 @@ function regionFromBoundsPolygon(coords: any): Region | null {
 
 const MAPLIBRE_DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 const MAPLIBRE_LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+const BOUNDARY_VECTOR_SOURCE_URL = 'https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/tiles.json';
+
+const BOUNDARY_RELIEF = {
+  teal: {
+    glow: 'rgba(45,212,191,0.90)',
+    core: 'rgba(153,246,228,0.96)',
+    county: 'rgba(94,234,212,0.46)',
+  },
+  orange: {
+    glow: 'rgba(251,146,60,0.92)',
+    core: 'rgba(255,237,213,0.98)',
+    county: 'rgba(253,186,116,0.44)',
+  },
+} as const;
+
+function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
+  const palette = BOUNDARY_RELIEF[tone];
+
+  return (
+    <MapLibreGL.VectorSource id={`boundary-relief-source-${tone}`} url={BOUNDARY_VECTOR_SOURCE_URL}>
+      <MapLibreGL.LineLayer
+        id={`boundary-country-glow-${tone}`}
+        sourceLayerID="boundary"
+        minZoomLevel={1}
+        filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
+        style={{
+          lineColor: palette.glow,
+          lineOpacity: ['interpolate', ['linear'], ['zoom'], 1, 0.38, 4, 0.66, 7, 0.82],
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 1, 1.2, 4, 2.4, 7, 4.2],
+          lineBlur: ['interpolate', ['linear'], ['zoom'], 1, 0.8, 4, 1.3, 7, 1.8],
+        } as any}
+      />
+
+      <MapLibreGL.LineLayer
+        id={`boundary-country-core-${tone}`}
+        sourceLayerID="boundary"
+        minZoomLevel={1}
+        filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
+        style={{
+          lineColor: palette.core,
+          lineOpacity: ['interpolate', ['linear'], ['zoom'], 1, 0.42, 4, 0.82, 7, 0.96],
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 1, 0.6, 4, 1.2, 7, 2.0],
+        } as any}
+      />
+
+      <MapLibreGL.LineLayer
+        id={`boundary-state-glow-${tone}`}
+        sourceLayerID="boundary"
+        minZoomLevel={3}
+        filter={['all', ['==', 'admin_level', 4], ['==', 'maritime', 0]] as any}
+        style={{
+          lineColor: palette.glow,
+          lineOpacity: ['interpolate', ['linear'], ['zoom'], 3, 0.48, 6, 0.78, 10, 0.96],
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 3, 1.5, 6, 3.0, 10, 5.2],
+          lineBlur: ['interpolate', ['linear'], ['zoom'], 3, 0.9, 6, 1.5, 10, 2.1],
+        } as any}
+      />
+
+      <MapLibreGL.LineLayer
+        id={`boundary-state-core-${tone}`}
+        sourceLayerID="boundary"
+        minZoomLevel={3}
+        filter={['all', ['==', 'admin_level', 4], ['==', 'maritime', 0]] as any}
+        style={{
+          lineColor: palette.core,
+          lineOpacity: ['interpolate', ['linear'], ['zoom'], 3, 0.56, 6, 0.90, 10, 1.0],
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 3, 0.75, 6, 1.5, 10, 2.6],
+        } as any}
+      />
+
+      <MapLibreGL.LineLayer
+        id={`boundary-county-core-${tone}`}
+        sourceLayerID="boundary"
+        minZoomLevel={7}
+        filter={['all', ['==', 'admin_level', 6], ['==', 'maritime', 0]] as any}
+        style={{
+          lineColor: palette.county,
+          lineOpacity: ['interpolate', ['linear'], ['zoom'], 7, 0.0, 8, 0.20, 10, 0.42, 12, 0.58],
+          lineWidth: ['interpolate', ['linear'], ['zoom'], 7, 0.25, 10, 0.55, 12, 0.85],
+        } as any}
+      />
+    </MapLibreGL.VectorSource>
+  );
+}
 
 export function MapRenderer(props: MapRendererProps) {
-  const { initialRegion, mapStyle, onRegionChangeComplete, onPanDrag, radar, overlays, children, onMapPress } = props;
+  const {
+    initialRegion,
+    mapStyle,
+    boundaryReliefTone,
+    regionEventMode = 'continuous',
+    onRegionChangeComplete,
+    onPanDrag,
+    radar,
+    overlays,
+    children,
+    onMapPress,
+  } = props;
 
   const internalCameraRef = useRef<any>(null);
   const cameraRef = props.cameraRef ?? internalCameraRef;
@@ -149,11 +246,6 @@ export function MapRenderer(props: MapRendererProps) {
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
   const lastRegionRef = useRef<Region>(initialRegion);
-
-  const [layout, setLayout] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const dpr = PixelRatio.get();
-  const overlayW = Math.max(0, Math.floor(layout.w * dpr));
-  const overlayH = Math.max(0, Math.floor(layout.h * dpr));
 
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
   const burstRef = useRef<{ t0: number; n: number }>({ t0: 0, n: 0 });
@@ -221,7 +313,13 @@ export function MapRenderer(props: MapRendererProps) {
   const userEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [isUserInteracting, setIsUserInteracting] = useState(false);
+  useEffect(() => {
+    return () => {
+      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+      if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
+      if (idleEmitTimerRef.current) clearTimeout(idleEmitTimerRef.current);
+    };
+  }, []);
 
   const emitRegion = () => {
     onRegionChangeComplete(lastRegionRef.current);
@@ -275,18 +373,18 @@ export function MapRenderer(props: MapRendererProps) {
 
     if (isUser && !userActiveRef.current) {
       userActiveRef.current = true;
-      setIsUserInteracting(true);
       onPanDrag?.();
     }
 
     if (isUser) {
-      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-      regionDebounceRef.current = setTimeout(() => emitRegion(), 200);
+      if (regionEventMode === 'continuous') {
+        if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+        regionDebounceRef.current = setTimeout(() => emitRegion(), 200);
+      }
 
       if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
       userEndTimerRef.current = setTimeout(() => {
         userActiveRef.current = false;
-        setIsUserInteracting(false);
         emitRegion();
       }, 250);
     } else {
@@ -308,7 +406,7 @@ export function MapRenderer(props: MapRendererProps) {
 
   const radarTemplates = useMemo(() => {
     const base = radar.templates ?? [];
-    if (!base.length) return [] as Array<string | null>;
+    if (!base.length) return [] as (string | null)[];
     return base.slice(0, maxSlots);
   }, [radar.templates, maxSlots]);
 
@@ -348,11 +446,6 @@ export function MapRenderer(props: MapRendererProps) {
   return (
     <View
       style={{ flex: 1 }}
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout?.width ?? 0;
-        const h = e.nativeEvent.layout?.height ?? 0;
-        setLayout({ w, h });
-      }}
     >
       <MapLibreGL.MapView
         style={{ flex: 1 }}
@@ -368,15 +461,7 @@ export function MapRenderer(props: MapRendererProps) {
           animationDuration={0}
         />
 
-        {overlays?.length && overlayW > 0 && overlayH > 0 ? (
-          <OverlayEngine
-            region={lastRegionRef.current}
-            width={overlayW}
-            height={overlayH}
-            overlays={overlays}
-            isUserInteracting={isUserInteracting}
-          />
-        ) : null}
+        {overlays?.length ? <OverlayEngine overlays={overlays} /> : null}
 
         {useLocalImage
           ? (() => {
@@ -430,6 +515,8 @@ export function MapRenderer(props: MapRendererProps) {
               );
             })
           : null}
+
+        {boundaryReliefTone ? <BoundaryReliefLayers tone={boundaryReliefTone} /> : null}
 
         {children}
       </MapLibreGL.MapView>
