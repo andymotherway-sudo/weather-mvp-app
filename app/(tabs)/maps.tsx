@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useIsFocused } from '@react-navigation/native';
@@ -209,6 +209,7 @@ export default function MapsScreen() {
   }, [loc.state.currentCoords]);
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
   const [rawMode, setRawMode] = useState(false);
 
@@ -745,6 +746,11 @@ export default function MapsScreen() {
               active={layersSheetOpen}
             />
             <MapActionButton label="Locate" onPress={recenterToGps} />
+            <MapActionButton
+              label="Settings"
+              onPress={() => setSettingsOpen(true)}
+              active={settingsOpen}
+            />
           </View>
         </View>
 
@@ -785,11 +791,7 @@ export default function MapsScreen() {
           visible={layersSheetOpen}
           onClose={() => setLayersSheetOpen(false)}
           state={state}
-          viewId={state.viewId}
-          onChangeView={(viewId) => dispatch({ type: 'SET_VIEW', viewId })}
           nerdy={state.nerdy}
-          value={sheetValue}
-          onChange={(next) => setSheetValue(next)}
           allowedGroups={['weather', 'fireAir']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
@@ -802,8 +804,83 @@ export default function MapsScreen() {
             pushSpecialMap('/nautical-map');
           }}
         />
+
+        <SettingsModal
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          value={sheetValue}
+          onChange={setSheetValue}
+          nerdy={state.nerdy}
+        />
       </View>
     </SafeAreaView>
+  );
+}
+
+function SettingsModal(props: {
+  visible: boolean;
+  onClose: () => void;
+  value: LayerSheetValue;
+  onChange: (next: LayerSheetValue) => void;
+  nerdy: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const { visible, onClose, value, onChange, nerdy } = props;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.settingsBackdrop}>
+        <Pressable onPress={onClose} style={StyleSheet.absoluteFillObject} />
+
+        <Glass style={[styles.settingsCard, { marginBottom: 18 + insets.bottom }]}>
+          <View style={styles.settingsHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingsEyebrow}>SETTINGS</Text>
+              <Text style={styles.settingsTitle}>Map settings</Text>
+              <Text style={styles.settingsSubtitle}>Adjust presentation and advanced map behavior.</Text>
+            </View>
+
+            <Pressable onPress={onClose} style={styles.settingsDone}>
+              <Text style={styles.settingsDoneText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.settingsSection}>
+            <Text style={styles.settingsSectionTitle}>Base map</Text>
+            <View style={styles.settingsRow}>
+              <SegmentChip
+                label="Dark"
+                active={value.baseMapStyle === 'dark'}
+                onPress={() => onChange({ ...value, baseMapStyle: 'dark' })}
+              />
+              <SegmentChip
+                label="Light"
+                active={value.baseMapStyle === 'light'}
+                onPress={() => onChange({ ...value, baseMapStyle: 'light' })}
+              />
+            </View>
+          </View>
+
+          {nerdy ? (
+            <View style={[styles.settingsSection, { marginTop: 12 }]}>
+              <Text style={styles.settingsSectionTitle}>Radar provider</Text>
+              <View style={styles.settingsRow}>
+                <SegmentChip
+                  label="RainViewer"
+                  active={value.radarProvider === 'rainviewer'}
+                  onPress={() => onChange({ ...value, radarProvider: 'rainviewer' })}
+                />
+                <SegmentChip
+                  label="IEM"
+                  active={value.radarProvider === 'iem'}
+                  onPress={() => onChange({ ...value, radarProvider: 'iem' })}
+                />
+              </View>
+            </View>
+          ) : null}
+        </Glass>
+      </View>
+    </Modal>
   );
 }
 
@@ -868,6 +945,14 @@ function ChipDark(props: { label: string; active?: boolean; onPress: () => void 
   return (
     <Pressable onPress={props.onPress} style={[styles.productChip, props.active ? styles.productChipActive : null]}>
       <Text style={styles.productChipText}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+function SegmentChip(props: { label: string; active?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={props.onPress} style={[styles.segmentChip, props.active ? styles.segmentChipActive : null]}>
+      <Text style={styles.segmentChipText}>{props.label}</Text>
     </Pressable>
   );
 }
@@ -1038,7 +1123,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: 'rgba(255,255,255,0.95)',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
     textAlign: 'center',
     lineHeight: 12,
@@ -1071,5 +1156,85 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 22,
+  },
+  settingsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+  },
+  settingsCard: {
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  settingsEyebrow: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  settingsTitle: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 6,
+  },
+  settingsSubtitle: {
+    color: 'rgba(255,255,255,0.68)',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  settingsDone: {
+    paddingVertical: 9,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  settingsDoneText: {
+    color: 'white',
+    fontWeight: '900',
+  },
+  settingsSection: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 18,
+    padding: 12,
+  },
+  settingsSectionTitle: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  segmentChip: {
+    paddingVertical: 9,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  segmentChipActive: {
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.11)',
+  },
+  segmentChipText: {
+    color: 'white',
+    fontWeight: '900',
   },
 });

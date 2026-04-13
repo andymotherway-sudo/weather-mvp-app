@@ -2,7 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,6 +45,20 @@ export function AppBoot({ children }: Props) {
 
   const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-mark.png'), []);
 
+  const refreshDefaultCity = useCallback(async () => {
+    const raw = await AsyncStorage.getItem(DEFAULT_CITY_KEY);
+    const city = safeJsonParse<any>(raw);
+
+    const ok = !!(
+      city &&
+      (city.lat != null || city.latitude != null) &&
+      (city.lon != null || city.longitude != null)
+    );
+
+    setHasDefaultCity(ok);
+    return ok;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -55,18 +69,10 @@ export function AppBoot({ children }: Props) {
         // ignore
       }
 
-      const raw = await AsyncStorage.getItem(DEFAULT_CITY_KEY);
-      const city = safeJsonParse<any>(raw);
-
-      const ok = !!(
-        city &&
-        (city.lat != null || city.latitude != null) &&
-        (city.lon != null || city.longitude != null)
-      );
+      await refreshDefaultCity();
 
       if (cancelled) return;
 
-      setHasDefaultCity(ok);
       setBootReady(true);
 
       try {
@@ -87,7 +93,13 @@ export function AppBoot({ children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [fade, scale]);
+  }, [fade, refreshDefaultCity, scale]);
+
+  useEffect(() => {
+    if (!bootReady) return;
+
+    void refreshDefaultCity();
+  }, [bootReady, refreshDefaultCity, segments]);
 
   const gatePending = hasDefaultCity == null;
   const inOnboarding = String(segments?.[0] ?? '') === '(onboarding)';
