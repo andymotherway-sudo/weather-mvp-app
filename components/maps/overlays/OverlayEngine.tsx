@@ -79,7 +79,7 @@ function buildWmsTileTemplate(overlay: WmsOverlayConfig, tileSize: number) {
   }
 
   const qs = Object.entries(params)
-    .filter(([, value]) => value !== '')
+    .filter(([key, value]) => value !== '' || key === 'styles')
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeTemplateValue(value)}`)
     .join('&');
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -9,11 +9,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AstroHeroCard } from '../../components/astro/AstroHeroCard';
 import { AstroHourlyStrip } from '../../components/astro/AstroHourlyStrip';
-import { BestWindowCard } from '../../components/astro/BestWindowCard';
 import { MoonDarknessCard } from '../../components/astro/MoonDarknessCard';
 import { OpenAstroMapCard } from '../../components/astro/OpenAstroMapCard';
 import { SkyScoreChart } from '../../components/astro/SkyScoreChart';
@@ -65,34 +65,69 @@ function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
 }
 
-function percentile(sortedAsc: number[], p: number) {
-  if (!sortedAsc.length) return NaN;
-  const idx = (sortedAsc.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sortedAsc[lo];
-  const w = idx - lo;
-  return sortedAsc[lo] * (1 - w) + sortedAsc[hi] * w;
+
+function extractIsoWallClockParts(value: unknown) {
+  if (typeof value !== 'string') return null;
+
+  const s = value.trim();
+  if (!s) return null;
+
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
+  if (!m) return null;
+
+  return {
+    year: Number(m[1]),
+    month: Number(m[2]),
+    day: Number(m[3]),
+    hour: Number(m[4]),
+    minute: Number(m[5]),
+  };
 }
 
-function smooth(prev: number | null | undefined, next: number, a = 0.2) {
-  if (prev == null || !Number.isFinite(prev)) return next;
-  return prev * (1 - a) + next * a;
+function wallClockToSortableMs(parts: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+}) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
 }
 
-type SpeedBands = { slowMax: number; typicalMax: number; max: number };
+function getNowSortableMs(timeZone?: string) {
+  if (timeZone) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
 
-function computeSolarWindSpeedBands(speeds: number[]): SpeedBands {
-  const clean = speeds.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
-  if (clean.length < 12) return { slowMax: 400, typicalMax: 550, max: 900 };
+    const parts = fmt.formatToParts(new Date());
+    const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
 
-  const p33 = percentile(clean, 0.33);
-  const p66 = percentile(clean, 0.66);
+    return wallClockToSortableMs({
+      year: pick('year'),
+      month: pick('month'),
+      day: pick('day'),
+      hour: pick('hour'),
+      minute: pick('minute'),
+    });
+  }
 
-  const slowMax = clamp(p33, 320, 430);
-  const typicalMax = clamp(p66, 480, 650);
-
-  return { slowMax, typicalMax, max: 900 };
+  const now = new Date();
+  return wallClockToSortableMs({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  });
 }
 
 function getNoaaScaleLevel(raw: any): number | null {
@@ -108,17 +143,6 @@ function getNoaaScaleLevel(raw: any): number | null {
   }
 
   return null;
-}
-
-function bandOpacitiesForLevel(level?: number) {
-  const lv = level == null ? 0 : clamp(level, 0, 5);
-  const t = lv / 5;
-  const base = 0.05 + t * 0.06;
-  return {
-    slow: base,
-    typical: base + 0.02,
-    fast: base + 0.04,
-  };
 }
 
 function solarWindBand(speed: number) {
@@ -142,6 +166,66 @@ function LearnRow({
     </Pressable>
   );
 }
+
+type SolarViewOption = {
+  id: string;
+  label: string;
+  source: string;
+  description: string;
+  imageUrl: string;
+  topicId: string;
+};
+
+const SOLAR_VIEWS: SolarViewOption[] = [
+  {
+    id: 'continuum',
+    label: 'Continuum',
+    source: 'SDO HMI',
+    description: 'Visible-light solar disk showing sunspots and broad surface structure.',
+    imageUrl: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIC.jpg',
+    topicId: 'solar-view-continuum',
+  },
+  {
+    id: 'magnetogram',
+    label: 'Magnetogram',
+    source: 'SDO HMI',
+    description: 'Magnetic field map highlighting active regions and polarity boundaries.',
+    imageUrl: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIB.jpg',
+    topicId: 'solar-view-magnetogram',
+  },
+  {
+    id: 'euv171',
+    label: 'EUV 171',
+    source: 'SDO AIA',
+    description: 'Cooler coronal loops and magnetic arcades in the upper atmosphere.',
+    imageUrl: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0171.jpg',
+    topicId: 'solar-view-euv171',
+  },
+  {
+    id: 'euv193',
+    label: 'EUV 193',
+    source: 'SDO AIA',
+    description: 'Coronal holes and hotter active corona, useful for solar wind source regions.',
+    imageUrl: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg',
+    topicId: 'solar-view-euv193',
+  },
+  {
+    id: 'euv304',
+    label: 'EUV 304',
+    source: 'SDO AIA',
+    description: 'Chromosphere and prominences around the limb of the Sun.',
+    imageUrl: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0304.jpg',
+    topicId: 'solar-view-euv304',
+  },
+  {
+    id: 'lasco',
+    label: 'Coronagraph',
+    source: 'SOHO LASCO C2',
+    description: 'Outer corona view used to spot CMEs moving away from the Sun.',
+    imageUrl: 'https://soho.nascom.nasa.gov/data/realtime/c2/512/latest.jpg',
+    topicId: 'solar-view-coronagraph',
+  },
+];
 
 export default function SolarScreen() {
   const insets = useSafeAreaInsets();
@@ -167,8 +251,10 @@ export default function SolarScreen() {
   const [explainPayload, setExplainPayload] = useState<ExplainPayload | null>(null);
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
-
-  const bandsRef = useRef<{ slowMax: number; typicalMax: number } | null>(null);
+  const [solarViewId, setSolarViewId] = useState<string>(SOLAR_VIEWS[0].id);
+  const [solarImageState, setSolarImageState] = useState<Record<string, 'idle' | 'loading' | 'loaded' | 'error'>>(
+    {}
+  );
 
   const openExplain = (p: ExplainPayload) => {
     setExplainPayload(p);
@@ -187,6 +273,29 @@ export default function SolarScreen() {
   };
 
   const isRefreshing = refreshing || astroRefreshing;
+  const chartHours = useMemo(() => {
+    const hours = astro?.hours ?? [];
+    if (!hours.length) return hours;
+
+    const nowSortable = getNowSortableMs(astro?.timezone);
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < hours.length; i++) {
+      const parts = extractIsoWallClockParts(hours[i]?.time);
+      if (!parts) continue;
+
+      const hourSortable = wallClockToSortableMs(parts);
+      const distance = Math.abs(hourSortable - nowSortable);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+
+    return hours.slice(bestIndex, bestIndex + 72);
+  }, [astro]);
 
   const renderKpGauge = (kp: number) => {
     const segments = Array.from({ length: 9 }, (_, i) => i + 1);
@@ -330,28 +439,44 @@ export default function SolarScreen() {
     if (!data?.windHistory?.length) return null;
 
     const history = data.windHistory;
-    const speeds = history
-      .map((s) => s.speed)
-      .filter((v) => Number.isFinite(v));
-
-    const rawBands = computeSolarWindSpeedBands(speeds);
-    const prev = bandsRef.current;
-
-    const slowMax = smooth(prev?.slowMax, rawBands.slowMax, 0.2);
-    const typicalMax = smooth(prev?.typicalMax, rawBands.typicalMax, 0.2);
-    bandsRef.current = { slowMax, typicalMax };
-
-    const gLevel =
-      data && (data as any).noaaScales
-        ? getNoaaScaleLevel((data as any).noaaScales?.G)
-        : 0;
-
-    const op = bandOpacitiesForLevel(gLevel ?? undefined);
-    const maxDisplay = rawBands.max;
-    const hMax = 54;
-
-    const ySlow = (1 - slowMax / maxDisplay) * hMax;
-    const yTypical = (1 - typicalMax / maxDisplay) * hMax;
+    const speeds = history.map((s) => s.speed).filter((v) => Number.isFinite(v));
+    const minSpeed = Math.min(...speeds);
+    const maxSpeed = Math.max(...speeds);
+    const latestSpeed = speeds[speeds.length - 1];
+    const startSpeed = speeds[0];
+    const speedDelta = latestSpeed - startSpeed;
+    const sampleCount = history.length;
+    const approxMinutes = Math.max(5, (sampleCount - 1) * 5);
+    const yMin = Math.max(250, Math.floor((minSpeed - 20) / 25) * 25);
+    const yMax = Math.max(yMin + 75, Math.ceil((maxSpeed + 20) / 25) * 25);
+    const slowMax = 400;
+    const typicalMax = 550;
+    const chartW = 320;
+    const chartH = 120;
+    const padL = 38;
+    const padR = 14;
+    const padT = 12;
+    const padB = 24;
+    const innerW = chartW - padL - padR;
+    const innerH = chartH - padT - padB;
+    const speedRange = Math.max(1, yMax - yMin);
+    const yFor = (speed: number) => padT + (1 - (speed - yMin) / speedRange) * innerH;
+    const xFor = (index: number) =>
+      padL + (history.length <= 1 ? 0 : (index / (history.length - 1)) * innerW);
+    const gridTicks = [yMax, Math.round((yMax + yMin) / 2), yMin];
+    const speedPath = history
+      .map((sample, idx) => `${idx === 0 ? 'M' : 'L'} ${xFor(idx).toFixed(1)} ${yFor(sample.speed).toFixed(1)}`)
+      .join(' ');
+    const latestPoint = { x: xFor(history.length - 1), y: yFor(latestSpeed) };
+    const trendLabel =
+      Math.abs(speedDelta) < 10 ? 'Steady' : speedDelta > 0 ? 'Rising' : 'Falling';
+    const bz = data.imf?.bzGsmNt;
+    const bzLabel =
+      typeof bz === 'number' && Number.isFinite(bz)
+        ? bz < -2
+          ? `Bz south ${bz.toFixed(1)} nT`
+          : `Bz north ${bz.toFixed(1)} nT`
+        : 'Bz unavailable';
 
     return (
       <View style={styles.card}>
@@ -374,58 +499,53 @@ export default function SolarScreen() {
           />
         </View>
 
-        <View style={styles.historyGraph}>
-          <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-            <View
-              style={[
-                styles.band,
-                {
-                  top: 0,
-                  height: Math.max(0, yTypical),
-                  backgroundColor: `rgba(56,189,248,${op.fast})`,
-                  borderColor: `rgba(56,189,248,${op.fast + 0.08})`,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.band,
-                {
-                  top: yTypical,
-                  height: Math.max(0, ySlow - yTypical),
-                  backgroundColor: `rgba(56,189,248,${op.typical})`,
-                  borderColor: `rgba(56,189,248,${op.typical + 0.08})`,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.band,
-                {
-                  top: ySlow,
-                  height: Math.max(0, hMax - ySlow),
-                  backgroundColor: `rgba(56,189,248,${op.slow})`,
-                  borderColor: `rgba(56,189,248,${op.slow + 0.08})`,
-                },
-              ]}
-            />
-
-            <View style={[styles.bandLine, { top: yTypical }]} />
-            <View style={[styles.bandLine, { top: ySlow }]} />
-          </View>
-
-          {history.map((sample, idx) => {
-            const h = Math.max(8, (sample.speed / maxDisplay) * hMax);
-            const isLast = idx === history.length - 1;
-            const alpha = isLast ? 1 : 0.65;
-
-            return (
-              <View key={sample.time} style={styles.historyBarWrapper}>
-                <View style={[styles.historyBar, { height: h, opacity: alpha }]} />
-              </View>
-            );
-          })}
+        <View style={styles.historyChartFrame}>
+          <Svg width="100%" height={chartH} viewBox={`0 0 ${chartW} ${chartH}`}>
+            {gridTicks.map((tick) => {
+              const y = yFor(tick);
+              return (
+                <React.Fragment key={tick}>
+                  <Line x1={padL} y1={y} x2={chartW - padR} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
+                  <SvgText x={padL - 8} y={y + 4} fontSize="10" fontWeight="700" fill="rgba(255,255,255,0.48)" textAnchor="end">
+                    {Math.round(tick)}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            <Line x1={latestPoint.x} y1={padT} x2={latestPoint.x} y2={chartH - padB} stroke="rgba(125,211,252,0.18)" strokeWidth={1} />
+            <Path d={speedPath} stroke="#7dd3fc" strokeWidth={3} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+            <Circle cx={latestPoint.x} cy={latestPoint.y} r={4.5} fill="#e0f2fe" />
+            <SvgText x={padL} y={chartH - 6} fontSize="10" fontWeight="700" fill="rgba(255,255,255,0.46)" textAnchor="start">
+              Earlier
+            </SvgText>
+            <SvgText x={chartW - padR} y={chartH - 6} fontSize="10" fontWeight="700" fill="rgba(255,255,255,0.46)" textAnchor="end">
+              Now
+            </SvgText>
+          </Svg>
         </View>
+
+        <View style={styles.historySummaryRow}>
+          <View style={styles.historyMetricPill}>
+            <Text style={styles.historyMetricLabel}>Now</Text>
+            <Text style={styles.historyMetricValue}>{Math.round(latestSpeed)} km/s</Text>
+          </View>
+          <View style={styles.historyMetricPill}>
+            <Text style={styles.historyMetricLabel}>Trend</Text>
+            <Text style={styles.historyMetricValue}>
+              {trendLabel} {speedDelta >= 0 ? '+' : ''}
+              {Math.round(speedDelta)}
+            </Text>
+          </View>
+          <View style={styles.historyMetricPill}>
+            <Text style={styles.historyMetricLabel}>Range</Text>
+            <Text style={styles.historyMetricValue}>
+              {Math.round(minSpeed)}–{Math.round(maxSpeed)}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.smallText}>
+          Approx. {approxMinutes} min trace. {bzLabel}. Speed is most useful when paired with IMF direction, not by itself.
+        </Text>
 
         <View style={styles.historyLabels}>
           <Text style={styles.smallText}>Earlier</Text>
@@ -465,6 +585,9 @@ export default function SolarScreen() {
       ) : eventsError ? (
         <>
           <Text style={styles.smallText}>{eventsError}</Text>
+          <Text style={styles.smallText}>
+            This usually means the NASA DONKI feed or proxy timed out, rate-limited, or returned an upstream error.
+          </Text>
           <Text style={styles.smallText}>Source: NASA DONKI</Text>
         </>
       ) : events?.length ? (
@@ -506,6 +629,41 @@ export default function SolarScreen() {
   const astroReady = !!astro;
   const showAstroLoading = astroLoading && !astro;
   const showSpaceWeatherLoading = loading && !data;
+  const activeSolarView = useMemo(
+    () => SOLAR_VIEWS.find((view) => view.id === solarViewId) ?? SOLAR_VIEWS[0],
+    [solarViewId]
+  );
+  const activeSolarImageState = solarImageState[activeSolarView.id] ?? 'idle';
+
+  useEffect(() => {
+    setSolarImageState((current) =>
+      current[activeSolarView.id] ? current : { ...current, [activeSolarView.id]: 'loading' }
+    );
+  }, [activeSolarView.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const warm = async () => {
+      const remaining = SOLAR_VIEWS.filter((view) => view.id !== activeSolarView.id);
+      for (const view of remaining) {
+        try {
+          await Image.prefetch(view.imageUrl);
+          if (cancelled) return;
+          setSolarImageState((current) =>
+            current[view.id] === 'loaded' ? current : { ...current, [view.id]: 'loaded' }
+          );
+        } catch {
+          if (cancelled) return;
+        }
+      }
+    };
+
+    warm();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSolarView.id]);
 
   return (
     <>
@@ -557,11 +715,31 @@ export default function SolarScreen() {
             </View>
           ) : astroReady ? (
             <>
-              <AstroHeroCard forecast={astro} />
-              <SkyScoreChart hours={astro.hours} title="Sky Score Trend (72h)" />
-              <BestWindowCard forecast={astro} />
+              <AstroHeroCard
+                forecast={astro}
+                onLearnSkyScore={() =>
+                  openExplain({
+                    title: 'Sky Score',
+                    summary:
+                      'Sky Score is OMNIwx’s observing-quality score that blends Bortle darkness, cloud layers, transparency, moonlight, and stability into one number.',
+                    whyItMatters:
+                      'It gives a fast read on whether the sky is truly worth your time, not just whether the Sun is down.',
+                    howComputed:
+                      'The current model weights Bortle and cloud-driven transparency most heavily, then factors in darkness state, moonlight, wind stability, humidity, visibility, and aerosols.',
+                    confidence: 'medium',
+                    learnTopicId: 'astro-sky-score',
+                  })
+                }
+              />
+              <SkyScoreChart hours={chartHours} title="Sky Score Trend (72h)" />
               <AstroHourlyStrip hours={astro.tonightHours} />
-              <MoonDarknessCard forecast={astro} />
+              <MoonDarknessCard
+                forecast={astro}
+                onLearnTopic={(topicId) => {
+                  setLearnTopicId(topicId ?? undefined);
+                  setLearnOpen(true);
+                }}
+              />
               <OpenAstroMapCard
                 lat={astro.lat}
                 lon={astro.lon}
@@ -569,6 +747,87 @@ export default function SolarScreen() {
               />
             </>
           ) : null}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Live Solar Views</Text>
+            <Text style={styles.sectionSubtitle}>
+              Toggle between current solar imagery products without leaving the Space page
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Solar imagery</Text>
+              <LearnRow
+                onPress={() => {
+                  setLearnTopicId(activeSolarView.topicId);
+                  setLearnOpen(true);
+                }}
+              />
+            </View>
+
+            <View style={styles.solarChipRow}>
+              {SOLAR_VIEWS.map((view) => (
+                <Pressable
+                  key={view.id}
+                  onPress={() => setSolarViewId(view.id)}
+                  style={[
+                    styles.solarChip,
+                    view.id === activeSolarView.id ? styles.solarChipActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.solarChipText,
+                      view.id === activeSolarView.id ? styles.solarChipTextActive : null,
+                    ]}
+                  >
+                    {view.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.solarImageFrame}>
+              <Image
+                source={{ uri: activeSolarView.imageUrl }}
+                style={styles.solarImage}
+                resizeMode="cover"
+                onLoadStart={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loading' }))
+                }
+                onLoad={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loaded' }))
+                }
+                onError={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'error' }))
+                }
+              />
+
+              {activeSolarImageState !== 'loaded' ? (
+                <View style={styles.solarImageOverlay}>
+                  <ActivityIndicator color="#E0F2FE" />
+                  <Text style={styles.solarImageOverlayText}>
+                    {activeSolarImageState === 'error'
+                      ? 'Solar image unavailable right now'
+                      : 'Loading live solar image…'}
+                  </Text>
+                  <Text style={styles.solarImageOverlaySubtext}>
+                    Using a smaller mobile-friendly image and warming the rest in the background
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.solarMetaRow}>
+              <View style={styles.solarSourcePill}>
+                <Text style={styles.solarSourcePillText}>{activeSolarView.source}</Text>
+              </View>
+              <Text style={styles.smallText}>Live image feed</Text>
+            </View>
+
+            <Text style={styles.cardBody}>{activeSolarView.description}</Text>
+          </View>
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Space Weather Context</Text>
@@ -933,6 +1192,100 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
+  solarChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+
+  solarChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+
+  solarChipActive: {
+    borderColor: 'rgba(125,211,252,0.30)',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+  },
+
+  solarChipText: {
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  solarChipTextActive: {
+    color: '#E0F2FE',
+  },
+
+  solarImageFrame: {
+    width: '100%',
+    aspectRatio: 1.08,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  solarImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  solarImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(2,6,23,0.78)',
+    gap: 8,
+  },
+
+  solarImageOverlayText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  solarImageOverlaySubtext: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+
+  solarMetaRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  solarSourcePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+
+  solarSourcePillText: {
+    color: '#E5E7EB',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
   label: {
     fontSize: 12,
     color: '#9CA3AF',
@@ -1154,6 +1507,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
   },
+  historyChartFrame: {
+    marginTop: 10,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#0B1220',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  historySummaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  historyMetricPill: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  historyMetricLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  historyMetricValue: {
+    marginTop: 4,
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '900',
+  },
 
   band: {
     position: 'absolute',
@@ -1184,11 +1571,7 @@ const styles = StyleSheet.create({
   },
 
   historyLabels: {
-    marginTop: 6,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
+    display: 'none',
   },
 
   footer: {

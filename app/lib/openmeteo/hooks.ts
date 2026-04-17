@@ -1,5 +1,6 @@
 // app/lib/openmeteo/hooks.ts
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 export type ForecastHour = {
@@ -131,9 +132,9 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'temperature_2m_min',
           'precipitation_probability_max',
           'wind_gusts_10m_max',
-          'windspeed_10m_max',
-          'winddirection_10m_dominant',
-          'cloudcover_mean',
+          'wind_speed_10m_max',
+          'wind_direction_10m_dominant',
+          'cloud_cover_mean',
           'dew_point_2m_max',
           'weather_code',
           'sunrise',
@@ -147,28 +148,29 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           'temperature_2m',
           'apparent_temperature',
           'dew_point_2m',
-          'relativehumidity_2m',
-          'cloudcover',
+          'relative_humidity_2m',
+          'cloud_cover',
           'precipitation_probability',
           'visibility',
           'pressure_msl',
-          'windspeed_10m',
+          'wind_speed_10m',
           'wind_gusts_10m',
-          'winddirection_10m',
+          'wind_direction_10m',
           'weather_code',
           'uv_index',
         ].join(',');
 
-        const url =
-          `https://api.open-meteo.com/v1/forecast` +
-          `?latitude=${latKey}&longitude=${lonKey}` +
-          `&daily=${dailyVars}` +
-          `&hourly=${hourlyVars}` +
-          `&forecast_days=${days}` +
-          (pastDays > 0 ? `&past_days=${pastDays}` : ``) +
-          `&temperature_unit=fahrenheit` +
-          `&wind_speed_unit=mph` +
-          `&timezone=auto`;
+        const params = new URLSearchParams({
+          lat: String(latKey),
+          lon: String(lonKey),
+          daily: dailyVars,
+          hourly: hourlyVars,
+          forecast_days: String(days),
+          timezone: 'auto',
+          units: 'imperial',
+        });
+        if (pastDays > 0) params.set('past_days', String(pastDays));
+        const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
 
         console.log('[net] requesting:', url);
         const res = await fetchWithTimeout(url, 12000);
@@ -186,13 +188,13 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const hTemp: any[] = h.temperature_2m ?? [];
         const hApp: any[] = h.apparent_temperature ?? [];
         const hDp: any[] = h.dew_point_2m ?? [];
-        const hRh: any[] = h.relativehumidity_2m ?? [];
-        const hCloud: any[] = h.cloudcover ?? [];
+        const hRh: any[] = h.relative_humidity_2m ?? h.relativehumidity_2m ?? [];
+        const hCloud: any[] = h.cloud_cover ?? h.cloudcover ?? [];
         const hPop: any[] = h.precipitation_probability ?? [];
         const hVis: any[] = h.visibility ?? [];
-        const hWind: any[] = h.windspeed_10m ?? [];
+        const hWind: any[] = h.wind_speed_10m ?? h.windspeed_10m ?? [];
         const hGust: any[] = h.wind_gusts_10m ?? [];
-        const hWindDir: any[] = h.winddirection_10m ?? [];
+        const hWindDir: any[] = h.wind_direction_10m ?? h.winddirection_10m ?? [];
         const hWmo: any[] = h.weather_code ?? [];
         const hPressure: any[] = h.pressure_msl ?? [];
         const hUv: any[] = h.uv_index ?? [];
@@ -246,10 +248,10 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const tMin: any[] = d.temperature_2m_min ?? [];
         const popMax: any[] = d.precipitation_probability_max ?? [];
         const gustMax: any[] = d.wind_gusts_10m_max ?? [];
-        const cloudMean: any[] = d.cloudcover_mean ?? [];
+        const cloudMean: any[] = d.cloud_cover_mean ?? d.cloudcover_mean ?? [];
         const dpMax: any[] = d.dew_point_2m_max ?? [];
-        const windMax: any[] = d.windspeed_10m_max ?? [];
-        const windDirDom: any[] = d.winddirection_10m_dominant ?? [];
+        const windMax: any[] = d.wind_speed_10m_max ?? d.windspeed_10m_max ?? [];
+        const windDirDom: any[] = d.wind_direction_10m_dominant ?? d.winddirection_10m_dominant ?? [];
         const dWmo: any[] = d.weather_code ?? [];
 
         const dSunrise: any[] = d.sunrise ?? [];

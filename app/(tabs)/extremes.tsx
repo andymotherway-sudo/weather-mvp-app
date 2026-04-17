@@ -8,6 +8,7 @@
 
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import {
   ActivityIndicator,
   Image,
@@ -467,7 +468,9 @@ function MarineSection({
 
             <SeverityPill severity={severity} />
 
-            <Text style={styles.valueText}>{renderValue(b)}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.valueText}>
+              {renderValue(b)}
+            </Text>
           </Pressable>
         );
       })}
@@ -517,7 +520,9 @@ function LandSection({ title, subtitle, items }: { title: string; subtitle: stri
               </View>
             ) : null}
 
-            <Text style={styles.valueText}>{x.valueText}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.valueText}>
+              {x.valueText}
+            </Text>
           </Pressable>
         ))
       )}
@@ -526,6 +531,7 @@ function LandSection({ title, subtitle, items }: { title: string; subtitle: stri
 }
 
 export default function ExtremesScreen() {
+  const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const { tempUnit } = useSettings();
   const [mode, setMode] = useState<Mode>('marine');
@@ -600,7 +606,7 @@ export default function ExtremesScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: theme.spacing['2xl'] + tabBarHeight + 18 }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View style={styles.header}>
@@ -1034,6 +1040,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#f97316',
     marginLeft: 8,
+    flexShrink: 1,
+    maxWidth: 96,
+    minWidth: 52,
+    textAlign: 'right',
   },
 
   severityPill: {

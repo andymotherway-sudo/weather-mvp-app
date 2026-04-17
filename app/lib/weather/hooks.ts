@@ -1,5 +1,6 @@
 // app/lib/weather/hooks.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type CurrentWeatherOptions = {
@@ -52,6 +53,47 @@ function at<T = any>(arr: T[] | undefined, idx: number): T | null {
 }
 
 function normalizeCurrentFromForecastJson(json: any, units: 'imperial' | 'metric') {
+  const directTemp = safeNum(json?.temp);
+  const directFeels = safeNum(json?.feels);
+  const directDewPoint = safeNum(json?.dewPoint);
+  const directHumidity = safeNum(json?.humidityPct);
+  const directCloudCover = safeNum(json?.cloudCoverPct);
+  const directWind = safeNum(json?.wind);
+  const directWindGust = safeNum(json?.windGust);
+  const directWindDir = safeNum(json?.windDir);
+  const directPressure = safeNum(json?.pressureMb);
+  const directWeatherCode = safeNum(json?.weatherCode);
+
+  if (
+    directTemp != null ||
+    directFeels != null ||
+    directDewPoint != null ||
+    directHumidity != null ||
+    directCloudCover != null ||
+    directWind != null ||
+    directWindGust != null ||
+    directWindDir != null ||
+    directPressure != null ||
+    directWeatherCode != null
+  ) {
+    return {
+      ok: json?.ok ?? true,
+      source: json?.source ?? 'open-meteo',
+      time: typeof json?.time === 'string' ? json.time : null,
+      units: json?.units ?? units,
+      temp: directTemp,
+      feels: directFeels,
+      dewPoint: directDewPoint,
+      humidityPct: directHumidity,
+      cloudCoverPct: directCloudCover,
+      wind: directWind,
+      windGust: directWindGust,
+      windDir: directWindDir,
+      pressureMb: directPressure,
+      weatherCode: directWeatherCode,
+    };
+  }
+
   const current = json?.current ?? null;
   const hourly = json?.hourly ?? {};
   const hourlyTimes: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
@@ -120,47 +162,13 @@ function normalizeCurrentFromForecastJson(json: any, units: 'imperial' | 'metric
   };
 }
 
-function buildOpenMeteoCurrentUrl(lat: number, lon: number, units: 'imperial' | 'metric') {
-  const temperatureUnit = units === 'imperial' ? 'fahrenheit' : 'celsius';
-  const windUnit = units === 'imperial' ? 'mph' : 'kmh';
-
-  const currentFields = [
-    'temperature_2m',
-    'apparent_temperature',
-    'dew_point_2m',
-    'relative_humidity_2m',
-    'weather_code',
-    'cloud_cover',
-    'wind_speed_10m',
-    'wind_gusts_10m',
-    'wind_direction_10m',
-    'pressure_msl',
-  ].join(',');
-
-  const hourlyFields = [
-    'temperature_2m',
-    'apparent_temperature',
-    'dew_point_2m',
-    'relative_humidity_2m',
-    'weather_code',
-    'cloud_cover',
-    'wind_speed_10m',
-    'wind_gusts_10m',
-    'wind_direction_10m',
-    'pressure_msl',
-  ].join(',');
-
-  return (
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(String(lat))}` +
-    `&longitude=${encodeURIComponent(String(lon))}` +
-    `&current=${encodeURIComponent(currentFields)}` +
-    `&hourly=${encodeURIComponent(hourlyFields)}` +
-    `&forecast_days=1` +
-    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
-    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
-    `&timezone=auto`
-  );
+function buildCurrentWeatherUrl(lat: number, lon: number, units: 'imperial' | 'metric') {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    units,
+  });
+  return apiUrl(`/api/current?${params.toString()}`);
 }
 
 export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherState {
@@ -195,8 +203,8 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
 
         setError(null);
 
-        const url = buildOpenMeteoCurrentUrl(lat, lon, units);
-        console.log('[net] current requesting (direct OM):', url);
+        const url = buildCurrentWeatherUrl(lat, lon, units);
+        console.log('[net] current requesting (worker):', url);
 
         const res = await fetchWithTimeout(url, 12000, { signal: ac.signal });
         console.log('[net] current status:', res.status, url);

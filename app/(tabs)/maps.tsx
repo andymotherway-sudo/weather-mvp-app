@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import MapLibreGL from '@maplibre/maplibre-react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Glass } from '../../components/common/Glass';
+import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { LayerSheetModal, type LayerSheetValue } from '../../components/maps/LayerSheetModal';
 import { LegendChip } from '../../components/maps/LegendChip';
 import type { Region } from '../../components/maps/MapRenderer';
@@ -18,8 +20,12 @@ import { useLocations } from '../lib/locations/useLocations';
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
+import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useRadarController } from '../lib/maps/useRadarController';
 import { MAP_VIEWS } from '../lib/maps/views';
+
+const WPC_FRONTS_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -77,6 +83,9 @@ function isRadarPrimaryView(viewId: string) {
 function getSimpleStatus(args: {
   viewId: string;
   radarEnabled: boolean;
+  frontsDay1Enabled: boolean;
+  frontsDay2Enabled: boolean;
+  frontsDay3Enabled: boolean;
   cloudsEnabled: boolean;
   wildfireEnabled: boolean;
   goesTrueColorEnabled: boolean;
@@ -92,6 +101,9 @@ function getSimpleStatus(args: {
   const {
     viewId,
     radarEnabled,
+    frontsDay1Enabled,
+    frontsDay2Enabled,
+    frontsDay3Enabled,
     cloudsEnabled,
     wildfireEnabled,
     goesTrueColorEnabled,
@@ -112,6 +124,9 @@ function getSimpleStatus(args: {
   if (goesWestIrEnabled) return 'GOES West infrared active';
   if (goesEastWvEnabled) return 'GOES East water vapor active';
   if (goesWestWvEnabled) return 'GOES West water vapor active';
+  if (frontsDay1Enabled) return 'WPC Day 1 fronts active';
+  if (frontsDay2Enabled) return 'WPC Day 2 fronts active';
+  if (frontsDay3Enabled) return 'WPC Day 3 fronts active';
 
   if (viewId === 'clouds') {
     return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
@@ -210,6 +225,8 @@ export default function MapsScreen() {
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [learnOpen, setLearnOpen] = useState(false);
+  const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
   const [rawMode, setRawMode] = useState(false);
 
@@ -257,6 +274,14 @@ export default function MapsScreen() {
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
+  const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
+  const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
+  const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
+  const aviationTurbEnabled = !!state.layers?.['aviation.gairmet.turb']?.enabled;
+  const aviationIceEnabled = !!state.layers?.['aviation.gairmet.ice']?.enabled;
+  const aviationSigmetEnabled = !!state.layers?.['aviation.sigmet']?.enabled;
+  const aviationCwaEnabled = !!state.layers?.['aviation.cwa']?.enabled;
+  const aviationPirepEnabled = !!state.layers?.['aviation.pirep']?.enabled;
 
   const goesTrueColorEnabled = !!state.layers?.['sat.goes.truecolor']?.enabled;
   const goesEastGeoEnabled = !!state.layers?.['sat.goesEast.geocolor']?.enabled;
@@ -269,6 +294,15 @@ export default function MapsScreen() {
   const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
     ? state.layers['sat.clouds'].opacity
     : 0.85;
+  const frontsDay1Opacity = Number.isFinite(state.layers?.['wx.fronts.day1']?.opacity)
+    ? state.layers['wx.fronts.day1'].opacity
+    : 0.96;
+  const frontsDay2Opacity = Number.isFinite(state.layers?.['wx.fronts.day2']?.opacity)
+    ? state.layers['wx.fronts.day2'].opacity
+    : 0.92;
+  const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
+    ? state.layers['wx.fronts.day3'].opacity
+    : 0.88;
 
   const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
@@ -297,6 +331,25 @@ export default function MapsScreen() {
   const goesWestWvOpacity = Number.isFinite(state.layers?.['sat.goesWest.wv']?.opacity)
     ? state.layers['sat.goesWest.wv'].opacity
     : 0.94;
+  const aviationTurbOpacity = Number.isFinite(state.layers?.['aviation.gairmet.turb']?.opacity)
+    ? state.layers['aviation.gairmet.turb'].opacity
+    : 0.72;
+  const aviationIceOpacity = Number.isFinite(state.layers?.['aviation.gairmet.ice']?.opacity)
+    ? state.layers['aviation.gairmet.ice'].opacity
+    : 0.72;
+  const aviationSigmetOpacity = Number.isFinite(state.layers?.['aviation.sigmet']?.opacity)
+    ? state.layers['aviation.sigmet'].opacity
+    : 0.82;
+  const aviationCwaOpacity = Number.isFinite(state.layers?.['aviation.cwa']?.opacity)
+    ? state.layers['aviation.cwa'].opacity
+    : 0.76;
+  const aviationPirepOpacity = Number.isFinite(state.layers?.['aviation.pirep']?.opacity)
+    ? state.layers['aviation.pirep'].opacity
+    : 0.9;
+
+  const aviationOverlayEnabled =
+    aviationTurbEnabled || aviationIceEnabled || aviationSigmetEnabled || aviationCwaEnabled || aviationPirepEnabled;
+  const aviationData = useAviationMapData(aviationOverlayEnabled || state.viewId === 'aviation');
 
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
@@ -320,6 +373,7 @@ export default function MapsScreen() {
 
   const uiFrames = radarCtl.uiFrames;
   const frameCount = radarCtl.frameCount;
+  const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const canSwitchProduct = state.nerdy;
 
@@ -346,6 +400,7 @@ export default function MapsScreen() {
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     const list: WmsOverlayConfig[] = [];
+    const sharedCloudTime = radarEnabled && cloudsEnabled && frameCount > 1 ? activeFrameIso ?? null : null;
 
     const shared = {
       enabled: true,
@@ -378,9 +433,52 @@ export default function MapsScreen() {
         id: 'goes-conus-ch02',
         url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
         layers: 'conus_ch02',
+        time: sharedCloudTime,
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 60,
         ...shared,
+      });
+    }
+
+    if (frontsDay1Enabled) {
+      list.push({
+        id: 'wpc-fronts-day1',
+        tileUrlTemplates: [`${WPC_FRONTS_EXPORT_URL}&layers=show:1,2`],
+        opacity: Math.max(0, Math.min(1, Number(frontsDay1Opacity))),
+        zIndex: 109,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (frontsDay2Enabled) {
+      list.push({
+        id: 'wpc-fronts-day2',
+        tileUrlTemplates: [`${WPC_FRONTS_EXPORT_URL}&layers=show:13,14`],
+        opacity: Math.max(0, Math.min(1, Number(frontsDay2Opacity))),
+        zIndex: 108,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (frontsDay3Enabled) {
+      list.push({
+        id: 'wpc-fronts-day3',
+        tileUrlTemplates: [`${WPC_FRONTS_EXPORT_URL}&layers=show:25,26`],
+        opacity: Math.max(0, Math.min(1, Number(frontsDay3Opacity))),
+        zIndex: 107,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
       });
     }
 
@@ -452,8 +550,17 @@ export default function MapsScreen() {
 
     return list;
   }, [
+    activeFrameIso,
+    frameCount,
+    radarEnabled,
     cloudsEnabled,
     cloudsOpacity,
+    frontsDay1Enabled,
+    frontsDay1Opacity,
+    frontsDay2Enabled,
+    frontsDay2Opacity,
+    frontsDay3Enabled,
+    frontsDay3Opacity,
     goesTrueColorEnabled,
     goesTrueColorOpacity,
     goesEastGeoEnabled,
@@ -574,11 +681,11 @@ export default function MapsScreen() {
   const effectiveRegion = region ?? stableInitialRegion;
 
   const pushSpecialMap = useCallback(
-    (pathname: '/astro-map' | '/nautical-map') => {
+    (pathname: '/astro-map' | '/nautical-map' | '/aviation') => {
       const currentRegion = effectiveRegion;
 
       router.push({
-        pathname,
+        pathname: pathname as any,
         params: {
           from: 'maps',
           nav: String(Date.now()),
@@ -622,6 +729,9 @@ export default function MapsScreen() {
   const simpleStatus = getSimpleStatus({
     viewId: String(state.viewId),
     radarEnabled,
+    frontsDay1Enabled,
+    frontsDay2Enabled,
+    frontsDay3Enabled,
     cloudsEnabled,
     wildfireEnabled,
     goesTrueColorEnabled,
@@ -656,6 +766,28 @@ export default function MapsScreen() {
   const providerLabel = sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
   const timelineStateLabel = !radarEnabled ? 'Layers only' : state.radarTime.playing ? 'Looping' : 'Holding';
+  const aviationPirepCount = aviationData.pireps?.features?.length ?? 0;
+  const aviationFeatureCount =
+    (aviationData.turbulence?.features?.length ?? 0) +
+    (aviationData.icing?.features?.length ?? 0) +
+    (aviationData.advisories?.features?.length ?? 0) +
+    (aviationData.centerWeather?.features?.length ?? 0) +
+    aviationPirepCount;
+  const aviationStatusLabel =
+    state.viewId === 'aviation'
+      ? aviationData.loading
+        ? 'Loading aviation overlays'
+        : aviationData.error && aviationFeatureCount <= 0
+          ? 'Aviation overlays unavailable'
+          : aviationData.error
+            ? 'Aviation overlays partial'
+            : aviationFeatureCount > 0
+              ? 'Aviation overlays ready'
+              : 'No active aviation hazards'
+      : null;
+  const overlayStatusText = aviationStatusLabel
+    ? [overlaySummaryText, aviationStatusLabel].filter(Boolean).join(' / ')
+    : overlaySummaryText;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -697,7 +829,187 @@ export default function MapsScreen() {
           }}
           radar={mapRadar}
           overlays={overlays}
-        />
+        >
+          {aviationTurbEnabled ? (
+            <MapLibreGL.ShapeSource id="aviation-turbulence-source" shape={aviationData.turbulence as any}>
+              <MapLibreGL.FillLayer
+                id="aviation-turbulence-fill"
+                style={{
+                  fillColor: '#f59e0b',
+                  fillOpacity: Math.max(0.08, Math.min(0.5, aviationTurbOpacity * 0.32)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="aviation-turbulence-line"
+                style={{
+                  lineColor: '#fbbf24',
+                  lineOpacity: Math.max(0.35, Math.min(1, aviationTurbOpacity)),
+                  lineWidth: 2,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-turbulence-label"
+                style={{
+                  textField: ['get', 'iconLabel'],
+                  symbolPlacement: 'point',
+                  textSize: 10,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['get', 'iconTextColor'],
+                  textHaloColor: ['get', 'iconBgColor'],
+                  textHaloWidth: 8,
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {aviationIceEnabled ? (
+            <MapLibreGL.ShapeSource id="aviation-icing-source" shape={aviationData.icing as any}>
+              <MapLibreGL.FillLayer
+                id="aviation-icing-fill"
+                style={{
+                  fillColor: '#38bdf8',
+                  fillOpacity: Math.max(0.08, Math.min(0.46, aviationIceOpacity * 0.3)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="aviation-icing-line"
+                style={{
+                  lineColor: '#7dd3fc',
+                  lineOpacity: Math.max(0.35, Math.min(1, aviationIceOpacity)),
+                  lineWidth: 2,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-icing-label"
+                style={{
+                  textField: ['get', 'iconLabel'],
+                  symbolPlacement: 'point',
+                  textSize: 10,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['get', 'iconTextColor'],
+                  textHaloColor: ['get', 'iconBgColor'],
+                  textHaloWidth: 8,
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {aviationSigmetEnabled ? (
+            <MapLibreGL.ShapeSource id="aviation-sigmet-source" shape={aviationData.advisories as any}>
+              <MapLibreGL.LineLayer
+                id="aviation-sigmet-line"
+                style={{
+                  lineColor: '#f87171',
+                  lineOpacity: Math.max(0.35, Math.min(1, aviationSigmetOpacity)),
+                  lineWidth: 2.4,
+                  lineDasharray: [2, 1.4],
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-sigmet-label"
+                style={{
+                  textField: ['get', 'iconLabel'],
+                  symbolPlacement: 'point',
+                  textSize: 10,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['get', 'iconTextColor'],
+                  textHaloColor: ['get', 'iconBgColor'],
+                  textHaloWidth: 8,
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {aviationCwaEnabled ? (
+            <MapLibreGL.ShapeSource id="aviation-cwa-source" shape={aviationData.centerWeather as any}>
+              <MapLibreGL.LineLayer
+                id="aviation-cwa-line"
+                style={{
+                  lineColor: '#fde68a',
+                  lineOpacity: Math.max(0.35, Math.min(1, aviationCwaOpacity)),
+                  lineWidth: 2,
+                  lineDasharray: [1.2, 1.2],
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-cwa-label"
+                style={{
+                  textField: ['get', 'iconLabel'],
+                  symbolPlacement: 'point',
+                  textSize: 10,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['get', 'iconTextColor'],
+                  textHaloColor: ['get', 'iconBgColor'],
+                  textHaloWidth: 8,
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {aviationPirepEnabled ? (
+            <MapLibreGL.ShapeSource
+              id="aviation-pirep-source"
+              shape={aviationData.pireps as any}
+              cluster
+              clusterRadius={42}
+              clusterMaxZoomLevel={8}
+            >
+              <MapLibreGL.CircleLayer
+                id="aviation-pirep-clusters"
+                filter={['has', 'point_count']}
+                style={{
+                  circleColor: 'rgba(14,165,233,0.28)',
+                  circleStrokeColor: 'rgba(186,230,253,0.92)',
+                  circleStrokeWidth: 1.2,
+                  circleOpacity: Math.max(0.35, Math.min(1, aviationPirepOpacity)),
+                  circleRadius: ['step', ['get', 'point_count'], 13, 25, 17, 75, 21, 200, 25],
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-pirep-cluster-count"
+                filter={['has', 'point_count']}
+                style={{
+                  textField: ['to-string', ['get', 'point_count']],
+                  textSize: 12,
+                  textColor: '#e0f2fe',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1,
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="aviation-pirep-points"
+                filter={['!', ['has', 'point_count']]}
+                style={{
+                  circleColor: ['coalesce', ['get', 'iconBgColor'], '#e0f2fe'],
+                  circleOpacity: Math.max(0.35, Math.min(1, aviationPirepOpacity)),
+                  circleRadius: ['coalesce', ['get', 'iconRadius'], 7],
+                  circleStrokeColor: ['coalesce', ['get', 'iconStrokeColor'], 'rgba(2,6,23,0.95)'],
+                  circleStrokeWidth: ['coalesce', ['get', 'iconStrokeWidth'], 1.25],
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="aviation-pirep-label"
+                filter={['!', ['has', 'point_count']]}
+                style={{
+                  textField: ['get', 'iconLabel'],
+                  textSize: 9,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['coalesce', ['get', 'iconTextColor'], '#020617'],
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+        </MapRenderer>
 
         <View pointerEvents="box-none" style={styles.topChrome}>
           <Glass style={styles.summaryCard}>
@@ -713,11 +1025,12 @@ export default function MapsScreen() {
 
             <Text style={styles.summaryTitle}>{currentViewTitle}</Text>
             <Text style={styles.summaryMeta} numberOfLines={2}>
-              {overlaySummaryText || 'Layer stack ready'}
+              {overlayStatusText || 'Layer stack ready'}
             </Text>
             <Text style={styles.summaryTimestamp}>
               {timestampLabel || 'Latest update'}
               {radarCtl.profileLabel ? ` / ${radarCtl.profileLabel}` : ''}
+              {state.viewId === 'aviation' && aviationPirepEnabled ? ` / ${aviationPirepCount} pireps` : ''}
             </Text>
 
             <View style={styles.summaryFooter}>
@@ -740,7 +1053,7 @@ export default function MapsScreen() {
 
           <View style={styles.quickActions}>
             <MapActionButton
-              label="Layers"
+              label="Overlays"
               onPress={() => setLayersSheetOpen(true)}
               badge={activeOverlayCount > 0 ? String(Math.min(99, activeOverlayCount)) : undefined}
               active={layersSheetOpen}
@@ -792,9 +1105,15 @@ export default function MapsScreen() {
           onClose={() => setLayersSheetOpen(false)}
           state={state}
           nerdy={state.nerdy}
-          allowedGroups={['weather', 'fireAir']}
+          allowedGroups={['weather', 'fireAir', 'aviation']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
+          onOpenSourceInfo={(layerId) => {
+            if (layerId === 'wx.fronts.day1' || layerId === 'wx.fronts.day2' || layerId === 'wx.fronts.day3') {
+              setLearnTopicId('front-types');
+              setLearnOpen(true);
+            }
+          }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);
             pushSpecialMap('/astro-map');
@@ -812,6 +1131,7 @@ export default function MapsScreen() {
           onChange={setSheetValue}
           nerdy={state.nerdy}
         />
+        <LearnMoreModal visible={learnOpen} onClose={() => setLearnOpen(false)} initialTopicId={learnTopicId} />
       </View>
     </SafeAreaView>
   );

@@ -38,11 +38,7 @@ function computeCloudPenalty(input: AstroInputs) {
   const high = pct01(input.cloudHigh) ?? 0;
   const total = pct01(input.cloudTotal);
 
-  const cloudPenaltyFromLayers = clamp(
-    0.3 * low + 0.55 * mid + 0.95 * high,
-    0,
-    1
-  );
+  const cloudPenaltyFromLayers = clamp(0.36 * low + 0.62 * mid + 0.96 * high, 0, 1);
 
   return {
     cloudPenalty: Math.max(total ?? 0, cloudPenaltyFromLayers),
@@ -56,42 +52,38 @@ function computeTransparency01(input: AstroInputs) {
   const visibilityPenalty =
     visKm == null
       ? 0.12
-      : clamp((20 - clamp(visKm, 0, 20)) / 20, 0, 1) * 0.45;
+      : clamp((22 - clamp(visKm, 0, 22)) / 22, 0, 1) * 0.4;
 
   const humidity = input.humidityPct ?? null;
   const humidityPenalty =
     humidity == null
       ? 0.05
-      : clamp((humidity - 70) / 30, 0, 1) * 0.22;
+      : clamp((humidity - 68) / 32, 0, 1) * 0.24;
 
-  let transparency01 = clamp(
-    1 - (cloudPenalty * 1.0 + visibilityPenalty + humidityPenalty),
-    0,
-    1
-  );
+  let transparency01 = clamp(1 - (cloudPenalty * 1.02 + visibilityPenalty + humidityPenalty), 0, 1);
 
   const cloudTotalPct = input.cloudTotal ?? null;
 
   if (cloudTotalPct != null) {
     if (cloudTotalPct >= 100) {
-      transparency01 = Math.min(transparency01, 0.03);
+      transparency01 = Math.min(transparency01, 0.02);
     } else if (cloudTotalPct >= 98) {
-      transparency01 = Math.min(transparency01, 0.05);
+      transparency01 = Math.min(transparency01, 0.04);
     } else if (cloudTotalPct >= 95) {
-      transparency01 = Math.min(transparency01, 0.08);
+      transparency01 = Math.min(transparency01, 0.07);
     } else if (cloudTotalPct >= 90) {
-      transparency01 = Math.min(transparency01, 0.14);
+      transparency01 = Math.min(transparency01, 0.12);
     } else if (cloudTotalPct >= 85) {
-      transparency01 = Math.min(transparency01, 0.20);
+      transparency01 = Math.min(transparency01, 0.18);
     }
   }
 
   if (cloudPenalty >= 0.95) {
-    transparency01 = Math.min(transparency01, 0.08);
+    transparency01 = Math.min(transparency01, 0.06);
   } else if (cloudPenalty >= 0.9) {
-    transparency01 = Math.min(transparency01, 0.14);
+    transparency01 = Math.min(transparency01, 0.12);
   } else if (cloudPenalty >= 0.85) {
-    transparency01 = Math.min(transparency01, 0.20);
+    transparency01 = Math.min(transparency01, 0.18);
   }
 
   return transparency01;
@@ -101,10 +93,12 @@ function computeSeeing01(input: AstroInputs) {
   const wind = input.windMps ?? 0;
   const gust = input.gustMps ?? wind;
 
-  const sustainedPenalty = clamp((wind - 4) / 10, 0, 1) * 0.45;
-  const gustPenalty = clamp((gust - 6) / 14, 0, 1) * 0.55;
+  const sustainedPenalty = clamp((wind - 4) / 10, 0, 1) * 0.42;
+  const gustPenalty = clamp((gust - 6) / 14, 0, 1) * 0.5;
+  const humidityPenalty =
+    input.humidityPct == null ? 0 : clamp((input.humidityPct - 85) / 15, 0, 1) * 0.08;
 
-  return clamp(1 - (sustainedPenalty + gustPenalty), 0, 1);
+  return clamp(1 - (sustainedPenalty + gustPenalty + humidityPenalty), 0, 1);
 }
 
 function computeMoonScore01(args: {
@@ -119,7 +113,7 @@ function computeMoonScore01(args: {
   const dark01 = clamp(darknessScore ?? 1, 0, 1);
 
   // Moon matters more when it is actually dark.
-  const maxPenalty = 0.80 * dark01;
+  const maxPenalty = 0.82 * dark01;
   return clamp(1 - illum01 * maxPenalty, 0, 1);
 }
 
@@ -182,19 +176,17 @@ export function computeSkyScorePoint(args: {
   const aerosols01 = computeAerosolScore01(input);
   const site01 = computeSiteScore01(input);
 
-  // Atmospheric observing quality at this moment.
   const weather01 = clamp(
-    transparency01 * 0.42 +
+    transparency01 * 0.4 +
+      seeing01 * 0.16 +
       darkness01 * 0.20 +
-      seeing01 * 0.14 +
       moon01 * 0.12 +
       aerosols01 * 0.12,
     0,
     1
   );
 
-  // Site baseline should matter a lot for astronomy.
-  const observer01 = clamp(weather01 * 0.68 + site01 * 0.32, 0, 1);
+  const observer01 = clamp(weather01 * (0.35 + 0.65 * site01), 0, 1);
   const score = Math.round(observer01 * 100);
 
   return {
@@ -280,6 +272,8 @@ export function skyScoreSummary(args: {
 
   if ((cloudTotal ?? 0) >= 95) return 'Overcast skies block observing';
   if ((cloudTotal ?? 0) >= 85) return 'Mostly cloudy skies limit observing';
+  if ((bortleClass ?? 0) >= 8) return 'City skyglow strongly limits faint-object contrast';
+  if ((bortleClass ?? 0) >= 6) return 'Bright suburban sky cuts into deep-sky detail';
   if ((cloudHigh ?? 0) >= 80) return 'High clouds reduce visibility';
   if (moonIsUp && (moonIlluminationPct ?? 0) >= 60) {
     return 'Moonlight reduces contrast';
@@ -290,9 +284,6 @@ export function skyScoreSummary(args: {
   if ((visibilityM ?? 20000) < 8000) return 'Hazy sky limits transparency';
   if ((humidityPct ?? 0) >= 88) return 'High humidity softens the sky';
   if ((gustMps ?? 0) >= 10) return 'Wind may reduce stability';
-  if ((bortleClass ?? 0) >= 8) return 'Inner-city sky limits most deep-sky observing';
-  if ((bortleClass ?? 0) >= 7) return 'Bright urban sky limits deep-sky observing';
-  if ((bortleClass ?? 0) >= 5) return 'Suburban light pollution reduces contrast';
   if ((elevationM ?? 0) >= 1500 && score >= 70) {
     return 'Dark, clear mountain observing';
   }

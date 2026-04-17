@@ -261,6 +261,11 @@ type AstroInspectPayload = {
     bortleLabel?: string | null;
     skyBrightness?: number | null;
   };
+  aerosols?: {
+    index?: number | null;
+    label?: string | null;
+    source?: string | null;
+  };
   fetchedAt: string;
 };
 
@@ -438,6 +443,48 @@ async function swrFetchJson(
   );
 }
 
+function buildDonkiCacheKey(reqUrl: URL, donkiPath: string) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = `/__cache__/nasa/donki/${donkiPath}`;
+  keyUrl.searchParams.sort();
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+async function fetchDonkiUpstream(upstream: URL) {
+  let lastErr: unknown = null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), DONKI_TIMEOUT_MS);
+    try {
+      const res = await fetch(upstream.toString(), {
+        signal: ctrl.signal,
+        headers: { accept: "application/json" },
+      });
+
+      if ((res.status === 429 || res.status >= 500) && attempt === 0) {
+        lastErr = new Error(`DONKI upstream ${res.status}`);
+        continue;
+      }
+
+      const bodyText = await res.text();
+      return new Response(bodyText, {
+        status: res.status,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+      });
+    } catch (err) {
+      lastErr = err;
+      if (attempt === 1) break;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  throw lastErr ?? new Error("DONKI upstream fetch failed");
+}
+
 /* =============================================================================
  * Knobs
  * ============================================================================= */
@@ -461,8 +508,13 @@ const RADAR_TILE_TTL_SECONDS = 900;
 const RADAR_TILE_STALE_SECONDS = 24 * 3600;
 const WMS_TTL_SECONDS = 300;
 const WMS_STALE_SECONDS = 24 * 3600;
+const ALMANAC_TTL_SECONDS = 24 * 3600;
+const ALMANAC_STALE_SECONDS = 7 * 24 * 3600;
+const DONKI_TTL_SECONDS = 15 * 60;
+const DONKI_STALE_SECONDS = 24 * 3600;
 
 const OPEN_METEO_TIMEOUT_MS = 8500;
+const DONKI_TIMEOUT_MS = 9000;
 const OPEN_METEO_BATCH_SIZE = 75;
 
 // Sky grid specific knobs
@@ -604,6 +656,103 @@ function pct01Sky(p: number | null | undefined) {
 function safeNum(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+type AerosolSnapshot = {
+  index: number | null;
+  label: string | null;
+  source: string | null;
+};
+
+function normalizeAerosolIndex(args: {
+  aerosolOpticalDepth?: number | null;
+  pm25?: number | null;
+  pm10?: number | null;
+  dust?: number | null;
+  usAqi?: number | null;
+}) {
+  const aod01 =
+    args.aerosolOpticalDepth == null ? null : clamp01((args.aerosolOpticalDepth - 0.04) / 0.42);
+  const pm2501 = args.pm25 == null ? null : clamp01(args.pm25 / 35);
+  const pm1001 = args.pm10 == null ? null : clamp01(args.pm10 / 80);
+  const dust01 = args.dust == null ? null : clamp01(args.dust / 120);
+  const aqi01 = args.usAqi == null ? null : clamp01((args.usAqi - 20) / 130);
+
+  const weighted =
+    (aod01 ?? 0) * 0.5 +
+    (pm2501 ?? 0) * 0.2 +
+    (pm1001 ?? 0) * 0.08 +
+    (dust01 ?? 0) * 0.12 +
+    (aqi01 ?? 0) * 0.1;
+
+  const sources = [aod01, pm2501, pm1001, dust01, aqi01].filter((v) => v != null);
+  if (!sources.length) return null;
+
+  return clamp01(weighted / (sources.length >= 3 ? 1 : 0.8));
+}
+
+function aerosolLabelForIndex(index: number | null) {
+  if (index == null) return null;
+  if (index <= 0.16) return "Excellent transparency";
+  if (index <= 0.3) return "Clean sky";
+  if (index <= 0.48) return "Light haze";
+  if (index <= 0.66) return "Hazy";
+  if (index <= 0.82) return "Heavy haze or smoke";
+  return "Opaque aerosols";
+}
+
+async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string): Promise<AerosolSnapshot> {
+  const url =
+    `https://air-quality-api.open-meteo.com/v1/air-quality` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=aerosol_optical_depth,pm2_5,pm10,dust,us_aqi,ozone` +
+    `&forecast_hours=24` +
+    `&past_hours=3` +
+    `&timezone=${encodeURIComponent(timezone || "auto")}`;
+
+  try {
+    const json: any = await fetchJsonWithHeaders(url);
+    const hourly = json?.hourly ?? {};
+    const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
+    if (!times.length) {
+      return { index: null, label: null, source: "Open-Meteo air quality" };
+    }
+
+    const now = Date.now();
+    let bestIdx = 0;
+    let bestDt = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < times.length; i++) {
+      const t = new Date(times[i]).getTime();
+      if (!Number.isFinite(t)) continue;
+      const dt = Math.abs(t - now);
+      if (dt < bestDt) {
+        bestDt = dt;
+        bestIdx = i;
+      }
+    }
+
+    const pick = (name: string) => {
+      const arr = hourly?.[name];
+      return Array.isArray(arr) ? safeNum(arr[bestIdx]) : null;
+    };
+
+    const index = normalizeAerosolIndex({
+      aerosolOpticalDepth: pick("aerosol_optical_depth"),
+      pm25: pick("pm2_5"),
+      pm10: pick("pm10"),
+      dust: pick("dust"),
+      usAqi: pick("us_aqi"),
+    });
+
+    return {
+      index,
+      label: aerosolLabelForIndex(index),
+      source: "Open-Meteo air quality",
+    };
+  } catch {
+    return { index: null, label: null, source: "Open-Meteo air quality" };
+  }
 }
 
 function midpoint(a: number, b: number) {
@@ -888,7 +1037,8 @@ function buildOmHourlyUpstream(url: URL) {
   }
 
   const hourly = url.searchParams.get("hourly") ?? url.searchParams.get("h") ?? "";
-  if (!hourly) return { ok: false as const, error: "hourly is required" };
+  const daily = url.searchParams.get("daily") ?? url.searchParams.get("d") ?? "";
+  if (!hourly && !daily) return { ok: false as const, error: "hourly or daily is required" };
 
   const tz = url.searchParams.get("timezone") ?? url.searchParams.get("tz") ?? "auto";
   const units = parseUnits(url.searchParams.get("units"));
@@ -900,7 +1050,8 @@ function buildOmHourlyUpstream(url: URL) {
   const upstream = new URL("https://api.open-meteo.com/v1/forecast");
   upstream.searchParams.set("latitude", lats.join(","));
   upstream.searchParams.set("longitude", lons.join(","));
-  upstream.searchParams.set("hourly", hourly);
+  if (hourly) upstream.searchParams.set("hourly", hourly);
+  if (daily) upstream.searchParams.set("daily", daily);
   upstream.searchParams.set("timezone", tz);
   upstream.searchParams.set("temperature_unit", temperatureUnit);
   upstream.searchParams.set("wind_speed_unit", windUnit);
@@ -908,6 +1059,8 @@ function buildOmHourlyUpstream(url: URL) {
 
   const forecastDays = url.searchParams.get("forecast_days");
   if (forecastDays) upstream.searchParams.set("forecast_days", forecastDays);
+  const pastDays = url.searchParams.get("past_days");
+  if (pastDays) upstream.searchParams.set("past_days", pastDays);
 
   return { ok: true as const, upstreamUrl: upstream.toString(), lats, lons, units };
 }
@@ -935,6 +1088,382 @@ function buildOmHourlyCacheKey(reqUrl: URL, lats: string[], lons: string[], unit
   if (keyUrl.searchParams.get("tz")) keyUrl.searchParams.delete("tz");
 
   return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function buildAlmanacCacheKey(reqUrl: URL, lat: number, lon: number) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/almanac/climo/v12";
+  keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+  keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+async function fetchNceiJson(
+  env: Env,
+  path: "/stations" | "/data",
+  params: Record<string, string | number>,
+) {
+  const u = new URL(`https://www.ncei.noaa.gov/cdo-web/api/v2${path}`);
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) continue;
+    u.searchParams.append(k, String(v));
+  }
+  const res = await fetch(u.toString(), {
+    headers: {
+      token: env.NOAA_NCEI_TOKEN,
+      accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`NOAA ${path} failed (${res.status})${txt ? ` ${txt.slice(0, 200)}` : ""}`);
+  }
+  return res.json<any>();
+}
+
+async function fetchNceiDataPages(
+  env: Env,
+  baseParams: Record<string, string | number>,
+) {
+  const limit = 250;
+  let offset = 1;
+  const results: any[] = [];
+  while (true) {
+    const json = await fetchNceiJson(env, "/data", { ...baseParams, limit, offset });
+    const rows = Array.isArray(json?.results) ? json.results : [];
+    results.push(...rows);
+    if (rows.length < limit) break;
+    offset += limit;
+  }
+  return results;
+}
+
+async function fetchNceiDailyChunk(
+  env: Env,
+  args: {
+    stationId: string;
+    startdate: string;
+    enddate: string;
+  },
+) {
+  const u = new URL("https://www.ncei.noaa.gov/cdo-web/api/v2/data");
+  u.searchParams.set("datasetid", "GHCND");
+  u.searchParams.set("stationid", args.stationId);
+  u.searchParams.set("startdate", args.startdate);
+  u.searchParams.set("enddate", args.enddate);
+  u.searchParams.append("datatypeid", "TMAX");
+  u.searchParams.append("datatypeid", "TMIN");
+  u.searchParams.append("datatypeid", "PRCP");
+  u.searchParams.set("limit", "1000");
+
+  const res = await fetch(u.toString(), {
+    headers: {
+      token: env.NOAA_NCEI_TOKEN,
+      accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`NOAA daily chunk failed (${res.status})${txt ? ` ${txt.slice(0, 200)}` : ""}`);
+  }
+  const json = await res.json<any>();
+  return Array.isArray(json?.results) ? json.results : [];
+}
+
+function parseMonthFromIso(dateStr: string) {
+  const m = Number(String(dateStr ?? "").slice(5, 7));
+  return Number.isFinite(m) && m >= 1 && m <= 12 ? m : null;
+}
+
+function normalizeTempToF(valueRaw: number, unitsHint: string) {
+  const u = String(unitsHint ?? "").trim().toLowerCase();
+  let v = valueRaw;
+  if (u.includes("tenth") || u.includes("tenths")) v = v / 10;
+  if (u.includes("c")) return (v * 9) / 5 + 32;
+  if (u.includes("f")) return v;
+  if (Math.abs(valueRaw) > 150) return valueRaw / 10;
+  return valueRaw;
+}
+
+async function findNearestNormalsStationForWorker(env: Env, lat: number, lon: number) {
+  const rings = [1.5, 2.5, 4.0, 6.0];
+  for (const d of rings) {
+    const extent = `${lat - d},${lon - d},${lat + d},${lon + d}`;
+    const json = await fetchNceiJson(env, "/stations", {
+      datasetid: "NORMAL_MLY",
+      extent,
+      limit: 1000,
+    });
+    const results = Array.isArray(json?.results) ? json.results : [];
+    const candidates = results
+      .map((r: any) => {
+        const la = Number(r?.latitude);
+        const lo = Number(r?.longitude);
+        if (!Number.isFinite(la) || !Number.isFinite(lo) || typeof r?.id !== "string") return null;
+        return {
+          id: r.id as string,
+          name: typeof r?.name === "string" ? r.name : undefined,
+          latitude: la,
+          longitude: lo,
+          elevation: Number.isFinite(Number(r?.elevation)) ? Number(r.elevation) : undefined,
+          km: haversineKm(lat, lon, la, lo),
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => a.km - b.km);
+
+    for (const c of candidates.slice(0, 5) as any[]) {
+      try {
+        const probe = await fetchNceiJson(env, "/data", {
+          datasetid: "NORMAL_MLY",
+          stationid: c.id,
+          startdate: "2010-01-01",
+          enddate: "2010-12-31",
+          datatypeid: "MLY-TAVG-NORMAL",
+          limit: 5,
+        });
+        if (Array.isArray(probe?.results) && probe.results.length) return c;
+      } catch {
+        continue;
+      }
+    }
+
+    if (candidates.length) return candidates[0] as any;
+  }
+  throw new Error("No usable normals station found");
+}
+
+
+async function fetchMonthlyNormalsForWorker(env: Env, stationId: string) {
+  const [tavg, tmin, tmax, prcp] = await Promise.all([
+    fetchNceiJson(env, "/data", {
+      datasetid: "NORMAL_MLY",
+      stationid: stationId,
+      startdate: "2010-01-01",
+      enddate: "2010-12-31",
+      datatypeid: "MLY-TAVG-NORMAL",
+      units: "standard",
+      limit: 1000,
+    }),
+    fetchNceiJson(env, "/data", {
+      datasetid: "NORMAL_MLY",
+      stationid: stationId,
+      startdate: "2010-01-01",
+      enddate: "2010-12-31",
+      datatypeid: "MLY-TMIN-NORMAL",
+      units: "standard",
+      limit: 1000,
+    }),
+    fetchNceiJson(env, "/data", {
+      datasetid: "NORMAL_MLY",
+      stationid: stationId,
+      startdate: "2010-01-01",
+      enddate: "2010-12-31",
+      datatypeid: "MLY-TMAX-NORMAL",
+      units: "standard",
+      limit: 1000,
+    }),
+    fetchNceiJson(env, "/data", {
+      datasetid: "NORMAL_MLY",
+      stationid: stationId,
+      startdate: "2010-01-01",
+      enddate: "2010-12-31",
+      datatypeid: "MLY-PRCP-NORMAL",
+      units: "standard",
+      limit: 1000,
+    }).catch(() => ({ results: [] })),
+  ]);
+
+  const normals = Array.from({ length: 12 }, (_, idx) => ({
+    month: idx + 1,
+    tavgF: null as number | null,
+    tminF: null as number | null,
+    tmaxF: null as number | null,
+  }));
+  const precipMonthlyIn = Array.from({ length: 12 }, () => null as number | null);
+
+  const ingestTemp = (payload: any, kind: "tavgF" | "tminF" | "tmaxF") => {
+    const rows = Array.isArray(payload?.results) ? payload.results : [];
+    for (const row of rows) {
+      const month = parseMonthFromIso(String(row?.date ?? ""));
+      const value = Number(row?.value);
+      if (!month || !Number.isFinite(value)) continue;
+      normals[month - 1][kind] = normalizeTempToF(value, String(row?.units ?? payload?.metadata?.units ?? payload?.units ?? ""));
+    }
+  };
+
+  ingestTemp(tavg, "tavgF");
+  ingestTemp(tmin, "tminF");
+  ingestTemp(tmax, "tmaxF");
+
+  const precipRows = Array.isArray(prcp?.results) ? prcp.results : [];
+  for (const row of precipRows) {
+    const month = parseMonthFromIso(String(row?.date ?? ""));
+    const value = Number(row?.value);
+    if (!month || !Number.isFinite(value)) continue;
+    precipMonthlyIn[month - 1] = value / 10;
+  }
+
+  return { normals, precipMonthlyIn };
+}
+
+async function resolveRecentGhcndStationForWorker(env: Env, lat: number, lon: number) {
+  const today = new Date();
+  const recentCutoff = new Date(today.getTime() - 365 * 2 * 86400000).toISOString().slice(0, 10);
+  const enddate = today.toISOString().slice(0, 10);
+  const extents = [0.75, 1.5, 3.0];
+
+  for (const extentDeg of extents) {
+    const south = lat - extentDeg;
+    const west = lon - extentDeg;
+    const north = lat + extentDeg;
+    const east = lon + extentDeg;
+    const json = await fetchNceiJson(env, "/stations", {
+      datasetid: "GHCND",
+      datatypeid: "TMAX",
+      extent: `${south},${west},${north},${east}`,
+      startdate: "1950-01-01",
+      enddate,
+      limit: 1000,
+      sortfield: "datacoverage",
+      sortorder: "desc",
+    });
+    const rows = Array.isArray(json?.results) ? json.results : [];
+    const scored = rows
+      .map((r: any) => {
+        const la = Number(r?.latitude);
+        const lo = Number(r?.longitude);
+        if (!Number.isFinite(la) || !Number.isFinite(lo) || typeof r?.id !== "string") return null;
+        const maxdate = String(r?.maxdate ?? "").slice(0, 10);
+        if (!maxdate || maxdate < recentCutoff) return null;
+        const mindate = String(r?.mindate ?? "").slice(0, 10);
+        const minY = Number(mindate.slice(0, 4));
+        const dc = Number(r?.datacoverage);
+        const longRecordBonus = minY <= 1950 ? 1 : minY <= 1970 ? 0.7 : minY <= 1990 ? 0.4 : 0;
+        const distPenalty = Math.min(1, haversineKm(lat, lon, la, lo) / 60);
+        const score = (Number.isFinite(dc) ? dc : 0) * 3 + longRecordBonus * 1.5 - distPenalty * 0.75;
+        return { id: r.id as string, score };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => b.score - a.score);
+    if (scored.length) return scored[0].id as string;
+  }
+  throw new Error("No recent GHCND station found");
+}
+
+async function fetchPriorYearSeriesForWorker(env: Env, stationId: string, year: number) {
+  const monthChunks = Array.from({ length: 12 }, (_, idx) => {
+    const month = idx + 1;
+    const startdate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const enddate = new Date(year, month, 0).toISOString().slice(0, 10);
+    return { startdate, enddate };
+  });
+
+  const monthResults = await Promise.allSettled(
+    monthChunks.map((chunk) =>
+      fetchNceiDailyChunk(env, {
+        stationId,
+        startdate: chunk.startdate,
+        enddate: chunk.enddate,
+      }),
+    ),
+  );
+
+  const all = monthResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+
+  const tminF = new Array<number>(365).fill(NaN);
+  const tmaxF = new Array<number>(365).fill(NaN);
+  const precipDailyIn = new Array<number | null>(365).fill(null);
+  const precipMonthlyIn = new Array<number | null>(12).fill(0);
+
+  for (const row of all) {
+    const dateStr = String(row?.date ?? "").slice(0, 10);
+    if (!dateStr) continue;
+    const date = new Date(`${dateStr}T12:00:00`);
+    if (!Number.isFinite(date.getTime())) continue;
+    const month = date.getMonth();
+    if (month === 1 && date.getDate() === 29) continue;
+    const doy = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+    const idx = doy > 59 && new Date(date.getFullYear(), 1, 29).getDate() === 29 ? doy - 2 : doy - 1;
+    const value = Number(row?.value);
+    if (!Number.isFinite(value) || idx < 0 || idx >= 365) continue;
+    const datatype = String(row?.datatype ?? "");
+    if (datatype === "TMIN") tminF[idx] = (value / 10) * 9 / 5 + 32;
+    if (datatype === "TMAX") tmaxF[idx] = (value / 10) * 9 / 5 + 32;
+    if (datatype === "PRCP") {
+      const inches = (value / 10) / 25.4;
+      precipDailyIn[idx] = inches;
+      precipMonthlyIn[month] = (precipMonthlyIn[month] ?? 0) + inches;
+    }
+  }
+
+  return { tminF, tmaxF, precipDailyIn, precipMonthlyIn };
+}
+
+async function fetchPriorYearSeriesFromOpenMeteo(lat: number, lon: number, year: number) {
+  const upstream = new URL("https://archive-api.open-meteo.com/v1/archive");
+  upstream.searchParams.set("latitude", String(lat));
+  upstream.searchParams.set("longitude", String(lon));
+  upstream.searchParams.set("start_date", `${year}-01-01`);
+  upstream.searchParams.set("end_date", `${year}-12-31`);
+  upstream.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_sum");
+  upstream.searchParams.set("temperature_unit", "fahrenheit");
+  upstream.searchParams.set("precipitation_unit", "inch");
+  upstream.searchParams.set("timezone", "auto");
+
+  const res = await fetch(upstream.toString());
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Open-Meteo archive failed (${res.status})${txt ? ` ${txt.slice(0, 200)}` : ""}`);
+  }
+
+  const json = await res.json<any>();
+  const daily = json?.daily ?? {};
+  const time = Array.isArray(daily?.time) ? daily.time : [];
+  const tmax = Array.isArray(daily?.temperature_2m_max) ? daily.temperature_2m_max : [];
+  const tmin = Array.isArray(daily?.temperature_2m_min) ? daily.temperature_2m_min : [];
+  const prcp = Array.isArray(daily?.precipitation_sum) ? daily.precipitation_sum : [];
+
+  const tminF = new Array<number>(365).fill(NaN);
+  const tmaxF = new Array<number>(365).fill(NaN);
+  const precipDailyIn = new Array<number | null>(365).fill(null);
+  const precipMonthlyIn = new Array<number | null>(12).fill(0);
+
+  for (let i = 0; i < time.length; i++) {
+    const dateStr = String(time[i] ?? "").slice(0, 10);
+    if (!dateStr) continue;
+    const date = new Date(`${dateStr}T12:00:00`);
+    if (!Number.isFinite(date.getTime())) continue;
+    const month = date.getMonth();
+    if (month === 1 && date.getDate() === 29) continue;
+    const doy = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+    const idx = doy > 59 && new Date(date.getFullYear(), 1, 29).getDate() === 29 ? doy - 2 : doy - 1;
+    if (idx < 0 || idx >= 365) continue;
+
+    const minVal = Number(tmin[i]);
+    const maxVal = Number(tmax[i]);
+    const precipVal = Number(prcp[i]);
+    if (Number.isFinite(minVal)) tminF[idx] = minVal;
+    if (Number.isFinite(maxVal)) tmaxF[idx] = maxVal;
+    if (Number.isFinite(precipVal)) {
+      precipDailyIn[idx] = precipVal;
+      precipMonthlyIn[month] = (precipMonthlyIn[month] ?? 0) + precipVal;
+    }
+  }
+
+  return { tminF, tmaxF, precipDailyIn, precipMonthlyIn };
 }
 
 /* =============================================================================
@@ -1240,6 +1769,7 @@ type SkyImagePoint = {
   windMps: number | null;
   gustMps: number | null;
   humidityPct: number | null;
+  aerosolIndex?: number | null;
 
   bortleClass?: number | null;
   bortleLabel?: string | null;
@@ -1502,8 +2032,10 @@ function computeMoonScore01Canonical(args: {
   return clamp01(1 - illum01 * maxPenalty);
 }
 
-function computeAerosolScore01Canonical(_p: SkyImagePoint) {
-  return 0.75;
+function computeAerosolScore01Canonical(p: SkyImagePoint) {
+  const aerosolIndex = p.aerosolIndex ?? null;
+  if (aerosolIndex == null) return 0.75;
+  return clamp01(1 - clamp01(aerosolIndex));
 }
 
 function bortleToScore01Canonical(bortle: number | null | undefined) {
@@ -2223,6 +2755,9 @@ async function buildAstroInspectPayload(args: {
     humidityPct: pick("relative_humidity_2m"),
   };
 
+  const aerosolSnapshot = await fetchAerosolSnapshot(lat, lon, "auto");
+  point.aerosolIndex = aerosolSnapshot.index;
+
   const now = new Date();
   const pointDate0 = now.toISOString().slice(0, 10);
   const pointDate1 = new Date(now.getTime() + 86400000).toISOString().slice(0, 10);
@@ -2295,6 +2830,7 @@ async function buildAstroInspectPayload(args: {
       bortleLabel: site?.bortleLabel ?? null,
       skyBrightness: site?.skyBrightness ?? null,
     },
+    aerosols: aerosolSnapshot,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -2489,13 +3025,15 @@ export default {
           let moonTomorrow;
           let sunToday;
           let sunTomorrow;
+          let aerosolSnapshot: AerosolSnapshot = { index: null, label: null, source: null };
 
           try {
-            [moonToday, moonTomorrow, sunToday, sunTomorrow] = await Promise.all([
+            [moonToday, moonTomorrow, sunToday, sunTomorrow, aerosolSnapshot] = await Promise.all([
               fetchMoonDay(lat, lon, todayDate, offset),
               fetchMoonDay(lat, lon, tomorrowDate, offset),
               fetchSunDay(lat, lon, todayDate, offset),
               fetchSunDay(lat, lon, tomorrowDate, offset),
+              fetchAerosolSnapshot(lat, lon, timezone),
             ]);
           } catch (error: any) {
             return new Response(
@@ -2554,14 +3092,14 @@ export default {
               skyBrightness: siteLookup.skyBrightness,
             },
             aerosols: {
-              index: null,
-              label: null,
-              source: null,
+              index: aerosolSnapshot.index,
+              label: aerosolSnapshot.label,
+              source: aerosolSnapshot.source,
             },
             diagnostics: {
               moonSource: "metno sunrise 3.0",
               siteSource: siteLookup.source,
-              aerosolSource: "pending",
+              aerosolSource: aerosolSnapshot.source,
             },
           };
 
@@ -3141,6 +3679,92 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/almanac/climo" || url.pathname === "/v1/almanac/climo") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKey = buildAlmanacCacheKey(url, lat, lon);
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: ALMANAC_TTL_SECONDS,
+        staleSeconds: ALMANAC_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const normalsStation = await findNearestNormalsStationForWorker(env, lat, lon);
+          const { normals, precipMonthlyIn } = await fetchMonthlyNormalsForWorker(env, normalsStation.id);
+
+          return new Response(
+            JSON.stringify({
+              station: {
+                id: normalsStation.id,
+                name: normalsStation.name ?? null,
+                latitude: normalsStation.latitude ?? null,
+                longitude: normalsStation.longitude ?? null,
+                elevation: normalsStation.elevation ?? null,
+              },
+              normals,
+              precipMonthlyIn,
+              source: "noaa_cdo_normal_mly",
+              fetchedAtIso: new Date().toISOString(),
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json; charset=utf-8" },
+            },
+          );
+        },
+      });
+    }
+
+    if (url.pathname === "/api/almanac/prior-year" || url.pathname === "/v1/almanac/prior-year") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const priorYear = new Date().getFullYear() - 1;
+      const keyUrl = new URL(url.toString());
+      keyUrl.pathname = "/__cache__/almanac/prior-year/v1";
+      keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+      keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+      const cacheKey = new Request(keyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: ALMANAC_TTL_SECONDS,
+        staleSeconds: ALMANAC_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const lastYear = await fetchPriorYearSeriesFromOpenMeteo(lat, lon, priorYear);
+          return new Response(
+            JSON.stringify({
+              lastYear,
+              fetchedAtIso: new Date().toISOString(),
+              diagnostics: {
+                priorYear,
+                source: "open_meteo_archive",
+              },
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json; charset=utf-8" },
+            },
+          );
+        },
+      });
+    }
+
     if (url.pathname === "/api/nasa/apod") {
       const date = url.searchParams.get("date");
       const upstream = new URL("https://api.nasa.gov/planetary/apod");
@@ -3162,15 +3786,33 @@ export default {
       const upstream = new URL(`https://api.nasa.gov/DONKI/${donkiPath}`);
       url.searchParams.forEach((v, k) => upstream.searchParams.set(k, v));
       upstream.searchParams.set("api_key", env.NASA_API_KEY);
+      const cacheKey = buildDonkiCacheKey(url, donkiPath);
 
-      const res = await fetch(upstream.toString(), { headers: { accept: "application/json" } });
-
-      return new Response(res.body, {
-        status: res.status,
-        headers: withCors({
-          "content-type": res.headers.get("content-type") || "application/json",
-          "cache-control": "public, max-age=0, s-maxage=1800",
-        }),
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: DONKI_TTL_SECONDS,
+        staleSeconds: DONKI_STALE_SECONDS,
+        fetchUpstream: async () => {
+          try {
+            return await fetchDonkiUpstream(upstream);
+          } catch (err: any) {
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                error: "DONKI upstream fetch failed",
+                detail: err instanceof Error ? err.message : String(err ?? "unknown error"),
+                path: donkiPath,
+              }),
+              {
+                status: 502,
+                headers: {
+                  "content-type": "application/json; charset=utf-8",
+                },
+              },
+            );
+          }
+        },
+        tag: `donki:${donkiPath}`,
       });
     }
 
@@ -3198,6 +3840,7 @@ export default {
           "/land-extremes?unit=F|C",
           "/api/current?lat=##&lon=##&units=imperial|metric",
           "/api/openmeteo/hourly?lat=..,..&lon=..,..&hourly=...&timezone=auto&units=imperial|metric",
+          "/api/almanac/climo?lat=##&lon=##",
           "/api/astro/location?lat=##&lon=##&placeName=Current%20location",
           "/api/astro/inspect?lat=##&lon=##&hour=0",
           "/api/astro/skyscore-grid?west=..&south=..&east=..&north=..&zoom=7&hour=0&w=160&h=160&includePoints=1&mode=regional&density=auto",

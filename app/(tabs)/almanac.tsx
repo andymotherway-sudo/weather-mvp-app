@@ -562,6 +562,12 @@ const hasNormals = chartNormals.length > 0;
   return Array.isArray(raw) && raw.length === 12 ? raw : undefined;
 }, [(climo.data as any)?.precipMonthlyIn]);
 
+  const chartLastYear = useMemo(() => {
+    const raw = (climo.data as any)?.lastYear;
+    if (!raw || typeof raw !== 'object') return undefined;
+    return raw;
+  }, [(climo.data as any)?.lastYear]);
+
   const canRenderChart =
   hasPlace &&
   chartNormals.length === 12 &&
@@ -872,6 +878,7 @@ const hasNormals = chartNormals.length > 0;
                 setSelectedIso(iso);
               }}
               precipMonthlyIn={chartPrecip}
+              lastYear={chartLastYear}
             />
           </View>
         ) : hasPlace ? (

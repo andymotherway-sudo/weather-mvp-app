@@ -1,11 +1,12 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { LocationAstroForecast } from '../../app/lib/astro/locationAstro';
 import { toLocalLabel } from '../../app/lib/astro/locationAstro';
 
 type Props = {
   forecast: LocationAstroForecast;
+  onLearnSkyScore?: () => void;
 };
 
 function formatWindow(start?: string | null, end?: string | null) {
@@ -57,7 +58,7 @@ function heroSubtitle(forecast: LocationAstroForecast) {
   return forecast.bestSummary ?? 'Observing conditions available for tonight.';
 }
 
-export function AstroHeroCard({ forecast }: Props) {
+export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
   const bestWindow = formatWindow(forecast.bestStartTime, forecast.bestEndTime);
   const darkestWindow = formatWindow(
     forecast.darkestStartTime,
@@ -66,17 +67,24 @@ export function AstroHeroCard({ forecast }: Props) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.eyebrow}>Astro Forecast</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.eyebrow}>Sky Score</Text>
+        {onLearnSkyScore ? (
+          <Pressable onPress={onLearnSkyScore} style={styles.learnBtn} hitSlop={10}>
+            <Text style={styles.learnBtnText}>Learn</Text>
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={styles.place}>{forecast.placeName ?? 'Selected location'}</Text>
 
       <View style={styles.heroRow}>
         <View style={styles.scoreWrap}>
           <Text style={styles.score}>{forecast.peakScore}</Text>
-          <Text style={styles.scoreLabel}>{forecast.peakLabel}</Text>
+          <Text style={styles.scoreLabel}>Sky Score</Text>
         </View>
 
         <View style={styles.summaryWrap}>
-          <Text style={styles.summaryTitle}>Tonight</Text>
+          <Text style={styles.summaryTitle}>{forecast.peakLabel}</Text>
           <Text style={styles.summaryText}>{heroSubtitle(forecast)}</Text>
 
           <Text style={styles.metaLabel}>Best window</Text>
@@ -124,13 +132,34 @@ const styles = StyleSheet.create({
     borderColor: '#1F2937',
   },
 
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+
   eyebrow: {
     color: '#93C5FD',
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 6,
+  },
+
+  learnBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+
+  learnBtnText: {
+    color: '#F9FAFB',
+    fontSize: 11,
+    fontWeight: '800',
   },
 
   place: {

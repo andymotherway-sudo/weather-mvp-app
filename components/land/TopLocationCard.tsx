@@ -72,7 +72,7 @@ export function TopLocationCard({
             style={[styles.pill, styles.pillPrimary, wxLabEnabled && styles.pillPrimaryOn]}
           >
             <TabBarIcon name="flask-outline" color="white" />
-            <Text style={[styles.pillText, { color: 'white' }]}>Wx Lab</Text>
+            <Text style={[styles.pillText, { color: 'white' }]}>wxNerd</Text>
           </Pressable>
         </View>
       </View>

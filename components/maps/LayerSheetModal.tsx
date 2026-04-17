@@ -11,26 +11,25 @@ import {
 } from '../../app/lib/maps/layerCatalog';
 import type { LayerId, MapRuntimeState } from '../../app/lib/maps/types';
 
+export type LayerSheetValue = {
+  baseMapStyle: 'dark' | 'light';
+  radarProvider: 'iem' | 'rainviewer';
+};
+
 export function LayerSheetModal(props: {
   visible: boolean;
   onClose: () => void;
-
   state: MapRuntimeState;
   nerdy: boolean;
-
   allowedGroups?: LayerGroupId[];
-
   onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
   onSetOpacity: (layerId: LayerId, opacity: number) => void;
-
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
-
   onOpenAstroMap?: () => void;
   onOpenNauticalMap?: () => void;
 }) {
   const insets = useSafeAreaInsets();
-
   const {
     visible,
     onClose,
@@ -44,76 +43,47 @@ export function LayerSheetModal(props: {
     onOpenNauticalMap,
   } = props;
 
-  const activeLayers = useMemo(() => {
-    const entries = Object.entries(state.layers ?? {})
+  const activeCount = useMemo(() => {
+    return Object.entries(state.layers ?? {})
       .filter(([, runtime]) => runtime?.enabled)
-      .map(([layerId, runtime]) => {
+      .filter(([layerId]) => {
         const catalog = LAYER_CATALOG.find((l) => l.id === layerId);
-        if (!catalog) return null;
-        if (allowedGroups?.length && !allowedGroups.includes(catalog.group)) return null;
-
-        return {
-          id: catalog.id,
-          title: catalog.title,
-          subtitle: catalog.subtitle,
-          opacity: runtime?.opacity ?? catalog.defaultOpacity ?? 1,
-        };
-      })
-      .filter(Boolean) as { id: LayerId; title: string; subtitle?: string; opacity: number }[];
-
-    return entries.sort((a, b) => a.title.localeCompare(b.title));
+        return catalog ? !allowedGroups?.length || allowedGroups.includes(catalog.group) : false;
+      }).length;
   }, [allowedGroups, state.layers]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'flex-end',
-          backgroundColor: 'rgba(0,0,0,0.62)',
-        }}
-      >
-        <Pressable onPress={onClose} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-
+      <View style={{ flex: 1, backgroundColor: 'rgba(2,6,23,0.94)' }}>
         <View
           style={{
+            flex: 1,
             paddingHorizontal: 10,
-            paddingTop: 12,
+            paddingTop: 10 + Math.max(insets.top, 6),
             paddingBottom: 10 + Math.max(insets.bottom, 6),
           }}
         >
           <Glass
             style={{
+              flex: 1,
               borderRadius: 28,
               paddingHorizontal: 14,
-              paddingTop: 12,
+              paddingTop: 14,
               paddingBottom: 0,
-              maxHeight: '92%',
-              minHeight: '64%',
               overflow: 'hidden',
             }}
           >
-            <View
-              style={{
-                alignSelf: 'center',
-                width: 44,
-                height: 5,
-                borderRadius: 999,
-                backgroundColor: 'rgba(255,255,255,0.18)',
-                marginBottom: 12,
-              }}
-            />
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <Pill label="LAYERS" />
-                  {activeLayers.length ? <Pill label={`${activeLayers.length} active`} subtle /> : null}
+                  <Pill label="OVERLAYS" />
+                  {activeCount ? <Pill label={`${activeCount} active`} subtle /> : null}
                 </View>
 
-                <Text style={{ color: 'white', fontWeight: '900', fontSize: 20 }}>Map layers</Text>
+                <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }}>Overlay selector</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 4, lineHeight: 18 }}>
-                  Toggle individual overlays and keep the combinations you want on-screen.
+                  Toggle map layers directly, then close this menu when you are done.
                 </Text>
               </View>
 
@@ -144,52 +114,9 @@ export function LayerSheetModal(props: {
             >
               <Section title="Special maps" subtitle="Open dedicated astronomy or nautical experiences">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  <QuickCard
-                    title="Astronomy Map"
-                    subtitle="Sky conditions"
-                    onPress={onOpenAstroMap}
-                  />
-                  <QuickCard
-                    title="Nautical Map"
-                    subtitle="Marine view"
-                    onPress={onOpenNauticalMap}
-                  />
+                  <QuickCard title="Astronomy Map" subtitle="Sky conditions" onPress={onOpenAstroMap} />
+                  <QuickCard title="Nautical Map" subtitle="Marine view" onPress={onOpenNauticalMap} />
                 </View>
-              </Section>
-
-              <Section
-                title="Active now"
-                badge={activeLayers.length ? `${activeLayers.length}` : undefined}
-                subtitle="Tap a chip to turn that layer off quickly"
-              >
-                {activeLayers.length ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {activeLayers.map((layer) => (
-                      <Pressable
-                        key={layer.id}
-                        onPress={() => onToggleLayer(layer.id, false)}
-                        style={{
-                          paddingVertical: 8,
-                          paddingHorizontal: 12,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.14)',
-                          backgroundColor: 'rgba(255,255,255,0.08)',
-                        }}
-                      >
-                        <Text style={{ color: 'white', fontWeight: '800' }}>
-                          {layer.title}
-                          {layer.subtitle ? ` · ${layer.subtitle}` : ''}
-                          {` · ${Math.round(layer.opacity * 100)}%`}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : (
-                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    No overlays are currently enabled.
-                  </Text>
-                )}
               </Section>
 
               <View
@@ -227,9 +154,7 @@ function Section(props: {
     <View style={{ marginTop: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 15 }}>
-            {props.title}
-          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 15 }}>{props.title}</Text>
           {props.subtitle ? (
             <Text style={{ color: 'rgba(255,255,255,0.60)', marginTop: 3, fontSize: 12, lineHeight: 17 }}>
               {props.subtitle}

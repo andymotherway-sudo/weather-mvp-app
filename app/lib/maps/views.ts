@@ -37,9 +37,10 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'storm',
     title: 'Storm',
-    presetEnabledLayers: ['radar.reflectivity', 'lightning.strikes', 'alerts.polygons'],
+    presetEnabledLayers: ['radar.reflectivity', 'wx.fronts.day1', 'lightning.strikes', 'alerts.polygons'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
+      'wx.fronts.day1': 0.96,
       'lightning.strikes': 0.95,
       'alerts.polygons': 0.95,
     },
@@ -49,9 +50,12 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'aviation',
     title: 'Aviation',
-    presetEnabledLayers: ['radar.reflectivity'],
+    presetEnabledLayers: ['radar.reflectivity', 'aviation.gairmet.turb', 'aviation.gairmet.ice', 'aviation.sigmet'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.88,
+      'aviation.gairmet.turb': 0.72,
+      'aviation.gairmet.ice': 0.72,
+      'aviation.sigmet': 0.82,
     },
     timelineDriverLayer: 'radar.reflectivity',
   },

@@ -23,10 +23,21 @@ interface UseMarineForecastResult {
 }
 
 const NWS_API = 'https://api.weather.gov';
+const NWS_PRODUCT = 'https://forecast.weather.gov/product.php';
+const NWS_MARINE_ZONE_TEXT = 'https://marine.weather.gov/MapClick.php';
 
 function shortBody(body: string, max = 240) {
   const s = (body ?? '').replace(/\s+/g, ' ').trim();
   return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function isGreatLakesZone(zoneId: string) {
+  const prefix = zoneId.trim().toUpperCase().slice(0, 3);
+  return ['LMZ', 'LEZ', 'LHZ', 'LOZ', 'LSZ'].includes(prefix);
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
@@ -134,7 +145,160 @@ async function fetchTgftpText(zoneId: string) {
   };
 }
 
-export function useMarineForecast(zoneId?: string): UseMarineForecastResult {
+async function fetchGreatLakesNearshoreText(zoneId: string, wfo?: string) {
+  const office = String(wfo ?? '').trim().toUpperCase();
+  if (!office) {
+    const e = new Error('Great Lakes text forecast requires a WFO id.');
+    (e as any).code = 'NOT_AVAILABLE';
+    throw e;
+  }
+
+  const url = `${NWS_PRODUCT}?issuedby=${encodeURIComponent(office)}&product=NSH&format=TXT&glossary=0`;
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      Accept: 'text/html,text/plain',
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`NWS product ${res.status}: ${shortBody(body) || res.statusText}`);
+  }
+
+  const html = await res.text();
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const id = zoneId.trim().toUpperCase();
+  const multiZoneHeader = new RegExp(`(?:^|\\n)${escapeRegex(id)}(?:-[A-Z]{2,3}\\d{3})*-[0-9]{6}-`, 'm');
+  const exactZoneHeader = new RegExp(`(?:^|\\n)${escapeRegex(id)}-[0-9]{6}-`, 'm');
+  const startMatch = exactZoneHeader.exec(text) ?? multiZoneHeader.exec(text);
+  if (!startMatch) {
+    const e = new Error(`No nearshore text block found for ${id}.`);
+    (e as any).code = 'NOT_AVAILABLE';
+    throw e;
+  }
+
+  const start = startMatch.index + (startMatch[0].startsWith('\n') ? 1 : 0);
+  const rest = text.slice(start);
+  const nextHeaderMatch = /\n[A-Z]{2,3}\d{3}(?:-[A-Z]{2,3}\d{3})*-[0-9]{6}-/m.exec(rest.slice(1));
+  const nextSeparator = /\n\$\$/m.exec(rest);
+  const candidates = [
+    nextHeaderMatch ? 1 + nextHeaderMatch.index : Number.POSITIVE_INFINITY,
+    nextSeparator ? nextSeparator.index : Number.POSITIVE_INFINITY,
+  ];
+  const end = Math.min(...candidates);
+  const block = (Number.isFinite(end) ? rest.slice(0, end) : rest).trim();
+
+  if (!block) {
+    const e = new Error(`Empty nearshore text block for ${id}.`);
+    (e as any).code = 'NOT_AVAILABLE';
+    throw e;
+  }
+
+  const issuedLine =
+    block
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => /\b(?:AM|PM)\s(?:CST|CDT|EST|EDT|MST|MDT|PST|PDT)\b/i.test(line)) ?? '';
+
+  return {
+    headline: `Nearshore Marine Forecast (${id})`,
+    issuedAt: issuedLine || new Date().toISOString(),
+    periods: [{ name: 'Official text forecast', summary: block }],
+  };
+}
+
+async function fetchGreatLakesZoneText(zoneId: string) {
+  const id = zoneId.trim().toUpperCase();
+  const url = `${NWS_MARINE_ZONE_TEXT}?TextType=1&zoneid=${encodeURIComponent(id)}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      Accept: 'text/html,text/plain',
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`NWS marine text ${res.status}: ${shortBody(body) || res.statusText}`);
+  }
+
+  const html = await res.text();
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const startAnchor =
+    text.indexOf('NWS Forecast for:') >= 0
+      ? text.indexOf('NWS Forecast for:')
+      : text.indexOf('Zone Forecast:') >= 0
+        ? text.indexOf('Zone Forecast:')
+        : -1;
+
+  if (startAnchor < 0) {
+    const e = new Error(`No marine zone text block found for ${id}.`);
+    (e as any).code = 'NOT_AVAILABLE';
+    throw e;
+  }
+
+  const trimmed = text.slice(startAnchor);
+  const endAnchor = trimmed.indexOf('Visit your local NWS office at:');
+  const block = (endAnchor > 0 ? trimmed.slice(0, endAnchor) : trimmed).trim();
+
+  if (!block) {
+    const e = new Error(`Empty marine zone text block for ${id}.`);
+    (e as any).code = 'NOT_AVAILABLE';
+    throw e;
+  }
+
+  const headlineLine =
+    block
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('NWS Forecast for:') || line.startsWith('Zone Forecast:')) ?? `Marine Forecast (${id})`;
+  const issuedLine =
+    block
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => /^Last Update:/i.test(line) || /\b(?:AM|PM)\s(?:CST|CDT|EST|EDT|MST|MDT|PST|PDT)\b/i.test(line)) ??
+    new Date().toISOString();
+
+  return {
+    headline: headlineLine.replace(/^NWS Forecast for:\s*/i, '').replace(/^Zone Forecast:\s*/i, '').trim(),
+    issuedAt: issuedLine.replace(/^Last Update:\s*/i, '').trim(),
+    periods: [{ name: 'Official text forecast', summary: block }],
+  };
+}
+
+export function useMarineForecast(zoneId?: string, wfo?: string): UseMarineForecastResult {
   const [forecast, setForecast] = useState<MarineForecast | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -196,7 +360,46 @@ export function useMarineForecast(zoneId?: string): UseMarineForecastResult {
           // fall through
         }
 
-        // 3) Fallback: TGFTP text (US prefixes only)
+        // 3) Great Lakes nearshore fallback via NWS product page
+        if (isGreatLakesZone(id)) {
+          try {
+            const glZone = await fetchGreatLakesZoneText(id);
+            if (cancelled) return;
+
+            setForecast({
+              id,
+              headline: glZone.headline,
+              periods: glZone.periods,
+              issuedAt: glZone.issuedAt,
+              source: 'NOAA / NWS marine zone text (marine.weather.gov)',
+            });
+            setLoading(false);
+            setStatus('ok');
+            return;
+          } catch {
+            // fall through
+          }
+
+          try {
+            const gl = await fetchGreatLakesNearshoreText(id, wfo);
+            if (cancelled) return;
+
+            setForecast({
+              id,
+              headline: gl.headline,
+              periods: gl.periods,
+              issuedAt: gl.issuedAt,
+              source: `NOAA / NWS nearshore text (${String(wfo ?? '').toUpperCase()} · NSH)`,
+            });
+            setLoading(false);
+            setStatus('ok');
+            return;
+          } catch {
+            // fall through
+          }
+        }
+
+        // 4) Fallback: TGFTP text (US prefixes only)
         const tg = await fetchTgftpText(id);
         if (cancelled) return;
 
@@ -231,7 +434,7 @@ export function useMarineForecast(zoneId?: string): UseMarineForecastResult {
     return () => {
       cancelled = true;
     };
-  }, [zoneId]);
+  }, [zoneId, wfo]);
 
   return { forecast, loading, error, status };
 }

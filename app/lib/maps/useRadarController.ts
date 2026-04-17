@@ -731,7 +731,7 @@ export function useRadarController(args: {
   ]);
 
   /* =========================================================================
-   * Playback (tiles only) - ping-pong + edge playlist promotion
+   * Playback (tiles only) - forward loop + edge playlist promotion
    * ========================================================================= */
   const PLAY_TICK_MS = 120;
   const END_HOLD_MULTIPLIER = 1.8;
@@ -743,8 +743,6 @@ export function useRadarController(args: {
   const minDwellRef = useRef<number>(profile.dwellMs);
   const radarEnabledRef = useRef<boolean>(radarEnabled);
   const preloadRef = useRef<number | null>(preloadTo);
-  const directionRef = useRef<1 | -1>(1);
-
   useEffect(() => {
     playingRef.current = state.radarTime.playing;
   }, [state.radarTime.playing]);
@@ -772,21 +770,6 @@ export function useRadarController(args: {
   useEffect(() => {
     preloadRef.current = preloadTo;
   }, [preloadTo]);
-
-  useEffect(() => {
-    directionRef.current = 1;
-  }, [sheetValue.radarProvider, product]);
-
-  useEffect(() => {
-    if (safeFrameIndex <= 0) {
-      directionRef.current = 1;
-      return;
-    }
-
-    if (safeFrameIndex >= Math.max(0, frameCount - 1)) {
-      directionRef.current = -1;
-    }
-  }, [safeFrameIndex, frameCount]);
 
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAdvanceRef = useRef<number>(0);
@@ -816,7 +799,6 @@ export function useRadarController(args: {
 
       const fc = frameCountRef.current;
       const cur = safeFrameIndexRef.current;
-      const dir = directionRef.current;
       const baseDwell = minDwellRef.current;
 
       const atStart = cur <= 0;
@@ -836,7 +818,6 @@ export function useRadarController(args: {
         setPlayFrames(nextFrames);
         setPlayTemplates(nextTemplates);
 
-        directionRef.current = atEnd ? -1 : 1;
         lastAdvanceRef.current = Date.now();
 
         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
@@ -846,21 +827,11 @@ export function useRadarController(args: {
       const dwellNow = atEdge ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
       if (Date.now() - lastAdvanceRef.current < dwellNow) return;
 
-      let nextDir = dir;
-      let next = cur + dir;
-
-      if (next >= fc) {
-        nextDir = -1;
-        next = fc > 1 ? fc - 2 : 0;
-      } else if (next < 0) {
-        nextDir = 1;
-        next = fc > 1 ? 1 : 0;
-      }
+      const next = cur >= fc - 1 ? 0 : cur + 1;
 
       const nextTemplate = templatesRef.current[next];
       if (!nextTemplate) return;
 
-      directionRef.current = nextDir;
       lastAdvanceRef.current = Date.now();
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });
     }, PLAY_TICK_MS);
@@ -926,6 +897,7 @@ export function useRadarController(args: {
     uiFrames: effectiveFrames,
     frameCount,
     safeFrameIndex,
+    activeFrameIso: effectiveFrames[safeFrameIndex]?.iso ?? null,
     timestampLabel,
 
     usingRainViewer,

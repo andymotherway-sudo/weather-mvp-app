@@ -431,7 +431,7 @@ export default function NauticalScreen() {
   const forecastZoneId = isZoneMode ? zoneId : area.forecastZoneId;
 
   const { forecast, loading: forecastLoading, error: forecastError } =
-    useMarineForecast(forecastZoneId);
+    useMarineForecast(forecastZoneId, isZoneMode ? wfo : undefined);
 
   const activeBuoy =
     allBuoys.find(

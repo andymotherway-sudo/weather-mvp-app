@@ -1,11 +1,11 @@
 // app/(tabs)/index.tsx
-// Land Wx – Rich + Nerdy (Branded + Alpha polish)
-// ✅ Drop-in replacement
-// ✅ Compresses header so current conditions sit higher
-// ✅ Simple mode shows vertical 15-day forecast list
-// ✅ Wx Lab shows daily chart + insights + hourly chart
-// ✅ Keeps location picker, alerts, video bg, favorites, explain + learn modals
-// ✅ Nerdy education taps now go straight to LearnMoreModal
+// Land Wx - Rich + Nerdy (Branded + Alpha polish)
+// Drop-in replacement
+// Compresses header so current conditions sit higher
+// Simple mode shows vertical 15-day forecast list
+// wxNerd shows daily chart + insights + hourly chart
+// Keeps location picker, alerts, video bg, favorites, explain + learn modals
+// Nerdy education taps now go straight to LearnMoreModal
 
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +26,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePlace } from '../context/PlaceContext';
+import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useCurrentWeather } from '../lib/weather/hooks';
 
@@ -230,6 +231,504 @@ function formatDailyLabel(dateValue: any) {
     month: 'numeric',
     day: 'numeric',
   });
+}
+
+function formatClock(iso?: string | null) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDayLength(seconds?: number | null) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '—';
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (!hours) return `${minutes}m`;
+  if (!minutes) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+function formatWindow(start?: string | null, end?: string | null) {
+  if (!start) return '—';
+  if (!end) return formatClock(start);
+  return `${formatClock(start)}–${formatClock(end)}`;
+}
+
+function astroLearnTopicId(kind: string) {
+  switch (kind) {
+    case 'sunrise':
+    case 'sunset':
+      return 'astro-sunrise-sunset';
+    case 'moonrise':
+    case 'moonset':
+      return 'astro-moonrise-moonset';
+    case 'civil':
+      return 'astro-civil-twilight';
+    case 'nautical':
+      return 'astro-nautical-twilight';
+    case 'astronomical':
+      return 'astro-astronomical-twilight';
+    case 'night':
+      return 'astro-night-window';
+    case 'true-dark':
+      return 'astro-true-dark';
+    case 'best':
+      return 'astro-best-window';
+    case 'darkest':
+      return 'astro-darkest-window';
+    default:
+      return 'astro-astronomical-twilight';
+  }
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function formatShortDay(dateValue?: string | null) {
+  if (!dateValue) return 'Today';
+  const d = new Date(`${dateValue}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return 'Today';
+  return d.toLocaleDateString([], { weekday: 'short' });
+}
+
+function formatTimeRangeShort(start?: string | null, end?: string | null) {
+  if (!start && !end) return null;
+  if (start && end) return `${formatClock(start)}-${formatClock(end)}`;
+  return formatClock(start ?? end ?? null);
+}
+
+type ActivityTier = 'great' | 'good' | 'mixed' | 'rough';
+
+type ActivityCardModel = {
+  id: string;
+  title: string;
+  icon: string;
+  tier: ActivityTier;
+  score: number;
+  headline: string;
+  detail: string;
+  kicker?: string | null;
+};
+
+function tierForScore(score: number): ActivityTier {
+  if (score >= 82) return 'great';
+  if (score >= 64) return 'good';
+  if (score >= 44) return 'mixed';
+  return 'rough';
+}
+
+function labelForTier(tier: ActivityTier) {
+  switch (tier) {
+    case 'great':
+      return 'Great';
+    case 'good':
+      return 'Good';
+    case 'mixed':
+      return 'Mixed';
+    default:
+      return 'Rough';
+  }
+}
+
+function tierColors(tier: ActivityTier) {
+  switch (tier) {
+    case 'great':
+      return { bg: 'rgba(72,201,176,0.18)', border: 'rgba(72,201,176,0.42)', text: '#8EF3DB' };
+    case 'good':
+      return { bg: 'rgba(118,196,255,0.16)', border: 'rgba(118,196,255,0.36)', text: '#C1E6FF' };
+    case 'mixed':
+      return { bg: 'rgba(255,196,92,0.16)', border: 'rgba(255,196,92,0.34)', text: '#FFD48A' };
+    default:
+      return { bg: 'rgba(255,113,113,0.16)', border: 'rgba(255,113,113,0.34)', text: '#FFB2B2' };
+  }
+}
+
+function describeBestDay(bestDate?: string | null, fallback = 'Watch conditions') {
+  if (!bestDate) return fallback;
+  const short = formatShortDay(bestDate);
+  return short === 'Today' ? 'Best today' : `Best ${short}`;
+}
+
+function buildActivityForecast(args: {
+  daily: any[];
+  visibilityMi: number | null;
+  astroData: any;
+}) {
+  const days = (args.daily ?? []).slice(0, 7);
+  const today = days[0] ?? null;
+
+  const scoreTempBand = (temp: number | null, idealMin: number, idealMax: number, hardMin: number, hardMax: number) => {
+    if (temp == null) return 8;
+    if (temp < hardMin || temp > hardMax) return 42;
+    if (temp < idealMin) return Math.round((idealMin - temp) * 1.8);
+    if (temp > idealMax) return Math.round((temp - idealMax) * 1.8);
+    return 0;
+  };
+
+  const scoreGenericDay = (
+    day: any,
+    config: {
+      tempField?: 'tempMaxF' | 'tempMinF';
+      idealMin: number;
+      idealMax: number;
+      hardMin: number;
+      hardMax: number;
+      popWeight: number;
+      windWeight: number;
+      gustWeight: number;
+      cloudTarget?: [number, number];
+      uvWeight?: number;
+      dryWindPenalty?: boolean;
+      visibilityPenalty?: boolean;
+    }
+  ) => {
+    const hi = safeNum(day?.tempMaxF);
+    const lo = safeNum(day?.tempMinF);
+    const temp = config.tempField === 'tempMinF' ? lo : hi;
+    const pop = safeNum(day?.precipProbMaxPct);
+    const wind = safeNum(day?.windMaxMph);
+    const gust = safeNum(day?.windGustMaxMph);
+    const cloud = safeNum(day?.cloudCoverAvgPct);
+    const uv = safeNum(day?.uvIndexMax);
+    const dew = safeNum(day?.dewPointMaxF);
+    const humidity = safeNum(day?.humidityMaxPct);
+
+    let penalty = scoreTempBand(temp, config.idealMin, config.idealMax, config.hardMin, config.hardMax);
+    penalty += ((pop ?? 0) / 100) * config.popWeight;
+    penalty += (Math.max((wind ?? 0) - 8, 0) / 22) * config.windWeight;
+    penalty += (Math.max((gust ?? 0) - 16, 0) / 24) * config.gustWeight;
+
+    if (config.cloudTarget && cloud != null) {
+      const [minCloud, maxCloud] = config.cloudTarget;
+      if (cloud < minCloud) penalty += (minCloud - cloud) * 0.18;
+      if (cloud > maxCloud) penalty += (cloud - maxCloud) * 0.18;
+    }
+
+    if (config.uvWeight && uv != null) {
+      penalty += Math.max(uv - 6, 0) * config.uvWeight;
+    }
+
+    if (config.dryWindPenalty) {
+      const dry = dew != null ? dew < 35 : (humidity != null ? humidity < 28 : false);
+      if (dry && (wind ?? 0) >= 15) penalty += 14;
+    }
+
+    if (config.visibilityPenalty && args.visibilityMi != null) {
+      penalty += Math.max(4 - args.visibilityMi, 0) * 10;
+    }
+
+    return clamp(Math.round(100 - penalty), 0, 100);
+  };
+
+  const pickBest = (scorer: (day: any) => number) => {
+    let bestDay: any = null;
+    let bestScore = -1;
+    for (const day of days) {
+      const score = scorer(day);
+      if (score > bestScore) {
+        bestScore = score;
+        bestDay = day;
+      }
+    }
+    return { bestDay, bestScore };
+  };
+
+  const todayRunning = scoreGenericDay(today, {
+    idealMin: 45,
+    idealMax: 68,
+    hardMin: 24,
+    hardMax: 92,
+    popWeight: 22,
+    windWeight: 14,
+    gustWeight: 8,
+    uvWeight: 2.5,
+  });
+  const runningBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 45,
+      idealMax: 68,
+      hardMin: 24,
+      hardMax: 92,
+      popWeight: 22,
+      windWeight: 14,
+      gustWeight: 8,
+      uvWeight: 2.5,
+    })
+  );
+
+  const todayCamping = scoreGenericDay(today, {
+    tempField: 'tempMinF',
+    idealMin: 45,
+    idealMax: 65,
+    hardMin: 25,
+    hardMax: 80,
+    popWeight: 28,
+    windWeight: 22,
+    gustWeight: 14,
+    dryWindPenalty: true,
+  });
+  const campingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      tempField: 'tempMinF',
+      idealMin: 45,
+      idealMax: 65,
+      hardMin: 25,
+      hardMax: 80,
+      popWeight: 28,
+      windWeight: 22,
+      gustWeight: 14,
+      dryWindPenalty: true,
+    })
+  );
+
+  const todayFishing = scoreGenericDay(today, {
+    idealMin: 52,
+    idealMax: 82,
+    hardMin: 30,
+    hardMax: 96,
+    popWeight: 20,
+    windWeight: 28,
+    gustWeight: 12,
+    cloudTarget: [20, 75],
+  });
+  const fishingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 52,
+      idealMax: 82,
+      hardMin: 30,
+      hardMax: 96,
+      popWeight: 20,
+      windWeight: 28,
+      gustWeight: 12,
+      cloudTarget: [20, 75],
+    })
+  );
+
+  const todayHiking = scoreGenericDay(today, {
+    idealMin: 50,
+    idealMax: 76,
+    hardMin: 28,
+    hardMax: 96,
+    popWeight: 24,
+    windWeight: 12,
+    gustWeight: 8,
+    uvWeight: 2.8,
+  });
+  const hikingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 50,
+      idealMax: 76,
+      hardMin: 28,
+      hardMax: 96,
+      popWeight: 24,
+      windWeight: 12,
+      gustWeight: 8,
+      uvWeight: 2.8,
+    })
+  );
+
+  const todayFlying = scoreGenericDay(today, {
+    idealMin: 38,
+    idealMax: 88,
+    hardMin: 18,
+    hardMax: 105,
+    popWeight: 26,
+    windWeight: 32,
+    gustWeight: 20,
+    visibilityPenalty: true,
+  });
+  const flyingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 38,
+      idealMax: 88,
+      hardMin: 18,
+      hardMax: 105,
+      popWeight: 26,
+      windWeight: 32,
+      gustWeight: 20,
+      visibilityPenalty: true,
+    })
+  );
+
+  const todayBoating = scoreGenericDay(today, {
+    idealMin: 58,
+    idealMax: 88,
+    hardMin: 38,
+    hardMax: 102,
+    popWeight: 26,
+    windWeight: 30,
+    gustWeight: 24,
+  });
+  const boatingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 58,
+      idealMax: 88,
+      hardMin: 38,
+      hardMax: 102,
+      popWeight: 26,
+      windWeight: 30,
+      gustWeight: 24,
+    })
+  );
+
+  const astroScore = clamp(Math.round((safeNum(args.astroData?.peakScore) ?? 0) * 100), 0, 100);
+  const astroTier = tierForScore(astroScore);
+  const astroWindow =
+    formatTimeRangeShort(
+      args.astroData?.bestStartTime ?? args.astroData?.darkestStartTime,
+      args.astroData?.bestEndTime ?? args.astroData?.darkestEndTime
+    ) ?? 'Tonight';
+  const aerosolLabel = typeof args.astroData?.aerosols?.label === 'string' ? args.astroData.aerosols.label : null;
+
+  return [
+    {
+      id: 'running',
+      title: 'Running',
+      icon: 'fitness-outline',
+      score: todayRunning,
+      tier: tierForScore(todayRunning),
+      headline: todayRunning >= 78 ? 'Stride weather' : todayRunning >= 58 ? 'Joggable' : todayRunning >= 40 ? 'Pick your hour' : 'Treadmill vibes',
+      detail: `${describeBestDay(runningBest.bestDay?.date)} for cooler miles`,
+      kicker: safeNum(today?.tempMaxF) != null ? `${Math.round(safeNum(today?.tempMaxF) ?? 0)} deg high` : null,
+    },
+    {
+      id: 'camping',
+      title: 'Camping',
+      icon: 'bonfire-outline',
+      score: todayCamping,
+      tier: tierForScore(todayCamping),
+      headline:
+        todayCamping >= 78 ? 'Campfire-friendly' : todayCamping >= 58 ? 'Pack layers' : todayCamping >= 40 ? 'Fussy setup' : 'Tent stress',
+      detail:
+        safeNum(today?.windMaxMph) != null && safeNum(today?.dewPointMaxF) != null && (safeNum(today?.windMaxMph) ?? 0) >= 15 && (safeNum(today?.dewPointMaxF) ?? 99) < 35
+          ? 'Dry and breezy: watch fire danger'
+          : `${describeBestDay(campingBest.bestDay?.date)} for the cleanest overnight`,
+      kicker: safeNum(today?.tempMinF) != null ? `${Math.round(safeNum(today?.tempMinF) ?? 0)} deg overnight` : null,
+    },
+    {
+      id: 'fishing',
+      title: 'Fishing',
+      icon: 'fish-outline',
+      score: todayFishing,
+      tier: tierForScore(todayFishing),
+      headline: todayFishing >= 76 ? 'Lines-in weather' : todayFishing >= 58 ? 'Worth a cast' : todayFishing >= 40 ? 'Choppy luck' : 'Stay on shore',
+      detail: `${describeBestDay(fishingBest.bestDay?.date)} around dawn or dusk`,
+      kicker: safeNum(today?.windMaxMph) != null ? `${Math.round(safeNum(today?.windMaxMph) ?? 0)} mph wind` : null,
+    },
+    {
+      id: 'hiking',
+      title: 'Hiking',
+      icon: 'footsteps-outline',
+      score: todayHiking,
+      tier: tierForScore(todayHiking),
+      headline: todayHiking >= 80 ? 'Trail candy' : todayHiking >= 60 ? 'Solid trek' : todayHiking >= 42 ? 'Start early' : 'Heat or weather tax',
+      detail: `${describeBestDay(hikingBest.bestDay?.date)} for the longest push`,
+      kicker: safeNum(today?.uvIndexMax) != null ? `UV ${safeNum(today?.uvIndexMax)?.toFixed(1)}` : null,
+    },
+    {
+      id: 'flying',
+      title: 'Flying',
+      icon: 'airplane-outline',
+      score: todayFlying,
+      tier: tierForScore(todayFlying),
+      headline:
+        todayFlying >= 80 ? 'Smooth enough' : todayFlying >= 60 ? 'Mostly flyable' : todayFlying >= 42 ? 'Check the briefing' : 'Bumpy or marginal',
+      detail: `${describeBestDay(flyingBest.bestDay?.date)} if you want cleaner conditions`,
+      kicker: args.visibilityMi != null ? `${args.visibilityMi.toFixed(1)} mi vis` : null,
+    },
+    {
+      id: 'stargazing',
+      title: 'Stargazing',
+      icon: 'star-outline',
+      score: astroScore,
+      tier: astroTier,
+      headline:
+        astroScore >= 82 ? 'Sky show' : astroScore >= 64 ? 'Worth looking up' : astroScore >= 44 ? 'Patchy window' : 'Clouds win tonight',
+      detail: args.astroData?.bestSummary ? `${astroWindow} - ${String(args.astroData.bestSummary)}` : astroWindow,
+      kicker: aerosolLabel ? `Aerosols: ${aerosolLabel}` : args.astroData?.peakLabel ? String(args.astroData.peakLabel) : 'Tonight',
+    },
+    {
+      id: 'boating',
+      title: 'Boating',
+      icon: 'boat-outline',
+      score: todayBoating,
+      tier: tierForScore(todayBoating),
+      headline:
+        todayBoating >= 80 ? 'Smooth cruise' : todayBoating >= 60 ? 'Mostly manageable' : todayBoating >= 42 ? 'Watch chop' : 'Whitecap mood',
+      detail: `${describeBestDay(boatingBest.bestDay?.date)} for calmer water`,
+      kicker: safeNum(today?.windGustMaxMph) != null ? `${Math.round(safeNum(today?.windGustMaxMph) ?? 0)} mph gusts` : null,
+    },
+  ] as ActivityCardModel[];
+}
+
+function ActivityForecastSection({
+  daily,
+  visibilityMi,
+  astroData,
+}: {
+  daily: any[];
+  visibilityMi: number | null;
+  astroData: any;
+}) {
+  const cards = useMemo(
+    () =>
+      buildActivityForecast({
+        daily,
+        visibilityMi,
+        astroData,
+      }),
+    [astroData, daily, visibilityMi]
+  );
+
+  if (!cards.length) return null;
+
+  return (
+    <Card style={styles.activitySectionCard}>
+      <View style={styles.activitySectionHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>Activity forecast</Text>
+          <Text style={styles.activitySectionSubtext}>Fun reads for the next outing, launch, cast, or sky check.</Text>
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activityScrollerContent}>
+        {cards.map((card) => {
+          const colors = tierColors(card.tier);
+
+          return (
+            <View
+              key={card.id}
+              style={[
+                styles.activityMiniCard,
+                {
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={styles.activityMiniTopRow}>
+                <View style={[styles.activityMiniIconWrap, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                  <Ionicons name={card.icon as any} size={16} color={colors.text} />
+                </View>
+
+                <View style={[styles.activityMiniPill, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+                  <Text style={[styles.activityMiniPillText, { color: colors.text }]}>{labelForTier(card.tier)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.activityMiniTitle}>{card.title}</Text>
+              <Text style={styles.activityMiniHeadline}>{card.headline}</Text>
+              <Text style={styles.activityMiniDetail} numberOfLines={2}>{card.detail}</Text>
+              <Text style={styles.activityMiniKicker} numberOfLines={1}>{card.kicker ?? `${card.score}/100 feel`}</Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+    </Card>
+  );
 }
 
 async function fetchFavoriteWeatherPreview(lat: number, lon: number): Promise<FavoriteWeatherPreview> {
@@ -721,10 +1220,14 @@ function SimpleSummary({
 function DailyForecastList({
   daily,
   hourly,
+  moonrise,
+  moonset,
   maxDays = 15,
 }: {
   daily: any[];
   hourly?: any[];
+  moonrise?: string | null;
+  moonset?: string | null;
   maxDays?: number;
 }) {
   const rows = (daily ?? []).slice(0, maxDays);
@@ -901,6 +1404,11 @@ function DailyForecastList({
         const condition = weatherCodeToLabel(code);
 
         const split = buildDayNight(day?.date ?? day?.time);
+        const sunrise = typeof day?.sunrise === 'string' ? day.sunrise : null;
+        const sunset = typeof day?.sunset === 'string' ? day.sunset : null;
+        const rowMoonrise = idx === 0 ? moonrise ?? null : (typeof day?.moonrise === 'string' ? day.moonrise : null);
+        const rowMoonset = idx === 0 ? moonset ?? null : (typeof day?.moonset === 'string' ? day.moonset : null);
+        const dayLength = safeNum(day?.daylightDurationSec ?? day?.daylight_duration ?? day?.daylightDuration) ?? null;
 
         const narrativeParts: string[] = [];
         if (condition === 'Clear') narrativeParts.push('Bright and clear');
@@ -968,6 +1476,12 @@ function DailyForecastList({
               {narrative.charAt(0).toUpperCase() + narrative.slice(1)}
             </Text>
 
+            <View style={styles.dailyAstroRow}>
+              <Text style={styles.dailyAstroText}>Sunrise {formatClock(sunrise)}</Text>
+              <Text style={styles.dailyAstroDot}>•</Text>
+              <Text style={styles.dailyAstroText}>Sunset {formatClock(sunset)}</Text>
+            </View>
+
             {expanded ? (
               <View style={styles.dailyExpanded}>
                 <View style={styles.dayNightBlock}>
@@ -1009,6 +1523,34 @@ function DailyForecastList({
                 </View>
 
                 <View style={styles.periodStatsWrap}>
+                  <View style={styles.periodStatsSection}>
+                    <Text style={styles.periodStatsTitle}>Sun and moon</Text>
+
+                    <View style={styles.dailyExpandedGrid}>
+                      <View style={styles.dailyExpandedCell}>
+                        <Text style={styles.dailyExpandedLabel}>Sunrise</Text>
+                        <Text style={styles.dailyExpandedValue}>{formatClock(sunrise)}</Text>
+                      </View>
+
+                      <View style={styles.dailyExpandedCell}>
+                        <Text style={styles.dailyExpandedLabel}>Sunset</Text>
+                        <Text style={styles.dailyExpandedValue}>{formatClock(sunset)}</Text>
+                      </View>
+
+                      <View style={styles.dailyExpandedCell}>
+                        <Text style={styles.dailyExpandedLabel}>Moonrise</Text>
+                        <Text style={styles.dailyExpandedValue}>{formatClock(rowMoonrise)}</Text>
+                      </View>
+
+                      <View style={styles.dailyExpandedCell}>
+                        <Text style={styles.dailyExpandedLabel}>Moonset</Text>
+                        <Text style={styles.dailyExpandedValue}>{formatClock(rowMoonset)}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.dailyExpandedSummary}>Day length {formatDayLength(dayLength)}</Text>
+                  </View>
+
                   <View style={styles.periodStatsSection}>
                     <Text style={styles.periodStatsTitle}>Day details</Text>
 
@@ -1186,6 +1728,12 @@ function NerdyDeepDive({
   pressureHpa,
   pressureInHg,
   pressureTrend,
+  astro,
+  sunrise,
+  sunset,
+  moonrise,
+  moonset,
+  dayLengthSec,
   feelsDriverLabel,
   feelsDriverValue,
   onOpenLearnTopic,
@@ -1205,6 +1753,25 @@ function NerdyDeepDive({
   visibilityMi: number | null;
   pressureHpa: number | null;
   pressureInHg: number | null;
+  astro?: {
+    civilDusk?: string | null;
+    nauticalDusk?: string | null;
+    astronomicalDusk?: string | null;
+    civilDawn?: string | null;
+    nauticalDawn?: string | null;
+    astronomicalDawn?: string | null;
+    nightStartTime?: string | null;
+    nightEndTime?: string | null;
+    trueDarkStartTime?: string | null;
+    trueDarkEndTime?: string | null;
+    bestStartTime?: string | null;
+    bestEndTime?: string | null;
+  } | null;
+  sunrise?: string | null;
+  sunset?: string | null;
+  moonrise?: string | null;
+  moonset?: string | null;
+  dayLengthSec?: number | null;
   pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
@@ -1220,6 +1787,26 @@ function NerdyDeepDive({
 
   const pressureRegime = pressureRegimeLabel(pressureTrend);
   const radiationRegime = radiationRegimeLabel(cloudCoverPct);
+  const astroMilestones = [
+    { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
+    { label: 'Sunset', value: formatClock(sunset), topicId: astroLearnTopicId('sunset') },
+    { label: 'Moonrise', value: formatClock(moonrise), topicId: astroLearnTopicId('moonrise') },
+    { label: 'Moonset', value: formatClock(moonset), topicId: astroLearnTopicId('moonset') },
+    { label: 'Civil dusk', value: formatClock(astro?.civilDusk), topicId: astroLearnTopicId('civil') },
+    { label: 'Civil dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
+    { label: 'Nautical dusk', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
+    { label: 'Nautical dawn', value: formatClock(astro?.nauticalDawn), topicId: astroLearnTopicId('nautical') },
+    {
+      label: 'Astronomical dusk',
+      value: formatClock(astro?.astronomicalDusk),
+      topicId: astroLearnTopicId('astronomical'),
+    },
+    {
+      label: 'Astronomical dawn',
+      value: formatClock(astro?.astronomicalDawn),
+      topicId: astroLearnTopicId('astronomical'),
+    },
+  ];
 
   return (
     <View style={nd.wrap}>
@@ -1387,6 +1974,44 @@ function NerdyDeepDive({
           </View>
         </View>
       </SectionCard>
+
+      <SectionCard title="Sun and Moon">
+        <View style={nd.astroGrid}>
+          {astroMilestones.map((item) => (
+            <View key={item.label} style={nd.astroGridItem}>
+              <StatTile
+                label={item.label}
+                value={item.value}
+                onPress={() => onOpenLearnTopic(item.topicId)}
+              />
+            </View>
+          ))}
+        </View>
+
+        <StatTile
+          label="Night window"
+          value={formatWindow(astro?.nightStartTime, astro?.nightEndTime)}
+          onPress={() => onOpenLearnTopic(astroLearnTopicId('night'))}
+        />
+
+        <StatTile
+          label="True dark"
+          value={formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime)}
+          onPress={() => onOpenLearnTopic(astroLearnTopicId('true-dark'))}
+        />
+
+        <StatTile
+          label="Best window"
+          value={formatWindow(astro?.bestStartTime, astro?.bestEndTime)}
+          onPress={() => onOpenLearnTopic(astroLearnTopicId('best'))}
+        />
+
+        <StatTile
+          label="Day length"
+          value={formatDayLength(dayLengthSec)}
+          onPress={() => onOpenLearnTopic(astroLearnTopicId('sunrise'))}
+        />
+      </SectionCard>
     </View>
   );
 }
@@ -1394,6 +2019,14 @@ function NerdyDeepDive({
 const nd = StyleSheet.create({
   wrap: { marginTop: 10, gap: 8 },
   gridItem: { flex: 1 },
+  astroGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  astroGridItem: {
+    width: '48%',
+  },
   section: {
     paddingVertical: 10,
     paddingHorizontal: 10,
@@ -1474,12 +2107,24 @@ function LandWeatherWithCoords({
     days: 15,
   });
 
+  const {
+    data: astroData,
+    refreshing: astroRefreshing,
+    refresh: astroRefresh,
+  } = useLocationAstroForecast({
+    lat: coords.lat,
+    lon: coords.lon,
+    placeName: activeLabel ?? undefined,
+    enabled: true,
+  });
+
   const loading = currentLoading || (wxLab && forecastLoading);
-  const refreshing = currentRefreshing || forecastRefreshing;
+  const refreshing = currentRefreshing || forecastRefreshing || astroRefreshing;
 
   const onRefresh = () => {
     currentRefresh?.();
     forecastRefresh?.();
+    astroRefresh?.();
   };
 
   const wx: any = currentData ?? {};
@@ -1490,13 +2135,41 @@ function LandWeatherWithCoords({
   const dewpointF = safeNum(wx.dewpointF ?? wx.dewpoint_f ?? wx.dew_point ?? wx.dewPoint);
   const humidityPct = safeNum(wx.humidity ?? wx.relativeHumidity ?? wx.relative_humidity ?? wx.rh ?? wx.humidityPct);
 
-  const windMph = safeNum(wx.windSpeedMph ?? wx.wind_speed_mph ?? wx.windSpeed ?? wx.wind);
-  const gustMph = safeNum(wx.windGustMph ?? wx.wind_gust_mph ?? wx.windGust ?? wx.gust ?? wx.windGust);
-  const windDirDeg = safeNum(wx.windDirection ?? wx.wind_dir ?? wx.wind_direction ?? wx.windDir);
+  const windMph = safeNum(
+    wx.windSpeedMph ??
+      wx.wind_speed_mph ??
+      wx.wind_speed_10m ??
+      wx.windspeed_10m ??
+      wx.windSpeed ??
+      wx.wind
+  );
+  const gustMph = safeNum(
+    wx.windGustMph ??
+      wx.wind_gust_mph ??
+      wx.wind_gusts_10m ??
+      wx.windGust ??
+      wx.windGustsMph ??
+      wx.gust ??
+      wx.windGust
+  );
+  const windDirDeg = safeNum(
+    wx.windDirection ??
+      wx.wind_dir ??
+      wx.wind_direction ??
+      wx.wind_direction_10m ??
+      wx.winddirection_10m ??
+      wx.windDir
+  );
 
   const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
 
   const daily = (forecastData?.daily ?? []).slice(0, 15);
+  const todayDaily = daily[0] ?? null;
+  const todaySunrise = typeof todayDaily?.sunrise === 'string' ? todayDaily.sunrise : null;
+  const todaySunset = typeof todayDaily?.sunset === 'string' ? todayDaily.sunset : null;
+  const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
+  const todayMoonrise = astroData?.moonrise ?? null;
+  const todayMoonset = astroData?.moonset ?? null;
   const hourlyRaw: any[] = forecastData?.hourly ?? [];
 
   const hourly = useMemo(() => {
@@ -1760,6 +2433,12 @@ function LandWeatherWithCoords({
             pressureHpa={pressureHpa}
             pressureInHg={pressureInHg}
             pressureTrend={pressureTrend}
+            astro={astroData}
+            sunrise={todaySunrise}
+            sunset={todaySunset}
+            moonrise={todayMoonrise}
+            moonset={todayMoonset}
+            dayLengthSec={todayDayLengthSec}
             feelsDriverLabel={feelsDriver.label}
             feelsDriverValue={feelsDriver.value}
             onOpenLearnTopic={openLearnTopic}
@@ -1773,11 +2452,23 @@ function LandWeatherWithCoords({
         <Card style={styles.forecastCard}>
           <Text style={styles.cardTitle}>{wxLab ? 'Daily (Model Blend)' : '15-Day Forecast'}</Text>
 
-          {wxLab ? <DailyRangeChart daily={daily} /> : <DailyForecastList daily={daily} hourly={hourly} maxDays={15} />}
+          {wxLab ? (
+            <DailyRangeChart daily={daily} />
+          ) : (
+            <DailyForecastList
+              daily={daily}
+              hourly={hourly}
+              moonrise={todayMoonrise}
+              moonset={todayMoonset}
+              maxDays={15}
+            />
+          )}
 
           <Text style={styles.updatedText}>Source: Open-Meteo (multi-model blend)</Text>
         </Card>
       ) : null}
+
+      {daily.length > 0 ? <ActivityForecastSection daily={daily} visibilityMi={visibilityMi} astroData={astroData} /> : null}
 
       {wxLab && hourly.length ? (
         <Card style={styles.hourlyCard}>
@@ -1899,7 +2590,7 @@ export default function LandWeatherScreen() {
   const locationLabel = useMemo(() => {
     const raw = (activeLabel ?? '').trim();
     if (raw) return raw;
-    return coords ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}` : 'Getting location…';
+    return coords ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}` : 'Getting location...';
   }, [activeLabel, coords]);
 
   useEffect(() => {
@@ -2005,14 +2696,14 @@ export default function LandWeatherScreen() {
                         {locationLabel}
                       </Text>
 
-                      {/* ⭐ SAVE INLINE */}
+                      {/* Save inline */}
                       <Pressable
                         onPress={onToggleFavorite}
                         disabled={!coords || isFavorited}
                         style={styles.saveInline}
                       >
                         <Text style={styles.saveInlineText}>
-                          {isFavorited ? '★' : '☆'}
+                          {isFavorited ? 'Saved' : 'Save'}
                         </Text>
                       </Pressable>
                     </View>
@@ -2028,29 +2719,34 @@ export default function LandWeatherScreen() {
                 </Pressable>
               </View>
 
-             <View style={styles.headerHeroBottomRow}>
-  <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
-    <Text style={styles.quickNavText}>Hourly</Text>
-  </Pressable>
+              <View style={styles.headerHeroBottomRow}>
+                <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
+                  <Text style={styles.quickNavText}>Hourly</Text>
+                </Pressable>
 
-  <Pressable onPress={() => router.push('/(tabs)/almanac')} style={styles.quickNavBtn}>
-    <Text style={styles.quickNavText}>Almanac</Text>
-  </Pressable>
+                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={styles.quickNavBtn}>
+                  <Text style={styles.quickNavText}>Almanac</Text>
+                </Pressable>
 
-  <Pressable
-    onPress={() => {
-      if (toggleWxLab) return toggleWxLab();
-      if (setWxLab) return setWxLab(!wxLab);
-    }}
-    style={[
-      styles.quickNavBtn,
-      styles.wxLabNavBtn,
-      wxLab && styles.wxLabNavBtnOn,
-    ]}
-  >
-    <Text style={styles.quickNavText}>🧪 Wx Lab</Text>
-  </Pressable>
-</View>
+                <View style={styles.headerModeWrap}>
+                  <Pressable
+                    onPress={() => setWxLab?.(false)}
+                    style={[styles.headerModeBtn, !wxLab ? styles.headerModeBtnActive : null]}
+                  >
+                    <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      if (toggleWxLab && !wxLab) return toggleWxLab();
+                      return setWxLab?.(true);
+                    }}
+                    style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
+                  >
+                    <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxNerd</Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </View>
 
@@ -2406,14 +3102,35 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  wxLabNavBtn: {
-  backgroundColor: 'rgba(37, 99, 235, 0.72)',
-  borderColor: 'rgba(255,255,255,0.16)',
-},
+  headerModeWrap: {
+    flexDirection: 'row',
+    gap: 8 as any,
+    padding: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
 
-wxLabNavBtnOn: {
-  backgroundColor: 'rgba(37, 99, 235, 0.92)',
-},
+  headerModeBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+  },
+
+  headerModeBtnActive: {
+    backgroundColor: 'rgba(70,130,220,0.22)',
+  },
+
+  headerModeText: {
+    color: 'rgba(255,255,255,0.70)',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+
+  headerModeTextActive: {
+    color: 'white',
+  },
   dailyMetaRow: {
     marginTop: 4,
     flexDirection: 'row',
@@ -2434,6 +3151,26 @@ wxLabNavBtnOn: {
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+
+  dailyAstroRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+
+  dailyAstroText: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  dailyAstroDot: {
+    color: 'rgba(255,255,255,0.30)',
+    fontSize: 11,
+    fontWeight: '900',
   },
 
   dailyExpanded: {
@@ -2621,6 +3358,106 @@ saveInlineText: {
   fontSize: 13,
   fontWeight: '900',
 },
+
+  activitySectionCard: {
+    marginBottom: theme.spacing.lg,
+    paddingTop: 12,
+    paddingBottom: 14,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+
+  activitySectionHeader: {
+    paddingHorizontal: 8,
+    marginBottom: 10,
+  },
+
+  activitySectionSubtext: {
+    marginTop: 2,
+    color: 'rgba(255,255,255,0.60)',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  activityScrollerContent: {
+    paddingHorizontal: 8,
+    gap: 10,
+  },
+
+  activityMiniCard: {
+    width: 176,
+    minHeight: 154,
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+
+  activityMiniTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+
+  activityMiniIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  activityMiniPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+
+  activityMiniPillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+
+  activityMiniTitle: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+
+  activityMiniHeadline: {
+    marginTop: 6,
+    color: 'white',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+
+  activityMiniDetail: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.70)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    minHeight: 32,
+  },
+
+  activityMiniKicker: {
+    marginTop: 'auto',
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
 
   forecastCard: {
     marginBottom: theme.spacing.lg,

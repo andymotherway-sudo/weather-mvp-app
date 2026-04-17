@@ -22,7 +22,7 @@ export default function NauticalZoneDetailScreen() {
   const title = name ? String(name) : `Marine Zone ${id || '—'}`;
   const headerTitle = `Zone: ${id || '—'}${wfo ? ` · WFO ${String(wfo)}` : ''}`;
 
-  const { forecast, loading, error, status } = useMarineForecast(id || undefined);
+  const { forecast, loading, error, status } = useMarineForecast(id || undefined, wfo ? String(wfo) : undefined);
 
   const bottomPad = Math.max(insets.bottom, 12) + 90;
 

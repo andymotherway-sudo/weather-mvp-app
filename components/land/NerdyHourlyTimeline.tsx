@@ -241,7 +241,7 @@ function ModeToggle({
             style={[styles.modeBtn, active ? styles.modeBtnActive : null]}
           >
             <Text style={[styles.modeText, active ? styles.modeTextActive : null]}>
-              {m === 'simple' ? 'Simple' : 'WxLab'}
+              {m === 'simple' ? 'Simple' : 'wxNerd'}
             </Text>
           </Pressable>
         );
@@ -332,9 +332,9 @@ export function NerdyHourlyTimeline({
       );
       const cloud = asPct(h.cloudCoverPct ?? h.cloud_cover ?? h.cloudcoverPct);
 
-      const wind = safeNum(h.windMph ?? h.windspeedMph ?? h.wind_speed_10m);
-      const gust = safeNum(h.windGustMph ?? h.wind_gusts_10m ?? h.windGustsMph);
-      const wdir = safeNum(h.windDirDeg ?? h.wind_direction_10m);
+      const wind = safeNum(h.windMph ?? h.windspeedMph ?? h.windspeed_10m ?? h.wind_speed_10m);
+      const gust = safeNum(h.windGustMph ?? h.windgusts_10m ?? h.wind_gusts_10m ?? h.windGustsMph);
+      const wdir = safeNum(h.windDirDeg ?? h.winddirection_10m ?? h.wind_direction_10m ?? h.windDir);
 
       const pressureHpa = safeNum(
         h.pressureHpa ?? h.pressure_msl ?? h.pressureMslHpa ?? h.surface_pressure

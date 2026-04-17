@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ClimatologyResult } from './types';
 
 // ✅ bump cache version so we can add new fields safely
-const KEY_PREFIX = 'omniwx:climo:v5';
+const KEY_PREFIX = 'omniwx:climo:v8';
 
 function keyFor(lat: number, lon: number) {
   const la = lat.toFixed(3);

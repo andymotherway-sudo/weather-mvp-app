@@ -17,6 +17,9 @@ export type MapViewId =
 
 export type LayerId =
   | 'radar.reflectivity'
+  | 'wx.fronts.day1'
+  | 'wx.fronts.day2'
+  | 'wx.fronts.day3'
   | 'sat.clouds'
   | 'sat.goesEast.geocolor'
   | 'sat.goesWest.geocolor'
@@ -32,7 +35,12 @@ export type LayerId =
   | 'lightning.strikes'
   | 'astro.skyScore'
   | 'space.aurora.prob'
-  | 'space.aurora.oval';
+  | 'space.aurora.oval'
+  | 'aviation.gairmet.turb'
+  | 'aviation.gairmet.ice'
+  | 'aviation.sigmet'
+  | 'aviation.cwa'
+  | 'aviation.pirep';
 
 export type LayerKind = 'tile' | 'geojson';
 

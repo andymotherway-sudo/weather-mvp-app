@@ -17,11 +17,14 @@ export function ViewSelector(props: {
   value: MapViewId;
   onChange: (id: MapViewId) => void;
   nerdy: boolean;
+  ids?: MapViewId[];
 }) {
-  const { value, onChange, nerdy } = props;
+  const { value, onChange, nerdy, ids } = props;
 
   const views = useMemo(() => {
-    return VIEW_SELECTOR_IDS
+    const viewIds = ids?.length ? ids : VIEW_SELECTOR_IDS;
+
+    return viewIds
       .map((id) => MAP_VIEWS.find((v) => v.id === id))
       .filter(Boolean)
       .filter((v: any) => {
@@ -29,7 +32,7 @@ export function ViewSelector(props: {
         if (v.nerdyOnly && !nerdy) return false;
         return true;
       });
-  }, [nerdy]);
+  }, [ids, nerdy]);
 
   return (
     <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>

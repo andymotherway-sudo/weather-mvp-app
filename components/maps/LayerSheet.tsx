@@ -159,7 +159,7 @@ export function LayerSheet(props: Props) {
   if (!state) {
     return (
       <View style={{ padding: 12 }}>
-        <Text style={{ fontWeight: '900', color: 'white' }}>Layers</Text>
+        <Text style={{ fontWeight: '900', color: 'white' }}>Overlays</Text>
         <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 6 }}>Loading map state…</Text>
       </View>
     );

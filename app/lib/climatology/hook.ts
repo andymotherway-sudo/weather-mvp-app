@@ -1,9 +1,8 @@
 // app/lib/climatology/hook.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiUrl } from '../net/apiBase';
+import { fetchWithTimeout } from '../net/fetchWithTimeout';
 import { readClimoCache, writeClimoCache } from './cache';
-import { nceiStations } from './ncei';
-import { fetchMonthlyPrecipNormalsIn, fetchMonthlyTempNormalsF } from './normals';
-import { findNearestNormalsStation } from './station';
 import type { ClimatologyResult } from './types';
 import { ClimoError } from './types';
 
@@ -23,13 +22,6 @@ function isAbortError(err: any) {
   );
 }
 
-const DEBUG_CLIMO_PHASE:
-  | 'cache'
-  | 'station'
-  | 'temp'
-  | 'precip'
-  | 'full' = 'cache';
-  
 function isFiniteCoord(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
@@ -55,8 +47,15 @@ function normalizePrecipMonthlyIn(arr?: Array<number | null>) {
 
 function normalizeClimoResult(r: ClimatologyResult): ClimatologyResult {
   const fixed = normalizePrecipMonthlyIn(r.precipMonthlyIn);
-  if (fixed === r.precipMonthlyIn) return r;
-  return { ...r, precipMonthlyIn: fixed };
+  const fixedLastYear = !r.lastYear
+    ? r.lastYear
+    : {
+        ...r.lastYear,
+        precipDailyIn: Array.isArray(r.lastYear.precipDailyIn) ? r.lastYear.precipDailyIn : r.lastYear.precipDailyIn,
+        precipMonthlyIn: normalizePrecipMonthlyIn(r.lastYear.precipMonthlyIn),
+      };
+  if (fixed === r.precipMonthlyIn && fixedLastYear === r.lastYear) return r;
+  return { ...r, precipMonthlyIn: fixed, lastYear: fixedLastYear };
 }
 
 function precipArraysEqual(a?: Array<number | null>, b?: Array<number | null>) {
@@ -71,6 +70,17 @@ function precipArraysEqual(a?: Array<number | null>, b?: Array<number | null>) {
     if (Math.abs(av - bv) > 1e-6) return false;
   }
   return true;
+}
+
+function hasUsableLastYear(lastYear?: ClimatologyResult['lastYear']) {
+  if (!lastYear) return false;
+  const tmin = Array.isArray(lastYear.tminF) ? lastYear.tminF : [];
+  const tmax = Array.isArray(lastYear.tmaxF) ? lastYear.tmaxF : [];
+  const validTmin = tmin.filter((v) => typeof v === 'number' && Number.isFinite(v)).length;
+  const validTmax = tmax.filter((v) => typeof v === 'number' && Number.isFinite(v)).length;
+  const hasTemps = tmin.length >= 365 && tmax.length >= 365 && validTmin >= 300 && validTmax >= 300;
+  const hasPrecip = Array.isArray(lastYear.precipMonthlyIn) && lastYear.precipMonthlyIn.length === 12;
+  return hasTemps && hasPrecip;
 }
 
 export function useClimatologyNormals({
@@ -91,8 +101,6 @@ export function useClimatologyNormals({
 
   const abortRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
-  const warmedRef = useRef(false);
-
   const hasValidCoords = isFiniteCoord(lat) && isFiniteCoord(lon);
 
   const locKey = useMemo(() => {
@@ -140,148 +148,75 @@ export function useClimatologyNormals({
       });
 
    try {
-  // 1) Cache first
-  if (preferCache) {
-    let cachedRaw: ClimatologyResult | null = null;
-    try {
-      cachedRaw = await readClimoCache(lat, lon);
-    } catch {
-      cachedRaw = null;
-    }
+      if (preferCache) {
+        let cachedRaw: ClimatologyResult | null = null;
+        try {
+          cachedRaw = await readClimoCache(lat, lon);
+        } catch {
+          cachedRaw = null;
+        }
 
-    if (cachedRaw) {
-      let cached = cachedRaw;
-      try {
-        cached = normalizeClimoResult(cachedRaw);
-      } catch {}
+        if (cachedRaw) {
+          let cached = cachedRaw;
+          try {
+            cached = normalizeClimoResult(cachedRaw);
+          } catch {}
+
+          safeSet(() => {
+            setData(cached);
+            setError(null);
+          });
+
+          if (hasUsableLastYear(cached.lastYear)) {
+            safeSet(() => {
+              setLoading(false);
+              setRefreshing(false);
+            });
+            return;
+          }
+        }
+      }
+
+      const url = apiUrl(`/api/almanac/climo?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`);
+      const res = await fetchWithTimeout(url, 25000, { signal: ac.signal });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new ClimoError('NETWORK', `Almanac worker failed (${res.status}).`, text);
+      }
+
+      const payload = (await res.json()) as ClimatologyResult;
+      const result = normalizeClimoResult(payload);
 
       safeSet(() => {
-        setData(cached);
+        setData(result);
         setError(null);
-        setLoading(false);
-        setRefreshing(false);
       });
-      return;
-    }
-  }
 
-  if (DEBUG_CLIMO_PHASE === 'full') {
-    safeSet(() => {
-      setData({
-        station: {
-          id: 'CACHE_TEST',
-          name: 'Cache Phase',
-          latitude: lat,
-          longitude: lon,
-        } as any,
-        normals: Array.from({ length: 12 }, (_, i) => ({
-          month: i + 1,
-          tavgF: null,
-          tminF: null,
-          tmaxF: null,
-        })),
-        precipMonthlyIn: undefined,
-        source: 'noaa_cdo_normal_mly',
-        fetchedAtIso: new Date().toISOString(),
-      });
-      setError(null);
-    });
-    return;
-  }
+      try {
+        await writeClimoCache(lat, lon, result);
+      } catch {}
 
-  // 2) Warmup
-  if (!warmedRef.current) {
-    warmedRef.current = true;
-    try {
-      await nceiStations({ limit: 1 }, undefined, ac.signal);
-    } catch (e: any) {
-      if (isAbortError(e) || ac.signal.aborted) throw e;
-    }
-  }
-
-  // 3) Station lookup
-  const station = await findNearestNormalsStation(lat, lon, undefined as any, ac.signal);
-
-  if (DEBUG_CLIMO_PHASE === 'station') {
-    safeSet(() => {
-      setData({
-        station,
-        normals: Array.from({ length: 12 }, (_, i) => ({
-          month: i + 1,
-          tavgF: null,
-          tminF: null,
-          tmaxF: null,
-        })),
-        precipMonthlyIn: undefined,
-        source: 'noaa_cdo_normal_mly',
-        fetchedAtIso: new Date().toISOString(),
-      });
-      setError(null);
-    });
-    return;
-  }
-
-  // 4) Temp normals
-  const normals = await fetchMonthlyTempNormalsF(station.id, undefined as any, ac.signal);
-
-  if (!Array.isArray(normals) || normals.length === 0) {
-    throw new ClimoError('NO_NORMALS', 'No monthly normals returned by NOAA for this station.');
-  }
-
-  if (DEBUG_CLIMO_PHASE === 'temp') {
-    safeSet(() => {
-      setData({
-        station,
-        normals,
-        precipMonthlyIn: undefined,
-        source: 'noaa_cdo_normal_mly',
-        fetchedAtIso: new Date().toISOString(),
-      });
-      setError(null);
-    });
-    return;
-  }
-
-  // 5) Precip normals
-  let precipMonthlyIn: Array<number | null> | undefined = undefined;
-  try {
-    precipMonthlyIn = await fetchMonthlyPrecipNormalsIn(station.id, undefined as any, ac.signal);
-  } catch {
-    precipMonthlyIn = undefined;
-  }
-
-  if (DEBUG_CLIMO_PHASE === 'precip') {
-    safeSet(() => {
-      setData({
-        station,
-        normals,
-        precipMonthlyIn,
-        source: 'noaa_cdo_normal_mly',
-        fetchedAtIso: new Date().toISOString(),
-      });
-      setError(null);
-    });
-    return;
-  }
-
-  const resultRaw: ClimatologyResult = {
-    station,
-    normals,
-    precipMonthlyIn,
-    source: 'noaa_cdo_normal_mly',
-    fetchedAtIso: new Date().toISOString(),
-  };
-
-  const result = normalizeClimoResult(resultRaw);
-
-  safeSet(() => {
-    setData(result);
-    setError(null);
-  });
-
-  try {
-    await writeClimoCache(lat, lon, result);
-  } catch {}
+      try {
+        const priorUrl = apiUrl(
+          `/api/almanac/prior-year?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`
+        );
+        const priorRes = await fetchWithTimeout(priorUrl, 25000, { signal: ac.signal });
+        if (priorRes.ok) {
+          const priorPayload = (await priorRes.json()) as { lastYear?: ClimatologyResult['lastYear'] };
+          if (priorPayload?.lastYear) {
+            const merged = normalizeClimoResult({ ...result, lastYear: priorPayload.lastYear });
+            safeSet(() => {
+              setData(merged);
+              setError(null);
+            });
+            try {
+              await writeClimoCache(lat, lon, merged);
+            } catch {}
+          }
+        }
+      } catch (priorErr: any) {
+        if (isAbortError(priorErr) || ac.signal.aborted) return;
+      }
 } catch (e: any) {
   if (isAbortError(e) || ac.signal.aborted) return;
 

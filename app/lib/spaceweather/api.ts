@@ -668,6 +668,17 @@ async function fetchDonkiJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+function settledErrorMessage(result: PromiseSettledResult<unknown>, label: string) {
+  if (result.status === 'fulfilled') return null;
+  const msg =
+    result.reason instanceof Error
+      ? result.reason.message
+      : typeof result.reason === 'string'
+        ? result.reason
+        : 'unknown failure';
+  return `${label}: ${msg}`;
+}
+
 export async function fetchSpaceWeatherEvents(days = 7): Promise<SpaceWeatherEvent[]> {
   const end = new Date();
   const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
@@ -796,14 +807,22 @@ export async function fetchSpaceWeatherEvents(days = 7): Promise<SpaceWeatherEve
     seen.add(e.id);
     deduped.push(e);
   }
-    const allFailed =
+  const allFailed =
     flrRes.status === 'rejected' &&
     cmeRes.status === 'rejected' &&
     sepRes.status === 'rejected' &&
     gstRes.status === 'rejected';
 
   if (allFailed) {
-    throw new Error('All DONKI sources failed');
+    const details = [
+      settledErrorMessage(flrRes, 'FLR'),
+      settledErrorMessage(cmeRes, 'CME'),
+      settledErrorMessage(sepRes, 'SEP'),
+      settledErrorMessage(gstRes, 'GST'),
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    throw new Error(details ? `All DONKI sources failed. ${details}` : 'All DONKI sources failed');
   }
   return deduped;
 }

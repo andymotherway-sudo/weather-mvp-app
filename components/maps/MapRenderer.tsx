@@ -286,27 +286,10 @@ export function MapRenderer(props: MapRendererProps) {
 
   const isDegraded = Date.now() < degradedUntil;
 
-  const lastKeyRef = useRef<string>('');
   useEffect(() => {
-    const key = `${initialRegion.latitude.toFixed(5)}:${initialRegion.longitude.toFixed(5)}:${initialRegion.longitudeDelta.toFixed(5)}`;
-
-    if (!lastKeyRef.current) {
-      lastKeyRef.current = key;
-      return;
-    }
-    if (lastKeyRef.current === key) return;
-
-    lastKeyRef.current = key;
-
-    const z = approxZoomFromLongitudeDelta(initialRegion.longitudeDelta);
-    setLiveZoom(z);
-
-    cameraRef.current?.setCamera?.({
-      centerCoordinate: initialCamera.centerCoordinate,
-      zoomLevel: initialCamera.zoomLevel,
-      animationDuration: 350,
-    });
-  }, [initialCamera.centerCoordinate, initialCamera.zoomLevel, initialRegion, cameraRef]);
+    lastRegionRef.current = initialRegion;
+    setLiveZoom(initialCamera.zoomLevel);
+  }, [initialCamera.zoomLevel, initialRegion]);
 
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userActiveRef = useRef(false);

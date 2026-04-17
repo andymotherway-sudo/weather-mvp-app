@@ -163,14 +163,24 @@ export function HourlyCharts72h({
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: theme.spacing.lg },
+  card: {
+    marginBottom: theme.spacing.lg,
+    backgroundColor: 'rgba(18, 28, 45, 0.48)',
+    borderWidth: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    elevation: 4,
+  },
 
   header: {
     flexDirection: 'row',
     gap: 10,
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 4,
+    paddingHorizontal: 2,
   },
   title: { fontSize: 15, fontWeight: '900', color: theme.colors.textPrimary },
   subtitle: { marginTop: 2, fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary },

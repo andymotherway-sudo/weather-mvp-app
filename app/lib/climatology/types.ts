@@ -24,6 +24,8 @@ export type LastYearSeries = {
    */
   tminF?: number[];
   tmaxF?: number[];
+  precipDailyIn?: Array<number | null>;
+  precipMonthlyIn?: Array<number | null>;
 };
 
 export type ClimatologyResult = {

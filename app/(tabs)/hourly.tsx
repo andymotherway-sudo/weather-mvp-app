@@ -98,7 +98,9 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       null;
 
     const windMph =
+      safeNum(h.windMph) ??
       safeNum(h.windSpeedMph) ??
+      safeNum(h.windspeed_10m) ??
       safeNum(h.wind_speed_10m) ??
       safeNum(h.wind_speed_mph) ??
       safeNum(h.windSpeed) ??
@@ -107,10 +109,18 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
 
     const windGustMph =
       safeNum(h.windGustMph) ??
+      safeNum(h.windgusts_10m) ??
       safeNum(h.wind_gusts_10m) ??
       safeNum(h.windGustsMph) ??
       safeNum(h.gustMph) ??
       safeNum(h.gust) ??
+      null;
+
+    const windDirDeg =
+      safeNum(h.windDirDeg) ??
+      safeNum(h.winddirection_10m) ??
+      safeNum(h.wind_direction_10m) ??
+      safeNum(h.windDir) ??
       null;
 
     const weatherCode =
@@ -129,6 +139,7 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       precipChancePct,
       windMph,
       windGustMph,
+      windDirDeg,
       weatherCode,
       timeZone: safeStr(h.timeZone) ?? timeZone ?? undefined,
       timezone: safeStr(h.timezone) ?? timeZone ?? undefined,
@@ -388,7 +399,7 @@ function HourlyWithCoords({
       {wxLab ? (
         <View style={styles.chartBlock}>
           <View style={styles.chartHeader}>
-            <Text style={styles.sectionTitle}>Wx Lab</Text>
+            <Text style={styles.sectionTitle}>wxNerd</Text>
             <Text style={styles.sectionSub}>Expanded hourly analysis</Text>
           </View>
 
@@ -502,7 +513,7 @@ export default function HourlyTab() {
                     {locationLabel}
                   </Text>
                   <Text style={styles.locationSecondary}>
-                    {wxLab ? 'Wx Lab expanded view' : 'Simple expanded view'}
+                    {wxLab ? 'wxNerd expanded view' : 'Simple expanded view'}
                   </Text>
                 </View>
               </View>

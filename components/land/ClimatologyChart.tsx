@@ -1,6 +1,6 @@
 // components/land/ClimatologyChart.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, {
   Defs,
   G,
@@ -31,6 +31,10 @@ type Props = {
 
   precipMonthlyIn?: Array<number | null>;
   lastYear?: LastYearSeries;
+  chartWidth?: number;
+  chartHeight?: number;
+  allowExpand?: boolean;
+  expanded?: boolean;
 };
 
 function clamp(v: number, a: number, b: number) {
@@ -43,6 +47,19 @@ function norm(v: number, min: number, max: number) {
 function buildPath(points: { x: number; y: number }[]) {
   if (!points.length) return '';
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+}
+function buildLinePath(points: { x: number; y: number | null }[]) {
+  let out = '';
+  let open = false;
+  for (const p of points) {
+    if (p.y == null || !Number.isFinite(p.y)) {
+      open = false;
+      continue;
+    }
+    out += `${open ? ' L' : ' M'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+    open = true;
+  }
+  return out.trim();
 }
 function monthLabel(m: number) {
   return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'][clamp(m, 1, 12) - 1];
@@ -114,6 +131,15 @@ function fmtInches(v: number | null | undefined) {
   return `${v.toFixed(2)}"`;
 }
 
+function fmtTempPair(low: number | null | undefined, high: number | null | undefined) {
+  const lo = typeof low === 'number' && Number.isFinite(low) ? Math.round(low) : '--';
+  const hi = typeof high === 'number' && Number.isFinite(high) ? Math.round(high) : '--';
+  return `${lo} / ${hi}`;
+}
+function fmtShortTemp(v: number | null | undefined) {
+  return typeof v === 'number' && Number.isFinite(v) ? `${Math.round(v)}°` : '--';
+}
+
 function monthFromDoy(doy1: number) {
   const d = clamp(doy1, 1, 365);
   for (let i = 11; i >= 0; i--) {
@@ -134,13 +160,25 @@ export function ClimatologyChart({
   onSelectDoy,
   precipMonthlyIn,
   lastYear,
+  chartWidth,
+  chartHeight,
+  allowExpand = true,
+  expanded = false,
 }: Props) {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [scrubDoy, setScrubDoy] = useState<number | null>(null);
+  const [zoomWindow, setZoomWindow] = useState<{ start: number; end: number }>({ start: 1, end: 365 });
+  const [expandOpen, setExpandOpen] = useState(false);
   const scrubbingRef = useRef(false);
+  const pinchRef = useRef<{
+    startDistance: number;
+    startSpan: number;
+    centerDoy: number;
+  } | null>(null);
 
   // ---- Layout
-  const W = 360;
-  const H = 240;
+  const W = chartWidth ?? 360;
+  const H = chartHeight ?? 240;
   const PAD_L = 36;
   const PAD_R = 16;
   const PAD_T = 18;
@@ -149,15 +187,33 @@ export function ClimatologyChart({
   const innerW = W - PAD_L - PAD_R;
   const innerH = H - PAD_T - PAD_B;
 
+  const visibleSpan = Math.max(1, zoomWindow.end - zoomWindow.start);
+
   const xForDoy = (doy1: number) => {
-    const d = clamp(doy1, 1, 365) - 1;
-    return PAD_L + (d / 364) * innerW;
+    const d = clamp(doy1, zoomWindow.start, zoomWindow.end) - zoomWindow.start;
+    return PAD_L + (d / visibleSpan) * innerW;
   };
 
   const doyForX = (x: number) => {
     const clamped = clamp(x, PAD_L, PAD_L + innerW);
     const t = (clamped - PAD_L) / innerW;
-    return clamp(1 + Math.round(t * 364), 1, 365);
+    return clamp(zoomWindow.start + Math.round(t * visibleSpan), 1, 365);
+  };
+
+  const distanceBetweenTouches = (touches: readonly any[]) => {
+    if (!touches || touches.length < 2) return 0;
+    const [a, b] = touches;
+    const dx = (b.pageX ?? 0) - (a.pageX ?? 0);
+    const dy = (b.pageY ?? 0) - (a.pageY ?? 0);
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const midpointLocationX = (touches: readonly any[]) => {
+    if (!touches || touches.length < 2) return null;
+    const [a, b] = touches;
+    const ax = a.locationX ?? a.pageX ?? 0;
+    const bx = b.locationX ?? b.pageX ?? 0;
+    return (ax + bx) / 2;
   };
 
   // ---- Data prep
@@ -259,73 +315,95 @@ export function ClimatologyChart({
   return `${buildPath(pts)} Z`;
 }, [seriesPts.tmax, seriesPts.tmin]);
 
-// ✅ Hourly-style precip: area fill + ridge stroke (steel-blue) that spans full chart width
-const precipShape = useMemo(() => {
-  if (!precipMonthlyIn || precipMonthlyIn.length < 12) return { area: '', ridge: '' };
+  const buildPrecipShape = (valsIn?: Array<number | null>) => {
+    if (!valsIn || valsIn.length < 12) return { area: '', ridge: '' };
 
-  const vals = precipMonthlyIn
-    .slice(0, 12)
-    .map((v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0));
+    const vals = valsIn.slice(0, 12).map((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0));
+    const max = vals.length ? Math.max(...vals) : 0;
+    if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
-  const max = vals.length ? Math.max(...vals) : 0;
-if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
-
-  const baseY = PAD_T + innerH;
-  const peakH = 28;
-
-  // Build month-start points
-  const monthPts = vals.map((v, i) => {
-    const x = xForDoy(MONTH_START_DOY[i]);
-    const h = (v / max) * peakH;
-    const y = baseY - h;
-    return { x, y };
-  });
-
-  // Anchor to full width so the mountain reaches both ends
-  const left = { x: PAD_L, y: monthPts[0]?.y ?? baseY };
-  const right = { x: PAD_L + innerW, y: monthPts[monthPts.length - 1]?.y ?? baseY };
-
-  const pts = [left, ...monthPts, right];
-
-  const ridge = buildPath(pts);
-
-  const area =
-    pts.length >= 2
-      ? `${ridge} L ${right.x.toFixed(2)} ${baseY.toFixed(2)} L ${left.x.toFixed(2)} ${baseY.toFixed(
-          2
-        )} Z`
-      : '';
-
-  return { area, ridge };
-}, [precipMonthlyIn, innerW, innerH]);
-
-  const lastYearBandPath = useMemo(() => {
-    const lyMin = lastYear?.tminF;
-    const lyMax = lastYear?.tmaxF;
-    if (!lyMin || !lyMax) return '';
-    if (lyMin.length < 365 || lyMax.length < 365) return '';
-
-    const top = lyMax.slice(0, 365).map((v, i) => {
-      const n = numOrNull(v);
-      const y = n == null ? yForVal(daily.tmax[i]) : yForVal(n);
-      return { x: PAD_L + (i / 364) * innerW, y };
+    const baseY = PAD_T + innerH;
+    const peakH = 16;
+    const referenceMax = 6;
+    const monthPts = vals.map((v, i) => {
+      const x = xForDoy(MONTH_START_DOY[i]);
+      const intensity = Math.sqrt(clamp(v / referenceMax, 0, 1));
+      return { x, y: baseY - intensity * peakH };
     });
 
-    const bot = lyMin
+    const left = { x: PAD_L, y: monthPts[0]?.y ?? baseY };
+    const right = { x: PAD_L + innerW, y: monthPts[monthPts.length - 1]?.y ?? baseY };
+    const pts = [left, ...monthPts, right];
+    const ridge = buildPath(pts);
+    const area =
+      pts.length >= 2
+        ? `${ridge} L ${right.x.toFixed(2)} ${baseY.toFixed(2)} L ${left.x.toFixed(2)} ${baseY.toFixed(2)} Z`
+        : '';
+
+    return { area, ridge };
+  };
+
+  const buildDailyPrecipShape = (valsIn?: Array<number | null>) => {
+    if (!Array.isArray(valsIn) || valsIn.length < 365) return { area: '', ridge: '' };
+
+    const vals = valsIn
       .slice(0, 365)
-      .reverse()
-      .map((v, revIdx) => {
-        const i = 364 - revIdx;
+      .map((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0));
+    const max = vals.length ? Math.max(...vals) : 0;
+    if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
+
+    const baseY = PAD_T + innerH;
+    const peakH = 24;
+    const referenceMax = Math.max(0.2, Math.min(1.5, max));
+    const pts = vals.map((v, i) => ({
+      x: PAD_L + (i / 364) * innerW,
+      y: baseY - Math.sqrt(clamp(v / referenceMax, 0, 1)) * peakH,
+    }));
+
+    const ridge = buildPath(pts);
+    const left = pts[0];
+    const right = pts[pts.length - 1];
+    const area =
+      pts.length >= 2
+        ? `${ridge} L ${right.x.toFixed(2)} ${baseY.toFixed(2)} L ${left.x.toFixed(2)} ${baseY.toFixed(2)} Z`
+        : '';
+
+    return { area, ridge };
+  };
+
+  const precipShape = useMemo(() => buildPrecipShape(precipMonthlyIn), [precipMonthlyIn, innerW, innerH]);
+  const lastYearPrecipShape = useMemo(
+    () => buildDailyPrecipShape(lastYear?.precipDailyIn),
+    [lastYear?.precipDailyIn, innerW, innerH]
+  );
+
+  const lastYearHighPath = useMemo(() => {
+    const lyMax = lastYear?.tmaxF;
+    if (!lyMax || lyMax.length < 365) return '';
+    return buildLinePath(
+      lyMax.slice(0, 365).map((v, i) => {
         const n = numOrNull(v);
-        const y = n == null ? yForVal(daily.tmin[i]) : yForVal(n);
-        return { x: PAD_L + (i / 364) * innerW, y };
-      });
+        return {
+          x: PAD_L + (i / 364) * innerW,
+          y: n == null ? null : yForVal(n),
+        };
+      })
+    );
+  }, [lastYear?.tmaxF, innerW, values.min, values.max]);
 
-    const pts = top.concat(bot);
-    if (!pts.length) return '';
-    return `${buildPath(pts)} Z`;
-  }, [lastYear?.tminF, lastYear?.tmaxF, innerW, daily.tmin, daily.tmax, values.min, values.max]);
-
+  const lastYearLowPath = useMemo(() => {
+    const lyMin = lastYear?.tminF;
+    if (!lyMin || lyMin.length < 365) return '';
+    return buildLinePath(
+      lyMin.slice(0, 365).map((v, i) => {
+        const n = numOrNull(v);
+        return {
+          x: PAD_L + (i / 364) * innerW,
+          y: n == null ? null : yForVal(n),
+        };
+      })
+    );
+  }, [lastYear?.tminF, innerW, values.min, values.max]);
   const pathFor = (k: SeriesKey) => {
     const pts = k === 'tminF' ? seriesPts.tmin : k === 'tavgF' ? seriesPts.tavg : seriesPts.tmax;
     return buildPath(pts);
@@ -370,15 +448,26 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
     const m = monthFromDoy(activeDoy);
     const p = precipMonthlyIn && precipMonthlyIn.length >= 12 ? precipMonthlyIn[m - 1] : null;
+    const lastYearPrecip =
+      lastYear?.precipDailyIn && lastYear.precipDailyIn.length > idx
+        ? numOrNull(lastYear.precipDailyIn[idx])
+        : lastYear?.precipMonthlyIn && lastYear.precipMonthlyIn.length >= 12
+          ? lastYear.precipMonthlyIn[m - 1]
+          : null;
+    const lastYearHigh = lastYear?.tmaxF && lastYear.tmaxF.length > idx ? numOrNull(lastYear.tmaxF[idx]) : null;
+    const lastYearLow = lastYear?.tminF && lastYear.tminF.length > idx ? numOrNull(lastYear.tminF[idx]) : null;
 
     return {
       tmin,
       tavg,
       tmax,
       precip: typeof p === 'number' ? p : null,
+      lastYearPrecip: typeof lastYearPrecip === 'number' ? lastYearPrecip : null,
+      lastYearHigh,
+      lastYearLow,
       month: m,
     };
-  }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn]);
+  }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn, lastYear?.precipDailyIn, lastYear?.precipMonthlyIn, lastYear?.tmaxF, lastYear?.tminF]);
 
   // ---- Scrub handling
   const panResponder = useMemo(() => {
@@ -389,6 +478,19 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
       onMoveShouldSetPanResponder: () => true,
 
       onPanResponderGrant: (evt) => {
+        if ((evt.nativeEvent.touches?.length ?? 0) >= 2) {
+          scrubbingRef.current = false;
+          setScrubDoy(null);
+
+          const centerX = midpointLocationX(evt.nativeEvent.touches);
+          pinchRef.current = {
+            startDistance: Math.max(distanceBetweenTouches(evt.nativeEvent.touches), 1),
+            startSpan: visibleSpan,
+            centerDoy: centerX == null ? selectedDoy ?? 183 : doyForX(centerX),
+          };
+          return;
+        }
+
         scrubbingRef.current = true;
         const x = evt.nativeEvent.locationX;
         const doy = doyForX(x);
@@ -397,6 +499,32 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
       },
 
       onPanResponderMove: (evt) => {
+        if ((evt.nativeEvent.touches?.length ?? 0) >= 2) {
+          scrubbingRef.current = false;
+          setScrubDoy(null);
+
+          const pinch = pinchRef.current;
+          const distance = distanceBetweenTouches(evt.nativeEvent.touches);
+          const centerX = midpointLocationX(evt.nativeEvent.touches);
+          if (!pinch || distance <= 0 || centerX == null) return;
+
+          const scale = pinch.startDistance / distance;
+          const nextSpan = clamp(Math.round(pinch.startSpan * scale), 20, 365);
+          const centerDoy = doyForX(centerX);
+          let start = Math.round(centerDoy - nextSpan / 2);
+          let end = start + nextSpan;
+          if (start < 1) {
+            end += 1 - start;
+            start = 1;
+          }
+          if (end > 365) {
+            start -= end - 365;
+            end = 365;
+          }
+          setZoomWindow({ start: clamp(start, 1, 345), end: clamp(end, 21, 365) });
+          return;
+        }
+
         if (!scrubbingRef.current) return;
         const x = evt.nativeEvent.locationX;
         const doy = doyForX(x);
@@ -406,59 +534,70 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
       onPanResponderRelease: () => {
         scrubbingRef.current = false;
+        pinchRef.current = null;
         setScrubDoy(null);
       },
       onPanResponderTerminate: () => {
         scrubbingRef.current = false;
+        pinchRef.current = null;
         setScrubDoy(null);
       },
     });
-  }, [onSelectDoy]);
+  }, [onSelectDoy, selectedDoy, visibleSpan, zoomWindow.start, zoomWindow.end]);
 
   // ---- Premium polish colors (subtler contrast)
   const C = {
     grid: 'rgba(255,255,255,0.07)',
     tick: 'rgba(255,255,255,0.42)',
     month: 'rgba(255,255,255,0.55)',
-
-    // lines
-    avg: 'rgba(210,220,230,0.70)',
-    min: 'rgba(170,190,210,0.50)',
-    max: 'rgba(210,225,240,0.66)',
-
-    // glow (reduced)
-    glow: 'rgba(0,0,0,0.00)',
-    glow2: 'rgba(0,0,0,0.00)',
-
-    // ✅ precip (steel-blue, like hourly chip)
-    precipFill: 'rgba(90, 140, 175, 0.18)',
-    precipStroke: 'rgba(90, 140, 175, 0.42)',
+    min: 'rgba(170,190,210,0.42)',
+    max: 'rgba(210,225,240,0.50)',
+    lastYearHigh: 'rgba(255,110,120,0.95)',
+    lastYearLow: 'rgba(110,170,255,0.95)',
+    precipFill: 'rgba(34, 197, 94, 0.18)',
+    precipStroke: 'rgba(34, 197, 94, 0.52)',
+    precipLastYearFill: 'rgba(163, 230, 53, 0.14)',
+    precipLastYearStroke: 'rgba(190, 242, 100, 0.82)',
 
     marker: 'rgba(125,210,255,0.55)',
     markerText: 'rgba(170,235,255,0.90)',
   };
 
+  const markerX = activeDoy ? xForDoy(activeDoy) : PAD_L;
+  const bubbleWidth = 154;
+  const bubbleLeft = clamp(markerX - bubbleWidth / 2, 10, Math.max(10, W - bubbleWidth - 10));
+
   return (
-    <Card style={styles.card}>
+    <>
+    <Card style={[styles.card, expanded ? styles.expandedCard : null]}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.subTitle} numberOfLines={1}>
-            {stationName ? `30-yr normals • ${stationName}` : '30-yr monthly normals (interpolated daily)'}
+            {stationName ? `30-yr normals | ${stationName}` : '30-yr monthly normals (interpolated daily)'}
           </Text>
 
-          {detail ? (
-            <Text style={styles.detailLine} numberOfLines={1}>
-              Typical low: {Math.round(detail.tmin)}°   Avg: {Math.round(detail.tavg)}°   Typical high:{' '}
-              {Math.round(detail.tmax)}° {'   '}Avg precip: {fmtInches(detail.precip)}
-            </Text>
+          {detail && !expanded ? (
+            <View style={styles.detailBlock}>
+              <Text style={styles.detailLine}>
+                Normal {fmtTempPair(detail.tmin, detail.tmax)} | Prior year {fmtTempPair(detail.lastYearLow, detail.lastYearHigh)}
+              </Text>
+              <Text style={styles.detailLineSecondary}>
+                Avg precip {fmtInches(detail.precip)} | Prior year precip {fmtInches(detail.lastYearPrecip)}
+              </Text>
+            </View>
           ) : null}
         </View>
+        {allowExpand ? (
+          <Pressable onPress={() => setExpandOpen(true)} style={styles.expandBtn}>
+            <Text style={styles.expandBtnText}>Open</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View {...(panResponder ? panResponder.panHandlers : {})}>
         {/* subtle “glass” rim behind SVG */}
-        <View style={styles.glassFrame} />
+        <View style={[styles.glassFrame, { width: W, height: H }]} />
 
         <Svg width={W} height={H}>
           <Defs>
@@ -483,32 +622,25 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
             </LinearGradient>
           </Defs>
 
-          {/* premium background */}
           <Rect x={0} y={0} width={W} height={H} rx={18} fill="url(#bgGrad)" />
           <Rect x={0} y={0} width={W} height={H} rx={18} fill="url(#vigGrad)" opacity={0.9} />
 
-          {/* ✅ precip behind (hourly-style fill + ridge) */}
-          {precipShape.area ? (
+          {lastYearPrecipShape.area ? (
             <>
-              <Path d={precipShape.area} fill={C.precipFill} stroke="none" />
-              <Path d={precipShape.ridge} fill="none" stroke={C.precipStroke} strokeWidth={2} />
+              <Path d={lastYearPrecipShape.area} fill={C.precipLastYearFill} stroke="none" />
+              <Path d={lastYearPrecipShape.ridge} fill="none" stroke={C.precipLastYearStroke} strokeWidth={1.5} />
             </>
           ) : null}
 
-          {/* last year overlay band */}
-          {lastYearBandPath ? (
-            <Path
-              d={lastYearBandPath}
-              fill="rgba(255,255,255,0.035)"
-              stroke="rgba(140,210,255,0.08)"
-              strokeWidth={1}
-            />
+          {precipShape.area ? (
+            <>
+              <Path d={precipShape.area} fill={C.precipFill} stroke="none" />
+              <Path d={precipShape.ridge} fill="none" stroke={C.precipStroke} strokeWidth={1.75} />
+            </>
           ) : null}
 
-          {/* normals band (transparent white) */}
           <Path d={bandPath} fill="url(#bandGrad)" opacity={0.62} />
 
-          {/* grid + ticks */}
           {ticks.map((t, idx) => {
             const y = yForVal(t);
             return (
@@ -528,8 +660,7 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
             );
           })}
 
-          {/* month labels */}
-          {MONTH_START_DOY.map((doy, i) => (
+          {MONTH_START_DOY.filter((doy) => doy >= zoomWindow.start && doy <= zoomWindow.end).map((doy, i) => (
             <SvgText
               key={`ml-${i}`}
               x={xForDoy(doy)}
@@ -539,25 +670,36 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
               fontWeight="900"
               textAnchor="middle"
             >
-              {monthLabel(i + 1)}
+              {monthLabel(monthFromDoy(doy))}
             </SvgText>
           ))}
 
-          {/* min/max (supporting) */}
-          <Path d={pathFor('tminF')} stroke={C.min} strokeWidth={1.5} opacity={0.85} fill="none" />
-          <Path d={pathFor('tmaxF')} stroke={C.max} strokeWidth={1.5} opacity={0.85} fill="none" />
-
-          {/* avg glow stack (reduced so it’s not stark) */}
-          <Path d={pathFor('tavgF')} stroke={C.glow2} strokeWidth={6} opacity={0.7} fill="none" />
-          <Path d={pathFor('tavgF')} stroke={C.glow} strokeWidth={4} opacity={0.8} fill="none" />
-          <Path d={pathFor('tavgF')} stroke={C.avg} strokeWidth={2.1} opacity={0.95} fill="none" />
+          <Path d={pathFor('tminF')} stroke={C.min} strokeWidth={1.35} opacity={0.72} fill="none" />
+          <Path d={pathFor('tmaxF')} stroke={C.max} strokeWidth={1.35} opacity={0.72} fill="none" />
+          {lastYearHighPath ? <Path d={lastYearHighPath} stroke={C.lastYearHigh} strokeWidth={2.2} opacity={0.96} fill="none" /> : null}
+          {lastYearLowPath ? <Path d={lastYearLowPath} stroke={C.lastYearLow} strokeWidth={2.2} opacity={0.96} fill="none" /> : null}
         </Svg>
 
-        {/* ✅ Marker overlay (native-driver smooth) */}
+        {expanded && detail ? (
+          <View style={[styles.floatingDetail, { left: bubbleLeft, top: 10 }]}>
+            <Text style={styles.floatingDetailDate}>{markerText ?? 'Selected'}</Text>
+            <Text style={styles.floatingDetailLine}>
+              Normal {fmtShortTemp(detail.tmin)} / {fmtShortTemp(detail.tmax)}
+            </Text>
+            <Text style={styles.floatingDetailLine}>
+              Prior {fmtShortTemp(detail.lastYearLow)} / {fmtShortTemp(detail.lastYearHigh)}
+            </Text>
+            <Text style={styles.floatingDetailLine}>
+              Avg {fmtInches(detail.precip)} • Prior {fmtInches(detail.lastYearPrecip)}
+            </Text>
+          </View>
+        ) : null}
+
         <AView
           pointerEvents="none"
           style={[
             styles.markerOverlay,
+            { width: W, height: H },
             {
               opacity: markerAlpha,
               transform: [{ translateX: markerXValue }],
@@ -567,7 +709,6 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
           <Svg width={W} height={H}>
             <Line x1={0} y1={PAD_T} x2={0} y2={PAD_T + innerH} stroke={C.marker} strokeWidth={1.5} />
 
-            {/* premium dot */}
             <Path
               d={`M 0 ${(PAD_T + 18).toFixed(2)} m -3 0 a 3 3 0 1 0 6 0 a 3 3 0 1 0 -6 0`}
               fill="rgba(170,235,255,0.95)"
@@ -587,16 +728,51 @@ if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
           </Svg>
         </AView>
       </View>
-
       <Text style={styles.footer}>
-        Tip: drag on the chart to scrub days. Precip is monthly normal for the selected day’s month.
+        Tip: drag to scrub days. Open the chart for a closer look. Dark green shows average monthly precip; bright green shows prior-year daily precip.
       </Text>
     </Card>
+    {allowExpand ? (
+      <Modal visible={expandOpen} animationType="slide" onRequestClose={() => setExpandOpen(false)}>
+        <View style={styles.expandScreen}>
+          <View style={styles.expandHeader}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={styles.expandTitle}>{title}</Text>
+              <Text style={styles.expandSubtitle}>
+                Drag inside the chart to scrub days. Scroll sideways for a closer look across the annual timeline.
+              </Text>
+            </View>
+            <Pressable onPress={() => setExpandOpen(false)} style={styles.expandCloseBtn}>
+              <Text style={styles.expandCloseText}>Done</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.expandScrollContent}>
+            <ClimatologyChart
+              title={title}
+              normals={normals}
+              stationName={stationName}
+              selectedDoy={selectedDoy}
+              markerLabel={markerLabel}
+              onSelectDoy={onSelectDoy}
+              precipMonthlyIn={precipMonthlyIn}
+              lastYear={lastYear}
+              chartWidth={Math.max(windowWidth * 2.2, 920)}
+              chartHeight={Math.max(windowHeight * 0.56, 320)}
+              allowExpand={false}
+              expanded
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+    ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   card: { marginBottom: theme.spacing.lg },
+  expandedCard: { marginBottom: 0 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -612,12 +788,57 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontWeight: '700',
   },
+  expandBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignSelf: 'flex-start',
+  },
+  expandBtnText: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 12,
+  },
 
   detailLine: {
-    marginTop: 8,
     fontSize: 12,
     fontWeight: '900',
     color: 'rgba(235,245,255,0.88)',
+  },
+  detailBlock: {
+    marginTop: 8,
+    gap: 2,
+  },
+  detailLineSecondary: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(235,245,255,0.74)',
+  },
+  floatingDetail: {
+    position: 'absolute',
+    minWidth: 154,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(2,6,23,0.90)',
+    zIndex: 3,
+  },
+  floatingDetailDate: {
+    color: 'rgba(170,235,255,0.92)',
+    fontWeight: '900',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  floatingDetailLine: {
+    color: 'rgba(235,245,255,0.88)',
+    fontWeight: '800',
+    fontSize: 11,
+    lineHeight: 15,
   },
 
   // “glass” rim (gives depth without changing Card)
@@ -625,8 +846,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    width: 360,
-    height: 240,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -638,11 +857,49 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    width: 360,
-    height: 240,
   },
 
   footer: { marginTop: 8, fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '700' },
+  expandScreen: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    paddingTop: 18,
+  },
+  expandHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
+  },
+  expandTitle: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 22,
+  },
+  expandSubtitle: {
+    color: 'rgba(255,255,255,0.68)',
+    marginTop: 4,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  expandCloseBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  expandCloseText: {
+    color: 'white',
+    fontWeight: '900',
+  },
+  expandScrollContent: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+  },
 });
 
 export default ClimatologyChart;
+

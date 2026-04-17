@@ -1,12 +1,25 @@
 // app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import React, { useMemo } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TabBarIcon from '../../components/ui/TabBarIcon';
 import { Colors } from '../../constants/theme';
 import { useColorScheme } from '../../hooks/use-color-scheme';
+
+function TabLabel({ color, label }: { color: string; label: string }) {
+  return (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.72}
+      style={{ color, fontWeight: '800', fontSize: 10, marginTop: -2, marginBottom: 1, textAlign: 'center' }}
+    >
+      {label}
+    </Text>
+  );
+}
 
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
@@ -14,9 +27,9 @@ export default function TabsLayout() {
   const insets = useSafeAreaInsets();
 
   const tabBarStyle = useMemo(() => {
-    const baseHeight = Platform.select({ ios: 60, android: 56, default: 56 }) as number;
-    const padTop = 8;
-    const padBottom = Math.max(10, insets.bottom);
+    const baseHeight = Platform.select({ ios: 58, android: 54, default: 54 }) as number;
+    const padTop = 6;
+    const padBottom = Math.max(8, insets.bottom);
 
     return {
       backgroundColor: 'rgba(20,24,38,0.98)',
@@ -47,8 +60,9 @@ export default function TabsLayout() {
         headerShown: false,
         headerTransparent: true,
 
-        tabBarLabelStyle: { fontWeight: '800', fontSize: 11, marginTop: -2, marginBottom: 2 },
-        tabBarIconStyle: { marginTop: 2 },
+        tabBarLabelStyle: { fontWeight: '800', fontSize: 10, marginTop: -2, marginBottom: 1 },
+        tabBarIconStyle: { marginTop: 1, marginBottom: -1 },
+        tabBarItemStyle: { paddingHorizontal: 0, minWidth: 0 },
 
         // ✅ use the computed style
         tabBarStyle,
@@ -64,6 +78,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Land',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Land" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'partly-sunny' : 'partly-sunny-outline'} color={color} />
           ),
@@ -75,6 +90,7 @@ export default function TabsLayout() {
         options={{
           headerTitle: '',
           title: 'Hourly',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Hourly" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'time' : 'time-outline'} color={color} />
           ),
@@ -85,6 +101,7 @@ export default function TabsLayout() {
   name="almanac"
   options={{
     title: 'Almanac',
+    tabBarLabel: ({ color }) => <TabLabel color={color} label="Almanac" />,
     tabBarIcon: ({ color, focused }) => (
       <TabBarIcon name={focused ? 'thermometer' : 'thermometer-outline'} color={color} />
     ),
@@ -95,6 +112,7 @@ export default function TabsLayout() {
         name="maps"
         options={{
           title: 'Maps',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Maps" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'map' : 'map-outline'} color={color} />
           ),
@@ -105,6 +123,7 @@ export default function TabsLayout() {
         name="solar"
         options={{
           title: 'Space',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Space" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'sunny' : 'sunny-outline'} color={color} />
           ),
@@ -115,8 +134,20 @@ export default function TabsLayout() {
         name="nautical"
         options={{
           title: 'Nautical',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Nautical" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'boat' : 'boat-outline'} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="aviation"
+        options={{
+          title: 'Aviation',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Aviation" />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name={focused ? 'airplane' : 'airplane-outline'} color={color} />
           ),
         }}
       />
@@ -125,6 +156,7 @@ export default function TabsLayout() {
         name="extremes"
         options={{
           title: 'Extremes',
+          tabBarLabel: ({ color }) => <TabLabel color={color} label="Extremes" />,
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name={focused ? 'thunderstorm' : 'thunderstorm-outline'} color={color} />
           ),
