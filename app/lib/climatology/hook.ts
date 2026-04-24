@@ -83,6 +83,61 @@ function hasUsableLastYear(lastYear?: ClimatologyResult['lastYear']) {
   return hasTemps && hasPrecip;
 }
 
+async function fetchClimatologyBundle(lat: number, lon: number, signal?: AbortSignal) {
+  if (!API_BASE) {
+    throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it to your Worker URL and restart Expo.');
+  }
+
+  const url = apiUrl(`/api/almanac/climo?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`);
+  const res = await fetchWithTimeout(url, 25000, { signal });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ClimoError('NETWORK', `Almanac worker failed (${res.status}).`, text);
+  }
+
+  const payload = (await res.json()) as ClimatologyResult;
+  let result = normalizeClimoResult(payload);
+
+  try {
+    const priorUrl = apiUrl(
+      `/api/almanac/prior-year?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`
+    );
+    const priorRes = await fetchWithTimeout(priorUrl, 25000, { signal });
+    if (priorRes.ok) {
+      const priorPayload = (await priorRes.json()) as { lastYear?: ClimatologyResult['lastYear'] };
+      if (priorPayload?.lastYear) {
+        result = normalizeClimoResult({ ...result, lastYear: priorPayload.lastYear });
+      }
+    }
+  } catch (priorErr: any) {
+    if (isAbortError(priorErr) || signal?.aborted) throw priorErr;
+  }
+
+  return result;
+}
+
+export async function primeClimatologyCache(lat: number, lon: number) {
+  if (!isFiniteCoord(lat) || !isFiniteCoord(lon)) return null;
+
+  try {
+    const cachedRaw = await readClimoCache(lat, lon);
+    if (cachedRaw) {
+      const cached = normalizeClimoResult(cachedRaw);
+      if (hasUsableLastYear(cached.lastYear)) return cached;
+    }
+  } catch {
+    // ignore cache read failures during warmup
+  }
+
+  try {
+    const result = await fetchClimatologyBundle(lat, lon);
+    await writeClimoCache(lat, lon, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 export function useClimatologyNormals({
   lat,
   lon,
@@ -177,15 +232,7 @@ export function useClimatologyNormals({
         }
       }
 
-      const url = apiUrl(`/api/almanac/climo?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`);
-      const res = await fetchWithTimeout(url, 25000, { signal: ac.signal });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new ClimoError('NETWORK', `Almanac worker failed (${res.status}).`, text);
-      }
-
-      const payload = (await res.json()) as ClimatologyResult;
-      const result = normalizeClimoResult(payload);
+      const result = await fetchClimatologyBundle(lat, lon, ac.signal);
 
       safeSet(() => {
         setData(result);
@@ -195,28 +242,6 @@ export function useClimatologyNormals({
       try {
         await writeClimoCache(lat, lon, result);
       } catch {}
-
-      try {
-        const priorUrl = apiUrl(
-          `/api/almanac/prior-year?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`
-        );
-        const priorRes = await fetchWithTimeout(priorUrl, 25000, { signal: ac.signal });
-        if (priorRes.ok) {
-          const priorPayload = (await priorRes.json()) as { lastYear?: ClimatologyResult['lastYear'] };
-          if (priorPayload?.lastYear) {
-            const merged = normalizeClimoResult({ ...result, lastYear: priorPayload.lastYear });
-            safeSet(() => {
-              setData(merged);
-              setError(null);
-            });
-            try {
-              await writeClimoCache(lat, lon, merged);
-            } catch {}
-          }
-        }
-      } catch (priorErr: any) {
-        if (isAbortError(priorErr) || ac.signal.aborted) return;
-      }
 } catch (e: any) {
   if (isAbortError(e) || ac.signal.aborted) return;
 

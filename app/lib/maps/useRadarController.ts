@@ -163,6 +163,26 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
   };
 }
 
+function getRadarFetchProfile(zoom: number, provider: 'iem' | 'rainviewer', stormMode: boolean) {
+  const z = Math.max(2, Math.min(12, zoom));
+
+  if (provider === 'rainviewer') {
+    if (z <= 5) return { maxFrames: 8, lookbackMinutes: 40 };
+    if (z <= 8) return { maxFrames: 10, lookbackMinutes: 55 };
+    return { maxFrames: 12, lookbackMinutes: 70 };
+  }
+
+  if (stormMode) {
+    if (z <= 6) return { maxFrames: 8, lookbackMinutes: 55 };
+    if (z <= 9) return { maxFrames: 10, lookbackMinutes: 70 };
+    return { maxFrames: 12, lookbackMinutes: 80 };
+  }
+
+  if (z <= 5) return { maxFrames: 7, lookbackMinutes: 35 };
+  if (z <= 8) return { maxFrames: 9, lookbackMinutes: 50 };
+  return { maxFrames: 10, lookbackMinutes: 65 };
+}
+
 export type RadarControllerSheetValue = {
   radarProvider: 'iem' | 'rainviewer';
 };
@@ -191,6 +211,10 @@ export function useRadarController(args: {
   const profile = useMemo(
     () => getRadarProfile(mapZoom, rawMode, state.nerdy),
     [mapZoom, rawMode, state.nerdy],
+  );
+  const fetchProfile = useMemo(
+    () => getRadarFetchProfile(mapZoom, sheetValue.radarProvider, stormMode),
+    [mapZoom, sheetValue.radarProvider, stormMode],
   );
 
   const radarOpacity = useMemo(() => {
@@ -228,7 +252,7 @@ export function useRadarController(args: {
     createRainViewerProvider({
       ttlMs: 60_000,
       includeNowcast: true,
-      maxFrames: 12,
+      maxFrames: 10,
       maxZoom: 10,
     }),
   );
@@ -271,8 +295,8 @@ export function useRadarController(args: {
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();
 
-  const imageW = Math.min(1600, Math.max(900, Math.floor(windowSize.width * deviceDpr)));
-  const imageH = Math.min(1600, Math.max(900, Math.floor(windowSize.height * deviceDpr)));
+  const imageW = Math.min(1280, Math.max(820, Math.floor(windowSize.width * Math.min(deviceDpr, 2))));
+  const imageH = Math.min(1280, Math.max(820, Math.floor(windowSize.height * Math.min(deviceDpr, 2))));
 
   const frameCountBase = usingRainViewer && rvFrames ? rvFrames.length : iemFramesFallback.length;
   const safeBaseIndex = clampIndex(state.radarTime.frameIndex, frameCountBase);
@@ -305,8 +329,8 @@ export function useRadarController(args: {
           widthPx: imageW,
           heightPx: imageH,
           timeIso: drivingIso ?? null,
-          shrink: 0.72,
-          dpr: 2.5,
+          shrink: 0.78,
+          dpr: 2.0,
           fmt: 'png32',
         });
 
@@ -380,8 +404,8 @@ export function useRadarController(args: {
             product,
             mosaicMaxZoom: 9,
             ridgeMinZoom: effectiveRidgeMinZoom,
-            maxFrames: 12,
-            lookbackMinutes: 90,
+            maxFrames: fetchProfile.maxFrames,
+            lookbackMinutes: fetchProfile.lookbackMinutes,
             maxLocalDistanceKm: 350,
           },
         });
@@ -408,6 +432,8 @@ export function useRadarController(args: {
     centerForRadar.lon,
     mapZoom,
     product,
+    fetchProfile.maxFrames,
+    fetchProfile.lookbackMinutes,
     ridgeMinZoom,
   ]);
 

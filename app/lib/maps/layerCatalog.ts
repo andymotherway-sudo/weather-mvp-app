@@ -24,6 +24,8 @@ export type LayerCatalogItem = {
     | 'smoke'
     | 'perimeters'
     | 'hotspots'
+    | 'wildfireHazard'
+    | 'fireWeather'
     | 'lightning'
     | 'satelliteInfrared'
     | 'satelliteWaterVapor';
@@ -325,8 +327,9 @@ export const LAYER_CATALOG = [
     zIndex: 80,
     legendKey: 'smoke',
     source: {
-      name: 'Provider TBD',
-      details: 'Smoke overlay feed',
+      name: 'NOAA HMS',
+      details: 'NOAA Hazard Mapping System analyst-drawn smoke polygons with light, medium, and heavy density classes.',
+      url: 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Smoke_Detection_%28v1%29/FeatureServer',
     },
     supportsOpacity: true,
     supportsLegend: true,
@@ -344,8 +347,9 @@ export const LAYER_CATALOG = [
     zIndex: 85,
     legendKey: 'perimeters',
     source: {
-      name: 'Provider TBD',
-      details: 'Wildfire perimeter feed',
+      name: 'NIFC / WFIGS',
+      details: 'Current interagency wildfire perimeters with active incident point markers sourced from WFIGS and IRWIN.',
+      url: 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer',
     },
     supportsOpacity: true,
     supportsLegend: true,
@@ -365,6 +369,48 @@ export const LAYER_CATALOG = [
     source: {
       name: 'Provider TBD',
       details: 'Thermal hotspot detections',
+    },
+    supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'wildfire.hazard',
+    group: 'fireAir',
+    title: 'Fire Danger',
+    subtitle: 'Hazard Potential',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.58,
+    zIndex: 86,
+    legendKey: 'wildfireHazard',
+    source: {
+      name: 'USDA Forest Service',
+      details:
+        'Wildfire Hazard Potential classified layer showing very low to very high long-term hazard potential.',
+      url: 'https://apps.fs.usda.gov/fsgisx01/rest/services/RDW_Wildfire/RMRS_WildfireHazardPotential_Classified_2023/ImageServer',
+    },
+    supportsOpacity: true,
+    supportsLegend: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'wildfire.firewx',
+    group: 'fireAir',
+    title: 'Fire Weather',
+    subtitle: 'SPC Outlook',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.76,
+    zIndex: 87,
+    legendKey: 'fireWeather',
+    source: {
+      name: 'NOAA SPC',
+      details:
+        'Storm Prediction Center fire weather outlook highlighting elevated, critical, and extreme fire weather risk areas.',
+      url: 'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/',
     },
     supportsOpacity: true,
     supportsLegend: true,

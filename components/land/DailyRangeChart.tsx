@@ -323,18 +323,6 @@ export function DailyRangeChart({
     <View style={s.wrap}>
       <View style={s.headerRow}>
         <Text style={[s.title, T.label]}>DAILY FORECAST</Text>
-
-        {wxLab ? (
-          <View style={s.legendRow}>
-            <LegendPill label="High" kind="line" color={C.high} />
-            <LegendPill label="Low" kind="line" color={C.low} />
-            <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
-            <LegendPill label="RH" kind="dot" color={C.rh} />
-            <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
-            <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
-            <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
-          </View>
-        ) : null}
       </View>
 
       <ScrollView
@@ -689,6 +677,20 @@ export function DailyRangeChart({
             </View>
         </View>
       </ScrollView>
+
+      {wxLab ? (
+        <View style={s.pillSection}>
+          <View style={s.legendRow}>
+            <LegendPill label="High" kind="line" color={C.high} />
+            <LegendPill label="Low" kind="line" color={C.low} />
+            <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
+            <LegendPill label="RH" kind="dot" color={C.rh} />
+            <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
+            <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
+            <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -752,7 +754,7 @@ const s = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
     paddingTop: 12,
   },
-  headerRow: { paddingHorizontal: 12, gap: 8 },
+  headerRow: { paddingHorizontal: 12, gap: 8, marginBottom: 6 },
   title: {
     color: 'rgba(255,255,255,0.55)',
     fontSize: 12,
@@ -760,7 +762,12 @@ const s = StyleSheet.create({
     letterSpacing: 1.2,
   },
 
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
+  pillSection: {
+    paddingHorizontal: 12,
+    paddingTop: 2,
+    paddingBottom: 10,
+  },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 0 },
   legPill: {
     flexDirection: 'row',
     alignItems: 'center',

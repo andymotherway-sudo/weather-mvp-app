@@ -394,12 +394,12 @@ function HourlyWithCoords({
         ) : null}
       </View>
 
-      {!wxLab ? <Text style={styles.sectionLead}>Next 24 hours</Text> : null}
+      {!wxLab ? <Text style={styles.sectionLead}>Next 72 hours</Text> : null}
 
       {wxLab ? (
         <View style={styles.chartBlock}>
           <View style={styles.chartHeader}>
-            <Text style={styles.sectionTitle}>wxNerd</Text>
+            <Text style={styles.sectionTitle}>wxLab</Text>
             <Text style={styles.sectionSub}>Expanded hourly analysis</Text>
           </View>
 
@@ -415,7 +415,7 @@ function HourlyWithCoords({
 
       <NerdyHourlyTimeline
         hours={visibleHourly}
-        maxHours={wxLab ? 72 : 24}
+        maxHours={72}
         timeZone={forecastTimeZone ?? undefined}
         defaultMode={wxLab ? 'wxlab' : 'simple'}
         onExplain={(payload) => onOpenLearn(payload.learnTopicId)}
@@ -513,7 +513,7 @@ export default function HourlyTab() {
                     {locationLabel}
                   </Text>
                   <Text style={styles.locationSecondary}>
-                    {wxLab ? 'wxNerd expanded view' : 'Simple expanded view'}
+                    {wxLab ? 'wxLab expanded view' : 'Simple expanded view'}
                   </Text>
                 </View>
               </View>

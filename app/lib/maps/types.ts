@@ -31,6 +31,8 @@ export type LayerId =
   | 'wildfire.smoke'
   | 'wildfire.perimeters'
   | 'wildfire.hotspots'
+  | 'wildfire.hazard'
+  | 'wildfire.firewx'
   | 'alerts.polygons'
   | 'lightning.strikes'
   | 'astro.skyScore'

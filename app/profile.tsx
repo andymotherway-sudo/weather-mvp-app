@@ -5,13 +5,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { usePlace, type Place } from './context/PlaceContext';
+import { formatCompactLocation } from './lib/locations/formats';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 
 type DefaultCity = { name: string; lat: number; lon: number; country?: string; admin1?: string };
 
 function formatCity(c: DefaultCity) {
-  return `${c.name}${c.admin1 ? `, ${c.admin1}` : ''}${c.country ? `, ${c.country}` : ''}`;
+  return formatCompactLocation({
+    name: c.name,
+    admin1: c.admin1,
+    country: c.country,
+  });
 }
 function placeFromDefaultCity(c: DefaultCity): Place {
   const id = `${c.lat.toFixed(4)},${c.lon.toFixed(4)}`;

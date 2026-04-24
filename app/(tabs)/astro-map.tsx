@@ -815,7 +815,8 @@ function MetricPill(props: { label: string; value: string; accent?: string }) {
   return (
     <View
       style={{
-        minWidth: 96,
+        flexGrow: 1,
+        minWidth: 104,
         paddingVertical: 10,
         paddingHorizontal: 12,
         borderRadius: 16,
@@ -834,9 +835,9 @@ function MetricPill(props: { label: string; value: string; accent?: string }) {
 
 function Row(props: { label: string; value: string }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 14 }}>
-      <Text style={{ color: 'rgba(255,255,255,0.70)', fontWeight: '900' }}>{props.label}</Text>
-      <Text style={{ color: 'white', fontWeight: '900', textAlign: 'right', flexShrink: 1 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start' }}>
+      <Text style={{ color: 'rgba(255,255,255,0.70)', fontWeight: '900', flex: 1, paddingRight: 8 }}>{props.label}</Text>
+      <Text style={{ color: 'white', fontWeight: '900', textAlign: 'right', flexShrink: 1, maxWidth: '48%' }}>
         {props.value}
       </Text>
     </View>
@@ -2143,6 +2144,49 @@ useEffect(() => {
     } as const;
   }, []);
 
+  const auroraFillStyle = useMemo(() => {
+    return {
+      fillColor: [
+        'match',
+        ['get', 'thr'],
+        50, 'rgba(226,255,245,1)',
+        35, 'rgba(150,255,220,1)',
+        20, 'rgba(88,240,196,1)',
+        10, 'rgba(72,206,186,1)',
+        5, 'rgba(106,132,255,1)',
+        'rgba(72,206,186,1)',
+      ],
+      fillOpacity: [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        1, 0.08,
+        4, 0.12,
+        7, 0.16,
+        10, 0.20,
+        12, 0.24,
+      ],
+    } as const;
+  }, []);
+
+  const auroraGlowStyle = useMemo(() => {
+    return {
+      lineColor: [
+        'match',
+        ['get', 'thr'],
+        50, 'rgba(220,255,245,0.95)',
+        35, 'rgba(170,255,228,0.92)',
+        20, 'rgba(110,255,214,0.88)',
+        10, 'rgba(112,224,255,0.82)',
+        5, 'rgba(150,110,255,0.78)',
+        'rgba(112,224,255,0.78)',
+      ],
+      lineWidth: ['interpolate', ['linear'], ['zoom'], 1, 7.0, 4, 9.0, 7, 11.0, 10, 13.0, 12, 15.0],
+      lineOpacity: ['interpolate', ['linear'], ['zoom'], 1, 0.10, 4, 0.14, 8, 0.18, 12, 0.22],
+      lineBlur: ['interpolate', ['linear'], ['zoom'], 1, 2.2, 4, 2.8, 8, 3.4, 12, 4.0],
+    } as const;
+  }, []);
+
   const selectedUsingActiveAstro = useMemo(() => {
     if (!inspect || !activeAstro || !active) return false;
     return approxDistanceDeg(inspect.lat, inspect.lon, active.lat, active.lon) <= 0.55;
@@ -2263,6 +2307,8 @@ useEffect(() => {
 
           {showAuroraOval ? (
             <MapLibreGL.ShapeSource id={`auroraOval-src-${screenKey}`} shape={auroraContoursGeojson as any}>
+              <MapLibreGL.FillLayer id={`auroraOval-fill-${screenKey}`} style={auroraFillStyle as any} />
+              <MapLibreGL.LineLayer id={`auroraOval-glow-${screenKey}`} style={auroraGlowStyle as any} />
               <MapLibreGL.LineLayer id={`auroraOval-line-${screenKey}`} style={auroraContourStyle as any} />
             </MapLibreGL.ShapeSource>
           ) : null}
@@ -2446,15 +2492,15 @@ useEffect(() => {
           bottomDock={TAB_BAR_HEIGHT + insets.bottom}
           draggable
           header={
-            <View style={{ gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <View style={{ flexShrink: 1 }}>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <View style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
                   <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }} numberOfLines={1}>
                     Sky {inspect?.skyScore ?? '—'}
                   </Text>
                   <Text
-                    style={{ color: 'rgba(255,255,255,0.72)', fontWeight: '800', marginTop: 2 }}
-                    numberOfLines={1}
+                    style={{ color: 'rgba(255,255,255,0.72)', fontWeight: '800', marginTop: 4, lineHeight: 18 }}
+                    numberOfLines={2}
                   >
                     {selectedPlaceName} · {scoreLabel(inspect?.skyScore)}
                   </Text>
@@ -2484,7 +2530,7 @@ useEffect(() => {
                 />
               </View>
 
-              <Text style={{ color: 'rgba(255,255,255,0.72)', fontWeight: '700', lineHeight: 18 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.72)', fontWeight: '700', lineHeight: 19 }}>
                 {scoreSentence(inspect?.skyScore, selectedCloudTotal, inspect?.visibleProb)}
               </Text>
             </View>

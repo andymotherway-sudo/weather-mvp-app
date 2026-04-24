@@ -1,6 +1,14 @@
 // app/lib/maps/radar/useAnimatedRadar.ts
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IEM_FRAMES, type IemFrame, iemFrameTemplate } from './providers/iem';
+
+type IemFrame = string;
+const IEM_FRAMES: readonly IemFrame[] = ['m50m', 'm45m', 'm40m', 'm35m', 'm30m', 'm25m', 'm20m', 'm15m', 'm10m', 'm05m', 'latest'];
+const IEM_TILE_BASE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+
+function iemFrameTemplate(frame: IemFrame) {
+  const stamp = frame === 'latest' ? '900913' : `900913-${frame}`;
+  return `${IEM_TILE_BASE}/nexrad-n0q-${stamp}/{z}/{x}/{y}.png`;
+}
 
 export type RadarFront = 'A' | 'B';
 

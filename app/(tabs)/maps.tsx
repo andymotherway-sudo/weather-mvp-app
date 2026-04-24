@@ -16,16 +16,38 @@ import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
 import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEngine';
 
+import { useFireContext } from '../lib/fire/useFireContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
+import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController } from '../lib/maps/useRadarController';
 import { MAP_VIEWS } from '../lib/maps/views';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const USFS_WHP_EXPORT_URL =
+  'https://apps.fs.usda.gov/arcx/rest/services/RDW_Wildfire/RMRS_WildfireHazardPotential_2023/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const SPC_FIREWX_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
+  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
+
+type WildfireIncidentDetails = {
+  incidentName: string;
+  percentContained: number | null;
+  acres: number | null;
+  updatedAt: string | null;
+  source: string | null;
+  county: string | null;
+  state: string | null;
+  city: string | null;
+  geometrySource: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -34,32 +56,6 @@ function clampIndex(i: number, n: number) {
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
-}
-
-function useDebouncedCallback<T extends (...args: any[]) => void>(fn: T, waitMs: number) {
-  const fnRef = useRef(fn);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    fnRef.current = fn;
-  }, [fn]);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = null;
-    };
-  }, []);
-
-  return useCallback(
-    (...args: Parameters<T>) => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        fnRef.current(...args);
-      }, waitMs);
-    },
-    [waitMs],
-  );
 }
 
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
@@ -87,7 +83,10 @@ function getSimpleStatus(args: {
   frontsDay2Enabled: boolean;
   frontsDay3Enabled: boolean;
   cloudsEnabled: boolean;
+  wildfireSmokeEnabled: boolean;
   wildfireEnabled: boolean;
+  wildfireHazardEnabled: boolean;
+  wildfireFireWxEnabled: boolean;
   goesTrueColorEnabled: boolean;
   goesEastGeoEnabled: boolean;
   goesWestGeoEnabled: boolean;
@@ -105,7 +104,10 @@ function getSimpleStatus(args: {
     frontsDay2Enabled,
     frontsDay3Enabled,
     cloudsEnabled,
+    wildfireSmokeEnabled,
     wildfireEnabled,
+    wildfireHazardEnabled,
+    wildfireFireWxEnabled,
     goesTrueColorEnabled,
     goesEastGeoEnabled,
     goesWestGeoEnabled,
@@ -133,7 +135,13 @@ function getSimpleStatus(args: {
   }
 
   if (viewId === 'wildfire') {
-    return `${wildfireEnabled ? 'Wildfire overlays active' : 'Wildfire overlays off'}${radarEnabled ? ' / Radar on' : ''}`;
+    const parts = [
+      wildfireSmokeEnabled ? 'Smoke on' : null,
+      wildfireEnabled ? 'Perimeters on' : null,
+      wildfireHazardEnabled ? 'Fire danger on' : null,
+      wildfireFireWxEnabled ? 'Fire weather on' : null,
+    ].filter(Boolean);
+    return `${parts.length ? parts.join(' / ') : 'Wildfire overlays off'}${radarEnabled ? ' / Radar on' : ''}`;
   }
 
   if (viewId === 'aviation') {
@@ -229,6 +237,8 @@ export default function MapsScreen() {
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [sheetValue, setSheetValue] = useState<LayerSheetValue>({ baseMapStyle: 'dark', radarProvider: 'iem' });
   const [rawMode, setRawMode] = useState(false);
+  const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
+  const [wildfireDetailLoading, setWildfireDetailLoading] = useState(false);
 
   const mapCameraRef = useRef<any>(null);
   const [region, setRegion] = useState<Region | null>(null);
@@ -247,12 +257,7 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, []);
 
-  const lastUserMoveAtRef = useRef<number>(0);
   const lastPanMarkRef = useRef<number>(0);
-
-  const markUserInteraction = useCallback(() => {
-    lastUserMoveAtRef.current = Date.now();
-  }, []);
 
   const [anchorPoint, setAnchorPoint] = useState<{ lat: number; lon: number } | null>(null);
 
@@ -261,18 +266,48 @@ export default function MapsScreen() {
     setAnchorPoint((prev) => prev ?? { lat: location.lat, lon: location.lon });
   }, [location]);
 
-  const debouncedAnchorToMap = useDebouncedCallback((lat: number, lon: number) => {
-    setAnchorPoint((prev) => {
-      if (prev && prev.lat === lat && prev.lon === lon) return prev;
-      return { lat, lon };
-    });
-  }, 160);
-
   const [mapZoom, setMapZoom] = useState<number>(4);
   const [product, setProduct] = useState<'N0Q' | 'N0B' | 'N0Z'>('N0Q');
 
+  const handleMapPress = useCallback(
+    async (e: any) => {
+      if (state.viewId !== 'wildfire' || !wildfireEnabled) {
+        setSelectedWildfire(null);
+        return;
+      }
+
+      const coords = e?.geometry?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) return;
+      const lon = Number(coords[0]);
+      const lat = Number(coords[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+      try {
+        setWildfireDetailLoading(true);
+        const detail = await queryWildfireIncidentAtPoint(lat, lon);
+        setSelectedWildfire(
+          detail
+            ? {
+                ...detail,
+                latitude: detail.latitude ?? lat,
+                longitude: detail.longitude ?? lon,
+              }
+            : null
+        );
+      } catch {
+        setSelectedWildfire(null);
+      } finally {
+        setWildfireDetailLoading(false);
+      }
+    },
+    [state.viewId, state.layers]
+  );
+
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
+  const wildfireSmokeEnabled = !!state.layers?.['wildfire.smoke']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
+  const wildfireHazardEnabled = !!state.layers?.['wildfire.hazard']?.enabled;
+  const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
@@ -303,6 +338,15 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
+  const wildfireSmokeOpacity = Number.isFinite(state.layers?.['wildfire.smoke']?.opacity)
+    ? state.layers['wildfire.smoke'].opacity
+    : 0.55;
+  const wildfireHazardOpacity = Number.isFinite(state.layers?.['wildfire.hazard']?.opacity)
+    ? state.layers['wildfire.hazard'].opacity
+    : 0.58;
+  const wildfireFireWxOpacity = Number.isFinite(state.layers?.['wildfire.firewx']?.opacity)
+    ? state.layers['wildfire.firewx'].opacity
+    : 0.76;
 
   const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
@@ -350,7 +394,6 @@ export default function MapsScreen() {
   const aviationOverlayEnabled =
     aviationTurbEnabled || aviationIceEnabled || aviationSigmetEnabled || aviationCwaEnabled || aviationPirepEnabled;
   const aviationData = useAviationMapData(aviationOverlayEnabled || state.viewId === 'aviation');
-
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
   const centerForRadar = useMemo(() => {
@@ -482,6 +525,34 @@ export default function MapsScreen() {
       });
     }
 
+    if (wildfireHazardEnabled) {
+      list.push({
+        id: 'wildfire-hazard',
+        tileUrlTemplates: [`${USFS_WHP_EXPORT_URL}&layers=show:1`],
+        opacity: Math.max(0, Math.min(1, Number(wildfireHazardOpacity))),
+        zIndex: 86,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 10,
+        fadeDurationMs: 140,
+        resampling: 'linear',
+      });
+    }
+
+    if (wildfireFireWxEnabled) {
+      list.push({
+        id: 'wildfire-firewx',
+        tileUrlTemplates: [`${SPC_FIREWX_EXPORT_URL}&layers=show:1,2`],
+        opacity: Math.max(0, Math.min(1, Number(wildfireFireWxOpacity))),
+        zIndex: 87,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 140,
+        resampling: 'linear',
+      });
+    }
+
     if (goesEastGeoEnabled) {
       list.push({
         id: 'goes-east-geocolor',
@@ -561,6 +632,10 @@ export default function MapsScreen() {
     frontsDay2Opacity,
     frontsDay3Enabled,
     frontsDay3Opacity,
+    wildfireHazardEnabled,
+    wildfireHazardOpacity,
+    wildfireFireWxEnabled,
+    wildfireFireWxOpacity,
     goesTrueColorEnabled,
     goesTrueColorOpacity,
     goesEastGeoEnabled,
@@ -646,23 +721,21 @@ export default function MapsScreen() {
     if (!routeFocusTarget) return;
     if (!mapCameraRef.current?.setCamera) return;
 
-    lastUserMoveAtRef.current = Date.now();
-
-    setAnchorPoint({ lat: routeFocusTarget.lat, lon: routeFocusTarget.lon });
-
-    dispatch({
-      type: 'SET_VIEWPORT',
-      viewport: {
-        center: { lat: routeFocusTarget.lat, lon: routeFocusTarget.lon },
-        zoom: 7,
-      },
-    });
+    const nextRegion: Region = {
+      latitude: routeFocusTarget.lat,
+      longitude: routeFocusTarget.lon,
+      latitudeDelta: 4,
+      longitudeDelta: 4,
+      zoom: 7,
+    };
 
     mapCameraRef.current.setCamera({
       centerCoordinate: [routeFocusTarget.lon, routeFocusTarget.lat],
       zoomLevel: 7,
       animationDuration: 700,
     });
+    setRegion(nextRegion);
+    setMapZoom(7);
 
     setConsumedRouteFocusKey(routeFocusTarget.key);
 
@@ -679,6 +752,30 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
+  const wildfireVectorEnabled =
+    state.viewId === 'wildfire' &&
+    (wildfireSmokeEnabled || wildfireEnabled || wildfireDetailLoading || selectedWildfire != null);
+  const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
+  const selectedWildfireSmokeBands = useMemo(
+    () => getNearbySmokeBands(selectedWildfire, wildfireData.smoke),
+    [selectedWildfire, wildfireData.smoke]
+  );
+  const wildfireFireContext = useFireContext({
+    lat: selectedWildfire?.latitude ?? 0,
+    lon: selectedWildfire?.longitude ?? 0,
+    enabled:
+      state.viewId === 'wildfire' &&
+      selectedWildfire != null &&
+      Number.isFinite(selectedWildfire?.latitude) &&
+      Number.isFinite(selectedWildfire?.longitude),
+  });
+  const wildfireRestrictionSummary =
+    wildfireFireContext.data?.restrictions?.summary ??
+    (wildfireFireContext.loading ? 'Checking nearby fire restrictions.' : null);
+  const wildfireRestrictionInEffect = wildfireFireContext.data?.restrictions?.inEffect === true;
+  const wildfireRestrictionSupported = wildfireFireContext.data?.restrictions?.supported === true;
+  const wildfireForestLabel = wildfireFireContext.data?.forest?.name ?? null;
+  const wildfireFireWeatherSummary = wildfireFireContext.data?.fireWeather?.summary ?? null;
 
   const pushSpecialMap = useCallback(
     (pathname: '/astro-map' | '/nautical-map' | '/aviation') => {
@@ -701,23 +798,22 @@ export default function MapsScreen() {
   );
 
   const recenterToGps = async () => {
-    await loc.refreshCurrentLocation();
-    const coords = loc.state.currentCoords;
+    const coords = (await loc.refreshCurrentLocation()) ?? loc.state.currentCoords;
     if (!coords) return;
-
-    setAnchorPoint({ lat: coords.lat, lon: coords.lon });
-    lastUserMoveAtRef.current = Date.now();
-
-    dispatch({
-      type: 'SET_VIEWPORT',
-      viewport: { center: { lat: coords.lat, lon: coords.lon }, zoom: 9 },
-    });
-
+    const nextRegion: Region = {
+      latitude: coords.lat,
+      longitude: coords.lon,
+      latitudeDelta: 4,
+      longitudeDelta: 4,
+      zoom: 9,
+    };
     mapCameraRef.current?.setCamera?.({
       centerCoordinate: [coords.lon, coords.lat],
       zoomLevel: 9,
       animationDuration: 450,
     });
+    setRegion(nextRegion);
+    setMapZoom(9);
   };
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
@@ -733,7 +829,10 @@ export default function MapsScreen() {
     frontsDay2Enabled,
     frontsDay3Enabled,
     cloudsEnabled,
+    wildfireSmokeEnabled,
     wildfireEnabled,
+    wildfireHazardEnabled,
+    wildfireFireWxEnabled,
     goesTrueColorEnabled,
     goesEastGeoEnabled,
     goesWestGeoEnabled,
@@ -764,6 +863,7 @@ export default function MapsScreen() {
     : simpleStatus;
 
   const providerLabel = sheetValue.radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
   const timelineStateLabel = !radarEnabled ? 'Layers only' : state.radarTime.playing ? 'Looping' : 'Holding';
   const aviationPirepCount = aviationData.pireps?.features?.length ?? 0;
@@ -798,11 +898,11 @@ export default function MapsScreen() {
           mapStyle={sheetValue.baseMapStyle}
           boundaryReliefTone={boundaryReliefTone}
           cameraRef={mapCameraRef}
+          onMapPress={handleMapPress}
           onPanDrag={() => {
             const now = Date.now();
             if (now - lastPanMarkRef.current > 450) {
               lastPanMarkRef.current = now;
-              markUserInteraction();
             }
           }}
           onRegionChangeComplete={(nextRegion: Region) => {
@@ -815,16 +915,6 @@ export default function MapsScreen() {
 
             setMapZoom(zFloat);
 
-            const userMovedRecently = Date.now() - lastUserMoveAtRef.current < 2000;
-
-            if (!userMovedRecently) {
-              dispatch({
-                type: 'SET_VIEWPORT',
-                viewport: { center: { lat: nextRegion.latitude, lon: nextRegion.longitude }, zoom: zFloat },
-              });
-            }
-
-            debouncedAnchorToMap(nextRegion.latitude, nextRegion.longitude);
             radarCtl.refreshLocalIfNeeded();
           }}
           radar={mapRadar}
@@ -1009,6 +1099,101 @@ export default function MapsScreen() {
               />
             </MapLibreGL.ShapeSource>
           ) : null}
+
+          {wildfireSmokeEnabled ? (
+            <MapLibreGL.ShapeSource id="wildfire-smoke-source" shape={wildfireData.smoke as any}>
+              <MapLibreGL.FillLayer
+                id="wildfire-smoke-fill"
+                style={{
+                  fillColor: ['coalesce', ['get', 'fillColor'], 'rgba(148,163,184,0.18)'],
+                  fillOpacity: Math.max(0.08, Math.min(0.5, wildfireSmokeOpacity)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="wildfire-smoke-line"
+                style={{
+                  lineColor: ['coalesce', ['get', 'lineColor'], 'rgba(226,232,240,0.45)'],
+                  lineOpacity: Math.max(0.2, Math.min(0.72, wildfireSmokeOpacity * 0.9)),
+                  lineWidth: 1.4,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {wildfireEnabled ? (
+            <MapLibreGL.ShapeSource id="wildfire-perimeter-source" shape={wildfireData.perimeters as any}>
+              <MapLibreGL.FillLayer
+                id="wildfire-perimeter-fill"
+                style={{
+                  fillColor: 'rgba(251,146,60,0.12)',
+                  fillOpacity: 0.18,
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="wildfire-perimeter-line"
+                style={{
+                  lineColor: '#fb923c',
+                  lineOpacity: 0.95,
+                  lineWidth: 2.2,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {wildfireEnabled ? (
+            <MapLibreGL.ShapeSource id="wildfire-incident-source" shape={wildfireData.incidents as any}>
+              <MapLibreGL.CircleLayer
+                id="wildfire-incident-halo"
+                minZoomLevel={3}
+                style={{
+                  circleColor: ['coalesce', ['get', 'markerHaloColor'], 'rgba(251,146,60,0.24)'],
+                  circleOpacity: 0.95,
+                  circleRadius: ['coalesce', ['get', 'markerHaloRadius'], 16],
+                  circleBlur: 0.45,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="wildfire-incident-circle"
+                minZoomLevel={3}
+                style={{
+                  circleColor: ['coalesce', ['get', 'markerColor'], '#fb923c'],
+                  circleOpacity: 0.95,
+                  circleRadius: ['coalesce', ['get', 'markerRadius'], 8],
+                  circleStrokeColor: ['coalesce', ['get', 'markerStrokeColor'], 'rgba(255,255,255,0.9)'],
+                  circleStrokeWidth: ['coalesce', ['get', 'markerStrokeWidth'], 1.5],
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="wildfire-incident-center"
+                minZoomLevel={4}
+                style={{
+                  circleColor: 'rgba(17,24,39,0.92)',
+                  circleOpacity: 1,
+                  circleRadius: ['coalesce', ['get', 'markerCenterRadius'], 3.5],
+                  circleStrokeColor: 'rgba(255,255,255,0.88)',
+                  circleStrokeWidth: 0.8,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="wildfire-incident-label"
+                minZoomLevel={5.5}
+                style={{
+                  textField: ['get', 'incidentName'],
+                  textSize: 11,
+                  textFont: ['Open Sans Bold'],
+                  textColor: 'rgba(255,245,245,0.96)',
+                  textHaloColor: 'rgba(2,6,23,0.98)',
+                  textHaloWidth: 1.5,
+                  textOffset: [0, 1.6],
+                  textMaxWidth: 12,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
         </MapRenderer>
 
         <View pointerEvents="box-none" style={styles.topChrome}>
@@ -1028,7 +1213,7 @@ export default function MapsScreen() {
               {overlayStatusText || 'Layer stack ready'}
             </Text>
             <Text style={styles.summaryTimestamp}>
-              {timestampLabel || 'Latest update'}
+              {radarUpdatedLabel}
               {radarCtl.profileLabel ? ` / ${radarCtl.profileLabel}` : ''}
               {state.viewId === 'aviation' && aviationPirepEnabled ? ` / ${aviationPirepCount} pireps` : ''}
             </Text>
@@ -1058,7 +1243,7 @@ export default function MapsScreen() {
               badge={activeOverlayCount > 0 ? String(Math.min(99, activeOverlayCount)) : undefined}
               active={layersSheetOpen}
             />
-            <MapActionButton label="Locate" onPress={recenterToGps} />
+            <MapActionButton label="Center" onPress={recenterToGps} />
             <MapActionButton
               label="Settings"
               onPress={() => setSettingsOpen(true)}
@@ -1069,7 +1254,7 @@ export default function MapsScreen() {
 
         {showRadarLegend ? (
           <View style={[styles.legendWrap, { bottom: legendBottom }]}>
-            <LegendChip title="dBZ">
+            <LegendChip title="Radar">
               <RadarLegend style="generic" />
             </LegendChip>
           </View>
@@ -1098,6 +1283,94 @@ export default function MapsScreen() {
               </Glass>
             }
           />
+        ) : null}
+
+        {(state.viewId === 'wildfire' && (wildfireDetailLoading || selectedWildfire)) ? (
+          <View pointerEvents="box-none" style={[styles.fireDetailWrap, { bottom: 24 + insets.bottom }]}>
+            <Glass style={styles.fireDetailCard}>
+              <View style={styles.fireDetailHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.fireDetailEyebrow}>ACTIVE WILDFIRE</Text>
+                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
+                    {wildfireDetailLoading ? 'Loading incident details' : selectedWildfire?.incidentName ?? 'No fire selected'}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelectedWildfire(null)} style={styles.fireDetailClose}>
+                  <Text style={styles.fireDetailCloseText}>Close</Text>
+                </Pressable>
+              </View>
+
+              {wildfireDetailLoading ? (
+                <Text style={styles.fireDetailMeta}>Looking up the nearest current wildfire incident.</Text>
+              ) : selectedWildfire ? (
+                <>
+                  <View style={styles.fireDetailPills}>
+                    <HudBadge label="Active" strong />
+                    {selectedWildfireSmokeBands.map((band) => (
+                      <HudBadge key={band} label={band} />
+                    ))}
+                    {wildfireRestrictionInEffect ? <HudBadge label="Restrictions in effect" /> : null}
+                    {selectedWildfire.percentContained != null ? (
+                      <HudBadge label={`${Math.round(selectedWildfire.percentContained)}% contained`} />
+                    ) : null}
+                    {selectedWildfire.acres != null ? (
+                      <HudBadge label={`${Math.round(selectedWildfire.acres).toLocaleString()} acres`} />
+                    ) : null}
+                  </View>
+
+                  <Text style={styles.fireDetailMeta}>
+                    {selectedWildfire.source ? `${selectedWildfire.source}` : 'NIFC / WFIGS'} • {formatWildfireUpdated(selectedWildfire.updatedAt)}
+                  </Text>
+                  <Text style={styles.fireDetailMeta}>
+                    {[selectedWildfire.city, selectedWildfire.county, selectedWildfire.state].filter(Boolean).join(', ') || 'Location details pending'}
+                  </Text>
+                  {wildfireForestLabel ? (
+                    <Text style={styles.fireDetailMeta}>Nearby forest unit: {wildfireForestLabel}</Text>
+                  ) : null}
+
+                  <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Containment</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedWildfire.percentContained != null ? `${Math.round(selectedWildfire.percentContained)}%` : 'Pending'}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Estimated size</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedWildfire.acres != null ? `${Math.round(selectedWildfire.acres).toLocaleString()} acres` : 'Pending'}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Reported by</Text>
+                      <Text style={styles.fireDetailValue}>NIFC / WFIGS</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Fire restrictions</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {wildfireRestrictionSummary ??
+                          (wildfireRestrictionSupported ? 'No active restrictions listed' : 'Restrictions unavailable')}
+                      </Text>
+                    </View>
+                    {wildfireFireWeatherSummary ? (
+                      <View style={styles.fireDetailRow}>
+                        <Text style={styles.fireDetailLabel}>Fire weather</Text>
+                        <Text style={styles.fireDetailValue}>{wildfireFireWeatherSummary}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Geometry source</Text>
+                      <Text style={styles.fireDetailValue} numberOfLines={1}>
+                        {selectedWildfire.geometrySource ?? 'Current perimeter feed'}
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.fireDetailMeta}>Tap a wildfire perimeter area to inspect the current incident.</Text>
+              )}
+            </Glass>
+          </View>
         ) : null}
 
         <LayerSheetModal
@@ -1135,6 +1408,180 @@ export default function MapsScreen() {
       </View>
     </SafeAreaView>
   );
+}
+
+function safeNum(value: any) {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
+function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 3958.7613;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function geometryBbox(geometry: any) {
+  const coords: number[][] = [];
+
+  const walk = (node: any) => {
+    if (!Array.isArray(node)) return;
+    if (typeof node[0] === 'number' && typeof node[1] === 'number') {
+      coords.push([node[0], node[1]]);
+      return;
+    }
+    node.forEach(walk);
+  };
+
+  walk(geometry?.coordinates);
+  if (!coords.length) return null;
+
+  let minLon = Number.POSITIVE_INFINITY;
+  let maxLon = Number.NEGATIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+
+  coords.forEach(([lon, lat]) => {
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  });
+
+  return { minLon, maxLon, minLat, maxLat };
+}
+
+function getNearbySmokeBands(selectedWildfire: WildfireIncidentDetails | null, smoke: any) {
+  if (!selectedWildfire || selectedWildfire.latitude == null || selectedWildfire.longitude == null) return [];
+  const features = Array.isArray(smoke?.features) ? smoke.features : [];
+  const hit = new Set<string>();
+
+  for (const feature of features) {
+    const bbox = geometryBbox(feature?.geometry);
+    if (!bbox) continue;
+    const inBox =
+      selectedWildfire.longitude >= bbox.minLon &&
+      selectedWildfire.longitude <= bbox.maxLon &&
+      selectedWildfire.latitude >= bbox.minLat &&
+      selectedWildfire.latitude <= bbox.maxLat;
+    if (!inBox) continue;
+    const label =
+      typeof feature?.properties?.densityCategory === 'string' ? feature.properties.densityCategory : null;
+    if (label) hit.add(label);
+  }
+
+  return Array.from(hit).sort((a, b) => {
+    const order = (label: string) =>
+      label.includes('Heavy') ? 3 : label.includes('Medium') ? 2 : label.includes('Light') ? 1 : 0;
+    return order(a) - order(b);
+  });
+}
+
+function formatWildfireUpdated(value?: string | null) {
+  if (!value) return 'Update time pending';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Update time pending';
+  const diffMs = Date.now() - d.getTime();
+  const diffHr = Math.round(diffMs / (60 * 60 * 1000));
+  if (diffHr < 1) return 'Updated within the last hour';
+  if (diffHr < 24) return `Updated ${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `Updated ${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
+
+async function queryWildfireIncidentAtPoint(lat: number, lon: number): Promise<WildfireIncidentDetails | null> {
+  const outFields = [
+    'poly_IncidentName',
+    'poly_GISAcres',
+    'poly_Source',
+    'poly_DateCurrent',
+    'attr_ModifiedOnDateTime_dt',
+    'attr_PercentContained',
+    'attr_IncidentSize',
+    'attr_POOCounty',
+    'attr_POOState',
+    'attr_POOCity',
+    'attr_InitialLatitude',
+    'attr_InitialLongitude',
+    'attr_Source',
+  ].join(',');
+
+  const buildUrl = (geometry: string, geometryType: 'esriGeometryPoint' | 'esriGeometryEnvelope') => {
+    const url = new URL(WFIGS_CURRENT_PERIMETERS_QUERY_URL);
+    url.searchParams.set('f', 'pjson');
+    url.searchParams.set('where', '1=1');
+    url.searchParams.set('geometry', geometry);
+    url.searchParams.set('geometryType', geometryType);
+    url.searchParams.set('inSR', '4326');
+    url.searchParams.set('spatialRel', 'esriSpatialRelIntersects');
+    url.searchParams.set('returnGeometry', 'false');
+    url.searchParams.set('outFields', outFields);
+    return url.toString();
+  };
+
+  const toIncident = (attrs: any): WildfireIncidentDetails | null => {
+    const incidentName =
+      typeof attrs?.poly_IncidentName === 'string' && attrs.poly_IncidentName.trim()
+        ? attrs.poly_IncidentName.trim()
+        : null;
+    if (!incidentName) return null;
+
+    return {
+      incidentName,
+      percentContained: safeNum(attrs?.attr_PercentContained),
+      acres: safeNum(attrs?.poly_GISAcres) ?? safeNum(attrs?.attr_IncidentSize),
+      updatedAt:
+        typeof attrs?.attr_ModifiedOnDateTime_dt === 'string'
+          ? attrs.attr_ModifiedOnDateTime_dt
+          : typeof attrs?.poly_DateCurrent === 'string'
+            ? attrs.poly_DateCurrent
+            : null,
+      source: typeof attrs?.attr_Source === 'string' ? attrs.attr_Source : 'NIFC / WFIGS',
+      county: typeof attrs?.attr_POOCounty === 'string' ? attrs.attr_POOCounty : null,
+      state: typeof attrs?.attr_POOState === 'string' ? attrs.attr_POOState : null,
+      city: typeof attrs?.attr_POOCity === 'string' ? attrs.attr_POOCity : null,
+      geometrySource: typeof attrs?.poly_Source === 'string' ? attrs.poly_Source : null,
+      latitude: safeNum(attrs?.attr_InitialLatitude),
+      longitude: safeNum(attrs?.attr_InitialLongitude),
+    };
+  };
+
+  const pointRes = await fetch(buildUrl(`${lon},${lat}`, 'esriGeometryPoint'));
+  if (!pointRes.ok) throw new Error(`Wildfire query failed (${pointRes.status})`);
+  const pointJson = await pointRes.json();
+  const pointFeatures = Array.isArray(pointJson?.features) ? pointJson.features : [];
+  if (pointFeatures.length) {
+    return toIncident(pointFeatures[0]?.attributes ?? null);
+  }
+
+  const radiusDeg = 0.35;
+  const env = `${lon - radiusDeg},${lat - radiusDeg},${lon + radiusDeg},${lat + radiusDeg}`;
+  const envRes = await fetch(buildUrl(env, 'esriGeometryEnvelope'));
+  if (!envRes.ok) throw new Error(`Wildfire nearby query failed (${envRes.status})`);
+  const envJson = await envRes.json();
+  const envFeatures = Array.isArray(envJson?.features) ? envJson.features : [];
+  if (!envFeatures.length) return null;
+
+  const nearest = envFeatures
+    .map((feature: any) => {
+      const attrs = feature?.attributes ?? {};
+      const fl = safeNum(attrs?.attr_InitialLatitude);
+      const fn = safeNum(attrs?.attr_InitialLongitude);
+      const distanceMi =
+        fl != null && fn != null ? haversineMiles(lat, lon, fl, fn) : Number.POSITIVE_INFINITY;
+      return { attrs, distanceMi };
+    })
+    .sort((a: any, b: any) => {
+      if (a.distanceMi !== b.distanceMi) return a.distanceMi - b.distanceMi;
+      return (safeNum(b.attrs?.poly_GISAcres) ?? 0) - (safeNum(a.attrs?.poly_GISAcres) ?? 0);
+    })[0];
+
+  return toIncident(nearest?.attrs ?? null);
 }
 
 function SettingsModal(props: {
@@ -1476,6 +1923,82 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 22,
+  },
+  fireDetailWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+  },
+  fireDetailCard: {
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  fireDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  fireDetailEyebrow: {
+    color: 'rgba(248,113,113,0.86)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  fireDetailTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  fireDetailClose: {
+    paddingVertical: 8,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  fireDetailCloseText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  fireDetailPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  fireDetailMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  fireDetailRows: {
+    marginTop: 12,
+    gap: 8,
+  },
+  fireDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  fireDetailLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 12,
+    fontWeight: '800',
+    flex: 1,
+  },
+  fireDetailValue: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '800',
+    flex: 1,
+    textAlign: 'right',
   },
   settingsBackdrop: {
     ...StyleSheet.absoluteFillObject,

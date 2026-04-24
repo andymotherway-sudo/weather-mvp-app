@@ -119,7 +119,7 @@ export function LearnMoreModal({
               </Pressable>
             ) : (
               <View>
-                <Text style={styles.eyebrow}>OMNI wx Learn</Text>
+                <Text style={styles.eyebrow}>OMNI wxLearn</Text>
                 <Text style={styles.title}>Understand the weather</Text>
               </View>
             )}

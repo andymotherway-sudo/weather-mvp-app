@@ -3,7 +3,7 @@
 // Drop-in replacement
 // Compresses header so current conditions sit higher
 // Simple mode shows vertical 15-day forecast list
-// wxNerd shows daily chart + insights + hourly chart
+// wxLab shows daily chart + insights + hourly chart
 // Keeps location picker, alerts, video bg, favorites, explain + learn modals
 // Nerdy education taps now go straight to LearnMoreModal
 
@@ -27,6 +27,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { usePlace } from '../context/PlaceContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
+import { useFireContext } from '../lib/fire/useFireContext';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useCurrentWeather } from '../lib/weather/hooks';
 
@@ -87,7 +88,29 @@ function dirToCompass(deg: number | null) {
 }
 
 function formatLocLabel(loc: { name: string; admin1?: string; country?: string }) {
-  return [loc.name, loc.admin1, loc.country].filter(Boolean).join(', ');
+  const compact = formatCompactLocation({
+    name: loc.name,
+    admin1: loc.admin1,
+    country: loc.country,
+  });
+  if (compact) return compact;
+
+  const parts = String(loc.name || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 3) {
+    return (
+      formatCompactLocation({
+        name: parts[0] || loc.name,
+        admin1: parts[1],
+        country: parts[2],
+      }) || loc.name
+    );
+  }
+
+  return loc.name;
 }
 
 function normalizeConfidence(v: any): 'low' | 'medium' | 'high' | undefined {
@@ -240,6 +263,10 @@ function formatClock(iso?: string | null) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function fmtInt(v: number | null, suffix = '') {
+  return v == null ? '—' : `${Math.round(v)}${suffix}`;
+}
+
 function formatDayLength(seconds?: number | null) {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '—';
   const totalMinutes = Math.round(seconds / 60);
@@ -311,6 +338,20 @@ type ActivityCardModel = {
   headline: string;
   detail: string;
   kicker?: string | null;
+  reason?: string | null;
+  scaleNote?: string | null;
+  week: Array<{
+    date: string | null;
+    shortDay: string;
+    score: number;
+    tier: ActivityTier;
+  }>;
+  hourly?: Array<{
+    timeLabel: string;
+    score: number;
+    tier: ActivityTier;
+    summary: string;
+  }>;
 };
 
 function tierForScore(score: number): ActivityTier {
@@ -346,19 +387,110 @@ function tierColors(tier: ActivityTier) {
   }
 }
 
+function activityScaleNote(title: string) {
+  switch (title) {
+    case 'Running':
+      return '7-day fit score, where higher is better, based on comfort, air quality, wind, UV, and rain.';
+    case 'Camping':
+      return '7-day fit score, where higher is better, based on overnight comfort, wind, rain, and fire context.';
+    case 'Fishing':
+      return '7-day fit score, where higher is better, based on wind, clouds, rain, and light timing.';
+    case 'Hiking':
+      return '7-day fit score, where higher is better, based on comfort, air quality, UV, wind, and rain.';
+    case 'Flying':
+      return '7-day fit score, where higher is better, based on visibility, wind, gusts, and precip risk.';
+    case 'Stargazing':
+      return '7-day fit score, where higher is better, based on Sky Score, clouds, aerosols, and moonlight.';
+    case 'Boating':
+      return '7-day fit score, where higher is better, based on wind, gusts, and precip risk.';
+    default:
+      return '7-day fit score: 0 difficult, 100 ideal.';
+  }
+}
+
+function formatHourMiniLabel(raw: any) {
+  const d = new Date(raw ?? '');
+  if (Number.isNaN(d.getTime())) return 'Now';
+  return d.toLocaleTimeString([], { hour: 'numeric' });
+}
+
+function normalizePreviewScore(value: any) {
+  const n = safeNum(value);
+  if (n == null) return 0;
+  return clamp(Math.round(n <= 1 ? n * 100 : n), 0, 100);
+}
+
+function cleanUiText(value?: string | null) {
+  if (!value) return value ?? '';
+  return value
+    .replace(/Ã‚Â°/g, ' deg')
+    .replace(/Â°/g, '°')
+    .replace(/â€¢/g, '•')
+    .replace(/â€”/g, '—')
+    .replace(/â€“/g, '-')
+    .replace(/â†’/g, '->')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function describeBestDay(bestDate?: string | null, fallback = 'Watch conditions') {
   if (!bestDate) return fallback;
   const short = formatShortDay(bestDate);
-  return short === 'Today' ? 'Best today' : `Best ${short}`;
+  return short === 'Today' ? 'Today is best' : `${short} is best`;
 }
 
 function buildActivityForecast(args: {
   daily: any[];
+  hourly: any[];
   visibilityMi: number | null;
   astroData: any;
+  feelsLikeF: number | null;
+  fireContext: any;
 }) {
   const days = (args.daily ?? []).slice(0, 7);
+  const hourly = (args.hourly ?? []).slice();
   const today = days[0] ?? null;
+  const aerosolLabel = typeof args.astroData?.aerosols?.label === 'string' ? args.astroData.aerosols.label : null;
+  const airQualityLabel =
+    typeof args.astroData?.aerosols?.airQualityLabel === 'string'
+      ? args.astroData.aerosols.airQualityLabel
+      : null;
+  const airQualityIndex = safeNum(args.astroData?.aerosols?.airQualityIndex);
+  const fireDangerLabel =
+    typeof args.fireContext?.fireDanger?.classLabel === 'string' ? args.fireContext.fireDanger.classLabel : null;
+  const fireDangerValue = safeNum(args.fireContext?.fireDanger?.classValue);
+  const redFlagWarning = !!args.fireContext?.fireWeather?.redFlagWarning;
+  const fireWeatherWatch = !!args.fireContext?.fireWeather?.fireWeatherWatch;
+  const fireRestrictionsInEffect = typeof args.fireContext?.restrictions?.inEffect === 'boolean' ? args.fireContext.restrictions.inEffect : null;
+  const fireRestrictionsSummary =
+    typeof args.fireContext?.restrictions?.summary === 'string' ? args.fireContext.restrictions.summary : null;
+
+  const describeComfortDelta = (temp: number | null, idealMin: number, idealMax: number) => {
+    if (temp == null) return 'temperature is uncertain';
+    if (temp < idealMin) return `${Math.round(temp)}° runs cool`;
+    if (temp > idealMax) return `${Math.round(temp)}° runs warm`;
+    return `${Math.round(temp)}° sits in a comfortable range`;
+  };
+
+  const explainBestShift = (
+    bestDate: string | null | undefined,
+    bestDay: any,
+    parts: Array<string | null | undefined>,
+    fallback = 'conditions stay fairly similar'
+  ) => {
+    const prefix = describeBestDay(bestDate);
+    if (!bestDay || !bestDate) return fallback;
+    if (bestDate === today?.date) return `Today leads because ${parts.filter(Boolean).join(', ')}`;
+    const reason = parts.filter(Boolean).slice(0, 3).join(', ');
+    return `${prefix} because ${reason || fallback}`;
+  };
+
+  const formatAirQuality = () => {
+    if (!airQualityLabel) return null;
+    return airQualityIndex != null
+      ? `Air quality: ${airQualityLabel} (AQI ${Math.round(airQualityIndex)})`
+      : `Air quality: ${airQualityLabel}`;
+  };
 
   const scoreTempBand = (temp: number | null, idealMin: number, idealMax: number, hardMin: number, hardMax: number) => {
     if (temp == null) return 8;
@@ -383,6 +515,7 @@ function buildActivityForecast(args: {
       uvWeight?: number;
       dryWindPenalty?: boolean;
       visibilityPenalty?: boolean;
+      airQualityWeight?: number;
     }
   ) => {
     const hi = safeNum(day?.tempMaxF);
@@ -420,8 +553,48 @@ function buildActivityForecast(args: {
       penalty += Math.max(4 - args.visibilityMi, 0) * 10;
     }
 
+    if (config.airQualityWeight && airQualityIndex != null) {
+      penalty += (Math.max(airQualityIndex - 50, 0) / 10) * config.airQualityWeight;
+    }
+
     return clamp(Math.round(100 - penalty), 0, 100);
   };
+
+  const campingFirePenalty = () => {
+    let penalty = 0;
+    if (fireDangerValue != null) penalty += fireDangerValue >= 4 ? 18 : fireDangerValue === 3 ? 12 : fireDangerValue === 2 ? 6 : 0;
+    if (redFlagWarning) penalty += 24;
+    else if (fireWeatherWatch) penalty += 12;
+    return penalty;
+  };
+
+  const scoreCampingDay = (day: any) =>
+    clamp(
+      scoreGenericDay(day, {
+        tempField: 'tempMinF',
+        idealMin: 45,
+        idealMax: 65,
+        hardMin: 25,
+        hardMax: 80,
+        popWeight: 28,
+        windWeight: 22,
+        gustWeight: 14,
+        dryWindPenalty: true,
+      }) - campingFirePenalty(),
+      0,
+      100
+    );
+
+  const buildWeek = (scorer: (day: any) => number) =>
+    days.map((day) => {
+      const score = scorer(day);
+      return {
+        date: typeof day?.date === 'string' ? day.date : null,
+        shortDay: formatShortDay(day?.date),
+        score,
+        tier: tierForScore(score),
+      };
+    });
 
   const pickBest = (scorer: (day: any) => number) => {
     let bestDay: any = null;
@@ -436,6 +609,84 @@ function buildActivityForecast(args: {
     return { bestDay, bestScore };
   };
 
+  const futureHours = hourly
+    .filter((h) => {
+      const t = new Date(h?.time ?? h?.datetime ?? h?.date ?? '').getTime();
+      return Number.isFinite(t) && t >= Date.now() - 30 * 60 * 1000;
+    })
+    .filter((_, idx) => idx === 0 || idx % 2 === 0)
+    .slice(0, 6);
+
+  const weatherHourScore = (
+    hour: any,
+    config: {
+      idealMin: number;
+      idealMax: number;
+      hardMin: number;
+      hardMax: number;
+      popWeight: number;
+      windWeight: number;
+      gustWeight: number;
+      uvWeight?: number;
+      cloudTarget?: [number, number];
+      visibilityPenalty?: boolean;
+      airQualityWeight?: number;
+      dryWindPenalty?: boolean;
+    }
+  ) => {
+    const temp =
+      safeNum(hour?.tempF ?? hour?.temperatureF ?? hour?.temperature_2m ?? hour?.temperature) ??
+      safeNum(hour?.apparentTemperatureF ?? hour?.apparent_temperature ?? hour?.feelsLikeF);
+    const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct);
+    const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+    const gust = safeNum(hour?.gustMph ?? hour?.windGustMph ?? hour?.wind_gusts_10m);
+    const uv = safeNum(hour?.uvIndex ?? hour?.uv_index);
+    const cloud = safeNum(hour?.cloudCoverPct ?? hour?.cloud_cover ?? hour?.cloudCover);
+    const dew = safeNum(hour?.dewpointF ?? hour?.dewPointF ?? hour?.dew_point);
+    const humidity = safeNum(hour?.humidityPct ?? hour?.relative_humidity);
+    const visibilityMi =
+      safeNum(hour?.visibilityMi) ??
+      (safeNum(hour?.visibility ?? hour?.visibility_m) != null
+        ? (safeNum(hour?.visibility ?? hour?.visibility_m) ?? 0) / 1609.344
+        : null);
+
+    let penalty = scoreTempBand(temp, config.idealMin, config.idealMax, config.hardMin, config.hardMax);
+    penalty += ((pop ?? 0) / 100) * config.popWeight;
+    penalty += (Math.max((wind ?? 0) - 8, 0) / 22) * config.windWeight;
+    penalty += (Math.max((gust ?? 0) - 16, 0) / 24) * config.gustWeight;
+
+    if (config.uvWeight && uv != null) penalty += Math.max(uv - 6, 0) * config.uvWeight;
+    if (config.cloudTarget && cloud != null) {
+      const [minCloud, maxCloud] = config.cloudTarget;
+      if (cloud < minCloud) penalty += (minCloud - cloud) * 0.18;
+      if (cloud > maxCloud) penalty += (cloud - maxCloud) * 0.18;
+    }
+    if (config.visibilityPenalty && visibilityMi != null) penalty += Math.max(4 - visibilityMi, 0) * 10;
+    if (config.airQualityWeight && airQualityIndex != null) {
+      penalty += (Math.max(airQualityIndex - 50, 0) / 10) * config.airQualityWeight;
+    }
+    if (config.dryWindPenalty) {
+      const dry = dew != null ? dew < 35 : humidity != null ? humidity < 28 : false;
+      if (dry && (wind ?? 0) >= 15) penalty += 14;
+    }
+
+    return clamp(Math.round(100 - penalty), 0, 100);
+  };
+
+  const buildWeatherHourPreview = (
+    scorer: (hour: any) => number,
+    summary: (hour: any) => string
+  ) =>
+    futureHours.map((hour) => {
+      const score = scorer(hour);
+      return {
+        timeLabel: formatHourMiniLabel(hour?.time ?? hour?.datetime ?? hour?.date),
+        score,
+        tier: tierForScore(score),
+        summary: summary(hour),
+      };
+    });
+
   const todayRunning = scoreGenericDay(today, {
     idealMin: 45,
     idealMax: 68,
@@ -445,6 +696,7 @@ function buildActivityForecast(args: {
     windWeight: 14,
     gustWeight: 8,
     uvWeight: 2.5,
+    airQualityWeight: 3.2,
   });
   const runningBest = pickBest((day) =>
     scoreGenericDay(day, {
@@ -456,33 +708,26 @@ function buildActivityForecast(args: {
       windWeight: 14,
       gustWeight: 8,
       uvWeight: 2.5,
+      airQualityWeight: 3.2,
+    })
+  );
+  const runningWeek = buildWeek((day) =>
+    scoreGenericDay(day, {
+      idealMin: 45,
+      idealMax: 68,
+      hardMin: 24,
+      hardMax: 92,
+      popWeight: 22,
+      windWeight: 14,
+      gustWeight: 8,
+      uvWeight: 2.5,
+      airQualityWeight: 3.2,
     })
   );
 
-  const todayCamping = scoreGenericDay(today, {
-    tempField: 'tempMinF',
-    idealMin: 45,
-    idealMax: 65,
-    hardMin: 25,
-    hardMax: 80,
-    popWeight: 28,
-    windWeight: 22,
-    gustWeight: 14,
-    dryWindPenalty: true,
-  });
-  const campingBest = pickBest((day) =>
-    scoreGenericDay(day, {
-      tempField: 'tempMinF',
-      idealMin: 45,
-      idealMax: 65,
-      hardMin: 25,
-      hardMax: 80,
-      popWeight: 28,
-      windWeight: 22,
-      gustWeight: 14,
-      dryWindPenalty: true,
-    })
-  );
+  const todayCamping = scoreCampingDay(today);
+  const campingBest = pickBest((day) => scoreCampingDay(day));
+  const campingWeek = buildWeek((day) => scoreCampingDay(day));
 
   const todayFishing = scoreGenericDay(today, {
     idealMin: 52,
@@ -506,6 +751,18 @@ function buildActivityForecast(args: {
       cloudTarget: [20, 75],
     })
   );
+  const fishingWeek = buildWeek((day) =>
+    scoreGenericDay(day, {
+      idealMin: 52,
+      idealMax: 82,
+      hardMin: 30,
+      hardMax: 96,
+      popWeight: 20,
+      windWeight: 28,
+      gustWeight: 12,
+      cloudTarget: [20, 75],
+    })
+  );
 
   const todayHiking = scoreGenericDay(today, {
     idealMin: 50,
@@ -516,6 +773,7 @@ function buildActivityForecast(args: {
     windWeight: 12,
     gustWeight: 8,
     uvWeight: 2.8,
+    airQualityWeight: 2.6,
   });
   const hikingBest = pickBest((day) =>
     scoreGenericDay(day, {
@@ -527,6 +785,20 @@ function buildActivityForecast(args: {
       windWeight: 12,
       gustWeight: 8,
       uvWeight: 2.8,
+      airQualityWeight: 2.6,
+    })
+  );
+  const hikingWeek = buildWeek((day) =>
+    scoreGenericDay(day, {
+      idealMin: 50,
+      idealMax: 76,
+      hardMin: 28,
+      hardMax: 96,
+      popWeight: 24,
+      windWeight: 12,
+      gustWeight: 8,
+      uvWeight: 2.8,
+      airQualityWeight: 2.6,
     })
   );
 
@@ -541,6 +813,18 @@ function buildActivityForecast(args: {
     visibilityPenalty: true,
   });
   const flyingBest = pickBest((day) =>
+    scoreGenericDay(day, {
+      idealMin: 38,
+      idealMax: 88,
+      hardMin: 18,
+      hardMax: 105,
+      popWeight: 26,
+      windWeight: 32,
+      gustWeight: 20,
+      visibilityPenalty: true,
+    })
+  );
+  const flyingWeek = buildWeek((day) =>
     scoreGenericDay(day, {
       idealMin: 38,
       idealMax: 88,
@@ -573,15 +857,225 @@ function buildActivityForecast(args: {
       gustWeight: 24,
     })
   );
+  const boatingWeek = buildWeek((day) =>
+    scoreGenericDay(day, {
+      idealMin: 58,
+      idealMax: 88,
+      hardMin: 38,
+      hardMax: 102,
+      popWeight: 26,
+      windWeight: 30,
+      gustWeight: 24,
+    })
+  );
 
-  const astroScore = clamp(Math.round((safeNum(args.astroData?.peakScore) ?? 0) * 100), 0, 100);
+  const astroScore = normalizePreviewScore(args.astroData?.peakScore);
   const astroTier = tierForScore(astroScore);
   const astroWindow =
     formatTimeRangeShort(
       args.astroData?.bestStartTime ?? args.astroData?.darkestStartTime,
       args.astroData?.bestEndTime ?? args.astroData?.darkestEndTime
     ) ?? 'Tonight';
-  const aerosolLabel = typeof args.astroData?.aerosols?.label === 'string' ? args.astroData.aerosols.label : null;
+  const astroHours: any[] = Array.isArray(args.astroData?.hours) ? args.astroData.hours : [];
+  const astroWeek = days.map((day) => {
+    const date = typeof day?.date === 'string' ? day.date : null;
+    const score = astroHours.reduce((best: number, hour: any) => {
+      const hourTime = typeof hour?.time === 'string' ? hour.time : '';
+      if (!date || !hourTime.startsWith(date)) return best;
+      const hourScore = normalizePreviewScore(hour?.skyScore ?? hour?.score);
+      return Math.max(best, hourScore);
+    }, 0);
+    return {
+      date,
+      shortDay: formatShortDay(date),
+      score,
+      tier: tierForScore(score),
+    };
+  });
+
+  const runningHourly = buildWeatherHourPreview(
+    (hour) =>
+      weatherHourScore(hour, {
+        idealMin: 45,
+        idealMax: 68,
+        hardMin: 24,
+        hardMax: 92,
+        popWeight: 22,
+        windWeight: 14,
+        gustWeight: 8,
+        uvWeight: 2.5,
+        airQualityWeight: 3.2,
+      }),
+    (hour) => {
+      const temp =
+        safeNum(hour?.apparentTemperatureF ?? hour?.apparent_temperature ?? hour?.feelsLikeF) ??
+        safeNum(hour?.tempF ?? hour?.temperatureF ?? hour?.temperature_2m ?? hour?.temperature);
+      const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+      const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct);
+      return `${fmtInt(temp, '°')} feel • ${fmtInt(wind, ' mph')} wind • ${fmtInt(pop, '%')} rain`;
+    }
+  );
+
+  const campingHourly = buildWeatherHourPreview(
+    (hour) =>
+      clamp(
+        weatherHourScore(hour, {
+          idealMin: 45,
+          idealMax: 65,
+          hardMin: 25,
+          hardMax: 80,
+          popWeight: 28,
+          windWeight: 22,
+          gustWeight: 14,
+          dryWindPenalty: true,
+        }) - campingFirePenalty(),
+        0,
+        100
+      ),
+    (hour) => {
+      const temp = safeNum(hour?.tempF ?? hour?.temperatureF ?? hour?.temperature_2m ?? hour?.temperature);
+      const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+      const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct);
+      return `${fmtInt(temp, '°')} • ${fmtInt(wind, ' mph')} wind • ${fmtInt(pop, '%')} rain`;
+    }
+  );
+
+  const fishingHourly = buildWeatherHourPreview(
+    (hour) =>
+      weatherHourScore(hour, {
+        idealMin: 52,
+        idealMax: 82,
+        hardMin: 30,
+        hardMax: 96,
+        popWeight: 20,
+        windWeight: 28,
+        gustWeight: 12,
+        cloudTarget: [20, 75],
+      }),
+    (hour) => {
+      const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+      const uv = safeNum(hour?.uvIndex ?? hour?.uv_index);
+      const cloud = safeNum(hour?.cloudCoverPct ?? hour?.cloud_cover ?? hour?.cloudCover);
+      return `${fmtInt(wind, ' mph')} wind • UV ${fmt(uv, 0)} • ${fmtInt(cloud, '%')} clouds`;
+    }
+  );
+
+  const hikingHourly = buildWeatherHourPreview(
+    (hour) =>
+      weatherHourScore(hour, {
+        idealMin: 50,
+        idealMax: 76,
+        hardMin: 28,
+        hardMax: 96,
+        popWeight: 24,
+        windWeight: 12,
+        gustWeight: 8,
+        uvWeight: 2.8,
+        airQualityWeight: 2.6,
+      }),
+    (hour) => {
+      const temp =
+        safeNum(hour?.apparentTemperatureF ?? hour?.apparent_temperature ?? hour?.feelsLikeF) ??
+        safeNum(hour?.tempF ?? hour?.temperatureF ?? hour?.temperature_2m ?? hour?.temperature);
+      const uv = safeNum(hour?.uvIndex ?? hour?.uv_index);
+      const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct);
+      return `${fmtInt(temp, '°')} feel • UV ${fmt(uv, 0)} • ${fmtInt(pop, '%')} rain`;
+    }
+  );
+
+  const flyingHourly = buildWeatherHourPreview(
+    (hour) =>
+      weatherHourScore(hour, {
+        idealMin: 38,
+        idealMax: 88,
+        hardMin: 18,
+        hardMax: 105,
+        popWeight: 26,
+        windWeight: 32,
+        gustWeight: 20,
+        visibilityPenalty: true,
+      }),
+    (hour) => {
+      const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+      const gust = safeNum(hour?.gustMph ?? hour?.windGustMph ?? hour?.wind_gusts_10m);
+      const vis =
+        safeNum(hour?.visibilityMi) ??
+        (safeNum(hour?.visibility ?? hour?.visibility_m) != null
+          ? (safeNum(hour?.visibility ?? hour?.visibility_m) ?? 0) / 1609.344
+          : null);
+      return `${fmtInt(wind, ' mph')} wind • ${fmtInt(gust, ' mph')} gusts • ${fmt(vis, 1)} mi vis`;
+    }
+  );
+
+  const astroHourly = astroHours
+    .filter((hour: any) => {
+      const t = new Date(hour?.time ?? '').getTime();
+      return Number.isFinite(t) && t >= Date.now() - 30 * 60 * 1000;
+    })
+    .slice(0, 6)
+    .map((hour: any) => {
+      const score = normalizePreviewScore(hour?.skyScore ?? hour?.score);
+      return {
+        timeLabel: formatHourMiniLabel(hour?.time),
+        score,
+        tier: tierForScore(score),
+        summary: cleanUiText(
+          `${hour?.label ?? 'Sky'} • ${hour?.summary ?? ''}`.replace(/\s+•\s*$/, '')
+        ),
+      };
+    });
+
+  const boatingHourly = buildWeatherHourPreview(
+    (hour) =>
+      weatherHourScore(hour, {
+        idealMin: 58,
+        idealMax: 88,
+        hardMin: 38,
+        hardMax: 102,
+        popWeight: 26,
+        windWeight: 30,
+        gustWeight: 24,
+      }),
+    (hour) => {
+      const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m);
+      const gust = safeNum(hour?.gustMph ?? hour?.windGustMph ?? hour?.wind_gusts_10m);
+      const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct);
+      return `${fmtInt(wind, ' mph')} wind • ${fmtInt(gust, ' mph')} gusts • ${fmtInt(pop, '%')} rain`;
+    }
+  );
+
+  const campingDetail = fireRestrictionsInEffect
+    ? 'Fire restrictions are in effect nearby, so campfire and stove plans may be limited.'
+    : redFlagWarning
+    ? 'Red Flag Warning is active nearby, so campfire plans should be reconsidered.'
+    : fireWeatherWatch
+      ? 'Fire Weather Watch is active nearby, so dry and windy conditions deserve extra caution.'
+      : safeNum(today?.windMaxMph) != null && safeNum(today?.dewPointMaxF) != null && (safeNum(today?.windMaxMph) ?? 0) >= 15 && (safeNum(today?.dewPointMaxF) ?? 99) < 35
+        ? `Dry and breezy today${fireDangerLabel ? ` with ${fireDangerLabel.toLowerCase()} fire danger nearby` : ''}.`
+        : `${fmtInt(safeNum(today?.tempMinF), 'Â°')} overnight with ${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk${fireDangerLabel ? `; ${fireDangerLabel.toLowerCase()} fire danger nearby` : ''}.`;
+
+  const campingReason = explainBestShift(
+    campingBest.bestDay?.date,
+    campingBest.bestDay,
+    [
+      safeNum(campingBest.bestDay?.tempMinF) != null ? `${Math.round(safeNum(campingBest.bestDay?.tempMinF) ?? 0)}Â° overnight low` : null,
+      safeNum(campingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(campingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+      safeNum(campingBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(campingBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
+      fireRestrictionsInEffect ? 'fire restrictions stay in effect nearby' : null,
+      redFlagWarning ? 'Red Flag Warning remains active nearby' : null,
+      fireWeatherWatch ? 'fire-weather risk stays elevated nearby' : null,
+    ],
+    'the overnight setup looks cleaner'
+  );
+
+  const campingKicker = [
+    safeNum(today?.tempMinF) != null ? `${Math.round(safeNum(today?.tempMinF) ?? 0)} deg overnight` : null,
+    fireRestrictionsInEffect ? 'Fire restrictions in effect' : null,
+    fireDangerLabel ? `Fire danger: ${fireDangerLabel}` : null,
+    !fireRestrictionsInEffect && fireRestrictionsSummary ? fireRestrictionsSummary.replace(/^No active fire restrictions listed for .*?\.\s*/i, 'No nearby fire restrictions listed. ') : null,
+  ]
+    .filter(Boolean)
+    .join(' • ');
 
   return [
     {
@@ -590,9 +1084,32 @@ function buildActivityForecast(args: {
       icon: 'fitness-outline',
       score: todayRunning,
       tier: tierForScore(todayRunning),
-      headline: todayRunning >= 78 ? 'Stride weather' : todayRunning >= 58 ? 'Joggable' : todayRunning >= 40 ? 'Pick your hour' : 'Treadmill vibes',
-      detail: `${describeBestDay(runningBest.bestDay?.date)} for cooler miles`,
-      kicker: safeNum(today?.tempMaxF) != null ? `${Math.round(safeNum(today?.tempMaxF) ?? 0)} deg high` : null,
+      week: runningWeek,
+      headline:
+        todayRunning >= 78
+          ? 'Excellent running conditions'
+          : todayRunning >= 58
+            ? 'Good running conditions'
+            : todayRunning >= 40
+              ? 'Manageable if timed well'
+              : 'Poor running conditions',
+      _legacyDetail:
+        `${describeComfortDelta(args.feelsLikeF ?? safeNum(today?.tempMaxF), 45, 68)}; ` +
+        `${safeNum(today?.windMaxMph) != null ? `${Math.round(safeNum(today?.windMaxMph) ?? 0)} mph wind` : 'wind is variable'}${safeNum(today?.precipProbMaxPct) != null ? `; ${Math.round(safeNum(today?.precipProbMaxPct) ?? 0)}% rain chance` : ''}${formatAirQuality() ? `; ${formatAirQuality()?.replace('Air quality: ', '').replace('air quality: ', '')}` : ''}.`,
+      _legacyReason: explainBestShift(
+        runningBest.bestDay?.date,
+        runningBest.bestDay,
+        [
+          safeNum(runningBest.bestDay?.tempMaxF) != null ? `${Math.round(safeNum(runningBest.bestDay?.tempMaxF) ?? 0)}° for steadier effort` : null,
+          safeNum(runningBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(runningBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+          safeNum(runningBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(runningBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
+          formatAirQuality(),
+        ],
+        'cooler and drier conditions line up better'
+      ),
+      kicker: [args.feelsLikeF != null ? `Feels like ${Math.round(args.feelsLikeF)}°` : null, formatAirQuality()]
+        .filter(Boolean)
+        .join(' • '),
     },
     {
       id: 'camping',
@@ -601,12 +1118,32 @@ function buildActivityForecast(args: {
       score: todayCamping,
       tier: tierForScore(todayCamping),
       headline:
-        todayCamping >= 78 ? 'Campfire-friendly' : todayCamping >= 58 ? 'Pack layers' : todayCamping >= 40 ? 'Fussy setup' : 'Tent stress',
-      detail:
+        todayCamping >= 78
+          ? 'Excellent camping conditions'
+          : todayCamping >= 58
+            ? 'Good camping conditions'
+            : todayCamping >= 40
+              ? 'Mixed camping conditions'
+              : 'Poor camping conditions',
+      _legacyDetail:
         safeNum(today?.windMaxMph) != null && safeNum(today?.dewPointMaxF) != null && (safeNum(today?.windMaxMph) ?? 0) >= 15 && (safeNum(today?.dewPointMaxF) ?? 99) < 35
-          ? 'Dry and breezy: watch fire danger'
-          : `${describeBestDay(campingBest.bestDay?.date)} for the cleanest overnight`,
-      kicker: safeNum(today?.tempMinF) != null ? `${Math.round(safeNum(today?.tempMinF) ?? 0)} deg overnight` : null,
+          ? 'Dry and breezy today, so fire danger deserves attention.'
+          : `${fmtInt(safeNum(today?.tempMinF), '°')} overnight with ${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk.`,
+      _legacyReason: explainBestShift(
+        campingBest.bestDay?.date,
+        campingBest.bestDay,
+        [
+          safeNum(campingBest.bestDay?.tempMinF) != null ? `${Math.round(safeNum(campingBest.bestDay?.tempMinF) ?? 0)}° overnight low` : null,
+          safeNum(campingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(campingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+          safeNum(campingBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(campingBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
+        ],
+        'the overnight setup looks cleaner'
+      ),
+      _legacyKicker: safeNum(today?.tempMinF) != null ? `${Math.round(safeNum(today?.tempMinF) ?? 0)} deg overnight` : null,
+      detail: campingDetail,
+      reason: campingReason,
+      kicker: campingKicker,
+      week: campingWeek,
     },
     {
       id: 'fishing',
@@ -614,9 +1151,27 @@ function buildActivityForecast(args: {
       icon: 'fish-outline',
       score: todayFishing,
       tier: tierForScore(todayFishing),
-      headline: todayFishing >= 76 ? 'Lines-in weather' : todayFishing >= 58 ? 'Worth a cast' : todayFishing >= 40 ? 'Choppy luck' : 'Stay on shore',
-      detail: `${describeBestDay(fishingBest.bestDay?.date)} around dawn or dusk`,
+      headline:
+        todayFishing >= 76
+          ? 'Excellent fishing conditions'
+          : todayFishing >= 58
+            ? 'Good fishing window'
+            : todayFishing >= 40
+              ? 'Choppy or unsettled'
+              : 'Poor fishing conditions',
+      detail: `${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind, ${fmtInt(safeNum(today?.cloudCoverAvgPct), '%')} cloud cover, and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk today.`,
+      reason: explainBestShift(
+        fishingBest.bestDay?.date,
+        fishingBest.bestDay,
+        [
+          safeNum(fishingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(fishingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+          safeNum(fishingBest.bestDay?.cloudCoverAvgPct) != null ? `${Math.round(safeNum(fishingBest.bestDay?.cloudCoverAvgPct) ?? 0)}% clouds` : null,
+          'dawn and dusk look steadier',
+        ],
+        'wind and sky cover line up a little better'
+      ),
       kicker: safeNum(today?.windMaxMph) != null ? `${Math.round(safeNum(today?.windMaxMph) ?? 0)} mph wind` : null,
+      week: fishingWeek,
     },
     {
       id: 'hiking',
@@ -624,9 +1179,33 @@ function buildActivityForecast(args: {
       icon: 'footsteps-outline',
       score: todayHiking,
       tier: tierForScore(todayHiking),
-      headline: todayHiking >= 80 ? 'Trail candy' : todayHiking >= 60 ? 'Solid trek' : todayHiking >= 42 ? 'Start early' : 'Heat or weather tax',
-      detail: `${describeBestDay(hikingBest.bestDay?.date)} for the longest push`,
-      kicker: safeNum(today?.uvIndexMax) != null ? `UV ${safeNum(today?.uvIndexMax)?.toFixed(1)}` : null,
+      week: hikingWeek,
+      headline:
+        todayHiking >= 80
+          ? 'Excellent hiking conditions'
+          : todayHiking >= 60
+            ? 'Good hiking window'
+            : todayHiking >= 42
+              ? 'Start early'
+              : 'Poor hiking conditions',
+      detail:
+        `${describeComfortDelta(args.feelsLikeF ?? safeNum(today?.tempMaxF), 50, 76)}; ` +
+        `${safeNum(today?.uvIndexMax) != null ? `UV ${safeNum(today?.uvIndexMax)?.toFixed(1)}` : 'UV unknown'} and ` +
+        `${safeNum(today?.precipProbMaxPct) != null ? `${Math.round(safeNum(today?.precipProbMaxPct) ?? 0)}% rain chance` : 'uncertain rain odds'}${formatAirQuality() ? `; ${formatAirQuality()?.replace('Air quality: ', '').replace('air quality: ', '')}` : ''} today.`,
+      reason: explainBestShift(
+        hikingBest.bestDay?.date,
+        hikingBest.bestDay,
+        [
+          safeNum(hikingBest.bestDay?.tempMaxF) != null ? `${Math.round(safeNum(hikingBest.bestDay?.tempMaxF) ?? 0)}° high` : null,
+          safeNum(hikingBest.bestDay?.uvIndexMax) != null ? `UV ${safeNum(hikingBest.bestDay?.uvIndexMax)?.toFixed(1)}` : null,
+          safeNum(hikingBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(hikingBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
+          formatAirQuality(),
+        ],
+        'heat and exposure ease up'
+      ),
+      kicker: [args.feelsLikeF != null ? `Feels like ${Math.round(args.feelsLikeF)}°` : null, formatAirQuality()]
+        .filter(Boolean)
+        .join(' • '),
     },
     {
       id: 'flying',
@@ -635,9 +1214,20 @@ function buildActivityForecast(args: {
       score: todayFlying,
       tier: tierForScore(todayFlying),
       headline:
-        todayFlying >= 80 ? 'Smooth enough' : todayFlying >= 60 ? 'Mostly flyable' : todayFlying >= 42 ? 'Check the briefing' : 'Bumpy or marginal',
-      detail: `${describeBestDay(flyingBest.bestDay?.date)} if you want cleaner conditions`,
+        todayFlying >= 80 ? 'Favorable flying conditions' : todayFlying >= 60 ? 'Mostly flyable' : todayFlying >= 42 ? 'Check the briefing' : 'Bumpy or marginal',
+      detail: `${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind, ${fmtInt(safeNum(today?.windGustMaxMph), ' mph')} gusts, and ${args.visibilityMi != null ? `${args.visibilityMi.toFixed(1)} mi visibility` : 'uncertain visibility'} today.`,
+      reason: explainBestShift(
+        flyingBest.bestDay?.date,
+        flyingBest.bestDay,
+        [
+          safeNum(flyingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(flyingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+          safeNum(flyingBest.bestDay?.windGustMaxMph) != null ? `${Math.round(safeNum(flyingBest.bestDay?.windGustMaxMph) ?? 0)} mph gusts` : null,
+          args.visibilityMi != null ? `${args.visibilityMi.toFixed(1)} mi visibility` : null,
+        ],
+        'winds and visibility look cleaner'
+      ),
       kicker: args.visibilityMi != null ? `${args.visibilityMi.toFixed(1)} mi vis` : null,
+      week: flyingWeek,
     },
     {
       id: 'stargazing',
@@ -646,9 +1236,19 @@ function buildActivityForecast(args: {
       score: astroScore,
       tier: astroTier,
       headline:
-        astroScore >= 82 ? 'Sky show' : astroScore >= 64 ? 'Worth looking up' : astroScore >= 44 ? 'Patchy window' : 'Clouds win tonight',
+        astroScore >= 82
+          ? 'Excellent observing window'
+          : astroScore >= 64
+            ? 'Good observing potential'
+            : astroScore >= 44
+              ? 'Limited observing window'
+              : 'Poor observing conditions',
       detail: args.astroData?.bestSummary ? `${astroWindow} - ${String(args.astroData.bestSummary)}` : astroWindow,
+      reason: args.astroData?.peakLabel
+        ? `${formatShortDay(args.astroData?.peakDate ?? null)} has the best Sky Score because observing conditions are ${String(args.astroData.peakLabel).toLowerCase()}.`
+        : null,
       kicker: aerosolLabel ? `Aerosols: ${aerosolLabel}` : args.astroData?.peakLabel ? String(args.astroData.peakLabel) : 'Tonight',
+      week: astroWeek,
     },
     {
       id: 'boating',
@@ -657,76 +1257,285 @@ function buildActivityForecast(args: {
       score: todayBoating,
       tier: tierForScore(todayBoating),
       headline:
-        todayBoating >= 80 ? 'Smooth cruise' : todayBoating >= 60 ? 'Mostly manageable' : todayBoating >= 42 ? 'Watch chop' : 'Whitecap mood',
-      detail: `${describeBestDay(boatingBest.bestDay?.date)} for calmer water`,
+        todayBoating >= 80
+          ? 'Calm boating window'
+          : todayBoating >= 60
+            ? 'Mostly manageable'
+            : todayBoating >= 42
+              ? 'Watch for chop'
+              : 'Poor boating conditions',
+      detail: `${fmtInt(safeNum(today?.windMaxMph), ' mph')} sustained wind, ${fmtInt(safeNum(today?.windGustMaxMph), ' mph')} gusts, and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk today.`,
+      reason: explainBestShift(
+        boatingBest.bestDay?.date,
+        boatingBest.bestDay,
+        [
+          safeNum(boatingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(boatingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
+          safeNum(boatingBest.bestDay?.windGustMaxMph) != null ? `${Math.round(safeNum(boatingBest.bestDay?.windGustMaxMph) ?? 0)} mph gusts` : null,
+          safeNum(boatingBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(boatingBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
+        ],
+        'water and weather settle down'
+      ),
       kicker: safeNum(today?.windGustMaxMph) != null ? `${Math.round(safeNum(today?.windGustMaxMph) ?? 0)} mph gusts` : null,
+      week: boatingWeek,
     },
   ] as ActivityCardModel[];
 }
 
 function ActivityForecastSection({
   daily,
+  hourly,
   visibilityMi,
   astroData,
+  feelsLikeF,
+  fireContext,
+  onLearnTopic,
 }: {
   daily: any[];
+  hourly: any[];
   visibilityMi: number | null;
   astroData: any;
+  feelsLikeF: number | null;
+  fireContext: any;
+  onLearnTopic?: (topicId: string) => void;
 }) {
+  const [flippedId, setFlippedId] = useState<string | null>(null);
   const cards = useMemo(
     () =>
       buildActivityForecast({
         daily,
+        hourly,
         visibilityMi,
         astroData,
+        feelsLikeF,
+        fireContext,
       }),
-    [astroData, daily, visibilityMi]
+    [astroData, daily, feelsLikeF, fireContext, hourly, visibilityMi]
   );
+
+  const hourlyPreviewByCard = useMemo(() => {
+    const futureWeatherHours = (hourly ?? [])
+      .filter((h) => {
+        const t = new Date(h?.time ?? h?.datetime ?? h?.date ?? '').getTime();
+        return Number.isFinite(t) && t >= Date.now() - 30 * 60 * 1000;
+      })
+      .filter((_, idx) => idx === 0 || idx % 2 === 0)
+      .slice(0, 6);
+
+    const airLabel =
+      typeof astroData?.aerosols?.airQualityLabel === 'string' ? astroData.aerosols.airQualityLabel : null;
+    const airIndex = safeNum(astroData?.aerosols?.airQualityIndex);
+    const fireRestricted = fireContext?.restrictions?.inEffect === true;
+    const fireWatch = !!fireContext?.fireWeather?.fireWeatherWatch;
+    const redFlag = !!fireContext?.fireWeather?.redFlagWarning;
+
+    const weatherPreview = (id: string) =>
+      futureWeatherHours.map((hour) => {
+        const timeLabel = formatHourMiniLabel(hour?.time ?? hour?.datetime ?? hour?.date);
+        const temp =
+          safeNum(hour?.apparentTemperatureF ?? hour?.apparent_temperature ?? hour?.feelsLikeF) ??
+          safeNum(hour?.tempF ?? hour?.temperatureF ?? hour?.temperature_2m ?? hour?.temperature);
+        const wind = safeNum(hour?.windMph ?? hour?.windSpeedMph ?? hour?.wind_speed_10m ?? hour?.windspeed_10m) ?? 0;
+        const gust = safeNum(hour?.gustMph ?? hour?.windGustMph ?? hour?.wind_gusts_10m) ?? 0;
+        const pop = safeNum(hour?.precipProbPct ?? hour?.precipitation_probability ?? hour?.precipChancePct) ?? 0;
+        const uv = safeNum(hour?.uvIndex ?? hour?.uv_index) ?? 0;
+        const cloud = safeNum(hour?.cloudCoverPct ?? hour?.cloud_cover ?? hour?.cloudCover) ?? 0;
+        const vis =
+          safeNum(hour?.visibilityMi) ??
+          (safeNum(hour?.visibility ?? hour?.visibility_m) != null
+            ? (safeNum(hour?.visibility ?? hour?.visibility_m) ?? 0) / 1609.344
+            : visibilityMi);
+
+        let score = 70;
+        let summary = `${fmtInt(temp, '°')} • ${fmtInt(wind, ' mph')} wind`;
+
+        if (id === 'running' || id === 'hiking') {
+          score -= Math.max((temp ?? 65) - (id === 'running' ? 68 : 76), 0) * 1.2;
+          score -= Math.max(wind - 12, 0) * 1.3;
+          score -= (pop / 100) * 24;
+          score -= Math.max(uv - 6, 0) * 3;
+          if (airIndex != null) score -= Math.max(airIndex - 50, 0) / 2.5;
+          summary = `${fmtInt(temp, '°')} feel • UV ${fmt(uv, 0)} • ${airLabel ?? 'AQ pending'}`;
+        } else if (id === 'camping') {
+          score -= Math.max(wind - 12, 0) * 1.7;
+          score -= (pop / 100) * 28;
+          if (fireRestricted) score -= 26;
+          else if (redFlag) score -= 22;
+          else if (fireWatch) score -= 12;
+          summary = `${fmtInt(temp, '°')} • ${fmtInt(wind, ' mph')} wind • ${fireRestricted ? 'Restrictions' : fmtInt(pop, '%')} rain`;
+        } else if (id === 'fishing') {
+          score -= Math.max(wind - 10, 0) * 2.2;
+          score -= (pop / 100) * 16;
+          summary = `${fmtInt(wind, ' mph')} wind • UV ${fmt(uv, 0)} • ${fmtInt(cloud, '%')} clouds`;
+        } else if (id === 'flying') {
+          score -= Math.max(wind - 10, 0) * 2.4;
+          score -= Math.max(gust - 18, 0) * 1.8;
+          score -= (pop / 100) * 18;
+          score -= Math.max(5 - (vis ?? 10), 0) * 12;
+          summary = `${fmt(vis, 1)} mi vis • ${fmtInt(wind, ' mph')} wind • ${fmtInt(gust, ' mph')} gusts`;
+        } else if (id === 'boating') {
+          score -= Math.max(wind - 10, 0) * 2.4;
+          score -= Math.max(gust - 16, 0) * 1.8;
+          score -= (pop / 100) * 18;
+          summary = `${fmtInt(wind, ' mph')} wind • ${fmtInt(gust, ' mph')} gusts • ${fmtInt(pop, '%')} rain`;
+        }
+
+      return {
+          timeLabel,
+          score: clamp(Math.round(score), 0, 100),
+          tier: tierForScore(clamp(Math.round(score), 0, 100)),
+          summary,
+        };
+      });
+
+    const astroPreview = (Array.isArray(astroData?.hours) ? astroData.hours : [])
+      .filter((hour: any) => {
+        const t = new Date(hour?.time ?? '').getTime();
+        return Number.isFinite(t) && t >= Date.now() - 30 * 60 * 1000;
+      })
+      .slice(0, 6)
+      .map((hour: any) => {
+        const score = normalizePreviewScore(hour?.skyScore ?? hour?.score);
+        return {
+          timeLabel: formatHourMiniLabel(hour?.time),
+          score,
+          tier: tierForScore(score),
+          summary: cleanUiText(`${hour?.label ?? 'Sky'} • ${hour?.summary ?? ''}`),
+        };
+      });
+
+    return {
+      running: weatherPreview('running'),
+      camping: weatherPreview('camping'),
+      fishing: weatherPreview('fishing'),
+      hiking: weatherPreview('hiking'),
+      flying: weatherPreview('flying'),
+      stargazing: astroPreview,
+      boating: weatherPreview('boating'),
+    } as Record<string, Array<{ timeLabel: string; score: number; tier: ActivityTier; summary: string }>>;
+  }, [astroData, fireContext, hourly, visibilityMi]);
 
   if (!cards.length) return null;
 
   return (
     <Card style={styles.activitySectionCard}>
       <View style={styles.activitySectionHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>Activity forecast</Text>
-          <Text style={styles.activitySectionSubtext}>Fun reads for the next outing, launch, cast, or sky check.</Text>
+        <View style={styles.activitySectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>Activity forecast</Text>
+            <Text style={styles.activitySectionSubtext}>7-day reads for the next outing, launch, cast, or sky check.</Text>
+          </View>
+          <Pressable
+            onPress={() => onLearnTopic?.('activity-scores')}
+            style={styles.activityLearnButton}
+            hitSlop={8}
+          >
+            <Ionicons name="information-circle-outline" size={14} color="rgba(191,219,254,0.92)" />
+            <Text style={styles.activityLearnButtonText}>wxLearn</Text>
+          </Pressable>
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activityScrollerContent}>
+      <View style={styles.activityGrid}>
         {cards.map((card) => {
           const colors = tierColors(card.tier);
+          const isFlipped = flippedId === card.id;
+          const hourlyPreview = hourlyPreviewByCard[card.id] ?? [];
 
           return (
-            <View
+            <Pressable
               key={card.id}
+              onPress={() => setFlippedId((current) => (current === card.id ? null : card.id))}
               style={[
-                styles.activityMiniCard,
+                styles.activityWideCard,
                 {
-                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  backgroundColor: 'rgba(9,14,28,0.78)',
                   borderColor: colors.border,
                 },
               ]}
             >
               <View style={styles.activityMiniTopRow}>
-                <View style={[styles.activityMiniIconWrap, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                  <Ionicons name={card.icon as any} size={16} color={colors.text} />
+                <View style={styles.activityWideIdentity}>
+                  <View
+                    style={[styles.activityMiniIconWrap, { backgroundColor: colors.bg, borderColor: colors.border }]}
+                  >
+                    <Ionicons name={card.icon as any} size={18} color={colors.text} />
+                  </View>
+                  <Text style={styles.activityMiniTitle}>{card.title}</Text>
                 </View>
 
                 <View style={[styles.activityMiniPill, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                  <Text style={[styles.activityMiniPillText, { color: colors.text }]}>{labelForTier(card.tier)}</Text>
+                  <Text style={[styles.activityMiniPillText, { color: colors.text }]}>
+                    {isFlipped ? 'Hourly' : labelForTier(card.tier)}
+                  </Text>
                 </View>
               </View>
 
-              <Text style={styles.activityMiniTitle}>{card.title}</Text>
-              <Text style={styles.activityMiniHeadline}>{card.headline}</Text>
-              <Text style={styles.activityMiniDetail} numberOfLines={2}>{card.detail}</Text>
-              <Text style={styles.activityMiniKicker} numberOfLines={1}>{card.kicker ?? `${card.score}/100 feel`}</Text>
-            </View>
+              {isFlipped ? (
+                <>
+                  <Text style={styles.activityWideHeadline}>Next-hour outlook</Text>
+                  <View style={styles.activityWeekRow}>
+                    {hourlyPreview.map((entry) => {
+                      const entryColors = tierColors(entry.tier);
+                      return (
+                        <View key={`${card.id}-${entry.timeLabel}`} style={styles.activityHourBlock}>
+                          <View style={styles.activityWeekItem}>
+                            <Text style={styles.activityWeekLabel}>{entry.timeLabel}</Text>
+                            <View style={styles.activityWeekBar}>
+                              <View
+                                style={[
+                                  styles.activityWeekFill,
+                                  {
+                                    width: `${clamp(entry.score, 0, 100)}%`,
+                                    backgroundColor: entryColors.text,
+                                  },
+                                ]}
+                              />
+                            </View>
+                            <Text style={[styles.activityWeekScore, { color: entryColors.text }]}>{entry.score}</Text>
+                          </View>
+                          <Text style={styles.activityHourlySummary}>{cleanUiText(entry.summary)}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.activityWideHeadline}>{cleanUiText(card.headline)}</Text>
+                  <Text style={styles.activityMiniDetail}>{cleanUiText(card.detail)}</Text>
+
+                  <View style={styles.activityWeekRow}>
+                    {(card.week ?? []).map((entry) => {
+                      const weekColors = tierColors(entry.tier);
+                      return (
+                        <View key={`${card.id}-${entry.date ?? entry.shortDay}`} style={styles.activityWeekItem}>
+                          <Text style={styles.activityWeekLabel}>{entry.shortDay}</Text>
+                          <View style={styles.activityWeekBar}>
+                            <View
+                              style={[
+                                styles.activityWeekFill,
+                                {
+                                  width: `${clamp(entry.score, 0, 100)}%`,
+                                  backgroundColor: weekColors.text,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.activityWeekScore, { color: weekColors.text }]}>{entry.score}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  <Text style={styles.activityMiniKicker}>
+                    {cleanUiText(card.kicker ?? `${card.score}/100 fit score`)}
+                  </Text>
+                </>
+              )}
+            </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
     </Card>
   );
 }
@@ -912,7 +1721,7 @@ function LocationPickerModal({
     return {
       key: item.id,
       kind: 'favorite',
-      title: item.name,
+      title: formatLocLabel({ name: item.name }),
       sub: preview?.condition ?? `${item.lat.toFixed(3)}, ${item.lon.toFixed(3)}`,
       emoji: preview?.emoji ?? '🌤️',
       hi: preview?.hi ?? null,
@@ -1100,7 +1909,8 @@ function SimpleSummary({
   gustMph,
   windDirDeg,
   precipChancePct,
-  visibilityMi,
+  uvIndex,
+  airQualityLabel,
   pressureHpa,
   pressureInHg,
   pressureTrend,
@@ -1113,7 +1923,8 @@ function SimpleSummary({
   gustMph: number | null;
   windDirDeg: number | null;
   precipChancePct: number | null;
-  visibilityMi: number | null;
+  uvIndex: number | null;
+  airQualityLabel: string | null;
   pressureHpa: number | null;
   pressureInHg: number | null;
   pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
@@ -1122,7 +1933,8 @@ function SimpleSummary({
 }) {
   const hasMoisture = dewpointF != null || humidityPct != null;
   const hasWind = !hideWind && (windMph != null || gustMph != null || windDirDeg != null);
-  const hasPrecipVis = precipChancePct != null || visibilityMi != null || pressureHpa != null || pressureInHg != null;
+  const hasExtras =
+    precipChancePct != null || uvIndex != null || !!airQualityLabel || pressureHpa != null || pressureInHg != null;
 
   const dirToCompassLocal = (deg: number | null) => {
     if (deg == null) return null;
@@ -1190,18 +2002,25 @@ function SimpleSummary({
         </View>
       ) : null}
 
-      {hasPrecipVis ? (
+      {hasExtras ? (
         <View style={ss.section}>
           <Text style={ss.sectionTitle}>Extras</Text>
 
-          <View style={ss.grid3}>
+          <View style={ss.grid2}>
             <View style={ss.cell}>
               <Text style={ss.k}>Precip</Text>
               <Text style={ss.v}>{precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}</Text>
             </View>
             <View style={ss.cell}>
-              <Text style={ss.k}>Vis</Text>
-              <Text style={ss.v}>{visibilityMi != null ? fmt1(visibilityMi, ' mi') : '—'}</Text>
+              <Text style={ss.k}>UV Index</Text>
+              <Text style={ss.v}>{uvIndex != null ? fmt1(uvIndex) : '—'}</Text>
+            </View>
+          </View>
+
+          <View style={ss.grid2}>
+            <View style={ss.cell}>
+              <Text style={ss.k}>Air Quality</Text>
+              <Text style={ss.v}>{airQualityLabel ?? '—'}</Text>
             </View>
             <View style={ss.cell}>
               <Text style={ss.k}>Pressure</Text>
@@ -1723,6 +2542,7 @@ function NerdyDeepDive({
   gf,
   cloudCoverPct,
   uvIndex,
+  airQualityLabel,
   precipChancePct,
   visibilityMi,
   pressureHpa,
@@ -1749,6 +2569,7 @@ function NerdyDeepDive({
   gf: number | null;
   cloudCoverPct: number | null;
   uvIndex: number | null;
+  airQualityLabel: string | null;
   precipChancePct: number | null;
   visibilityMi: number | null;
   pressureHpa: number | null;
@@ -1893,7 +2714,7 @@ function NerdyDeepDive({
       </SectionCard>
 
       {(() => {
-        const hasSky = cloudCoverPct != null || uvIndex != null;
+        const hasSky = cloudCoverPct != null || uvIndex != null || !!airQualityLabel;
 
         if (!hasSky) {
           return (
@@ -1923,11 +2744,23 @@ function NerdyDeepDive({
               </View>
             </View>
 
-            <StatTile
-              label="Radiation Regime"
-              value={radiationRegime}
-              onPress={() => onOpenLearnTopic('clouds')}
-            />
+            <View style={nd.grid2}>
+              <View style={nd.gridItem}>
+                <StatTile
+                  label="Air Quality"
+                  value={airQualityLabel ?? '—'}
+                  onPress={() => onOpenLearnTopic('air-quality')}
+                />
+              </View>
+
+              <View style={nd.gridItem}>
+                <StatTile
+                  label="Radiation Regime"
+                  value={radiationRegime}
+                  onPress={() => onOpenLearnTopic('clouds')}
+                />
+              </View>
+            </View>
           </SectionCard>
         );
       })()}
@@ -2118,13 +2951,24 @@ function LandWeatherWithCoords({
     enabled: true,
   });
 
+  const {
+    data: fireContextData,
+    refreshing: fireContextRefreshing,
+    refresh: fireContextRefresh,
+  } = useFireContext({
+    lat: coords.lat,
+    lon: coords.lon,
+    enabled: true,
+  });
+
   const loading = currentLoading || (wxLab && forecastLoading);
-  const refreshing = currentRefreshing || forecastRefreshing || astroRefreshing;
+  const refreshing = currentRefreshing || forecastRefreshing || astroRefreshing || fireContextRefreshing;
 
   const onRefresh = () => {
     currentRefresh?.();
     forecastRefresh?.();
     astroRefresh?.();
+    fireContextRefresh?.();
   };
 
   const wx: any = currentData ?? {};
@@ -2245,6 +3089,10 @@ function LandWeatherWithCoords({
     safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv) ??
     uvIndexFromHourly ??
     uvIndexFromDailyMax ??
+    null;
+  const airQualityLabel =
+    (typeof astroData?.aerosols?.airQualityLabel === 'string' ? astroData.aerosols.airQualityLabel : null) ??
+    (typeof astroData?.aerosols?.label === 'string' ? astroData.aerosols.label : null) ??
     null;
 
   const pressureHpa =
@@ -2408,7 +3256,8 @@ function LandWeatherWithCoords({
             gustMph={gustMph}
             windDirDeg={windDirDeg}
             precipChancePct={precipChancePct}
-            visibilityMi={visibilityMi}
+            uvIndex={uvIndex}
+            airQualityLabel={airQualityLabel}
             pressureHpa={pressureHpa}
             pressureInHg={pressureInHg}
             pressureTrend={pressureTrend}
@@ -2428,6 +3277,7 @@ function LandWeatherWithCoords({
             gf={gf}
             cloudCoverPct={cloudCoverPct}
             uvIndex={uvIndex}
+            airQualityLabel={airQualityLabel}
             precipChancePct={precipChancePct}
             visibilityMi={visibilityMi}
             pressureHpa={pressureHpa}
@@ -2468,7 +3318,20 @@ function LandWeatherWithCoords({
         </Card>
       ) : null}
 
-      {daily.length > 0 ? <ActivityForecastSection daily={daily} visibilityMi={visibilityMi} astroData={astroData} /> : null}
+      {!wxLab && daily.length > 0 ? (
+        <ActivityForecastSection
+          daily={daily}
+          hourly={hourly}
+          visibilityMi={visibilityMi}
+          astroData={astroData}
+          feelsLikeF={feelsLikeF}
+          fireContext={fireContextData}
+          onLearnTopic={(topicId) => {
+            setLearnTopicId(topicId ?? undefined);
+            setLearnOpen(true);
+          }}
+        />
+      ) : null}
 
       {wxLab && hourly.length ? (
         <Card style={styles.hourlyCard}>
@@ -2480,6 +3343,21 @@ function LandWeatherWithCoords({
 
           <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
         </Card>
+      ) : null}
+
+      {wxLab && daily.length > 0 ? (
+        <ActivityForecastSection
+          daily={daily}
+          hourly={hourly}
+          visibilityMi={visibilityMi}
+          astroData={astroData}
+          feelsLikeF={feelsLikeF}
+          fireContext={fireContextData}
+          onLearnTopic={(topicId) => {
+            setLearnTopicId(topicId ?? undefined);
+            setLearnOpen(true);
+          }}
+        />
       ) : null}
 
       <View style={{ display: 'none' }}>
@@ -2589,7 +3467,7 @@ export default function LandWeatherScreen() {
 
   const locationLabel = useMemo(() => {
     const raw = (activeLabel ?? '').trim();
-    if (raw) return raw;
+    if (raw) return formatLocLabel({ name: raw });
     return coords ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}` : 'Getting location...';
   }, [activeLabel, coords]);
 
@@ -2743,7 +3621,7 @@ export default function LandWeatherScreen() {
                     }}
                     style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
                   >
-                    <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxNerd</Text>
+                    <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
                   </Pressable>
                 </View>
               </View>
@@ -3119,7 +3997,9 @@ const styles = StyleSheet.create({
   },
 
   headerModeBtnActive: {
-    backgroundColor: 'rgba(70,130,220,0.22)',
+    backgroundColor: 'rgba(72, 201, 176, 0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(109, 236, 198, 0.34)',
   },
 
   headerModeText: {
@@ -3129,7 +4009,7 @@ const styles = StyleSheet.create({
   },
 
   headerModeTextActive: {
-    color: 'white',
+    color: '#DDFCF4',
   },
   dailyMetaRow: {
     marginTop: 4,
@@ -3375,6 +4255,31 @@ saveInlineText: {
     marginBottom: 10,
   },
 
+  activitySectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  activityLearnButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.28)',
+    backgroundColor: 'rgba(15,23,42,0.42)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  activityLearnButtonText: {
+    color: 'rgba(191,219,254,0.92)',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+
   activitySectionSubtext: {
     marginTop: 2,
     color: 'rgba(255,255,255,0.60)',
@@ -3382,19 +4287,24 @@ saveInlineText: {
     fontWeight: '700',
   },
 
-  activityScrollerContent: {
+  activityGrid: {
     paddingHorizontal: 8,
     gap: 10,
   },
 
-  activityMiniCard: {
-    width: 176,
-    minHeight: 154,
+  activityWideCard: {
+    width: '100%',
     borderRadius: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
     borderWidth: 1,
     overflow: 'hidden',
+  },
+
+  activityWideIdentity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
 
   activityMiniTopRow: {
@@ -3443,20 +4353,99 @@ saveInlineText: {
     fontWeight: '900',
   },
 
+  activityWideHeadline: {
+    marginTop: 4,
+    color: 'white',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+
   activityMiniDetail: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.70)',
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
     fontWeight: '700',
-    minHeight: 32,
+  },
+
+  activityMiniReason: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+
+  activityScaleText: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
   },
 
   activityMiniKicker: {
-    marginTop: 'auto',
+    marginTop: 10,
     color: 'rgba(255,255,255,0.56)',
     fontSize: 11,
     fontWeight: '800',
+  },
+
+  activityWeekRow: {
+    marginTop: 12,
+    gap: 8,
+  },
+
+  activityWeekItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  activityHourBlock: {
+    gap: 4,
+  },
+
+  activityWeekLabel: {
+    width: 32,
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  activityWeekBar: {
+    flex: 1,
+    height: 7,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+
+  activityWeekFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+
+  activityWeekScore: {
+    width: 28,
+    textAlign: 'right',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  activityHourlySummary: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+  },
+
+  activityHourlySummaryTime: {
+    color: 'white',
+    fontWeight: '900',
   },
 
   forecastCard: {

@@ -39,6 +39,7 @@ export function AppBoot({ children }: Props) {
   const [overlayDone, setOverlayDone] = useState(false);
 
   const [hasDefaultCity, setHasDefaultCity] = useState<boolean | null>(null);
+  const refreshSeqRef = useRef(0);
 
   const fade = useRef(new Animated.Value(1)).current;
   const scale = useRef(new Animated.Value(0.98)).current;
@@ -46,6 +47,7 @@ export function AppBoot({ children }: Props) {
   const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-mark.png'), []);
 
   const refreshDefaultCity = useCallback(async () => {
+    const seq = ++refreshSeqRef.current;
     const raw = await AsyncStorage.getItem(DEFAULT_CITY_KEY);
     const city = safeJsonParse<any>(raw);
 
@@ -55,7 +57,9 @@ export function AppBoot({ children }: Props) {
       (city.lon != null || city.longitude != null)
     );
 
-    setHasDefaultCity(ok);
+    if (seq === refreshSeqRef.current) {
+      setHasDefaultCity(ok);
+    }
     return ok;
   }, []);
 
@@ -97,7 +101,6 @@ export function AppBoot({ children }: Props) {
 
   useEffect(() => {
     if (!bootReady) return;
-
     void refreshDefaultCity();
   }, [bootReady, refreshDefaultCity, segments]);
 

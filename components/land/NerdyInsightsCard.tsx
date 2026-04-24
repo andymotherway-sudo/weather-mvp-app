@@ -27,7 +27,7 @@ export function NerdyInsightsCard({
         <Text style={styles.title}>{title}</Text>
 
         <Pressable onPress={onPressLearn} style={styles.learnChip}>
-          <Text style={styles.learnText}>Learn</Text>
+          <Text style={styles.learnText}>wxLearn</Text>
         </Pressable>
       </View>
 

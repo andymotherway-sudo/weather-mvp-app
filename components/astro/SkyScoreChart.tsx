@@ -23,39 +23,19 @@ function scoreColor(score: number) {
   return '#EF4444';
 }
 
-function isDaylightHour(hour: AstroHourRow) {
-  return (
-    !hour.isNight &&
-    !hour.isCivilTwilight &&
-    !hour.isNauticalTwilight &&
-    !hour.isAstronomicalTwilight &&
-    !hour.isTrueDark
-  );
-}
-
 function hourVisualOpacity(hour: AstroHourRow) {
-  if (hour.isTrueDark) return 1;
-  if (hour.isAstronomicalTwilight) return 0.92;
-  if (hour.isNauticalTwilight) return 0.82;
-  if (hour.isCivilTwilight) return 0.62;
-  if (hour.isNight) return 0.88;
+  if (hour.isNight || hour.isTrueDark) return 0.94;
   return 0.22;
 }
 
 function backgroundFillForHour(hour: AstroHourRow) {
-  if (hour.isTrueDark) return 'rgba(99,102,241,0.10)';
-  if (hour.isAstronomicalTwilight) return 'rgba(139,92,246,0.08)';
-  if (hour.isNauticalTwilight) return 'rgba(59,130,246,0.07)';
-  if (hour.isCivilTwilight) return 'rgba(251,146,60,0.06)';
-  return 'rgba(255,255,255,0.035)';
+  if (hour.isNight || hour.isTrueDark) return 'rgba(30,41,86,0.28)';
+  return 'rgba(100,116,139,0.08)';
 }
 
 function lineTickColorForHour(hour: AstroHourRow) {
-  if (hour.isTrueDark) return 'rgba(255,255,255,0.16)';
-  if (hour.isAstronomicalTwilight) return 'rgba(255,255,255,0.14)';
-  if (hour.isNauticalTwilight) return 'rgba(255,255,255,0.12)';
-  if (hour.isCivilTwilight) return 'rgba(255,255,255,0.10)';
-  return 'rgba(255,255,255,0.06)';
+  if (hour.isNight || hour.isTrueDark) return 'rgba(191,219,254,0.24)';
+  return 'rgba(226,232,240,0.18)';
 }
 
 function hourLabel(hour: AstroHourRow, index: number, total: number) {
@@ -68,9 +48,26 @@ function hourLabel(hour: AstroHourRow, index: number, total: number) {
   return shouldShow ? hour.timeLabel : '';
 }
 
+function dateKeyFromIso(value: string) {
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  return match ? match[1] : value.slice(0, 10);
+}
+
+function dayLabelFromIso(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return '';
+  const dt = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt);
+}
+
 export function SkyScoreChart({
   hours,
-  title = 'Sky Score Trend',
+  title,
 }: Props) {
   const chart = useMemo(() => {
     if (!hours.length) return null;
@@ -105,6 +102,18 @@ export function SkyScoreChart({
 
     const best = [...hours].sort((a, b) => b.score - a.score)[0];
     const bestIndex = hours.findIndex((h) => h.time === best.time);
+    const dayMarkers = hours
+      .map((h, i) => ({
+        i,
+        time: h.time,
+        dayKey: dateKeyFromIso(h.time),
+      }))
+      .filter((entry, i, arr) => i === 0 || entry.dayKey !== arr[i - 1].dayKey)
+      .map((entry) => ({
+        ...entry,
+        x: xFor(entry.i),
+        label: dayLabelFromIso(entry.time),
+      }));
 
     return {
       width,
@@ -122,17 +131,18 @@ export function SkyScoreChart({
       areaPath,
       best,
       bestIndex,
+      dayMarkers,
       is72h,
     };
   }, [hours]);
 
   if (!chart || !hours.length) return null;
 
+  const effectiveTitle = title ?? `Sky Score Trend (${hours.length}h)`;
+
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>
-        {title || (hours.length > 18 ? 'Sky Score Trend (72h)' : 'Sky Score Trend')}
-      </Text>
+      <Text style={styles.title}>{effectiveTitle}</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <Svg width={chart.width} height={chart.height}>
@@ -189,26 +199,38 @@ export function SkyScoreChart({
             );
           })}
 
-          {hours.map((h, i) => {
-            if (!isDaylightHour(h)) return null;
-            const x = chart.xFor(i);
-            const left = i === 0 ? chart.padL : x - chart.stepX / 2;
-            const right =
-              i === hours.length - 1
-                ? chart.width - chart.padR
-                : x + chart.stepX / 2;
-
-            return (
+          {chart.dayMarkers.map((marker, idx) => (
+            <React.Fragment key={`day-marker-${marker.dayKey}`}>
+              {idx > 0 ? (
+                <Line
+                  x1={marker.x}
+                  y1={chart.padT}
+                  x2={marker.x}
+                  y2={chart.padT + chart.plotH}
+                  stroke="rgba(255,255,255,0.16)"
+                  strokeWidth={1.5}
+                />
+              ) : null}
               <Rect
-                key={`day-${h.time}`}
-                x={left}
-                y={chart.padT}
-                width={Math.max(0, right - left)}
-                height={chart.plotH}
-                fill="rgba(255,255,255,0.035)"
+                x={Math.max(chart.padL + 2, marker.x - 28)}
+                y={2}
+                width={56}
+                height={14}
+                rx={7}
+                fill="rgba(15,23,42,0.72)"
               />
-            );
-          })}
+              <SvgText
+                x={Math.max(chart.padL + 30, marker.x)}
+                y={12}
+                fill="rgba(255,255,255,0.72)"
+                fontSize="9"
+                fontWeight="700"
+                textAnchor="middle"
+              >
+                {marker.label}
+              </SvgText>
+            </React.Fragment>
+          ))}
 
           <Path d={chart.areaPath} fill="rgba(59,130,246,0.10)" />
           <Polyline
@@ -263,31 +285,7 @@ export function SkyScoreChart({
 
       <Text style={styles.caption}>
         Peak {chart.best.score} at {chart.best.timeLabel}
-        {chart.is72h ? ' • Daytime dimmed' : ''}
       </Text>
-
-      <View style={styles.legendRow}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: 'rgba(255,255,255,0.04)' }]} />
-          <Text style={styles.legendText}>Day</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: 'rgba(251,146,60,0.16)' }]} />
-          <Text style={styles.legendText}>Civil</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: 'rgba(59,130,246,0.18)' }]} />
-          <Text style={styles.legendText}>Nautical</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: 'rgba(139,92,246,0.18)' }]} />
-          <Text style={styles.legendText}>Astro</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendSwatch, { backgroundColor: 'rgba(99,102,241,0.22)' }]} />
-          <Text style={styles.legendText}>True dark</Text>
-        </View>
-      </View>
     </View>
   );
 }
@@ -313,27 +311,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 8,
     paddingHorizontal: 16,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 10,
-    paddingHorizontal: 16,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendSwatch: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  legendText: {
-    color: '#9CA3AF',
-    fontSize: 11,
-    fontWeight: '700',
   },
 });

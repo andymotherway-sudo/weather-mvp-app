@@ -240,7 +240,7 @@ function useLocationsImpl() {
   const refreshCurrentLocation = useCallback(async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== 'granted') return null;
 
       const pos = await Location.getCurrentPositionAsync({});
       const coords: Coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -258,8 +258,10 @@ function useLocationsImpl() {
 
       dispatch({ type: 'SET_CURRENT', coords, label });
       saveLastCoords(coords, label);
+      return coords;
     } catch {
       // ignore
+      return null;
     }
   }, []);
 

@@ -154,7 +154,7 @@ function solarWindBand(speed: number) {
 }
 
 function LearnRow({
-  label = 'Learn',
+  label = 'wxLearn',
   onPress,
 }: {
   label?: string;
@@ -731,7 +731,7 @@ export default function SolarScreen() {
                   })
                 }
               />
-              <SkyScoreChart hours={chartHours} title="Sky Score Trend (72h)" />
+              <SkyScoreChart hours={chartHours} />
               <AstroHourlyStrip hours={astro.tonightHours} />
               <MoonDarknessCard
                 forecast={astro}

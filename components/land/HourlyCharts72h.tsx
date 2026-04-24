@@ -147,7 +147,7 @@ export function HourlyCharts72h({
         <View style={{ flex: 1 }} />
 
         <Pressable onPress={() => openLearn('data-availability')} style={styles.learnBtn}>
-          <Text style={styles.learnText}>About this Data</Text>
+          <Text style={styles.learnText}>wxLearn</Text>
         </Pressable>
       </View>
 
@@ -165,13 +165,14 @@ export function HourlyCharts72h({
 const styles = StyleSheet.create({
   card: {
     marginBottom: theme.spacing.lg,
-    backgroundColor: 'rgba(18, 28, 45, 0.48)',
+    backgroundColor: 'transparent',
     borderWidth: 0,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-    elevation: 4,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
 
   header: {
@@ -189,9 +190,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
   learnText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
 });

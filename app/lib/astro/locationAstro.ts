@@ -13,6 +13,44 @@ function parseLocalDate(iso?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseWallClockParts(value?: string | null) {
+  if (!value || typeof value !== 'string') return null;
+
+  const s = value.trim();
+  const m = s.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/
+  );
+  if (!m) return null;
+
+  return {
+    year: Number(m[1]),
+    month: Number(m[2]),
+    day: Number(m[3]),
+    hour: Number(m[4]),
+    minute: Number(m[5]),
+    second: Number(m[6] ?? '0'),
+  };
+}
+
+function wallClockToSortableMs(parts: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second?: number;
+}) {
+  return Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second ?? 0,
+    0
+  );
+}
+
 function toLocalLabel(iso?: string | null) {
   const d = parseLocalDate(iso);
   if (!d) return '—';
@@ -76,6 +114,17 @@ function isBetween(
   startIso?: string | null,
   endIso?: string | null
 ) {
+  const tWall = parseWallClockParts(timeIso);
+  const sWall = parseWallClockParts(startIso);
+  const eWall = parseWallClockParts(endIso);
+
+  if (tWall && sWall && eWall) {
+    const t = wallClockToSortableMs(tWall);
+    const s = wallClockToSortableMs(sWall);
+    const e = wallClockToSortableMs(eWall);
+    return t >= s && t <= e;
+  }
+
   const t = parseLocalDate(timeIso);
   const s = parseLocalDate(startIso);
   const e = parseLocalDate(endIso);
@@ -368,6 +417,8 @@ export type LocationAstroForecast = {
     index?: number | null;
     label?: string | null;
     source?: string | null;
+    airQualityIndex?: number | null;
+    airQualityLabel?: string | null;
   };
 
   diagnostics?: {
@@ -375,6 +426,18 @@ export type LocationAstroForecast = {
     siteSource?: string | null;
     aerosolSource?: string | null;
   };
+
+  sunDays?: Array<{
+    date: string;
+    sunrise?: string | null;
+    sunset?: string | null;
+    civilDawn?: string | null;
+    civilDusk?: string | null;
+    nauticalDawn?: string | null;
+    nauticalDusk?: string | null;
+    astronomicalDawn?: string | null;
+    astronomicalDusk?: string | null;
+  }>;
 
   hours: AstroHourRow[];
   tonightHours: AstroHourRow[];
@@ -416,6 +479,17 @@ type WorkerAstroPayload = {
     moonIlluminationPct?: number | null;
     moonPhaseLabel?: string | null;
   }>;
+  sunDays?: Array<{
+    date: string;
+    sunrise?: string | null;
+    sunset?: string | null;
+    civilDawn?: string | null;
+    civilDusk?: string | null;
+    nauticalDawn?: string | null;
+    nauticalDusk?: string | null;
+    astronomicalDawn?: string | null;
+    astronomicalDusk?: string | null;
+  }>;
   hourly: {
     time: string[];
     temperatureC?: Array<number | null>;
@@ -438,6 +512,8 @@ type WorkerAstroPayload = {
     index?: number | null;
     label?: string | null;
     source?: string | null;
+    airQualityIndex?: number | null;
+    airQualityLabel?: string | null;
   };
   diagnostics?: {
     moonSource?: string | null;
@@ -505,6 +581,10 @@ async function fetchLocationAstroForecast(args: {
   const moonByDate = new Map(
     (payload.moonDays ?? []).map((m) => [m.date, m] as const)
   );
+  const sunByDate = new Map(
+    (payload.sunDays ?? []).map((s) => [s.date, s] as const)
+  );
+  const sunDays = payload.sunDays ?? [];
 
   const hourTimes = Array.isArray(payload.hourly?.time) ? payload.hourly.time : [];
   if (!hourTimes.length) {
@@ -515,6 +595,23 @@ async function fetchLocationAstroForecast(args: {
     const dayKey = typeof time === 'string' ? time.slice(0, 10) : '';
     const moonForDay =
       moonByDate.get(dayKey) ?? relevantMoonDay ?? payload.moonDays?.[0];
+    const sunForDay =
+      sunByDate.get(dayKey) ??
+      payload.sunDays?.[0] ?? {
+        sunrise: undefined,
+        sunset: undefined,
+        civilDawn: undefined,
+        civilDusk: undefined,
+        nauticalDawn: undefined,
+        nauticalDusk: undefined,
+        astronomicalDawn: undefined,
+        astronomicalDusk: undefined,
+      };
+    const sunIndex = sunDays.findIndex((s) => s.date === dayKey);
+    const prevSunForDay =
+      (sunIndex > 0 ? sunDays[sunIndex - 1] : undefined) ?? sunForDay;
+    const nextSunForDay =
+      (sunIndex >= 0 && sunIndex + 1 < sunDays.length ? sunDays[sunIndex + 1] : undefined) ?? sunForDay;
 
     const moonrise = moonForDay?.moonrise ?? undefined;
     const moonset = moonForDay?.moonset ?? undefined;
@@ -522,29 +619,42 @@ async function fetchLocationAstroForecast(args: {
 
     const hourDate = parseLocalDate(time);
     const isNight =
-      nightWindow.start != null &&
-      nightWindow.end != null &&
-      hourDate != null &&
-      hourDate >= nightWindow.start &&
-      hourDate <= nightWindow.end;
+      !!(
+        time &&
+        (
+          isBetween(time, prevSunForDay?.sunset, sunForDay?.sunrise) ||
+          isBetween(time, sunForDay?.sunset, nextSunForDay?.sunrise) ||
+          (
+            nightWindow.start != null &&
+            nightWindow.end != null &&
+            hourDate != null &&
+            hourDate >= nightWindow.start &&
+            hourDate <= nightWindow.end
+          )
+        )
+      );
 
     const isCivilTwilight =
-      isBetween(time, payload.sun?.todaySunset, payload.twilight?.todayCivilDusk) ||
-      isBetween(time, payload.twilight?.tomorrowCivilDawn, payload.sun?.tomorrowSunrise);
+      isBetween(time, sunForDay?.sunset, sunForDay?.civilDusk) ||
+      isBetween(time, sunForDay?.civilDawn, sunForDay?.sunrise);
 
     const isNauticalTwilight =
-      isBetween(time, payload.twilight?.todayCivilDusk, payload.twilight?.todayNauticalDusk) ||
-      isBetween(time, payload.twilight?.tomorrowNauticalDawn, payload.twilight?.tomorrowCivilDawn);
+      isBetween(time, sunForDay?.civilDusk, sunForDay?.nauticalDusk) ||
+      isBetween(time, sunForDay?.nauticalDawn, sunForDay?.civilDawn);
 
     const isAstronomicalTwilight =
-      isBetween(time, payload.twilight?.todayNauticalDusk, payload.twilight?.todayAstronomicalDusk) ||
-      isBetween(time, payload.twilight?.tomorrowAstronomicalDawn, payload.twilight?.tomorrowNauticalDawn);
+      isBetween(time, sunForDay?.nauticalDusk, sunForDay?.astronomicalDusk) ||
+      isBetween(time, sunForDay?.astronomicalDawn, sunForDay?.nauticalDawn);
 
-    const isTrueDark = isBetween(
-      time,
-      payload.twilight?.todayAstronomicalDusk,
-      payload.twilight?.tomorrowAstronomicalDawn
-    );
+    const isTrueDark =
+      isNight &&
+      !isCivilTwilight &&
+      !isNauticalTwilight &&
+      !isAstronomicalTwilight &&
+      (
+        isBetween(time, prevSunForDay?.astronomicalDusk, sunForDay?.astronomicalDawn) ||
+        isBetween(time, sunForDay?.astronomicalDusk, nextSunForDay?.astronomicalDawn)
+      );
 
     const darknessScore = darknessScoreForHour({
       isTrueDark,
@@ -713,6 +823,8 @@ async function fetchLocationAstroForecast(args: {
           index: payload.aerosols.index ?? null,
           label: payload.aerosols.label ?? null,
           source: payload.aerosols.source ?? null,
+          airQualityIndex: payload.aerosols.airQualityIndex ?? null,
+          airQualityLabel: payload.aerosols.airQualityLabel ?? null,
         }
       : undefined,
 
@@ -722,6 +834,20 @@ async function fetchLocationAstroForecast(args: {
           siteSource: payload.diagnostics.siteSource ?? null,
           aerosolSource: payload.diagnostics.aerosolSource ?? null,
         }
+      : undefined,
+
+    sunDays: Array.isArray(payload.sunDays)
+      ? payload.sunDays.map((day) => ({
+          date: day.date,
+          sunrise: day.sunrise ?? null,
+          sunset: day.sunset ?? null,
+          civilDawn: day.civilDawn ?? null,
+          civilDusk: day.civilDusk ?? null,
+          nauticalDawn: day.nauticalDawn ?? null,
+          nauticalDusk: day.nauticalDusk ?? null,
+          astronomicalDawn: day.astronomicalDawn ?? null,
+          astronomicalDusk: day.astronomicalDusk ?? null,
+        }))
       : undefined,
 
     hours: rows,

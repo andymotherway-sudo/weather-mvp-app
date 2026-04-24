@@ -71,7 +71,7 @@ export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
         <Text style={styles.eyebrow}>Sky Score</Text>
         {onLearnSkyScore ? (
           <Pressable onPress={onLearnSkyScore} style={styles.learnBtn} hitSlop={10}>
-            <Text style={styles.learnBtnText}>Learn</Text>
+            <Text style={styles.learnBtnText}>wxLearn</Text>
           </Pressable>
         ) : null}
       </View>

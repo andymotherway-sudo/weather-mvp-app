@@ -123,6 +123,49 @@ type CurrentResponse = {
   weatherCode: number | null;
 };
 
+type FireContextPayload = {
+  ok: true;
+  lat: number;
+  lon: number;
+  fetchedAtIso: string;
+  forest: {
+    name: string | null;
+    region: string | null;
+    slug: string | null;
+  } | null;
+  fireDanger: {
+    classValue: number | null;
+    classLabel: string | null;
+    summary: string | null;
+    source: string;
+  };
+  fireWeather: {
+    redFlagWarning: boolean;
+    fireWeatherWatch: boolean;
+    alertCount: number;
+    headlines: string[];
+    summary: string | null;
+    source: string;
+  };
+  restrictions: {
+    supported: boolean;
+    inEffect: boolean | null;
+    summary: string | null;
+    source: string | null;
+    cards?: Array<{
+      title: string;
+      url: string | null;
+      body: string | null;
+      startDate: string | null;
+      forestOrder: string | null;
+    }>;
+  };
+  diagnostics?: {
+    hazardRaw?: string | null;
+    alertEvents?: string[];
+  };
+};
+
 type AstroLocationPayload = {
   ok: true;
   lat: number;
@@ -152,6 +195,17 @@ type AstroLocationPayload = {
     moonIlluminationPct?: number | null;
     moonPhaseLabel?: string | null;
   }>;
+  sunDays: Array<{
+    date: string;
+    sunrise?: string | null;
+    sunset?: string | null;
+    civilDawn?: string | null;
+    civilDusk?: string | null;
+    nauticalDawn?: string | null;
+    nauticalDusk?: string | null;
+    astronomicalDawn?: string | null;
+    astronomicalDusk?: string | null;
+  }>;
   hourly: {
     time: string[];
     temperatureC: Array<number | null>;
@@ -174,6 +228,8 @@ type AstroLocationPayload = {
     index?: number | null;
     label?: string | null;
     source?: string | null;
+    airQualityIndex?: number | null;
+    airQualityLabel?: string | null;
   };
   diagnostics?: {
     moonSource?: string | null;
@@ -350,7 +406,7 @@ async function swrFetchJson(
     tag?: string;
   },
 ): Promise<Response> {
-  const cache = caches.default;
+  const cache = (caches as any).default as Cache;
   const cached = await cache.match(opts.cacheKey);
 
   if (cached) {
@@ -512,9 +568,12 @@ const ALMANAC_TTL_SECONDS = 24 * 3600;
 const ALMANAC_STALE_SECONDS = 7 * 24 * 3600;
 const DONKI_TTL_SECONDS = 15 * 60;
 const DONKI_STALE_SECONDS = 24 * 3600;
+const FIRE_CONTEXT_TTL_SECONDS = 30 * 60;
+const FIRE_CONTEXT_STALE_SECONDS = 12 * 3600;
 
 const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
+const FIRE_CONTEXT_TIMEOUT_MS = 9000;
 const OPEN_METEO_BATCH_SIZE = 75;
 
 // Sky grid specific knobs
@@ -662,6 +721,8 @@ type AerosolSnapshot = {
   index: number | null;
   label: string | null;
   source: string | null;
+  airQualityIndex?: number | null;
+  airQualityLabel?: string | null;
 };
 
 function normalizeAerosolIndex(args: {
@@ -701,6 +762,16 @@ function aerosolLabelForIndex(index: number | null) {
   return "Opaque aerosols";
 }
 
+function airQualityLabelForUsAqi(aqi: number | null) {
+  if (aqi == null || !Number.isFinite(aqi)) return null;
+  if (aqi <= 50) return "Good";
+  if (aqi <= 100) return "Moderate";
+  if (aqi <= 150) return "Unhealthy for sensitive groups";
+  if (aqi <= 200) return "Unhealthy";
+  if (aqi <= 300) return "Very unhealthy";
+  return "Hazardous";
+}
+
 async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string): Promise<AerosolSnapshot> {
   const url =
     `https://air-quality-api.open-meteo.com/v1/air-quality` +
@@ -716,7 +787,7 @@ async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string):
     const hourly = json?.hourly ?? {};
     const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
     if (!times.length) {
-      return { index: null, label: null, source: "Open-Meteo air quality" };
+      return { index: null, label: null, source: "Open-Meteo air quality", airQualityIndex: null, airQualityLabel: null };
     }
 
     const now = Date.now();
@@ -737,21 +808,24 @@ async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string):
       return Array.isArray(arr) ? safeNum(arr[bestIdx]) : null;
     };
 
+    const usAqi = pick("us_aqi");
     const index = normalizeAerosolIndex({
       aerosolOpticalDepth: pick("aerosol_optical_depth"),
       pm25: pick("pm2_5"),
       pm10: pick("pm10"),
       dust: pick("dust"),
-      usAqi: pick("us_aqi"),
+      usAqi,
     });
 
     return {
       index,
       label: aerosolLabelForIndex(index),
       source: "Open-Meteo air quality",
+      airQualityIndex: usAqi,
+      airQualityLabel: airQualityLabelForUsAqi(usAqi),
     };
   } catch {
-    return { index: null, label: null, source: "Open-Meteo air quality" };
+    return { index: null, label: null, source: "Open-Meteo air quality", airQualityIndex: null, airQualityLabel: null };
   }
 }
 
@@ -1105,6 +1179,14 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 function buildAlmanacCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
   keyUrl.pathname = "/__cache__/almanac/climo/v12";
+  keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+  keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildFireContextCacheKey(reqUrl: URL, lat: number, lon: number) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/fire/context/v2";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
   return new Request(keyUrl.toString(), { method: "GET" });
@@ -1543,6 +1625,399 @@ async function fetchJsonWithHeaders(url: string, headers?: Record<string, string
   }
 
   return res.json();
+}
+
+async function fetchJsonWithTimeout(url: string, timeoutMs: number, headers?: Record<string, string>) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        accept: "application/json",
+        ...headers,
+      },
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}${txt ? ` ${txt.slice(0, 300)}` : ""}`);
+    }
+
+    return res.json<any>();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs: number, headers?: Record<string, string>) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers,
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}${txt ? ` ${txt.slice(0, 300)}` : ""}`);
+    }
+
+    return res.text();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function swrFetchObject<T>(
+  ctx: ExecutionContext,
+  cacheKey: Request,
+  ttlSeconds: number,
+  staleSeconds: number,
+  fetchUpstream: () => Promise<T>,
+): Promise<T> {
+  const cache = (caches as any).default as Cache;
+  const cached = await cache.match(cacheKey);
+
+  if (cached) {
+    const cachedAt = Number(cached.headers.get("X-Omni-Cached-At") || "0");
+    const ageSeconds = cachedAt ? Math.floor((nowMs() - cachedAt) / 1000) : undefined;
+    if (ageSeconds != null && ageSeconds <= ttlSeconds + staleSeconds) {
+      const parsed = (await cached.json().catch(() => null)) as T | null;
+      if (parsed) {
+        if (ageSeconds > ttlSeconds) {
+          ctx.waitUntil(
+            (async () => {
+              try {
+                const fresh = await fetchUpstream();
+                const out = new Response(JSON.stringify(fresh), {
+                  headers: {
+                    "content-type": "application/json; charset=utf-8",
+                    "X-Omni-Cached-At": String(nowMs()),
+                    "Cache-Control": `public, max-age=${ttlSeconds + staleSeconds}`,
+                  },
+                });
+                await cache.put(cacheKey, out);
+              } catch {
+                // ignore refresh errors
+              }
+            })(),
+          );
+        }
+        return parsed;
+      }
+    }
+  }
+
+  const fresh = await fetchUpstream();
+  const out = new Response(JSON.stringify(fresh), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "X-Omni-Cached-At": String(nowMs()),
+      "Cache-Control": `public, max-age=${ttlSeconds + staleSeconds}`,
+    },
+  });
+  await cache.put(cacheKey, out);
+  return fresh;
+}
+
+function slugifyForestName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/\b(national forests?|national grasslands?|national grassland|forests?|forest|grasslands?|grassland)\b/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-");
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeFireDangerLabel(raw: string | null | undefined) {
+  const s = String(raw ?? "").trim();
+  if (!s) return { classValue: null, classLabel: null, summary: null };
+
+  const lower = s.toLowerCase();
+  const known: Array<{ match: string; value: number; label: string; summary: string }> = [
+    { match: "very high", value: 4, label: "Very High", summary: "Fire danger is elevated nearby." },
+    { match: "high", value: 3, label: "High", summary: "Dry and windy starts deserve extra caution." },
+    { match: "moderate", value: 2, label: "Moderate", summary: "Basic campfire caution makes sense." },
+    { match: "low", value: 1, label: "Low", summary: "Broader fire danger looks limited nearby." },
+    { match: "very low", value: 0, label: "Very Low", summary: "Broader fire danger is low nearby." },
+    { match: "non-burnable", value: 0, label: "Non-burnable", summary: "Fuel-driven fire danger is minimal here." },
+  ];
+
+  for (const item of known) {
+    if (lower.includes(item.match)) {
+      return { classValue: item.value, classLabel: item.label, summary: item.summary };
+    }
+  }
+
+  return {
+    classValue: null,
+    classLabel: s,
+    summary: `${s} fire danger nearby.`,
+  };
+}
+
+async function fetchFireDangerPoint(lat: number, lon: number) {
+  const identifyUrl =
+    "https://imagery.geoplatform.gov/iipp/rest/services/Fire_Aviation/USFS_EDW_RMRS_WildfireHazardPotentialClassified/ImageServer/identify" +
+    `?geometry=${encodeURIComponent(`${lon},${lat}`)}` +
+    "&geometryType=esriGeometryPoint" +
+    "&sr=4326" +
+    "&returnGeometry=false" +
+    "&returnCatalogItems=false" +
+    "&f=pjson";
+
+  const json = await fetchJsonWithTimeout(identifyUrl, FIRE_CONTEXT_TIMEOUT_MS, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+
+  const rawLabel =
+    (typeof json?.value === "string" ? json.value : null) ??
+    (typeof json?.name === "string" ? json.name : null);
+
+  const normalized = normalizeFireDangerLabel(rawLabel === "NoData" ? null : rawLabel);
+  return {
+    ...normalized,
+    rawLabel: rawLabel ?? null,
+  };
+}
+
+async function fetchFireDangerContext(lat: number, lon: number) {
+  const candidates = [
+    { lat, lon, distanceDeg: 0 },
+    { lat: lat + 0.1, lon, distanceDeg: 0.1 },
+    { lat: lat - 0.1, lon, distanceDeg: 0.1 },
+    { lat, lon: lon + 0.1, distanceDeg: 0.1 },
+    { lat, lon: lon - 0.1, distanceDeg: 0.1 },
+  ];
+
+  const settled = await Promise.allSettled(
+    candidates.map(async (candidate) => ({
+      ...candidate,
+      result: await fetchFireDangerPoint(candidate.lat, candidate.lon),
+    }))
+  );
+
+  const usable = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => (item as PromiseFulfilledResult<{ lat: number; lon: number; distanceDeg: number; result: { classValue: number | null; classLabel: string | null; summary: string | null; rawLabel: string | null } }>).value)
+    .filter((item) => item.result.classLabel);
+
+  const best = usable.sort((a, b) => a.distanceDeg - b.distanceDeg)[0];
+  const normalized = best?.result ?? { classValue: null, classLabel: null, summary: null, rawLabel: null };
+
+  return {
+    classValue: normalized.classValue,
+    classLabel: normalized.classLabel,
+    summary: normalized.summary,
+    rawLabel: normalized.rawLabel,
+    source: "USDA Forest Service Wildfire Hazard Potential",
+  };
+}
+
+async function fetchFireWeatherContext(lat: number, lon: number) {
+  const alertsUrl =
+    "https://api.weather.gov/alerts/active" +
+    `?point=${encodeURIComponent(`${lat},${lon}`)}`;
+
+  const json = await fetchJsonWithTimeout(alertsUrl, FIRE_CONTEXT_TIMEOUT_MS, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+  const features = Array.isArray(json?.features) ? json.features : [];
+  const relevant = features
+    .map((feature: any) => feature?.properties ?? null)
+    .filter(Boolean)
+    .filter((props: any) => {
+      const event = String(props?.event ?? "").toLowerCase();
+      return event.includes("red flag") || event.includes("fire weather");
+    });
+
+  const redFlagWarning = relevant.some((props: any) =>
+    String(props?.event ?? "").toLowerCase().includes("red flag warning")
+  );
+  const fireWeatherWatch = relevant.some((props: any) =>
+    String(props?.event ?? "").toLowerCase().includes("fire weather watch")
+  );
+  const headlines = relevant
+    .map((props: any) => {
+      const event = typeof props?.event === "string" ? props.event.trim() : "";
+      const area = typeof props?.areaDesc === "string" ? props.areaDesc.trim() : "";
+      return [event, area].filter(Boolean).join(" • ");
+    })
+    .filter((line: string) => !!line)
+    .slice(0, 3);
+
+  const summary = redFlagWarning
+    ? "Red Flag Warning is active nearby."
+    : fireWeatherWatch
+      ? "Fire Weather Watch is active nearby."
+      : relevant.length
+        ? "Fire-weather alerts are active nearby."
+        : "No active fire-weather alerts nearby.";
+
+  return {
+    redFlagWarning,
+    fireWeatherWatch,
+    alertCount: relevant.length,
+    headlines,
+    summary,
+    source: "NOAA / NWS Alerts API",
+    alertEvents: relevant
+      .map((props: any) => (typeof props?.event === "string" ? props.event : null))
+      .filter(Boolean) as string[],
+  };
+}
+
+async function resolveNearbyForest(lat: number, lon: number) {
+  const radii = [0, 0.45, 0.9, 1.25];
+
+  const geometryCenter = (geometry: any) => {
+    const rings = Array.isArray(geometry?.rings) ? geometry.rings : [];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const ring of rings) {
+      for (const point of ring ?? []) {
+        const x = Array.isArray(point) ? Number(point[0]) : NaN;
+        const y = Array.isArray(point) ? Number(point[1]) : NaN;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) return null;
+    return {
+      lon: (minX + maxX) / 2,
+      lat: (minY + maxY) / 2,
+    };
+  };
+
+  for (const radius of radii) {
+    const geometry =
+      radius <= 0
+        ? `${lon},${lat}`
+        : `${lon - radius},${lat - radius},${lon + radius},${lat + radius}`;
+    const geometryType = radius <= 0 ? "esriGeometryPoint" : "esriGeometryEnvelope";
+    const url =
+      "https://apps.fs.usda.gov/fsgisx05/rest/services/wo_nfs_gtac/EDW_ForestSystemBoundaries_01/MapServer/0/query" +
+      `?where=1%3D1&geometry=${encodeURIComponent(geometry)}` +
+      `&geometryType=${geometryType}` +
+      "&inSR=4326" +
+      "&spatialRel=esriSpatialRelIntersects" +
+      `&returnGeometry=${radius <= 0 ? "false" : "true"}` +
+      "&outFields=FORESTNAME,FORESTORGCODE,REGION,FORESTNUMBER" +
+      "&f=pjson";
+
+    const json = await fetchJsonWithTimeout(url, FIRE_CONTEXT_TIMEOUT_MS, {
+      "User-Agent": "omniwx-worker/1.0",
+    });
+    const features = Array.isArray(json?.features) ? json.features : [];
+    if (!features.length) continue;
+
+    const chosen =
+      radius <= 0
+        ? features[0]
+        : features
+            .map((feature: any) => {
+              const center = geometryCenter(feature?.geometry);
+              const distanceKm = center ? haversineKm(lat, lon, center.lat, center.lon) : Number.POSITIVE_INFINITY;
+              return { feature, distanceKm };
+            })
+            .sort((a: any, b: any) => a.distanceKm - b.distanceKm)[0]?.feature;
+
+    const attrs = chosen?.attributes ?? null;
+    if (!attrs?.FORESTNAME) continue;
+
+    return {
+      name: String(attrs.FORESTNAME),
+      region: typeof attrs.REGION === "string" ? attrs.REGION : null,
+      forestOrgCode: typeof attrs.FORESTORGCODE === "string" ? attrs.FORESTORGCODE : null,
+      forestNumber: typeof attrs.FORESTNUMBER === "string" ? attrs.FORESTNUMBER : null,
+      slug: slugifyForestName(String(attrs.FORESTNAME)),
+    };
+  }
+
+  return null;
+}
+
+async function fetchForestRestrictionsCached(
+  ctx: ExecutionContext,
+  forest: { name: string; region: string | null; slug: string },
+) {
+  const regionCode = String(forest.region ?? "").padStart(2, "0");
+  const keyUrl = new URL("https://omniwx-api-cache.local/__cache__/fire/restrictions");
+  keyUrl.searchParams.set("region", regionCode);
+  keyUrl.searchParams.set("slug", forest.slug);
+  const cacheKey = new Request(keyUrl.toString(), { method: "GET" });
+
+  return swrFetchObject(
+    ctx,
+    cacheKey,
+    FIRE_CONTEXT_TTL_SECONDS,
+    FIRE_CONTEXT_STALE_SECONDS,
+    async () => {
+      const url = `https://www.fs.usda.gov/r${regionCode}/${forest.slug}/alerts?field_alert_type_target_id=56&forest_order=1`;
+      const html = await fetchTextWithTimeout(url, FIRE_CONTEXT_TIMEOUT_MS, {
+        "User-Agent": "omniwx-worker/1.0",
+      });
+
+      const cardMatches = [...html.matchAll(/<li class="usa-card usa-card--flag wfs-alert-flag fire-restriction">([\s\S]*?)<\/li>/gi)];
+      const cards = cardMatches
+        .map((match) => {
+          const block = match[1] ?? "";
+          const hrefMatch = block.match(/<a[^>]+href="([^"]+)"/i);
+          const titleMatch = block.match(/<span>([\s\S]*?)<\/span>/i);
+          const bodyMatch = block.match(/<div class="usa-card__body">\s*([\s\S]*?)\s*<\/div>/i);
+          const startMatch = block.match(/Alert Start Date:<\/strong>\s*([^<\n]+)/i);
+          const orderMatch = block.match(/Forest Order:<\/strong>\s*([^<\n]+)/i);
+
+          return {
+            title: stripHtml(titleMatch?.[1] ?? ""),
+            url: hrefMatch?.[1] ? `https://www.fs.usda.gov${hrefMatch[1]}` : null,
+            body: bodyMatch?.[1] ? stripHtml(bodyMatch[1]) : null,
+            startDate: startMatch?.[1] ? stripHtml(startMatch[1]) : null,
+            forestOrder: orderMatch?.[1] ? stripHtml(orderMatch[1]) : null,
+          };
+        })
+        .filter((card) => !!card.title)
+        .slice(0, 5);
+
+      const noRestrictionCard = cards.find((card) => {
+        const text = `${card.title} ${card.body ?? ""}`.toLowerCase();
+        return text.includes("no fire restrictions") || text.includes("termination order");
+      });
+
+      return {
+        supported: true as const,
+        inEffect: cards.length ? !noRestrictionCard : null,
+        summary: cards.length
+          ? noRestrictionCard
+            ? `No active fire restrictions listed for ${forest.name}.`
+            : `Fire restrictions are listed for ${forest.name}.`
+          : `No fire-restriction orders are listed for ${forest.name}.`,
+        source: url,
+        cards,
+      };
+    },
+  );
 }
 
 function degToRad(deg: number) {
@@ -2961,6 +3436,7 @@ export default {
           ].join(",");
 
           const daily = ["sunrise", "sunset"].join(",");
+          const astroForecastDays = 4;
 
           const forecastUrl =
             `https://api.open-meteo.com/v1/forecast` +
@@ -2968,7 +3444,7 @@ export default {
             `&longitude=${encodeURIComponent(String(lon))}` +
             `&hourly=${encodeURIComponent(hourly)}` +
             `&daily=${encodeURIComponent(daily)}` +
-            `&forecast_days=2` +
+            `&forecast_days=${astroForecastDays}` +
             `&wind_speed_unit=ms` +
             `&timezone=auto`;
 
@@ -3018,21 +3494,16 @@ export default {
             });
           }
 
-          const todayDate = dayTimes[0];
-          const tomorrowDate = dayTimes[1] ?? dayTimes[0];
+          const astroDates = dayTimes.slice(0, astroForecastDays);
 
-          let moonToday;
-          let moonTomorrow;
-          let sunToday;
-          let sunTomorrow;
+          let moonDays;
+          let sunDays;
           let aerosolSnapshot: AerosolSnapshot = { index: null, label: null, source: null };
 
           try {
-            [moonToday, moonTomorrow, sunToday, sunTomorrow, aerosolSnapshot] = await Promise.all([
-              fetchMoonDay(lat, lon, todayDate, offset),
-              fetchMoonDay(lat, lon, tomorrowDate, offset),
-              fetchSunDay(lat, lon, todayDate, offset),
-              fetchSunDay(lat, lon, tomorrowDate, offset),
+            [moonDays, sunDays, aerosolSnapshot] = await Promise.all([
+              Promise.all(astroDates.map((date) => fetchMoonDay(lat, lon, date, offset))),
+              Promise.all(astroDates.map((date) => fetchSunDay(lat, lon, date, offset))),
               fetchAerosolSnapshot(lat, lon, timezone),
             ]);
           } catch (error: any) {
@@ -3048,6 +3519,13 @@ export default {
               },
             );
           }
+
+          const todayDate = astroDates[0];
+          const tomorrowDate = astroDates[1] ?? astroDates[0];
+          const moonToday = moonDays?.[0] ?? null;
+          const moonTomorrow = moonDays?.[1] ?? moonDays?.[0] ?? null;
+          const sunToday = sunDays?.[0] ?? null;
+          const sunTomorrow = sunDays?.[1] ?? sunDays?.[0] ?? null;
 
           const siteLookup = lookupBortle(lat, lon);
 
@@ -3072,7 +3550,8 @@ export default {
               tomorrowNauticalDawn: sunTomorrow?.nauticalDawn ?? null,
               tomorrowAstronomicalDawn: sunTomorrow?.astronomicalDawn ?? null,
             },
-            moonDays: [moonToday, moonTomorrow],
+            moonDays: Array.isArray(moonDays) ? moonDays : [moonToday, moonTomorrow].filter(Boolean),
+            sunDays: Array.isArray(sunDays) ? sunDays : [sunToday, sunTomorrow].filter(Boolean),
             hourly: {
               time: Array.isArray(hourlyData.time) ? hourlyData.time : [],
               temperatureC: Array.isArray(hourlyData.temperature_2m) ? hourlyData.temperature_2m : [],
@@ -3095,6 +3574,8 @@ export default {
               index: aerosolSnapshot.index,
               label: aerosolSnapshot.label,
               source: aerosolSnapshot.source,
+              airQualityIndex: aerosolSnapshot.airQualityIndex ?? null,
+              airQualityLabel: aerosolSnapshot.airQualityLabel ?? null,
             },
             diagnostics: {
               moonSource: "metno sunrise 3.0",
@@ -3761,6 +4242,121 @@ export default {
               headers: { "content-type": "application/json; charset=utf-8" },
             },
           );
+        },
+      });
+    }
+
+    if (url.pathname === "/api/fire/context" || url.pathname === "/v1/fire/context") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKey = buildFireContextCacheKey(url, lat, lon);
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: FIRE_CONTEXT_TTL_SECONDS,
+        staleSeconds: FIRE_CONTEXT_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const [fireDangerResult, fireWeatherResult] = await Promise.allSettled([
+            fetchFireDangerContext(lat, lon),
+            fetchFireWeatherContext(lat, lon),
+          ]);
+          const forest = await resolveNearbyForest(lat, lon).catch(() => null);
+          const restrictions =
+            forest?.region && forest?.slug
+              ? await fetchForestRestrictionsCached(ctx, {
+                  name: forest.name,
+                  region: forest.region,
+                  slug: forest.slug,
+                }).catch(() => ({
+                  supported: false as const,
+                  inEffect: null,
+                  summary: null,
+                  source: null,
+                  cards: [],
+                }))
+              : {
+                  supported: false as const,
+                  inEffect: null,
+                  summary: null,
+                  source: null,
+                  cards: [],
+                };
+
+          const fireDanger =
+            fireDangerResult.status === "fulfilled"
+              ? fireDangerResult.value
+              : {
+                  classValue: null,
+                  classLabel: null,
+                  summary: null,
+                  rawLabel: null,
+                  source: "USDA Forest Service Wildfire Hazard Potential",
+                };
+
+          const fireWeather =
+            fireWeatherResult.status === "fulfilled"
+              ? fireWeatherResult.value
+              : {
+                  redFlagWarning: false,
+                  fireWeatherWatch: false,
+                  alertCount: 0,
+                  headlines: [],
+                  summary: null,
+                  source: "NOAA / NWS Alerts API",
+                  alertEvents: [] as string[],
+                };
+
+          const payload: FireContextPayload = {
+            ok: true,
+            lat,
+            lon,
+            fetchedAtIso: new Date().toISOString(),
+            forest: forest
+              ? {
+                  name: forest.name,
+                  region: forest.region,
+                  slug: forest.slug,
+                }
+              : null,
+            fireDanger: {
+              classValue: fireDanger.classValue,
+              classLabel: fireDanger.classLabel,
+              summary: fireDanger.summary,
+              source: fireDanger.source,
+            },
+            fireWeather: {
+              redFlagWarning: fireWeather.redFlagWarning,
+              fireWeatherWatch: fireWeather.fireWeatherWatch,
+              alertCount: fireWeather.alertCount,
+              headlines: fireWeather.headlines,
+              summary: fireWeather.summary,
+              source: fireWeather.source,
+            },
+            restrictions: {
+              supported: restrictions.supported,
+              inEffect: restrictions.inEffect,
+              summary: restrictions.summary,
+              source: restrictions.source,
+              cards: restrictions.cards,
+            },
+            diagnostics: {
+              hazardRaw: fireDanger.rawLabel,
+              alertEvents: fireWeather.alertEvents,
+            },
+          };
+
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
         },
       });
     }

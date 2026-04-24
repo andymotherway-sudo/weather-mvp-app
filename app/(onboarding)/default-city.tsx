@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 
 import { usePlace, type Place } from '../context/PlaceContext';
+import { primeClimatologyCache } from '../lib/climatology/hook';
+import { formatCompactLocation } from '../lib/locations/formats';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 const PENDING_GPS_KEY = 'omniwx:onboarding:pendingGps';
@@ -44,7 +46,12 @@ function placeFromCity(payload: {
   admin1?: string;
 }): Place {
   const id = `${payload.lat.toFixed(4)},${payload.lon.toFixed(4)}`;
-  const label = safeJoin([payload.name, payload.admin1, payload.country]) || payload.name || 'Default City';
+  const label =
+    formatCompactLocation({
+      name: payload.name,
+      admin1: payload.admin1,
+      country: payload.country,
+    }) || payload.name || 'Default City';
   return { id, name: label, lat: payload.lat, lon: payload.lon, source: 'search' };
 }
 
@@ -93,6 +100,7 @@ export default function DefaultCityScreen() {
   }) {
     await AsyncStorage.setItem(DEFAULT_CITY_KEY, JSON.stringify(payload));
     setActive(placeFromCity(payload));
+    void primeClimatologyCache(payload.lat, payload.lon);
     await tick(100);
   }
 
@@ -346,8 +354,11 @@ export default function DefaultCityScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle}>
-                {item.name}
-                {item.admin1 ? <Text style={styles.rowDim}>, {item.admin1}</Text> : null}
+                {formatCompactLocation({
+                  name: item.name,
+                  admin1: item.admin1,
+                  country: item.country,
+                })}
               </Text>
               <Text style={styles.rowSub}>{safeJoin([item.country, item.admin1 ? '•' : null, item.admin1])}</Text>
             </View>

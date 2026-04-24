@@ -98,7 +98,7 @@ export default function MapLibreTestScreen() {
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap', maxWidth: 240 }}>
-  {radar.frames.map((f, idx) => {
+  {radar.frames.map((f: string, idx: number) => {
     const active = idx === radar.frameIndex;
     return (
       <Pressable

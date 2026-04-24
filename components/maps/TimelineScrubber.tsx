@@ -24,6 +24,17 @@ function formatRadarFrameLabel(iso: string) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatRelativeFrameAge(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const diffMin = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (diffMin <= 0) return 'Now';
+  if (diffMin < 60) return `-${diffMin}m`;
+  const hours = Math.floor(diffMin / 60);
+  const mins = diffMin % 60;
+  return mins ? `-${hours}h ${mins}m` : `-${hours}h`;
+}
+
 function buildFallbackFrames(opts?: { minutesBack?: number; stepMinutes?: number }): FrameLike[] {
   const minutesBack = opts?.minutesBack ?? 120;
   const stepMinutes = opts?.stepMinutes ?? 5;
@@ -173,13 +184,13 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
       <View style={styles.topRow}>
         <View style={styles.controlsRow}>
           <ControlButton
-            label={playing ? 'Pause' : 'Play'}
+            label={playing ? '❚❚' : '▶'}
             onPress={() => onSetPlaying(!playing)}
             disabled={playDisabled}
             active={playing}
           />
           <ControlButton
-            label="Prev"
+            label="◀◀"
             onPress={() => {
               if (playing) onSetPlaying(false);
               commitFrame(prevFrameIndex(idx, frameCount));
@@ -187,7 +198,7 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
             disabled={frameCount < 1}
           />
           <ControlButton
-            label="Next"
+            label="▶▶"
             onPress={() => {
               if (playing) onSetPlaying(false);
               commitFrame(nextFrameIndex(idx, frameCount));
@@ -197,10 +208,16 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
         </View>
 
         <View style={styles.labelCard}>
-          <Text style={styles.primaryLabel}>{label}</Text>
+          <View style={styles.labelCardTop}>
+            <Text style={styles.primaryLabel}>{label}</Text>
+            <View style={[styles.modeBadge, playing ? styles.modeBadgeLive : scrubbing ? styles.modeBadgeScrub : null]}>
+              <Text style={styles.modeBadgeText}>
+                {scrubbing ? 'Scrubbing' : playing ? 'Live loop' : 'Paused'}
+              </Text>
+            </View>
+          </View>
           <Text style={styles.secondaryLabel}>
             {frameCount > 0 ? `${idxForUI + 1} of ${frameCount}` : 'No frames'}
-            {scrubbing ? '  /  Scrubbing' : playing ? '  /  Live loop' : '  /  Holding'}
           </Text>
         </View>
       </View>
@@ -221,8 +238,8 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
         </View>
 
         <View style={styles.footerRow}>
-          <Text style={styles.footerLabel}>{oldestLabel}</Text>
-          <Text style={styles.footerLabel}>{latestLabel}</Text>
+          <Text style={styles.footerLabel}>{`${oldestLabel}  ${formatRelativeFrameAge(effectiveFrames[0]?.iso ?? '')}`.trim()}</Text>
+          <Text style={styles.footerLabel}>{`${latestLabel}  ${formatRelativeFrameAge(effectiveFrames[frameCount - 1]?.iso ?? '')}`.trim()}</Text>
         </View>
       </View>
     </View>
@@ -270,6 +287,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 2,
   },
+  labelCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   primaryLabel: {
     color: 'white',
     fontSize: 14,
@@ -278,9 +301,30 @@ const styles = StyleSheet.create({
   },
   secondaryLabel: {
     color: 'rgba(255,255,255,0.62)',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     marginTop: 3,
+  },
+  modeBadge: {
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  modeBadgeLive: {
+    borderColor: 'rgba(125,211,252,0.25)',
+    backgroundColor: 'rgba(96,165,250,0.18)',
+  },
+  modeBadgeScrub: {
+    borderColor: 'rgba(196,181,253,0.25)',
+    backgroundColor: 'rgba(139,92,246,0.16)',
+  },
+  modeBadgeText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 10,
+    fontWeight: '900',
   },
   trackWrap: {
     gap: 8,

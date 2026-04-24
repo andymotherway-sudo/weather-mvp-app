@@ -77,6 +77,51 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'Relative humidity is a “how full is the bucket right now?” number. Warm air can hold more water vapor than cool air, so RH can change a lot through the day even when the moisture in the air has barely changed.',
   },
 
+  {
+    id: 'air-quality',
+    title: 'Air Quality',
+    summary:
+      'Air quality is a quick read on how clean or dirty the air is near the surface. Haze, smoke, dust, and pollution can all lower air quality and affect both breathing comfort and overall sky clarity.',
+    references: [
+      { label: 'Cleaner air', value: 'Lower smoke, dust, and particulate load' },
+      { label: 'Mixed air', value: 'Some haze or particulate signal' },
+      { label: 'Poorer air', value: 'More smoke, dust, or trapped pollution' },
+    ],
+    bullets: [
+      'Poor air quality can make running and hiking feel harder even when temperature looks fine.',
+      'Smoke and aerosols can also reduce contrast and scenic visibility.',
+      'Air quality is related to sky transparency, but it is not the same thing as cloud cover.',
+    ],
+    body:
+      'This app’s air-quality readout is a practical surface signal based on aerosol loading. Cleaner readings usually mean easier breathing and better distance clarity, while degraded readings suggest more haze, smoke, or dust in the air.',
+    insight:
+      'A day can be dry and sunny but still feel off outdoors if smoke or haze is suspended in the air.',
+  },
+
+  {
+    id: 'activity-scores',
+    title: 'Activity Scores',
+    summary:
+      'Activity scores are simple fit ratings for specific plans like running, hiking, camping, boating, flying, fishing, and stargazing. Higher scores mean the weather lines up better for that activity.',
+    bullets: [
+      'Running and hiking weigh comfort, air quality, UV, wind, and rain.',
+      'Camping weighs overnight comfort, wind, rain, fire weather, and nearby restrictions when available.',
+      'Fishing and boating lean heavily on wind, gusts, rain, and sky conditions.',
+      'Flying emphasizes visibility, wind, gusts, and precipitation risk.',
+      'Stargazing uses Sky Score, cloud layers, aerosols, and moonlight.',
+    ],
+    body:
+      'These scores are not safety guarantees or official briefings. They are quick-read planning tools that combine the most important weather signals for each activity into one number so you can compare today with the next several days at a glance.',
+    references: [
+      { label: '80-100', value: 'Excellent fit' },
+      { label: '60-79', value: 'Generally favorable' },
+      { label: '40-59', value: 'Mixed or conditional' },
+      { label: '0-39', value: 'Poor fit' },
+    ],
+    insight:
+      'The same weather can be good for one activity and poor for another, so each score uses a different recipe on purpose.',
+  },
+
     {
     id: 'spread_temp_dew',
     title: 'Spread (Temperature − Dew Point)',

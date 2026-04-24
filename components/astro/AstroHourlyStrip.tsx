@@ -18,12 +18,7 @@ function scoreTone(score: number) {
 
 function phaseTone(hour: AstroHourRow) {
   if (hour.isTrueDark) {
-    return {
-      label: 'True dark',
-      bg: 'rgba(99,102,241,0.18)',
-      border: 'rgba(129,140,248,0.34)',
-      text: '#C7D2FE',
-    };
+    return null;
   }
 
   if (hour.isAstronomicalTwilight) {
@@ -123,19 +118,21 @@ export function AstroHourlyStrip({
             <View key={hour.time} style={styles.hourCard}>
               <View style={styles.topRow}>
                 <Text style={styles.time}>{hour.timeLabel}</Text>
-                <View
-                  style={[
-                    styles.phasePill,
-                    {
-                      backgroundColor: phase.bg,
-                      borderColor: phase.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.phaseText, { color: phase.text }]}>
-                    {phase.label}
-                  </Text>
-                </View>
+                {phase ? (
+                  <View
+                    style={[
+                      styles.phasePill,
+                      {
+                        backgroundColor: phase.bg,
+                        borderColor: phase.border,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.phaseText, { color: phase.text }]}>
+                      {phase.label}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.heroRow}>

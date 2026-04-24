@@ -68,7 +68,7 @@ export function NerdyExplainModal({
 
               {!!payload.learnTopicId && !!onLearnMore && (
                 <Pressable onPress={() => onLearnMore(payload.learnTopicId!)} style={styles.learnBtn}>
-                  <Text style={styles.learnBtnText}>Learn more</Text>
+                  <Text style={styles.learnBtnText}>wxLearn</Text>
                 </Pressable>
               )}
             </>

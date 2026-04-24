@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
@@ -241,7 +242,7 @@ function ModeToggle({
             style={[styles.modeBtn, active ? styles.modeBtnActive : null]}
           >
             <Text style={[styles.modeText, active ? styles.modeTextActive : null]}>
-              {m === 'simple' ? 'Simple' : 'wxNerd'}
+              {m === 'simple' ? 'Simple' : 'wxLab'}
             </Text>
           </Pressable>
         );
@@ -285,7 +286,7 @@ function LearnableWxRow({
       <View style={styles.wxRow}>
         <View style={styles.wxLeft}>
           <Text style={styles.wxKey}>{label}</Text>
-          <Text style={styles.infoBadge}>ⓘ Learn more</Text>
+          <Text style={styles.infoBadge}>ⓘ wxLearn</Text>
         </View>
         <Text style={styles.wxVal}>{value}</Text>
       </View>
@@ -401,6 +402,19 @@ export function NerdyHourlyTimeline({
         style={{ marginBottom: theme.spacing.sm }}
       >
         <View style={styles.card}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              'rgba(120, 180, 255, 0.00)',
+              'rgba(120, 180, 255, 0.05)',
+              'rgba(120, 180, 255, 0.09)',
+              'rgba(120, 180, 255, 0.05)',
+              'rgba(120, 180, 255, 0.00)',
+            ]}
+            locations={[0, 0.14, 0.5, 0.86, 1]}
+            style={styles.innerPanelFade}
+          />
+
           <View style={styles.rowTop}>
             <View style={styles.left}>
               <Text style={styles.day}>{item.dayLabel}</Text>
@@ -602,6 +616,7 @@ type Styles = {
   modeTextActive: TextStyle;
 
   card: ViewStyle;
+  innerPanelFade: ViewStyle;
 
   rowTop: ViewStyle;
   left: ViewStyle;
@@ -661,9 +676,13 @@ const styles = StyleSheet.create<Styles>({
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
   modeBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999 },
-  modeBtnActive: { backgroundColor: 'rgba(70,130,220,0.22)', },
+  modeBtnActive: {
+    backgroundColor: 'rgba(72, 201, 176, 0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(109, 236, 198, 0.34)',
+  },
   modeText: { color: 'rgba(255,255,255,0.70)', fontWeight: '800', fontSize: 12 },
-  modeTextActive: { color: 'white' },
+  modeTextActive: { color: '#DDFCF4' },
 
   card: {
     position: 'relative',
@@ -678,6 +697,14 @@ const styles = StyleSheet.create<Styles>({
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 5,
+  },
+  innerPanelFade: {
+    position: 'absolute',
+    top: 12,
+    bottom: 12,
+    left: 58,
+    right: 58,
+    borderRadius: 18,
   },
 
   rowTop: { flexDirection: 'row', alignItems: 'center' },

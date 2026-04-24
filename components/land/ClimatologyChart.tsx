@@ -11,6 +11,7 @@ import Svg, {
   Stop,
   Text as SvgText,
 } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { theme } from '../../styles/theme';
 import { Card } from '../layout/Card';
@@ -136,6 +137,22 @@ function fmtTempPair(low: number | null | undefined, high: number | null | undef
   const hi = typeof high === 'number' && Number.isFinite(high) ? Math.round(high) : '--';
   return `${lo} / ${hi}`;
 }
+
+function smoothSeries(valsIn?: Array<number | null>, radius = 3) {
+  if (!Array.isArray(valsIn) || !valsIn.length) return [];
+  const vals = valsIn.map(numOrNull);
+  return vals.map((_, i) => {
+    let sum = 0;
+    let count = 0;
+    for (let j = Math.max(0, i - radius); j <= Math.min(vals.length - 1, i + radius); j++) {
+      const v = vals[j];
+      if (v == null || !Number.isFinite(v)) continue;
+      sum += v;
+      count += 1;
+    }
+    return count ? sum / count : null;
+  });
+}
 function fmtShortTemp(v: number | null | undefined) {
   return typeof v === 'number' && Number.isFinite(v) ? `${Math.round(v)}°` : '--';
 }
@@ -166,6 +183,7 @@ export function ClimatologyChart({
   expanded = false,
 }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [scrubDoy, setScrubDoy] = useState<number | null>(null);
   const [zoomWindow, setZoomWindow] = useState<{ start: number; end: number }>({ start: 1, end: 365 });
   const [expandOpen, setExpandOpen] = useState(false);
@@ -376,9 +394,11 @@ export function ClimatologyChart({
     () => buildDailyPrecipShape(lastYear?.precipDailyIn),
     [lastYear?.precipDailyIn, innerW, innerH]
   );
+  const smoothedLastYearHigh = useMemo(() => smoothSeries(lastYear?.tmaxF, 3), [lastYear?.tmaxF]);
+  const smoothedLastYearLow = useMemo(() => smoothSeries(lastYear?.tminF, 3), [lastYear?.tminF]);
 
   const lastYearHighPath = useMemo(() => {
-    const lyMax = lastYear?.tmaxF;
+    const lyMax = smoothedLastYearHigh;
     if (!lyMax || lyMax.length < 365) return '';
     return buildLinePath(
       lyMax.slice(0, 365).map((v, i) => {
@@ -389,10 +409,10 @@ export function ClimatologyChart({
         };
       })
     );
-  }, [lastYear?.tmaxF, innerW, values.min, values.max]);
+  }, [smoothedLastYearHigh, innerW, values.min, values.max]);
 
   const lastYearLowPath = useMemo(() => {
-    const lyMin = lastYear?.tminF;
+    const lyMin = smoothedLastYearLow;
     if (!lyMin || lyMin.length < 365) return '';
     return buildLinePath(
       lyMin.slice(0, 365).map((v, i) => {
@@ -403,7 +423,7 @@ export function ClimatologyChart({
         };
       })
     );
-  }, [lastYear?.tminF, innerW, values.min, values.max]);
+  }, [smoothedLastYearLow, innerW, values.min, values.max]);
   const pathFor = (k: SeriesKey) => {
     const pts = k === 'tminF' ? seriesPts.tmin : k === 'tavgF' ? seriesPts.tavg : seriesPts.tmax;
     return buildPath(pts);
@@ -734,7 +754,7 @@ export function ClimatologyChart({
     </Card>
     {allowExpand ? (
       <Modal visible={expandOpen} animationType="slide" onRequestClose={() => setExpandOpen(false)}>
-        <View style={styles.expandScreen}>
+        <View style={[styles.expandScreen, { paddingTop: Math.max(insets.top, 18) }]}>
           <View style={styles.expandHeader}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.expandTitle}>{title}</Text>

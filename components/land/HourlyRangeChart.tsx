@@ -913,14 +913,16 @@ function ToggleLegendPill({
 
 const s = StyleSheet.create({
   wrap: {
-    marginTop: 2,
+    marginTop: 10,
     borderRadius: 18,
-    backgroundColor: 'rgba(18, 28, 45, 0.50)',
-    paddingTop: 4,
+    backgroundColor: 'rgba(18, 28, 45, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 12,
     overflow: 'hidden',
   },
 
-  headerRow: { paddingHorizontal: 8, gap: 8 },
+  headerRow: { paddingHorizontal: 12, gap: 8, marginBottom: 6 },
   title: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
 
   strip: { flexDirection: 'row', gap: 10, paddingTop: 10 },
@@ -952,9 +954,9 @@ const s = StyleSheet.create({
   },
 
   pillSection: {
-    paddingHorizontal: 8,
-    paddingTop: 2,
-    paddingBottom: 4,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   pillSectionTitle: {
     color: 'rgba(255,255,255,0.40)',

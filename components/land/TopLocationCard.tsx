@@ -72,7 +72,7 @@ export function TopLocationCard({
             style={[styles.pill, styles.pillPrimary, wxLabEnabled && styles.pillPrimaryOn]}
           >
             <TabBarIcon name="flask-outline" color="white" />
-            <Text style={[styles.pillText, { color: 'white' }]}>wxNerd</Text>
+            <Text style={[styles.pillText, { color: 'white' }]}>wxLab</Text>
           </Pressable>
         </View>
       </View>
@@ -171,7 +171,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.16)',
   },
   pillPrimaryOn: {
-    backgroundColor: 'rgba(37, 99, 235, 0.92)',
+    backgroundColor: 'rgba(72, 201, 176, 0.22)',
+    borderColor: 'rgba(109, 236, 198, 0.34)',
   },
   pillText: {
     color: 'rgba(255,255,255,0.90)',

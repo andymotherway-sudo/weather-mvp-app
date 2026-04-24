@@ -238,14 +238,19 @@ export function MapRenderer(props: MapRendererProps) {
 
   const mapStyleUrl = mapStyle === 'dark' ? MAPLIBRE_DARK_STYLE_URL : MAPLIBRE_LIGHT_STYLE_URL;
 
-  const initialCamera = useMemo(() => {
-    const centerCoordinate: [number, number] = [initialRegion.longitude, initialRegion.latitude];
-    const zoomLevel = approxZoomFromLongitudeDelta(initialRegion.longitudeDelta);
-    return { centerCoordinate, zoomLevel };
-  }, [initialRegion.latitude, initialRegion.longitude, initialRegion.longitudeDelta]);
+  const mountInitialRegionRef = useRef<Region>(initialRegion);
+  const startRegion = mountInitialRegionRef.current;
+  const mountInitialCameraRef = useRef<{
+    centerCoordinate: [number, number];
+    zoomLevel: number;
+  }>({
+    centerCoordinate: [startRegion.longitude, startRegion.latitude],
+    zoomLevel: approxZoomFromLongitudeDelta(startRegion.longitudeDelta),
+  });
+  const initialCamera = mountInitialCameraRef.current;
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
-  const lastRegionRef = useRef<Region>(initialRegion);
+  const lastRegionRef = useRef<Region>(mountInitialRegionRef.current);
 
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
   const burstRef = useRef<{ t0: number; n: number }>({ t0: 0, n: 0 });
@@ -286,21 +291,14 @@ export function MapRenderer(props: MapRendererProps) {
 
   const isDegraded = Date.now() < degradedUntil;
 
-  useEffect(() => {
-    lastRegionRef.current = initialRegion;
-    setLiveZoom(initialCamera.zoomLevel);
-  }, [initialCamera.zoomLevel, initialRegion]);
-
   const regionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userActiveRef = useRef(false);
   const userEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const idleEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
       if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
-      if (idleEmitTimerRef.current) clearTimeout(idleEmitTimerRef.current);
     };
   }, []);
 
@@ -329,7 +327,9 @@ export function MapRenderer(props: MapRendererProps) {
       const lat = Number(center[1]);
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
         const lonDelta =
-          zoom !== null ? lonDeltaFromZoom(zoom) : lastRegionRef.current?.longitudeDelta ?? initialRegion.longitudeDelta;
+          zoom !== null
+            ? lonDeltaFromZoom(zoom)
+            : lastRegionRef.current?.longitudeDelta ?? mountInitialRegionRef.current.longitudeDelta;
         const latDelta = Math.max(0.0001, lonDelta * 0.6);
         nextRegion = {
           latitude: lat,
@@ -370,11 +370,6 @@ export function MapRenderer(props: MapRendererProps) {
         userActiveRef.current = false;
         emitRegion();
       }, 250);
-    } else {
-      if (idleEmitTimerRef.current) clearTimeout(idleEmitTimerRef.current);
-      idleEmitTimerRef.current = setTimeout(() => {
-        if (!userActiveRef.current) emitRegion();
-      }, 350);
     }
   };
 
@@ -383,8 +378,8 @@ export function MapRenderer(props: MapRendererProps) {
 
   const maxSlots = useMemo(() => {
     if (isDegraded) return 1;
-    if (liveZoom >= 10.0) return 1;
-    return 3;
+    if (liveZoom >= 8.5) return 1;
+    return 2;
   }, [isDegraded, liveZoom]);
 
   const radarTemplates = useMemo(() => {
@@ -401,7 +396,8 @@ export function MapRenderer(props: MapRendererProps) {
 
   const requestMaxZ = useMemo(() => {
     const providerMax = Math.max(0, Math.floor(radar.tileMaxZ ?? 10));
-    return clamp(providerMax, 0, providerMax);
+    const desired = Math.ceil(liveZoom) + (liveZoom >= 8 ? 1 : 2);
+    return clamp(desired, 0, providerMax);
   }, [radar.tileMaxZ]);
 
   const layerMaxZ = 24;
@@ -441,6 +437,7 @@ export function MapRenderer(props: MapRendererProps) {
         <MapLibreGL.Camera
           ref={cameraRef}
           defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
+          followUserLocation={false}
           animationDuration={0}
         />
 

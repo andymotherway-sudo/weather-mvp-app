@@ -1,4 +1,4 @@
-import MapLibreGL from '@maplibre/maplibre-react-native';
+ï»¿import MapLibreGL from '@maplibre/maplibre-react-native';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -207,7 +207,7 @@ const windText = (row: any) => {
   const g = num(row?.wgst, row?.wind_gust_kt, row?.windGustKt);
   return d == null && s == null && g == null
     ? '--'
-    : `${d == null ? 'VRB' : `${Math.round(d)}°`} / ${s == null ? '--' : `${Math.round(s)} kt`}${g == null ? '' : ` G${Math.round(g)}`}`;
+    : `${d == null ? 'VRB' : `${Math.round(d)}ï¿½`} / ${s == null ? '--' : `${Math.round(s)} kt`}${g == null ? '' : ` G${Math.round(g)}`}`;
 };
 const tempDew = (row: any) => {
   const t = num(row?.temp, row?.tempC, row?.temperature_c);
@@ -402,7 +402,7 @@ export default function AviationScreen() {
           <>
             <View style={s.modeAlt}><Seg onPress={() => setReportView('decoded')} active={reportView === 'decoded'} label="Decoded" /><Seg onPress={() => setReportView('raw')} active={reportView === 'raw'} label="Raw" /></View>
             <Glass style={s.card}>
-              <View style={s.cardHead}><View><Text style={s.cardTitle}>{station.station.code ?? station.station.label}</Text><Text style={s.cardSub}>{station.station.label}</Text></View><Learn onPress={() => openLearn('aviation-metar')} label="Learn" /></View>
+              <View style={s.cardHead}><View><Text style={s.cardTitle}>{station.station.code ?? station.station.label}</Text><Text style={s.cardSub}>{station.station.label}</Text></View><Learn onPress={() => openLearn('aviation-metar')} label="wxLearn" /></View>
               <Row label="Flight Category" value={flightCat(station.metar) ?? '--'} />
               <Row label="Wind" value={windText(station.metar)} />
               <Row label="Visibility" value={visText(station.metar)} />

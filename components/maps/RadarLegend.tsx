@@ -1,25 +1,10 @@
-// components/maps/RadarLegend.tsx
 import React from 'react';
 import { Text, View } from 'react-native';
 
 type LegendStyle = 'rainviewer' | 'generic';
 
-const RV_RAMP = [
-  '#60a5fa', // blue (light)
-  '#22d3ee', // cyan
-  '#34d399', // green
-  '#fde047', // yellow
-  '#fb923c', // orange
-  '#ef4444', // red (heavy)
-];
-
-const GENERIC_DBZ_RAMP = [
-  '#0f172a', // very low
-  '#22c55e', // green
-  '#84cc16', // yellow-green
-  '#f59e0b', // orange
-  '#ef4444', // red
-];
+const RV_RAMP = ['#60a5fa', '#22d3ee', '#34d399', '#fde047', '#fb923c', '#ef4444'];
+const GENERIC_DBZ_RAMP = ['#0f172a', '#22c55e', '#84cc16', '#f59e0b', '#ef4444'];
 
 export function RadarLegend(props: {
   style?: LegendStyle;
@@ -38,17 +23,22 @@ export function RadarLegend(props: {
 
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{title}</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{title}</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>
+          {style === 'rainviewer' ? 'Provider colors' : 'Reflectivity'}
+        </Text>
+      </View>
 
-      {/* Thin ramp */}
       <View
         style={{
-          height: 10,
+          height: 12,
           borderRadius: 999,
           overflow: 'hidden',
           borderWidth: 1,
           borderColor: 'rgba(255,255,255,0.12)',
           flexDirection: 'row',
+          backgroundColor: 'rgba(255,255,255,0.05)',
         }}
       >
         {ramp.map((c, idx) => (
@@ -56,24 +46,15 @@ export function RadarLegend(props: {
         ))}
       </View>
 
-      {/* Minimal labels */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '800' }}>
-          {leftLabel}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ color: 'rgba(255,255,255,0.76)', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 }}>
+          {leftLabel.toUpperCase()}
         </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '800' }}>
-          {midLabel}
-        </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '800' }}>
-          {rightLabel}
+        <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '800' }}>{midLabel}</Text>
+        <Text style={{ color: 'rgba(255,255,255,0.76)', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 }}>
+          {rightLabel.toUpperCase()}
         </Text>
       </View>
-
-      <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11 }}>
-        {style === 'rainviewer'
-          ? 'Colors match provider styling'
-          : 'dBZ-ish scale · varies by product/source'}
-      </Text>
     </View>
   );
 }

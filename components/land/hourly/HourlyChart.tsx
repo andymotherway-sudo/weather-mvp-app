@@ -737,7 +737,7 @@ function renderGridWithTicks(args: {
   showRight: boolean;
 }) {
   const { xLeft, xRight, top, height, leftAxis, rightAxis, leftTicks, rightTicks, leftLabel, rightLabel, showRight } = args;
-  const elements: JSX.Element[] = [];
+  const elements: React.ReactElement[] = [];
 
   if (leftLabel) {
     elements.push(<SvgText key="ylabL" x={8} y={top + 10} fontSize="9" fill="rgba(255,255,255,0.35)" fontWeight="800">{leftLabel}</SvgText>);

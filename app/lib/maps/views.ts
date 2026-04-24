@@ -25,11 +25,19 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'wildfire',
     title: 'Wildfire',
-    presetEnabledLayers: ['radar.reflectivity', 'wildfire.smoke', 'wildfire.perimeters'],
+    presetEnabledLayers: [
+      'radar.reflectivity',
+      'wildfire.smoke',
+      'wildfire.perimeters',
+      'wildfire.hazard',
+      'wildfire.firewx',
+    ],
     presetLayerOpacity: {
       'radar.reflectivity': 0.85,
       'wildfire.smoke': 0.55,
       'wildfire.perimeters': 0.9,
+      'wildfire.hazard': 0.58,
+      'wildfire.firewx': 0.76,
     },
     timelineDriverLayer: 'radar.reflectivity',
   },

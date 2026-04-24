@@ -3,8 +3,21 @@ import React from 'react';
 import { View } from 'react-native';
 import MapView, { UrlTile } from 'react-native-maps';
 
-import { iemRadarTileTemplate } from '../../app/lib/maps/radarIem';
 import type { MapRuntimeState } from '../../app/lib/maps/types';
+
+function iemRadarTileTemplate({
+  radarId,
+  product,
+  stamp,
+}: {
+  radarId: string;
+  product: string;
+  stamp: string | 0;
+}) {
+  const normalizedRadar = radarId.startsWith('K') ? radarId.slice(1) : radarId;
+  const normalizedStamp = stamp === 0 || stamp === 'latest' ? '900913' : String(stamp);
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${normalizedRadar}-${product}-${normalizedStamp}/{z}/{x}/{y}.png?alpha=1`;
+}
 
 export function MapCanvas(props: {
   state: MapRuntimeState;

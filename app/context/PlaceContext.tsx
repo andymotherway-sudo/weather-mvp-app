@@ -2,6 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { formatCompactLocation } from '../lib/locations/formats';
 import { useLocations } from '../lib/locations/useLocations';
 
 export type Place = {
@@ -63,7 +64,11 @@ type DefaultCity = {
 };
 
 function formatCity(c: DefaultCity) {
-  return `${c.name}${c.admin1 ? `, ${c.admin1}` : ''}${c.country ? `, ${c.country}` : ''}`;
+  return formatCompactLocation({
+    name: c.name,
+    admin1: c.admin1,
+    country: c.country,
+  });
 }
 
 function placeFromDefaultCity(c: DefaultCity): Place {
