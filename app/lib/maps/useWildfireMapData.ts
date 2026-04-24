@@ -35,9 +35,9 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
 };
 
 const CURRENT_WILDFIRE_INCIDENTS_QUERY_URL =
-  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query';
+  'https://services5.arcgis.com/b7cJ4YYc9GM63RSz/ArcGIS/rest/services/USA_Active_Wildfires___Current_Incidents/FeatureServer/0/query';
 const CURRENT_WILDFIRE_PERIMETERS_QUERY_URL =
-  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/1/query';
+  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
 const NOAA_HMS_SMOKE_QUERY_URL =
   'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Smoke_Detection_%28v1%29/FeatureServer/0/query';
 

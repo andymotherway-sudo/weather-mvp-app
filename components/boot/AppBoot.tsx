@@ -107,10 +107,13 @@ export function AppBoot({ children }: Props) {
   const gatePending = hasDefaultCity == null;
   const inOnboarding = String(segments?.[0] ?? '') === '(onboarding)';
   const mustOnboard = bootReady && hasDefaultCity === false && !inOnboarding;
+  const shouldLeaveOnboarding = bootReady && hasDefaultCity === true && inOnboarding;
 
   return (
     <View style={styles.root}>
-      {mustOnboard ? <Redirect href={'/(onboarding)/default-city' as any} /> : children}
+      {mustOnboard ? <Redirect href={'/(onboarding)/default-city' as any} /> : null}
+      {shouldLeaveOnboarding ? <Redirect href={'/' as any} /> : null}
+      {children}
 
       {!overlayDone && (
         <Animated.View

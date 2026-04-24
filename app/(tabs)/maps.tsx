@@ -83,6 +83,7 @@ function getSimpleStatus(args: {
   frontsDay2Enabled: boolean;
   frontsDay3Enabled: boolean;
   cloudsEnabled: boolean;
+  wildfireHotspotsEnabled: boolean;
   wildfireSmokeEnabled: boolean;
   wildfireEnabled: boolean;
   wildfireHazardEnabled: boolean;
@@ -104,6 +105,7 @@ function getSimpleStatus(args: {
     frontsDay2Enabled,
     frontsDay3Enabled,
     cloudsEnabled,
+    wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
     wildfireEnabled,
     wildfireHazardEnabled,
@@ -136,6 +138,7 @@ function getSimpleStatus(args: {
 
   if (viewId === 'wildfire') {
     const parts = [
+      wildfireHotspotsEnabled ? 'Incidents on' : null,
       wildfireSmokeEnabled ? 'Smoke on' : null,
       wildfireEnabled ? 'Perimeters on' : null,
       wildfireHazardEnabled ? 'Fire danger on' : null,
@@ -306,6 +309,7 @@ export default function MapsScreen() {
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const wildfireSmokeEnabled = !!state.layers?.['wildfire.smoke']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
+  const wildfireHotspotsEnabled = !!state.layers?.['wildfire.hotspots']?.enabled;
   const wildfireHazardEnabled = !!state.layers?.['wildfire.hazard']?.enabled;
   const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
@@ -721,21 +725,13 @@ export default function MapsScreen() {
     if (!routeFocusTarget) return;
     if (!mapCameraRef.current?.setCamera) return;
 
-    const nextRegion: Region = {
-      latitude: routeFocusTarget.lat,
-      longitude: routeFocusTarget.lon,
-      latitudeDelta: 4,
-      longitudeDelta: 4,
-      zoom: 7,
-    };
-
     mapCameraRef.current.setCamera({
       centerCoordinate: [routeFocusTarget.lon, routeFocusTarget.lat],
       zoomLevel: 7,
       animationDuration: 700,
+      followUserLocation: false,
     });
-    setRegion(nextRegion);
-    setMapZoom(7);
+    setAnchorPoint({ lat: routeFocusTarget.lat, lon: routeFocusTarget.lon });
 
     setConsumedRouteFocusKey(routeFocusTarget.key);
 
@@ -753,8 +749,7 @@ export default function MapsScreen() {
 
   const effectiveRegion = region ?? stableInitialRegion;
   const wildfireVectorEnabled =
-    state.viewId === 'wildfire' &&
-    (wildfireSmokeEnabled || wildfireEnabled || wildfireDetailLoading || selectedWildfire != null);
+    state.viewId === 'wildfire';
   const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
   const selectedWildfireSmokeBands = useMemo(
     () => getNearbySmokeBands(selectedWildfire, wildfireData.smoke),
@@ -798,22 +793,15 @@ export default function MapsScreen() {
   );
 
   const recenterToGps = async () => {
-    const coords = (await loc.refreshCurrentLocation()) ?? loc.state.currentCoords;
+    const coords = loc.state.currentCoords ?? (await loc.refreshCurrentLocation());
     if (!coords) return;
-    const nextRegion: Region = {
-      latitude: coords.lat,
-      longitude: coords.lon,
-      latitudeDelta: 4,
-      longitudeDelta: 4,
-      zoom: 9,
-    };
+    setAnchorPoint({ lat: coords.lat, lon: coords.lon });
     mapCameraRef.current?.setCamera?.({
       centerCoordinate: [coords.lon, coords.lat],
       zoomLevel: 9,
       animationDuration: 450,
+      followUserLocation: false,
     });
-    setRegion(nextRegion);
-    setMapZoom(9);
   };
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
@@ -829,6 +817,7 @@ export default function MapsScreen() {
     frontsDay2Enabled,
     frontsDay3Enabled,
     cloudsEnabled,
+    wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
     wildfireEnabled,
     wildfireHazardEnabled,
@@ -1140,7 +1129,7 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
-          {wildfireEnabled ? (
+          {state.viewId === 'wildfire' ? (
             <MapLibreGL.ShapeSource id="wildfire-incident-source" shape={wildfireData.incidents as any}>
               <MapLibreGL.CircleLayer
                 id="wildfire-incident-halo"
