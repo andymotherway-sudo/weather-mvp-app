@@ -35,7 +35,7 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
 };
 
 const CURRENT_WILDFIRE_INCIDENTS_QUERY_URL =
-  'https://services5.arcgis.com/b7cJ4YYc9GM63RSz/ArcGIS/rest/services/USA_Active_Wildfires___Current_Incidents/FeatureServer/0/query';
+  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query';
 const CURRENT_WILDFIRE_PERIMETERS_QUERY_URL =
   'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
 const NOAA_HMS_SMOKE_QUERY_URL =
@@ -411,7 +411,7 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
             NOAA_HMS_SMOKE_QUERY_URL,
             {
               ...shared,
-              outFields: 'OBJECTID,Density,Satellite,Start,End',
+              outFields: 'FID,Density,Satellite,Start,End_',
             },
             controller.signal
           ),

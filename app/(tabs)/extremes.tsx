@@ -55,12 +55,13 @@ function pushLandExtremeToMap(
   router.push({
     pathname: '/maps',
     params: {
+      view: 'radar',
+      focus: 'once',
       lat: String(x.lat),
       lon: String(x.lon),
       label: x.name,
-      focus: 'once',
       source: 'extremes',
-      targetType: 'land',
+      targetType: 'land-extreme',
     },
   });
 }

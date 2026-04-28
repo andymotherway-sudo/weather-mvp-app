@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSettings } from '../context/SettingsContext';
 import { useWxLab } from '../context/WxLabContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
@@ -42,6 +43,20 @@ function safeNum(v: any): number | null {
 
 function safeStr(v: any): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
+  switch (model) {
+    case 'gfs':
+      return 'NOAA U.S.';
+    case 'ecmwf':
+      return 'ECMWF';
+    case 'dwd_icon':
+      return 'DWD ICON';
+    case 'best_match':
+    default:
+      return 'Best match';
+  }
 }
 
 function weatherCodeToLabel(code: number | null): string {
@@ -276,11 +291,13 @@ function HourlyWithCoords({
   onVisualStateChange: (state: VisualState) => void;
 }) {
   const units: UnitSystem = 'us';
+  const { forecastModel } = useSettings();
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
     lon: coords.lon,
     days: 5,
+    model: forecastModel,
   });
 
   useEffect(() => {
@@ -343,6 +360,7 @@ function HourlyWithCoords({
   const heroWind = safeNum(leadHour.windMph);
   const heroGust = safeNum(leadHour.windGustMph);
   const heroPressure = safeNum(leadHour.pressureHpa);
+  const modelLabel = forecastModelLabel(forecastModel);
 
   return (
     <>
@@ -360,6 +378,7 @@ function HourlyWithCoords({
             <Text style={styles.heroTemp}>{heroTemp != null ? `${Math.round(heroTemp)}°` : '—'}</Text>
             <Text style={styles.heroCondition}>{heroCondition}</Text>
             <Text style={styles.heroSummary}>{heroSummary}</Text>
+            <Text style={styles.heroNowText}>Model: {modelLabel}</Text>
           </View>
 
           <View style={styles.heroRight}>

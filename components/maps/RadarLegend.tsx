@@ -1,10 +1,11 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 
-type LegendStyle = 'rainviewer' | 'generic';
+type LegendStyle = 'rainviewer' | 'generic' | 'reflectivity' | 'velocity';
 
-const RV_RAMP = ['#60a5fa', '#22d3ee', '#34d399', '#fde047', '#fb923c', '#ef4444'];
-const GENERIC_DBZ_RAMP = ['#0f172a', '#22c55e', '#84cc16', '#f59e0b', '#ef4444'];
+const RV_RAMP = ['#1d4ed8', '#38bdf8', '#34d399', '#fde047', '#fb923c', '#dc2626'];
+const REFLECTIVITY_RAMP = ['#1f2937', '#2563eb', '#22c55e', '#84cc16', '#facc15', '#f97316', '#dc2626', '#7e22ce'];
+const VELOCITY_RAMP = ['#1d4ed8', '#38bdf8', '#93c5fd', '#e5e7eb', '#fca5a5', '#ef4444', '#991b1b'];
 
 export function RadarLegend(props: {
   style?: LegendStyle;
@@ -12,27 +13,67 @@ export function RadarLegend(props: {
   leftLabel?: string;
   midLabel?: string;
   rightLabel?: string;
+  compact?: boolean;
 }) {
   const style = props.style ?? 'rainviewer';
-  const ramp = style === 'rainviewer' ? RV_RAMP : GENERIC_DBZ_RAMP;
+  const compact = !!props.compact;
+  const normalizedStyle = style === 'generic' ? 'reflectivity' : style;
+  const ramp =
+    normalizedStyle === 'rainviewer'
+      ? RV_RAMP
+      : normalizedStyle === 'velocity'
+        ? VELOCITY_RAMP
+        : REFLECTIVITY_RAMP;
 
-  const title = props.title ?? (style === 'rainviewer' ? 'Radar intensity' : 'Reflectivity');
-  const leftLabel = props.leftLabel ?? (style === 'rainviewer' ? 'Light' : '<5');
-  const midLabel = props.midLabel ?? (style === 'rainviewer' ? 'Mod' : '30');
-  const rightLabel = props.rightLabel ?? (style === 'rainviewer' ? 'Heavy' : '60+');
+  const title =
+    props.title ??
+    (normalizedStyle === 'rainviewer'
+      ? 'Radar intensity'
+      : normalizedStyle === 'velocity'
+        ? 'Radial velocity'
+        : 'Reflectivity');
+  const leftLabel =
+    props.leftLabel ??
+    (normalizedStyle === 'rainviewer'
+      ? 'Light'
+      : normalizedStyle === 'velocity'
+        ? 'Away'
+        : 'Light');
+  const midLabel =
+    props.midLabel ??
+    (normalizedStyle === 'rainviewer'
+      ? 'Moderate'
+      : normalizedStyle === 'velocity'
+        ? 'Neutral'
+        : 'Moderate');
+  const rightLabel =
+    props.rightLabel ??
+    (normalizedStyle === 'rainviewer'
+      ? 'Heavy'
+      : normalizedStyle === 'velocity'
+        ? 'Toward'
+        : 'Severe');
+  const helperLabel =
+    normalizedStyle === 'rainviewer'
+      ? 'Provider colors'
+      : normalizedStyle === 'velocity'
+        ? 'Wind motion'
+        : 'Precip intensity';
 
   return (
-    <View style={{ gap: 8 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{title}</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>
-          {style === 'rainviewer' ? 'Provider colors' : 'Reflectivity'}
-        </Text>
-      </View>
+    <View style={{ gap: compact ? 5 : 8 }}>
+      {!compact ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{title}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>
+            {helperLabel}
+          </Text>
+        </View>
+      ) : null}
 
       <View
         style={{
-          height: 12,
+          height: compact ? 18 : 12,
           borderRadius: 999,
           overflow: 'hidden',
           borderWidth: 1,
@@ -47,11 +88,27 @@ export function RadarLegend(props: {
       </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: 'rgba(255,255,255,0.76)', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 }}>
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.76)',
+            fontSize: compact ? 9 : 10,
+            fontWeight: '900',
+            letterSpacing: 0.4,
+          }}
+        >
           {leftLabel.toUpperCase()}
         </Text>
-        <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '800' }}>{midLabel}</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.76)', fontSize: 10, fontWeight: '900', letterSpacing: 0.4 }}>
+        <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: compact ? 9 : 10, fontWeight: '800' }}>
+          {midLabel}
+        </Text>
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.76)',
+            fontSize: compact ? 9 : 10,
+            fontWeight: '900',
+            letterSpacing: 0.4,
+          }}
+        >
           {rightLabel.toUpperCase()}
         </Text>
       </View>

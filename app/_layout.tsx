@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppBoot } from '../components/boot/AppBoot';
 
@@ -22,8 +23,9 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: APP_BG }}>
-      <StatusBar style="light" translucent={false} backgroundColor={APP_BG} />
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: APP_BG }}>
+        <StatusBar style="light" translucent={false} backgroundColor={APP_BG} />
 
       <SettingsProvider>
         {/* ✅ replaces LocationProvider */}
@@ -45,7 +47,8 @@ export default function RootLayout() {
             </WxLabProvider>
           </PlaceProvider>
         </LocationsProvider>
-      </SettingsProvider>
-    </View>
+        </SettingsProvider>
+      </View>
+    </SafeAreaProvider>
   );
 }

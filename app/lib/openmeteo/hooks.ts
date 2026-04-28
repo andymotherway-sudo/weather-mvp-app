@@ -65,6 +65,7 @@ export type OpenMeteoForecastOpts = {
   lon: number | null;
   days?: number; // default 3
   pastDays?: number; // default 0
+  model?: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon';
 };
 
 type OpenMeteoForecastArg = number | OpenMeteoForecastOpts;
@@ -94,13 +95,21 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         lon: arg.lon ?? null,
         days: arg.days ?? 3,
         pastDays: arg.pastDays ?? 0,
+        model: arg.model ?? 'best_match',
       };
     }
 
-    return { lat: null, lon: null, days: typeof arg === 'number' ? arg : 3, pastDays: 0 };
+    return { lat: null, lon: null, days: typeof arg === 'number' ? arg : 3, pastDays: 0, model: 'best_match' };
   }, [arg]);
 
-  const days = opts.days ?? 3;
+  const model = opts.model ?? 'best_match';
+  const requestedDays = opts.days ?? 3;
+  const days =
+    model === 'dwd_icon'
+      ? Math.min(requestedDays, 7)
+      : model === 'ecmwf'
+        ? Math.min(requestedDays, 15)
+        : Math.min(requestedDays, 16);
   const pastDays = opts.pastDays ?? 0;
 
   const latKey = useMemo(() => (opts.lat == null ? null : toKey3(opts.lat)), [opts.lat]);
@@ -169,6 +178,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           timezone: 'auto',
           units: 'imperial',
         });
+        if (model !== 'best_match') params.set('model', model);
         if (pastDays > 0) params.set('past_days', String(pastDays));
         const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
 
@@ -296,7 +306,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         setRefreshing(false);
       }
     },
-    [latKey, lonKey, days, pastDays]
+    [latKey, lonKey, days, pastDays, model]
   );
 
   useEffect(() => {

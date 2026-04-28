@@ -39,15 +39,6 @@ export const LAYERS: LayerDefinition[] = [
     zIndex: 40,
   },
   {
-    id: 'wildfire.hazard',
-    title: 'Fire Danger',
-    kind: 'tile',
-    visibility: 'both',
-    defaultOpacity: 0.58,
-    timestampMode: 'latest_snapshot',
-    zIndex: 35,
-  },
-  {
     id: 'wildfire.firewx',
     title: 'Fire Weather',
     kind: 'tile',

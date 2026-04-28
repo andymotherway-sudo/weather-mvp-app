@@ -24,6 +24,7 @@ import {
 } from '../../components/common/NerdyExplainModal';
 
 import { usePlace } from '../context/PlaceContext';
+import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
@@ -677,21 +678,18 @@ export default function SolarScreen() {
         >
           <View style={styles.headerRow}>
             <View style={styles.brandRow}>
-              <Image
-                source={OMNI_MARK_WORD}
-                style={styles.brandWordmark}
-                resizeMode="contain"
-              />
-              <View style={styles.domainPill}>
-                <Text style={styles.domainPillText}>Astro</Text>
+              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+              <View style={{ flex: 1 }}>
+                <View style={styles.domainPill}>
+                  <Text style={styles.domainPillText}>Space</Text>
+                </View>
+                <Text style={styles.headerTitle}>Space</Text>
+                <Text style={styles.headerSubline} numberOfLines={2}>
+                  {active?.name ? `${active.name} · night sky forecast and solar activity` : 'Night sky forecast, moonlight, observing conditions, aurora context, and space weather'}
+                </Text>
               </View>
             </View>
           </View>
-
-          <Text style={styles.subtitle}>
-            Night sky forecast, moonlight, observing conditions, aurora context,
-            and space weather
-          </Text>
 
           {!active ? (
             <View style={styles.card}>
@@ -1100,6 +1098,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 6,
+    flex: 1,
   },
 
   brandWordmark: {
@@ -1124,11 +1123,12 @@ const styles = StyleSheet.create({
     color: 'white',
   },
 
-  subtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
-    marginBottom: 14,
-    lineHeight: 16,
+  headerTitle: {
+    ...typography.title,
+  },
+
+  headerSubline: {
+    ...typography.subtitle,
   },
 
   sectionHeader: {

@@ -1,10 +1,11 @@
 // app/profile.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { usePlace, type Place } from './context/PlaceContext';
+import { useSettings } from './context/SettingsContext';
 import { formatCompactLocation } from './lib/locations/formats';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
@@ -23,11 +24,44 @@ function placeFromDefaultCity(c: DefaultCity): Place {
   return { id, name: formatCity(c), lat: c.lat, lon: c.lon, source: 'search' };
 }
 
+const FORECAST_MODEL_OPTIONS = [
+  { key: 'best_match', label: 'Best match' },
+  { key: 'gfs', label: 'NOAA U.S.' },
+  { key: 'ecmwf', label: 'ECMWF' },
+  { key: 'dwd_icon', label: 'DWD ICON' },
+] as const;
+
 export default function ProfileScreen() {
+  const params = useLocalSearchParams<{ returnTo?: string; returnLabel?: string }>();
   const { active, useGPS, setActive } = usePlace();
+  const {
+    tempUnit,
+    setTempUnit,
+    baseMapStyle,
+    setBaseMapStyle,
+    radarProvider,
+    setRadarProvider,
+    forecastModel,
+    setForecastModel,
+  } = useSettings();
   const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-mark-word.png'), []);
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const leaveSettings = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    const returnTo = typeof params.returnTo === 'string' ? params.returnTo : null;
+    if (returnTo) {
+      router.replace(returnTo as any);
+      return;
+    }
+
+    router.replace('/(tabs)' as any);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -68,6 +102,14 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.hero}>
+          <Pressable style={styles.backButton} onPress={leaveSettings}>
+            <Text style={styles.backButtonText}>
+              {typeof params.returnLabel === 'string' && params.returnLabel.trim()
+                ? `Back to ${params.returnLabel}`
+                : 'Back'}
+            </Text>
+          </Pressable>
+
           <View style={styles.heroRow}>
             <View style={styles.logoWrap}>
               <View style={styles.logoGlow} />
@@ -107,6 +149,81 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.label}>Preferences</Text>
+          <Text style={styles.value}>Units and map behavior</Text>
+
+          <View style={{ height: 14 }} />
+
+          <Text style={styles.label}>Temperature</Text>
+          <View style={styles.rowButtons}>
+            <Pressable
+              style={[styles.pill, tempUnit === 'F' ? styles.pillActive : null]}
+              onPress={() => setTempUnit('F')}
+            >
+              <Text style={styles.pillText}>Fahrenheit</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.pill, tempUnit === 'C' ? styles.pillActive : null]}
+              onPress={() => setTempUnit('C')}
+            >
+              <Text style={styles.pillText}>Celsius</Text>
+            </Pressable>
+          </View>
+
+          <View style={{ height: 14 }} />
+
+          <Text style={styles.label}>Base Map</Text>
+          <View style={styles.rowButtons}>
+            <Pressable
+              style={[styles.pill, baseMapStyle === 'dark' ? styles.pillActive : null]}
+              onPress={() => setBaseMapStyle('dark')}
+            >
+              <Text style={styles.pillText}>Dark</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.pill, baseMapStyle === 'light' ? styles.pillActive : null]}
+              onPress={() => setBaseMapStyle('light')}
+            >
+              <Text style={styles.pillText}>Light</Text>
+            </Pressable>
+          </View>
+
+          <View style={{ height: 14 }} />
+
+          <Text style={styles.label}>Radar Provider</Text>
+          <View style={styles.rowButtons}>
+            <Pressable
+              style={[styles.pill, radarProvider === 'iem' ? styles.pillActive : null]}
+              onPress={() => setRadarProvider('iem')}
+            >
+              <Text style={styles.pillText}>IEM</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.pill, radarProvider === 'rainviewer' ? styles.pillActive : null]}
+              onPress={() => setRadarProvider('rainviewer')}
+            >
+              <Text style={styles.pillText}>RainViewer</Text>
+            </Pressable>
+          </View>
+
+          <View style={{ height: 14 }} />
+
+          <Text style={styles.label}>Forecast Model</Text>
+          <Text style={styles.helperText}>Used by wxLab and forecast views. Best match remains the safest default.</Text>
+          <View style={styles.stackButtons}>
+            {FORECAST_MODEL_OPTIONS.map((option) => (
+              <Pressable
+                key={option.key}
+                style={[styles.pill, forecastModel === option.key ? styles.pillActive : null]}
+                onPress={() => setForecastModel(option.key)}
+              >
+                <Text style={styles.pillText}>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         <Pressable
           style={styles.primaryButton}
           onPress={() =>
@@ -119,6 +236,10 @@ export default function ProfileScreen() {
           <Text style={styles.primaryButtonText}>
             {defaultCity ? 'Change Default City' : 'Set Default City'}
           </Text>
+        </Pressable>
+
+        <Pressable style={styles.secondaryButton} onPress={leaveSettings}>
+          <Text style={styles.secondaryButtonText}>Done</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -149,6 +270,17 @@ const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' },
 
   hero: { marginBottom: 16 },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  backButtonText: { color: 'white', fontWeight: '800', fontSize: 13 },
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
 
   logoWrap: { width: 64, height: 64, justifyContent: 'center', alignItems: 'center' },
@@ -174,8 +306,10 @@ const styles = StyleSheet.create({
   },
   label: { color: 'rgba(255,255,255,0.58)', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
   value: { color: 'white', fontSize: 16, fontWeight: '900', marginTop: 6 },
+  helperText: { color: 'rgba(255,255,255,0.62)', fontSize: 12, lineHeight: 17, marginTop: 6, marginBottom: 10 },
 
   rowButtons: { flexDirection: 'row', gap: 10 },
+  stackButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   pill: {
     flex: 1,
     paddingVertical: 12,
@@ -184,6 +318,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
     alignItems: 'center',
+  },
+  pillActive: {
+    backgroundColor: 'rgba(37,99,235,0.35)',
+    borderColor: 'rgba(147,197,253,0.55)',
   },
   pillDisabled: { opacity: 0.45 },
   pillText: { color: 'white', fontWeight: '900' },
@@ -197,4 +335,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
   },
   primaryButtonText: { color: 'white', fontWeight: '900', fontSize: 16 },
+  secondaryButton: {
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  secondaryButtonText: { color: 'white', fontWeight: '900', fontSize: 16 },
 });

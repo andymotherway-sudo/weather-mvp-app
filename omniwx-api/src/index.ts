@@ -166,6 +166,33 @@ type FireContextPayload = {
   };
 };
 
+type FireRestrictionStatus = "restrictions" | "closure" | "none" | "unknown";
+
+type FireRestrictionCardRecord = {
+  title: string;
+  url: string | null;
+  body: string | null;
+  startDate: string | null;
+  forestOrder: string | null;
+};
+
+type FireRestrictionAgency = "USFS" | "BLM" | "MN DNR";
+
+type FireRestrictionRecord = {
+  id: string;
+  agency: FireRestrictionAgency;
+  forestName: string;
+  region: string | null;
+  slug: string;
+  forestOrgCode?: string | null;
+  forestNumber?: string | null;
+  status: FireRestrictionStatus;
+  summary: string | null;
+  sourceUrl: string | null;
+  checkedAt: string;
+  cards: FireRestrictionCardRecord[];
+};
+
 type AstroLocationPayload = {
   ok: true;
   lat: number;
@@ -1116,12 +1143,22 @@ function buildOmHourlyUpstream(url: URL) {
 
   const tz = url.searchParams.get("timezone") ?? url.searchParams.get("tz") ?? "auto";
   const units = parseUnits(url.searchParams.get("units"));
+  const requestedModel = (url.searchParams.get("model") ?? "best_match").trim().toLowerCase();
 
   const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
   const windUnit = units === "imperial" ? "mph" : "kmh";
   const precipUnit = units === "imperial" ? "inch" : "mm";
 
-  const upstream = new URL("https://api.open-meteo.com/v1/forecast");
+  const endpointPath =
+    requestedModel === "gfs"
+      ? "/v1/gfs"
+      : requestedModel === "ecmwf"
+        ? "/v1/ecmwf"
+        : requestedModel === "dwd_icon"
+          ? "/v1/dwd-icon"
+          : "/v1/forecast";
+
+  const upstream = new URL(`https://api.open-meteo.com${endpointPath}`);
   upstream.searchParams.set("latitude", lats.join(","));
   upstream.searchParams.set("longitude", lons.join(","));
   if (hourly) upstream.searchParams.set("hourly", hourly);
@@ -1136,7 +1173,7 @@ function buildOmHourlyUpstream(url: URL) {
   const pastDays = url.searchParams.get("past_days");
   if (pastDays) upstream.searchParams.set("past_days", pastDays);
 
-  return { ok: true as const, upstreamUrl: upstream.toString(), lats, lons, units };
+  return { ok: true as const, upstreamUrl: upstream.toString(), lats, lons, units, model: requestedModel };
 }
 
 function buildOmHourlyCacheKey(reqUrl: URL, lats: string[], lons: string[], units: Units) {
@@ -1732,6 +1769,16 @@ function slugifyForestName(name: string) {
     .replace(/-+/g, "-");
 }
 
+function titleCaseWords(name: string) {
+  return String(name)
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (match) => match.toUpperCase())
+    .replace(/\bBlm\b/g, "BLM")
+    .replace(/\bUsa\b/g, "USA")
+    .replace(/\bNca\b/g, "NCA")
+    .trim();
+}
+
 function stripHtml(value: string) {
   return value
     .replace(/<[^>]+>/g, " ")
@@ -1741,6 +1788,362 @@ function stripHtml(value: string) {
     .replace(/&quot;/g, '"')
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function stripHtmlWithLineBreaks(value: string) {
+  return value
+    .replace(/<(?:br|br\/)\s*>/gi, "\n")
+    .replace(/<\/(?:p|div|section|article|dd|dt|li|ul|ol|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+    .replace(/<(?:p|div|section|article|dd|dt|li|ul|ol|h1|h2|h3|h4|h5|h6)[^>]*>/gi, "\n")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function normalizeBlmUnitName(value: string) {
+  return titleCaseWords(value)
+    .replace(/\bDistrict Office\b/gi, "")
+    .replace(/\bDistrict\b/gi, "")
+    .replace(/\bField Office\b/gi, "")
+    .replace(/\bOffice\b/gi, "")
+    .replace(/\bNw Oregon\b/gi, "Northwest Oregon")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeMinnesotaCountyName(value: string) {
+  return titleCaseWords(value)
+    .replace(/\bCounty\b/gi, "")
+    .replace(/\bSaint\b/gi, "St.")
+    .replace(/\bSt\.?\s+Louis\b/gi, "St. Louis")
+    .replace(/\bBeltrami\s+North\b/gi, "Beltrami")
+    .replace(/\bBeltrami\s+South\b/gi, "Beltrami")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function classifyFireRestrictionStatus(cards: FireRestrictionCardRecord[]): FireRestrictionStatus {
+  if (!cards.length) return "none";
+
+  const text = cards.map((card) => `${card.title} ${card.body ?? ""}`.toLowerCase()).join(" \n ");
+
+  if (
+    text.includes("no fire restrictions") ||
+    text.includes("termination order") ||
+    text.includes("rescinded") ||
+    text.includes("rescission")
+  ) {
+    return "none";
+  }
+
+  if (
+    text.includes("closure order") ||
+    text.includes("area closure") ||
+    text.includes("area closed") ||
+    text.includes("forest closure") ||
+    text.includes("temporary closure") ||
+    text.includes("closed to entry")
+  ) {
+    return "closure";
+  }
+
+  return "restrictions";
+}
+
+function summarizeFireRestrictionStatus(status: FireRestrictionStatus, forestName: string) {
+  switch (status) {
+    case "closure":
+      return `Closures are listed for ${forestName}.`;
+    case "restrictions":
+      return `Fire restrictions are listed for ${forestName}.`;
+    case "none":
+      return `No active fire restrictions are listed for ${forestName}.`;
+    default:
+      return `Restriction status is unavailable for ${forestName}.`;
+  }
+}
+
+function summarizeMinnesotaRestrictionStatus(status: FireRestrictionStatus, countyName: string) {
+  switch (status) {
+    case "restrictions":
+      return `Minnesota DNR burning restrictions are in effect for ${countyName}.`;
+    case "closure":
+      return `Closures are listed for ${countyName}.`;
+    case "none":
+      return `No active Minnesota DNR burning restrictions are listed for ${countyName}.`;
+    default:
+      return `Minnesota DNR restriction status is unavailable for ${countyName}.`;
+  }
+}
+
+const BLM_AZ_RESTRICTIONS_URL =
+  "https://www.blm.gov/programs/public-safety-and-fire/fire/regional-info/arizona/fire-restrictions";
+const BLM_ORWA_RESTRICTIONS_URL =
+  "https://www.blm.gov/programs/fire/regional-info/oregon-washington/fire-restrictions";
+const MINNESOTA_DNR_RESTRICTIONS_URL =
+  "https://www.dnr.state.mn.us/forestry/fire/firerating_restrictions.html";
+const MINNESOTA_DNR_PLANNING_URL =
+  "https://www.dnr.state.mn.us/forestry/fire/planning.html";
+
+const BLM_AZ_DISTRICTS = [
+  {
+    anchor: "ASD",
+    districtName: "Arizona Strip District",
+    offices: ["AZA01000"],
+  },
+  {
+    anchor: "CRD",
+    districtName: "Colorado River District",
+    offices: ["AZC01000", "AZC02000", "AZC03000"],
+  },
+  {
+    anchor: "GID",
+    districtName: "Gila District",
+    offices: ["AZG01000", "AZG02000"],
+  },
+  {
+    anchor: "PHD",
+    districtName: "Phoenix District",
+    offices: ["AZP01000", "AZP02000"],
+  },
+] as const;
+
+const BLM_ORWA_DISTRICT_NAMES = [
+  "Burns",
+  "Coos Bay",
+  "Lakeview",
+  "Medford",
+  "Northwest Oregon",
+  "Prineville",
+  "Roseburg",
+  "Spokane",
+  "Vale",
+] as const;
+
+const BLM_AZ_FIELD_OFFICE_META: Record<
+  string,
+  { name: string; parentName: string; anchor: (typeof BLM_AZ_DISTRICTS)[number]["anchor"] }
+> = {
+  AZA01000: {
+    name: "Arizona Strip Field Office",
+    parentName: "Arizona Strip District Office",
+    anchor: "ASD",
+  },
+  AZC01000: {
+    name: "Kingman Field Office",
+    parentName: "Colorado River District Office",
+    anchor: "CRD",
+  },
+  AZC02000: {
+    name: "Yuma Field Office",
+    parentName: "Colorado River District Office",
+    anchor: "CRD",
+  },
+  AZC03000: {
+    name: "Lake Havasu Field Office",
+    parentName: "Colorado River District Office",
+    anchor: "CRD",
+  },
+  AZG01000: {
+    name: "Safford Field Office",
+    parentName: "Gila District Office",
+    anchor: "GID",
+  },
+  AZG02000: {
+    name: "Tucson Field Office",
+    parentName: "Gila District Office",
+    anchor: "GID",
+  },
+  AZP01000: {
+    name: "Hassayampa Field Office",
+    parentName: "Phoenix District Office",
+    anchor: "PHD",
+  },
+  AZP02000: {
+    name: "Lower Sonoran Field Office",
+    parentName: "Phoenix District Office",
+    anchor: "PHD",
+  },
+};
+
+type GeoJsonGeometry =
+  | { type: "Polygon"; coordinates: number[][][] }
+  | { type: "MultiPolygon"; coordinates: number[][][][] };
+
+function normalizeClosedRing(ring: number[][]) {
+  if (ring.length < 3) return ring;
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] === last[0] && first[1] === last[1]) return ring;
+  return [...ring, first];
+}
+
+function signedAreaLonLat(ring: number[][]) {
+  let sum = 0;
+  for (let i = 0; i < ring.length - 1; i += 1) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[i + 1];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return sum / 2;
+}
+
+function ringBounds(ring: number[][]) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function pointOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const cross = (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+  if (Math.abs(cross) > 1e-9) return false;
+
+  const dot = (px - ax) * (bx - ax) + (py - ay) * (by - ay);
+  if (dot < 0) return false;
+
+  const squaredLen = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+  return dot <= squaredLen;
+}
+
+function pointInRingInclusive(point: number[], ring: number[][]) {
+  const [px, py] = point;
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+
+    if (pointOnSegment(px, py, xi, yi, xj, yj)) return true;
+
+    const intersects =
+      (yi > py) !== (yj > py) &&
+      px < ((xj - xi) * (py - yi)) / ((yj - yi) || 1e-12) + xi;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function ringContainsRing(container: number[][], candidate: number[][]) {
+  const containerBounds = ringBounds(container);
+  const candidateBounds = ringBounds(candidate);
+  if (
+    candidateBounds.minX < containerBounds.minX ||
+    candidateBounds.maxX > containerBounds.maxX ||
+    candidateBounds.minY < containerBounds.minY ||
+    candidateBounds.maxY > containerBounds.maxY
+  ) {
+    return false;
+  }
+
+  for (let i = 0; i < candidate.length - 1; i += 1) {
+    if (pointInRingInclusive(candidate[i], container)) return true;
+  }
+
+  return pointInRingInclusive(candidate[0], container);
+}
+
+function ringsToGeoJsonGeometry(rings: number[][][]): GeoJsonGeometry | null {
+  const cleaned = rings
+    .map((ring) => normalizeClosedRing(ring))
+    .filter((ring) => Array.isArray(ring) && ring.length >= 4);
+
+  if (!cleaned.length) return null;
+
+  const infos = cleaned.map((ring, index) => ({
+    index,
+    ring,
+    absArea: Math.abs(signedAreaLonLat(ring)),
+    parent: -1,
+    depth: 0,
+    isOuter: true,
+  }));
+
+  const sorted = [...infos].sort((a, b) => b.absArea - a.absArea);
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    const current = sorted[i];
+    for (let j = i - 1; j >= 0; j -= 1) {
+      const parent = sorted[j];
+      if (ringContainsRing(parent.ring, current.ring)) {
+        current.parent = parent.index;
+        current.depth = parent.depth + 1;
+        current.isOuter = current.depth % 2 === 0;
+        break;
+      }
+    }
+  }
+
+  const infoByIndex = new Map(infos.map((info) => [info.index, info]));
+  const polygonByOuterIndex = new Map<number, number[][][]>();
+  const polygons: number[][][][] = [];
+
+  for (const info of infos) {
+    if (!info.isOuter) continue;
+    const polygon: number[][][] = [info.ring];
+    polygonByOuterIndex.set(info.index, polygon);
+    polygons.push(polygon);
+  }
+
+  for (const info of infos) {
+    if (info.isOuter) continue;
+
+    let ownerIndex = info.parent;
+    while (ownerIndex >= 0) {
+      const owner = infoByIndex.get(ownerIndex);
+      if (!owner) break;
+      if (owner.isOuter) {
+        polygonByOuterIndex.get(owner.index)?.push(info.ring);
+        break;
+      }
+      ownerIndex = owner.parent;
+    }
+  }
+
+  if (!polygons.length) {
+    const [first, ...rest] = cleaned;
+    return { type: "Polygon", coordinates: [first, ...rest] };
+  }
+
+  if (polygons.length === 1) {
+    return { type: "Polygon", coordinates: polygons[0] };
+  }
+
+  return { type: "MultiPolygon", coordinates: polygons };
+}
+
+function arcGisGeometryToGeoJson(geometry: any): GeoJsonGeometry | null {
+  if (!Array.isArray(geometry?.rings)) return null;
+  return ringsToGeoJsonGeometry(geometry.rings);
+}
+
+function arcGisGeometryToSimpleGeoJson(geometry: any): GeoJsonGeometry | null {
+  if (!Array.isArray(geometry?.rings)) return null;
+
+  const cleaned = geometry.rings
+    .map((ring: any) => normalizeClosedRing(Array.isArray(ring) ? ring : []))
+    .filter((ring: number[][]) => Array.isArray(ring) && ring.length >= 4);
+
+  if (!cleaned.length) return null;
+  if (cleaned.length === 1) return { type: "Polygon", coordinates: [cleaned[0]] };
+  return { type: "MultiPolygon", coordinates: cleaned.map((ring: number[][]) => [ring]) };
 }
 
 function normalizeFireDangerLabel(raw: string | null | undefined) {
@@ -1958,29 +2361,35 @@ async function resolveNearbyForest(lat: number, lon: number) {
   return null;
 }
 
-async function fetchForestRestrictionsCached(
+async function fetchForestRestrictionRecordCached(
   ctx: ExecutionContext,
-  forest: { name: string; region: string | null; slug: string },
+  forest: {
+    name: string;
+    region: string | null;
+    slug: string;
+    forestOrgCode?: string | null;
+    forestNumber?: string | null;
+  },
 ) {
   const regionCode = String(forest.region ?? "").padStart(2, "0");
-  const keyUrl = new URL("https://omniwx-api-cache.local/__cache__/fire/restrictions");
+  const keyUrl = new URL("https://omniwx-api-cache.local/__cache__/fire/restrictions/unit");
   keyUrl.searchParams.set("region", regionCode);
   keyUrl.searchParams.set("slug", forest.slug);
   const cacheKey = new Request(keyUrl.toString(), { method: "GET" });
 
-  return swrFetchObject(
+  return swrFetchObject<FireRestrictionRecord>(
     ctx,
     cacheKey,
     FIRE_CONTEXT_TTL_SECONDS,
     FIRE_CONTEXT_STALE_SECONDS,
     async () => {
-      const url = `https://www.fs.usda.gov/r${regionCode}/${forest.slug}/alerts?field_alert_type_target_id=56&forest_order=1`;
-      const html = await fetchTextWithTimeout(url, FIRE_CONTEXT_TIMEOUT_MS, {
+      const sourceUrl = `https://www.fs.usda.gov/r${regionCode}/${forest.slug}/alerts?field_alert_type_target_id=56&forest_order=1`;
+      const html = await fetchTextWithTimeout(sourceUrl, FIRE_CONTEXT_TIMEOUT_MS, {
         "User-Agent": "omniwx-worker/1.0",
       });
 
       const cardMatches = [...html.matchAll(/<li class="usa-card usa-card--flag wfs-alert-flag fire-restriction">([\s\S]*?)<\/li>/gi)];
-      const cards = cardMatches
+      const cards: FireRestrictionCardRecord[] = cardMatches
         .map((match) => {
           const block = match[1] ?? "";
           const hrefMatch = block.match(/<a[^>]+href="([^"]+)"/i);
@@ -2000,24 +2409,576 @@ async function fetchForestRestrictionsCached(
         .filter((card) => !!card.title)
         .slice(0, 5);
 
-      const noRestrictionCard = cards.find((card) => {
-        const text = `${card.title} ${card.body ?? ""}`.toLowerCase();
-        return text.includes("no fire restrictions") || text.includes("termination order");
-      });
+      const status = classifyFireRestrictionStatus(cards);
 
       return {
-        supported: true as const,
-        inEffect: cards.length ? !noRestrictionCard : null,
-        summary: cards.length
-          ? noRestrictionCard
-            ? `No active fire restrictions listed for ${forest.name}.`
-            : `Fire restrictions are listed for ${forest.name}.`
-          : `No fire-restriction orders are listed for ${forest.name}.`,
-        source: url,
+        id: `usfs:${regionCode}:${forest.slug}`,
+        agency: "USFS",
+        forestName: forest.name,
+        region: forest.region,
+        slug: forest.slug,
+        forestOrgCode: forest.forestOrgCode ?? null,
+        forestNumber: forest.forestNumber ?? null,
+        status,
+        summary: summarizeFireRestrictionStatus(status, forest.name),
+        sourceUrl,
+        checkedAt: new Date().toISOString(),
         cards,
       };
     },
   );
+}
+
+async function fetchForestRestrictionsCached(
+  ctx: ExecutionContext,
+  forest: {
+    name: string;
+    region: string | null;
+    slug: string;
+    forestOrgCode?: string | null;
+    forestNumber?: string | null;
+  },
+) {
+  const record = await fetchForestRestrictionRecordCached(ctx, forest);
+  return {
+    supported: true as const,
+    inEffect: record.status === "restrictions" || record.status === "closure" ? true : record.status === "none" ? false : null,
+    summary: record.summary,
+    source: record.sourceUrl,
+    cards: record.cards,
+  };
+}
+
+async function fetchForestBoundaryFeaturesForBbox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  simplifyDegrees: number,
+) {
+  const idUrl =
+    "https://apps.fs.usda.gov/fsgisx05/rest/services/wo_nfs_gtac/EDW_ForestSystemBoundaries_01/MapServer/0/query" +
+    "?where=1%3D1" +
+    `&geometry=${encodeURIComponent(`${west},${south},${east},${north}`)}` +
+    "&geometryType=esriGeometryEnvelope" +
+    "&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&returnGeometry=false" +
+    "&returnIdsOnly=true" +
+    "&f=pjson";
+
+  const idJson = await fetchJsonWithTimeout(idUrl, 15000, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+  const objectIds = Array.isArray(idJson?.objectIds)
+    ? idJson.objectIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id))
+    : [];
+
+  if (!objectIds.length) return [];
+
+  const chunkSize = 40;
+  const chunks = chunk(objectIds, chunkSize);
+  const allFeatures: any[] = [];
+
+  for (const ids of chunks) {
+    const url =
+      "https://apps.fs.usda.gov/fsgisx05/rest/services/wo_nfs_gtac/EDW_ForestSystemBoundaries_01/MapServer/0/query" +
+      `?objectIds=${encodeURIComponent(ids.join(","))}` +
+      "&inSR=4326" +
+      "&returnGeometry=true" +
+      "&outFields=OBJECTID,FORESTNAME,FORESTORGCODE,REGION,FORESTNUMBER" +
+      "&outSR=4326" +
+      `&maxAllowableOffset=${encodeURIComponent(String(simplifyDegrees))}` +
+      "&f=pjson";
+
+    const json = await fetchJsonWithTimeout(url, 15000, {
+      "User-Agent": "omniwx-worker/1.0",
+    });
+
+    if (Array.isArray(json?.features)) {
+      allFeatures.push(...json.features);
+    }
+  }
+
+  return allFeatures;
+}
+
+function classifyBlmRestrictionStatus(text: string): FireRestrictionStatus {
+  const lower = text.toLowerCase();
+
+  if (
+    lower.includes("closure") ||
+    lower.includes("closed to entry") ||
+    lower.includes("area closed")
+  ) {
+    return "closure";
+  }
+
+  if (
+    lower.includes("year-round fire restrictions are in effect") ||
+    lower.includes("seasonal fire restrictions are in effect")
+  ) {
+    return "restrictions";
+  }
+
+  if (lower.includes("fire restrictions are not in effect")) {
+    return "none";
+  }
+
+  return "unknown";
+}
+
+function summarizeBlmRestrictionStatus(status: FireRestrictionStatus, unitName: string, rawText: string) {
+  const lower = rawText.toLowerCase();
+
+  if (
+    status === "restrictions" &&
+    lower.includes("seasonal fire restrictions are not in effect") &&
+    lower.includes("year-round fire restrictions are in effect")
+  ) {
+    return `Year-round fire restrictions are in effect for ${unitName}; seasonal restrictions are not.`;
+  }
+
+  switch (status) {
+    case "closure":
+      return `Closures are listed for ${unitName}.`;
+    case "restrictions":
+      return `Fire restrictions are listed for ${unitName}.`;
+    case "none":
+      return `No active fire restrictions are listed for ${unitName}.`;
+    default:
+      return `Restriction status is unavailable for ${unitName}.`;
+  }
+}
+
+async function fetchBlmArizonaRestrictionRecordsCached(ctx: ExecutionContext) {
+  const cacheKey = new Request("https://omniwx-api-cache.local/__cache__/fire/restrictions/blm/az", {
+    method: "GET",
+  });
+
+  return swrFetchObject<Record<string, FireRestrictionRecord>>(
+    ctx,
+    cacheKey,
+    FIRE_CONTEXT_TTL_SECONDS,
+    FIRE_CONTEXT_STALE_SECONDS,
+    async () => {
+      const html = await fetchTextWithTimeout(BLM_AZ_RESTRICTIONS_URL, FIRE_CONTEXT_TIMEOUT_MS, {
+        "User-Agent": "omniwx-worker/1.0",
+      });
+
+      const orderBlockMatch = html.match(/<dt>Year-Round Statewide Fire Prevention Order<\/dt><dd>([\s\S]*?)<\/dd>/i);
+      const statewideOrderText = stripHtml(orderBlockMatch?.[1] ?? "");
+      const statewideOrderNumber =
+        statewideOrderText.match(/Order No\.\s*([A-Z0-9-]+)/i)?.[1]?.trim() ?? "AZ910-2022-001";
+      const statewideOrderStart =
+        statewideOrderText.match(/on ([A-Za-z]+ \d{1,2}, \d{4}) through/i)?.[1]?.trim() ?? "May 8, 2022";
+
+      const districtRecordByAnchor = new Map<string, FireRestrictionRecord>();
+      const districtRegex =
+        /<h2><a class="ck-anchor" id="(ASD|CRD|GID|PHD)"><\/a>([^<]+)<\/h2>([\s\S]*?)(?=<h2><a class="ck-anchor" id="(?:ASD|CRD|GID|PHD)\b|<h2>BLM Arizona Map<\/h2>)/gi;
+
+      for (const match of html.matchAll(districtRegex)) {
+        const anchor = String(match[1] ?? "").trim();
+        const districtName = stripHtml(match[2] ?? "");
+        const block = match[3] ?? "";
+        const restrictionsMatch = block.match(/<dt>Fire Restrictions<\/dt><dd>([\s\S]*?)<\/dd>/i);
+        const restrictionsHtml = restrictionsMatch?.[1] ?? "";
+        const restrictionsText = stripHtml(restrictionsHtml);
+        const status = classifyBlmRestrictionStatus(restrictionsText);
+        const sourceUrl = `${BLM_AZ_RESTRICTIONS_URL}#${anchor}`;
+
+        districtRecordByAnchor.set(anchor, {
+          id: `blm:az:${slugifyForestName(districtName)}`,
+          agency: "BLM",
+          forestName: districtName,
+          region: "AZ",
+          slug: slugifyForestName(districtName),
+          status,
+          summary: summarizeBlmRestrictionStatus(status, districtName, restrictionsText),
+          sourceUrl,
+          checkedAt: new Date().toISOString(),
+          cards: [
+            {
+              title: `${districtName} fire restrictions`,
+              url: sourceUrl,
+              body: restrictionsText || null,
+              startDate: statewideOrderStart,
+              forestOrder: statewideOrderNumber,
+            },
+          ],
+        });
+      }
+
+      const out: Record<string, FireRestrictionRecord> = {};
+
+      for (const [officeCode, meta] of Object.entries(BLM_AZ_FIELD_OFFICE_META)) {
+        const districtRecord = districtRecordByAnchor.get(meta.anchor);
+
+        out[officeCode] = districtRecord
+          ? {
+              ...districtRecord,
+              id: `blm:az:${officeCode.toLowerCase()}`,
+              forestName: meta.name,
+              slug: slugifyForestName(meta.name),
+            }
+          : {
+              id: `blm:az:${officeCode.toLowerCase()}`,
+              agency: "BLM",
+              forestName: meta.name,
+              region: "AZ",
+              slug: slugifyForestName(meta.name),
+              status: "unknown",
+              summary: `Restriction status is unavailable for ${meta.name}.`,
+              sourceUrl: `${BLM_AZ_RESTRICTIONS_URL}#${meta.anchor}`,
+              checkedAt: new Date().toISOString(),
+              cards: [],
+            };
+      }
+
+      return out;
+    },
+  );
+}
+
+async function fetchBlmArizonaFieldBoundaryFeaturesForBbox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  simplifyDegrees: number,
+) {
+  const where = "ADMIN_ST='AZ' AND BLM_ORG_TYPE='Field'";
+  const idUrl =
+    "https://gis.blm.gov/arcgis/rest/services/admin_boundaries/BLM_Natl_AdminUnit/MapServer/3/query" +
+    `?where=${encodeURIComponent(where)}` +
+    `&geometry=${encodeURIComponent(`${west},${south},${east},${north}`)}` +
+    "&geometryType=esriGeometryEnvelope" +
+    "&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&returnGeometry=false" +
+    "&returnIdsOnly=true" +
+    "&f=pjson";
+
+  const idJson = await fetchJsonWithTimeout(idUrl, 15000, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+  const objectIds = Array.isArray(idJson?.objectIds)
+    ? idJson.objectIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id))
+    : [];
+
+  if (!objectIds.length) return [];
+
+  const chunks = chunk(objectIds, 40);
+  const allFeatures: any[] = [];
+
+  for (const ids of chunks) {
+    const url =
+      "https://gis.blm.gov/arcgis/rest/services/admin_boundaries/BLM_Natl_AdminUnit/MapServer/3/query" +
+      `?objectIds=${encodeURIComponent(ids.join(","))}` +
+      "&inSR=4326" +
+      "&returnGeometry=true" +
+      "&outFields=OBJECTID,ADM_UNIT_CD,ADMU_NAME,PARENT_NAME,ADMIN_ST,BLM_ORG_TYPE" +
+      "&outSR=4326" +
+      `&maxAllowableOffset=${encodeURIComponent(String(simplifyDegrees))}` +
+      "&f=pjson";
+
+    const json = await fetchJsonWithTimeout(url, 15000, {
+      "User-Agent": "omniwx-worker/1.0",
+    });
+
+    if (Array.isArray(json?.features)) allFeatures.push(...json.features);
+  }
+
+  return allFeatures;
+}
+
+function classifyBlmOrWaDistrictBlock(unitName: string, blockLines: string[]) {
+  let section: "general" | "closures" | "restrictions" = "general";
+  let hasActiveClosure = false;
+  let hasActiveRestriction = false;
+  const cards: FireRestrictionCardRecord[] = [];
+
+  const pushCard = (title: string, body: string | null, statusHint: "closure" | "restrictions") => {
+    if (cards.length >= 5) return;
+    cards.push({
+      title,
+      url: BLM_ORWA_RESTRICTIONS_URL,
+      body,
+      startDate: null,
+      forestOrder: null,
+    });
+    if (statusHint === "closure") hasActiveClosure = true;
+    if (statusHint === "restrictions") hasActiveRestriction = true;
+  };
+
+  for (const rawLine of blockLines) {
+    const line = rawLine.trim().replace(/^[•*-]\s*/, "");
+    if (!line) continue;
+
+    const lower = line.toLowerCase();
+    if (lower === unitName.toLowerCase()) continue;
+    if (lower === "closures") {
+      section = "closures";
+      continue;
+    }
+    if (lower === "restrictions") {
+      section = "restrictions";
+      continue;
+    }
+    if (lower.includes("no current closures or restrictions")) {
+      continue;
+    }
+
+    const isRescissionLike =
+      lower.includes("rescission") ||
+      lower.includes("recission") ||
+      lower.includes("reopens") ||
+      lower.includes("reopened") ||
+      lower.includes("closure lifted") ||
+      lower.includes("reducing fire restrictions");
+
+    if (section === "closures") {
+      if (!isRescissionLike) {
+        pushCard(`${unitName} closure`, line, "closure");
+      }
+      continue;
+    }
+
+    if (section === "restrictions") {
+      if (
+        !isRescissionLike ||
+        lower.includes("annual fire prevention order") ||
+        lower.includes("amended fire prevention order") ||
+        lower.includes("implements seasonal campfire restrictions") ||
+        lower.includes("stage 2") ||
+        lower.includes("high fire danger")
+      ) {
+        pushCard(`${unitName} fire restrictions`, line, "restrictions");
+      }
+      continue;
+    }
+  }
+
+  const status: FireRestrictionStatus = hasActiveRestriction ? "restrictions" : hasActiveClosure ? "closure" : "none";
+  return { status, cards };
+}
+
+async function fetchBlmOregonWashingtonRestrictionRecordsCached(ctx: ExecutionContext) {
+  const cacheKey = new Request("https://omniwx-api-cache.local/__cache__/fire/restrictions/blm/orwa", {
+    method: "GET",
+  });
+
+  return swrFetchObject<Record<string, FireRestrictionRecord>>(
+    ctx,
+    cacheKey,
+    FIRE_CONTEXT_TTL_SECONDS,
+    FIRE_CONTEXT_STALE_SECONDS,
+    async () => {
+      const html = await fetchTextWithTimeout(BLM_ORWA_RESTRICTIONS_URL, FIRE_CONTEXT_TIMEOUT_MS, {
+        "User-Agent": "omniwx-worker/1.0",
+      });
+
+      const text = stripHtmlWithLineBreaks(html);
+      const lines = text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const out: Record<string, FireRestrictionRecord> = {};
+
+      for (let idx = 0; idx < BLM_ORWA_DISTRICT_NAMES.length; idx++) {
+        const districtName = BLM_ORWA_DISTRICT_NAMES[idx];
+        const nextName = BLM_ORWA_DISTRICT_NAMES[idx + 1] ?? null;
+        const startIdx = lines.findIndex((line) => line === districtName);
+        const endIdx = nextName ? lines.findIndex((line, lineIdx) => lineIdx > startIdx && line === nextName) : -1;
+        const blockLines = startIdx >= 0 ? lines.slice(startIdx, endIdx >= 0 ? endIdx : undefined) : [];
+        const parsed = classifyBlmOrWaDistrictBlock(districtName, blockLines);
+        const status = startIdx >= 0 ? parsed.status : "unknown";
+        const cards = startIdx >= 0 ? parsed.cards : [];
+        const normalizedName = normalizeBlmUnitName(districtName);
+
+        out[normalizedName] = {
+          id: `blm:orwa:${slugifyForestName(normalizedName)}`,
+          agency: "BLM",
+          forestName: districtName,
+          region: "ORWA",
+          slug: slugifyForestName(districtName),
+          status,
+          summary: summarizeBlmRestrictionStatus(status, districtName, cards.map((card) => card.body ?? card.title).join(" ")),
+          sourceUrl: BLM_ORWA_RESTRICTIONS_URL,
+          checkedAt: new Date().toISOString(),
+          cards,
+        };
+      }
+
+      return out;
+    },
+  );
+}
+
+async function fetchBlmOregonWashingtonDistrictBoundaryFeaturesForBbox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  simplifyDegrees: number,
+) {
+  const where = "(ADMIN_ST='OR' OR ADMIN_ST='WA') AND BLM_ORG_TYPE='Field'";
+  const idUrl =
+    "https://gis.blm.gov/arcgis/rest/services/admin_boundaries/BLM_Natl_AdminUnit/MapServer/3/query" +
+    `?where=${encodeURIComponent(where)}` +
+    `&geometry=${encodeURIComponent(`${west},${south},${east},${north}`)}` +
+    "&geometryType=esriGeometryEnvelope" +
+    "&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&returnGeometry=false" +
+    "&returnIdsOnly=true" +
+    "&f=pjson";
+
+  const idJson = await fetchJsonWithTimeout(idUrl, 15000, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+  const objectIds = Array.isArray(idJson?.objectIds)
+    ? idJson.objectIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id))
+    : [];
+
+  if (!objectIds.length) return [];
+
+  const chunks = chunk(objectIds, 40);
+  const allFeatures: any[] = [];
+
+  for (const ids of chunks) {
+    const url =
+      "https://gis.blm.gov/arcgis/rest/services/admin_boundaries/BLM_Natl_AdminUnit/MapServer/3/query" +
+      `?objectIds=${encodeURIComponent(ids.join(","))}` +
+      "&inSR=4326" +
+      "&returnGeometry=true" +
+      "&outFields=OBJECTID,ADM_UNIT_CD,ADMU_NAME,PARENT_NAME,ADMIN_ST,BLM_ORG_TYPE" +
+      "&outSR=4326" +
+      `&maxAllowableOffset=${encodeURIComponent(String(simplifyDegrees))}` +
+      "&f=pjson";
+
+    const json = await fetchJsonWithTimeout(url, 15000, {
+      "User-Agent": "omniwx-worker/1.0",
+    });
+
+    if (Array.isArray(json?.features)) allFeatures.push(...json.features);
+  }
+
+  return allFeatures;
+}
+
+async function fetchMinnesotaDnrRestrictionRecordsCached(ctx: ExecutionContext) {
+  const cacheKey = new Request("https://omniwx-api-cache.local/__cache__/fire/restrictions/mn/dnr", {
+    method: "GET",
+  });
+
+  return swrFetchObject<Record<string, FireRestrictionRecord>>(
+    ctx,
+    cacheKey,
+    FIRE_CONTEXT_TTL_SECONDS,
+    FIRE_CONTEXT_STALE_SECONDS,
+    async () => {
+      const html = await fetchTextWithTimeout(MINNESOTA_DNR_PLANNING_URL, FIRE_CONTEXT_TIMEOUT_MS, {
+        "User-Agent": "omniwx-worker/1.0",
+      });
+
+      const text = stripHtmlWithLineBreaks(html);
+      const countyMatch =
+        text.match(/Burning restrictions are in effect today for the following counties:\s*([^\n.]+)\./i) ??
+        text.match(/Burning restrictions are in effect today for the following counties:\s*([^\n]+)/i);
+      const lastModifiedMatch = text.match(/Last Modified\s+([0-9/:\sAPMapm]+)/i);
+      const countyListRaw = countyMatch?.[1] ?? "";
+      const countyNames = countyListRaw
+        .replace(/\band\b/gi, ",")
+        .split(",")
+        .map((value) => normalizeMinnesotaCountyName(value))
+        .filter(Boolean);
+      const countySet = new Set(countyNames);
+      const out: Record<string, FireRestrictionRecord> = {};
+      const checkedAtIso = new Date().toISOString();
+      const startDate = lastModifiedMatch?.[1]?.trim() ?? null;
+
+      for (const countyName of countySet) {
+        const displayName = countyName.endsWith("County") ? countyName : `${countyName} County`;
+
+        out[countyName] = {
+          id: `mndnr:${slugifyForestName(displayName)}`,
+          agency: "MN DNR",
+          forestName: displayName,
+          region: "MN",
+          slug: slugifyForestName(displayName),
+          status: "restrictions",
+          summary: summarizeMinnesotaRestrictionStatus("restrictions", displayName),
+          sourceUrl: MINNESOTA_DNR_RESTRICTIONS_URL,
+          checkedAt: checkedAtIso,
+          cards: [
+            {
+              title: `${displayName} burning restrictions`,
+              url: MINNESOTA_DNR_RESTRICTIONS_URL,
+              body: `Minnesota DNR lists active county burning restrictions for ${displayName}.`,
+              startDate,
+              forestOrder: null,
+            },
+          ],
+        };
+      }
+
+      return out;
+    },
+  );
+}
+
+async function fetchMinnesotaCountyBoundaryFeaturesForBbox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  simplifyDegrees: number,
+) {
+  const where = "STATE='27'";
+  const idUrl =
+    "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/3/query" +
+    `?where=${encodeURIComponent(where)}` +
+    `&geometry=${encodeURIComponent(`${west},${south},${east},${north}`)}` +
+    "&geometryType=esriGeometryEnvelope" +
+    "&inSR=4326" +
+    "&spatialRel=esriSpatialRelIntersects" +
+    "&returnGeometry=false" +
+    "&returnIdsOnly=true" +
+    "&f=pjson";
+
+  const idJson = await fetchJsonWithTimeout(idUrl, 15000, {
+    "User-Agent": "omniwx-worker/1.0",
+  });
+  const objectIds = Array.isArray(idJson?.objectIds)
+    ? idJson.objectIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id))
+    : [];
+
+  if (!objectIds.length) return [];
+
+  const chunks = chunk(objectIds, 40);
+  const allFeatures: any[] = [];
+
+  for (const ids of chunks) {
+    const url =
+      "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/3/query" +
+      `?objectIds=${encodeURIComponent(ids.join(","))}` +
+      "&inSR=4326" +
+      "&returnGeometry=true" +
+      "&outFields=OBJECTID,GEOID,STATE,COUNTY,NAME,BASENAME" +
+      "&outSR=4326" +
+      `&maxAllowableOffset=${encodeURIComponent(String(simplifyDegrees))}` +
+      "&f=pjson";
+
+    const json = await fetchJsonWithTimeout(url, 15000, {
+      "User-Agent": "omniwx-worker/1.0",
+    });
+
+    if (Array.isArray(json?.features)) allFeatures.push(...json.features);
+  }
+
+  return allFeatures;
 }
 
 function degToRad(deg: number) {
@@ -4236,6 +5197,381 @@ export default {
                 priorYear,
                 source: "open_meteo_archive",
               },
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json; charset=utf-8" },
+            },
+          );
+        },
+      });
+    }
+
+    if (url.pathname === "/api/fire/restrictions/unit") {
+      const region = (url.searchParams.get("region") ?? "").trim();
+      const slug = (url.searchParams.get("slug") ?? "").trim();
+      const forestName = (url.searchParams.get("name") ?? "").trim();
+
+      if (!region || !slug || !forestName) {
+        return new Response(JSON.stringify({ ok: false, error: "region, slug, and name are required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const record = await fetchForestRestrictionRecordCached(ctx, {
+        name: forestName,
+        region,
+        slug,
+      }).catch((err: any) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err ?? "unknown error"),
+      }));
+
+      return new Response(JSON.stringify(record), {
+        status: 200,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
+    if (url.pathname === "/api/fire/restrictions/geojson") {
+      const west = Number(url.searchParams.get("west"));
+      const south = Number(url.searchParams.get("south"));
+      const east = Number(url.searchParams.get("east"));
+      const north = Number(url.searchParams.get("north"));
+      const zoom = Number(url.searchParams.get("zoom") ?? "6");
+
+      if (![west, south, east, north].every(Number.isFinite)) {
+        return new Response(JSON.stringify({ ok: false, error: "west, south, east, and north are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const keyUrl = new URL(url.toString());
+      keyUrl.pathname = "/__cache__/fire/restrictions/geojson/v8";
+      keyUrl.searchParams.set("west", String(roundCoordKey(west, 0.2)));
+      keyUrl.searchParams.set("south", String(roundCoordKey(south, 0.2)));
+      keyUrl.searchParams.set("east", String(roundCoordKey(east, 0.2)));
+      keyUrl.searchParams.set("north", String(roundCoordKey(north, 0.2)));
+      keyUrl.searchParams.set("zoom", String(clampInt(zoom, 3, 12)));
+      const cacheKey = new Request(keyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: FIRE_CONTEXT_TTL_SECONDS,
+        staleSeconds: FIRE_CONTEXT_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const simplifyDegrees =
+            zoom >= 10 ? 0.0015 : zoom >= 8 ? 0.003 : zoom >= 6 ? 0.008 : 0.02;
+
+          const settled = await Promise.allSettled([
+            fetchForestBoundaryFeaturesForBbox(west, south, east, north, simplifyDegrees),
+            fetchBlmArizonaFieldBoundaryFeaturesForBbox(
+              west,
+              south,
+              east,
+              north,
+              simplifyDegrees,
+            ),
+            fetchBlmOregonWashingtonDistrictBoundaryFeaturesForBbox(
+              west,
+              south,
+              east,
+              north,
+              simplifyDegrees,
+            ),
+            fetchMinnesotaCountyBoundaryFeaturesForBbox(
+              west,
+              south,
+              east,
+              north,
+              simplifyDegrees,
+            ),
+            fetchBlmArizonaRestrictionRecordsCached(ctx),
+            fetchBlmOregonWashingtonRestrictionRecordsCached(ctx),
+            fetchMinnesotaDnrRestrictionRecordsCached(ctx),
+          ] as const);
+
+          const [
+            boundaryFeaturesResult,
+            blmBoundaryFeaturesResult,
+            blmOrWaBoundaryFeaturesResult,
+            minnesotaCountyFeaturesResult,
+            blmRecordMapResult,
+            blmOrWaRecordMapResult,
+            minnesotaRecordMapResult,
+          ] = settled;
+
+          const boundaryFeatures =
+            boundaryFeaturesResult.status === "fulfilled" ? boundaryFeaturesResult.value : [];
+          const blmBoundaryFeatures =
+            blmBoundaryFeaturesResult.status === "fulfilled" ? blmBoundaryFeaturesResult.value : [];
+          const blmOrWaBoundaryFeatures =
+            blmOrWaBoundaryFeaturesResult.status === "fulfilled" ? blmOrWaBoundaryFeaturesResult.value : [];
+          const minnesotaCountyFeatures =
+            minnesotaCountyFeaturesResult.status === "fulfilled" ? minnesotaCountyFeaturesResult.value : [];
+          const blmRecordMap = blmRecordMapResult.status === "fulfilled" ? blmRecordMapResult.value : {};
+          const blmOrWaRecordMap =
+            blmOrWaRecordMapResult.status === "fulfilled" ? blmOrWaRecordMapResult.value : {};
+          const minnesotaRecordMap =
+            minnesotaRecordMapResult.status === "fulfilled" ? minnesotaRecordMapResult.value : {};
+
+          const forests = boundaryFeatures
+            .map((feature: any) => {
+              const attrs = feature?.attributes ?? {};
+              const name = typeof attrs?.FORESTNAME === "string" ? attrs.FORESTNAME.trim() : "";
+              const region = typeof attrs?.REGION === "string" ? attrs.REGION.trim() : null;
+              const slug = name ? slugifyForestName(name) : "";
+              if (!name || !slug || !region) return null;
+              return {
+                name,
+                region,
+                slug,
+                forestOrgCode: typeof attrs?.FORESTORGCODE === "string" ? attrs.FORESTORGCODE : null,
+                forestNumber: typeof attrs?.FORESTNUMBER === "string" ? attrs.FORESTNUMBER : null,
+              };
+            })
+            .filter(Boolean) as Array<{
+            name: string;
+            region: string;
+            slug: string;
+            forestOrgCode: string | null;
+            forestNumber: string | null;
+          }>;
+
+          const dedupedForests = Array.from(
+            new Map(forests.map((forest) => [`${forest.region}|${forest.slug}`, forest] as const)).values(),
+          );
+
+          const recordMap = new Map<string, FireRestrictionRecord>();
+          const forestChunks = chunk(dedupedForests, 8);
+
+          for (const forestChunk of forestChunks) {
+            const settled = await Promise.allSettled(
+              forestChunk.map((forest) => fetchForestRestrictionRecordCached(ctx, forest)),
+            );
+
+            settled.forEach((result, idx) => {
+              const forest = forestChunk[idx];
+              const key = `${forest.region}|${forest.slug}`;
+
+              if (result.status === "fulfilled") {
+                recordMap.set(key, result.value);
+                return;
+              }
+
+              recordMap.set(key, {
+                id: `usfs:${String(forest.region).padStart(2, "0")}:${forest.slug}`,
+                agency: "USFS",
+                forestName: forest.name,
+                region: forest.region,
+                slug: forest.slug,
+                forestOrgCode: forest.forestOrgCode,
+                forestNumber: forest.forestNumber,
+                status: "unknown",
+                summary: `Restriction status is unavailable for ${forest.name}.`,
+                sourceUrl: null,
+                checkedAt: new Date().toISOString(),
+                cards: [],
+              });
+            });
+          }
+
+          const usfsFeatures = boundaryFeatures
+            .map((feature: any, idx: number) => {
+              const geometry = arcGisGeometryToGeoJson(feature?.geometry);
+              if (!geometry) return null;
+
+              const attrs = feature?.attributes ?? {};
+              const forestName = typeof attrs?.FORESTNAME === "string" ? attrs.FORESTNAME.trim() : "";
+              const region = typeof attrs?.REGION === "string" ? attrs.REGION.trim() : null;
+              const slug = forestName ? slugifyForestName(forestName) : "";
+              if (!forestName || !region || !slug) return null;
+
+              const record =
+                recordMap.get(`${region}|${slug}`) ??
+                ({
+                  id: `usfs:${String(region).padStart(2, "0")}:${slug}`,
+                  agency: "USFS",
+                  forestName,
+                  region,
+                  slug,
+                  status: "unknown",
+                  summary: `Restriction status is unavailable for ${forestName}.`,
+                  sourceUrl: null,
+                  checkedAt: new Date().toISOString(),
+                  cards: [],
+                } satisfies FireRestrictionRecord);
+
+              return {
+                type: "Feature",
+                id: feature?.attributes?.OBJECTID ?? `fire-restriction-${idx}`,
+                geometry,
+                properties: {
+                  id: record.id,
+                  agency: record.agency,
+                  forestName: record.forestName,
+                  region: record.region,
+                  slug: record.slug,
+                  status: record.status,
+                  summary: record.summary,
+                  sourceUrl: record.sourceUrl,
+                  checkedAt: record.checkedAt,
+                  orderCount: record.cards.length,
+                  hasOrders: record.cards.length > 0,
+                },
+              };
+            })
+            .filter(Boolean);
+
+          const blmFeatures = blmBoundaryFeatures
+            .map((feature: any, idx: number) => {
+              const geometry = arcGisGeometryToGeoJson(feature?.geometry);
+              if (!geometry) return null;
+
+              const attrs = feature?.attributes ?? {};
+              const officeCode = typeof attrs?.ADM_UNIT_CD === "string" ? attrs.ADM_UNIT_CD.trim() : "";
+              const officeNameRaw = typeof attrs?.ADMU_NAME === "string" ? attrs.ADMU_NAME.trim() : "";
+              if (!officeCode || !officeNameRaw) return null;
+
+              const officeName = titleCaseWords(officeNameRaw);
+              const record =
+                blmRecordMap[officeCode] ??
+                ({
+                  id: `blm:az:${officeCode.toLowerCase()}`,
+                  agency: "BLM",
+                  forestName: officeName,
+                  region: "AZ",
+                  slug: slugifyForestName(officeName),
+                  status: "unknown",
+                  summary: `Restriction status is unavailable for ${officeName}.`,
+                  sourceUrl: BLM_AZ_RESTRICTIONS_URL,
+                  checkedAt: new Date().toISOString(),
+                  cards: [],
+                } satisfies FireRestrictionRecord);
+
+              return {
+                type: "Feature",
+                id: feature?.attributes?.OBJECTID ?? `blm-fire-restriction-${idx}`,
+                geometry,
+                properties: {
+                  id: record.id,
+                  agency: record.agency,
+                  forestName: record.forestName,
+                  region: record.region,
+                  slug: record.slug,
+                  status: record.status,
+                  summary: record.summary,
+                  sourceUrl: record.sourceUrl,
+                  checkedAt: record.checkedAt,
+                  orderCount: record.cards.length,
+                  hasOrders: record.cards.length > 0,
+                },
+              };
+            })
+            .filter(Boolean);
+
+          const blmOrWaFeatures = blmOrWaBoundaryFeatures
+            .map((feature: any, idx: number) => {
+              const geometry = arcGisGeometryToSimpleGeoJson(feature?.geometry);
+              if (!geometry) return null;
+
+              const attrs = feature?.attributes ?? {};
+              const unitNameRaw = typeof attrs?.ADMU_NAME === "string" ? attrs.ADMU_NAME.trim() : "";
+              const parentNameRaw = typeof attrs?.PARENT_NAME === "string" ? attrs.PARENT_NAME.trim() : "";
+              if (!unitNameRaw) return null;
+
+              const normalizedName = normalizeBlmUnitName(parentNameRaw || unitNameRaw);
+              const fallbackName = titleCaseWords(unitNameRaw);
+              const record =
+                blmOrWaRecordMap[normalizedName] ??
+                ({
+                  id: `blm:orwa:${slugifyForestName(normalizedName || fallbackName)}`,
+                  agency: "BLM",
+                  forestName: fallbackName,
+                  region: "ORWA",
+                  slug: slugifyForestName(fallbackName),
+                  status: "unknown",
+                  summary: `Restriction status is unavailable for ${fallbackName}.`,
+                  sourceUrl: BLM_ORWA_RESTRICTIONS_URL,
+                  checkedAt: new Date().toISOString(),
+                  cards: [],
+                } satisfies FireRestrictionRecord);
+
+              return {
+                type: "Feature",
+                id: feature?.attributes?.OBJECTID ?? `blm-orwa-fire-restriction-${idx}`,
+                geometry,
+                properties: {
+                  id: record.id,
+                  agency: record.agency,
+                  forestName: record.forestName,
+                  region: record.region,
+                  slug: record.slug,
+                  status: record.status,
+                  summary: record.summary,
+                  sourceUrl: record.sourceUrl,
+                  checkedAt: record.checkedAt,
+                  orderCount: record.cards.length,
+                  hasOrders: record.cards.length > 0,
+                },
+              };
+            })
+            .filter(Boolean);
+
+          const minnesotaFeatures = minnesotaCountyFeatures
+            .map((feature: any, idx: number) => {
+              const geometry = arcGisGeometryToGeoJson(feature?.geometry);
+              if (!geometry) return null;
+
+              const attrs = feature?.attributes ?? {};
+              const countyNameRaw = typeof attrs?.NAME === "string" ? attrs.NAME.trim() : "";
+              if (!countyNameRaw) return null;
+
+              const normalizedCountyName = normalizeMinnesotaCountyName(countyNameRaw);
+              const displayName = countyNameRaw.endsWith("County") ? countyNameRaw : `${countyNameRaw} County`;
+              const record =
+                minnesotaRecordMap[normalizedCountyName] ??
+                ({
+                  id: `mndnr:${slugifyForestName(displayName)}`,
+                  agency: "MN DNR",
+                  forestName: displayName,
+                  region: "MN",
+                  slug: slugifyForestName(displayName),
+                  status: "none",
+                  summary: summarizeMinnesotaRestrictionStatus("none", displayName),
+                  sourceUrl: MINNESOTA_DNR_RESTRICTIONS_URL,
+                  checkedAt: new Date().toISOString(),
+                  cards: [],
+                } satisfies FireRestrictionRecord);
+
+              return {
+                type: "Feature",
+                id: feature?.attributes?.OBJECTID ?? `mn-fire-restriction-${idx}`,
+                geometry,
+                properties: {
+                  id: record.id,
+                  agency: record.agency,
+                  forestName: record.forestName,
+                  region: record.region,
+                  slug: record.slug,
+                  status: record.status,
+                  summary: record.summary,
+                  sourceUrl: record.sourceUrl,
+                  checkedAt: record.checkedAt,
+                  orderCount: record.cards.length,
+                  hasOrders: record.cards.length > 0,
+                },
+              };
+            })
+            .filter(Boolean);
+
+          return new Response(
+            JSON.stringify({
+              type: "FeatureCollection",
+              features: [...usfsFeatures, ...blmFeatures, ...blmOrWaFeatures, ...minnesotaFeatures],
+              fetchedAtIso: new Date().toISOString(),
             }),
             {
               status: 200,

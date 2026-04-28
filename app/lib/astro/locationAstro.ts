@@ -438,6 +438,14 @@ export type LocationAstroForecast = {
     astronomicalDawn?: string | null;
     astronomicalDusk?: string | null;
   }>;
+  moonDays?: Array<{
+    date: string;
+    moonrise?: string | null;
+    moonset?: string | null;
+    moonPhaseDegrees?: number | null;
+    moonIlluminationPct?: number | null;
+    moonPhaseLabel?: string | null;
+  }>;
 
   hours: AstroHourRow[];
   tonightHours: AstroHourRow[];
@@ -847,6 +855,16 @@ async function fetchLocationAstroForecast(args: {
           nauticalDusk: day.nauticalDusk ?? null,
           astronomicalDawn: day.astronomicalDawn ?? null,
           astronomicalDusk: day.astronomicalDusk ?? null,
+        }))
+      : undefined,
+    moonDays: Array.isArray(payload.moonDays)
+      ? payload.moonDays.map((day) => ({
+          date: day.date,
+          moonrise: day.moonrise ?? null,
+          moonset: day.moonset ?? null,
+          moonPhaseDegrees: day.moonPhaseDegrees ?? null,
+          moonIlluminationPct: day.moonIlluminationPct ?? null,
+          moonPhaseLabel: day.moonPhaseLabel ?? null,
         }))
       : undefined,
 

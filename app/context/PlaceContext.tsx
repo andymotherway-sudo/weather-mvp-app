@@ -1,6 +1,6 @@
 // app/context/PlaceContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatCompactLocation } from '../lib/locations/formats';
 import { useLocations } from '../lib/locations/useLocations';
@@ -97,19 +97,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
   const { active: locActive, activeCoords, refreshCurrentLocation, state: locState } = useLocations();
 
   // We expose a similar “permission/loading” semantics that PlaceContext used before
-  const [permission, setPermission] = useState<'unknown' | 'granted' | 'denied'>('unknown');
   const locationLoading = !locState.hydrated;
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const p = await getPermissionStatus();
-      if (mounted) setPermission(p);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const [active, setActiveState] = useState<Place | null>(null);
   const [favorites, setFavorites] = useState<Place[]>([]);
@@ -245,32 +233,36 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
     setActiveState((cur) => (cur?.id === id ? null : cur));
   };
 
-  const useGPS = () => {
-    // Request a refresh (best effort). We still set from activeCoords if available immediately.
-    // If permission is denied, do nothing (matches prior behavior).
-    if (permission !== 'granted') return;
+  const useGPS = useCallback(() => {
+    void (async () => {
+      const livePermission = await getPermissionStatus();
 
-    // Make sure the locations store is in "current" mode (PlaceContext doesn't control it directly)
-    // If it's currently a favorite, we still avoid forcing; user can switch back to Current in UI.
-    if (locActive.kind !== 'current') return;
+      // Request a refresh (best effort). We still set from activeCoords if available immediately.
+      // If permission is denied, do nothing (matches prior behavior).
+      if (livePermission !== 'granted') return;
 
-    if (activeCoords) {
-      setActiveState({
-        id: makeId(activeCoords.lat, activeCoords.lon),
-        name: 'Current Location',
-        lat: activeCoords.lat,
-        lon: activeCoords.lon,
-        source: 'gps',
-      });
-    }
+      // Make sure the locations store is in "current" mode (PlaceContext doesn't control it directly)
+      // If it's currently a favorite, we still avoid forcing; user can switch back to Current in UI.
+      if (locActive.kind !== 'current') return;
 
-    // Also kick a refresh so it's truly current.
-    refreshCurrentLocation();
-  };
+      if (activeCoords) {
+        setActiveState({
+          id: makeId(activeCoords.lat, activeCoords.lon),
+          name: 'Current Location',
+          lat: activeCoords.lat,
+          lon: activeCoords.lon,
+          source: 'gps',
+        });
+      }
+
+      // Also kick a refresh so it's truly current.
+      await refreshCurrentLocation();
+    })();
+  }, [activeCoords, locActive.kind, refreshCurrentLocation]);
 
   const value = useMemo<PlaceState>(
     () => ({ active, favorites, setActive, addFavorite, removeFavorite, useGPS }),
-    [active, favorites],
+    [active, favorites, useGPS],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

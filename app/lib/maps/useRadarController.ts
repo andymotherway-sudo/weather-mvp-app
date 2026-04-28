@@ -100,8 +100,8 @@ function buildWorkerWmsUrl(args: {
   const ne = lonLatToMercatorMeters(east, north);
   const bbox = `${sw.x},${sw.y},${ne.x},${ne.y}`;
 
-  const width = String(Math.max(768, Math.min(1600, Math.floor(widthPx))));
-  const height = String(Math.max(768, Math.min(1600, Math.floor(heightPx))));
+  const width = String(Math.max(768, Math.min(2304, Math.floor(widthPx))));
+  const height = String(Math.max(768, Math.min(2304, Math.floor(heightPx))));
 
   const u = new URL(`${OMNI_WORKER_BASE}/v2/radar/wms`);
   u.searchParams.set('product', product);
@@ -290,13 +290,50 @@ export function useRadarController(args: {
   /* =========================================================================
    * Hyperlocal WMS image mode
    * ========================================================================= */
-  const usingLocalImage = sheetValue.radarProvider === 'iem' && radarEnabled && mapZoom >= localMinZoom;
+  // The hyperlocal WMS image path is reliable for the primary reflectivity product,
+  // but alternate reflectivity / velocity can disappear at higher zooms there.
+  // Keep those products on the tiled IEM path instead of switching into local-image mode.
+  const usingLocalImage =
+    sheetValue.radarProvider === 'iem' && radarEnabled && product === 'N0Q' && mapZoom >= localMinZoom;
 
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();
 
-  const imageW = Math.min(1280, Math.max(820, Math.floor(windowSize.width * Math.min(deviceDpr, 2))));
-  const imageH = Math.min(1280, Math.max(820, Math.floor(windowSize.height * Math.min(deviceDpr, 2))));
+  const localImageProfile = useMemo(() => {
+    if (mapZoom >= 14) {
+      return {
+        maxDimension: 2304,
+        minDimension: 1180,
+        dpr: 2.5,
+        debounceMs: 320,
+      };
+    }
+
+    if (mapZoom >= 13) {
+      return {
+        maxDimension: 1920,
+        minDimension: 1040,
+        dpr: 2.25,
+        debounceMs: 280,
+      };
+    }
+
+    return {
+      maxDimension: 1600,
+      minDimension: 900,
+      dpr: 2.0,
+      debounceMs: 240,
+    };
+  }, [mapZoom]);
+
+  const imageW = Math.min(
+    localImageProfile.maxDimension,
+    Math.max(localImageProfile.minDimension, Math.floor(windowSize.width * Math.min(deviceDpr, localImageProfile.dpr))),
+  );
+  const imageH = Math.min(
+    localImageProfile.maxDimension,
+    Math.max(localImageProfile.minDimension, Math.floor(windowSize.height * Math.min(deviceDpr, localImageProfile.dpr))),
+  );
 
   const frameCountBase = usingRainViewer && rvFrames ? rvFrames.length : iemFramesFallback.length;
   const safeBaseIndex = clampIndex(state.radarTime.frameIndex, frameCountBase);
@@ -330,7 +367,7 @@ export function useRadarController(args: {
           heightPx: imageH,
           timeIso: drivingIso ?? null,
           shrink: 0.78,
-          dpr: 2.0,
+          dpr: localImageProfile.dpr,
           fmt: 'png32',
         });
 
@@ -355,14 +392,14 @@ export function useRadarController(args: {
       } catch (e: any) {
         setLocalError(String(e?.message ?? e ?? 'Local image build failed'));
       }
-    }, 220);
+    }, localImageProfile.debounceMs);
   };
 
   useEffect(() => {
     if (!usingLocalImage) return;
     debouncedRefreshLocal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, product, imageW, imageH, drivingIso]);
+  }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs]);
 
   useEffect(() => {
     if (usingLocalImage && state.radarTime.playing) {

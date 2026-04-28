@@ -248,21 +248,21 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
+    gap: 8,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   controlsRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   controlButton: {
-    minWidth: 54,
-    height: 38,
-    paddingHorizontal: 14,
+    minWidth: 44,
+    height: 32,
+    paddingHorizontal: 10,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   controlButtonText: {
     color: 'rgba(255,255,255,0.94)',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.2,
   },
@@ -291,23 +291,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
   primaryLabel: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: -0.2,
   },
   secondaryLabel: {
     color: 'rgba(255,255,255,0.62)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    marginTop: 3,
+    marginTop: 2,
   },
   modeBadge: {
-    paddingVertical: 5,
-    paddingHorizontal: 9,
+    paddingVertical: 4,
+    paddingHorizontal: 7,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -323,14 +323,14 @@ const styles = StyleSheet.create({
   },
   modeBadgeText: {
     color: 'rgba(255,255,255,0.92)',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
   },
   trackWrap: {
-    gap: 8,
+    gap: 6,
   },
   track: {
-    height: 28,
+    height: 22,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -340,8 +340,8 @@ const styles = StyleSheet.create({
   },
   trackTick: {
     position: 'absolute',
-    top: 8,
-    bottom: 8,
+    top: 6,
+    bottom: 6,
     width: 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -356,17 +356,17 @@ const styles = StyleSheet.create({
   },
   knobHalo: {
     position: 'absolute',
-    top: -4,
-    width: 36,
-    height: 36,
+    top: -5,
+    width: 28,
+    height: 28,
     borderRadius: 999,
     backgroundColor: 'rgba(125,211,252,0.18)',
   },
   knob: {
     position: 'absolute',
-    top: 3,
-    width: 22,
-    height: 22,
+    top: 2,
+    width: 18,
+    height: 18,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(191,219,254,0.34)',
@@ -375,11 +375,11 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 8,
   },
   footerLabel: {
     color: 'rgba(255,255,255,0.54)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
 });

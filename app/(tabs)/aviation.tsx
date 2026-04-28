@@ -1,13 +1,17 @@
 ﻿import MapLibreGL from '@maplibre/maplibre-react-native';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { Card } from '../../components/layout/Card';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
+import { theme } from '../../styles/theme';
+import { typography } from '../../styles/typography';
+import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { geocodePlaces } from '../lib/locations/geocode';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
@@ -265,6 +269,10 @@ export default function AviationScreen() {
     setLearnTopicId(id);
     setLearnVisible(true);
   };
+  const headerSubtitle =
+    mode === 'station'
+      ? 'Airport conditions, decoded reports, and map-ready station weather'
+      : 'Route scans, corridor hazards, and aviation-focused map context';
 
   const openMap = () => {
     if (mode === 'station' && station) {
@@ -372,9 +380,24 @@ export default function AviationScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 28 + insets.bottom }} showsVerticalScrollIndicator={false}>
-        <Glass style={s.hero}>
+        <View style={s.header}>
+          <View style={s.brandRow}>
+            <View style={s.brandLeft}>
+              <Image source={OMNI_MARK_WORD} style={s.brandWordmark} resizeMode="contain" />
+              <View style={{ flex: 1 }}>
+                <View style={s.domainPill}>
+                  <Text style={s.domainPillText}>Aviation</Text>
+                </View>
+                <Text style={s.headerTitle}>Aviation</Text>
+                <Text style={s.headerSubtitle}>{headerSubtitle}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <Card style={s.hero}>
           <Text style={s.eyebrow}>AVIATION</Text>
-          <Text style={s.title}>Aviation weather</Text>
+          <Text style={s.title}>Flight weather</Text>
           <Text style={s.subtitle}>Pilots can load station reports. Travelers can analyze a route and jump into the aviation map.</Text>
           <View style={s.mode}><Seg onPress={() => setMode('station')} active={mode === 'station'} label="Station" /><Seg onPress={() => setMode('flight')} active={mode === 'flight'} label="Flight" /></View>
 
@@ -396,7 +419,7 @@ export default function AviationScreen() {
 
           <Text style={s.helper}>Three- and four-letter airport codes are supported. US three-letter inputs also try the matching K-prefixed station.</Text>
           <Text style={[s.summary, error ? s.error : null]}>{error ?? (mode === 'station' ? station ? `Loaded ${station.station.code ?? station.station.label}.` : 'Enter a station to load raw and decoded aviation weather.' : flight ? `${flight.samples.filter((x) => x.severity === 'high').length} high-concern segments, ${flight.samples.filter((x) => x.severity === 'elevated').length} elevated.` : 'Enter a route to scan the corridor.')}</Text>
-        </Glass>
+        </Card>
 
         {mode === 'station' && station ? (
           <>
@@ -460,8 +483,25 @@ function Stat({ label, value }: { label: string; value: string }) { return <Glas
 function Row({ label, value }: { label: string; value: string }) { return <View style={s.row}><Text style={s.rowLabel}>{label}</Text><Text style={s.rowValue}>{value}</Text></View>; }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#071120' },
-  hero: { borderRadius: 24, padding: 14 },
+  safe: { flex: 1, backgroundColor: theme.colors.background },
+  header: { marginBottom: theme.spacing.md },
+  brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+  domainPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    marginBottom: 6,
+  },
+  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
+  headerTitle: { ...typography.title },
+  headerSubtitle: { ...typography.subtitle },
+  hero: { borderRadius: 24, padding: 14, marginBottom: 12 },
   eyebrow: { color: 'rgba(125,211,252,0.88)', fontWeight: '900', fontSize: 11, letterSpacing: 1.1 },
   title: { color: 'white', fontWeight: '900', fontSize: 26, marginTop: 4 },
   subtitle: { color: 'rgba(255,255,255,0.72)', marginTop: 6, lineHeight: 19 },

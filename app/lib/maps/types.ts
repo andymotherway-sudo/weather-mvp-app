@@ -16,6 +16,7 @@ export type MapViewId =
   | 'satellite-west-wv';
 
 export type LayerId =
+  | 'fire.restrictions'
   | 'radar.reflectivity'
   | 'wx.fronts.day1'
   | 'wx.fronts.day2'

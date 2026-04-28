@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePlace } from '../context/PlaceContext';
+import { useSettings } from '../context/SettingsContext';
 
 import { ClimatologyChart } from '../../components/land/ClimatologyChart';
 import { Card } from '../../components/layout/Card';
@@ -58,6 +59,20 @@ function isoToDoy(iso: string) {
   const diff = d.getTime() - start.getTime();
   const doy = Math.floor(diff / DAY_MS);
   return Number.isFinite(doy) && doy >= 1 ? doy : 1;
+}
+
+function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
+  switch (model) {
+    case 'gfs':
+      return 'NOAA U.S.';
+    case 'ecmwf':
+      return 'ECMWF';
+    case 'dwd_icon':
+      return 'DWD ICON';
+    case 'best_match':
+    default:
+      return 'Best match';
+  }
 }
 
 function fmtDow(iso: string) {
@@ -259,12 +274,15 @@ export default function ClimoTab() {
     enabled: hasPlace && !!coords,
     preferCache: true,
   } as any);
+  const { forecastModel } = useSettings();
 
   const forecast = useOpenMeteoForecast({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
+    model: forecastModel,
   });
+  const forecastModelName = forecastModelLabel(forecastModel);
 
   const safeForecastDaily = useMemo(() => {
     const raw = forecast.data?.daily;
@@ -622,6 +640,11 @@ const hasNormals = chartNormals.length > 0;
             <View style={styles.metaPill}>
               <Text style={styles.metaPillLabel}>Updated</Text>
               <Text style={styles.metaPillValue}>{updatedLabel}</Text>
+            </View>
+
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillLabel}>Forecast</Text>
+              <Text style={styles.metaPillValue}>{forecastModelName}</Text>
             </View>
           </View>
 

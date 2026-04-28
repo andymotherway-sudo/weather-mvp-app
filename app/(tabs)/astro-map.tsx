@@ -13,6 +13,7 @@ import { Glass } from '../../components/common/Glass';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 import { usePlace } from '../context/PlaceContext';
+import { useSettings } from '../context/SettingsContext';
 
 import {
   buildAuroraContourRings,
@@ -1461,7 +1462,6 @@ export default function AstroMapScreen() {
 
   const cameraRef = useRef<any>(null);
 
-  const [baseMapStyle, setBaseMapStyle] = useState<'dark' | 'light'>('dark');
   const [showSkyScore, setShowSkyScore] = useState(true);
   const [showAuroraProb, setShowAuroraProb] = useState(true);
   const [showAuroraOval, setShowAuroraOval] = useState(true);
@@ -1492,6 +1492,7 @@ export default function AstroMapScreen() {
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>('collapsed');
   const [inspect, setInspect] = useState<SkyInspect | null>(null);
   const [viewRegion, setViewRegion] = useState<Region>(initialRegion);
+  const { baseMapStyle } = useSettings();
 
   useEffect(() => {
     hourOffsetRef.current = hourOffset;
@@ -2549,11 +2550,6 @@ useEffect(() => {
               />
               <ToggleChip label="Aurora %" active={showAuroraProb} onPress={() => setShowAuroraProb((v) => !v)} />
               <ToggleChip label="Aurora band" active={showAuroraOval} onPress={() => setShowAuroraOval((v) => !v)} />
-              <ToggleChip
-                label={baseMapStyle === 'dark' ? 'Dark' : 'Light'}
-                active
-                onPress={() => setBaseMapStyle((s) => (s === 'dark' ? 'light' : 'dark'))}
-              />
             </View>
           </View>
 

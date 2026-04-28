@@ -26,6 +26,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePlace } from '../context/PlaceContext';
+import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
@@ -78,6 +79,20 @@ function fmt(v: number | null, digits = 0) {
 
 function near(a: number, b: number, eps = 0.0005) {
   return Math.abs(a - b) < eps;
+}
+
+function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
+  switch (model) {
+    case 'gfs':
+      return 'NOAA U.S.';
+    case 'ecmwf':
+      return 'ECMWF';
+    case 'dwd_icon':
+      return 'DWD ICON';
+    case 'best_match':
+    default:
+      return 'Best match';
+  }
 }
 
 function dirToCompass(deg: number | null) {
@@ -2041,16 +2056,26 @@ function DailyForecastList({
   hourly,
   moonrise,
   moonset,
+  moonDays,
   maxDays = 15,
 }: {
   daily: any[];
   hourly?: any[];
   moonrise?: string | null;
   moonset?: string | null;
+  moonDays?: Array<{
+    date: string;
+    moonrise?: string | null;
+    moonset?: string | null;
+  }>;
   maxDays?: number;
 }) {
   const rows = (daily ?? []).slice(0, maxDays);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
+  const moonByDate = React.useMemo(
+    () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
+    [moonDays]
+  );
 
   if (!rows.length) return null;
 
@@ -2223,10 +2248,18 @@ function DailyForecastList({
         const condition = weatherCodeToLabel(code);
 
         const split = buildDayNight(day?.date ?? day?.time);
+        const dayKey = getIsoDateKey(day?.date ?? day?.time);
         const sunrise = typeof day?.sunrise === 'string' ? day.sunrise : null;
         const sunset = typeof day?.sunset === 'string' ? day.sunset : null;
-        const rowMoonrise = idx === 0 ? moonrise ?? null : (typeof day?.moonrise === 'string' ? day.moonrise : null);
-        const rowMoonset = idx === 0 ? moonset ?? null : (typeof day?.moonset === 'string' ? day.moonset : null);
+        const moonForDay = moonByDate.get(dayKey);
+        const rowMoonrise =
+          (typeof moonForDay?.moonrise === 'string' ? moonForDay.moonrise : null) ??
+          (idx === 0 ? moonrise ?? null : null) ??
+          (typeof day?.moonrise === 'string' ? day.moonrise : null);
+        const rowMoonset =
+          (typeof moonForDay?.moonset === 'string' ? moonForDay.moonset : null) ??
+          (idx === 0 ? moonset ?? null : null) ??
+          (typeof day?.moonset === 'string' ? day.moonset : null);
         const dayLength = safeNum(day?.daylightDurationSec ?? day?.daylight_duration ?? day?.daylightDuration) ?? null;
 
         const narrativeParts: string[] = [];
@@ -2909,6 +2942,7 @@ function LandWeatherWithCoords({
   onWeatherCode: (code: number | null) => void;
 }) {
   const units: UnitSystem = 'us';
+  const { forecastModel } = useSettings();
 
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
@@ -2938,6 +2972,7 @@ function LandWeatherWithCoords({
     lat: coords.lat,
     lon: coords.lon,
     days: 15,
+    model: forecastModel,
   });
 
   const {
@@ -3300,7 +3335,7 @@ function LandWeatherWithCoords({
 
       {daily.length > 0 ? (
         <Card style={styles.forecastCard}>
-          <Text style={styles.cardTitle}>{wxLab ? 'Daily (Model Blend)' : '15-Day Forecast'}</Text>
+          <Text style={styles.cardTitle}>{wxLab ? 'Daily Forecast' : '15-Day Forecast'}</Text>
 
           {wxLab ? (
             <DailyRangeChart daily={daily} />
@@ -3310,11 +3345,13 @@ function LandWeatherWithCoords({
               hourly={hourly}
               moonrise={todayMoonrise}
               moonset={todayMoonset}
+              moonDays={astroData?.moonDays}
               maxDays={15}
             />
           )}
 
-          <Text style={styles.updatedText}>Source: Open-Meteo (multi-model blend)</Text>
+          <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
+          <Text style={styles.updatedText}>Source: Open-Meteo</Text>
         </Card>
       ) : null}
 

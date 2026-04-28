@@ -4,10 +4,11 @@
 // Also supports "zone mode" when launched from polygon world map.
 
 import { useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Keyboard,
   Modal,
   Pressable,
   RefreshControl,
@@ -32,6 +33,7 @@ import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 import {
   DEFAULT_MARINE_AREA,
   getMarineAreaById,
+  MARINE_AREAS,
   type MarineArea,
 } from '../lib/nautical/areas';
 import { useNauticalSummary } from '../lib/nautical/hooks';
@@ -41,6 +43,7 @@ import {
   NAUTICAL_STATIONS,
   type NauticalStation,
 } from '../lib/nautical/stations';
+import { geocodePlaces, type GeocodeResult } from '../lib/locations/geocode';
 
 // nerdy builder
 import { buildNerdyData } from '../lib/nautical/buildNerdyData';
@@ -169,6 +172,46 @@ function formatTemp(c: number | null | undefined, unit: 'F' | 'C'): string {
   if (unit === 'C') return `${c.toFixed(1)} °C`;
   const f = (c * 9) / 5 + 32;
   return `${f.toFixed(1)} °F`;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function stationForArea(area: MarineArea): NauticalStation {
+  return (
+    NAUTICAL_STATIONS.find((s) => s.id === area.tideStationId) ??
+    DEFAULT_NAUTICAL_STATION
+  );
+}
+
+function areaCenter(area: MarineArea) {
+  return {
+    lat: (area.bounds.minLat + area.bounds.maxLat) / 2,
+    lon: (area.bounds.minLon + area.bounds.maxLon) / 2,
+  };
+}
+
+function areaSpan(area: MarineArea) {
+  return (area.bounds.maxLat - area.bounds.minLat) * (area.bounds.maxLon - area.bounds.minLon);
+}
+
+function areaContains(area: MarineArea, lat: number, lon: number) {
+  return (
+    lat >= area.bounds.minLat &&
+    lat <= area.bounds.maxLat &&
+    lon >= area.bounds.minLon &&
+    lon <= area.bounds.maxLon
+  );
 }
 
 function asString(v: unknown): string | undefined {
@@ -399,7 +442,7 @@ export default function NauticalScreen() {
 
   const initialArea: MarineArea =
     getMarineAreaById(areaId) ?? DEFAULT_MARINE_AREA;
-  const [area] = useState<MarineArea>(initialArea);
+  const [area, setArea] = useState<MarineArea>(initialArea);
 
   // In zone mode, we do NOT show tides (no single tide station)
   const supportsTides = isZoneMode ? false : area.supportsTides !== false;
@@ -413,6 +456,9 @@ export default function NauticalScreen() {
   // Search + selected buoy for sea state source
   const [search, setSearch] = useState('');
   const [selectedBuoyId, setSelectedBuoyId] = useState<string | null>(null);
+  const [selectedPlaceLabel, setSelectedPlaceLabel] = useState<string | null>(null);
+  const [placeResults, setPlaceResults] = useState<GeocodeResult[]>([]);
+  const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
 
   // Data hooks
   const { data, loading, error, refreshing, refresh } =
@@ -438,11 +484,49 @@ export default function NauticalScreen() {
       (b) => b.id.toUpperCase() === String(activeBuoyId ?? '').toUpperCase(),
     ) ?? null;
 
+  const clearSearchUi = () => {
+    Keyboard.dismiss();
+    setSearch('');
+    setPlaceResults([]);
+    setPlaceSearchLoading(false);
+  };
+
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 3) {
+      setPlaceResults([]);
+      setPlaceSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPlaceSearchLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await geocodePlaces(q);
+        if (!cancelled) {
+          setPlaceResults(results.slice(0, 8));
+        }
+      } catch {
+        if (!cancelled) setPlaceResults([]);
+      } finally {
+        if (!cancelled) setPlaceSearchLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
+
   // --- SEARCH: stations + buoys -----------------------------------
 
   type SearchRow = {
     key: string;
     label: string;
+    subtitle?: string;
     onPress: () => void;
   };
 
@@ -451,22 +535,108 @@ export default function NauticalScreen() {
     if (!q) return [];
 
     const rows: SearchRow[] = [];
+    const seen = new Set<string>();
+    const addRow = (row: SearchRow) => {
+      if (seen.has(row.key)) return;
+      seen.add(row.key);
+      rows.push(row);
+    };
+
+    const resolveAreaForPoint = (lat: number, lon: number) => {
+      const containing = MARINE_AREAS.filter((candidate) => areaContains(candidate, lat, lon));
+      if (containing.length) {
+        return containing.sort((a, b) => {
+          const kindRank = (area: MarineArea) =>
+            area.kind === 'coastal' ? 0 : area.kind === 'lake' ? 1 : area.kind === 'offshore' ? 2 : 3;
+          const rankDiff = kindRank(a) - kindRank(b);
+          if (rankDiff !== 0) return rankDiff;
+          return areaSpan(a) - areaSpan(b);
+        })[0];
+      }
+
+      return (
+        MARINE_AREAS
+          .map((candidate) => {
+            const center = areaCenter(candidate);
+            return {
+              area: candidate,
+              distanceKm: haversineKm(lat, lon, center.lat, center.lon),
+            };
+          })
+          .sort((a, b) => a.distanceKm - b.distanceKm)[0]?.area ?? area
+      );
+    };
+
+    const resolveStationForPoint = (lat: number, lon: number, fallbackArea: MarineArea) =>
+      NAUTICAL_STATIONS
+        .filter((candidate) => candidate.latitude != null && candidate.longitude != null)
+        .map((candidate) => ({
+          station: candidate,
+          distanceKm: haversineKm(
+            lat,
+            lon,
+            candidate.latitude as number,
+            candidate.longitude as number,
+          ),
+        }))
+        .sort((a, b) => a.distanceKm - b.distanceKm)[0]?.station ?? stationForArea(fallbackArea);
+
+    const applyArea = (nextArea: MarineArea, _nextLabel: string, nextBuoyId?: string | null) => {
+      const nextStation = stationForArea(nextArea);
+      setArea(nextArea);
+      setStation(nextStation);
+      setSelectedBuoyId(nextBuoyId ?? nextArea.primaryBuoyId ?? nextStation.buoyId ?? null);
+      setSelectedPlaceLabel(null);
+      clearSearchUi();
+    };
+
+    const matchingAreas = MARINE_AREAS.filter((marineArea) => {
+      const hay = [
+        marineArea.name,
+        marineArea.region,
+        marineArea.ocean,
+        marineArea.kind,
+        marineArea.country,
+        marineArea.id,
+        marineArea.forecastZoneId,
+        marineArea.primaryBuoyId,
+        marineArea.tideStationId,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    }).slice(0, 20);
+
+    matchingAreas.forEach((marineArea) => {
+      addRow({
+        key: `area-${marineArea.id}`,
+        label: marineArea.name,
+        subtitle: `${marineArea.region} · ${marineArea.kind} area`,
+        onPress: () => applyArea(marineArea, marineArea.name),
+      });
+    });
 
     // Stations (curated)
     const matchingStations = NAUTICAL_STATIONS.filter((s) => {
       const name = s.name.toLowerCase();
       const id = s.id.toLowerCase();
       return name.includes(q) || id.includes(q);
-    });
+    }).slice(0, 30);
 
     matchingStations.forEach((s) => {
-      rows.push({
+      addRow({
         key: `station-${s.id}`,
+        subtitle: `NOAA tide station ${s.id}`,
         label: `${s.name} · tide station`,
         onPress: () => {
+          const matchingArea =
+            MARINE_AREAS.find((candidate) => candidate.tideStationId === s.id) ?? area;
+          setArea(matchingArea);
           setStation(s);
-          setSelectedBuoyId(s.buoyId ?? null);
-          setSearch(s.name);
+          setSelectedBuoyId(s.buoyId ?? matchingArea.primaryBuoyId ?? null);
+          setSelectedPlaceLabel(null);
+          clearSearchUi();
         },
       });
     });
@@ -483,7 +653,7 @@ export default function NauticalScreen() {
         const hay = `${display} ${b.id}`.toLowerCase();
         return hay.includes(q);
       })
-      .slice(0, 20);
+      .slice(0, 60);
 
     matchingBuoys.forEach((b) => {
       const display =
@@ -492,18 +662,48 @@ export default function NauticalScreen() {
         (b as any).description?.trim?.() ||
         b.id;
 
-      rows.push({
+      addRow({
         key: `buoy-${b.id}`,
         label: `${display} · buoy ${b.id}`,
+        subtitle: `NOAA buoy ${b.id}`,
         onPress: () => {
+          const nearestArea = resolveAreaForPoint(b.lat, b.lon);
+          const nearestStation = resolveStationForPoint(b.lat, b.lon, nearestArea);
+          setArea(nearestArea);
+          setStation(nearestStation);
           setSelectedBuoyId(b.id);
-          setSearch(display);
+          setSelectedPlaceLabel(null);
+          clearSearchUi();
         },
       });
     });
 
-    return rows;
-  }, [search, allBuoys]);
+    placeResults.forEach((place) => {
+      const nearestArea = resolveAreaForPoint(place.lat, place.lon);
+      const nearestStation = resolveStationForPoint(place.lat, place.lon, nearestArea);
+
+      if (!nearestArea) return;
+
+      const placeLabel = [place.name, place.admin1, place.country].filter(Boolean).join(', ');
+
+      addRow({
+        key: `place-${place.name}-${place.lat.toFixed(3)}-${place.lon.toFixed(3)}`,
+        label: placeLabel,
+        subtitle: `Marine area: ${nearestArea.name}`,
+        onPress: () => {
+          setArea(nearestArea);
+          setStation(nearestStation);
+          setSelectedBuoyId(nearestArea.primaryBuoyId ?? nearestStation.buoyId ?? null);
+          setSelectedPlaceLabel(placeLabel);
+          clearSearchUi();
+        },
+      });
+    });
+
+    return rows.slice(0, 80);
+  }, [search, allBuoys, area, placeResults]);
+  const searchActive = search.trim().length > 0;
+  const showSearchResults = searchRows.length > 0;
 
   // --- DERIVED CONDITIONS -----------------------------------------
 
@@ -555,12 +755,16 @@ export default function NauticalScreen() {
   // Header lines
   const headerLine = isZoneMode
     ? String(zoneName ?? `Marine Zone ${zoneId}`)
+    : selectedPlaceLabel
+      ? selectedPlaceLabel
     : supportsTides
       ? station.name
       : area.name;
 
   const headerSubLine = isZoneMode
     ? `Zone: ${String(zoneId)}${wfo ? ` · WFO ${String(wfo)}` : ''}`
+    : selectedPlaceLabel
+      ? `Marine area: ${area.name}`
     : supportsTides
       ? `Marine area: ${area.name}`
       : `${area.region} · ${area.ocean}`;
@@ -683,6 +887,7 @@ export default function NauticalScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="always"
         refreshControl={
           <RefreshControl refreshing={!!refreshing} onRefresh={refresh} />
         }
@@ -697,10 +902,10 @@ export default function NauticalScreen() {
                   <Text style={styles.domainPillText}>Nautical</Text>
                 </View>
 
-                <Text style={styles.headerLine} numberOfLines={1}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
                   {headerLine}
                 </Text>
-                <Text style={styles.headerSubLine} numberOfLines={1}>
+                <Text style={styles.headerLine} numberOfLines={1}>
                   {headerSubLine}
                 </Text>
               </View>
@@ -723,22 +928,35 @@ export default function NauticalScreen() {
           />
         </View>
 
-        {searchRows.length > 0 && (
+        {search.trim().length >= 3 && placeSearchLoading && (
+          <Text style={styles.searchHint}>Looking up coastal places…</Text>
+        )}
+
+        {search.trim().length > 0 && (
+          <Text style={styles.searchHint}>
+            {searchRows.length} result{searchRows.length === 1 ? '' : 's'} across marine areas, tide stations, buoys, and nearby places
+          </Text>
+        )}
+
+        {showSearchResults && (
           <View style={styles.searchResults}>
             {searchRows.map((row) => (
-              <Text
+              <Pressable
                 key={row.key}
                 style={styles.searchResultRow}
                 onPress={row.onPress}
               >
-                {row.label}
-              </Text>
+                <Text style={styles.searchResultLabel}>{row.label}</Text>
+                {row.subtitle ? (
+                  <Text style={styles.searchResultMeta}>{row.subtitle}</Text>
+                ) : null}
+              </Pressable>
             ))}
           </View>
         )}
 
         {/* Loading */}
-        {loading && !data && (
+        {!searchActive && loading && !data && (
           <View style={styles.center}>
             <ActivityIndicator size="large" />
             <Text style={typography.small}>Loading marine data…</Text>
@@ -746,7 +964,7 @@ export default function NauticalScreen() {
         )}
 
         {/* Error */}
-        {error && (
+        {!searchActive && error && (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Error</Text>
             <Text style={styles.errorText}>{error}</Text>
@@ -754,7 +972,7 @@ export default function NauticalScreen() {
         )}
 
         {/* SEA STATE */}
-        {(conditions || buoyData) && (
+        {!searchActive && (conditions || buoyData) && (
           <Card style={styles.mainCard}>
             <View style={styles.riskRow}>
               <View style={{ flex: 1 }}>
@@ -827,7 +1045,7 @@ export default function NauticalScreen() {
         )}
 
         {/* NERDY CARD */}
-        {mode === 'nerdy' && (conditions || buoyData || forecast) && (
+        {!searchActive && mode === 'nerdy' && (conditions || buoyData || forecast) && (
           <Card style={styles.mainCard}>
             <Text style={styles.sectionLabel}>Nerdy</Text>
 
@@ -1087,14 +1305,11 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
   },
   headerLine: {
-    fontSize: 14,
-    color: theme.colors.textPrimary,
-    marginTop: 4,
-  },
-  headerSubLine: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
+    ...typography.subtitle,
     marginTop: 2,
+  },
+  headerTitle: {
+    ...typography.title,
   },
     brandRow: {
     flexDirection: 'row',
@@ -1136,6 +1351,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: theme.colors.textPrimary,
   },
+  searchHint: {
+    marginTop: 6,
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+  },
   searchResults: {
     marginTop: 4,
     borderRadius: theme.radius.lg,
@@ -1143,14 +1363,25 @@ const styles = StyleSheet.create({
     borderColor: '#1f2937',
     backgroundColor: '#020617',
     maxHeight: 220,
+    overflow: 'hidden',
+    zIndex: 20,
+    elevation: 6,
   },
   searchResultRow: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
+    paddingVertical: 8,
     borderBottomWidth: 0.5,
     borderBottomColor: '#111827',
+  },
+  searchResultLabel: {
+    fontSize: 12,
+    color: theme.colors.textPrimary,
+    fontWeight: '700',
+  },
+  searchResultMeta: {
+    marginTop: 2,
+    fontSize: 11,
+    color: theme.colors.textSecondary,
   },
   mainCard: {
     marginTop: theme.spacing.lg,
