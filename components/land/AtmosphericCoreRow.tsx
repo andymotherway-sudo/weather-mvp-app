@@ -1,15 +1,17 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { PremiumMetricIcon } from '../weather/PremiumWeatherIcon';
+
 type UnitSystem = 'us' | 'metric';
 
 export type AtmosphericCoreValues = {
-  precipChancePct?: number | null;  // 0-100
-  cloudCoverPct?: number | null;    // 0-100
-  dewPointC?: number | null;        // C
-  humidityPct?: number | null;      // 0-100
-  windSpeedMps?: number | null;     // m/s
-  windGustMps?: number | null;      // m/s
+  precipChancePct?: number | null;
+  cloudCoverPct?: number | null;
+  dewPointC?: number | null;
+  humidityPct?: number | null;
+  windSpeedMps?: number | null;
+  windGustMps?: number | null;
 };
 
 function clampPct(v?: number | null): number | null {
@@ -59,77 +61,62 @@ export function AtmosphericCoreRow({ values, units = 'us', compact = false }: Pr
   const humid = clampPct(values.humidityPct);
 
   const dew =
-    values.dewPointC == null || Number.isNaN(values.dewPointC)
-      ? null
-      : fmtTemp(values.dewPointC, units);
+    values.dewPointC == null || Number.isNaN(values.dewPointC) ? null : fmtTemp(values.dewPointC, units);
 
   const wind =
-    values.windSpeedMps == null || Number.isNaN(values.windSpeedMps)
-      ? null
-      : fmtSpeed(values.windSpeedMps, units);
+    values.windSpeedMps == null || Number.isNaN(values.windSpeedMps) ? null : fmtSpeed(values.windSpeedMps, units);
 
   const gust =
-    values.windGustMps == null || Number.isNaN(values.windGustMps)
-      ? null
-      : fmtSpeed(values.windGustMps, units);
+    values.windGustMps == null || Number.isNaN(values.windGustMps) ? null : fmtSpeed(values.windGustMps, units);
 
   const spdUnit = speedUnitLabel(units);
 
   return (
     <View style={[styles.grid, compact && styles.gridCompact]}>
-      <MetricTile icon="🌧" value={precip == null ? null : `${precip}%`} label="Precip" compact={compact} />
-      <MetricTile icon="☁️" value={clouds == null ? null : `${clouds}%`} label="Clouds" compact={compact} />
-
-      {/* Dew point primary, RH secondary (LOCKED) */}
+      <MetricTile kind="precip" value={precip == null ? null : `${precip}%`} label="Precip" compact={compact} />
+      <MetricTile kind="cloud" value={clouds == null ? null : `${clouds}%`} label="Clouds" compact={compact} />
       <StackTile
-        icon="💧"
+        kind="dew"
         primary={dew}
         secondary={humid == null ? null : `${humid}%`}
         labelPrimary="Dew"
         labelSecondary="RH"
         compact={compact}
       />
-
-      {/* Wind + Gust always side-by-side (LOCKED) */}
       <WindGustTile wind={wind} gust={gust} unit={spdUnit} compact={compact} />
     </View>
   );
 }
 
 function MetricTile({
-  icon,
+  kind,
   value,
   label,
   compact,
 }: {
-  icon: string;
+  kind: 'precip' | 'cloud';
   value: string | null;
   label: string;
   compact: boolean;
 }) {
   return (
     <View style={[styles.tile, compact && styles.tileCompact]}>
-      <Text style={[styles.icon, compact && styles.iconCompact]}>{icon}</Text>
+      <PremiumMetricIcon kind={kind} size={compact ? 20 : 22} style={styles.iconBadge} />
       <Text style={[styles.value, compact && styles.valueCompact]}>{displayOrDash(value)}</Text>
       <Text style={[styles.label, compact && styles.labelCompact]}>{label}</Text>
     </View>
   );
 }
 
-/**
- * Dew point + humidity tile:
- *  - Primary (dew point) bigger, full opacity
- *  - Secondary (RH) smaller, muted
- */
 function StackTile({
-  icon,
+  kind,
   primary,
   secondary,
   labelPrimary,
   labelSecondary,
   compact,
 }: {
-  icon: string;
+  kind: 'dew';
   primary: string | null;
   secondary: string | null;
   labelPrimary?: string;
@@ -138,7 +125,7 @@ function StackTile({
 }) {
   return (
     <View style={[styles.tile, compact && styles.tileCompact]}>
-      <Text style={[styles.icon, compact && styles.iconCompact]}>{icon}</Text>
+      <PremiumMetricIcon kind={kind} size={compact ? 20 : 22} style={styles.iconBadge} />
       <Text style={[styles.value, compact && styles.valueCompact]}>{displayOrDash(primary)}</Text>
       <Text style={[styles.subValue, compact && styles.subValueCompact]}>{displayOrDash(secondary)}</Text>
       <Text style={[styles.label, compact && styles.labelCompact]}>
@@ -165,7 +152,7 @@ function WindGustTile({
 
   return (
     <View style={[styles.tile, compact && styles.tileCompact]}>
-      <Text style={[styles.icon, compact && styles.iconCompact]}>🌬️</Text>
+      <PremiumMetricIcon kind="wind" size={compact ? 20 : 22} style={styles.iconBadge} />
       <Text style={[styles.value, compact && styles.valueCompact]}>{pair}</Text>
       <Text style={[styles.label, compact && styles.labelCompact]}>{`Wind → Gust · ${unit}`}</Text>
     </View>
@@ -176,17 +163,16 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     gap: 10,
-    flexWrap: 'wrap', // prevents crushing on narrow screens
+    flexWrap: 'wrap',
   },
   gridCompact: {
     gap: 8,
   },
-
   tile: {
     flexGrow: 1,
-    flexBasis: '22%',        // ~4 tiles per row, wraps if needed
-    minWidth: 82,            // keeps readability on small screens
-    minHeight: 106,          // stabilizes layout across values
+    flexBasis: '22%',
+    minWidth: 82,
+    minHeight: 106,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 18,
@@ -201,17 +187,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 16,
   },
-
-  icon: {
-    fontSize: 18,
+  iconBadge: {
     marginBottom: 8,
-    opacity: 0.95,
   },
-  iconCompact: {
-    fontSize: 17,
-    marginBottom: 6,
-  },
-
   value: {
     fontSize: 20,
     fontWeight: '800',
@@ -222,21 +200,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 22,
   },
-
   subValue: {
     marginTop: 3,
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 18,
     color: 'rgba(255,255,255,0.92)',
-    opacity: 0.80,
+    opacity: 0.8,
   },
   subValueCompact: {
     fontSize: 13,
     lineHeight: 16,
     marginTop: 2,
   },
-
   label: {
     marginTop: 8,
     fontSize: 12,

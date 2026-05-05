@@ -60,6 +60,7 @@ export const NAUTICAL_STATIONS: NauticalStation[] = [
   { id: '8726520', name: 'Tampa Bay, FL — St. Petersburg', latitude: 27.760, longitude: -82.627 },
 
   // GULF
+  { id: '8775237', name: 'Corpus Christi, TX - Port Aransas', buoyId: '42020', latitude: 27.839, longitude: -97.072 },
   { id: '8771450', name: 'Galveston, TX — Galveston Pier 21', latitude: 29.310, longitude: -94.794 },
   { id: '8761927', name: 'New Orleans, LA — Mississippi River', latitude: 29.950, longitude: -90.068 },
 
@@ -67,3 +68,4 @@ export const NAUTICAL_STATIONS: NauticalStation[] = [
   { id: '9755371', name: 'San Juan, PR — San Juan Harbor', latitude: 18.465, longitude: -66.117 },
   { id: '9455500', name: 'Seward, AK — Resurrection Bay', latitude: 60.104, longitude: -149.442 },
 ];
+

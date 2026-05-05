@@ -214,6 +214,29 @@ function areaContains(area: MarineArea, lat: number, lon: number) {
   );
 }
 
+function normalizeCountry(value?: string) {
+  const raw = (value ?? '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'us' || raw === 'usa' || raw === 'united states' || raw === 'united states of america') {
+    return 'US';
+  }
+  if (raw === "int'l" || raw === 'intl' || raw === 'international') {
+    return 'INTL';
+  }
+  return raw.toUpperCase();
+}
+
+function distanceToAreaBoundsKm(area: MarineArea, lat: number, lon: number) {
+  const clampedLat = Math.max(area.bounds.minLat, Math.min(lat, area.bounds.maxLat));
+  const clampedLon = Math.max(area.bounds.minLon, Math.min(lon, area.bounds.maxLon));
+  return haversineKm(lat, lon, clampedLat, clampedLon);
+}
+
+function distanceToStationKm(station: NauticalStation, lat: number, lon: number) {
+  if (station.latitude == null || station.longitude == null) return Number.POSITIVE_INFINITY;
+  return haversineKm(lat, lon, station.latitude, station.longitude);
+}
+
 function asString(v: unknown): string | undefined {
   if (v == null) return undefined;
   return Array.isArray(v) ? String(v[0]) : String(v);
@@ -567,6 +590,68 @@ export default function NauticalScreen() {
       );
     };
 
+    const resolveMarineContextForPlace = (place: GeocodeResult) => {
+      const placeCountry = normalizeCountry(place.country);
+
+      const areaCandidates = MARINE_AREAS
+        .filter((candidate) => candidate.kind !== 'high-seas')
+        .map((candidate) => {
+          const distanceKm = distanceToAreaBoundsKm(candidate, place.lat, place.lon);
+          const contains = areaContains(candidate, place.lat, place.lon);
+          const kindBoost =
+            candidate.kind === 'coastal' ? 220 : candidate.kind === 'lake' ? 200 : 120;
+          const sameCountryBoost =
+            placeCountry && normalizeCountry(candidate.country) === placeCountry ? 420 : 0;
+          const score =
+            (contains ? 4000 : 0) +
+            sameCountryBoost +
+            kindBoost +
+            (candidate.tideStationId ? 40 : 0) -
+            distanceKm * 5 -
+            areaSpan(candidate) * 1.5;
+
+          return { area: candidate, distanceKm, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const bestArea = areaCandidates[0]?.area;
+      const bestAreaDistanceKm = areaCandidates[0]?.distanceKm ?? Number.POSITIVE_INFINITY;
+      if (!bestArea) return null;
+
+      const stationCandidates = NAUTICAL_STATIONS.filter(
+        (candidate) => candidate.latitude != null && candidate.longitude != null,
+      )
+        .map((candidate) => {
+          const distanceKm = distanceToStationKm(candidate, place.lat, place.lon);
+          const inBestArea =
+            candidate.latitude != null &&
+            candidate.longitude != null &&
+            areaContains(bestArea, candidate.latitude, candidate.longitude);
+          const score = (inBestArea ? 300 : 0) - distanceKm * 3;
+          return { station: candidate, distanceKm, score };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const bestStation = stationCandidates[0]?.station ?? stationForArea(bestArea);
+      const bestStationDistanceKm =
+        stationCandidates[0]?.distanceKm ??
+        distanceToStationKm(stationForArea(bestArea), place.lat, place.lon);
+
+      const maxAllowedDistanceKm =
+        bestArea.kind === 'lake' ? 220 : bestArea.kind === 'coastal' ? 300 : 420;
+      const supported =
+        bestAreaDistanceKm <= maxAllowedDistanceKm || bestStationDistanceKm <= maxAllowedDistanceKm;
+
+      if (!supported) return null;
+
+      return {
+        area: bestArea,
+        station: bestStation,
+        areaDistanceKm: bestAreaDistanceKm,
+        stationDistanceKm: bestStationDistanceKm,
+      };
+    };
+
     const resolveStationForPoint = (lat: number, lon: number, fallbackArea: MarineArea) =>
       NAUTICAL_STATIONS
         .filter((candidate) => candidate.latitude != null && candidate.longitude != null)
@@ -679,17 +764,22 @@ export default function NauticalScreen() {
     });
 
     placeResults.forEach((place) => {
-      const nearestArea = resolveAreaForPoint(place.lat, place.lon);
-      const nearestStation = resolveStationForPoint(place.lat, place.lon, nearestArea);
+      const context = resolveMarineContextForPlace(place);
+      if (!context) return;
 
-      if (!nearestArea) return;
+      const nearestArea = context.area;
+      const nearestStation = context.station;
 
       const placeLabel = [place.name, place.admin1, place.country].filter(Boolean).join(', ');
+      const subtitleParts = [`Marine area: ${nearestArea.name}`];
+      if (nearestStation?.name) {
+        subtitleParts.push(`Nearest station: ${nearestStation.name}`);
+      }
 
       addRow({
         key: `place-${place.name}-${place.lat.toFixed(3)}-${place.lon.toFixed(3)}`,
         label: placeLabel,
-        subtitle: `Marine area: ${nearestArea.name}`,
+        subtitle: subtitleParts.join(' · '),
         onPress: () => {
           setArea(nearestArea);
           setStation(nearestStation);

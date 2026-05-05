@@ -51,6 +51,7 @@ import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
 
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
+import { PremiumMoonIcon, PremiumWeatherIcon } from '../../components/weather/PremiumWeatherIcon';
 
 import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
 import { useWxLab } from '../context/WxLabContext';
@@ -191,7 +192,8 @@ function pressureTrendFromHourly(hours: any[]) {
 }
 
 type FavoriteWeatherPreview = {
-  emoji: string;
+  weatherCode?: number | null;
+  emoji?: string;
   condition: string;
   hi: number | null;
   lo: number | null;
@@ -1463,7 +1465,7 @@ function ActivityForecastSection({
               style={[
                 styles.activityWideCard,
                 {
-                  backgroundColor: 'rgba(9,14,28,0.78)',
+                  backgroundColor: GLASS_PANEL_BG_STRONG,
                   borderColor: colors.border,
                 },
               ]}
@@ -1842,7 +1844,11 @@ function LocationPickerModal({
               return (
                 <Pressable onPress={item.onPress} style={styles.favoritePickRow}>
                   <View style={styles.favoriteEmojiBadge}>
-                    <Text style={styles.favoriteEmoji}>{item.emoji}</Text>
+                    {typeof item.weatherCode === 'number' ? (
+                      <PremiumWeatherIcon code={item.weatherCode} size={24} />
+                    ) : (
+                      <Text style={styles.favoriteEmoji}>{item.emoji}</Text>
+                    )}
                   </View>
 
                   <View style={styles.favoriteMain}>
@@ -2051,6 +2057,450 @@ function SimpleSummary({
   );
 }
 
+function getIsoDateKey(raw: any) {
+  const s = typeof raw === 'string' ? raw : '';
+  if (!s) return '';
+  return s.slice(0, 10);
+}
+
+function getHour(raw: any) {
+  const s = typeof raw === 'string' ? raw : '';
+  if (!s || s.length < 13) return null;
+  const h = Number(s.slice(11, 13));
+  return Number.isFinite(h) ? h : null;
+}
+
+function summarizeHourBlock(block: any[], label: 'Day' | 'Night') {
+  if (!block.length) {
+    return {
+      label,
+      condition: '—',
+      pop: null as number | null,
+      wind: null as number | null,
+      gust: null as number | null,
+      tempMin: null as number | null,
+      tempMax: null as number | null,
+      narrative: `${label} details unavailable.`,
+    };
+  }
+
+  const pops = block
+    .map((h) => safeNum(h?.precipitation_probability ?? h?.precipProbPct ?? h?.precipChancePct ?? h?.pop))
+    .filter((v): v is number => v != null);
+  const winds = block
+    .map((h) => safeNum(h?.windMph ?? h?.windSpeedMph ?? h?.wind_speed_mph ?? h?.windSpeed ?? h?.wind))
+    .filter((v): v is number => v != null);
+  const gusts = block
+    .map((h) => safeNum(h?.gustMph ?? h?.windGustMph ?? h?.wind_gust_mph ?? h?.gust ?? h?.windGust))
+    .filter((v): v is number => v != null);
+  const temps = block
+    .map((h) => safeNum(h?.tempF ?? h?.temperatureF ?? h?.temperature_2m ?? h?.temperature ?? h?.temp))
+    .filter((v): v is number => v != null);
+
+  const conditionCounts = new Map<string, number>();
+  for (const h of block) {
+    const code =
+      safeNum(h?.weatherCode ?? h?.weather_code ?? h?.weathercode ?? h?.condition_code ?? h?.code) ?? null;
+    const condition = weatherCodeToLabel(code);
+    conditionCounts.set(condition, (conditionCounts.get(condition) ?? 0) + 1);
+  }
+
+  let dominantCondition = '—';
+  let dominantCount = -1;
+  for (const [condition, count] of conditionCounts.entries()) {
+    if (count > dominantCount) {
+      dominantCondition = condition;
+      dominantCount = count;
+    }
+  }
+
+  const pop = pops.length ? Math.max(...pops) : null;
+  const wind = winds.length ? Math.max(...winds) : null;
+  const gust = gusts.length ? Math.max(...gusts) : null;
+  const tempMin = temps.length ? Math.min(...temps) : null;
+  const tempMax = temps.length ? Math.max(...temps) : null;
+
+  const phrases: string[] = [];
+  if (dominantCondition === 'Clear') phrases.push(label === 'Day' ? 'Clear skies' : 'Clear tonight');
+  else if (dominantCondition === 'Mostly clear') phrases.push(label === 'Day' ? 'Mostly sunny' : 'Mostly clear');
+  else if (dominantCondition === 'Partly cloudy') phrases.push('Partly cloudy');
+  else if (dominantCondition === 'Overcast') phrases.push('Cloudy');
+  else if (dominantCondition === 'Rain') phrases.push('Rain likely');
+  else if (dominantCondition === 'Showers') phrases.push('Showers around');
+  else if (dominantCondition === 'Drizzle') phrases.push('Light drizzle possible');
+  else if (dominantCondition === 'Snow') phrases.push('Snow possible');
+  else if (dominantCondition === 'Thunderstorm') phrases.push('Storms possible');
+  else if (dominantCondition === 'Fog') phrases.push('Fog possible');
+
+  if (pop != null) {
+    if (pop >= 70) phrases.push('high precip chance');
+    else if (pop >= 40) phrases.push('some precip possible');
+    else if (pop <= 10) phrases.push('mainly dry');
+  }
+
+  if (wind != null) {
+    if (wind >= 20) phrases.push('windy');
+    else if (wind >= 10) phrases.push('breezy');
+  }
+
+  return {
+    label,
+    condition: dominantCondition,
+    pop,
+    wind,
+    gust,
+    tempMin,
+    tempMax,
+    narrative: phrases.length ? phrases.join(' • ') : `${label} conditions vary.`,
+  };
+}
+
+function buildDayNightSummary(dateRaw: any, hourly?: any[]) {
+  const dayKey = getIsoDateKey(dateRaw);
+  const sameDay = (hourly ?? []).filter((h) => getIsoDateKey(h?.time ?? h?.datetime ?? h?.date) === dayKey);
+  const dayHours = sameDay.filter((h) => {
+    const hour = getHour(h?.time ?? h?.datetime ?? h?.date);
+    return hour != null && hour >= 6 && hour < 18;
+  });
+  const nightHours = sameDay.filter((h) => {
+    const hour = getHour(h?.time ?? h?.datetime ?? h?.date);
+    return hour != null && (hour < 6 || hour >= 18);
+  });
+  return {
+    day: summarizeHourBlock(dayHours, 'Day'),
+    night: summarizeHourBlock(nightHours, 'Night'),
+  };
+}
+
+function SimpleDailyOverview({
+  tempF,
+  condition,
+  heroSummary,
+  feelsLikeF,
+  dewpointF,
+  precipChancePct,
+  windMph,
+  gustMph,
+  humidityPct,
+  uvIndex,
+  airQualityLabel,
+  airQualityIndex,
+  daily,
+  hourly,
+  sunrise,
+  sunset,
+  moonrise,
+  moonset,
+  moonDays,
+  dayLengthSec,
+}: {
+  tempF: number | null;
+  condition: string;
+  heroSummary: string;
+  feelsLikeF: number | null;
+  dewpointF: number | null;
+  precipChancePct: number | null;
+  windMph: number | null;
+  gustMph: number | null;
+  humidityPct: number | null;
+  uvIndex: number | null;
+  airQualityLabel: string | null;
+  airQualityIndex: number | null;
+  daily: any[];
+  hourly: any[];
+  sunrise?: string | null;
+  sunset?: string | null;
+  moonrise?: string | null;
+  moonset?: string | null;
+  moonDays?: Array<{
+    date: string;
+    moonrise?: string | null;
+    moonset?: string | null;
+  }>;
+  dayLengthSec?: number | null;
+}) {
+  const today = daily[0] ?? null;
+  const nextDays = daily.slice(1, 15);
+  const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
+  const moonByDate = React.useMemo(
+    () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
+    [moonDays]
+  );
+  const todaySplit = buildDayNightSummary(today?.date ?? today?.time, hourly);
+  const fmtWind = (v: number | null) => (v != null ? `${Math.round(v)} mph` : '—');
+  const todayHi =
+    safeNum(today?.tempMaxF ?? today?.temperatureMaxF ?? today?.temperature_2m_max ?? today?.maxTempF ?? today?.highF) ?? null;
+  const todayLo =
+    safeNum(today?.tempMinF ?? today?.temperatureMinF ?? today?.temperature_2m_min ?? today?.minTempF ?? today?.lowF) ?? null;
+  const todayPop =
+    safeNum(today?.precipProbMaxPct ?? today?.precipitationProbabilityMax ?? today?.pop ?? today?.precipChancePct) ?? null;
+  const todayCode = safeNum(today?.weatherCode ?? today?.weather_code ?? today?.weathercode ?? today?.code) ?? null;
+  const todayCondition = weatherCodeToLabel(todayCode);
+  const todayEmoji = weatherCodeToEmoji(todayCode);
+  const todayNarrative = [
+    todayCondition,
+    todayHi != null && todayHi >= 85 ? 'Warm' : todayHi != null && todayHi <= 55 ? 'Cool' : 'Mild',
+    todayPop != null && todayPop <= 10 ? 'Dry overall' : todayPop != null && todayPop >= 40 ? 'Some precip possible' : null,
+  ]
+    .filter(Boolean)
+    .join(' • ');
+  const currentAqiValue = airQualityIndex != null ? `${Math.round(airQualityIndex)}` : '—';
+  const currentAqiSub = airQualityLabel ?? 'AQI';
+  const todayWindSub = gustMph != null ? `Gust ${Math.round(gustMph)} mph` : '—';
+  const tonightWindSub = todaySplit.night.gust != null ? `Gust ${Math.round(todaySplit.night.gust)} mph` : '—';
+  const currentMetrics = [
+    { value: precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—', label: 'Precip chance' },
+    { value: windMph != null ? `${Math.round(windMph)} mph` : '—', label: 'Wind', sub: todayWindSub.replace('???', '—') },
+    { value: humidityPct != null ? `${Math.round(humidityPct)}%` : '—', label: 'Humidity' },
+    { value: uvIndex != null ? `${Math.round(uvIndex)}` : '—', label: 'UV index' },
+    { value: currentAqiValue.replace('???', '—'), label: 'AQI', sub: currentAqiSub },
+    { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'Dew point' },
+  ];
+
+  return (
+    <View style={styles.dailySimpleWrap}>
+      <View style={styles.dailyCurrentCard}>
+        <Text style={styles.dailyPanelEyebrow}>Current conditions</Text>
+        <View style={styles.dailyCurrentTop}>
+          <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
+          <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+          <View style={styles.dailyCurrentText}>
+            <Text style={styles.dailyCurrentCondition}>{condition}</Text>
+            <Text style={styles.dailyCurrentSummary}>{heroSummary}</Text>
+            <Text style={styles.dailyCurrentFeels}>Feels like {feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.dailyCurrentMetricRow}>
+          {currentMetrics.map((item) => (
+            <View key={item.label} style={styles.dailyCurrentMetricCell}>
+              <Text style={styles.dailyCurrentMetricValue}>{item.value}</Text>
+              <Text style={styles.dailyCurrentMetricLabel}>{item.label}</Text>
+              {item.sub ? <Text style={styles.dailyCurrentMetricSub}>{item.sub}</Text> : null}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.dailyFeatureCard}>
+        <Text style={styles.dailyPanelEyebrow}>Today & tonight</Text>
+        <View style={styles.dailyTwinColumns}>
+          <View style={styles.dailyTwinColumn}>
+            <View style={styles.dailyFeatureTitleRow}>
+              <Text style={styles.dailyFeatureMiniTitle}>Today</Text>
+              <Text style={styles.dailyFeatureRange}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'} / {todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+            </View>
+            <View style={styles.dailyFeatureSummaryRow}>
+              <PremiumWeatherIcon code={todayCode} size={46} variant="hero" style={styles.dailyFeatureIconBadge} />
+              <View style={styles.dailyFeatureSummaryText}>
+                <Text style={styles.dailyFeatureCondition}>{todayCondition}</Text>
+                <Text style={styles.dailyFeatureNarrative}>{todayNarrative}</Text>
+              </View>
+            </View>
+            <View style={styles.dailyDetailList}>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Precip</Text>
+                <Text style={styles.dailyDetailValue}>{todayPop != null ? `${Math.round(todayPop)}%` : '—'}</Text>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Wind</Text>
+                <View style={styles.dailyDetailValueStack}>
+                  <Text style={styles.dailyDetailValue}>{todaySplit.day.wind != null ? `${Math.round(todaySplit.day.wind)} mph` : '—'}</Text>
+                  <Text style={styles.dailyDetailSub}>{todaySplit.day.gust != null ? `Gust ${Math.round(todaySplit.day.gust)} mph` : '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Humidity / DP</Text>
+                <View style={styles.dailyDetailPair}>
+                  <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
+                  <Text style={styles.dailyDetailPairDivider}>/</Text>
+                  <Text style={styles.dailyDetailValue}>{dewpointF != null ? `${Math.round(dewpointF)}°` : '—'}</Text>
+                </View>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Sunrise</Text>
+                <Text style={styles.dailyDetailValue}>{formatClock(sunrise)}</Text>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Sunset</Text>
+                <Text style={styles.dailyDetailValue}>{formatClock(sunset)}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.dailyTwinDivider} />
+          <View style={styles.dailyTwinColumn}>
+            <View style={styles.dailyFeatureTitleRow}>
+              <Text style={styles.dailyFeatureMiniTitle}>Tonight</Text>
+              <Text style={styles.dailyFeatureRange}>Low {todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+            </View>
+            <View style={styles.dailyNightSummaryRow}>
+              <PremiumMoonIcon size={42} variant="hero" style={styles.dailyNightIconBadge} />
+              <View style={styles.dailyNightText}>
+                <Text style={styles.dailyFeatureCondition}>{todaySplit.night.condition}</Text>
+                <Text style={styles.dailyFeatureNarrative}>{todaySplit.night.narrative}</Text>
+              </View>
+            </View>
+            <View style={styles.dailyDetailList}>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Precip</Text>
+                <Text style={styles.dailyDetailValue}>{todaySplit.night.pop != null ? `${Math.round(todaySplit.night.pop)}%` : '—'}</Text>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Wind</Text>
+                <View style={styles.dailyDetailValueStack}>
+                  <Text style={styles.dailyDetailValue}>{todaySplit.night.wind != null ? `${Math.round(todaySplit.night.wind)} mph` : '—'}</Text>
+                  <Text style={styles.dailyDetailSub}>{tonightWindSub}</Text>
+                </View>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Humidity</Text>
+                <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Moonrise</Text>
+                <Text style={styles.dailyDetailValue}>{formatClock(moonrise)}</Text>
+              </View>
+              <View style={styles.dailyDetailStrip}>
+                <Text style={styles.dailyDetailLabel}>Moonset</Text>
+                <Text style={styles.dailyDetailValue}>{formatClock(moonset)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.nextDaysHeader}>
+        <Text style={styles.nextDaysTitle}>Next 15 days</Text>
+      </View>
+      <View style={styles.nextDaysList}>
+        {nextDays.map((day: any, idx: number) => {
+          const key = String(day?.date ?? day?.time ?? idx);
+          const expanded = expandedKey === key;
+          const hi =
+            safeNum(day?.tempMaxF ?? day?.temperatureMaxF ?? day?.temperature_2m_max ?? day?.maxTempF ?? day?.highF) ?? null;
+          const lo =
+            safeNum(day?.tempMinF ?? day?.temperatureMinF ?? day?.temperature_2m_min ?? day?.minTempF ?? day?.lowF) ?? null;
+          const pop =
+            safeNum(day?.precipProbMaxPct ?? day?.precipitationProbabilityMax ?? day?.pop ?? day?.precipChancePct) ?? null;
+          const code = safeNum(day?.weatherCode ?? day?.weather_code ?? day?.weathercode ?? day?.code) ?? null;
+          const wind =
+            safeNum(day?.windSpeedMaxMph ?? day?.windMaxMph ?? day?.maxWindMph ?? day?.wind_mph ?? day?.windSpeedMph) ?? null;
+          const gust =
+            safeNum(day?.windGustMaxMph ?? day?.gustMaxMph ?? day?.maxGustMph ?? day?.windGustMph) ?? null;
+          const split = buildDayNightSummary(day?.date ?? day?.time, hourly);
+          const dayKey = typeof day?.date === 'string' ? day.date.slice(0, 10) : typeof day?.time === 'string' ? day.time.slice(0, 10) : '';
+          const moonForDay = dayKey ? moonByDate.get(dayKey) : undefined;
+          const sunriseForDay = typeof day?.sunrise === 'string' ? day.sunrise : null;
+          const sunsetForDay = typeof day?.sunset === 'string' ? day.sunset : null;
+          const moonriseForDay =
+            (typeof moonForDay?.moonrise === 'string' ? moonForDay.moonrise : null) ??
+            (typeof day?.moonrise === 'string' ? day.moonrise : null) ??
+            null;
+          const moonsetForDay =
+            (typeof moonForDay?.moonset === 'string' ? moonForDay.moonset : null) ??
+            (typeof day?.moonset === 'string' ? day.moonset : null) ??
+            null;
+          const dayLength =
+            safeNum(day?.daylightDurationSec ?? day?.daylight_duration ?? day?.daylightDuration) ?? null;
+          const uvMax =
+            safeNum(day?.uvIndexMax ?? day?.uv_index_max ?? day?.uvMax ?? day?.uv) ?? uvIndex ?? null;
+          const humidityText =
+            safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct) != null
+              ? `${Math.round(safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct) ?? 0)}%`
+              : '—';
+          const pressureText =
+            safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) != null
+              ? `${Math.round(safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) ?? 0)} hPa`
+              : '—';
+          const aqiText = airQualityIndex != null ? `${Math.round(airQualityIndex)}` : '—';
+          const label = formatDailyLabel(day?.date ?? day?.time ?? day?.datetime);
+          const emoji = weatherCodeToEmoji(code);
+          const conditionLabel = weatherCodeToLabel(code);
+          const labelParts = label.split(',');
+          const dayLabel = labelParts[0]?.trim() || label;
+          const dateLabel = labelParts.slice(1).join(',').trim();
+          const humidityValue =
+            safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct) ?? null;
+          const pressureValue =
+            safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) ?? null;
+          const summaryLine = [
+            pop != null ? `${Math.round(pop)}% precip chance` : null,
+            wind != null ? `${Math.round(wind)} mph wind` : null,
+          ]
+            .filter(Boolean)
+            .join(' • ');
+          const metricRows = [
+            { label: 'Wind', value: fmtWind(wind), ratio: wind != null ? Math.max(0, Math.min(1, wind / 40)) : 0 },
+            { label: 'Wind gusts', value: fmtWind(gust), ratio: gust != null ? Math.max(0, Math.min(1, gust / 50)) : 0 },
+            { label: 'Humidity', value: humidityText.replace('???', '—'), ratio: humidityValue != null ? Math.max(0, Math.min(1, humidityValue / 100)) : 0 },
+            { label: 'Precip chance', value: pop != null ? `${Math.round(pop)}%` : '—', ratio: pop != null ? Math.max(0, Math.min(1, pop / 100)) : 0 },
+            { label: 'Pressure', value: pressureText.replace('???', '—'), ratio: pressureValue != null ? Math.max(0, Math.min(1, (pressureValue - 980) / 60)) : 0 },
+            { label: 'Air quality', value: aqiText.replace('???', '—'), ratio: airQualityIndex != null ? Math.max(0, Math.min(1, airQualityIndex / 150)) : 0 },
+          ].filter((row) => row.value !== '???' && row.value !== '—');
+
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setExpandedKey((prev) => (prev === key ? null : key))}
+              style={[styles.nextDayRow, expanded && styles.nextDayRowExpanded]}
+            >
+              <View style={styles.dailyForecastTop}>
+                <View style={styles.dailyForecastWhen}>
+                  <Text style={styles.dailyForecastDay}>{dayLabel}</Text>
+                  {dateLabel ? <Text style={styles.dailyForecastDate}>{dateLabel}</Text> : null}
+                </View>
+                <View style={styles.dailyForecastMain}>
+                  <Text style={styles.dailyTemps}>
+                    <Text style={styles.dailyHi}>{hi != null ? `${Math.round(hi)}°` : '—'}</Text>
+                    <Text style={styles.dailySlash}> / </Text>
+                    <Text style={styles.dailyLo}>{lo != null ? `${Math.round(lo)}°` : '—'}</Text>
+                  </Text>
+                  <View style={styles.dailyForecastConditionRow}>
+                    <PremiumWeatherIcon code={code} size={26} variant="inline" style={styles.dailyForecastIconBadge} />
+                    <Text style={styles.dailyCondition} numberOfLines={1}>
+                      {conditionLabel}
+                    </Text>
+                  </View>
+                  <Text style={styles.dailyForecastSummary} numberOfLines={expanded ? 2 : 1}>
+                    {summaryLine}
+                  </Text>
+                </View>
+                <View style={styles.dailyForecastSide}>
+                  <Text style={styles.dailyForecastSideValue}>{pop != null ? `${Math.round(pop)}%` : '—'}</Text>
+                  <Text style={styles.dailyChevron}>{expanded ? '⌃' : '⌄'}</Text>
+                </View>
+              </View>
+
+              {expanded ? (
+                <View style={styles.dailyExpanded}>
+                  {metricRows.map((row) => (
+                    <View key={row.label} style={styles.dailyMetricRow}>
+                      <Text style={styles.dailyMetricLabel}>{row.label}</Text>
+                      <View style={styles.dailyMetricTrack}>
+                        <View style={[styles.dailyMetricFill, { width: `${Math.max(12, row.ratio * 100)}%` }]} />
+                      </View>
+                      <Text style={styles.dailyMetricValue}>{row.value}</Text>
+                    </View>
+                  ))}
+                  <View style={styles.dailySunRow}>
+                    <Text style={styles.dailySunLabel}>Sunrise</Text>
+                    <Text style={styles.dailySunValue}>{formatClock(sunriseForDay)}</Text>
+                  </View>
+                  <View style={styles.dailySunRow}>
+                    <Text style={styles.dailySunLabel}>Sunset</Text>
+                    <Text style={styles.dailySunValue}>{formatClock(sunsetForDay)}</Text>
+                  </View>
+                  <Text style={styles.dailyExpandedSummary}>Day length {formatDayLength(dayLength)}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function DailyForecastList({
   daily,
   hourly,
@@ -2072,195 +2522,44 @@ function DailyForecastList({
 }) {
   const rows = (daily ?? []).slice(0, maxDays);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
-  const moonByDate = React.useMemo(
-    () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
-    [moonDays]
-  );
 
   if (!rows.length) return null;
 
-  const toggleRow = (key: string) => {
-    setExpandedKey((prev) => (prev === key ? null : key));
-  };
-
   const fmtWind = (v: number | null) => (v != null ? `${Math.round(v)} mph` : '—');
-
-  const getIsoDateKey = (raw: any) => {
-    const s = typeof raw === 'string' ? raw : '';
-    if (!s) return '';
-    return s.slice(0, 10);
-  };
-
-  const getHour = (raw: any) => {
-    const s = typeof raw === 'string' ? raw : '';
-    if (!s || s.length < 13) return null;
-    const h = Number(s.slice(11, 13));
-    return Number.isFinite(h) ? h : null;
-  };
-
-  const hourConditionLabel = (h: any) => {
-    const code =
-      safeNum(h?.weatherCode ?? h?.weather_code ?? h?.weathercode ?? h?.condition_code ?? h?.code) ?? null;
-    return weatherCodeToLabel(code);
-  };
-
-  const hourPop = (h: any) =>
-    safeNum(h?.precipitation_probability ?? h?.precipProbPct ?? h?.precipChancePct ?? h?.pop) ?? null;
-
-  const hourWind = (h: any) =>
-    safeNum(h?.windMph ?? h?.windSpeedMph ?? h?.wind_speed_mph ?? h?.windSpeed ?? h?.wind) ?? null;
-
-  const hourGust = (h: any) =>
-    safeNum(h?.gustMph ?? h?.windGustMph ?? h?.wind_gust_mph ?? h?.gust ?? h?.windGust) ?? null;
-
-  const hourTemp = (h: any) =>
-    safeNum(h?.tempF ?? h?.temperatureF ?? h?.temperature_2m ?? h?.temperature ?? h?.temp) ?? null;
-
-  const summarizeBlock = (block: any[], label: 'Day' | 'Night') => {
-    if (!block.length) {
-      return {
-        label,
-        condition: '—',
-        pop: null as number | null,
-        wind: null as number | null,
-        gust: null as number | null,
-        tempMin: null as number | null,
-        tempMax: null as number | null,
-        narrative: `${label} details unavailable.`,
-      };
-    }
-
-    const pops = block.map(hourPop).filter((v): v is number => v != null);
-    const winds = block.map(hourWind).filter((v): v is number => v != null);
-    const gusts = block.map(hourGust).filter((v): v is number => v != null);
-    const temps = block.map(hourTemp).filter((v): v is number => v != null);
-
-    const conditionCounts = new Map<string, number>();
-    for (const h of block) {
-      const c = hourConditionLabel(h);
-      conditionCounts.set(c, (conditionCounts.get(c) ?? 0) + 1);
-    }
-
-    let dominantCondition = '—';
-    let dominantCount = -1;
-    for (const [cond, count] of conditionCounts.entries()) {
-      if (count > dominantCount) {
-        dominantCondition = cond;
-        dominantCount = count;
-      }
-    }
-
-    const pop = pops.length ? Math.max(...pops) : null;
-    const wind = winds.length ? Math.max(...winds) : null;
-    const gust = gusts.length ? Math.max(...gusts) : null;
-    const tempMin = temps.length ? Math.min(...temps) : null;
-    const tempMax = temps.length ? Math.max(...temps) : null;
-
-    const phrases: string[] = [];
-
-    if (dominantCondition !== '—') {
-      if (dominantCondition === 'Clear') phrases.push(label === 'Day' ? 'Bright and clear' : 'Clear skies');
-      else if (dominantCondition === 'Mostly clear') phrases.push(label === 'Day' ? 'Mostly sunny' : 'Mostly clear');
-      else if (dominantCondition === 'Partly cloudy') phrases.push('Partly cloudy');
-      else if (dominantCondition === 'Overcast') phrases.push('Cloudy');
-      else if (dominantCondition === 'Rain') phrases.push('Rain likely');
-      else if (dominantCondition === 'Showers') phrases.push('Showers around');
-      else if (dominantCondition === 'Drizzle') phrases.push('Light drizzle possible');
-      else if (dominantCondition === 'Snow') phrases.push('Snow possible');
-      else if (dominantCondition === 'Thunderstorm') phrases.push('Storms possible');
-      else if (dominantCondition === 'Fog') phrases.push('Fog possible');
-      else phrases.push(dominantCondition);
-    }
-
-    if (pop != null) {
-      if (pop >= 70) phrases.push('high precip chance');
-      else if (pop >= 40) phrases.push('some precip possible');
-      else if (pop <= 10) phrases.push('mainly dry');
-    }
-
-    if (wind != null) {
-      if (wind >= 25) phrases.push('windy');
-      else if (wind >= 15) phrases.push('breezy');
-    }
-
-    const narrative = phrases.length
-      ? `${phrases[0].charAt(0).toUpperCase()}${phrases[0].slice(1)}${phrases.length > 1 ? ` • ${phrases.slice(1).join(' • ')}` : ''}.`
-      : `${label} conditions vary.`;
-
-    return {
-      label,
-      condition: dominantCondition,
-      pop,
-      wind,
-      gust,
-      tempMin,
-      tempMax,
-      narrative,
-    };
-  };
-
-  const buildDayNight = (dateRaw: any) => {
-    const dayKey = getIsoDateKey(dateRaw);
-    const sameDay = (hourly ?? []).filter((h) => getIsoDateKey(h?.time ?? h?.datetime ?? h?.date) === dayKey);
-
-    const dayHours = sameDay.filter((h) => {
-      const hour = getHour(h?.time ?? h?.datetime ?? h?.date);
-      return hour != null && hour >= 6 && hour < 18;
-    });
-
-    const nightHours = sameDay.filter((h) => {
-      const hour = getHour(h?.time ?? h?.datetime ?? h?.date);
-      return hour != null && (hour < 6 || hour >= 18);
-    });
-
-    return {
-      day: summarizeBlock(dayHours, 'Day'),
-      night: summarizeBlock(nightHours, 'Night'),
-    };
-  };
 
   return (
     <View style={styles.dailyList}>
       {rows.map((day: any, idx: number) => {
         const key = String(day?.date ?? day?.time ?? `day-${idx}`);
         const expanded = expandedKey === key;
-
         const label = formatDailyLabel(day?.date ?? day?.time);
-
+        const labelParts = label.split(',');
+        const dayLabel = labelParts[0]?.trim() || label;
+        const dateLabel = labelParts.slice(1).join(',').trim();
         const hi =
           safeNum(day?.tempMaxF ?? day?.temperatureMaxF ?? day?.temperature_2m_max ?? day?.maxTempF ?? day?.highF) ?? null;
         const lo =
           safeNum(day?.tempMinF ?? day?.temperatureMinF ?? day?.temperature_2m_min ?? day?.minTempF ?? day?.lowF) ?? null;
-
         const pop =
           safeNum(day?.precipProbMaxPct ?? day?.precipitationProbabilityMax ?? day?.pop ?? day?.precipChancePct) ?? null;
-
         const code =
           safeNum(day?.weatherCode ?? day?.weather_code ?? day?.weathercode ?? day?.code) ?? null;
-
         const wind =
           safeNum(day?.windSpeedMaxMph ?? day?.windMaxMph ?? day?.maxWindMph ?? day?.wind_mph ?? day?.windSpeedMph) ?? null;
-
         const gust =
           safeNum(day?.windGustMaxMph ?? day?.gustMaxMph ?? day?.maxGustMph ?? day?.windGustMph) ?? null;
-
-        const emoji = weatherCodeToEmoji(code);
-        const condition = weatherCodeToLabel(code);
-
-        const split = buildDayNight(day?.date ?? day?.time);
-        const dayKey = getIsoDateKey(day?.date ?? day?.time);
+        const humidity =
+          safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct ?? day?.humidity) ?? null;
+        const dewPoint =
+          safeNum(day?.dewPointMaxF ?? day?.dewpointMaxF ?? day?.dewPointF ?? day?.dewpointF) ?? null;
+        const cloudCover =
+          safeNum(day?.cloudCoverAvgPct ?? day?.cloudCoverPct ?? day?.cloudcover ?? day?.cloudCover) ?? null;
+        const feelsLike =
+          safeNum(day?.apparentTempMaxF ?? day?.feelsLikeMaxF ?? day?.apparentTemperatureMaxF ?? day?.feelsLikeF) ?? hi;
         const sunrise = typeof day?.sunrise === 'string' ? day.sunrise : null;
         const sunset = typeof day?.sunset === 'string' ? day.sunset : null;
-        const moonForDay = moonByDate.get(dayKey);
-        const rowMoonrise =
-          (typeof moonForDay?.moonrise === 'string' ? moonForDay.moonrise : null) ??
-          (idx === 0 ? moonrise ?? null : null) ??
-          (typeof day?.moonrise === 'string' ? day.moonrise : null);
-        const rowMoonset =
-          (typeof moonForDay?.moonset === 'string' ? moonForDay.moonset : null) ??
-          (idx === 0 ? moonset ?? null : null) ??
-          (typeof day?.moonset === 'string' ? day.moonset : null);
-        const dayLength = safeNum(day?.daylightDurationSec ?? day?.daylight_duration ?? day?.daylightDuration) ?? null;
+        const emoji = weatherCodeToEmoji(code);
+        const condition = weatherCodeToLabel(code);
 
         const narrativeParts: string[] = [];
         if (condition === 'Clear') narrativeParts.push('Bright and clear');
@@ -2274,7 +2573,6 @@ function DailyForecastList({
         else if (condition === 'Thunderstorm') narrativeParts.push('Storms possible');
         else if (condition === 'Fog') narrativeParts.push('Fog possible');
         else narrativeParts.push(condition);
-
         if (hi != null) {
           if (hi >= 95) narrativeParts.push('very hot');
           else if (hi >= 85) narrativeParts.push('warm');
@@ -2282,7 +2580,6 @@ function DailyForecastList({
           else if (hi >= 50) narrativeParts.push('cool');
           else narrativeParts.push('cold');
         }
-
         if (pop != null) {
           if (pop >= 70) narrativeParts.push('high precip chance');
           else if (pop >= 40) narrativeParts.push('some precip possible');
@@ -2290,179 +2587,79 @@ function DailyForecastList({
         }
 
         const narrative = `${narrativeParts.join(' • ')}.`;
+        const windFeel =
+          wind == null ? '—' : wind >= 25 ? 'Strong' : wind >= 15 ? 'Breezy' : wind >= 8 ? 'Light' : 'Calm';
+        const summaryLine = [
+          pop != null ? `${Math.round(pop)}% precip chance` : null,
+          wind != null ? `${Math.round(wind)} mph wind` : null,
+        ]
+          .filter(Boolean)
+          .join(' • ');
+        const barRows = [
+          { label: 'Feels like', value: feelsLike != null ? `${Math.round(feelsLike)}°` : '—', ratio: feelsLike != null ? Math.max(0, Math.min(1, (feelsLike - 20) / 90)) : 0 },
+          { label: 'Dew point', value: dewPoint != null ? `${Math.round(dewPoint)}°` : '—', ratio: dewPoint != null ? Math.max(0, Math.min(1, dewPoint / 80)) : 0 },
+          { label: 'Humidity', value: humidity != null ? `${Math.round(humidity)}%` : '—', ratio: humidity != null ? Math.max(0, Math.min(1, humidity / 100)) : 0 },
+          { label: 'Cloud cover', value: cloudCover != null ? `${Math.round(cloudCover)}%` : '—', ratio: cloudCover != null ? Math.max(0, Math.min(1, cloudCover / 100)) : 0 },
+          { label: 'Precip chance', value: pop != null ? `${Math.round(pop)}%` : '—', ratio: pop != null ? Math.max(0, Math.min(1, pop / 100)) : 0 },
+          { label: 'Wind', value: fmtWind(wind), ratio: wind != null ? Math.max(0, Math.min(1, wind / 40)) : 0 },
+          { label: 'Wind gusts', value: fmtWind(gust), ratio: gust != null ? Math.max(0, Math.min(1, gust / 50)) : 0 },
+          { label: 'Wind feel', value: windFeel, ratio: wind != null ? Math.max(0, Math.min(1, wind / 35)) : 0 },
+        ];
 
         return (
           <Pressable
             key={key}
-            onPress={() => toggleRow(key)}
+            onPress={() => setExpandedKey((prev) => (prev === key ? null : key))}
             style={[styles.dailyRow, expanded && styles.dailyRowExpanded]}
           >
-            <View style={styles.dailyRowTop}>
-              <View style={styles.dailyLeft}>
-                <Text style={styles.dailyLabel}>{label}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 20 }}>{emoji}</Text> {/* ⬅️ bigger icon */}
-                  <Text style={styles.dailyCondition} numberOfLines={1}>
-                    {condition}
-                  </Text>
-                </View>
+            <View style={styles.dailyForecastTop}>
+              <View style={styles.dailyForecastWhen}>
+                <Text style={styles.dailyForecastDay}>{dayLabel}</Text>
+                {dateLabel ? <Text style={styles.dailyForecastDate}>{dateLabel}</Text> : null}
               </View>
 
-              <View style={styles.dailyRight}>
+              <View style={styles.dailyForecastMain}>
                 <Text style={styles.dailyTemps}>
                   <Text style={styles.dailyHi}>{hi != null ? `${Math.round(hi)}°` : '—'}</Text>
                   <Text style={styles.dailySlash}> / </Text>
                   <Text style={styles.dailyLo}>{lo != null ? `${Math.round(lo)}°` : '—'}</Text>
                 </Text>
-
-                <View style={styles.dailyMetaRow}>
-                  <Text style={styles.dailyPop}>
-                    {pop != null ? `Precip ${Math.round(pop)}%` : 'Precip —'}
+                <View style={styles.dailyForecastConditionRow}>
+                  <PremiumWeatherIcon code={code} size={26} variant="inline" style={styles.dailyForecastIconBadge} />
+                  <Text style={styles.dailyCondition} numberOfLines={1}>
+                    {condition}
                   </Text>
-                  <Text style={styles.dailyChevron}>{expanded ? '⌃' : '⌄'}</Text>
                 </View>
+                <Text style={styles.dailyForecastSummary} numberOfLines={expanded ? 2 : 1}>
+                  {summaryLine || narrative.charAt(0).toUpperCase() + narrative.slice(1)}
+                </Text>
               </View>
-            </View>
 
-            <Text style={styles.dailyNarrative} numberOfLines={expanded ? undefined : 1}>
-              {narrative.charAt(0).toUpperCase() + narrative.slice(1)}
-            </Text>
-
-            <View style={styles.dailyAstroRow}>
-              <Text style={styles.dailyAstroText}>Sunrise {formatClock(sunrise)}</Text>
-              <Text style={styles.dailyAstroDot}>•</Text>
-              <Text style={styles.dailyAstroText}>Sunset {formatClock(sunset)}</Text>
+              <View style={styles.dailyForecastSide}>
+                <Text style={styles.dailyForecastSideValue}>{pop != null ? `${Math.round(pop)}%` : '—'}</Text>
+                <Text style={styles.dailyChevron}>{expanded ? '⌃' : '⌄'}</Text>
+              </View>
             </View>
 
             {expanded ? (
               <View style={styles.dailyExpanded}>
-                <View style={styles.dayNightBlock}>
-                  <Text style={styles.dayNightTitle}>Day</Text>
-                  <Text style={styles.dayNightNarrative}>{split.day.narrative}</Text>
-                  <View style={styles.dayNightMetaRow}>
-                    <Text style={styles.dayNightMetaText}>
-                      {split.day.tempMax != null ? `High ${Math.round(split.day.tempMax)}°` : 'High —'}
-                    </Text>
-                    <Text style={styles.dayNightMetaDot}>•</Text>
-                    <Text style={styles.dayNightMetaText}>
-                      {split.day.pop != null ? `Precip ${Math.round(split.day.pop)}%` : 'Precip —'}
-                    </Text>
-                    <Text style={styles.dayNightMetaDot}>•</Text>
-                    <Text style={styles.dayNightMetaText}>
-                      Wind {fmtWind(split.day.wind)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.dayNightDivider} />
-
-                <View style={styles.dayNightBlock}>
-                  <Text style={styles.dayNightTitle}>Night</Text>
-                  <Text style={styles.dayNightNarrative}>{split.night.narrative}</Text>
-                  <View style={styles.dayNightMetaRow}>
-                    <Text style={styles.dayNightMetaText}>
-                      {split.night.tempMin != null ? `Low ${Math.round(split.night.tempMin)}°` : 'Low —'}
-                    </Text>
-                    <Text style={styles.dayNightMetaDot}>•</Text>
-                    <Text style={styles.dayNightMetaText}>
-                      {split.night.pop != null ? `Precip ${Math.round(split.night.pop)}%` : 'Precip —'}
-                    </Text>
-                    <Text style={styles.dayNightMetaDot}>•</Text>
-                    <Text style={styles.dayNightMetaText}>
-                      Wind {fmtWind(split.night.wind)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.periodStatsWrap}>
-                  <View style={styles.periodStatsSection}>
-                    <Text style={styles.periodStatsTitle}>Sun and moon</Text>
-
-                    <View style={styles.dailyExpandedGrid}>
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Sunrise</Text>
-                        <Text style={styles.dailyExpandedValue}>{formatClock(sunrise)}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Sunset</Text>
-                        <Text style={styles.dailyExpandedValue}>{formatClock(sunset)}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Moonrise</Text>
-                        <Text style={styles.dailyExpandedValue}>{formatClock(rowMoonrise)}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Moonset</Text>
-                        <Text style={styles.dailyExpandedValue}>{formatClock(rowMoonset)}</Text>
-                      </View>
+                {barRows.map((row) => (
+                  <View key={row.label} style={styles.dailyMetricRow}>
+                    <Text style={styles.dailyMetricLabel}>{row.label}</Text>
+                    <View style={styles.dailyMetricTrack}>
+                      <View style={[styles.dailyMetricFill, { width: `${Math.max(12, row.ratio * 100)}%` }]} />
                     </View>
-
-                    <Text style={styles.dailyExpandedSummary}>Day length {formatDayLength(dayLength)}</Text>
+                    <Text style={styles.dailyMetricValue}>{row.value}</Text>
                   </View>
-
-                  <View style={styles.periodStatsSection}>
-                    <Text style={styles.periodStatsTitle}>Day details</Text>
-
-                    <View style={styles.dailyExpandedGrid}>
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Condition</Text>
-                        <Text style={styles.dailyExpandedValue}>{split.day.condition}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Precip</Text>
-                        <Text style={styles.dailyExpandedValue}>
-                          {split.day.pop != null ? `${Math.round(split.day.pop)}%` : '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Wind</Text>
-                        <Text style={styles.dailyExpandedValue}>{fmtWind(split.day.wind)}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Gusts</Text>
-                        <Text style={styles.dailyExpandedValue}>{fmtWind(split.day.gust)}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.periodStatsSection}>
-                    <Text style={styles.periodStatsTitle}>Night details</Text>
-
-                    <View style={styles.dailyExpandedGrid}>
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Condition</Text>
-                        <Text style={styles.dailyExpandedValue}>{split.night.condition}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Precip</Text>
-                        <Text style={styles.dailyExpandedValue}>
-                          {split.night.pop != null ? `${Math.round(split.night.pop)}%` : '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Wind</Text>
-                        <Text style={styles.dailyExpandedValue}>{fmtWind(split.night.wind)}</Text>
-                      </View>
-
-                      <View style={styles.dailyExpandedCell}>
-                        <Text style={styles.dailyExpandedLabel}>Gusts</Text>
-                        <Text style={styles.dailyExpandedValue}>{fmtWind(split.night.gust)}</Text>
-                      </View>
-                    </View>
-                  </View>
+                ))}
+                <View style={styles.dailySunRow}>
+                  <Text style={styles.dailySunLabel}>Sunrise</Text>
+                  <Text style={styles.dailySunValue}>{formatClock(sunrise)}</Text>
                 </View>
-
-                <Text style={styles.dailyExpandedSummary}>
-                  High {hi != null ? `${Math.round(hi)}°` : '—'} • Low {lo != null ? `${Math.round(lo)}°` : '—'}
-                </Text>
+                <View style={styles.dailySunRow}>
+                  <Text style={styles.dailySunLabel}>Sunset</Text>
+                  <Text style={styles.dailySunValue}>{formatClock(sunset)}</Text>
+                </View>
               </View>
             ) : null}
           </Pressable>
@@ -2491,15 +2688,22 @@ function wmoToCondition(code: number | null): string | null {
   return 'Cloudy';
 }
 
+const GLASS_PANEL_BG = 'rgba(44, 70, 102, 0.76)';
+const GLASS_PANEL_BG_STRONG = 'rgba(44, 70, 102, 0.76)';
+const GLASS_INSET_BG = 'rgba(44, 70, 102, 0.76)';
+const GLASS_INSET_BG_SOFT = 'rgba(44, 70, 102, 0.76)';
+const GLASS_BORDER = 'rgba(255,255,255,0.18)';
+const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.12)';
+
 const ss = StyleSheet.create({
   wrap: { marginTop: 10, gap: 10 },
   section: {
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.035)',
+    borderColor: GLASS_BORDER_SOFT,
   },
   sectionTitle: {
     fontSize: 11,
@@ -2564,11 +2768,15 @@ function radiationRegimeLabel(cloudCoverPct: number | null) {
 }
 
 function NerdyDeepDive({
+  condition,
+  heroSummary,
+  updatedText,
   dewpointF,
   humidityPct,
   dpBand,
   spreadF,
   tempF,
+  feelsLikeF,
   windMph,
   gustMph,
   windDirDeg,
@@ -2591,11 +2799,15 @@ function NerdyDeepDive({
   feelsDriverValue,
   onOpenLearnTopic,
 }: {
+  condition: string;
+  heroSummary: string;
+  updatedText: string;
   dewpointF: number | null;
   humidityPct: number | null;
   dpBand: string | null;
   spreadF: number | null;
   tempF: number | null;
+  feelsLikeF: number | null;
   windMph: number | null;
   gustMph: number | null;
   windDirDeg: number | null;
@@ -2626,297 +2838,599 @@ function NerdyDeepDive({
   moonrise?: string | null;
   moonset?: string | null;
   dayLengthSec?: number | null;
-  pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
+  pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
   onOpenLearnTopic: (topicId?: string) => void;
 }) {
   const dir = dirToCompass(windDirDeg);
-  const dirText = windDirDeg != null ? `${dir ?? ''} ${Math.round(windDirDeg)}°`.trim() : '—';
-
-  const trendHint =
-    pressureTrend.deltaHpa == null
-      ? `${pressureTrend.arrow} ${pressureTrend.label}`
-      : `${pressureTrend.arrow} ${pressureTrend.label} • ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
-
+  const dirHeading = dir ?? '\u2014';
+  const dirDegrees = windDirDeg != null ? `${Math.round(windDirDeg)}\u00B0` : '\u2014';
   const pressureRegime = pressureRegimeLabel(pressureTrend);
   const radiationRegime = radiationRegimeLabel(cloudCoverPct);
-  const astroMilestones = [
+  const windState = windMph == null ? 'Wind variable' : windMph < 5 ? 'Calm' : windMph < 15 ? 'Breezy' : windMph < 25 ? 'Steady winds' : 'Windy';
+  const moistureState = dewpointF == null ? 'Moisture' : dewpointF < 45 ? 'Dry Air' : dewpointF < 60 ? 'Comfortable' : 'Humid';
+  const cloudState = radiationRegime === '\u2014' ? 'Sky state' : radiationRegime;
+  const pressureState = pressureRegime;
+  const pressurePrimary = pressureHpa != null ? `${Math.round(pressureHpa)} hPa ${pressureTrend.arrow}` : `\u2014 ${pressureTrend.arrow}`;
+  const pressureSecondary = pressureInHg != null ? `${pressureInHg.toFixed(2)} inHg` : '\u2014';
+  const pressureTrendText = pressureTrend.deltaHpa == null
+    ? pressureTrend.label
+    : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
+  const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
+  const sunMoments = [
+    { label: 'Dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
     { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
     { label: 'Sunset', value: formatClock(sunset), topicId: astroLearnTopicId('sunset') },
-    { label: 'Moonrise', value: formatClock(moonrise), topicId: astroLearnTopicId('moonrise') },
-    { label: 'Moonset', value: formatClock(moonset), topicId: astroLearnTopicId('moonset') },
-    { label: 'Civil dusk', value: formatClock(astro?.civilDusk), topicId: astroLearnTopicId('civil') },
-    { label: 'Civil dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
-    { label: 'Nautical dusk', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
-    { label: 'Nautical dawn', value: formatClock(astro?.nauticalDawn), topicId: astroLearnTopicId('nautical') },
-    {
-      label: 'Astronomical dusk',
-      value: formatClock(astro?.astronomicalDusk),
-      topicId: astroLearnTopicId('astronomical'),
-    },
-    {
-      label: 'Astronomical dawn',
-      value: formatClock(astro?.astronomicalDawn),
-      topicId: astroLearnTopicId('astronomical'),
-    },
+    { label: 'Dusk', value: formatClock(astro?.civilDusk), topicId: astroLearnTopicId('civil') },
   ];
+  const darknessMoments = [
+    { label: 'Nautical Dusk', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
+    { label: 'Astronomical Dusk', value: formatClock(astro?.astronomicalDusk), topicId: astroLearnTopicId('astronomical') },
+    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
+    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
+  ];
+  const summaryCards = [
+    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
+    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
+    { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime), topicId: astroLearnTopicId('best') },
+    { label: 'Day Length', value: formatDayLength(dayLengthSec), topicId: astroLearnTopicId('sunrise') },
+  ];
+  const quickChips = [moistureState, windState, cloudState, pressureState];
 
   return (
     <View style={nd.wrap}>
-      <SectionCard title="Comfort">
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Dew point"
-              value={dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}
-              onPress={() => onOpenLearnTopic('dewpoint')}
-            />
+      <View style={nd.topBar}>
+        <Text style={nd.kicker}>WX LAB DAILY</Text>
+        <Text style={nd.updated}>{updatedText}</Text>
+      </View>
+
+      <View style={nd.heroShell}>
+        <View style={nd.heroRow}>
+          <Text style={nd.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+
+          <View style={nd.heroCopy}>
+            <Text style={nd.heroCondition}>{condition}</Text>
+            <Text style={nd.heroSummary}>{heroSummary}</Text>
           </View>
 
-          <View style={nd.gridItem}>
-            <StatTile
-              label="RH"
-              value={humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}
-              onPress={() => onOpenLearnTopic('humidity')}
-            />
-          </View>
-        </View>
-
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Dew band"
-              value={dpBand ?? '—'}
-              onPress={() => onOpenLearnTopic('dewpoint')}
-            />
-          </View>
-
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Thermal Spread"
-              value={spreadF != null ? `${Math.round(spreadF)}°F` : '—'}
-              onPress={() => onOpenLearnTopic('dewpoint')}
-            />
+          <View style={nd.heroFeelsBlock}>
+            <Text style={nd.heroFeelsLabel}>Feels</Text>
+            <Text style={nd.heroFeelsValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
           </View>
         </View>
 
-        <StatTile
-          label={feelsDriverLabel}
-          value={feelsDriverValue}
-          onPress={() => onOpenLearnTopic('apparent-temp')}
-        />
-      </SectionCard>
-
-      <SectionCard title="Wind">
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Speed"
-              value={windMph != null ? `${Math.round(windMph)} mph` : '—'}
-              onPress={() => onOpenLearnTopic('wind')}
-            />
-          </View>
-
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Gusts"
-              value={gustMph != null ? `${Math.round(gustMph)} mph` : '—'}
-              onPress={() => onOpenLearnTopic('wind')}
-            />
-          </View>
-        </View>
-
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Direction"
-              value={dirText}
-              onPress={() => onOpenLearnTopic('wind')}
-            />
-          </View>
-
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Gust Factor"
-              value={gf != null ? gf.toFixed(2) : '—'}
-              onPress={() => onOpenLearnTopic('wind')}
-            />
-          </View>
-        </View>
-      </SectionCard>
-
-      {(() => {
-        const hasSky = cloudCoverPct != null || uvIndex != null || !!airQualityLabel;
-
-        if (!hasSky) {
-          return (
-            <SectionCard title="Sky">
-              <Text style={nd.mutedLine}>Sky details not available from this station.</Text>
-            </SectionCard>
-          );
-        }
-
-        return (
-          <SectionCard title="Sky">
-            <View style={nd.grid2}>
-              <View style={nd.gridItem}>
-                <StatTile
-                  label="Cloud cover"
-                  value={cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'}
-                  onPress={() => onOpenLearnTopic('clouds')}
-                />
-              </View>
-
-              <View style={nd.gridItem}>
-                <StatTile
-                  label="UV index"
-                  value={uvIndex != null ? fmt(uvIndex, 1) : '—'}
-                  onPress={() => onOpenLearnTopic('uv')}
-                />
-              </View>
-            </View>
-
-            <View style={nd.grid2}>
-              <View style={nd.gridItem}>
-                <StatTile
-                  label="Air Quality"
-                  value={airQualityLabel ?? '—'}
-                  onPress={() => onOpenLearnTopic('air-quality')}
-                />
-              </View>
-
-              <View style={nd.gridItem}>
-                <StatTile
-                  label="Radiation Regime"
-                  value={radiationRegime}
-                  onPress={() => onOpenLearnTopic('clouds')}
-                />
-              </View>
-            </View>
-          </SectionCard>
-        );
-      })()}
-
-      <SectionCard title="Extras">
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="POP"
-              value={precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}
-              onPress={() => onOpenLearnTopic('pop')}
-            />
-          </View>
-
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Vis"
-              value={visibilityMi != null ? `${visibilityMi.toFixed(1)} mi` : '—'}
-              onPress={() => onOpenLearnTopic('visibility')}
-            />
-          </View>
-        </View>
-
-        <View style={nd.grid2}>
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Pressure"
-              value={pressureHpa != null ? `${fmt(pressureHpa)} hPa ${pressureTrend.arrow}` : `— ${pressureTrend.arrow}`}
-              valueHint={
-                pressureInHg != null
-                  ? `${pressureInHg.toFixed(2)} inHg • ${trendHint}`
-                  : `${trendHint}${pressureHpa != null ? ` • ${fmt(pressureHpa)} hPa` : ''}`
-              }
-              onPress={() => onOpenLearnTopic('pressure')}
-            />
-          </View>
-
-          <View style={nd.gridItem}>
-            <StatTile
-              label="Pressure Regime"
-              value={pressureRegime}
-              onPress={() => onOpenLearnTopic('pressure')}
-            />
-          </View>
-        </View>
-      </SectionCard>
-
-      <SectionCard title="Sun and Moon">
-        <View style={nd.astroGrid}>
-          {astroMilestones.map((item) => (
-            <View key={item.label} style={nd.astroGridItem}>
-              <StatTile
-                label={item.label}
-                value={item.value}
-                onPress={() => onOpenLearnTopic(item.topicId)}
-              />
+        <View style={nd.chipRow}>
+          {quickChips.map((chip) => (
+            <View key={chip} style={nd.chip}>
+              <Text style={nd.chipText}>{chip}</Text>
             </View>
           ))}
         </View>
+      </View>
 
-        <StatTile
-          label="Night window"
-          value={formatWindow(astro?.nightStartTime, astro?.nightEndTime)}
-          onPress={() => onOpenLearnTopic(astroLearnTopicId('night'))}
-        />
+      <View style={nd.panelGrid}>
+        <View style={nd.panelRow}>
+          <View style={nd.panelHalf}>
+            <Text style={nd.panelTitle}>Atmosphere</Text>
+            <View style={nd.metricGrid2}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('apparent-temp')}>
+                <Text style={nd.metricLabel}>Dew Point</Text>
+                <Text style={nd.metricValue}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
+              </Pressable>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('humidity')}>
+                <Text style={nd.metricLabel}>RH</Text>
+                <Text style={nd.metricValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
+              </Pressable>
+            </View>
+            <View style={nd.metricGrid2}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+                <Text style={nd.metricLabel}>Feels Like</Text>
+                <Text style={nd.metricValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+              </Pressable>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+                <Text style={nd.metricLabel}>Thermal Spread</Text>
+                <Text style={nd.metricValue}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
+              </Pressable>
+            </View>
+            <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+              <View style={nd.metricWideHead}>
+                <Text style={nd.metricLabel}>Dew Band</Text>
+                <Text style={nd.metricWideValue}>{dpBand ?? '—'}</Text>
+              </View>
+              <Text style={nd.metricHint}>{dewpointF != null ? `${Math.round(dewpointF)}°F dew point` : 'Based on dew point'}</Text>
+            </Pressable>
+          </View>
 
-        <StatTile
-          label="True dark"
-          value={formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime)}
-          onPress={() => onOpenLearnTopic(astroLearnTopicId('true-dark'))}
-        />
+          <View style={nd.panelHalf}>
+            <Text style={nd.panelTitle}>Wind Profile</Text>
+            <View style={nd.metricGrid2}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('wind')}>
+                <Text style={nd.metricLabel}>Speed</Text>
+                <Text style={nd.metricValue}>{windMph != null ? `${Math.round(windMph)} mph` : '—'}</Text>
+              </Pressable>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('wind')}>
+                <Text style={nd.metricLabel}>Gusts</Text>
+                <Text style={nd.metricValue}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
+              </Pressable>
+            </View>
+            <View style={nd.metricGrid2Tall}>
+              <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind')}>
+                <Text style={nd.metricLabel}>Direction</Text>
+                <Text style={nd.directionMain}>{dirHeading}</Text>
+                <Text style={nd.directionSub}>{dirDegrees}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
+                <Text style={nd.metricLabel}>Gust Factor</Text>
+                <Text style={nd.metricValue}>{gf != null ? gf.toFixed(2) : '—'}</Text>
+                <Text style={nd.metricHint}>{windState}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
 
-        <StatTile
-          label="Best window"
-          value={formatWindow(astro?.bestStartTime, astro?.bestEndTime)}
-          onPress={() => onOpenLearnTopic(astroLearnTopicId('best'))}
-        />
+        <View style={nd.panelRow}>
+          <View style={nd.panelHalf}>
+            <Text style={nd.panelTitle}>Sky & Radiation</Text>
+            <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('clouds')}>
+              <Text style={nd.metricLabel}>Cloud Cover</Text>
+              <View style={nd.cloudRow}>
+                <Text style={nd.metricWideValue}>{cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'}</Text>
+                <View style={nd.cloudTrack}>
+                  <View style={[nd.cloudFill, { width: `${cloudBarPct}%` }]} />
+                </View>
+              </View>
+            </Pressable>
+            <View style={nd.metricStack}>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('uv')}>
+                <Text style={nd.metricLabel}>UV Index</Text>
+                <Text style={nd.metricValueSmall}>{uvIndex != null ? fmt(uvIndex, 1) : '—'}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('air-quality')}>
+                <Text style={nd.metricLabel}>Air Quality</Text>
+                <Text style={nd.metricValueSmall}>{airQualityLabel ?? '—'}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('clouds')}>
+                <Text style={nd.metricLabel}>Radiation Regime</Text>
+                <Text style={nd.metricValueSmall}>{radiationRegime}</Text>
+              </Pressable>
+            </View>
+          </View>
 
-        <StatTile
-          label="Day length"
-          value={formatDayLength(dayLengthSec)}
-          onPress={() => onOpenLearnTopic(astroLearnTopicId('sunrise'))}
-        />
-      </SectionCard>
+          <View style={nd.panelHalf}>
+            <Text style={nd.panelTitle}>Pressure & Visibility</Text>
+            <Pressable style={nd.pressureHeroCard} onPress={() => onOpenLearnTopic('pressure')}>
+              <Text style={nd.metricLabel}>Pressure</Text>
+              <Text style={nd.pressureHeroValue}>{pressurePrimary}</Text>
+              <Text style={nd.pressureHeroSub}>{pressureSecondary}</Text>
+              <Text style={nd.pressureHeroHint}>{pressureTrendText}</Text>
+            </Pressable>
+            <View style={nd.metricStack}>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('visibility')}>
+                <Text style={nd.metricLabel}>Visibility</Text>
+                <Text style={nd.metricValueSmall}>{visibilityMi != null ? `${visibilityMi.toFixed(1)} mi` : '—'}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('pop')}>
+                <Text style={nd.metricLabel}>POP</Text>
+                <Text style={nd.metricValueSmall}>{precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('pressure')}>
+                <Text style={nd.metricLabel}>Pressure Regime</Text>
+                <Text style={nd.metricValueSmall}>{pressureRegime}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+
+        <View style={nd.panelFull}>
+          <Text style={nd.panelTitle}>Sun & Moon</Text>
+
+          <Text style={nd.timelineLabel}>Sun</Text>
+          <View style={nd.timelineRow}>
+            {sunMoments.map((item) => (
+              <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
+                <Text style={nd.timelineNodeLabel}>{item.label}</Text>
+                <Text style={nd.timelineNodeValue}>{item.value}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={nd.timelineLabel}>Darkness</Text>
+          <View style={nd.timelineRow}>
+            {darknessMoments.map((item) => (
+              <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
+                <Text style={nd.timelineNodeLabel}>{item.label}</Text>
+                <Text style={nd.timelineNodeValue}>{item.value}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={nd.timelineLabel}>Moon</Text>
+          <View style={nd.moonRow}>
+            <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
+              <Text style={nd.timelineNodeLabel}>Moonrise</Text>
+              <Text style={nd.timelineNodeValue}>{formatClock(moonrise)}</Text>
+            </Pressable>
+            <View style={nd.moonCenter}>
+              <PremiumMoonIcon size={36} />
+              <Text style={nd.moonGlyph}>{''}</Text>
+            </View>
+            <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonset'))}>
+              <Text style={nd.timelineNodeLabel}>Moonset</Text>
+              <Text style={nd.timelineNodeValue}>{formatClock(moonset)}</Text>
+            </Pressable>
+          </View>
+
+          <Text style={nd.timelineLabel}>Windows & Summary</Text>
+          <View style={nd.metricGrid4}>
+            {summaryCards.map((item) => (
+              <Pressable key={item.label} style={nd.summaryCard} onPress={() => onOpenLearnTopic(item.topicId)}>
+                <Text style={nd.metricLabel}>{item.label}</Text>
+                <Text style={nd.summaryValue}>{item.value}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
 
 const nd = StyleSheet.create({
-  wrap: { marginTop: 10, gap: 8 },
-  gridItem: { flex: 1 },
-  astroGrid: {
+  wrap: { marginTop: 8, gap: 12 },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  kicker: {
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.72)',
+    fontWeight: '900',
+  },
+  updated: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  heroShell: {
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 0,
+    gap: 16,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  heroTemp: {
+    fontSize: 64,
+    lineHeight: 66,
+    fontWeight: '900',
+    color: 'white',
+  },
+  heroCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 12,
+  },
+  heroCondition: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: 'white',
+  },
+  heroSummary: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.78)',
+  },
+  heroFeelsBlock: {
+    alignItems: 'flex-end',
+    paddingTop: 6,
+    minWidth: 68,
+  },
+  heroFeelsLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.54)',
+  },
+  heroFeelsValue: {
+    marginTop: 6,
+    fontSize: 32,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.92)',
+  },
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  astroGridItem: {
-    width: '48%',
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(18, 37, 63, 0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  section: {
+  chipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.88)',
+  },
+  panelGrid: { gap: 10 },
+  section: { gap: 10 },
+  sectionTitle: { fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(255,255,255,0.64)', fontWeight: '900' },
+  sectionBody: { gap: 10 },
+  panelRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'stretch',
+  },
+  panelHalf: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 0,
+    gap: 10,
+  },
+  panelFull: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 0,
+    gap: 10,
+  },
+  panelTitle: {
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.64)',
+    fontWeight: '900',
+  },
+  metricGrid2: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metricGrid2Tall: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metricGrid3: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  metricGrid3Wrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  metricStack: {
+    gap: 10,
+  },
+  metricGrid4: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  metricCard: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 84,
     paddingVertical: 10,
     paddingHorizontal: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.025)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG,
+    borderWidth: 0,
+    justifyContent: 'flex-start',
+    gap: 8,
   },
-  sectionTitle: {
-    fontSize: 11,
-    letterSpacing: 0.9,
+  metricTallCard: {
+    minHeight: 132,
+  },
+  metricDialCard: {
+    minHeight: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metricWideCard: {
+    minHeight: 92,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG,
+    borderWidth: 0,
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  metricCardHalf: {
+    flexBasis: '48%',
+    flexGrow: 1,
+  },
+  metricCardFull: {
+    width: '100%',
+    flexBasis: '100%',
+    minHeight: 72,
+  },
+  metricWideHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  metricLabel: {
+    fontSize: 10,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.48)',
     fontWeight: '900',
-    marginBottom: 10,
+    lineHeight: 13,
   },
-  sectionBody: { gap: 8 },
-  grid2: { flexDirection: 'row', gap: 8 },
-  grid3: { flexDirection: 'row', gap: 8 },
-  mutedLine: {
-    color: 'rgba(255,255,255,0.55)',
-    fontWeight: '700',
+  metricValue: {
+    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900',
+    color: 'white',
+  },
+  metricValueSmall: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900',
+    color: 'white',
+  },
+  metricWideValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: 'white',
+  },
+  metricHint: {
     fontSize: 12,
     lineHeight: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  directionMain: {
+    marginTop: 8,
+    fontSize: 26,
+    lineHeight: 28,
+    fontWeight: '900',
+    color: 'white',
+    textAlign: 'center',
+  },
+  directionSub: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  cloudRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cloudTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  cloudFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(120, 180, 255, 0.72)',
+  },
+  pressureHeroCard: {
+    minHeight: 136,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG,
+    borderWidth: 0,
+    justifyContent: 'space-between',
+  },
+  pressureHeroValue: {
+    marginTop: 8,
+    fontSize: 21,
+    lineHeight: 24,
+    fontWeight: '900',
+    color: 'white',
+  },
+  pressureHeroSub: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  pressureHeroHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.52)',
+  },
+  timelineLabel: {
+    fontSize: 10,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.46)',
+    fontWeight: '900',
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  timelineNode: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 0,
+    gap: 6,
+  },
+  timelineNodeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.5)',
+  },
+  timelineNodeValue: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    color: 'white',
+  },
+  moonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  moonNode: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 0,
+    gap: 6,
+  },
+  moonCenter: {
+    width: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moonGlyph: {
+    display: 'none',
+  },
+  summaryCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    minHeight: 80,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    justifyContent: 'space-between',
+  },
+  summaryValue: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    color: 'white',
   },
 });
 
@@ -3008,13 +3522,13 @@ function LandWeatherWithCoords({
 
   const wx: any = currentData ?? {};
 
-  const tempF = safeNum(wx.temperatureF ?? wx.temp_f ?? wx.temperature ?? wx.temp);
-  const feelsLikeF = safeNum(wx.apparentTemperatureF ?? wx.feels_like_f ?? wx.feels_like ?? wx.feels);
+  const currentTempF = safeNum(wx.temperatureF ?? wx.temp_f ?? wx.temperature ?? wx.temp);
+  const currentFeelsLikeF = safeNum(wx.apparentTemperatureF ?? wx.feels_like_f ?? wx.feels_like ?? wx.feels);
 
-  const dewpointF = safeNum(wx.dewpointF ?? wx.dewpoint_f ?? wx.dew_point ?? wx.dewPoint);
-  const humidityPct = safeNum(wx.humidity ?? wx.relativeHumidity ?? wx.relative_humidity ?? wx.rh ?? wx.humidityPct);
+  const currentDewpointF = safeNum(wx.dewpointF ?? wx.dewpoint_f ?? wx.dew_point ?? wx.dewPoint);
+  const currentHumidityPct = safeNum(wx.humidity ?? wx.relativeHumidity ?? wx.relative_humidity ?? wx.rh ?? wx.humidityPct);
 
-  const windMph = safeNum(
+  const currentWindMph = safeNum(
     wx.windSpeedMph ??
       wx.wind_speed_mph ??
       wx.wind_speed_10m ??
@@ -3022,7 +3536,7 @@ function LandWeatherWithCoords({
       wx.windSpeed ??
       wx.wind
   );
-  const gustMph = safeNum(
+  const currentGustMph = safeNum(
     wx.windGustMph ??
       wx.wind_gust_mph ??
       wx.wind_gusts_10m ??
@@ -3031,7 +3545,7 @@ function LandWeatherWithCoords({
       wx.gust ??
       wx.windGust
   );
-  const windDirDeg = safeNum(
+  const currentWindDirDeg = safeNum(
     wx.windDirection ??
       wx.wind_dir ??
       wx.wind_direction ??
@@ -3040,7 +3554,7 @@ function LandWeatherWithCoords({
       wx.windDir
   );
 
-  const cloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
+  const currentCloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
 
   const daily = (forecastData?.daily ?? []).slice(0, 15);
   const todayDaily = daily[0] ?? null;
@@ -3068,54 +3582,60 @@ function LandWeatherWithCoords({
     });
   }, [hourlyRaw]);
 
+  const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now()), [hourly]);
+
+  const tempF =
+    currentTempF ??
+    safeNum(nearestHourly?.tempF ?? nearestHourly?.temperatureF ?? nearestHourly?.temperature_2m ?? nearestHourly?.temperature ?? nearestHourly?.temp) ??
+    null;
+  const feelsLikeF =
+    currentFeelsLikeF ??
+    safeNum(nearestHourly?.apparentTempF ?? nearestHourly?.apparentTemperatureF ?? nearestHourly?.apparent_temperature ?? nearestHourly?.feelsLikeF) ??
+    tempF;
+  const dewpointF =
+    currentDewpointF ??
+    safeNum(nearestHourly?.dewPointF ?? nearestHourly?.dewpointF ?? nearestHourly?.dew_point_2m ?? nearestHourly?.dew_point) ??
+    safeNum(todayDaily?.dewPointMaxF) ??
+    null;
+  const humidityPct =
+    currentHumidityPct ??
+    safeNum(nearestHourly?.humidityPct ?? nearestHourly?.relative_humidity_2m ?? nearestHourly?.relativeHumidity ?? nearestHourly?.rh) ??
+    safeNum(todayDaily?.humidityMaxPct) ??
+    null;
+  const windMph =
+    currentWindMph ??
+    safeNum(nearestHourly?.windMph ?? nearestHourly?.windSpeedMph ?? nearestHourly?.wind_speed_10m ?? nearestHourly?.windspeed_10m ?? nearestHourly?.wind) ??
+    null;
+  const gustMph =
+    currentGustMph ??
+    safeNum(nearestHourly?.windGustMph ?? nearestHourly?.gustMph ?? nearestHourly?.wind_gusts_10m ?? nearestHourly?.gust ?? nearestHourly?.windGust) ??
+    safeNum(todayDaily?.windGustMaxMph) ??
+    null;
+  const windDirDeg =
+    currentWindDirDeg ??
+    safeNum(nearestHourly?.windDirDeg ?? nearestHourly?.wind_direction_10m ?? nearestHourly?.winddirection_10m ?? nearestHourly?.windDirection) ??
+    safeNum(todayDaily?.windDirDominantDeg) ??
+    null;
+  const cloudCoverPct =
+    currentCloudCoverPct ??
+    safeNum(nearestHourly?.cloudCoverPct ?? nearestHourly?.cloud_cover ?? nearestHourly?.cloudcover ?? nearestHourly?.cloudCover) ??
+    safeNum(todayDaily?.cloudCoverAvgPct) ??
+    null;
+
   const pressureTrend = useMemo(() => pressureTrendFromHourly(hourly), [hourly]);
 
   const visibilityMi = (() => {
     const vMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
     if (vMi != null) return vMi;
 
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
-    const meters = safeNum(best?.visibility ?? best?.visibility_m);
+    const meters = safeNum(nearestHourly?.visibility ?? nearestHourly?.visibility_m);
     if (meters == null) return null;
 
     return meters / 1609.344;
   })();
 
   const uvIndexFromHourly = (() => {
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
-    return safeNum(best?.uvIndex ?? best?.uv_index ?? best?.uv);
+    return safeNum(nearestHourly?.uvIndex ?? nearestHourly?.uv_index ?? nearestHourly?.uv);
   })();
 
   const uvIndexFromDailyMax = safeNum(forecastData?.daily?.[0]?.uvIndexMax);
@@ -3129,10 +3649,12 @@ function LandWeatherWithCoords({
     (typeof astroData?.aerosols?.airQualityLabel === 'string' ? astroData.aerosols.airQualityLabel : null) ??
     (typeof astroData?.aerosols?.label === 'string' ? astroData.aerosols.label : null) ??
     null;
+  const airQualityIndex = safeNum(astroData?.aerosols?.airQualityIndex);
 
   const pressureHpa =
     safeNum(wx.pressureHpa ?? wx.pressure_hpa ?? wx.pressure) ??
     safeNum(wx.pressureMb) ??
+    safeNum(nearestHourly?.pressureHpa ?? nearestHourly?.pressure_msl ?? nearestHourly?.pressureMslHpa ?? nearestHourly?.pressure_hpa ?? nearestHourly?.pressure) ??
     null;
 
   const pressureInHg =
@@ -3140,24 +3662,7 @@ function LandWeatherWithCoords({
     (pressureHpa != null ? hpaToInHg(pressureHpa) : null);
 
   const popFromHourly = (() => {
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
-    return safeNum(best?.precipitation_probability ?? best?.precipProbPct ?? best?.precipChancePct ?? best?.pop);
+    return safeNum(nearestHourly?.precipitation_probability ?? nearestHourly?.precipProbPct ?? nearestHourly?.precipChancePct ?? nearestHourly?.pop);
   })();
 
   const popTodayPeak = safeNum(forecastData?.daily?.[0]?.precipProbMaxPct);
@@ -3168,25 +3673,8 @@ function LandWeatherWithCoords({
     safeNum(wx.weatherCode ?? wx.weathercode ?? wx.weather_code ?? wx.code ?? wx.iconCode ?? wx.icon_code) ?? null;
 
   const weatherCodeFromHourly = (() => {
-    const hrs: any[] = forecastData?.hourly ?? [];
-    if (!hrs.length) return null;
-
-    const now = Date.now();
-    let best: any = null;
-    let bestDt = Infinity;
-
-    for (const h of hrs) {
-      const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        best = h;
-      }
-    }
-
     return (
-      safeNum(best?.weatherCode ?? best?.weather_code ?? best?.weathercode ?? best?.condition_code ?? best?.code) ?? null
+      safeNum(nearestHourly?.weatherCode ?? nearestHourly?.weather_code ?? nearestHourly?.weathercode ?? nearestHourly?.condition_code ?? nearestHourly?.code) ?? null
     );
   })();
 
@@ -3243,6 +3731,81 @@ function LandWeatherWithCoords({
     [setLearnOpen, setLearnTopicId]
   );
 
+  if (!wxLab) {
+    return (
+      <>
+        {primary ? (
+          <View style={{ marginTop: -6, marginBottom: theme.spacing.md }}>
+            <AlertBanner primary={primary} count={alerts.length} onPress={() => onPressAlert(primary, alerts)} />
+          </View>
+        ) : null}
+
+        {loading && !currentData ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" />
+            <Text style={styles.smallText}>Loading weatherâ€¦</Text>
+          </View>
+        ) : null}
+
+        {currentError || forecastError ? (
+          <Card style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Error</Text>
+            <Text style={styles.errorText}>{currentError || forecastError}</Text>
+          </Card>
+        ) : null}
+
+        <SimpleDailyOverview
+          tempF={tempF}
+          condition={condition}
+          heroSummary={heroSummary}
+          feelsLikeF={feelsLikeF}
+          dewpointF={dewpointF}
+          precipChancePct={precipChancePct}
+          windMph={windMph}
+          gustMph={gustMph}
+          humidityPct={humidityPct}
+          uvIndex={uvIndex}
+          airQualityLabel={airQualityLabel}
+          airQualityIndex={airQualityIndex}
+          daily={daily}
+          hourly={hourly}
+          sunrise={todaySunrise}
+          sunset={todaySunset}
+          moonrise={todayMoonrise}
+          moonset={todayMoonset}
+          moonDays={astroData?.moonDays}
+          dayLengthSec={todayDayLengthSec}
+        />
+
+        <Text style={styles.updatedText}>{updatedText}</Text>
+        <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
+
+        {daily.length > 0 ? (
+          <ActivityForecastSection
+            daily={daily}
+            hourly={hourly}
+            visibilityMi={visibilityMi}
+            astroData={astroData}
+            feelsLikeF={feelsLikeF}
+            fireContext={fireContextData}
+            onLearnTopic={(topicId) => {
+              setLearnTopicId(topicId ?? undefined);
+              setLearnOpen(true);
+            }}
+          />
+        ) : null}
+
+        <View style={{ display: 'none' }}>
+          <Text>{activeLabel}</Text>
+          <Text>{String(refreshing)}</Text>
+          <Text>{String(onRefresh)}</Text>
+          <Text>{String(!!setExplainOpen)}</Text>
+          <Text>{String(!!setExplainPayload)}</Text>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       {primary ? (
@@ -3265,25 +3828,25 @@ function LandWeatherWithCoords({
         </Card>
       ) : null}
 
-      <Card style={styles.heroCard}>
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject} />
+      {!wxLab ? (
+        <Card style={styles.heroCard}>
+          <View pointerEvents="none" style={StyleSheet.absoluteFillObject} />
 
-        <View style={styles.heroTopRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
-            <Text style={styles.heroCondition}>{condition}</Text>
-            <Text style={styles.heroSummary} numberOfLines={1}>
-              {heroSummary}
-            </Text>
+          <View style={styles.heroTopRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+              <Text style={styles.heroCondition}>{condition}</Text>
+              <Text style={styles.heroSummary} numberOfLines={1}>
+                {heroSummary}
+              </Text>
+            </View>
+
+            <View style={styles.heroRight}>
+              <Text style={styles.heroMiniLabel}>Feels</Text>
+              <Text style={styles.heroMiniValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+            </View>
           </View>
 
-          <View style={styles.heroRight}>
-            <Text style={styles.heroMiniLabel}>Feels</Text>
-            <Text style={styles.heroMiniValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
-          </View>
-        </View>
-
-        {!wxLab ? (
           <SimpleSummary
             dewpointF={dewpointF}
             humidityPct={humidityPct}
@@ -3299,39 +3862,43 @@ function LandWeatherWithCoords({
             narrative={moistureHint ?? undefined}
             hideWind
           />
-        ) : (
-          <NerdyDeepDive
-            dewpointF={dewpointF}
-            humidityPct={humidityPct}
-            dpBand={dpBand}
-            spreadF={spreadF}
-            tempF={tempF}
-            windMph={windMph}
-            gustMph={gustMph}
-            windDirDeg={windDirDeg}
-            gf={gf}
-            cloudCoverPct={cloudCoverPct}
-            uvIndex={uvIndex}
-            airQualityLabel={airQualityLabel}
-            precipChancePct={precipChancePct}
-            visibilityMi={visibilityMi}
-            pressureHpa={pressureHpa}
-            pressureInHg={pressureInHg}
-            pressureTrend={pressureTrend}
-            astro={astroData}
-            sunrise={todaySunrise}
-            sunset={todaySunset}
-            moonrise={todayMoonrise}
-            moonset={todayMoonset}
-            dayLengthSec={todayDayLengthSec}
-            feelsDriverLabel={feelsDriver.label}
-            feelsDriverValue={feelsDriver.value}
-            onOpenLearnTopic={openLearnTopic}
-          />
-        )}
 
-        <Text style={styles.updatedText}>{updatedText}</Text>
-      </Card>
+          <Text style={styles.updatedText}>{updatedText}</Text>
+        </Card>
+      ) : (
+        <NerdyDeepDive
+          condition={condition}
+          heroSummary={heroSummary}
+          updatedText={updatedText}
+          dewpointF={dewpointF}
+          humidityPct={humidityPct}
+          dpBand={dpBand}
+          spreadF={spreadF}
+          tempF={tempF}
+          feelsLikeF={feelsLikeF}
+          windMph={windMph}
+          gustMph={gustMph}
+          windDirDeg={windDirDeg}
+          gf={gf}
+          cloudCoverPct={cloudCoverPct}
+          uvIndex={uvIndex}
+          airQualityLabel={airQualityLabel}
+          precipChancePct={precipChancePct}
+          visibilityMi={visibilityMi}
+          pressureHpa={pressureHpa}
+          pressureInHg={pressureInHg}
+          pressureTrend={pressureTrend}
+          astro={astroData}
+          sunrise={todaySunrise}
+          sunset={todaySunset}
+          moonrise={todayMoonrise}
+          moonset={todayMoonset}
+          dayLengthSec={todayDayLengthSec}
+          feelsDriverLabel={feelsDriver.label}
+          feelsDriverValue={feelsDriver.value}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      )}
 
       {daily.length > 0 ? (
         <Card style={styles.forecastCard}>
@@ -3371,7 +3938,7 @@ function LandWeatherWithCoords({
       ) : null}
 
       {wxLab && hourly.length ? (
-        <Card style={styles.hourlyCard}>
+        <View style={styles.hourlyCard}>
           <View style={styles.hourlyHeaderRow}>
             <Text style={styles.cardTitle}>Next 72 hours</Text>
           </View>
@@ -3379,7 +3946,7 @@ function LandWeatherWithCoords({
           <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
 
           <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
-        </Card>
+        </View>
       ) : null}
 
       {wxLab && daily.length > 0 ? (
@@ -3763,7 +4330,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
   },
@@ -3777,9 +4344,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden',
   },
 
@@ -3811,9 +4378,9 @@ const styles = StyleSheet.create({
   paddingVertical: 6,
   paddingHorizontal: 10,
   borderRadius: 16,
-  backgroundColor: 'rgba(0,0,0,0.12)',
+  backgroundColor: GLASS_PANEL_BG,
   borderWidth: 1,
-  borderColor: 'rgba(255,255,255,0.10)',
+  borderColor: 'rgba(255,255,255,0.12)',
 },
 
   actionRow: {
@@ -3830,7 +4397,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
@@ -3860,8 +4427,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: GLASS_PANEL_BG,
   },
 
   quickNavText: { color: 'white', fontWeight: '900', fontSize: 12 },
@@ -3933,6 +4500,436 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.38)',
   },
 
+  dailySimpleWrap: {
+    gap: 14,
+    marginBottom: theme.spacing.lg,
+  },
+  dailyCurrentCard: {
+    paddingVertical: 20,
+    paddingHorizontal: 18,
+    borderRadius: 28,
+    backgroundColor: GLASS_PANEL_BG_STRONG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+  },
+  dailyCurrentTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    marginTop: 8,
+  },
+  dailyPanelEyebrow: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.66)',
+  },
+  dailyCurrentEmoji: {
+    fontSize: 54,
+    lineHeight: 58,
+    marginTop: 6,
+  },
+  dailyCurrentIconBadge: {
+    marginTop: 8,
+  },
+  dailyCurrentTemp: {
+    fontSize: 76,
+    lineHeight: 78,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyCurrentText: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 12,
+  },
+  dailyCurrentCondition: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyCurrentSummary: {
+    marginTop: 4,
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.8)',
+  },
+  dailyCurrentFeels: {
+    marginTop: 4,
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.88)',
+  },
+  dailyCurrentMetricRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: GLASS_INSET_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    rowGap: 10,
+  },
+  dailyCurrentMetricCell: {
+    width: '31%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    minHeight: 72,
+    paddingHorizontal: 4,
+  },
+  dailyCurrentMetricValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: 'white',
+    textAlign: 'center',
+  },
+  dailyCurrentMetricLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+  },
+  dailyCurrentMetricSub: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.58)',
+    textAlign: 'center',
+  },
+  dailyCurrentMetricDivider: {
+    display: 'none',
+  },
+  dailyFeatureCard: {
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderRadius: 28,
+    backgroundColor: GLASS_PANEL_BG_STRONG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+  },
+  dailyFeatureTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  dailyTwinColumns: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 14,
+  },
+  dailyTwinColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyTwinDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  dailyFeatureMiniTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.66)',
+  },
+  dailyFeatureTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyFeatureRange: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  dailyFeatureSummaryRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dailyFeatureEmoji: {
+    fontSize: 46,
+  },
+  dailyFeatureIconBadge: {},
+  dailyFeatureSummaryText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyFeatureCondition: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyFeatureNarrative: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.76)',
+  },
+  dailyAstroHeroRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.14)',
+  },
+  dailyAstroHeroText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.76)',
+  },
+  dailyAstroHeroDot: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.34)',
+  },
+  dailyFeatureMetricStrip: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  dailyFeatureMetricText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.84)',
+  },
+  dailyNightSummaryRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dailyNightEmoji: {
+    fontSize: 42,
+    display: 'none',
+  },
+  dailyNightIconBadge: {},
+  dailyNightTemp: {
+    fontSize: 60,
+    lineHeight: 62,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyNightText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyDetailList: {
+    marginTop: 18,
+    gap: 12,
+  },
+  dailyDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  dailyDetailStrip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    minHeight: 42,
+    paddingLeft: 14,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.14)',
+  },
+  dailyDetailLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  dailyDetailValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: 'white',
+    textAlign: 'right',
+  },
+  dailyDetailValueStack: {
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  dailyDetailPair: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  dailyDetailPairDivider: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.48)',
+  },
+  dailyDetailSub: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.58)',
+    textAlign: 'right',
+  },
+  nextDaysHeader: {
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  nextDaysTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'white',
+  },
+  nextDaysList: {
+    gap: 16,
+  },
+  nextDayRow: {
+    paddingVertical: 22,
+    paddingHorizontal: 20,
+    borderRadius: 28,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+  },
+  nextDayRowExpanded: {
+    backgroundColor: GLASS_PANEL_BG_STRONG,
+    borderColor: GLASS_BORDER,
+  },
+  nextDayTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  nextDayLabel: {
+    width: 96,
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'white',
+  },
+  nextDayVisual: {
+    flex: 1,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  nextDayIcon: {
+    fontSize: 30,
+    width: 36,
+    textAlign: 'center',
+  },
+  nextDayCondition: {
+    width: '100%',
+    fontSize: 17,
+    lineHeight: 20,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.84)',
+    textAlign: 'center',
+  },
+  nextDayRange: {
+    width: 90,
+    fontSize: 22,
+    fontWeight: '900',
+    color: 'white',
+    textAlign: 'right',
+  },
+  nextDayPop: {
+    width: 42,
+    fontSize: 17,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'right',
+  },
+  nextDayExpanded: {
+    marginTop: 18,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    gap: 16,
+  },
+  nextDayExpandedMetaRows: {
+    gap: 8,
+  },
+  nextDayExpandedMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  nextDayExpandedMetaItem: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  nextDayExpandedPeriods: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  nextDayExpandedPeriodCard: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  nextDayExpandedPeriodHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  nextDayExpandedPeriodTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: 'white',
+  },
+  nextDayExpandedPeriodTemp: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  nextDayExpandedPeriodText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.76)',
+  },
+  nextDayExpandedDetailRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+  },
+  nextDayExpandedDetailItem: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  nextDayMoonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  nextDayMoonChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  nextDayMoonChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.86)',
+  },
+
   updatedText: { ...typography.small, marginTop: theme.spacing.md, opacity: 0.6, fontWeight: '700' },
 
   dailyList: {
@@ -3953,10 +4950,10 @@ const styles = StyleSheet.create({
   },
 
   dailyCondition: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.78)',
+    color: 'white',
     fontSize: 15,
     fontWeight: '800',
+    flexShrink: 1,
   },
 
   dailyRight: {
@@ -3995,19 +4992,14 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     paddingHorizontal: 16,
     borderRadius: 26,
-    backgroundColor: 'rgba(21, 35, 60, 0.68)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
 
   dailyRowExpanded: {
-    backgroundColor: 'rgba(27, 44, 74, 0.80)',
-    borderColor: 'rgba(255,255,255,0.065)',
+    backgroundColor: GLASS_PANEL_BG_STRONG,
   },
 
   dailyRowTop: {
@@ -4024,7 +5016,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: GLASS_PANEL_BG,
   },
 
   headerModeBtn: {
@@ -4091,10 +5083,134 @@ const styles = StyleSheet.create({
   },
 
   dailyExpanded: {
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 14,
+    paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.07)',
+  },
+
+  dailyForecastTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+
+  dailyForecastWhen: {
+    width: 74,
+    paddingTop: 2,
+  },
+
+  dailyForecastDay: {
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: 15,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+
+  dailyForecastDate: {
+    marginTop: 4,
+    color: 'white',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  dailyForecastMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  dailyForecastConditionRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  dailyForecastIcon: {
+    fontSize: 24,
+  },
+  dailyForecastIconBadge: {},
+
+  dailyForecastSummary: {
+    marginTop: 8,
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+  },
+
+  dailyForecastSide: {
+    width: 64,
+    alignItems: 'flex-end',
+    paddingTop: 2,
+  },
+
+  dailyForecastSideValue: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  dailyForecastSideLabel: {
+    marginTop: 3,
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  dailyMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+
+  dailyMetricLabel: {
+    width: 82,
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  dailyMetricTrack: {
+    flex: 1,
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+
+  dailyMetricFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.78)',
+  },
+
+  dailyMetricValue: {
+    width: 62,
+    textAlign: 'right',
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  dailySunRow: {
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  dailySunLabel: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  dailySunValue: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   dayNightBlock: {
@@ -4153,9 +5269,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.032)',
+    backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.028)',
+    borderColor: GLASS_BORDER_SOFT,
   },
 
   dailyExpandedLabel: {

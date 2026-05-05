@@ -224,6 +224,21 @@ function degToCardinal(deg?: number | null) {
   return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][idx];
 }
 
+function pickHourConditionLabel(code: number | null) {
+  if (code == null) return 'Cloudy';
+  if (code === 0) return 'Clear';
+  if (code === 1) return 'Mostly clear';
+  if (code === 2) return 'Partly cloudy';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
+  if ([61, 63, 65, 66, 67].includes(code)) return 'Rain';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Showers';
+  if ([95, 96, 99].includes(code)) return 'Storms';
+  return 'Cloudy';
+}
+
 export function HourlyRangeChart({
   hours,
   maxHours = 72,
@@ -278,6 +293,7 @@ export function HourlyRangeChart({
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);
+  const [tableOverlayY, setTableOverlayY] = useState(0);
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
 
@@ -485,13 +501,23 @@ export function HourlyRangeChart({
 
   const unitsLabel = units === 'metric' ? '°C' : '°F';
   const windLabel = units === 'metric' ? 'kph' : 'mph';
+  const rowLead = padL;
+  const TABLE_HEADER_H = 28;
+  const TABLE_ROW_H = 36;
+  const TABLE_SECTION_PAD_TOP = 10;
+  const TABLE_HEADER_GAP = 6;
+  const tableRows = [
+    { label: 'Temp', values: data.map((h: any) => fmtInt(pick(h, tempKey), unitsLabel)) },
+    ...(showDew ? [{ label: 'Dew pt', values: data.map((h: any) => fmtInt(pick(h, dewKey), unitsLabel)) }] : []),
+    ...(showRh ? [{ label: 'RH', values: data.map((h: any) => fmtInt(pick(h, 'humidityPct'), '%')) }] : []),
+    { label: 'Wind', values: data.map((h: any) => fmtInt(pick(h, 'windMph'), ` ${windLabel}`)) },
+    { label: 'Gusts', values: data.map((h: any) => fmtInt(pick(h, 'gustMph'), ` ${windLabel}`)) },
+    { label: 'Clouds', values: data.map((h: any) => fmtInt(pick(h, 'cloudCoverPct'), '%')) },
+    { label: 'Precip', values: data.map((h: any) => fmtInt(pick(h, 'popPct'), '%')) },
+  ];
 
   return (
     <View style={s.wrap}>
-      <View style={s.headerRow}>
-        <Text style={s.title}>HOURLY RANGE</Text>
-      </View>
-
       <ScrollView
         ref={(r) => {
           scrollRef.current = r;
@@ -512,7 +538,7 @@ export function HourlyRangeChart({
         }}
       >
         <View style={{ width: contentW - padX * 2 }}>
-          <View style={{ width: contentW - padX * 2, height: 180 }}>
+          <View style={{ width: contentW - padX * 2, height: 0, overflow: 'hidden' }}>
             {data.map((h: any, i) => {
               const x = xForIdx(i);
 
@@ -613,14 +639,36 @@ export function HourlyRangeChart({
 
               <Line x1={padL + 2} x2={padL + 2} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
 
-              <SvgText x={padL - 10} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.30)" fontWeight="800" textAnchor="end">
+              <SvgText x={padL - 10} y={padT - 6} fontSize="12" fill="rgba(255,255,255,0.78)" fontWeight="900" textAnchor="end">
                 {unitsLabel}
               </SvgText>
-              <SvgText x={pctAxisX} y={padT - 6} fontSize="10" fill="rgba(255,255,255,0.22)" fontWeight="800" textAnchor="start">
+              <SvgText x={pctAxisX} y={padT - 6} fontSize="12" fill="rgba(215,180,255,0.88)" fontWeight="900" textAnchor="start">
                 %
               </SvgText>
 
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
+
+              {data.map((h: any, i) => {
+                const x = xForIdx(i);
+                const t = h.time as string;
+                const dk = dayKeyFromIso(t);
+                const hm = parseHourMinute(t);
+                const label = hm?.h === 0 ? dayLabelFromKey(dk) : hourLabel(t);
+                return (
+                  <G key={`chart-top-${t}-${i}`}>
+                    <SvgText
+                      x={x}
+                      y={18}
+                      fontSize="10"
+                      fill="rgba(255,255,255,0.92)"
+                      fontWeight="800"
+                      textAnchor="middle"
+                    >
+                      {label}
+                    </SvgText>
+                  </G>
+                );
+              })}
 
               {showPrecip && precipArea ? (
                 <>
@@ -662,9 +710,12 @@ export function HourlyRangeChart({
                       />
                     ) : null}
 
-                    {showTemp && yT != null ? <Circle cx={x} cy={yT} r={5.0} fill="white" opacity={0.92} /> : null}
-                    {showDew && yD != null ? <Circle cx={x} cy={yD} r={3.6} fill={C.dew} opacity={0.85} /> : null}
-                    {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={3.2} fill={C.rh} opacity={0.75} /> : null}
+                    {showTemp && yT != null ? <Circle cx={x} cy={yT} r={9} fill={C.temp} opacity={0.14} /> : null}
+                    {showDew && yD != null ? <Circle cx={x} cy={yD} r={7} fill={C.dew} opacity={0.16} /> : null}
+                    {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={6.2} fill={C.rh} opacity={0.16} /> : null}
+                    {showTemp && yT != null ? <Circle cx={x} cy={yT} r={6.2} fill="white" stroke={C.temp} strokeWidth={2.5} /> : null}
+                    {showDew && yD != null ? <Circle cx={x} cy={yD} r={4.8} fill="white" stroke={C.dew} strokeWidth={2.1} /> : null}
+                    {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={4.4} fill="white" stroke={C.rh} strokeWidth={2.1} /> : null}
                   </G>
                 );
               })}
@@ -795,13 +846,69 @@ export function HourlyRangeChart({
                 );
               })}
             </Svg>
+            <View style={s.tableSection} onLayout={(e) => setTableOverlayY(e.nativeEvent.layout.y)}>
+              <View style={s.tableWrap}>
+                <View style={[s.tableHeaderRow, { paddingLeft: rowLead }]}>
+                  {data.map((h: any, i) => {
+                    const t = h.time as string;
+                    const dk = dayKeyFromIso(t);
+                    const hm = parseHourMinute(t);
+                    const label = hm?.h === 0 ? dayLabelFromKey(dk) : hourLabel(t);
+                    return (
+                      <Text
+                        key={`th-${t}-${i}`}
+                        style={[
+                          s.tableValueCell,
+                          s.tableHeaderText,
+                          { width: TILE_W, marginRight: i === data.length - 1 ? 0 : GAP },
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    );
+                  })}
+                </View>
+
+                {tableRows.map((row) => (
+                  <View key={row.label} style={s.tableDataRow}>
+                    <View style={[s.tableValuesRow, { paddingLeft: rowLead }]}>
+                      {row.values.map((value, idx) => (
+                        <Text
+                          key={`${row.label}-${idx}`}
+                          style={[
+                            s.tableValueCell,
+                            { width: TILE_W, marginRight: idx === row.values.length - 1 ? 0 : GAP },
+                          ]}
+                        >
+                          {value}
+                        </Text>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
           </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+
+      {tableOverlayY > 0 ? (
+        <View
+          pointerEvents="none"
+          style={[
+            s.tableFloatingLabels,
+            { top: tableOverlayY + TABLE_SECTION_PAD_TOP + TABLE_HEADER_H + TABLE_HEADER_GAP + TABLE_ROW_H },
+          ]}
+        >
+          {tableRows.map((row) => (
+            <View key={`floating-${row.label}`} style={[s.tableFloatingLabelRow, { height: TABLE_ROW_H }]}>
+              <Text style={s.tableFloatingLabelText}>{row.label}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={s.pillSection}>
-        <Text style={s.pillSectionTitle}>HOURLY FORECAST</Text>
-
         <View style={s.legendRow}>
           <ToggleLegendPill
             label={`Temp (${unitsLabel})`}
@@ -914,16 +1021,19 @@ function ToggleLegendPill({
 const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(18, 28, 45, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingTop: 12,
+    borderRadius: 24,
+    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    paddingTop: 14,
     overflow: 'hidden',
   },
 
-  headerRow: { paddingHorizontal: 12, gap: 8, marginBottom: 6 },
-  title: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
+  headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
+  title: { color: 'rgba(255,255,255,0.92)', fontSize: 16, fontWeight: '900', letterSpacing: 0.2 },
+  currentConditionHeader: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    fontWeight: '800',
+  },
 
   strip: { flexDirection: 'row', gap: 10, paddingTop: 10 },
   hourTile: {
@@ -954,35 +1064,32 @@ const s = StyleSheet.create({
   },
 
   pillSection: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  pillSectionTitle: {
-    color: 'rgba(255,255,255,0.40)',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.0,
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
 
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 0,
+    paddingVertical: 2,
+    paddingHorizontal: 0,
+  },
   legPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
+    paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   legPillOff: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  legText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 11 },
+  legText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 11 },
   legSwatchWrap: { width: 18, height: 10, justifyContent: 'center' },
 
   swLine: { height: 3, borderRadius: 2 },
@@ -1050,6 +1157,66 @@ const s = StyleSheet.create({
     borderTopWidth: 2,
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
+  },
+  tableSection: {
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  tableWrap: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    paddingTop: 10,
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    height: 28,
+  },
+  tableDataRow: {
+    height: 36,
+    justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  tableHeaderText: {
+    color: 'rgba(255,255,255,0.62)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  tableValueCell: {
+    width: 92,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  tableValuesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tableFloatingLabels: {
+    position: 'absolute',
+    left: 18,
+    width: 64,
+    zIndex: 5,
+  },
+  tableFloatingLabelRow: {
+    justifyContent: 'center',
+  },
+  tableFloatingLabelText: {
+    alignSelf: 'flex-start',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(31,50,77,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    color: 'rgba(255,255,255,0.80)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.45,
   },
 });
 

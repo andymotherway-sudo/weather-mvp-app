@@ -5,6 +5,7 @@ import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-
 
 import { useWxLab } from '../../app/context/WxLabContext'; // adjust relative path if needed
 import { getTypography } from '../../styles/typography';
+import { PremiumWeatherIcon } from '../weather/PremiumWeatherIcon';
 
 type DailyDatum = {
   date: string; // ISO yyyy-mm-dd
@@ -93,6 +94,21 @@ function pickWxIconFromCode(code?: number | null) {
   return '☁️';
 }
 
+function pickWxLabelFromCode(code?: number | null) {
+  if (code == null) return 'Cloudy';
+  if (code === 0) return 'Clear';
+  if (code === 1) return 'Mostly clear';
+  if (code === 2) return 'Partly cloudy';
+  if (code === 3) return 'Overcast';
+  if (code === 45 || code === 48) return 'Fog';
+  if ([51, 53, 55, 56, 57].includes(code)) return 'Drizzle';
+  if ([61, 63, 65, 66, 67].includes(code)) return 'Rain';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Showers';
+  if ([95, 96, 99].includes(code)) return 'Storms';
+  return 'Cloudy';
+}
+
 // 16-point compass for small labels
 function degToCompass(degFrom: number) {
   const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -119,6 +135,7 @@ export function DailyRangeChart({
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);
+  const [tableOverlayY, setTableOverlayY] = useState(0);
 
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
@@ -169,19 +186,23 @@ export function DailyRangeChart({
   const TILE_W = 132;
   const GAP = 10;
   const padX = 14;
+  const TABLE_HEADER_H = 30;
+  const TABLE_ROW_H = 36;
+  const TABLE_SECTION_PAD_TOP = 10;
+  const TABLE_HEADER_GAP = 6;
 
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
-  const H = 360;
+  const H = 332;
 
   const axisL = 28; // left margin for °F ticks
   const padL = padX + axisL;
   const padR = padX;
 
-  const padT = 18;
+  const padT = 56;
   const padB = 142;
 
   const plotW = W - padL - padR;
@@ -318,11 +339,21 @@ export function DailyRangeChart({
   // Wind marker placement (above bottom day labels)
   const windMarkerY = H - 52; // circle center
   const windMarkerLabelY = windMarkerY + 22; // compass text under circle
+  const tableRows = [
+    { label: 'High', values: data.map((d) => fmtInt(d.tempMaxF, unitsLabel)) },
+    { label: 'Low', values: data.map((d) => fmtInt(d.tempMinF, unitsLabel)) },
+    ...(showDew ? [{ label: 'Dew pt', values: data.map((d) => fmtInt(d.dewPointMaxF, unitsLabel)) }] : []),
+    ...(showRh ? [{ label: 'RH', values: data.map((d) => fmtInt(d.humidityMaxPct, '%')) }] : []),
+    { label: 'Wind', values: data.map((d) => fmtInt(d.windMaxMph, ' mph')) },
+    { label: 'Gusts', values: data.map((d) => fmtInt(d.windGustMaxMph, ' mph')) },
+    { label: 'Clouds', values: data.map((d) => fmtInt(d.cloudCoverAvgPct, '%')) },
+    { label: 'Precip', values: data.map((d) => fmtInt(d.precipProbMaxPct, '%')) },
+  ];
 
   return (
     <View style={s.wrap}>
       <View style={s.headerRow}>
-        <Text style={[s.title, T.label]}>DAILY FORECAST</Text>
+        <Text style={[s.title, T.label]}>Detailed view</Text>
       </View>
 
       <ScrollView
@@ -346,7 +377,7 @@ export function DailyRangeChart({
       >
         <View style={{ width: W }}>
           {/* Tiles */}
-          <View style={{ width: W, minHeight: 212, marginBottom: 18, overflow: 'visible'  }}>
+          <View style={{ width: W, height: 0, marginBottom: 0, overflow: 'hidden' }}>
             {data.map((d, i) => {
               const { day, md } = niceDayLabel(d.date);
               const isSel = i === selIdx;
@@ -377,7 +408,7 @@ export function DailyRangeChart({
                     ]}
                   >
                     <Text style={[s.dayTop, T.body]}>{isToday ? 'TODAY' : `${day} ${md.split(' ')[1]}`}</Text>
-                    <Text style={s.icon}> {pickWxIconFromCode(d.weatherCode)}</Text>
+                    <PremiumWeatherIcon code={d.weatherCode ?? null} size={28} style={s.iconBadge} />
 
                     <Text style={[s.hilo, T.title]}>
                       {fmtInt(d.tempMaxF)}
@@ -398,7 +429,7 @@ export function DailyRangeChart({
                       </View>
                     ) : null}
 
-                    <Text style={[s.sub, T.metric]}>💧 {fmtInt(d.precipProbMaxPct, '%')}</Text>
+                    <Text style={[s.sub, T.metric]}>Precip {fmtInt(d.precipProbMaxPct, '%')}</Text>
                   </Animated.View>
                 </Pressable>
               );
@@ -454,9 +485,9 @@ export function DailyRangeChart({
               <SvgText
                 x={padL - 10}
                 y={padT - 6}
-                fontSize="10"
-                fill="rgba(255,255,255,0.30)"
-                fontWeight={wxLab ? '700' : '900'}
+                fontSize="12"
+                fill="rgba(255,255,255,0.78)"
+                fontWeight="900"
                 textAnchor="end"
               >
                 {unitsLabel}
@@ -464,9 +495,9 @@ export function DailyRangeChart({
               <SvgText
                 x={pctAxisX}
                 y={padT - 6}
-                fontSize="10"
-                fill="rgba(255,255,255,0.22)"
-                fontWeight={wxLab ? '700' : '900'}
+                fontSize="12"
+                fill="rgba(215,180,255,0.88)"
+                fontWeight="900"
                 textAnchor="start"
               >
                 %
@@ -474,6 +505,36 @@ export function DailyRangeChart({
 
               {/* Cursor */}
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
+
+              {data.map((d, i) => {
+                const x = xForIdx(i);
+                const { day } = niceDayLabel(d.date);
+                const isToday = d.date === todayISODateLocal();
+                return (
+                  <G key={`chart-head-${d.date}`}>
+                    <SvgText
+                      x={x}
+                      y={18}
+                      fontSize="11"
+                      fill="rgba(255,255,255,0.92)"
+                      fontWeight="800"
+                      textAnchor="middle"
+                    >
+                      {isToday ? 'Today' : day}
+                    </SvgText>
+                    <SvgText
+                      x={x}
+                      y={34}
+                      fontSize="11"
+                      fill="rgba(255,255,255,0.72)"
+                      fontWeight="700"
+                      textAnchor="middle"
+                    >
+                      {pickWxLabelFromCode(d.weatherCode)}
+                    </SvgText>
+                  </G>
+                );
+              })}
 
               {/* precip area */}
               {precipArea ? (
@@ -507,10 +568,14 @@ export function DailyRangeChart({
 
                 return (
                   <G key={`pt-${d.date}`}>
-                    {yMax != null ? <Circle cx={x} cy={yMax} r={5.5} fill="white" opacity={0.95} /> : null}
-                    {yMin != null ? <Circle cx={x} cy={yMin} r={4.8} fill="white" opacity={0.45} /> : null}
-                    {yDp != null ? <Circle cx={x} cy={yDp} r={3.6} fill={C.dew} opacity={0.85} /> : null}
-                    {yRh != null ? <Circle cx={x} cy={yRh} r={3.2} fill={C.rh} opacity={0.75} /> : null}
+                    {yMax != null ? <Circle cx={x} cy={yMax} r={10} fill={C.high} opacity={0.14} /> : null}
+                    {yMin != null ? <Circle cx={x} cy={yMin} r={9} fill={C.low} opacity={0.14} /> : null}
+                    {yDp != null ? <Circle cx={x} cy={yDp} r={8} fill={C.dew} opacity={0.16} /> : null}
+                    {yRh != null ? <Circle cx={x} cy={yRh} r={7} fill={C.rh} opacity={0.16} /> : null}
+                    {yMax != null ? <Circle cx={x} cy={yMax} r={6.8} fill="white" stroke={C.high} strokeWidth={2.6} /> : null}
+                    {yMin != null ? <Circle cx={x} cy={yMin} r={6.2} fill="white" stroke={C.low} strokeWidth={2.4} /> : null}
+                    {yDp != null ? <Circle cx={x} cy={yDp} r={4.8} fill="white" stroke={C.dew} strokeWidth={2.1} /> : null}
+                    {yRh != null ? <Circle cx={x} cy={yRh} r={4.4} fill="white" stroke={C.rh} strokeWidth={2.1} /> : null}
                   </G>
                 );
               })}
@@ -675,22 +740,76 @@ export function DailyRangeChart({
             </Svg>
 
             </View>
-        </View>
+
+            <View
+              style={s.tableSection}
+              onLayout={(e) => setTableOverlayY(e.nativeEvent.layout.y)}
+            >
+              <View style={s.tableInlineWrap}>
+                <View style={s.tableHeaderValuesRow}>
+                  <View style={{ width: padL }} />
+                  {data.map((d, idx) => {
+                    const { day } = niceDayLabel(d.date);
+                    const isToday = d.date === todayISODateLocal();
+                    return (
+                      <Text
+                        key={`th-${d.date}`}
+                        style={[s.tableValueCell, s.tableHeaderText, idx === data.length - 1 ? null : s.tableGap]}
+                      >
+                        {isToday ? 'Today' : day}
+                      </Text>
+                    );
+                  })}
+                  <View style={{ width: padR }} />
+                </View>
+
+                {tableRows.map((row) => (
+                  <View key={row.label} style={s.tableDataValuesRow}>
+                    <View style={{ width: padL }} />
+                    {row.values.map((value, idx) => (
+                      <Text
+                        key={`${row.label}-${idx}`}
+                        style={[s.tableValueCell, idx === row.values.length - 1 ? null : s.tableGap]}
+                      >
+                        {value}
+                      </Text>
+                    ))}
+                    <View style={{ width: padR }} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
       </ScrollView>
 
-      {wxLab ? (
-        <View style={s.pillSection}>
-          <View style={s.legendRow}>
-            <LegendPill label="High" kind="line" color={C.high} />
-            <LegendPill label="Low" kind="line" color={C.low} />
-            <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
-            <LegendPill label="RH" kind="dot" color={C.rh} />
-            <LegendPill label="Precip" kind="mountain" color={C.precipStroke} />
-            <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
-            <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
-          </View>
+      {tableOverlayY > 0 ? (
+        <View
+          pointerEvents="none"
+          style={[
+            s.tableFloatingLabels,
+            {
+              top: tableOverlayY + TABLE_SECTION_PAD_TOP + TABLE_HEADER_H + TABLE_HEADER_GAP + TABLE_ROW_H,
+            },
+          ]}
+        >
+          {tableRows.map((row) => (
+            <View key={`floating-${row.label}`} style={[s.tableFloatingLabelRow, { height: TABLE_ROW_H }]}>
+              <Text style={s.tableFloatingLabelText}>{row.label}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
+
+      <View style={s.pillSection}>
+        <View style={s.legendRow}>
+          <LegendPill label="High" kind="line" color={C.high} />
+          <LegendPill label="Low" kind="line" color={C.low} />
+          <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
+          <LegendPill label="RH" kind="dot" color={C.rh} />
+          <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
+          <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -748,38 +867,48 @@ function LegendPill({
 const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(18, 28, 45, 0.72)',
+    borderRadius: 24,
+    backgroundColor: 'rgba(44, 70, 102, 0.76)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    paddingTop: 12,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingTop: 14,
   },
-  headerRow: { paddingHorizontal: 12, gap: 8, marginBottom: 6 },
+  headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   title: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 1.2,
+    letterSpacing: 0.2,
   },
 
   pillSection: {
-    paddingHorizontal: 12,
-    paddingTop: 2,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 0 },
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 0,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
   legPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 2,
+    paddingHorizontal: 0,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
-  legText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 11 },
+  legText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 11 },
   legSwatchWrap: { width: 18, height: 10, justifyContent: 'center' },
 
   strip: { flexDirection: 'row', gap: 10, paddingTop: 10 },
@@ -798,6 +927,7 @@ const s = StyleSheet.create({
   },
   dayTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 14, letterSpacing: 0.4 },
   icon: { marginTop: 10, fontSize: 26, opacity: 0.9 },
+  iconBadge: { marginTop: 10 },
   hilo: { marginTop: 10, color: 'white', fontWeight: '900', fontSize: 18 },
 
   sub: { marginTop: 6, color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 12 },
@@ -869,6 +999,68 @@ const s = StyleSheet.create({
     borderTopWidth: 2,
     opacity: 0.55,
     transform: [{ skewX: '-10deg' }],
+  },
+  tableSection: {
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  tableInlineWrap: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  tableHeaderValuesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    height: 30,
+  },
+  tableDataValuesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 36,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  tableHeaderText: {
+    color: 'rgba(255,255,255,0.62)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  tableValueCell: {
+    width: 132,
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  tableGap: {
+    marginRight: 10,
+  },
+  tableFloatingLabels: {
+    position: 'absolute',
+    left: 18,
+    width: 72,
+    zIndex: 5,
+  },
+  tableFloatingLabelRow: {
+    justifyContent: 'center',
+  },
+  tableFloatingLabelText: {
+    alignSelf: 'flex-start',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(31,50,77,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    color: 'rgba(255,255,255,0.80)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.45,
   },
 
   cloudReadoutRow: {
