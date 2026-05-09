@@ -10,7 +10,8 @@ export type MapAction =
   | { type: 'SET_LAYER_OPACITY'; layerId: LayerId; opacity: number }
   | { type: 'SET_VIEWPORT'; viewport: MapViewport }
   | { type: 'SET_RADAR_FRAME'; frameIndex: number }
-  | { type: 'SET_RADAR_PLAYING'; playing: boolean };
+  | { type: 'SET_RADAR_PLAYING'; playing: boolean }
+  | { type: 'SET_RADAR_STORM_MODE'; stormMode: boolean };
 
 function buildDefaultLayers(): Record<LayerId, LayerRuntimeState> {
   return Object.fromEntries(
@@ -61,7 +62,7 @@ export function createInitialMapState(opts?: {
     nerdy,
     viewport,
     layers,
-    radarTime: { frameIndex: 0, playing: false },
+    radarTime: { frameIndex: 0, playing: false, stormMode: false },
   };
 }
 
@@ -131,6 +132,16 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
 
     case 'SET_RADAR_PLAYING':
       return { ...state, radarTime: { ...state.radarTime, playing: action.playing } };
+
+    case 'SET_RADAR_STORM_MODE':
+      return {
+        ...state,
+        radarTime: {
+          ...state.radarTime,
+          stormMode: action.stormMode,
+          playing: action.stormMode ? false : state.radarTime.playing,
+        },
+      };
 
     default:
       return state;

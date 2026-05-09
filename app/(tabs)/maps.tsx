@@ -9,6 +9,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { LayerSheetModal } from '../../components/maps/LayerSheetModal';
+import { AviationAltitudeSelector } from '../../components/maps/aviation/AviationAltitudeSelector';
+import { AviationFeatureInspector } from '../../components/maps/aviation/AviationFeatureInspector';
+import { AviationMapControls } from '../../components/maps/aviation/AviationMapControls';
+import { AviationStatusStrip } from '../../components/maps/aviation/AviationStatusStrip';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 import { RadarLegend } from '../../components/maps/RadarLegend';
@@ -18,6 +22,10 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { useLocations } from '../lib/locations/useLocations';
+import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
+import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
+import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
+import { aviationFillColorExpression, aviationLineColorExpression } from '../lib/aviation/colors';
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
@@ -187,7 +195,7 @@ function getSimpleStatus(args: {
   }
 
   if (viewId === 'aviation') {
-    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / Aviation weather view` : 'Radar off';
+    return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / Experimental aviation hazards` : 'Radar off';
   }
 
   if (viewId === 'storm') {
@@ -274,6 +282,23 @@ export default function MapsScreen() {
   const [rawMode, setRawMode] = useState(false);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
+  const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
+  const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
+    'gairmet',
+    'sigmet',
+    'convectiveSigmet',
+  ]);
+  const [selectedAviationHazards, setSelectedAviationHazards] = useState<AviationHazardType[]>([
+    'ice',
+    'turb',
+    'llws',
+    'ifr',
+    'mtnObscuration',
+    'ts',
+  ]);
+  const [selectedAviationAltitudeFt, setSelectedAviationAltitudeFt] = useState<number | null>(null);
+  const [selectedAviationValidTime, setSelectedAviationValidTime] = useState<Date>(new Date());
+  const [showUnknownAviationAltitude, setShowUnknownAviationAltitude] = useState(false);
   const [selectedRestrictionPoint, setSelectedRestrictionPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [wildfireDetailLoading, setWildfireDetailLoading] = useState(false);
 
@@ -281,7 +306,7 @@ export default function MapsScreen() {
   const locateSeedRegionRef = useRef<Region | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
-  const { baseMapStyle, radarProvider } = useSettings();
+  const { baseMapStyle } = useSettings();
 
   useEffect(() => {
     const rawView = params?.view ? String(params.view).toLowerCase() : '';
@@ -301,13 +326,16 @@ export default function MapsScreen() {
   const locateRequestIdRef = useRef(0);
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const [product, setProduct] = useState<RadarProductId>('N0Q');
+  const product: RadarProductId = 'N0Q';
+  const stormMode = state.viewId === 'storm';
+  const effectiveRadarProvider = stormMode ? 'iem' : 'rainviewer';
 
   const handleMapPress = useCallback(
     async (e: any) => {
       if (state.viewId !== 'wildfire') {
         setSelectedWildfire(null);
         setSelectedRestrictionPoint(null);
+        if (state.viewId !== 'aviation') setSelectedAviationFeature(null);
         return;
       }
 
@@ -355,11 +383,12 @@ export default function MapsScreen() {
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
   const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
-  const aviationTurbEnabled = !!state.layers?.['aviation.gairmet.turb']?.enabled;
-  const aviationIceEnabled = !!state.layers?.['aviation.gairmet.ice']?.enabled;
-  const aviationSigmetEnabled = !!state.layers?.['aviation.sigmet']?.enabled;
-  const aviationCwaEnabled = !!state.layers?.['aviation.cwa']?.enabled;
-  const aviationPirepEnabled = !!state.layers?.['aviation.pirep']?.enabled;
+  const aviationModeActive = state.viewId === 'aviation';
+  const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
+  const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
+  const aviationSigmetEnabled = !aviationModeActive && !!state.layers?.['aviation.sigmet']?.enabled;
+  const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
+  const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
 
   const goesTrueColorEnabled = !!state.layers?.['sat.goes.truecolor']?.enabled;
   const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
@@ -421,7 +450,92 @@ export default function MapsScreen() {
 
   const aviationOverlayEnabled =
     aviationTurbEnabled || aviationIceEnabled || aviationSigmetEnabled || aviationCwaEnabled || aviationPirepEnabled;
-  const aviationData = useAviationMapData(aviationOverlayEnabled || state.viewId === 'aviation');
+  const aviationData = useAviationMapData(aviationOverlayEnabled || aviationModeActive);
+  const aviationAvailableTimes = aviationData.validTimes ?? [];
+
+  useEffect(() => {
+    if (!aviationModeActive || !aviationAvailableTimes.length) return;
+    const currentMs = selectedAviationValidTime.getTime();
+    const stillAvailable = aviationAvailableTimes.some((value) => Math.abs(Date.parse(value) - currentMs) < 60 * 1000);
+    if (!stillAvailable) setSelectedAviationValidTime(pickCurrentValidTime(aviationAvailableTimes));
+  }, [aviationAvailableTimes, aviationModeActive, selectedAviationValidTime]);
+
+  const normalizedAviationHazards = useMemo(
+    () => normalizeAviationFeatureCollection(aviationData.allHazards),
+    [aviationData.allHazards],
+  );
+  const normalizedAviationPireps = useMemo(
+    () => normalizeAviationFeatureCollection(aviationData.pireps),
+    [aviationData.pireps],
+  );
+  const visibleAviationHazards = useMemo(
+    () =>
+      filterAviationFeatures({
+        features: normalizedAviationHazards,
+        selectedProducts: selectedAviationProducts,
+        selectedHazards: selectedAviationHazards,
+        selectedAltitudeFt: selectedAviationAltitudeFt,
+        selectedValidTime: selectedAviationValidTime,
+        showUnknownAltitude: showUnknownAviationAltitude,
+      }),
+    [
+      normalizedAviationHazards,
+      selectedAviationAltitudeFt,
+      selectedAviationHazards,
+      selectedAviationProducts,
+      selectedAviationValidTime,
+      showUnknownAviationAltitude,
+    ],
+  );
+  const visibleAviationPireps = useMemo(
+    () =>
+      selectedAviationProducts.includes('pirep')
+        ? filterAviationFeatures({
+            features: normalizedAviationPireps,
+            selectedProducts: ['pirep'],
+            selectedHazards: selectedAviationHazards,
+            selectedAltitudeFt: selectedAviationAltitudeFt,
+            selectedValidTime: selectedAviationValidTime,
+            showUnknownAltitude: true,
+            includeMissingValidTime: true,
+          })
+        : [],
+    [
+      normalizedAviationPireps,
+      selectedAviationAltitudeFt,
+      selectedAviationHazards,
+      selectedAviationProducts,
+      selectedAviationValidTime,
+    ],
+  );
+  const aviationHazardsFc = useMemo(
+    () => aviationFeaturesToFeatureCollection(visibleAviationHazards),
+    [visibleAviationHazards],
+  );
+  const aviationPirepsFc = useMemo(
+    () => aviationFeaturesToFeatureCollection(visibleAviationPireps),
+    [visibleAviationPireps],
+  );
+
+  const handleAviationFeaturePress = useCallback(
+    (e: any) => {
+      const id = String(e?.features?.[0]?.properties?.id ?? e?.features?.[0]?.id ?? '');
+      const feature = [...visibleAviationHazards, ...visibleAviationPireps].find((item) => item.id === id);
+      if (feature) setSelectedAviationFeature(feature);
+    },
+    [visibleAviationHazards, visibleAviationPireps],
+  );
+
+  const aviationFiltered = useMemo(
+    () => ({
+      turbulence: aviationData.turbulence,
+      icing: aviationData.icing,
+      advisories: aviationData.advisories,
+      centerWeather: aviationData.centerWeather,
+    }),
+    [aviationData.advisories, aviationData.centerWeather, aviationData.icing, aviationData.turbulence],
+  );
+
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
   const centerForRadar = useMemo(() => {
@@ -432,14 +546,14 @@ export default function MapsScreen() {
   const radarCtl = useRadarController({
     state,
     dispatch,
-    sheetValue: { radarProvider },
+    sheetValue: { radarProvider: effectiveRadarProvider },
     centerForRadar,
     mapZoom,
     product,
     rawMode,
     region,
-    localMinZoom: 12.8,
-    ridgeMinZoom: 8.6,
+    localMinZoom: stormMode ? 9.2 : 12.8,
+    ridgeMinZoom: stormMode ? 7.4 : 8.6,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -675,15 +789,6 @@ export default function MapsScreen() {
   ]);
 
   const [stableInitialRegion] = useState<Region>(() => {
-    if (routeFocusTarget) {
-      return {
-        latitude: routeFocusTarget.lat,
-        longitude: routeFocusTarget.lon,
-        latitudeDelta: 2,
-        longitudeDelta: 2,
-      };
-    }
-
     if (activePlace && activePlace.source !== 'gps') {
       return {
         latitude: activePlace.lat,
@@ -704,18 +809,28 @@ export default function MapsScreen() {
   useEffect(() => {
     if (!routeFocusTarget) return;
 
+    const nextRegion: Region = {
+      latitude: routeFocusTarget.lat,
+      longitude: routeFocusTarget.lon,
+      latitudeDelta: 2,
+      longitudeDelta: 2,
+      zoom: approxZoomFromLongitudeDelta(2),
+    };
+
     setCameraDebugLabel(`route-focus:${routeFocusTarget.lat.toFixed(2)},${routeFocusTarget.lon.toFixed(2)}`);
+    setRegion(nextRegion);
+    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
     mapCameraRef.current?.moveTo?.([routeFocusTarget.lon, routeFocusTarget.lat], 0);
     setConsumedRouteFocusKey(routeFocusTarget.key);
 
     requestAnimationFrame(() => {
       router.setParams({
-        focus: undefined,
-        lat: undefined,
-        lon: undefined,
-        label: undefined,
-        source: undefined,
-        targetType: undefined,
+        focus: 'consumed',
+        lat: '',
+        lon: '',
+        label: '',
+        source: '',
+        targetType: '',
       });
     });
   }, [routeFocusTarget, router]);
@@ -754,7 +869,7 @@ export default function MapsScreen() {
   const wildfireRestrictionSourceUrl = wildfireRestrictionCards[0]?.url ?? wildfireFireContext.data?.restrictions?.source ?? null;
 
   const pushSpecialMap = useCallback(
-    (pathname: '/astro-map' | '/nautical-map' | '/aviation') => {
+    (pathname: '/astro-map' | '/nautical-map') => {
       const currentRegion = effectiveRegion;
 
       router.push({
@@ -826,7 +941,7 @@ export default function MapsScreen() {
 
   const showTimeline = isFocused && radarEnabled && frameCount > 1;
   const dockBottom = 12 + insets.bottom;
-  const DOCK_ESTIMATED_HEIGHT = radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? 132 : 102;
+  const DOCK_ESTIMATED_HEIGHT = 102;
   const legendBottom = showTimeline ? dockBottom + DOCK_ESTIMATED_HEIGHT + 10 : dockBottom + 6;
 
   const accentBg = getViewAccent(String(state.viewId));
@@ -842,29 +957,25 @@ export default function MapsScreen() {
     ? activeLayerSummary.subtitle ?? simpleStatus
     : simpleStatus;
 
-  const providerLabel = radarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
-  const radarProductLabel =
-    radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? radarProductMeta.summaryLabel : null;
+  const providerLabel = stormMode ? 'Storm radar' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const radarProductLabel = stormMode ? 'Detail mode' : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
   const timelineStateLabel = !radarEnabled ? 'Layers only' : state.radarTime.playing ? 'Looping' : 'Holding';
-  const aviationPirepCount = aviationData.pireps?.features?.length ?? 0;
-  const aviationFeatureCount =
-    (aviationData.turbulence?.features?.length ?? 0) +
-    (aviationData.icing?.features?.length ?? 0) +
-    (aviationData.advisories?.features?.length ?? 0) +
-    (aviationData.centerWeather?.features?.length ?? 0) +
-    aviationPirepCount;
+  const aviationPirepCount = visibleAviationPireps.length;
+  const aviationFeatureCount = visibleAviationHazards.length + aviationPirepCount;
+  const aviationPolygonCount = visibleAviationHazards.length;
+  const aviationTimeSummary = getAviationTimeSummaryFromNormalized(visibleAviationHazards);
   const aviationStatusLabel =
     state.viewId === 'aviation'
       ? aviationData.loading
         ? 'Loading aviation overlays'
         : aviationData.error && aviationFeatureCount <= 0
-          ? 'Aviation overlays unavailable'
+          ? 'Experimental aviation hazards unavailable'
           : aviationData.error
-            ? 'Aviation overlays partial'
+            ? 'Experimental aviation hazards partial'
             : aviationFeatureCount > 0
-              ? 'Aviation overlays ready'
+              ? `Aviation weather: ${aviationPolygonCount} polygons`
               : 'No active aviation hazards'
       : null;
   const fireRestrictionsStatusLabel =
@@ -886,6 +997,7 @@ export default function MapsScreen() {
     selectedRestrictionPoint != null &&
     (wildfireFireContext.loading || wildfireFireContext.data != null || wildfireFireContext.error != null);
   const showFireDetailPanel = state.viewId === 'wildfire' && (wildfireDetailLoading || selectedWildfire != null || showRestrictionDetail);
+  const showAviationPanel = state.viewId === 'aviation' && aviationOverlayEnabled;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -921,21 +1033,115 @@ export default function MapsScreen() {
           radar={mapRadar}
           overlays={overlays}
         >
+          {aviationModeActive ? (
+            <>
+              <MapLibreGL.ShapeSource
+                id="aviation-mode-hazards-source"
+                shape={aviationHazardsFc as any}
+                onPress={handleAviationFeaturePress}
+              >
+                <MapLibreGL.FillLayer
+                  id="aviation-mode-hazards-fill"
+                  style={{
+                    fillColor: aviationFillColorExpression() as any,
+                    fillOpacity: [
+                      'match',
+                      ['get', 'severity'],
+                      'severe',
+                      0.34,
+                      'extreme',
+                      0.42,
+                      'moderate',
+                      0.24,
+                      0.18,
+                    ] as any,
+                  }}
+                />
+                <MapLibreGL.LineLayer
+                  id="aviation-mode-hazards-line"
+                  style={{
+                    lineColor: aviationLineColorExpression() as any,
+                    lineOpacity: 0.88,
+                    lineWidth: ['match', ['get', 'severity'], 'severe', 2.8, 'extreme', 3.2, 1.8] as any,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="aviation-mode-hazards-labels"
+                  minZoomLevel={5}
+                  style={{
+                    textField: ['get', 'label'],
+                    textSize: ['interpolate', ['linear'], ['zoom'], 5, 9, 8, 11, 11, 13] as any,
+                    textColor: '#f8fafc',
+                    textHaloColor: 'rgba(2,6,23,0.96)',
+                    textHaloWidth: 1.4,
+                    textAllowOverlap: false,
+                    textOptional: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+
+              <MapLibreGL.ShapeSource id="aviation-mode-pireps-source" shape={aviationPirepsFc as any}>
+                <MapLibreGL.CircleLayer
+                  id="aviation-mode-pireps-points"
+                  minZoomLevel={4}
+                  style={{
+                    circleColor: ['coalesce', ['get', 'iconBgColor'], '#bae6fd'] as any,
+                    circleOpacity: 0.9,
+                    circleRadius: ['interpolate', ['linear'], ['zoom'], 4, 4.5, 7, 6.5, 10, 8] as any,
+                    circleStrokeColor: ['coalesce', ['get', 'iconStrokeColor'], 'rgba(2,6,23,0.95)'] as any,
+                    circleStrokeWidth: 1.2,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="aviation-mode-pireps-label"
+                  minZoomLevel={6}
+                  style={{
+                    textField: ['coalesce', ['get', 'iconLabel'], 'UA'] as any,
+                    textSize: 9,
+                    textColor: ['coalesce', ['get', 'iconTextColor'], '#020617'] as any,
+                    textAllowOverlap: true,
+                    textIgnorePlacement: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+            </>
+          ) : null}
+
           {aviationTurbEnabled ? (
-            <MapLibreGL.ShapeSource id="aviation-turbulence-source" shape={aviationData.turbulence as any}>
+            <MapLibreGL.ShapeSource
+              id="aviation-turbulence-source"
+              shape={aviationFiltered.turbulence as any}
+              onPress={handleAviationFeaturePress}
+            >
               <MapLibreGL.FillLayer
                 id="aviation-turbulence-fill"
                 style={{
-                  fillColor: '#f59e0b',
+                  fillColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#fb923c',
+                    'Moderate',
+                    '#f59e0b',
+                    '#d97706',
+                  ],
                   fillOpacity: Math.max(0.08, Math.min(0.5, aviationTurbOpacity * 0.32)),
                 }}
               />
               <MapLibreGL.LineLayer
                 id="aviation-turbulence-line"
                 style={{
-                  lineColor: '#fbbf24',
+                  lineColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#fed7aa',
+                    'Moderate',
+                    '#fbbf24',
+                    '#f59e0b',
+                  ],
                   lineOpacity: Math.max(0.35, Math.min(1, aviationTurbOpacity)),
-                  lineWidth: 2,
+                  lineWidth: ['match', ['get', 'severityLabel'], 'Severe', 2.8, 2] as any,
                 }}
               />
               <MapLibreGL.SymbolLayer
@@ -956,20 +1162,40 @@ export default function MapsScreen() {
           ) : null}
 
           {aviationIceEnabled ? (
-            <MapLibreGL.ShapeSource id="aviation-icing-source" shape={aviationData.icing as any}>
+            <MapLibreGL.ShapeSource
+              id="aviation-icing-source"
+              shape={aviationFiltered.icing as any}
+              onPress={handleAviationFeaturePress}
+            >
               <MapLibreGL.FillLayer
                 id="aviation-icing-fill"
                 style={{
-                  fillColor: '#38bdf8',
+                  fillColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#0284c7',
+                    'Moderate',
+                    '#38bdf8',
+                    '#0ea5e9',
+                  ],
                   fillOpacity: Math.max(0.08, Math.min(0.46, aviationIceOpacity * 0.3)),
                 }}
               />
               <MapLibreGL.LineLayer
                 id="aviation-icing-line"
                 style={{
-                  lineColor: '#7dd3fc',
+                  lineColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#bae6fd',
+                    'Moderate',
+                    '#7dd3fc',
+                    '#38bdf8',
+                  ],
                   lineOpacity: Math.max(0.35, Math.min(1, aviationIceOpacity)),
-                  lineWidth: 2,
+                  lineWidth: ['match', ['get', 'severityLabel'], 'Severe', 2.8, 2] as any,
                 }}
               />
               <MapLibreGL.SymbolLayer
@@ -990,13 +1216,25 @@ export default function MapsScreen() {
           ) : null}
 
           {aviationSigmetEnabled ? (
-            <MapLibreGL.ShapeSource id="aviation-sigmet-source" shape={aviationData.advisories as any}>
+            <MapLibreGL.ShapeSource
+              id="aviation-sigmet-source"
+              shape={aviationFiltered.advisories as any}
+              onPress={handleAviationFeaturePress}
+            >
               <MapLibreGL.LineLayer
                 id="aviation-sigmet-line"
                 style={{
-                  lineColor: '#f87171',
+                  lineColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#fecaca',
+                    'Moderate',
+                    '#f87171',
+                    '#ef4444',
+                  ],
                   lineOpacity: Math.max(0.35, Math.min(1, aviationSigmetOpacity)),
-                  lineWidth: 2.4,
+                  lineWidth: ['match', ['get', 'severityLabel'], 'Severe', 3.2, 2.4] as any,
                   lineDasharray: [2, 1.4],
                 }}
               />
@@ -1018,13 +1256,25 @@ export default function MapsScreen() {
           ) : null}
 
           {aviationCwaEnabled ? (
-            <MapLibreGL.ShapeSource id="aviation-cwa-source" shape={aviationData.centerWeather as any}>
+            <MapLibreGL.ShapeSource
+              id="aviation-cwa-source"
+              shape={aviationFiltered.centerWeather as any}
+              onPress={handleAviationFeaturePress}
+            >
               <MapLibreGL.LineLayer
                 id="aviation-cwa-line"
                 style={{
-                  lineColor: '#fde68a',
+                  lineColor: [
+                    'match',
+                    ['get', 'severityLabel'],
+                    'Severe',
+                    '#fee2e2',
+                    'Moderate',
+                    '#fde68a',
+                    '#facc15',
+                  ],
                   lineOpacity: Math.max(0.35, Math.min(1, aviationCwaOpacity)),
-                  lineWidth: 2,
+                  lineWidth: ['match', ['get', 'severityLabel'], 'Severe', 2.8, 2] as any,
                   lineDasharray: [1.2, 1.2],
                 }}
               />
@@ -1380,7 +1630,7 @@ export default function MapsScreen() {
           <View style={[styles.legendWrap, styles.topLegendWrap]}>
             <Glass style={styles.legendCard}>
               <RadarLegend
-                style={radarProvider === 'iem' ? radarProductMeta.legendStyle : 'rainviewer'}
+                style={effectiveRadarProvider === 'iem' ? radarProductMeta.legendStyle : 'rainviewer'}
                 title={radarProductMeta.legendTitle}
                 leftLabel={radarProductMeta.legendLeft}
                 midLabel={radarProductMeta.legendMid}
@@ -1388,7 +1638,7 @@ export default function MapsScreen() {
                 compact
               />
               <Text style={styles.legendCardMeta}>
-                {radarProvider === 'iem'
+                {effectiveRadarProvider === 'iem'
                   ? `${radarProductMeta.legendTitle} · ${radarProductMeta.legendNote}`
                   : 'RainViewer colors vary slightly by provider frame.'}
               </Text>
@@ -1430,23 +1680,46 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
+        {aviationModeActive ? (
+          <>
+            <AviationStatusStrip
+              loading={aviationData.loading}
+              error={aviationData.error}
+              updatedAt={aviationTimeSummary.issuedTime}
+              validFrom={selectedAviationValidTime.toISOString()}
+              validTo={aviationTimeSummary.expiresTime}
+            />
+            <AviationAltitudeSelector
+              selectedAltitudeFt={selectedAviationAltitudeFt}
+              showUnknownAltitude={showUnknownAviationAltitude}
+              onSelectAltitude={setSelectedAviationAltitudeFt}
+              onToggleUnknown={() => setShowUnknownAviationAltitude((value) => !value)}
+            />
+            <AviationMapControls
+              selectedProducts={selectedAviationProducts}
+              selectedHazards={selectedAviationHazards}
+              validTimes={aviationAvailableTimes}
+              selectedValidTime={selectedAviationValidTime}
+              onToggleProduct={(value) =>
+                setSelectedAviationProducts((current) => toggleFilterValue(current, value))
+              }
+              onToggleHazard={(value) =>
+                setSelectedAviationHazards((current) => toggleFilterValue(current, value))
+              }
+              onSelectValidTime={setSelectedAviationValidTime}
+              bottomOffset={124 + insets.bottom}
+            />
+            <AviationFeatureInspector
+              feature={selectedAviationFeature}
+              onClose={() => setSelectedAviationFeature(null)}
+            />
+          </>
+        ) : null}
+
         {showTimeline ? (
           <BottomDock
             center={
               <View style={styles.timelineStack}>
-                {radarProvider === 'iem' && isRadarPrimaryView(String(state.viewId)) ? (
-                  <Glass style={styles.productDock}>
-                    <View style={styles.productDockHeader}>
-                      <Text style={styles.productDockTitle}>{currentViewTitle}</Text>
-                      <Text style={styles.productDockMeta}>{radarUpdatedLabel}</Text>
-                    </View>
-                    <View style={styles.productRowCompact}>
-                      <ChipDark active={product === 'N0Q'} label={RADAR_PRODUCT_META.N0Q.chipLabel} onPress={() => setProduct('N0Q')} />
-                      <ChipDark active={product === 'N0B'} label={RADAR_PRODUCT_META.N0B.chipLabel} onPress={() => setProduct('N0B')} />
-                      <ChipDark active={product === 'N0Z'} label={RADAR_PRODUCT_META.N0Z.chipLabel} onPress={() => setProduct('N0Z')} />
-                    </View>
-                  </Glass>
-                ) : null}
                 <Glass style={styles.timelineDock}>
                   <TimelineScrubber
                     frameIndex={state.radarTime.frameIndex}
@@ -1648,6 +1921,10 @@ export default function MapsScreen() {
             setLayersSheetOpen(false);
             pushSpecialMap('/nautical-map');
           }}
+          onOpenAviationMap={() => {
+            setLayersSheetOpen(false);
+            dispatch({ type: 'SET_VIEW', viewId: 'aviation' });
+          }}
         />
 
         <LearnMoreModal visible={learnOpen} onClose={() => setLearnOpen(false)} initialTopicId={learnTopicId} />
@@ -1768,6 +2045,106 @@ function formatWildfireUpdated(value?: string | null) {
   return `Updated ${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
 }
 
+function filterAviationCollection(
+  fc: any,
+  selectedTime: string | null,
+  productFilter: any,
+  hazardFilter: any,
+  altitudeFilter: any
+) {
+  const features = Array.isArray(fc?.features) ? fc.features : [];
+
+  return {
+    type: 'FeatureCollection' as const,
+    features: features.filter((feature: any) => {
+      const props = feature?.properties ?? {};
+      if (selectedTime && !aviationTimeMatches(props, selectedTime)) return false;
+      if (productFilter !== 'all' && props.productKey !== productFilter) return false;
+      if (hazardFilter !== 'all' && props.hazardKey !== hazardFilter) return false;
+      if (altitudeFilter !== 'all') {
+        const bands = String(props.altitudeBands ?? '')
+          .split(',')
+          .map((band) => band.trim())
+          .filter(Boolean);
+        if (!bands.includes(altitudeFilter)) return false;
+      }
+      return true;
+    }),
+  };
+}
+
+function pickCurrentAviationValidTime(times: string[]) {
+  if (!times.length) return null;
+  const now = Date.now();
+  return times.find((value) => Date.parse(value) >= now) ?? times[times.length - 1] ?? null;
+}
+
+function aviationTimeMatches(props: any, selectedTime: string) {
+  const selectedMs = Date.parse(selectedTime);
+  const validKey = typeof props?.validKey === 'string' ? props.validKey : null;
+  if (validKey === selectedTime) return true;
+  if (!Number.isFinite(selectedMs)) return validKey == null;
+
+  const from = Date.parse(props?.validFrom ?? props?.validTime ?? props?.validKey ?? '');
+  const to = Date.parse(props?.expiresTime ?? props?.validTime ?? props?.validKey ?? '');
+  if (Number.isFinite(from) && Number.isFinite(to)) return selectedMs >= from && selectedMs <= to;
+  if (Number.isFinite(from)) return Math.abs(selectedMs - from) < 60 * 1000;
+  return !validKey;
+}
+
+function getAviationTimeSummary(features: any[]) {
+  let issuedMs = Number.NEGATIVE_INFINITY;
+  let expiresMs = Number.NEGATIVE_INFINITY;
+
+  features.forEach((feature) => {
+    const props = feature?.properties ?? {};
+    const issued = Date.parse(props.issuedTime ?? '');
+    const expires = Date.parse(props.expiresTime ?? props.validTime ?? props.validFrom ?? '');
+    if (Number.isFinite(issued)) issuedMs = Math.max(issuedMs, issued);
+    if (Number.isFinite(expires)) expiresMs = Math.max(expiresMs, expires);
+  });
+
+  return {
+    issuedTime: Number.isFinite(issuedMs) ? new Date(issuedMs).toISOString() : null,
+    expiresTime: Number.isFinite(expiresMs) ? new Date(expiresMs).toISOString() : null,
+  };
+}
+
+function getAviationTimeSummaryFromNormalized(features: AviationFeature[]) {
+  let issuedMs = Number.NEGATIVE_INFINITY;
+  let expiresMs = Number.NEGATIVE_INFINITY;
+
+  features.forEach((feature) => {
+    const issued = Date.parse(feature.issuedAt ?? '');
+    const expires = Date.parse(feature.validTo ?? feature.validFrom ?? '');
+    if (Number.isFinite(issued)) issuedMs = Math.max(issuedMs, issued);
+    if (Number.isFinite(expires)) expiresMs = Math.max(expiresMs, expires);
+  });
+
+  return {
+    issuedTime: Number.isFinite(issuedMs) ? new Date(issuedMs).toISOString() : null,
+    expiresTime: Number.isFinite(expiresMs) ? new Date(expiresMs).toISOString() : null,
+  };
+}
+
+function formatAviationTime(value?: string | null) {
+  if (!value) return 'pending';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'pending';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatAviationChipTime(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Time';
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 async function queryWildfireIncidentAtPoint(lat: number, lon: number): Promise<WildfireIncidentDetails | null> {
   const outFields = [
     'poly_IncidentName',
@@ -1858,6 +2235,24 @@ async function queryWildfireIncidentAtPoint(lat: number, lon: number): Promise<W
   return toIncident(nearest?.attrs ?? null);
 }
 
+function AviationDetailRow(props: { label: string; value?: any }) {
+  const value =
+    props.value == null || props.value === ''
+      ? 'Pending'
+      : typeof props.value === 'string'
+        ? props.value
+        : String(props.value);
+
+  return (
+    <View style={styles.fireDetailRow}>
+      <Text style={styles.fireDetailLabel}>{props.label}</Text>
+      <Text style={styles.fireDetailValue} numberOfLines={2}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function HudBadge(props: { label: string; strong?: boolean }) {
   return (
     <View style={[styles.hudBadge, props.strong ? styles.hudBadgeStrong : null]}>
@@ -1911,14 +2306,6 @@ function MapActionButton(props: {
           <Text style={styles.actionBadgeText}>{props.badge}</Text>
         </View>
       ) : null}
-    </Pressable>
-  );
-}
-
-function ChipDark(props: { label: string; active?: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={props.onPress} style={[styles.productChip, props.active ? styles.productChipActive : null]}>
-      <Text style={styles.productChipText}>{props.label}</Text>
     </Pressable>
   );
 }
@@ -2034,29 +2421,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 5,
     marginTop: 8,
-  },
-  productRowCompact: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 8,
-  },
-  productChip: {
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  productChipActive: {
-    borderColor: 'rgba(255,255,255,0.20)',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  productChipText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '900',
   },
   infoPill: {
     paddingHorizontal: 8,
@@ -2205,6 +2569,37 @@ const styles = StyleSheet.create({
       right: 84,
       left: 12,
     },
+  aviationPanelWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 84,
+  },
+  aviationPanel: {
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  aviationEyebrow: {
+    color: 'rgba(125,211,252,0.92)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  aviationTitle: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  aviationFilterGroup: {
+    marginTop: 10,
+  },
+  aviationFilterLabel: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
   legendCard: {
     width: 264,
     paddingHorizontal: 10,
@@ -2272,28 +2667,6 @@ const styles = StyleSheet.create({
   },
   timelineStack: {
     gap: 8,
-  },
-  productDock: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 16,
-    gap: 7,
-  },
-  productDockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-  },
-  productDockTitle: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  productDockMeta: {
-    color: 'rgba(255,255,255,0.66)',
-    fontSize: 10,
-    fontWeight: '800',
   },
   timelineDock: {
     paddingHorizontal: 8,

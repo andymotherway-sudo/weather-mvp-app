@@ -3,7 +3,7 @@
     "name": "OMNIwx Alpha",
     "slug": "weather-app",
     "version": "1.1.7",
-    "owner": "andym",
+    "owner": "andymotherway",
     "orientation": "portrait",
     "icon": "./assets/brand/icon-alpha.png",
     "scheme": "weatherapp",
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "versionCode": 10010,
+      "versionCode": 10014,
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#020617",
@@ -52,7 +52,8 @@
         }
       ],
       "@maplibre/maplibre-react-native",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -64,10 +65,9 @@
       "supportUrl": "https://www.omni-wx.com/support",
       "privacyPolicyUrl": "https://www.omni-wx.com/privacy",
       "buildLabel": "almanac-aab-test-1",
-      
       "eas": {
         "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3",
-       "almanacSafeMode": true
+        "almanacSafeMode": true
       }
     }
   }

@@ -37,7 +37,7 @@ const SettingsContext = createContext<SettingsContextValue | undefined>(
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [tempUnit, setTempUnit] = useState<TempUnit>('F'); // default to F
   const [baseMapStyle, setBaseMapStyle] = useState<BaseMapStyle>('dark');
-  const [radarProvider, setRadarProvider] = useState<RadarProvider>('iem');
+  const [radarProvider, setRadarProvider] = useState<RadarProvider>('rainviewer');
   const [forecastModel, setForecastModel] = useState<ForecastModel>('best_match');
 
   useEffect(() => {

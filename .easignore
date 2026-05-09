@@ -1,0 +1,17 @@
+.git
+.expo
+.vscode
+node_modules
+/.gradle
+/android/.gradle
+/android/.kotlin
+/android/build
+/android/app/build
+/android/local.properties
+omniwx-api
+omniwx-api/node_modules
+builds
+logcat_cam.txt
+*.apk
+*.aab
+*.log

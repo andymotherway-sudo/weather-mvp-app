@@ -1,12 +1,16 @@
 {
   "cli": {
     "version": ">= 16.28.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://omniwx-api.omniwx.workers.dev",
+        "EXPO_PUBLIC_OMNIWX_API_BASE": "https://omniwx-api.omniwx.workers.dev"
+      },
       "android": {
         "buildType": "apk"
       },
@@ -16,6 +20,10 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://omniwx-api.omniwx.workers.dev",
+        "EXPO_PUBLIC_OMNIWX_API_BASE": "https://omniwx-api.omniwx.workers.dev"
+      },
       "android": {
         "buildType": "apk"
       },
@@ -25,6 +33,10 @@
     },
     "production": {
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://omniwx-api.omniwx.workers.dev",
+        "EXPO_PUBLIC_OMNIWX_API_BASE": "https://omniwx-api.omniwx.workers.dev"
+      },
       "android": {
         "buildType": "app-bundle"
       },

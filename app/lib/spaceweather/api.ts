@@ -6,6 +6,7 @@ import type {
   NoaaScalesNow,
   ProtonNow,
   SolarWindSample,
+  MarsInsightWeather,
   SpaceWeatherExtremes,
   SpaceWeatherSummary,
 } from './types';
@@ -50,6 +51,10 @@ const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
 function apiUrl(path: string) {
   if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
   return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
+export async function fetchMarsInsightWeather(): Promise<MarsInsightWeather> {
+  return fetchJson<MarsInsightWeather>(apiUrl('/mars-insight'), 'Mars InSight weather');
 }
 
 // ---------- Shared helpers ----------

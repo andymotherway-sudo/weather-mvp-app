@@ -1,8 +1,8 @@
 // app/lib/spaceweather/hooks.ts
 
 import { useCallback, useEffect, useState } from 'react';
-import { fetchSpaceWeatherSummary } from './api';
-import type { SpaceWeatherSummary } from './types';
+import { fetchMarsInsightWeather, fetchSpaceWeatherSummary } from './api';
+import type { MarsInsightWeather, SpaceWeatherSummary } from './types';
 
 export function useSpaceWeatherSummary() {
   const [data, setData] = useState<SpaceWeatherSummary | null>(null);
@@ -42,4 +42,36 @@ export function useSpaceWeatherSummary() {
     refreshing,
     refresh,
   };
+}
+
+export function useMarsInsightWeather() {
+  const [data, setData] = useState<MarsInsightWeather | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      setLoading(true);
+      const result = await fetchMarsInsightWeather();
+      setData(result);
+    } catch (err: any) {
+      setError(err?.message ?? 'Error loading Mars weather');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { data, loading, error, refreshing, refresh };
 }

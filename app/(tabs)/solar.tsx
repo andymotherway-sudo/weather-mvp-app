@@ -27,7 +27,7 @@ import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
-import { useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
+import { useMarsInsightWeather, useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
 
 function fmtUpdated(iso?: string) {
@@ -154,6 +154,21 @@ function solarWindBand(speed: number) {
   return { label: 'Very fast', index: 3 };
 }
 
+function fmtMarsTemp(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${Math.round(value)}°C`;
+}
+
+function fmtMarsPressure(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${Math.round(value)} Pa`;
+}
+
+function fmtMarsWind(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${value.toFixed(1)} m/s`;
+}
+
 function LearnRow({
   label = 'wxLearn',
   onPress,
@@ -233,6 +248,13 @@ export default function SolarScreen() {
   const { active } = usePlace();
 
   const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary();
+  const {
+    data: mars,
+    loading: marsLoading,
+    error: marsError,
+    refreshing: marsRefreshing,
+    refresh: refreshMars,
+  } = useMarsInsightWeather();
   const { events, loading: eventsLoading, error: eventsError } = useSpaceWeatherEvents(7);
 
   const {
@@ -267,13 +289,14 @@ export default function SolarScreen() {
       await Promise.allSettled([
         Promise.resolve(refresh()),
         Promise.resolve(refreshAstro()),
+        Promise.resolve(refreshMars()),
       ]);
     } catch {
       // no-op
     }
   };
 
-  const isRefreshing = refreshing || astroRefreshing;
+  const isRefreshing = refreshing || astroRefreshing || marsRefreshing;
   const chartHours = useMemo(() => {
     const hours = astro?.hours ?? [];
     if (!hours.length) return hours;
@@ -835,6 +858,63 @@ export default function SolarScreen() {
             </Text>
           </View>
 
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Mars Weather Archive</Text>
+              <LearnRow
+                onPress={() =>
+                  openExplain({
+                    title: 'InSight Mars weather',
+                    summary:
+                      'NASA InSight measured surface temperature, pressure, and wind at Elysium Planitia on Mars.',
+                    whyItMatters:
+                      'The mission is retired, so this is archived context rather than a live Mars forecast.',
+                    howComputed:
+                      'OMNIwx requests the NASA InSight Weather API through the worker and falls back to an archived final-mission sample when the stale feed is unavailable.',
+                    confidence: 'medium',
+                    learnTopicId: 'mars-insight-weather',
+                  })
+                }
+              />
+            </View>
+
+            {marsLoading && !mars ? (
+              <Text style={styles.smallText}>Loading archived Mars weather...</Text>
+            ) : marsError && !mars ? (
+              <Text style={styles.smallText}>{marsError}</Text>
+            ) : mars ? (
+              <>
+                <View style={styles.marsMetricRow}>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Air temp avg</Text>
+                    <Text style={styles.cardValue}>{fmtMarsTemp(mars.tempC.avg)}</Text>
+                    <Text style={styles.smallText}>
+                      {fmtMarsTemp(mars.tempC.min)} to {fmtMarsTemp(mars.tempC.max)}
+                    </Text>
+                  </View>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Pressure</Text>
+                    <Text style={styles.cardValue}>{fmtMarsPressure(mars.pressurePa.avg)}</Text>
+                    <Text style={styles.smallText}>Sol {mars.sol}</Text>
+                  </View>
+                </View>
+                <View style={styles.marsMetricRow}>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Wind avg</Text>
+                    <Text style={styles.cardValue}>{fmtMarsWind(mars.windMps.avg)}</Text>
+                    <Text style={styles.smallText}>Max {fmtMarsWind(mars.windMps.max)}</Text>
+                  </View>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Date</Text>
+                    <Text style={styles.cardValue}>{mars.terrestrialDate ?? 'Archived'}</Text>
+                    <Text style={styles.smallText}>{mars.season ?? mars.source}</Text>
+                  </View>
+                </View>
+                <Text style={styles.smallText}>{mars.note}</Text>
+              </>
+            ) : null}
+          </View>
+
           {showSpaceWeatherLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
@@ -1350,6 +1430,22 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
     fontWeight: '800',
     fontSize: 12,
+  },
+
+  marsMetricRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+
+  marsMetricTile: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
 
   flareClassText: {

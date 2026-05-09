@@ -1,4 +1,4 @@
-﻿import MapLibreGL from '@maplibre/maplibre-react-native';
+import MapLibreGL from '@maplibre/maplibre-react-native';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -12,6 +12,8 @@ import { MapRenderer } from '../../components/maps/MapRenderer';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
+import type { AviationFeature } from '../lib/aviation/types';
 import { geocodePlaces } from '../lib/locations/geocode';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
@@ -20,18 +22,49 @@ type Mode = 'station' | 'flight';
 type ReportView = 'decoded' | 'raw';
 type Stop = { raw: string; code?: string; label: string; lat: number; lon: number };
 type Wx = { tempF: number | null; windMph: number | null; gustMph: number | null; cloudPct: number | null; visMi: number | null };
+type RouteAdvisory = {
+  key: string;
+  productType: AviationFeature['productType'];
+  hazardType: AviationFeature['hazardType'];
+  product: string;
+  hazard: string;
+  severity: string | null;
+  altitude: string;
+  valid: string;
+  rawId: string;
+  rank: number;
+};
 type Sample = {
   key: string;
   label: string;
   lat: number;
   lon: number;
   distanceMi: number;
+  etaIso: string;
   weather: Wx;
-  hazards: { turbulence: boolean; icing: boolean; sigmet: boolean; cwa: boolean; pirep: boolean };
+  advisories: RouteAdvisory[];
+  airportRisk: 'low' | 'elevated' | 'high';
   severity: 'low' | 'elevated' | 'high';
 };
-type Flight = { origin: Stop; destination: Stop; totalDistanceMi: number; samples: Sample[]; counts: Record<string, number> };
+type Flight = { origin: Stop; destination: Stop; totalDistanceMi: number; cruiseAltitudeFt: number; departureIso: string; samples: Sample[]; counts: Record<string, number> };
 type Station = { station: Stop; metar: any | null; taf: any | null };
+
+const CRUISE_LEVELS = [
+  { label: '6,000 ft', feet: 6000 },
+  { label: '9,000 ft', feet: 9000 },
+  { label: '12,000 ft', feet: 12000 },
+  { label: 'FL180', feet: 18000 },
+  { label: 'FL240', feet: 24000 },
+  { label: 'FL300', feet: 30000 },
+  { label: 'FL360', feet: 36000 },
+];
+
+const DEPARTURE_OFFSETS = [
+  { label: 'Now', minutes: 0 },
+  { label: '+1h', minutes: 60 },
+  { label: '+2h', minutes: 120 },
+  { label: '+4h', minutes: 240 },
+];
 
 const DEFAULT_REGION: Region = { latitude: 39.5, longitude: -98.35, latitudeDelta: 20, longitudeDelta: 28, zoom: 4 };
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as any[] };
@@ -97,6 +130,145 @@ function featureBounds(f: any) {
     south: Math.min(...out.map((c) => c[1])),
     north: Math.max(...out.map((c) => c[1])),
   };
+}
+
+function productLabel(feature: AviationFeature) {
+  const source = String(feature.properties?.sourceProduct ?? '').trim();
+  if (source) return source;
+  if (feature.productType === 'gairmet') return 'G-AIRMET';
+  if (feature.productType === 'sigmet') return 'SIGMET';
+  if (feature.productType === 'convectiveSigmet') return 'Convective SIGMET';
+  if (feature.productType === 'cwa') return 'CWA';
+  if (feature.productType === 'pirep') return 'PIREP';
+  return 'Aviation';
+}
+
+function hazardLabel(feature: AviationFeature) {
+  const hazard = String(feature.properties?.hazardType ?? '').trim();
+  if (hazard) return hazard;
+  if (feature.hazardType === 'ice') return 'ICE';
+  if (feature.hazardType === 'turb') return 'TURB';
+  if (feature.hazardType === 'llws') return 'LLWS';
+  if (feature.hazardType === 'ifr') return 'IFR/MTN';
+  if (feature.hazardType === 'mtnObscuration') return 'MTN OBS';
+  if (feature.hazardType === 'ts') return 'TS';
+  return 'UNKNOWN';
+}
+
+function flLabel(ft: number | null | undefined) {
+  if (ft == null || !Number.isFinite(ft)) return null;
+  if (ft <= 0) return 'SFC';
+  return `FL${String(Math.round(ft / 100)).padStart(3, '0')}`;
+}
+
+function altitudeText(feature: AviationFeature) {
+  const base = flLabel(feature.baseFt);
+  const top = flLabel(feature.topFt);
+  if (base && top) return `${base}-${top}`;
+  if (top) return `Tops ${top}`;
+  if (base) return `${base}+`;
+  return 'altitude unknown';
+}
+
+function cruiseLabel(feet: number) {
+  if (feet >= 18000) return flLabel(feet) ?? `${Math.round(feet).toLocaleString()} ft`;
+  return `${Math.round(feet).toLocaleString()} ft`;
+}
+
+function departureLabel(minutes: number) {
+  if (minutes <= 0) return 'Now';
+  return `+${Math.round(minutes / 60)}h`;
+}
+
+function utcShort(value: string | null | undefined) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  return `${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}Z`;
+}
+
+function validText(feature: AviationFeature) {
+  const from = utcShort(feature.validFrom);
+  const to = utcShort(feature.validTo);
+  if (from && to && from !== to) return `valid ${from}-${to}`;
+  if (to) return `valid until ${to}`;
+  if (from) return `valid ${from}`;
+  return 'valid time unknown';
+}
+
+const GAIRMET_SNAPSHOT_LOOKBACK_MS = 30 * 60 * 1000;
+const GAIRMET_SNAPSHOT_WINDOW_MS = 3.5 * 60 * 60 * 1000;
+
+function altitudeApplies(feature: AviationFeature, altitudeFt: number) {
+  if (feature.baseFt == null && feature.topFt == null) {
+    if (feature.hazardType === 'ifr' || feature.hazardType === 'mtnObscuration' || feature.hazardType === 'llws') {
+      return altitudeFt <= 12000;
+    }
+    return false;
+  }
+  const base = feature.baseFt ?? 0;
+  const top = feature.topFt ?? 60000;
+  return altitudeFt >= base && altitudeFt <= top;
+}
+
+function timeApplies(feature: AviationFeature, iso: string) {
+  const ms = Date.parse(iso);
+  const from = Date.parse(feature.validFrom ?? '');
+  const to = Date.parse(feature.validTo ?? feature.validFrom ?? '');
+  if (!Number.isFinite(ms)) return false;
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from) return ms >= from && ms <= to;
+  if (Number.isFinite(from) && feature.productType === 'gairmet') {
+    return ms >= from - GAIRMET_SNAPSHOT_LOOKBACK_MS && ms <= from + GAIRMET_SNAPSHOT_WINDOW_MS;
+  }
+  if (Number.isFinite(from)) return Math.abs(ms - from) <= 60 * 1000;
+  return false;
+}
+
+function rankAdvisory(feature: AviationFeature) {
+  const sev = feature.severity;
+  if (feature.productType === 'convectiveSigmet') return 5;
+  if (feature.productType === 'sigmet') return 5;
+  if (feature.productType === 'cwa') return feature.hazardType === 'ts' ? 5 : 3;
+  if ((feature.hazardType === 'turb' || feature.hazardType === 'ice') && (sev === 'severe' || sev === 'extreme')) return 5;
+  if ((feature.hazardType === 'turb' || feature.hazardType === 'ice') && sev === 'moderate') return 3;
+  if (feature.productType === 'pirep' && (sev === 'severe' || sev === 'extreme')) return 5;
+  if (feature.productType === 'pirep' && sev === 'moderate') return 3;
+  if (feature.hazardType === 'ifr' || feature.hazardType === 'mtnObscuration' || feature.hazardType === 'llws') return 3;
+  return 1;
+}
+
+function makeRouteAdvisory(feature: AviationFeature): RouteAdvisory {
+  return {
+    key: feature.id,
+    productType: feature.productType,
+    hazardType: feature.hazardType,
+    product: productLabel(feature),
+    hazard: hazardLabel(feature),
+    severity: feature.severity === 'unknown' ? null : feature.severity.toUpperCase(),
+    altitude: altitudeText(feature),
+    valid: validText(feature),
+    rawId: feature.id,
+    rank: rankAdvisory(feature),
+  };
+}
+
+function airportRiskFromMetar(row: any): 'low' | 'elevated' | 'high' {
+  const cat = String(flightCat(row) ?? '').toUpperCase();
+  if (cat === 'LIFR' || cat === 'IFR') return 'high';
+  if (cat === 'MVFR') return 'elevated';
+  return 'low';
+}
+
+function severityFromScore(score: number): 'low' | 'elevated' | 'high' {
+  if (score >= 5) return 'high';
+  if (score >= 3) return 'elevated';
+  return 'low';
+}
+
+function airportRiskText(risk: Sample['airportRisk']) {
+  if (risk === 'high') return 'Airport conditions: IFR/LIFR risk near endpoint.';
+  if (risk === 'elevated') return 'Airport conditions: MVFR risk near endpoint.';
+  return null;
 }
 
 function airportCandidates(token: string) {
@@ -258,6 +430,8 @@ export default function AviationScreen() {
   const [stationInput, setStationInput] = useState('KPHX');
   const [fromInput, setFromInput] = useState('KPHX');
   const [toInput, setToInput] = useState('KDEN');
+  const [cruiseAltitudeFt, setCruiseAltitudeFt] = useState(12000);
+  const [departureOffsetMin, setDepartureOffsetMin] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [station, setStation] = useState<Station | null>(null);
@@ -318,6 +492,21 @@ export default function AviationScreen() {
     setError(null);
     try {
       const [origin, destination] = await Promise.all([resolveStop(fromInput.trim()), resolveStop(toInput.trim())]);
+      const departureMs = Date.now() + departureOffsetMin * 60 * 1000;
+      const routeSpeedMph = 160;
+      const [originMetar, destinationMetar] = await Promise.all([
+        origin.code ? fetchProduct('metar', origin.code).catch(() => null) : Promise.resolve(null),
+        destination.code ? fetchProduct('metar', destination.code).catch(() => null) : Promise.resolve(null),
+      ]);
+      const loadedAviationProductCount = aviation.allHazards.features.length + aviation.pireps.features.length;
+      if (loadedAviationProductCount === 0) {
+        if (aviation.loading) {
+          throw new Error('Aviation advisory products are still loading. Wait a few seconds, then analyze the route again.');
+        }
+        throw new Error(aviation.error ? `Aviation advisory products did not load: ${aviation.error}` : 'Aviation advisory products did not load yet. Try again in a moment.');
+      }
+      const normalizedHazards = normalizeAviationFeatureCollection(aviation.allHazards);
+      const normalizedPireps = normalizeAviationFeatureCollection(aviation.pireps);
       const totalDistanceMi = mi(origin.lat, origin.lon, destination.lat, destination.lon);
       const count = Math.max(4, Math.min(9, Math.round(totalDistanceMi / 120) + 1));
       const pts = Array.from({ length: count }, (_, i) => {
@@ -328,40 +517,54 @@ export default function AviationScreen() {
           lat: origin.lat + (destination.lat - origin.lat) * t,
           lon: origin.lon + (destination.lon - origin.lon) * t,
           distanceMi: totalDistanceMi * t,
+          etaIso: new Date(departureMs + (totalDistanceMi * t / routeSpeedMph) * 60 * 60 * 1000).toISOString(),
         };
       });
       const corridor = expand(bounds(pts), 1.2);
       const wx = await Promise.all(pts.map((p) => fetchWx(p.lat, p.lon)));
       const samples: Sample[] = pts.map((p, i) => {
         const box = { west: p.lon, east: p.lon, south: p.lat, north: p.lat };
-        const hazards = {
-          turbulence: aviation.turbulence.features.some((f) => { const b = featureBounds(f); return b ? intersects(expand(b, 0.75), box) : false; }),
-          icing: aviation.icing.features.some((f) => { const b = featureBounds(f); return b ? intersects(expand(b, 0.75), box) : false; }),
-          sigmet: aviation.advisories.features.some((f) => { const b = featureBounds(f); return b ? intersects(expand(b, 0.65), box) : false; }),
-          cwa: aviation.centerWeather.features.some((f) => { const b = featureBounds(f); return b ? intersects(expand(b, 0.55), box) : false; }),
-          pirep: aviation.pireps.features.some((f) => { const c = f?.geometry?.coordinates; return Array.isArray(c) && c.length >= 2 && mi(p.lat, p.lon, Number(c[1]), Number(c[0])) <= 65; }),
+        const productAdvisories = normalizedHazards
+          .filter((feature) => {
+            const b = featureBounds({ geometry: feature.geometry });
+            return b ? intersects(expand(b, 0.75), box) && altitudeApplies(feature, cruiseAltitudeFt) && timeApplies(feature, p.etaIso) : false;
+          })
+          .map(makeRouteAdvisory);
+        const pirepAdvisories = normalizedPireps
+          .filter((feature) => {
+            const c = feature.geometry?.coordinates;
+            return Array.isArray(c) && c.length >= 2 && mi(p.lat, p.lon, Number(c[1]), Number(c[0])) <= 65 && altitudeApplies(feature, cruiseAltitudeFt);
+          })
+          .map(makeRouteAdvisory);
+        const airportRisk =
+          i === 0 ? airportRiskFromMetar(originMetar) : i === pts.length - 1 ? airportRiskFromMetar(destinationMetar) : 'low';
+        const advisories = [...productAdvisories, ...pirepAdvisories]
+          .sort((a, b) => b.rank - a.rank)
+          .slice(0, 5);
+        const advisoryScore = advisories.reduce((max, advisory) => Math.max(max, advisory.rank), 0);
+        const airportScore = airportRisk === 'high' ? 5 : airportRisk === 'elevated' ? 3 : 0;
+        return {
+          ...p,
+          weather: wx[i],
+          advisories,
+          airportRisk,
+          severity: severityFromScore(Math.max(advisoryScore, airportScore)),
         };
-        const score =
-          (hazards.sigmet ? 3 : 0) +
-          (hazards.turbulence ? 2 : 0) +
-          (hazards.icing ? 2 : 0) +
-          (hazards.cwa ? 1 : 0) +
-          (hazards.pirep ? 1 : 0) +
-          ((wx[i].gustMph ?? 0) >= 30 ? 1 : 0) +
-          ((wx[i].visMi ?? 10) < 3 ? 1 : 0);
-        return { ...p, weather: wx[i], hazards, severity: score >= 4 ? 'high' : score >= 2 ? 'elevated' : 'low' };
       });
+      const matchedAdvisories = Array.from(new Map(samples.flatMap((sample) => sample.advisories).map((advisory) => [advisory.key, advisory])).values());
       setFlight({
         origin,
         destination,
         totalDistanceMi,
+        cruiseAltitudeFt,
+        departureIso: new Date(departureMs).toISOString(),
         samples,
         counts: {
-          turbulence: aviation.turbulence.features.filter((f) => { const b = featureBounds(f); return b ? intersects(b, corridor) : false; }).length,
-          icing: aviation.icing.features.filter((f) => { const b = featureBounds(f); return b ? intersects(b, corridor) : false; }).length,
-          sigmet: aviation.advisories.features.filter((f) => { const b = featureBounds(f); return b ? intersects(b, corridor) : false; }).length,
-          cwa: aviation.centerWeather.features.filter((f) => { const b = featureBounds(f); return b ? intersects(b, corridor) : false; }).length,
-          pirep: aviation.pireps.features.filter((f) => { const c = f?.geometry?.coordinates; return Array.isArray(c) && c.length >= 2 && intersects(expand({ west: Number(c[0]), east: Number(c[0]), south: Number(c[1]), north: Number(c[1]) }, 0.55), corridor); }).length,
+          turbulence: matchedAdvisories.filter((f) => f.hazardType === 'turb').length,
+          icing: matchedAdvisories.filter((f) => f.hazardType === 'ice').length,
+          sigmet: matchedAdvisories.filter((f) => f.productType === 'sigmet' || f.productType === 'convectiveSigmet').length,
+          cwa: matchedAdvisories.filter((f) => f.productType === 'cwa').length,
+          pirep: matchedAdvisories.filter((f) => f.productType === 'pirep').length,
         },
       });
       setStation(null);
@@ -412,12 +615,21 @@ export default function AviationScreen() {
             <>
               <Label text="From" /><TextInput value={fromInput} onChangeText={setFromInput} autoCapitalize="characters" autoCorrect={false} placeholder="KPHX or Phoenix" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
               <Label text="To" /><TextInput value={toInput} onChangeText={setToInput} autoCapitalize="characters" autoCorrect={false} placeholder="KDEN or Denver" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
+              <Label text="Cruise altitude" />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+                {CRUISE_LEVELS.map((level) => <Seg key={level.feet} onPress={() => setCruiseAltitudeFt(level.feet)} active={cruiseAltitudeFt === level.feet} label={level.label} />)}
+              </ScrollView>
+              <Label text="Departure" />
+              <View style={s.learnRow}>
+                {DEPARTURE_OFFSETS.map((option) => <Seg key={option.minutes} onPress={() => setDepartureOffsetMin(option.minutes)} active={departureOffsetMin === option.minutes} label={option.label} />)}
+              </View>
               <View style={s.actions}><Primary onPress={analyzeFlight} label="Analyze Flight" loading={loading} /><Secondary onPress={openMap} label="Open Aviation Map" /></View>
               <View style={s.learnRow}><Learn onPress={() => openLearn('aviation-turbulence')} label="Turbulence" /><Learn onPress={() => openLearn('aviation-icing')} label="Icing" /><Learn onPress={() => openLearn('aviation-pirep')} label="PIREPs" /></View>
             </>
           )}
 
           <Text style={s.helper}>Three- and four-letter airport codes are supported. US three-letter inputs also try the matching K-prefixed station.</Text>
+          {mode === 'flight' ? <Text style={s.disclaimer}>For situational awareness only. Not for flight planning or navigation. Verify with official FAA/NWS/AWC briefing sources.</Text> : null}
           <Text style={[s.summary, error ? s.error : null]}>{error ?? (mode === 'station' ? station ? `Loaded ${station.station.code ?? station.station.label}.` : 'Enter a station to load raw and decoded aviation weather.' : flight ? `${flight.samples.filter((x) => x.severity === 'high').length} high-concern segments, ${flight.samples.filter((x) => x.severity === 'elevated').length} elevated.` : 'Enter a route to scan the corridor.')}</Text>
         </Card>
 
@@ -456,16 +668,32 @@ export default function AviationScreen() {
                   <MapLibreGL.CircleLayer id="route-pts-layer" style={{ circleColor: ['match', ['get', 'severity'], 'high', '#ef4444', 'elevated', '#f59e0b', '#22c55e'] as any, circleRadius: 5, circleStrokeColor: 'rgba(2,6,23,0.98)', circleStrokeWidth: 1.5 }} />
                   <MapLibreGL.SymbolLayer id="route-labels" style={{ textField: ['get', 'label'], textSize: 10, textColor: '#e5e7eb', textHaloColor: 'rgba(2,6,23,0.98)', textHaloWidth: 1, textOffset: [0, 1.2], textAnchor: 'top' }} />
                 </MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="turb" shape={aviation.turbulence as any}><MapLibreGL.FillLayer id="turb-fill" style={{ fillColor: '#f59e0b', fillOpacity: 0.18 }} /><MapLibreGL.LineLayer id="turb-line" style={{ lineColor: '#fbbf24', lineWidth: 1.5, lineOpacity: 0.7 }} /></MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="ice" shape={aviation.icing as any}><MapLibreGL.FillLayer id="ice-fill" style={{ fillColor: '#38bdf8', fillOpacity: 0.16 }} /><MapLibreGL.LineLayer id="ice-line" style={{ lineColor: '#7dd3fc', lineWidth: 1.5, lineOpacity: 0.68 }} /></MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="sigmet" shape={aviation.advisories as any}><MapLibreGL.LineLayer id="sigmet-line" style={{ lineColor: '#f87171', lineWidth: 2, lineOpacity: 0.78, lineDasharray: [2, 1.4] }} /></MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="cwa" shape={aviation.centerWeather as any}><MapLibreGL.LineLayer id="cwa-line" style={{ lineColor: '#fde68a', lineWidth: 1.7, lineOpacity: 0.72, lineDasharray: [1.2, 1.2] }} /></MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="pirep" shape={aviation.pireps as any}><MapLibreGL.CircleLayer id="pirep-layer" style={{ circleColor: '#e0f2fe', circleOpacity: 0.88, circleRadius: 3.5, circleStrokeColor: 'rgba(2,6,23,0.98)', circleStrokeWidth: 1 }} /></MapLibreGL.ShapeSource>
               </MapRenderer>
             </View></Glass>
-            <View style={s.stats}><Stat label="Distance" value={flight ? fmt(flight.totalDistanceMi, ' mi') : '--'} /><Stat label="Turb" value={flight ? String(flight.counts.turbulence) : '--'} /><Stat label="Icing" value={flight ? String(flight.counts.icing) : '--'} /><Stat label="SIGMET" value={flight ? String(flight.counts.sigmet) : '--'} /></View>
-            <View style={s.stats}><Stat label="CWA" value={flight ? String(flight.counts.cwa) : '--'} /><Stat label="PIREPs" value={flight ? String(flight.counts.pirep) : '--'} /><Stat label="From" value={flight ? (flight.origin.code ?? flight.origin.label.split(',')[0]) : '--'} /><Stat label="To" value={flight ? (flight.destination.code ?? flight.destination.label.split(',')[0]) : '--'} /></View>
-            {flight?.samples.map((x) => <Glass key={x.key} style={s.card}><View style={s.cardHead}><View><Text style={s.cardTitle}>{x.label}</Text><Text style={s.cardSub}>{fmt(x.distanceMi, ' mi')} from departure</Text></View><View style={[s.pill, x.severity === 'high' ? s.high : x.severity === 'elevated' ? s.elevated : s.low]}><Text style={s.pillText}>{x.severity.toUpperCase()}</Text></View></View><Text style={s.raw}>Temp {fmt(x.weather.tempF, ' deg')} / Wind {fmt(x.weather.windMph, ' mph')} / Gust {fmt(x.weather.gustMph, ' mph')} / Clouds {fmt(x.weather.cloudPct, '%')} / Visibility {fmt(x.weather.visMi, ' mi', x.weather.visMi != null && x.weather.visMi < 10 ? 1 : 0)}</Text><Text style={[s.raw, { marginTop: 10 }]}>Hazards: {x.hazards.turbulence ? 'Turb ' : ''}{x.hazards.icing ? 'Ice ' : ''}{x.hazards.sigmet ? 'SIGMET ' : ''}{x.hazards.cwa ? 'CWA ' : ''}{x.hazards.pirep ? 'PIREP' : ''}{!x.hazards.turbulence && !x.hazards.icing && !x.hazards.sigmet && !x.hazards.cwa && !x.hazards.pirep ? 'None nearby' : ''}</Text></Glass>)}
+            <View style={s.stats}><Stat label="Distance" value={flight ? fmt(flight.totalDistanceMi, ' mi') : '--'} /><Stat label="Cruise" value={flight ? cruiseLabel(flight.cruiseAltitudeFt) : cruiseLabel(cruiseAltitudeFt)} /><Stat label="Depart" value={flight ? utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin) : departureLabel(departureOffsetMin)} /><Stat label="SIGMET" value={flight ? String(flight.counts.sigmet) : '--'} /></View>
+            <View style={s.stats}><Stat label="Turb" value={flight ? String(flight.counts.turbulence) : '--'} /><Stat label="Icing" value={flight ? String(flight.counts.icing) : '--'} /><Stat label="CWA" value={flight ? String(flight.counts.cwa) : '--'} /><Stat label="PIREPs" value={flight ? String(flight.counts.pirep) : '--'} /></View>
+            {flight?.samples.map((x) => (
+              <Glass key={x.key} style={s.card}>
+                <View style={s.cardHead}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.cardTitle}>{x.label}</Text>
+                    <Text style={s.cardSub}>{fmt(x.distanceMi, ' mi')} from departure · ETA {utcShort(x.etaIso) ?? '--'}</Text>
+                  </View>
+                  <View style={[s.pill, x.severity === 'high' ? s.high : x.severity === 'elevated' ? s.elevated : s.low]}><Text style={s.pillText}>{x.severity.toUpperCase()}</Text></View>
+                </View>
+                <Text style={s.sectionLabel}>Weather context</Text>
+                <Text style={s.raw}>Temp {fmt(x.weather.tempF, ' deg')} / Wind {fmt(x.weather.windMph, ' mph')} / Gust {fmt(x.weather.gustMph, ' mph')} / Visibility {fmt(x.weather.visMi, ' mi', x.weather.visMi != null && x.weather.visMi < 10 ? 1 : 0)} / Clouds {fmt(x.weather.cloudPct, '%')} (context)</Text>
+                {airportRiskText(x.airportRisk) ? <Text style={s.airportRisk}>{airportRiskText(x.airportRisk)}</Text> : null}
+                <Text style={s.sectionLabel}>Aviation advisories</Text>
+                {x.advisories.length ? x.advisories.map((advisory) => (
+                  <View key={`${x.key}-${advisory.key}`} style={s.advisory}>
+                    <Text style={s.advisoryTitle}>{advisory.hazard} · {advisory.product}</Text>
+                    <Text style={s.advisoryMeta}>{advisory.severity ? `${advisory.severity} · ` : ''}{advisory.altitude} · {advisory.valid}</Text>
+                    <Text style={s.advisoryId}>Raw ID {advisory.rawId}</Text>
+                  </View>
+                )) : <Text style={s.raw}>No product-based advisories matched this segment at the selected altitude and valid time.</Text>}
+              </Glass>
+            ))}
           </>
         ) : null}
 
@@ -518,10 +746,12 @@ const s = StyleSheet.create({
   primaryText: { color: 'white', fontWeight: '900', fontSize: 15 },
   secondary: { minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 14 },
   secondaryText: { color: 'white', fontWeight: '800', fontSize: 13 },
+  chipRow: { flexDirection: 'row', gap: 8, paddingRight: 8 },
   learnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   learn: { paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' },
   learnText: { color: 'rgba(255,255,255,0.82)', fontWeight: '800', fontSize: 12 },
   helper: { color: 'rgba(255,255,255,0.5)', marginTop: 10, fontSize: 12, lineHeight: 18 },
+  disclaimer: { color: 'rgba(255,255,255,0.48)', marginTop: 8, fontSize: 11, lineHeight: 16 },
   summary: { color: 'rgba(255,255,255,0.84)', marginTop: 12, lineHeight: 19 },
   error: { color: '#fca5a5' },
   card: { marginTop: 12, borderRadius: 22, padding: 12 },
@@ -529,6 +759,12 @@ const s = StyleSheet.create({
   cardSub: { color: 'rgba(255,255,255,0.6)', marginTop: 4, lineHeight: 18 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
   raw: { color: 'rgba(255,255,255,0.82)', lineHeight: 20, fontWeight: '700', marginTop: 10 },
+  sectionLabel: { color: 'rgba(125,211,252,0.78)', fontSize: 11, fontWeight: '900', letterSpacing: 0.7, textTransform: 'uppercase', marginTop: 14 },
+  airportRisk: { color: '#fbbf24', lineHeight: 19, fontWeight: '800', marginTop: 8 },
+  advisory: { marginTop: 9, paddingTop: 9, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' },
+  advisoryTitle: { color: 'white', fontSize: 14, fontWeight: '900' },
+  advisoryMeta: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 19, marginTop: 3 },
+  advisoryId: { color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: '700', marginTop: 3 },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   rowLabel: { color: 'rgba(255,255,255,0.56)', fontWeight: '800', flex: 1 },
   rowValue: { color: 'white', fontWeight: '800', textAlign: 'right', flexShrink: 1 },

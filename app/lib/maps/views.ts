@@ -58,7 +58,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'aviation',
     title: 'Aviation',
-    presetEnabledLayers: ['radar.reflectivity', 'aviation.gairmet.turb', 'aviation.gairmet.ice', 'aviation.sigmet'],
+    presetEnabledLayers: ['aviation.gairmet.turb', 'aviation.gairmet.ice', 'aviation.sigmet', 'aviation.pirep'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.88,
       'aviation.gairmet.turb': 0.72,

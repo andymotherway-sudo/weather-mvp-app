@@ -102,6 +102,7 @@ export type MapRuntimeState = {
     // index into frames array
     frameIndex: number;
     playing: boolean;
+    stormMode?: boolean;
   };
 
   // Wildfire snapshots typically “latest”; keep optional timestamp if you add historical later

@@ -26,13 +26,15 @@ import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+import { useMarsInsightWeather } from '../lib/spaceweather/hooks';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
 const MAX_ROWS = 10;
 
 // Worker endpoint (land extremes)
-const LAND_EXTREMES_WORKER_URL = 'https://omniwx-api.omniwx.workers.dev/land-extremes';
+const API_BASE = ((process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? 'https://omniwx-api.omniwx.workers.dev').replace(/\/+$/, '');
+const LAND_EXTREMES_WORKER_URL = `${API_BASE}/land-extremes`;
 
 type Severity = 'calm' | 'moderate' | 'rough' | 'extreme';
 type Mode = 'marine' | 'land' | 'space';
@@ -342,6 +344,21 @@ function useSpaceExtremes(): {
   };
 }
 
+function fmtC(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${Math.round(value)} °C`;
+}
+
+function fmtPa(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${Math.round(value)} Pa`;
+}
+
+function fmtMps(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${value.toFixed(1)} m/s`;
+}
+
 function Segmented({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
   const options: Array<{ key: Mode; label: string }> = [
     { key: 'marine', label: 'Marine' },
@@ -583,17 +600,17 @@ export default function ExtremesScreen() {
 
   // Land + Space
   const land = useLandExtremes(tempUnit);
-  const space = useSpaceExtremes();
+  const mars = useMarsInsightWeather();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       if (mode === 'land') await land.refresh();
-      if (mode === 'space') await space.refresh();
+      if (mode === 'space') await mars.refresh();
     } finally {
       setRefreshing(false);
     }
-  }, [land, mode, space]);
+  }, [land, mars, mode]);
 
   const headerSubtitle =
     mode === 'marine'
@@ -808,35 +825,59 @@ export default function ExtremesScreen() {
       {/* SPACE */}
       {mode === 'space' ? (
         <>
-          {space.error ? (
+          {mars.error ? (
             <Card style={styles.errorCard}>
               <Text style={styles.errorTitle}>Error</Text>
-              <Text style={styles.errorText}>{space.error}</Text>
+              <Text style={styles.errorText}>{mars.error}</Text>
             </Card>
           ) : null}
 
-          {space.loading ? (
+          {mars.loading && !mars.data ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
               <Text style={typography.small}>Checking Mars conditions…</Text>
             </View>
           ) : null}
 
-          {!space.loading ? (
+          {!mars.loading && mars.data ? (
             <Card style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>Space</Text>
-              <Text style={styles.sectionSubtitle}>Mars extremes, dust storms, and fun comparisons</Text>
+              <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
+              <Text style={styles.sectionSubtitle}>NASA InSight lander weather at Elysium Planitia. Archived, not live.</Text>
 
-              {space.items.map((x, i) => (
-                <View key={`${x.title}-${i}`} style={styles.spaceRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.spaceTitle}>{x.title}</Text>
-                    <Text style={styles.spaceSubtitle}>{x.subtitle}</Text>
-                    {x.footnote ? <Text style={styles.spaceFootnote}>{x.footnote}</Text> : null}
-                  </View>
-                  <Text style={styles.valueText}>{x.valueText}</Text>
+              <View style={styles.spaceRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.spaceTitle}>Air temperature</Text>
+                  <Text style={styles.spaceSubtitle}>
+                    Sol {mars.data.sol} / {mars.data.terrestrialDate ?? 'archived date'}
+                  </Text>
+                  <Text style={styles.spaceFootnote}>
+                    Range {fmtC(mars.data.tempC.min)} to {fmtC(mars.data.tempC.max)}
+                  </Text>
                 </View>
-              ))}
+                <Text style={styles.valueText}>{fmtC(mars.data.tempC.avg)}</Text>
+              </View>
+
+              <View style={styles.spaceRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.spaceTitle}>Pressure</Text>
+                  <Text style={styles.spaceSubtitle}>{mars.data.season ?? mars.data.source}</Text>
+                  <Text style={styles.spaceFootnote}>
+                    Range {fmtPa(mars.data.pressurePa.min)} to {fmtPa(mars.data.pressurePa.max)}
+                  </Text>
+                </View>
+                <Text style={styles.valueText}>{fmtPa(mars.data.pressurePa.avg)}</Text>
+              </View>
+
+              <View style={styles.spaceRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.spaceTitle}>Wind</Text>
+                  <Text style={styles.spaceSubtitle}>Horizontal wind speed from InSight</Text>
+                  <Text style={styles.spaceFootnote}>Max {fmtMps(mars.data.windMps.max)}</Text>
+                </View>
+                <Text style={styles.valueText}>{fmtMps(mars.data.windMps.avg)}</Text>
+              </View>
+
+              <Text style={styles.spaceFootnote}>{mars.data.note}</Text>
             </Card>
           ) : null}
         </>

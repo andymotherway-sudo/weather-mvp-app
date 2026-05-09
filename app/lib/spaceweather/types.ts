@@ -69,3 +69,17 @@ export type SpaceWeatherSummary = {
   imf?: ImfNow;
   protons?: ProtonNow;
 };
+
+export type MarsInsightWeather = {
+  ok: boolean;
+  source: 'NASA InSight Weather API';
+  archived: true;
+  sol: string;
+  terrestrialDate: string | null;
+  season: string | null;
+  tempC: { avg: number | null; min: number | null; max: number | null };
+  pressurePa: { avg: number | null; min: number | null; max: number | null };
+  windMps: { avg: number | null; min: number | null; max: number | null };
+  fetchedAtIso: string;
+  note: string;
+};

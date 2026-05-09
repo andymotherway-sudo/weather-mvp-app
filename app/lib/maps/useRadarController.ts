@@ -88,6 +88,7 @@ function buildWorkerWmsUrl(args: {
   shrink?: number;
   dpr?: number;
   fmt?: 'png' | 'png32';
+  stormMode?: boolean;
 }) {
   const { product, region, widthPx, heightPx, timeIso } = args;
 
@@ -112,6 +113,7 @@ function buildWorkerWmsUrl(args: {
   u.searchParams.set('dpr', String(dpr));
   u.searchParams.set('fmt', fmt);
   u.searchParams.set('bgcolor', '0x00000000');
+  if (args.stormMode) u.searchParams.set('storm', '1');
   if (timeIso) u.searchParams.set('time', timeIso);
 
   return u.toString();
@@ -173,9 +175,9 @@ function getRadarFetchProfile(zoom: number, provider: 'iem' | 'rainviewer', stor
   }
 
   if (stormMode) {
-    if (z <= 6) return { maxFrames: 8, lookbackMinutes: 55 };
-    if (z <= 9) return { maxFrames: 10, lookbackMinutes: 70 };
-    return { maxFrames: 12, lookbackMinutes: 80 };
+    if (z <= 6) return { maxFrames: 6, lookbackMinutes: 45 };
+    if (z <= 9) return { maxFrames: 5, lookbackMinutes: 40 };
+    return { maxFrames: 3, lookbackMinutes: 25 };
   }
 
   if (z <= 5) return { maxFrames: 7, lookbackMinutes: 35 };
@@ -188,7 +190,7 @@ export type RadarControllerSheetValue = {
 };
 
 function getStormMode(state: any) {
-  return state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
+  return state?.viewId === 'storm' || state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
 }
 
 export function useRadarController(args: {
@@ -290,16 +292,45 @@ export function useRadarController(args: {
   /* =========================================================================
    * Hyperlocal WMS image mode
    * ========================================================================= */
-  // The hyperlocal WMS image path is reliable for the primary reflectivity product,
-  // but alternate reflectivity / velocity can disappear at higher zooms there.
-  // Keep those products on the tiled IEM path instead of switching into local-image mode.
+  // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
+  // also allow the alternate reflectivity product for sharper single-site inspection.
   const usingLocalImage =
-    sheetValue.radarProvider === 'iem' && radarEnabled && product === 'N0Q' && mapZoom >= localMinZoom;
+    sheetValue.radarProvider === 'iem' &&
+    radarEnabled &&
+    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
+    mapZoom >= localMinZoom;
 
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();
 
   const localImageProfile = useMemo(() => {
+    if (stormMode && mapZoom >= 13.5) {
+      return {
+        maxDimension: 3072,
+        minDimension: 1600,
+        dpr: 2.7,
+        debounceMs: 420,
+      };
+    }
+
+    if (stormMode && mapZoom >= 11.5) {
+      return {
+        maxDimension: 2816,
+        minDimension: 1400,
+        dpr: 2.45,
+        debounceMs: 360,
+      };
+    }
+
+    if (stormMode) {
+      return {
+        maxDimension: 2304,
+        minDimension: 1180,
+        dpr: 2.2,
+        debounceMs: 300,
+      };
+    }
+
     if (mapZoom >= 14) {
       return {
         maxDimension: 2304,
@@ -324,7 +355,7 @@ export function useRadarController(args: {
       dpr: 2.0,
       debounceMs: 240,
     };
-  }, [mapZoom]);
+  }, [mapZoom, stormMode]);
 
   const imageW = Math.min(
     localImageProfile.maxDimension,
@@ -366,9 +397,10 @@ export function useRadarController(args: {
           widthPx: imageW,
           heightPx: imageH,
           timeIso: drivingIso ?? null,
-          shrink: 0.78,
+          shrink: stormMode ? 0.68 : 0.78,
           dpr: localImageProfile.dpr,
           fmt: 'png32',
+          stormMode,
         });
 
         const { west, east, south, north } = regionToBounds(r, 1.0);
@@ -399,7 +431,7 @@ export function useRadarController(args: {
     if (!usingLocalImage) return;
     debouncedRefreshLocal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs]);
+  }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs, stormMode]);
 
   useEffect(() => {
     if (usingLocalImage && state.radarTime.playing) {
@@ -443,7 +475,7 @@ export function useRadarController(args: {
             ridgeMinZoom: effectiveRidgeMinZoom,
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
-            maxLocalDistanceKm: 350,
+            maxLocalDistanceKm: stormMode ? 260 : 350,
           },
         });
 
@@ -472,6 +504,7 @@ export function useRadarController(args: {
     fetchProfile.maxFrames,
     fetchProfile.lookbackMinutes,
     ridgeMinZoom,
+    stormMode,
   ]);
 
   const iemDebugLabel = iemUnified?.debugLabel ?? null;

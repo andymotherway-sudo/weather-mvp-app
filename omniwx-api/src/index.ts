@@ -22,6 +22,8 @@
 import { lookupBortle } from "./bortleLookup";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 
+const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-extreme-expansion-2026-05-07-cache-refresh-2` as const;
+
 export interface Env {
   NOAA_NCEI_TOKEN: string;
   NASA_API_KEY: string;
@@ -42,6 +44,86 @@ type LandPoint = {
   badge?: "US" | "Global";
   group?: "airport" | "notable" | "capital" | "city";
 };
+
+const EXTRA_LAND_EXTREME_POINTS: LandPoint[] = [
+  { id: "us-extreme-death-valley", name: "Death Valley, CA", lat: 36.4623, lon: -116.8666, badge: "US", group: "notable" },
+  { id: "us-extreme-lake-havasu-city", name: "Lake Havasu City, AZ", lat: 34.4839, lon: -114.3225, badge: "US", group: "notable" },
+  { id: "us-extreme-yuma", name: "Yuma, AZ", lat: 32.6927, lon: -114.6277, badge: "US", group: "notable" },
+  { id: "us-extreme-palm-springs", name: "Palm Springs, CA", lat: 33.8303, lon: -116.5453, badge: "US", group: "notable" },
+  { id: "us-extreme-imperial", name: "Imperial, CA", lat: 32.8476, lon: -115.5694, badge: "US", group: "notable" },
+  { id: "us-extreme-las-vegas", name: "Las Vegas, NV", lat: 36.1716, lon: -115.1391, badge: "US", group: "notable" },
+  { id: "us-extreme-laredo", name: "Laredo, TX", lat: 27.5036, lon: -99.5076, badge: "US", group: "notable" },
+  { id: "us-extreme-del-rio", name: "Del Rio, TX", lat: 29.3709, lon: -100.8959, badge: "US", group: "notable" },
+  { id: "us-extreme-key-west", name: "Key West, FL", lat: 24.5551, lon: -81.78, badge: "US", group: "notable" },
+  { id: "us-extreme-international-falls", name: "International Falls, MN", lat: 48.601, lon: -93.4107, badge: "US", group: "notable" },
+  { id: "us-extreme-embarrass", name: "Embarrass, MN", lat: 47.6594, lon: -92.2007, badge: "US", group: "notable" },
+  { id: "us-extreme-saranac-lake", name: "Saranac Lake, NY", lat: 44.3295, lon: -74.1313, badge: "US", group: "notable" },
+  { id: "us-extreme-mount-washington", name: "Mount Washington, NH", lat: 44.2706, lon: -71.3033, badge: "US", group: "notable" },
+  { id: "us-extreme-blue-hill", name: "Blue Hill Observatory, MA", lat: 42.2126, lon: -71.1137, badge: "US", group: "notable" },
+  { id: "us-extreme-alpine", name: "Alpine, TX", lat: 30.3585, lon: -103.661, badge: "US", group: "notable" },
+  { id: "us-extreme-dodge-city", name: "Dodge City, KS", lat: 37.7528, lon: -100.0171, badge: "US", group: "notable" },
+  { id: "us-extreme-amarillo", name: "Amarillo, TX", lat: 35.222, lon: -101.8313, badge: "US", group: "notable" },
+  { id: "us-extreme-cheyenne", name: "Cheyenne, WY", lat: 41.14, lon: -104.8202, badge: "US", group: "notable" },
+  { id: "us-extreme-casper", name: "Casper, WY", lat: 42.8501, lon: -106.3252, badge: "US", group: "notable" },
+  { id: "us-extreme-livingston", name: "Livingston, MT", lat: 45.6624, lon: -110.561, badge: "US", group: "notable" },
+  { id: "us-extreme-cut-bank", name: "Cut Bank, MT", lat: 48.633, lon: -112.326, badge: "US", group: "notable" },
+  { id: "us-extreme-bar-row", name: "Utqiagvik, AK", lat: 71.2906, lon: -156.7886, badge: "US", group: "notable" },
+  { id: "us-extreme-deadhorse", name: "Deadhorse, AK", lat: 70.2002, lon: -148.4597, badge: "US", group: "notable" },
+  { id: "us-extreme-bethel", name: "Bethel, AK", lat: 60.7922, lon: -161.7558, badge: "US", group: "notable" },
+  { id: "us-extreme-adak", name: "Adak, AK", lat: 51.8836, lon: -176.6428, badge: "US", group: "notable" },
+  { id: "us-extreme-hilo", name: "Hilo, HI", lat: 19.7074, lon: -155.0885, badge: "US", group: "notable" },
+  { id: "us-extreme-mauna-kea", name: "Mauna Kea, HI", lat: 19.8207, lon: -155.4681, badge: "US", group: "notable" },
+
+  { id: "gl-extreme-el-azizia", name: "El Azizia, Libya", lat: 32.531, lon: 13.017, badge: "Global", group: "notable" },
+  { id: "gl-extreme-wadi-halfa", name: "Wadi Halfa, Sudan", lat: 21.8, lon: 31.35, badge: "Global", group: "notable" },
+  { id: "gl-extreme-bilma", name: "Bilma, Niger", lat: 18.685, lon: 12.916, badge: "Global", group: "notable" },
+  { id: "gl-extreme-timbuktu", name: "Timbuktu, Mali", lat: 16.7666, lon: -3.0026, badge: "Global", group: "notable" },
+  { id: "gl-extreme-mecca", name: "Mecca, Saudi Arabia", lat: 21.3891, lon: 39.8579, badge: "Global", group: "notable" },
+  { id: "gl-extreme-doha", name: "Doha, Qatar", lat: 25.2854, lon: 51.531, badge: "Global", group: "notable" },
+  { id: "gl-extreme-abu-dhabi", name: "Abu Dhabi, United Arab Emirates", lat: 24.4539, lon: 54.3773, badge: "Global", group: "notable" },
+  { id: "gl-extreme-muscat", name: "Muscat, Oman", lat: 23.588, lon: 58.3829, badge: "Global", group: "notable" },
+  { id: "gl-extreme-jaisalmer", name: "Jaisalmer, India", lat: 26.9157, lon: 70.9083, badge: "Global", group: "notable" },
+  { id: "gl-extreme-marble-bar", name: "Marble Bar, Australia", lat: -21.172, lon: 119.744, badge: "Global", group: "notable" },
+  { id: "gl-extreme-oodnadatta", name: "Oodnadatta, Australia", lat: -27.546, lon: 135.446, badge: "Global", group: "notable" },
+  { id: "gl-extreme-birdsville", name: "Birdsville, Australia", lat: -25.8975, lon: 139.351, badge: "Global", group: "notable" },
+  { id: "gl-extreme-coober-pedy", name: "Coober Pedy, Australia", lat: -29.013, lon: 134.754, badge: "Global", group: "notable" },
+  { id: "gl-extreme-alice-springs", name: "Alice Springs, Australia", lat: -23.698, lon: 133.881, badge: "Global", group: "notable" },
+  { id: "gl-extreme-wyndham", name: "Wyndham, Australia", lat: -15.4825, lon: 128.123, badge: "Global", group: "notable" },
+  { id: "gl-extreme-furnace-creek-global", name: "Furnace Creek, California", lat: 36.4623, lon: -116.8666, badge: "Global", group: "notable" },
+
+  { id: "gl-extreme-yakutsk", name: "Yakutsk, Russia", lat: 62.0355, lon: 129.6755, badge: "Global", group: "notable" },
+  { id: "gl-extreme-dikson", name: "Dikson, Russia", lat: 73.5069, lon: 80.5464, badge: "Global", group: "notable" },
+  { id: "gl-extreme-tiksi", name: "Tiksi, Russia", lat: 71.6872, lon: 128.8694, badge: "Global", group: "notable" },
+  { id: "gl-extreme-ust-nera", name: "Ust-Nera, Russia", lat: 64.5667, lon: 143.2, badge: "Global", group: "notable" },
+  { id: "gl-extreme-grise-fiord", name: "Grise Fiord, Nunavut, Canada", lat: 76.4186, lon: -82.8958, badge: "Global", group: "notable" },
+  { id: "gl-extreme-pond-inlet", name: "Pond Inlet, Nunavut, Canada", lat: 72.6992, lon: -77.9596, badge: "Global", group: "notable" },
+  { id: "gl-extreme-thule", name: "Pituffik Space Base, Greenland", lat: 76.5312, lon: -68.7032, badge: "Global", group: "notable" },
+  { id: "gl-extreme-summit-camp", name: "Summit Camp, Greenland", lat: 72.5796, lon: -38.4592, badge: "Global", group: "notable" },
+  { id: "gl-extreme-mcmurdo", name: "McMurdo Station, Antarctica", lat: -77.8419, lon: 166.6863, badge: "Global", group: "notable" },
+  { id: "gl-extreme-halley", name: "Halley Research Station, Antarctica", lat: -75.605, lon: -26.209, badge: "Global", group: "notable" },
+  { id: "gl-extreme-rothera", name: "Rothera Research Station, Antarctica", lat: -67.568, lon: -68.126, badge: "Global", group: "notable" },
+
+  { id: "gl-extreme-mount-wellington", name: "Mount Wellington, Tasmania", lat: -42.895, lon: 147.236, badge: "Global", group: "notable" },
+  { id: "gl-extreme-stanley-falklands", name: "Stanley, Falkland Islands", lat: -51.6977, lon: -57.8517, badge: "Global", group: "notable" },
+  { id: "gl-extreme-south-georgia", name: "King Edward Point, South Georgia", lat: -54.283, lon: -36.5, badge: "Global", group: "notable" },
+  { id: "gl-extreme-crozet", name: "Crozet Islands", lat: -46.433, lon: 51.85, badge: "Global", group: "notable" },
+  { id: "gl-extreme-kerguelen", name: "Kerguelen Islands", lat: -49.35, lon: 70.217, badge: "Global", group: "notable" },
+  { id: "gl-extreme-macquarie", name: "Macquarie Island", lat: -54.499, lon: 158.937, badge: "Global", group: "notable" },
+  { id: "gl-extreme-cape-horn", name: "Cape Horn, Chile", lat: -55.983, lon: -67.267, badge: "Global", group: "notable" },
+  { id: "gl-extreme-faroe", name: "Torshavn, Faroe Islands", lat: 62.0079, lon: -6.7909, badge: "Global", group: "notable" },
+  { id: "gl-extreme-st-johns", name: "St. John's, Newfoundland", lat: 47.5615, lon: -52.7126, badge: "Global", group: "notable" },
+  { id: "gl-extreme-fortaleza", name: "Fortaleza, Brazil", lat: -3.7319, lon: -38.5267, badge: "Global", group: "notable" },
+  { id: "gl-extreme-djibouti", name: "Djibouti City, Djibouti", lat: 11.5721, lon: 43.1456, badge: "Global", group: "notable" },
+  { id: "gl-extreme-socotra", name: "Socotra, Yemen", lat: 12.4634, lon: 53.8237, badge: "Global", group: "notable" },
+];
+
+function landExtremePoints() {
+  const byId = new Map<string, LandPoint>();
+  for (const point of [...((LAND_POINTS as unknown as LandPoint[]) ?? []), ...EXTRA_LAND_EXTREME_POINTS]) {
+    byId.set(point.id, point);
+  }
+  return Array.from(byId.values());
+}
 
 type LandExtreme = {
   id: string;
@@ -72,6 +154,20 @@ type LandExtremesResponse = {
     ttlSeconds: number;
     pointsVersion: string;
   };
+};
+
+type MarsInsightWeather = {
+  ok: boolean;
+  source: "NASA InSight Weather API";
+  archived: true;
+  sol: string;
+  terrestrialDate: string | null;
+  season: string | null;
+  tempC: { avg: number | null; min: number | null; max: number | null };
+  pressurePa: { avg: number | null; min: number | null; max: number | null };
+  windMps: { avg: number | null; min: number | null; max: number | null };
+  fetchedAtIso: string;
+  note: string;
 };
 
 type OpenMeteoCurrent = {
@@ -1092,6 +1188,77 @@ function buildLandExtremes(
   const updatedAt = rows.map((r) => r.time).filter(Boolean).sort().slice(-1)[0] ?? null;
 
   return { heroes, groups: [gHot, gCold, gWind, gRain, gGlobalHot, gGlobalCold, gGlobalRain], updatedAt };
+}
+
+function numOrNull(value: unknown) {
+  const n = typeof value === "string" ? Number(value) : value;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+function marsStat(block: any) {
+  return {
+    avg: numOrNull(block?.av),
+    min: numOrNull(block?.mn),
+    max: numOrNull(block?.mx),
+  };
+}
+
+function archivedMarsFallback(fetchedAtIso: string): MarsInsightWeather {
+  return {
+    ok: true,
+    source: "NASA InSight Weather API",
+    archived: true,
+    sol: "archived",
+    terrestrialDate: "2022-12-15",
+    season: "northern winter",
+    tempC: { avg: -62, min: -96, max: -15 },
+    pressurePa: { avg: 735, min: 707, max: 760 },
+    windMps: { avg: 7.2, min: null, max: 20 },
+    fetchedAtIso,
+    note:
+      "Archived/stale Mars surface weather. InSight stopped returning weather after the mission ended in December 2022, so this card is intentionally not live.",
+  };
+}
+
+async function fetchMarsInsightWeather(env: Env): Promise<MarsInsightWeather> {
+  const fetchedAtIso = new Date().toISOString();
+  const apiKey = env.NASA_API_KEY || "DEMO_KEY";
+  const url =
+    `https://api.nasa.gov/insight_weather/` +
+    `?api_key=${encodeURIComponent(apiKey)}` +
+    `&feedtype=json&ver=1.0`;
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6500);
+
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return archivedMarsFallback(fetchedAtIso);
+    const json = (await res.json()) as any;
+    const sols = Array.isArray(json?.sol_keys) ? json.sol_keys : [];
+    const sol = String(sols[sols.length - 1] ?? "");
+    const row = sol ? json?.[sol] : null;
+    if (!sol || !row) return archivedMarsFallback(fetchedAtIso);
+
+    return {
+      ok: true,
+      source: "NASA InSight Weather API",
+      archived: true,
+      sol,
+      terrestrialDate: typeof row?.First_UTC === "string" ? row.First_UTC.slice(0, 10) : null,
+      season: typeof row?.Season === "string" ? row.Season : null,
+      tempC: marsStat(row?.AT),
+      pressurePa: marsStat(row?.PRE),
+      windMps: marsStat(row?.HWS),
+      fetchedAtIso,
+      note:
+        "Archived/stale Mars surface weather. InSight stopped returning weather after the mission ended in December 2022, so this card is intentionally not live.",
+    };
+  } catch {
+    return archivedMarsFallback(fetchedAtIso);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 /* =============================================================================
@@ -4837,12 +5004,14 @@ export default {
 
       const shrink = clampFloat(Number(url.searchParams.get("shrink") || "0.85"), 0.6, 1.0, 0.85);
       const dpr = clampFloat(Number(url.searchParams.get("dpr") || "2"), 1, 3, 2);
+      const stormMode = url.searchParams.get("storm") === "1";
+      const maxImageDimension = stormMode ? 3072 : 2048;
 
-      const baseW = clampInt(Number(url.searchParams.get("width") || "1024"), 256, 2048);
-      const baseH = clampInt(Number(url.searchParams.get("height") || "1024"), 256, 2048);
+      const baseW = clampInt(Number(url.searchParams.get("width") || "1024"), 256, maxImageDimension);
+      const baseH = clampInt(Number(url.searchParams.get("height") || "1024"), 256, maxImageDimension);
 
-      const width = clampInt(Math.round(baseW * dpr), 256, 2048);
-      const height = clampInt(Math.round(baseH * dpr), 256, 2048);
+      const width = clampInt(Math.round(baseW * dpr), 256, maxImageDimension);
+      const height = clampInt(Math.round(baseH * dpr), 256, maxImageDimension);
 
       const fmt = (url.searchParams.get("fmt") || "png32").toLowerCase();
       const format = "image/png";
@@ -4883,6 +5052,7 @@ export default {
       k2.searchParams.set("dpr", String(dpr));
       k2.searchParams.set("fmt", fmt);
       k2.searchParams.set("bgcolor", bgcolor);
+      if (stormMode) k2.searchParams.set("storm", "1");
       if (timeIso) k2.searchParams.set("time", timeIso);
 
       const cacheKey = new Request(k2.toString(), { method: "GET" });
@@ -5055,7 +5225,7 @@ export default {
       const cacheKeyUrl = new URL(request.url);
       cacheKeyUrl.pathname = "/__cache__/land-extremes";
       cacheKeyUrl.searchParams.set("unit", unit);
-      cacheKeyUrl.searchParams.set("v", LAND_POINTS_VERSION);
+      cacheKeyUrl.searchParams.set("v", LAND_EXTREMES_POINTS_VERSION);
       const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
 
       return swrFetchJson(request, ctx, {
@@ -5064,7 +5234,7 @@ export default {
         staleSeconds: LAND_STALE_SECONDS,
         fetchUpstream: async () => {
           const fetchedAtIso = new Date().toISOString();
-          const pts = (LAND_POINTS as unknown as LandPoint[]) ?? [];
+          const pts = landExtremePoints();
           const chunks = chunk(pts, OPEN_METEO_BATCH_SIZE);
 
           const rows: Array<
@@ -5092,6 +5262,26 @@ export default {
             }
           }
 
+          const validRows = rows.filter((r) => r.t != null || r.wind != null || r.gust != null || r.precip != null).length;
+          if (validRows === 0 && rows.length > 0) {
+            return new Response(
+              JSON.stringify({
+                ok: false,
+                error: "Open-Meteo returned no usable current weather for land extremes",
+                meta: {
+                  pointsTotal: rows.length,
+                  fetchedAtIso,
+                  source: "open-meteo",
+                  pointsVersion: LAND_EXTREMES_POINTS_VERSION,
+                },
+              }),
+              {
+                status: 502,
+                headers: { "content-type": "application/json; charset=utf-8" },
+              },
+            );
+          }
+
           const { heroes, groups, updatedAt } = buildLandExtremes(unit, rows);
           const pointsUs = rows.filter((r) => r.badge !== "Global").length;
           const pointsGlobal = rows.filter((r) => r.badge === "Global").length;
@@ -5109,10 +5299,28 @@ export default {
               fetchedAtIso,
               source: "open-meteo",
               ttlSeconds: LAND_TTL_SECONDS,
-              pointsVersion: LAND_POINTS_VERSION,
+              pointsVersion: LAND_EXTREMES_POINTS_VERSION,
             },
           };
 
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/mars-insight" || url.pathname === "/api/mars/insight") {
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/mars-insight";
+      cacheKeyUrl.searchParams.set("v", "insight-archive-v1");
+      return swrFetchJson(request, ctx, {
+        cacheKey: new Request(cacheKeyUrl.toString(), { method: "GET" }),
+        ttlSeconds: 86400,
+        staleSeconds: 86400 * 30,
+        fetchUpstream: async () => {
+          const payload = await fetchMarsInsightWeather(env);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },

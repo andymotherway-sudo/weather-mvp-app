@@ -28,6 +28,7 @@ export function LayerSheetModal(props: {
   onOpenSourceInfo?: (layerId: LayerId) => void;
   onOpenAstroMap?: () => void;
   onOpenNauticalMap?: () => void;
+  onOpenAviationMap?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const {
@@ -41,6 +42,7 @@ export function LayerSheetModal(props: {
     onOpenSourceInfo,
     onOpenAstroMap,
     onOpenNauticalMap,
+    onOpenAviationMap,
   } = props;
 
   const activeCount = useMemo(() => {
@@ -112,10 +114,11 @@ export function LayerSheetModal(props: {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
-              <Section title="Special maps" subtitle="Open dedicated astronomy or nautical experiences">
+              <Section title="Special maps" subtitle="Open dedicated astronomy, nautical, or aviation experiences">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                   <QuickCard title="Astronomy Map" subtitle="Sky conditions" onPress={onOpenAstroMap} />
                   <QuickCard title="Nautical Map" subtitle="Marine view" onPress={onOpenNauticalMap} />
+                  <QuickCard title="Aviation Map" subtitle="Flight weather" onPress={onOpenAviationMap} />
                 </View>
               </Section>
 

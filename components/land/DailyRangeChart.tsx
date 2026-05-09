@@ -40,6 +40,10 @@ type Props = {
   showCloudBand?: boolean;
 };
 
+const TABLE_LABEL_WIDTH = 76;
+const TABLE_HEADER_HEIGHT = 30;
+const ROW_HEIGHT = 38;
+
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
@@ -135,7 +139,6 @@ export function DailyRangeChart({
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);
-  const [tableOverlayY, setTableOverlayY] = useState(0);
 
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
@@ -186,11 +189,6 @@ export function DailyRangeChart({
   const TILE_W = 132;
   const GAP = 10;
   const padX = 14;
-  const TABLE_HEADER_H = 30;
-  const TABLE_ROW_H = 36;
-  const TABLE_SECTION_PAD_TOP = 10;
-  const TABLE_HEADER_GAP = 6;
-
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
@@ -318,12 +316,43 @@ export function DailyRangeChart({
   );
 
   const scrollRef = useRef<ScrollView | null>(null);
+  const tableScrollRef = useRef<ScrollView | null>(null);
+  const syncScrollSourceRef = useRef<'chart' | 'table' | null>(null);
+
+  const releaseSyncScrollSource = useCallback((source: 'chart' | 'table') => {
+    requestAnimationFrame(() => {
+      if (syncScrollSourceRef.current === source) {
+        syncScrollSourceRef.current = null;
+      }
+    });
+  }, []);
+
+  const syncTableScroll = useCallback(
+    (x: number) => {
+      if (syncScrollSourceRef.current === 'table') return;
+      syncScrollSourceRef.current = 'chart';
+      tableScrollRef.current?.scrollTo({ x, animated: false });
+      releaseSyncScrollSource('chart');
+    },
+    [releaseSyncScrollSource]
+  );
+
+  const syncChartScroll = useCallback(
+    (x: number) => {
+      if (syncScrollSourceRef.current === 'chart') return;
+      syncScrollSourceRef.current = 'table';
+      scrollRef.current?.scrollTo({ x, animated: false });
+      releaseSyncScrollSource('table');
+    },
+    [releaseSyncScrollSource]
+  );
 
   // Tap scroll centering
   useEffect(() => {
     if (!selFromTapRef.current) return;
     const targetX = Math.max(0, xForIdx(selIdx) - 180);
     scrollRef.current?.scrollTo({ x: targetX, animated: true });
+    tableScrollRef.current?.scrollTo({ x: targetX, animated: true });
   }, [selIdx]);
 
   const selX = xForIdx(selIdx);
@@ -340,14 +369,14 @@ export function DailyRangeChart({
   const windMarkerY = H - 52; // circle center
   const windMarkerLabelY = windMarkerY + 22; // compass text under circle
   const tableRows = [
-    { label: 'High', values: data.map((d) => fmtInt(d.tempMaxF, unitsLabel)) },
-    { label: 'Low', values: data.map((d) => fmtInt(d.tempMinF, unitsLabel)) },
-    ...(showDew ? [{ label: 'Dew pt', values: data.map((d) => fmtInt(d.dewPointMaxF, unitsLabel)) }] : []),
-    ...(showRh ? [{ label: 'RH', values: data.map((d) => fmtInt(d.humidityMaxPct, '%')) }] : []),
-    { label: 'Wind', values: data.map((d) => fmtInt(d.windMaxMph, ' mph')) },
-    { label: 'Gusts', values: data.map((d) => fmtInt(d.windGustMaxMph, ' mph')) },
-    { label: 'Clouds', values: data.map((d) => fmtInt(d.cloudCoverAvgPct, '%')) },
-    { label: 'Precip', values: data.map((d) => fmtInt(d.precipProbMaxPct, '%')) },
+    { label: 'High', shortLabel: 'HIGH', values: data.map((d) => fmtInt(d.tempMaxF, unitsLabel)) },
+    { label: 'Low', shortLabel: 'LOW', values: data.map((d) => fmtInt(d.tempMinF, unitsLabel)) },
+    { label: 'Dew pt', shortLabel: 'DEW PT', values: data.map((d) => fmtInt(d.dewPointMaxF, unitsLabel)) },
+    { label: 'RH', shortLabel: 'RH', values: data.map((d) => fmtInt(d.humidityMaxPct, '%')) },
+    { label: 'Wind', shortLabel: 'WIND', values: data.map((d) => fmtInt(d.windMaxMph, ' mph')) },
+    { label: 'Gusts', shortLabel: 'GUSTS', values: data.map((d) => fmtInt(d.windGustMaxMph, ' mph')) },
+    { label: 'Clouds', shortLabel: 'CLOUDS', values: data.map((d) => fmtInt(d.cloudCoverAvgPct, '%')) },
+    { label: 'Precip', shortLabel: 'PRECIP', values: data.map((d) => fmtInt(d.precipProbMaxPct, '%')) },
   ];
 
   return (
@@ -367,6 +396,7 @@ export function DailyRangeChart({
         onLayout={(e) => setViewportW(e.nativeEvent.layout.width)}
         onScroll={(e) => {
           const x = e.nativeEvent.contentOffset.x;
+          syncTableScroll(x);
           const idx = idxFromScroll(x);
           if (idx !== lastSelIdxRef.current) {
             lastSelIdxRef.current = idx;
@@ -741,64 +771,71 @@ export function DailyRangeChart({
 
             </View>
 
-            <View
-              style={s.tableSection}
-              onLayout={(e) => setTableOverlayY(e.nativeEvent.layout.y)}
-            >
-              <View style={s.tableInlineWrap}>
-                <View style={s.tableHeaderValuesRow}>
-                  <View style={{ width: padL }} />
-                  {data.map((d, idx) => {
-                    const { day } = niceDayLabel(d.date);
-                    const isToday = d.date === todayISODateLocal();
-                    return (
-                      <Text
-                        key={`th-${d.date}`}
-                        style={[s.tableValueCell, s.tableHeaderText, idx === data.length - 1 ? null : s.tableGap]}
-                      >
-                        {isToday ? 'Today' : day}
-                      </Text>
-                    );
-                  })}
-                  <View style={{ width: padR }} />
-                </View>
-
-                {tableRows.map((row) => (
-                  <View key={row.label} style={s.tableDataValuesRow}>
-                    <View style={{ width: padL }} />
-                    {row.values.map((value, idx) => (
-                      <Text
-                        key={`${row.label}-${idx}`}
-                        style={[s.tableValueCell, idx === row.values.length - 1 ? null : s.tableGap]}
-                      >
-                        {value}
-                      </Text>
-                    ))}
-                    <View style={{ width: padR }} />
-                  </View>
-                ))}
-              </View>
-            </View>
           </View>
       </ScrollView>
 
-      {tableOverlayY > 0 ? (
-        <View
-          pointerEvents="none"
-          style={[
-            s.tableFloatingLabels,
-            {
-              top: tableOverlayY + TABLE_SECTION_PAD_TOP + TABLE_HEADER_H + TABLE_HEADER_GAP + TABLE_ROW_H,
-            },
-          ]}
-        >
-          {tableRows.map((row) => (
-            <View key={`floating-${row.label}`} style={[s.tableFloatingLabelRow, { height: TABLE_ROW_H }]}>
-              <Text style={s.tableFloatingLabelText}>{row.label}</Text>
+      <View style={s.tableSection}>
+        <View style={s.tableContainer}>
+          <View style={s.tableLabelColumn}>
+            <View style={s.tableLabelHeader} />
+            {tableRows.map((row, idx) => (
+              <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
+                <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          <ScrollView
+            ref={(r) => {
+              tableScrollRef.current = r;
+            }}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.tableScrollContent}
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              const x = e.nativeEvent.contentOffset.x;
+              syncChartScroll(x);
+              const idx = idxFromScroll(x);
+              if (idx !== lastSelIdxRef.current) {
+                lastSelIdxRef.current = idx;
+                selFromTapRef.current = false;
+                setSelIdx(idx);
+              }
+            }}
+          >
+            <View style={s.tableDataColumns}>
+              <View style={s.tableHeaderValuesRow}>
+                {data.map((d, idx) => {
+                  const { day } = niceDayLabel(d.date);
+                  const isToday = d.date === todayISODateLocal();
+                  return (
+                    <Text
+                      key={`th-${d.date}`}
+                      style={[s.tableValueCell, s.tableHeaderText, idx === data.length - 1 ? null : s.tableGap]}
+                    >
+                      {isToday ? 'Today' : day}
+                    </Text>
+                  );
+                })}
+              </View>
+
+              {tableRows.map((row, rowIdx) => (
+                <View key={row.label} style={[s.tableDataValuesRow, rowIdx % 2 === 1 ? s.tableRowAlt : null]}>
+                  {row.values.map((value, idx) => (
+                    <Text
+                      key={`${row.label}-${idx}`}
+                      style={[s.tableValueCell, idx === row.values.length - 1 ? null : s.tableGap]}
+                    >
+                      {value}
+                    </Text>
+                  ))}
+                </View>
+              ))}
             </View>
-          ))}
+          </ScrollView>
         </View>
-      ) : null}
+      </View>
 
       <View style={s.pillSection}>
         <View style={s.legendRow}>
@@ -1001,27 +1038,66 @@ const s = StyleSheet.create({
     transform: [{ skewX: '-10deg' }],
   },
   tableSection: {
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
-  tableInlineWrap: {
+  tableContainer: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  tableLabelColumn: {
+    width: TABLE_LABEL_WIDTH,
+    flexShrink: 0,
+    backgroundColor: 'rgba(18,31,50,0.78)',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.12)',
+  },
+  tableLabelHeader: {
+    height: TABLE_HEADER_HEIGHT,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  tableLabelRow: {
+    height: ROW_HEIGHT,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.10)',
-    paddingTop: 10,
-    paddingBottom: 2,
+    borderTopColor: 'rgba(255,255,255,0.075)',
+  },
+  tableLabelText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.45,
+  },
+  tableScrollContent: {
+    flexGrow: 0,
+  },
+  tableDataColumns: {
+    backgroundColor: 'rgba(255,255,255,0.018)',
   },
   tableHeaderValuesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
-    height: 30,
+    height: TABLE_HEADER_HEIGHT,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   tableDataValuesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 36,
+    height: ROW_HEIGHT,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.075)',
+  },
+  tableRowAlt: {
+    backgroundColor: 'rgba(255,255,255,0.035)',
   },
   tableHeaderText: {
     color: 'rgba(255,255,255,0.62)',
@@ -1039,30 +1115,6 @@ const s = StyleSheet.create({
   tableGap: {
     marginRight: 10,
   },
-  tableFloatingLabels: {
-    position: 'absolute',
-    left: 18,
-    width: 72,
-    zIndex: 5,
-  },
-  tableFloatingLabelRow: {
-    justifyContent: 'center',
-  },
-  tableFloatingLabelText: {
-    alignSelf: 'flex-start',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(31,50,77,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    color: 'rgba(255,255,255,0.80)',
-    fontSize: 10,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.45,
-  },
-
   cloudReadoutRow: {
     marginTop: 8,
     paddingHorizontal: 12,
