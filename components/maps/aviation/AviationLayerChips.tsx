@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 export function AviationLayerChips<T extends string>(props: {
   title?: string;
@@ -10,7 +10,7 @@ export function AviationLayerChips<T extends string>(props: {
   return (
     <View style={styles.wrap}>
       {props.title ? <Text style={styles.title}>{props.title}</Text> : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      <View style={styles.row}>
         {props.options.map((option) => {
           const active = props.selected.includes(option.key);
           return (
@@ -23,7 +23,7 @@ export function AviationLayerChips<T extends string>(props: {
             </Pressable>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -31,7 +31,7 @@ export function AviationLayerChips<T extends string>(props: {
 const styles = StyleSheet.create({
   wrap: { gap: 4 },
   title: { color: 'rgba(255,255,255,0.54)', fontSize: 9, fontWeight: '900', textTransform: 'uppercase' },
-  row: { gap: 6, paddingRight: 8 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingRight: 4 },
   chip: {
     minHeight: 30,
     paddingHorizontal: 10,

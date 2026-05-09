@@ -19,7 +19,7 @@ export function Card({ children, style }: CardProps) {
 const styles = StyleSheet.create({
   card: {
     // Let the background animation breathe through
-    backgroundColor: 'rgba(18, 28, 45, 0.60)',
+    backgroundColor: 'rgba(18, 28, 45, 0.56)',
 
     borderRadius: theme.radius.lg,
     paddingVertical: theme.spacing.lg,

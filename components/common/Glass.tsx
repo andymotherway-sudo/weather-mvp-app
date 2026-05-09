@@ -6,7 +6,7 @@ export function Glass(props: { children: React.ReactNode; style?: StyleProp<View
     <View
       style={[
         {
-          backgroundColor: 'rgba(2,6,23,0.72)',
+          backgroundColor: 'rgba(2,6,23,0.66)',
           borderColor: 'rgba(255,255,255,0.10)',
           borderWidth: 1,
           borderRadius: 18,

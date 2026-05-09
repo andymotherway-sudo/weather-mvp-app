@@ -2,12 +2,15 @@ import React from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Svg, {
   Circle,
+  ClipPath,
   Defs,
   Ellipse,
   G,
   Line,
   LinearGradient as SvgLinearGradient,
   Path,
+  RadialGradient,
+  Rect,
   Stop,
 } from 'react-native-svg';
 
@@ -621,11 +624,15 @@ export function PremiumMoonIcon({
   size = 34,
   style,
   variant,
+  illuminationPct,
+  phaseDegrees,
 }: {
   size?: number;
   style?: ViewStyle;
   label?: string | null;
   variant?: IconVariant;
+  illuminationPct?: number | null;
+  phaseDegrees?: number | null;
 }) {
   const palette = {
     primary: '#FFF8E6',
@@ -639,6 +646,21 @@ export function PremiumMoonIcon({
   };
   const resolvedVariant = resolveVariant(size, variant);
   const glyphSize = resolvedVariant === 'hero' ? Math.round(size * 0.72) : size;
+  const illum01 =
+    typeof illuminationPct === 'number' && Number.isFinite(illuminationPct)
+      ? Math.max(0, Math.min(1, illuminationPct / 100))
+      : 0.55;
+  const phase =
+    typeof phaseDegrees === 'number' && Number.isFinite(phaseDegrees)
+      ? ((phaseDegrees % 360) + 360) % 360
+      : 120;
+  const waxing = phase > 0 && phase < 180;
+  const litSideLeft = phase >= 180;
+  const absFromFull = Math.abs(illum01 - 1);
+  const shadowWidth = illum01 >= 0.98 ? 0 : illum01 >= 0.5 ? Math.max(3, absFromFull * 52) : 54 - illum01 * 40;
+  const shadowX = waxing ? 9 : 63 - shadowWidth;
+  const terminatorCx = waxing ? shadowX + shadowWidth : shadowX;
+  const litCrescentX = litSideLeft ? 9 : 63 - Math.max(5, illum01 * 24);
 
   return (
     <View
@@ -654,15 +676,66 @@ export function PremiumMoonIcon({
       ]}
     >
       <Svg width={glyphSize} height={glyphSize} viewBox="0 0 72 72">
-        <Path
-          d="M44 12c-8 2-14 10-14 19 0 11 9 20 20 20 4 0 8-1 11-3-3 9-12 15-22 15-13 0-24-11-24-24s11-24 24-24c2 0 4 0 5 1z"
-          fill="none"
-          stroke={palette.primary}
-          strokeWidth="3.2"
-          strokeLinejoin="round"
-        />
-        <Circle cx="49" cy="22" r="2.5" fill={palette.accent} opacity="0.95" />
-        <Circle cx="56" cy="30" r="1.6" fill={palette.accent} opacity="0.8" />
+        <Defs>
+          <RadialGradient id="moonLitReal" cx="35%" cy="28%" r="72%">
+            <Stop offset="0" stopColor="#fff9e8" stopOpacity="1" />
+            <Stop offset="0.5" stopColor="#d9d2ba" stopOpacity="1" />
+            <Stop offset="1" stopColor="#8f8b7d" stopOpacity="1" />
+          </RadialGradient>
+          <RadialGradient id="moonShadowReal" cx="40%" cy="32%" r="72%">
+            <Stop offset="0" stopColor="#313947" stopOpacity="1" />
+            <Stop offset="1" stopColor="#080b12" stopOpacity="1" />
+          </RadialGradient>
+          <ClipPath id="moonClipReal">
+            <Circle cx="36" cy="36" r="27" />
+          </ClipPath>
+        </Defs>
+        <Circle cx="36" cy="36" r="27" fill="url(#moonShadowReal)" />
+        <G clipPath="url(#moonClipReal)">
+          {illum01 < 0.5 ? (
+            <>
+              <Circle cx="36" cy="36" r="27" fill="url(#moonShadowReal)" />
+              <Rect x={litCrescentX} y="9" width={Math.max(5, illum01 * 24)} height="54" fill="url(#moonLitReal)" opacity="0.98" />
+              <Ellipse
+                cx={litSideLeft ? litCrescentX + Math.max(5, illum01 * 24) : litCrescentX}
+                cy="36"
+                rx={Math.max(7, 17 - illum01 * 18)}
+                ry="28"
+                fill="url(#moonShadowReal)"
+                opacity="0.9"
+              />
+            </>
+          ) : (
+            <>
+              <Circle cx="36" cy="36" r="27" fill="url(#moonLitReal)" />
+              {shadowWidth > 0 ? (
+                <>
+                  <Rect x={shadowX} y="9" width={shadowWidth} height="54" fill="url(#moonShadowReal)" opacity="0.9" />
+                  <Ellipse
+                    cx={terminatorCx}
+                    cy="36"
+                    rx={Math.max(6, shadowWidth * 0.34)}
+                    ry="28"
+                    fill="url(#moonLitReal)"
+                    opacity="0.72"
+                  />
+                </>
+              ) : null}
+            </>
+          )}
+          <Circle cx="27" cy="25" r="4.8" fill="#6f6b61" opacity={0.28 + illum01 * 0.18} />
+          <Circle cx="44" cy="30" r="3.8" fill="#6b665c" opacity={0.24 + illum01 * 0.16} />
+          <Circle cx="32" cy="47" r="5.2" fill="#746f65" opacity={0.22 + illum01 * 0.14} />
+          <Circle cx="50" cy="45" r="2.5" fill="#5f5e58" opacity={0.24 + illum01 * 0.12} />
+          <Path
+            d="M21 39c5 2 10 2 15-1M39 21c4 3 8 4 13 3M41 54c4-2 8-2 13-1"
+            fill="none"
+            stroke="#f4ecd5"
+            strokeWidth="1.1"
+            strokeOpacity={0.08 + illum01 * 0.12}
+          />
+        </G>
+        <Circle cx="36" cy="36" r="27" fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="1.2" />
       </Svg>
     </View>
   );

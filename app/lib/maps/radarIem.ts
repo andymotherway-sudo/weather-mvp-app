@@ -4,6 +4,7 @@
 import { NEXRAD_SITES } from './nexradSites';
 
 export type RadarScan = { iso: string; stamp: string };
+export type RadarProductId = 'N0Q' | 'N0B' | 'N0Z' | 'N0U' | 'N0S';
 
 export type RadarFrameUnified = {
   iso: string;
@@ -17,7 +18,7 @@ export type RadarFrameUnified = {
 
 type ResolveFramesOpts = {
   zoom: number;
-  product: 'N0Q' | 'N0B' | 'N0Z';
+  product: RadarProductId;
 
   mosaicMaxZoom: number;
   ridgeMinZoom: number;
@@ -25,6 +26,7 @@ type ResolveFramesOpts = {
   maxFrames: number;
   lookbackMinutes: number;
   maxLocalDistanceKm: number;
+  allowMosaicFallback?: boolean;
 
   force?: 'mosaic' | 'ridge';
 };
@@ -47,13 +49,13 @@ export function iemNationalMosaicTimestamps() {
   return DEFAULT_MOSAIC_MINUTES.map(minutesToStamp);
 }
 
-function iemMosaicTileTemplate(product: 'N0Q' | 'N0B' | 'N0Z', stamp: string) {
+function iemMosaicTileTemplate(product: RadarProductId, stamp: string) {
   const p = product.toLowerCase();
   const layer = `nexrad-${p}-${stamp}`;
   return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png`;
 }
 
-function iemRidgeTileTemplate(radarId3: string, product: 'N0Q' | 'N0B' | 'N0Z', ts: string) {
+function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: string) {
   const layer = `ridge::${radarId3}-${product}-${ts}`;
   // Try forcing transparent background (common IEM param pattern)
   return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png?alpha=1`;
@@ -165,7 +167,7 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
  */
 async function fetchIemRidgeScanList(args: {
   radarId3: string;
-  product: 'N0Q' | 'N0B' | 'N0Z';
+  product: RadarProductId;
   lookbackMinutes: number;
 }) {
   const { radarId3, product, lookbackMinutes } = args;
@@ -249,17 +251,21 @@ async function fetchIemRidgeScanList(args: {
 
 async function fetchRidgeWithProductFallback(args: {
   radarId3: string;
-  preferred: 'N0Q' | 'N0B' | 'N0Z';
+  preferred: RadarProductId;
   lookbackMinutes: number;
 }) {
   const { radarId3, preferred, lookbackMinutes } = args;
 
-  const order: Array<'N0Q' | 'N0B' | 'N0Z'> =
+  const order: RadarProductId[] =
     preferred === 'N0Q'
       ? ['N0Q', 'N0B', 'N0Z']
       : preferred === 'N0B'
         ? ['N0B', 'N0Q', 'N0Z']
-        : ['N0Z', 'N0Q', 'N0B'];
+        : preferred === 'N0U'
+          ? ['N0U', 'N0S']
+          : preferred === 'N0S'
+            ? ['N0S', 'N0U']
+            : ['N0Z', 'N0Q', 'N0B'];
 
   for (const p of order) {
     const tsList = await fetchIemRidgeScanList({ radarId3, product: p, lookbackMinutes });
@@ -273,7 +279,7 @@ async function findBestRidgeRadar(args: {
   lat: number;
   lon: number;
   maxDistanceKm: number;
-  preferredProduct: 'N0Q' | 'N0B' | 'N0Z';
+  preferredProduct: RadarProductId;
   lookbackMinutes: number;
   maxCandidates?: number;
 }) {
@@ -331,6 +337,7 @@ export async function resolveIemFrames(args: {
   const zoom = Number.isFinite(opts.zoom) ? opts.zoom : 4;
   const maxFrames = clampInt(opts.maxFrames, 4, 18);
   const lookbackMinutes = clampInt(opts.lookbackMinutes, 20, 180);
+  const allowMosaicFallback = opts.allowMosaicFallback !== false;
 
   const stamps = iemNationalMosaicTimestamps();
   const nowBase = Date.now();
@@ -350,6 +357,9 @@ export async function resolveIemFrames(args: {
     (opts.force !== 'mosaic' && zoom >= opts.ridgeMinZoom && zoom >= Math.max(3, opts.mosaicMaxZoom - 0.25));
 
   if (!wantRidge) {
+    if (!allowMosaicFallback) {
+      return { frames: [], mode: 'ridge', debugLabel: `Single-site ${opts.product} unavailable at this zoom` };
+    }
     const trimmed = mosaicFrames.slice(Math.max(0, mosaicFrames.length - maxFrames));
     return { frames: trimmed, mode: 'mosaic', debugLabel: `IEM Mosaic · ${opts.product}` };
   }
@@ -365,6 +375,13 @@ export async function resolveIemFrames(args: {
     });
 
     if (!best) {
+      if (!allowMosaicFallback) {
+        return {
+          frames: [],
+          mode: 'ridge',
+          debugLabel: `Single-site ${opts.product} unavailable within ${opts.maxLocalDistanceKm} km`,
+        };
+      }
       const trimmed = mosaicFrames.slice(Math.max(0, mosaicFrames.length - maxFrames));
       return {
         frames: trimmed,
@@ -392,6 +409,14 @@ export async function resolveIemFrames(args: {
       .filter(Boolean) as RadarFrameUnified[];
 
     if (!ridgeFrames.length) {
+      if (!allowMosaicFallback) {
+        return {
+          frames: [],
+          mode: 'ridge',
+          radarId3: best.radarId3,
+          debugLabel: `Single-site ${opts.product} unavailable for ${best.radarId3}`,
+        };
+      }
       const trimmed = mosaicFrames.slice(Math.max(0, mosaicFrames.length - maxFrames));
       return {
         frames: trimmed,
@@ -408,6 +433,13 @@ export async function resolveIemFrames(args: {
       debugLabel: `IEM RIDGE · ${best.radarId3} · ${best.ridgeProduct} (picked from nearby)`,
     };
   } catch (e: any) {
+    if (!allowMosaicFallback) {
+      return {
+        frames: [],
+        mode: 'ridge',
+        debugLabel: `Single-site ${opts.product} error: ${String(e?.message ?? e)}`,
+      };
+    }
     const trimmed = mosaicFrames.slice(Math.max(0, mosaicFrames.length - maxFrames));
     return {
       frames: trimmed,

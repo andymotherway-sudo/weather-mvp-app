@@ -22,7 +22,13 @@ import { Dimensions, PixelRatio } from 'react-native';
 import type { RadarOverlay, Region } from '../../../components/maps/MapRenderer';
 import { createRainViewerProvider } from './radar/providers/rainviewer';
 import type { RadarFrame } from './radar/providers/types';
-import { iemNationalMosaicTimestamps, resolveIemFrames, type RadarFrameUnified, type RadarScan } from './radarIem';
+import {
+  iemNationalMosaicTimestamps,
+  resolveIemFrames,
+  type RadarFrameUnified,
+  type RadarProductId,
+  type RadarScan,
+} from './radarIem';
 import type { MapAction } from './state';
 import type { MapRuntimeState } from './types';
 
@@ -148,7 +154,7 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
 
   if (z <= 8) {
     return {
-      blendMs: 520,
+      blendMs: 600,
       dwellMs: nerdy ? 1200 : 1325,
       opacityMult: nerdy ? 0.92 : 0.86,
       enableTemporal3: false,
@@ -157,7 +163,7 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
   }
 
   return {
-    blendMs: 300,
+    blendMs: 450,
     dwellMs: nerdy ? 900 : 1000,
     opacityMult: 1.0,
     enableTemporal3: false,
@@ -199,7 +205,7 @@ export function useRadarController(args: {
   sheetValue: RadarControllerSheetValue;
   centerForRadar: { lat: number; lon: number };
   mapZoom: number;
-  product: 'N0Q' | 'N0B' | 'N0Z';
+  product: RadarProductId;
   rawMode: boolean;
   region: Region | null;
   localMinZoom?: number;
@@ -253,9 +259,9 @@ export function useRadarController(args: {
   const rvProviderRef = useRef(
     createRainViewerProvider({
       ttlMs: 60_000,
-      includeNowcast: true,
+      includeNowcast: false,
       maxFrames: 10,
-      maxZoom: 10,
+      maxZoom: 7,
     }),
   );
 
@@ -391,8 +397,9 @@ export function useRadarController(args: {
       try {
         setLocalError(null);
 
+        const wmsProduct = product === 'N0B' ? 'N0B' : 'N0Q';
         const url = buildWorkerWmsUrl({
-          product,
+          product: wmsProduct,
           region: r,
           widthPx: imageW,
           heightPx: imageH,
@@ -476,6 +483,8 @@ export function useRadarController(args: {
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
             maxLocalDistanceKm: stormMode ? 260 : 350,
+            allowMosaicFallback: !stormMode,
+            force: stormMode ? 'ridge' : undefined,
           },
         });
 
@@ -539,12 +548,18 @@ export function useRadarController(args: {
       return rvFrames
         .map((f) => {
           if (!f?.t || !f?.iso) return null;
-          return {
-            iso: f.iso,
-            template:
+          let template: string | null = null;
+          try {
+            template = rvProviderRef.current.getTileUrlTemplate(f);
+          } catch {
+            template =
               `${OMNI_WORKER_BASE}/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png` +
               `?ts=${encodeURIComponent(String(f.t))}` +
-              `&size=512&color=2&smooth=1&snow=1`,
+              `&size=512&color=2&smooth=1&snow=1`;
+          }
+          return {
+            iso: f.iso,
+            template,
           };
         })
         .filter(Boolean)
@@ -575,6 +590,17 @@ export function useRadarController(args: {
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
+
+  useEffect(() => {
+    if (liveFrames.length) return;
+    if (!stormMode) return;
+
+    setPlayFrames([]);
+    setPlayTemplates([]);
+    pendingFramesRef.current = null;
+    pendingTemplatesRef.current = null;
+    slotHoldRef.current = [null, null, null];
+  }, [liveFrames.length, stormMode]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
@@ -677,28 +703,27 @@ export function useRadarController(args: {
     const preloadMs = mapZoom <= 5 ? 360 : mapZoom <= 8 ? 300 : 240;
 
     preloadTimerRef.current = setTimeout(() => {
-  const start = Date.now();
-  const duration = profile.blendMs;
+      const start = Date.now();
+      const duration = profile.blendMs;
 
-  setXfade({ from: prev, to: next, t: 0 });
-
-  xfadeTimerRef.current = setInterval(() => {
-    const rawT = (Date.now() - start) / duration;
-
-    if (rawT >= 1) {
-      if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
-      xfadeTimerRef.current = null;
-
-      // IMPORTANT: only clear preload AFTER the fade fully completes
       setPreloadTo(null);
-      setXfade({ from: next, to: next, t: 1 });
-      return;
-    }
+      setXfade({ from: prev, to: next, t: 0 });
 
-    const t = easeInOutCubic(Math.max(0, Math.min(1, rawT)));
-    setXfade({ from: prev, to: next, t });
-  }, 24);
-}, preloadMs);
+      xfadeTimerRef.current = setInterval(() => {
+        const rawT = (Date.now() - start) / duration;
+
+        if (rawT >= 1) {
+          if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
+          xfadeTimerRef.current = null;
+
+          setXfade({ from: next, to: next, t: 1 });
+          return;
+        }
+
+        const t = easeInOutCubic(Math.max(0, Math.min(1, rawT)));
+        setXfade({ from: prev, to: next, t });
+      }, 24);
+    }, preloadMs);
 
     return () => {
       if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
@@ -753,6 +778,10 @@ export function useRadarController(args: {
     }
 
     if (!n) {
+      if (stormMode) {
+        slotHoldRef.current = [null, null, null];
+        return { templates: outTemplates, opacities: outOpacities };
+      }
       outTemplates[0] = slotHoldRef.current[0];
       outTemplates[1] = slotHoldRef.current[1];
       outTemplates[2] = slotHoldRef.current[2];
@@ -760,7 +789,7 @@ export function useRadarController(args: {
     }
 
     if (preloadTo !== null) {
-      const cur = clampIndex(xfade.to, n);
+      const cur = clampIndex(xfade.from, n);
       const pre = clampIndex(preloadTo, n);
 
       outTemplates[0] = effectiveTemplates[cur] ?? slotHoldRef.current[0];
@@ -824,6 +853,7 @@ export function useRadarController(args: {
     radarOpacity,
     preloadTo,
     mapZoom,
+    stormMode,
   ]);
 
   /* =========================================================================

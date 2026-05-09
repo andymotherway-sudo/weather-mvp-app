@@ -135,6 +135,16 @@ function regionFromBoundsPolygon(coords: any): Region | null {
 const MAPLIBRE_DARK_STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 const MAPLIBRE_LIGHT_STYLE_URL = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 const BOUNDARY_VECTOR_SOURCE_URL = 'https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/tiles.json';
+const MAPTILER_API_KEY = process.env.EXPO_PUBLIC_MAPTILER_API_KEY?.trim();
+
+function mapStyleUrlFor(style: 'dark' | 'light') {
+  if (!MAPTILER_API_KEY) {
+    return style === 'dark' ? MAPLIBRE_DARK_STYLE_URL : MAPLIBRE_LIGHT_STYLE_URL;
+  }
+
+  const mapId = style === 'dark' ? 'dataviz-v4-dark' : 'dataviz-v4-light';
+  return `https://api.maptiler.com/maps/${mapId}/style.json?key=${encodeURIComponent(MAPTILER_API_KEY)}`;
+}
 
 const BOUNDARY_RELIEF = {
   teal: {
@@ -236,7 +246,7 @@ export function MapRenderer(props: MapRendererProps) {
   const internalCameraRef = useRef<any>(null);
   const cameraRef = props.cameraRef ?? internalCameraRef;
 
-  const mapStyleUrl = mapStyle === 'dark' ? MAPLIBRE_DARK_STYLE_URL : MAPLIBRE_LIGHT_STYLE_URL;
+  const mapStyleUrl = mapStyleUrlFor(mapStyle);
 
   const mountInitialRegionRef = useRef<Region>(initialRegion);
   const startRegion = mountInitialRegionRef.current;
@@ -359,17 +369,19 @@ export function MapRenderer(props: MapRendererProps) {
       onPanDrag?.();
     }
 
-    if (isUser) {
-      if (regionEventMode === 'continuous') {
-        if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-        regionDebounceRef.current = setTimeout(() => emitRegion(), 200);
-      }
+    if (regionEventMode === 'continuous') {
+      if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
+      regionDebounceRef.current = setTimeout(() => emitRegion(), 200);
+    }
 
-      if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
-      userEndTimerRef.current = setTimeout(() => {
-        userActiveRef.current = false;
-        emitRegion();
-      }, 250);
+    if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
+    userEndTimerRef.current = setTimeout(() => {
+      userActiveRef.current = false;
+      emitRegion();
+    }, isUser ? 250 : 80);
+
+    if (!isUser && regionEventMode !== 'continuous') {
+      emitRegion();
     }
   };
 
@@ -378,9 +390,14 @@ export function MapRenderer(props: MapRendererProps) {
 
   const maxSlots = useMemo(() => {
     if (isDegraded) return 1;
+    const activeRadarSlots = (radar.templates ?? []).filter((tpl, idx) => {
+      const opacity = radar.opacities?.[idx] ?? 0;
+      return !!tpl && opacity > 0.001;
+    }).length;
+    if (activeRadarSlots >= 2) return 2;
     if (liveZoom >= 8.5) return 1;
     return 2;
-  }, [isDegraded, liveZoom]);
+  }, [isDegraded, liveZoom, radar.opacities, radar.templates]);
 
   const radarTemplates = useMemo(() => {
     const base = radar.templates ?? [];
@@ -398,7 +415,7 @@ export function MapRenderer(props: MapRendererProps) {
     const providerMax = Math.max(0, Math.floor(radar.tileMaxZ ?? 10));
     const desired = Math.ceil(liveZoom) + (liveZoom >= 8 ? 1 : 2);
     return clamp(desired, 0, providerMax);
-  }, [radar.tileMaxZ]);
+  }, [liveZoom, radar.tileMaxZ]);
 
   const layerMaxZ = 24;
   const rasterResampling: 'linear' | 'nearest' = 'linear';

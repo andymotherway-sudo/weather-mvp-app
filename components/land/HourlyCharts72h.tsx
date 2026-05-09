@@ -5,12 +5,11 @@
 // ✅ Adds: safer ISO wall-clock parsing for padding
 // ❌ Removes: Expand button + expanded state + expanded prop spread
 
-import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet } from 'react-native';
 
 import type { ForecastHour } from '../../app/lib/openmeteo/hooks';
 import { theme } from '../../styles/theme';
-import { LearnMoreModal } from '../common/LearnMoreModal';
 import { Card } from '../layout/Card';
 import { HourlyRangeChart } from './HourlyRangeChart';
 
@@ -127,14 +126,6 @@ export function HourlyCharts72h({
   maxHours = 72,
   units = 'us',
 }: Props) {
-  const [learnVisible, setLearnVisible] = useState(false);
-  const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
-
-  const openLearn = (topicId?: string) => {
-    setLearnTopicId(topicId);
-    setLearnVisible(true);
-  };
-
   const slice = useMemo(() => {
     const base = hours.slice(0, Math.min(hours.length, maxHours));
     const { padded } = padSliceToMidnight(base);
@@ -143,21 +134,7 @@ export function HourlyCharts72h({
 
   return (
     <Card style={styles.card}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }} />
-
-        <Pressable onPress={() => openLearn('data-availability')} style={styles.learnBtn}>
-          <Text style={styles.learnText}>wxLearn</Text>
-        </Pressable>
-      </View>
-
       <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} />
-
-      <LearnMoreModal
-        visible={learnVisible}
-        onClose={() => setLearnVisible(false)}
-        initialTopicId={learnTopicId}
-      />
     </Card>
   );
 }
@@ -175,26 +152,6 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
 
-  header: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-    paddingHorizontal: 2,
-  },
-  title: { fontSize: 15, fontWeight: '900', color: theme.colors.textPrimary },
-  subtitle: { marginTop: 2, fontSize: 12, opacity: 0.7, color: theme.colors.textSecondary },
-
-  learnBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: 'rgba(255,255,255,0.045)',
-  },
-  learnText: { fontSize: 12, fontWeight: '900', color: theme.colors.textPrimary },
 });
 
 export default HourlyCharts72h;

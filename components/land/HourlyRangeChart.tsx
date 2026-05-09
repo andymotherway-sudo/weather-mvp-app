@@ -13,7 +13,7 @@ import type { ForecastHour } from '../../app/lib/openmeteo/hooks';
 
 type UnitSystem = 'us' | 'metric';
 
-const TABLE_LABEL_WIDTH = 76;
+const TABLE_LABEL_WIDTH = 42;
 const TABLE_HEADER_HEIGHT = 30;
 const ROW_HEIGHT = 38;
 
@@ -469,43 +469,12 @@ export function HourlyRangeChart({
   );
 
   const scrollRef = useRef<ScrollView | null>(null);
-  const tableScrollRef = useRef<ScrollView | null>(null);
-  const syncScrollSourceRef = useRef<'chart' | 'table' | null>(null);
-
-  const releaseSyncScrollSource = useCallback((source: 'chart' | 'table') => {
-    requestAnimationFrame(() => {
-      if (syncScrollSourceRef.current === source) {
-        syncScrollSourceRef.current = null;
-      }
-    });
-  }, []);
-
-  const syncTableScroll = useCallback(
-    (x: number) => {
-      if (syncScrollSourceRef.current === 'table') return;
-      syncScrollSourceRef.current = 'chart';
-      tableScrollRef.current?.scrollTo({ x, animated: false });
-      releaseSyncScrollSource('chart');
-    },
-    [releaseSyncScrollSource]
-  );
-
-  const syncChartScroll = useCallback(
-    (x: number) => {
-      if (syncScrollSourceRef.current === 'chart') return;
-      syncScrollSourceRef.current = 'table';
-      scrollRef.current?.scrollTo({ x, animated: false });
-      releaseSyncScrollSource('table');
-    },
-    [releaseSyncScrollSource]
-  );
 
   useEffect(() => {
     if (!selFromTapRef.current) return;
     if (!viewportW) return;
     const targetX = Math.max(0, padX + selIdx * step + TILE_W / 2 - viewportW / 2);
     scrollRef.current?.scrollTo({ x: targetX, animated: true });
-    tableScrollRef.current?.scrollTo({ x: targetX, animated: true });
   }, [selIdx, viewportW, padX, step, TILE_W]);
 
   const selX = xForIdx(selIdx);
@@ -537,12 +506,12 @@ export function HourlyRangeChart({
   const windLabel = units === 'metric' ? 'kph' : 'mph';
   const tableRows = [
     { label: 'Temp', shortLabel: 'TEMP', values: data.map((h: any) => fmtInt(pick(h, tempKey), unitsLabel)) },
-    { label: 'Dew pt', shortLabel: 'DEW PT', values: data.map((h: any) => fmtInt(pick(h, dewKey), unitsLabel)) },
+    { label: 'Dew pt', shortLabel: 'DEW', values: data.map((h: any) => fmtInt(pick(h, dewKey), unitsLabel)) },
     { label: 'RH', shortLabel: 'RH', values: data.map((h: any) => fmtInt(pick(h, 'humidityPct'), '%')) },
     { label: 'Wind', shortLabel: 'WIND', values: data.map((h: any) => fmtInt(pick(h, 'windMph'), ` ${windLabel}`)) },
-    { label: 'Gusts', shortLabel: 'GUSTS', values: data.map((h: any) => fmtInt(pick(h, 'gustMph'), ` ${windLabel}`)) },
-    { label: 'Clouds', shortLabel: 'CLOUDS', values: data.map((h: any) => fmtInt(pick(h, 'cloudCoverPct'), '%')) },
-    { label: 'Precip', shortLabel: 'PRECIP', values: data.map((h: any) => fmtInt(pick(h, 'popPct'), '%')) },
+    { label: 'Gusts', shortLabel: 'GUST', values: data.map((h: any) => fmtInt(pick(h, 'gustMph'), ` ${windLabel}`)) },
+    { label: 'Clouds', shortLabel: 'CLD', values: data.map((h: any) => fmtInt(pick(h, 'cloudCoverPct'), '%')) },
+    { label: 'Precip', shortLabel: 'PCP', values: data.map((h: any) => fmtInt(pick(h, 'popPct'), '%')) },
   ];
 
   return (
@@ -553,12 +522,12 @@ export function HourlyRangeChart({
         }}
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ width: contentW, paddingHorizontal: padX, paddingBottom: 2 }}
+        decelerationRate="normal"
+        contentContainerStyle={{ paddingHorizontal: padX, paddingBottom: 2 }}
         scrollEventThrottle={16}
         onLayout={(e) => setViewportW(e.nativeEvent.layout.width)}
         onScroll={(e) => {
           const x = e.nativeEvent.contentOffset.x;
-          syncTableScroll(x);
           const idx = idxFromScroll(x);
           if (idx !== lastSelIdxRef.current) {
             lastSelIdxRef.current = idx;
@@ -567,7 +536,7 @@ export function HourlyRangeChart({
           }
         }}
       >
-        <View style={{ width: contentW - padX * 2 }}>
+        <View style={{ width: W + padL + 24 }}>
           <View style={{ width: contentW - padX * 2, height: 0, overflow: 'hidden' }}>
             {data.map((h: any, i) => {
               const x = xForIdx(i);
@@ -877,81 +846,60 @@ export function HourlyRangeChart({
               })}
             </Svg>
           </View>
+
+          <View style={[s.tableDataColumns, s.tableInlineData, { paddingLeft: padL }]}>
+            <View style={s.tableHeaderRow}>
+              {data.map((h: any, i) => {
+                const t = h.time as string;
+                const dk = dayKeyFromIso(t);
+                const hm = parseHourMinute(t);
+                const label = hm?.h === 0 ? dayLabelFromKey(dk) : hourLabel(t);
+                return (
+                  <Text
+                    key={`th-inline-${t}-${i}`}
+                    style={[
+                      s.tableValueCell,
+                      s.tableHeaderText,
+                      { width: TILE_W, marginRight: i === data.length - 1 ? 0 : GAP },
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                );
+              })}
+            </View>
+
+            {tableRows.map((row, rowIdx) => (
+              <View key={`inline-${row.label}`} style={[s.tableDataRow, rowIdx % 2 === 1 ? s.tableRowAlt : null]}>
+                <View style={s.tableValuesRow}>
+                  {row.values.map((value, idx) => (
+                    <Text
+                      key={`${row.label}-inline-${idx}`}
+                      style={[
+                        s.tableValueCell,
+                        { width: TILE_W, marginRight: idx === row.values.length - 1 ? 0 : GAP },
+                      ]}
+                    >
+                      {value}
+                    </Text>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
         </ScrollView>
 
-      <View style={s.tableSection}>
-        <View style={s.tableContainer}>
-          <View style={s.tableLabelColumn}>
+      <View
+        pointerEvents="none"
+        style={[s.tableLabelColumn, s.tableLabelOverlay, { left: 0, width: TABLE_LABEL_WIDTH, top: 14 + H + 8 }]}
+      >
             <View style={s.tableLabelHeader} />
             {tableRows.map((row, idx) => (
               <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
                 <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
               </View>
             ))}
-          </View>
-
-          <ScrollView
-            ref={(r) => {
-              tableScrollRef.current = r;
-            }}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.tableScrollContent}
-            scrollEventThrottle={16}
-            onScroll={(e) => {
-              const x = e.nativeEvent.contentOffset.x;
-              syncChartScroll(x);
-              const idx = idxFromScroll(x);
-              if (idx !== lastSelIdxRef.current) {
-                lastSelIdxRef.current = idx;
-                selFromTapRef.current = false;
-                setSelIdx(idx);
-              }
-            }}
-          >
-            <View style={s.tableDataColumns}>
-              <View style={s.tableHeaderRow}>
-                {data.map((h: any, i) => {
-                  const t = h.time as string;
-                  const dk = dayKeyFromIso(t);
-                  const hm = parseHourMinute(t);
-                  const label = hm?.h === 0 ? dayLabelFromKey(dk) : hourLabel(t);
-                  return (
-                    <Text
-                      key={`th-${t}-${i}`}
-                      style={[
-                        s.tableValueCell,
-                        s.tableHeaderText,
-                        { width: TILE_W, marginRight: i === data.length - 1 ? 0 : GAP },
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  );
-                })}
-              </View>
-
-              {tableRows.map((row, rowIdx) => (
-                <View key={row.label} style={[s.tableDataRow, rowIdx % 2 === 1 ? s.tableRowAlt : null]}>
-                  <View style={s.tableValuesRow}>
-                    {row.values.map((value, idx) => (
-                      <Text
-                        key={`${row.label}-${idx}`}
-                        style={[
-                          s.tableValueCell,
-                          { width: TILE_W, marginRight: idx === row.values.length - 1 ? 0 : GAP },
-                        ]}
-                      >
-                        {value}
-                      </Text>
-                    ))}
-                  </View>
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
       </View>
 
       <View style={s.pillSection}>
@@ -1071,6 +1019,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(44, 70, 102, 0.76)',
     paddingTop: 14,
     overflow: 'hidden',
+    position: 'relative',
   },
 
   headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
@@ -1220,9 +1169,17 @@ const s = StyleSheet.create({
   tableLabelColumn: {
     width: TABLE_LABEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: 'rgba(18,31,50,0.78)',
+    backgroundColor: 'rgba(48,82,118,0.88)',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(255,255,255,0.12)',
+    borderRightColor: 'rgba(156,205,245,0.16)',
+  },
+  tableLabelOverlay: {
+    position: 'absolute',
+    left: 12,
+    zIndex: 3,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+    overflow: 'hidden',
   },
   tableLabelHeader: {
     height: TABLE_HEADER_HEIGHT,
@@ -1232,22 +1189,34 @@ const s = StyleSheet.create({
   tableLabelRow: {
     height: ROW_HEIGHT,
     justifyContent: 'center',
-    paddingHorizontal: 10,
+    alignItems: 'center',
+    paddingHorizontal: 5,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.075)',
+    borderTopColor: 'rgba(156,205,245,0.10)',
   },
   tableLabelText: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 10,
+    color: 'rgba(214,232,248,0.82)',
+    fontSize: 8,
     fontWeight: '800',
+    textAlign: 'center',
     textTransform: 'uppercase',
-    letterSpacing: 0.45,
+    letterSpacing: 0.2,
   },
   tableScrollContent: {
     flexGrow: 0,
   },
   tableDataColumns: {
     backgroundColor: 'rgba(255,255,255,0.018)',
+  },
+  tableInlineData: {
+    marginTop: 8,
+    marginLeft: 0,
+    marginRight: 12,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
   },
   tableHeaderRow: {
     flexDirection: 'row',

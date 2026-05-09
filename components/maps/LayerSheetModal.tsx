@@ -26,6 +26,7 @@ export function LayerSheetModal(props: {
   onSetOpacity: (layerId: LayerId, opacity: number) => void;
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
+  onOpenStandardMap?: () => void;
   onOpenAstroMap?: () => void;
   onOpenNauticalMap?: () => void;
   onOpenAviationMap?: () => void;
@@ -40,6 +41,7 @@ export function LayerSheetModal(props: {
     onSetOpacity,
     onOpenLegend,
     onOpenSourceInfo,
+    onOpenStandardMap,
     onOpenAstroMap,
     onOpenNauticalMap,
     onOpenAviationMap,
@@ -114,8 +116,9 @@ export function LayerSheetModal(props: {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
-              <Section title="Special maps" subtitle="Open dedicated astronomy, nautical, or aviation experiences">
+              <Section title="Special maps" subtitle="Switch between the standard weather map and focused map experiences">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                  <QuickCard title="Standard Map" subtitle="Weather radar" onPress={onOpenStandardMap} />
                   <QuickCard title="Astronomy Map" subtitle="Sky conditions" onPress={onOpenAstroMap} />
                   <QuickCard title="Nautical Map" subtitle="Marine view" onPress={onOpenNauticalMap} />
                   <QuickCard title="Aviation Map" subtitle="Flight weather" onPress={onOpenAviationMap} />

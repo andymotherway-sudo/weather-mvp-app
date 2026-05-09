@@ -29,6 +29,7 @@ import { aviationFillColorExpression, aviationLineColorExpression } from '../lib
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
+import type { RadarProductId } from '../lib/maps/radarIem';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController } from '../lib/maps/useRadarController';
@@ -57,8 +58,6 @@ type WildfireIncidentDetails = {
   longitude?: number | null;
 };
 
-type RadarProductId = 'N0Q' | 'N0B' | 'N0Z';
-
 const RADAR_PRODUCT_META: Record<
   RadarProductId,
   {
@@ -83,14 +82,14 @@ const RADAR_PRODUCT_META: Record<
     legendNote: 'Shows precipitation intensity and storm structure.',
   },
   N0B: {
-    chipLabel: 'Reflectivity Alt',
-    summaryLabel: 'Reflectivity Alt',
+    chipLabel: 'N0B Refl',
+    summaryLabel: 'High-res reflectivity',
     legendStyle: 'reflectivity',
-    legendTitle: 'Reflectivity Alt',
+    legendTitle: 'High-res Reflectivity',
     legendLeft: 'Light',
     legendMid: 'Moderate',
     legendRight: 'Severe',
-    legendNote: 'Alternate reflectivity feed when the primary product is less useful.',
+    legendNote: 'Single-site high-resolution reflectivity for storm structure.',
   },
   N0Z: {
     chipLabel: 'Velocity',
@@ -102,7 +101,29 @@ const RADAR_PRODUCT_META: Record<
     legendRight: 'Toward',
     legendNote: 'Shows wind motion relative to the radar, not rain intensity.',
   },
+  N0U: {
+    chipLabel: 'N0U Vel',
+    summaryLabel: 'Base velocity',
+    legendStyle: 'velocity',
+    legendTitle: 'Base Velocity',
+    legendLeft: 'Away',
+    legendMid: 'Neutral',
+    legendRight: 'Toward',
+    legendNote: 'Single-site radial velocity for inbound/outbound wind signatures.',
+  },
+  N0S: {
+    chipLabel: 'N0S SRV',
+    summaryLabel: 'Storm-relative velocity',
+    legendStyle: 'velocity',
+    legendTitle: 'Storm-Relative Velocity',
+    legendLeft: 'Away',
+    legendMid: 'Neutral',
+    legendRight: 'Toward',
+    legendNote: 'Velocity with storm motion removed to make rotation easier to inspect.',
+  },
 };
+
+const STORM_RADAR_PRODUCTS: RadarProductId[] = ['N0B', 'N0U', 'N0S'];
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -280,6 +301,7 @@ export default function MapsScreen() {
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [rawMode, setRawMode] = useState(false);
+  const [stormProduct, setStormProduct] = useState<RadarProductId>('N0B');
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
@@ -304,6 +326,7 @@ export default function MapsScreen() {
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
+  const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
   const { baseMapStyle } = useSettings();
@@ -326,8 +349,8 @@ export default function MapsScreen() {
   const locateRequestIdRef = useRef(0);
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const product: RadarProductId = 'N0Q';
   const stormMode = state.viewId === 'storm';
+  const product: RadarProductId = stormMode ? stormProduct : 'N0Q';
   const effectiveRadarProvider = stormMode ? 'iem' : 'rainviewer';
 
   const handleMapPress = useCallback(
@@ -552,7 +575,7 @@ export default function MapsScreen() {
     product,
     rawMode,
     region,
-    localMinZoom: stormMode ? 9.2 : 12.8,
+    localMinZoom: Number.POSITIVE_INFINITY,
     ridgeMinZoom: stormMode ? 7.4 : 8.6,
   });
 
@@ -563,8 +586,9 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
 
   const radarTileMaxZ = useMemo(() => {
+    if (effectiveRadarProvider === 'rainviewer') return radarCtl.radarTileMaxZ;
     return Math.max(radarCtl.radarTileMaxZ, Math.ceil(mapZoom));
-  }, [radarCtl.radarTileMaxZ, mapZoom]);
+  }, [effectiveRadarProvider, radarCtl.radarTileMaxZ, mapZoom]);
 
   const mapRadar = useMemo(() => {
     if (!isFocused) {
@@ -818,12 +842,14 @@ export default function MapsScreen() {
     };
 
     setCameraDebugLabel(`route-focus:${routeFocusTarget.lat.toFixed(2)},${routeFocusTarget.lon.toFixed(2)}`);
+    routeFocusSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
-    mapCameraRef.current?.moveTo?.([routeFocusTarget.lon, routeFocusTarget.lat], 0);
+    setMapResetKey((value) => value + 1);
     setConsumedRouteFocusKey(routeFocusTarget.key);
 
     requestAnimationFrame(() => {
+      routeFocusSeedRegionRef.current = null;
       router.setParams({
         focus: 'consumed',
         lat: '',
@@ -957,8 +983,8 @@ export default function MapsScreen() {
     ? activeLayerSummary.subtitle ?? simpleStatus
     : simpleStatus;
 
-  const providerLabel = stormMode ? 'Storm radar' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
-  const radarProductLabel = stormMode ? 'Detail mode' : null;
+  const providerLabel = stormMode ? 'Single-site radar' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const radarProductLabel = stormMode ? radarProductMeta.summaryLabel : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
   const timelineStateLabel = !radarEnabled ? 'Layers only' : state.radarTime.playing ? 'Looping' : 'Holding';
@@ -1005,7 +1031,7 @@ export default function MapsScreen() {
           <MapRenderer
             key={`map-${mapResetKey}`}
             engine="maplibre"
-            initialRegion={locateSeedRegionRef.current ?? stableInitialRegion}
+            initialRegion={routeFocusSeedRegionRef.current ?? locateSeedRegionRef.current ?? stableInitialRegion}
             mapStyle={baseMapStyle}
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
@@ -1642,6 +1668,21 @@ export default function MapsScreen() {
                   ? `${radarProductMeta.legendTitle} · ${radarProductMeta.legendNote}`
                   : 'RainViewer colors vary slightly by provider frame.'}
               </Text>
+              {stormMode ? (
+                <View style={styles.stormProductRow}>
+                  {STORM_RADAR_PRODUCTS.map((id) => (
+                    <MiniToggle
+                      key={id}
+                      label={RADAR_PRODUCT_META[id].chipLabel}
+                      active={product === id}
+                      onPress={() => {
+                        setStormProduct(id);
+                        dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                      }}
+                    />
+                  ))}
+                </View>
+              ) : null}
             </Glass>
           </View>
         ) : null}
@@ -1707,7 +1748,7 @@ export default function MapsScreen() {
                 setSelectedAviationHazards((current) => toggleFilterValue(current, value))
               }
               onSelectValidTime={setSelectedAviationValidTime}
-              bottomOffset={124 + insets.bottom}
+              bottomOffset={16 + insets.bottom}
             />
             <AviationFeatureInspector
               feature={selectedAviationFeature}
@@ -1912,6 +1953,10 @@ export default function MapsScreen() {
               setLearnTopicId('front-types');
               setLearnOpen(true);
             }
+          }}
+          onOpenStandardMap={() => {
+            setLayersSheetOpen(false);
+            dispatch({ type: 'SET_VIEW', viewId: 'radar' });
           }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);
@@ -2618,6 +2663,12 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     fontWeight: '700',
     display: 'none',
+  },
+  stormProductRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
   },
   restrictionLegend: {
     gap: 6,

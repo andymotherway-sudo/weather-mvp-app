@@ -146,6 +146,13 @@ function formatUpdatedTime(observationTime: string | null) {
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+function todayDateKeyLocal() {
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
 function hpaToInHg(hpa: number) {
   return hpa * 0.029529983071445;
 }
@@ -2784,6 +2791,7 @@ function NerdyDeepDive({
   cloudCoverPct,
   uvIndex,
   airQualityLabel,
+  airQualityIndex,
   precipChancePct,
   visibilityMi,
   pressureHpa,
@@ -2794,6 +2802,9 @@ function NerdyDeepDive({
   sunset,
   moonrise,
   moonset,
+  moonIlluminationPct,
+  moonPhaseDegrees,
+  moonPhaseLabel,
   dayLengthSec,
   feelsDriverLabel,
   feelsDriverValue,
@@ -2801,7 +2812,7 @@ function NerdyDeepDive({
 }: {
   condition: string;
   heroSummary: string;
-  updatedText: string;
+  updatedText: string | null;
   dewpointF: number | null;
   humidityPct: number | null;
   dpBand: string | null;
@@ -2815,6 +2826,7 @@ function NerdyDeepDive({
   cloudCoverPct: number | null;
   uvIndex: number | null;
   airQualityLabel: string | null;
+  airQualityIndex: number | null;
   precipChancePct: number | null;
   visibilityMi: number | null;
   pressureHpa: number | null;
@@ -2837,6 +2849,9 @@ function NerdyDeepDive({
   sunset?: string | null;
   moonrise?: string | null;
   moonset?: string | null;
+  moonIlluminationPct?: number | null;
+  moonPhaseDegrees?: number | null;
+  moonPhaseLabel?: string | null;
   dayLengthSec?: number | null;
   pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
@@ -2858,6 +2873,7 @@ function NerdyDeepDive({
     ? pressureTrend.label
     : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
+  const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
   const sunMoments = [
     { label: 'Dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
     { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
@@ -2882,7 +2898,7 @@ function NerdyDeepDive({
     <View style={nd.wrap}>
       <View style={nd.topBar}>
         <Text style={nd.kicker}>WX LAB DAILY</Text>
-        <Text style={nd.updated}>{updatedText}</Text>
+        {updatedText ? <Text style={nd.updated}>{updatedText}</Text> : null}
       </View>
 
       <View style={nd.heroShell}>
@@ -2934,11 +2950,8 @@ function NerdyDeepDive({
               </Pressable>
             </View>
             <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('dewpoint')}>
-              <View style={nd.metricWideHead}>
-                <Text style={nd.metricLabel}>Dew Band</Text>
-                <Text style={nd.metricWideValue}>{dpBand ?? '—'}</Text>
-              </View>
-              <Text style={nd.metricHint}>{dewpointF != null ? `${Math.round(dewpointF)}°F dew point` : 'Based on dew point'}</Text>
+              <Text style={nd.metricLabel}>Dew Band</Text>
+              <Text style={[nd.metricWideValue, nd.metricStackedValue]}>{dpBand ?? '—'}</Text>
             </Pressable>
           </View>
 
@@ -2957,7 +2970,9 @@ function NerdyDeepDive({
             <View style={nd.metricGrid2Tall}>
               <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind')}>
                 <Text style={nd.metricLabel}>Direction</Text>
-                <Text style={nd.directionMain}>{dirHeading}</Text>
+                <Text style={nd.directionMain} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.74}>
+                  {dirHeading}
+                </Text>
                 <Text style={nd.directionSub}>{dirDegrees}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
@@ -2988,7 +3003,8 @@ function NerdyDeepDive({
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('air-quality')}>
                 <Text style={nd.metricLabel}>Air Quality</Text>
-                <Text style={nd.metricValueSmall}>{airQualityLabel ?? '—'}</Text>
+                <Text style={nd.metricValueSmall}>{airQualityIndex != null ? `${Math.round(airQualityIndex)} AQI` : '—'}</Text>
+                {airQualityLabel ? <Text style={nd.metricHint}>{airQualityLabel}</Text> : null}
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('clouds')}>
                 <Text style={nd.metricLabel}>Radiation Regime</Text>
@@ -3052,8 +3068,9 @@ function NerdyDeepDive({
               <Text style={nd.timelineNodeValue}>{formatClock(moonrise)}</Text>
             </Pressable>
             <View style={nd.moonCenter}>
-              <PremiumMoonIcon size={36} />
-              <Text style={nd.moonGlyph}>{''}</Text>
+              <PremiumMoonIcon size={46} illuminationPct={moonIlluminationPct} phaseDegrees={moonPhaseDegrees} />
+              <Text style={nd.moonPhaseText} numberOfLines={1}>{moonPhaseLabel ?? 'Moon phase'}</Text>
+              <Text style={nd.moonFullText}>{moonFullLabel}</Text>
             </View>
             <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonset'))}>
               <Text style={nd.timelineNodeLabel}>Moonset</Text>
@@ -3295,6 +3312,9 @@ const nd = StyleSheet.create({
     fontWeight: '900',
     color: 'white',
   },
+  metricStackedValue: {
+    marginTop: 8,
+  },
   metricHint: {
     fontSize: 12,
     lineHeight: 16,
@@ -3303,11 +3323,13 @@ const nd = StyleSheet.create({
   },
   directionMain: {
     marginTop: 8,
-    fontSize: 26,
-    lineHeight: 28,
+    width: '100%',
+    fontSize: 22,
+    lineHeight: 24,
     fontWeight: '900',
     color: 'white',
     textAlign: 'center',
+    includeFontPadding: false,
   },
   directionSub: {
     marginTop: 4,
@@ -3409,6 +3431,23 @@ const nd = StyleSheet.create({
     width: 88,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  moonPhaseText: {
+    marginTop: 5,
+    maxWidth: 92,
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.66)',
+    textAlign: 'center',
+  },
+  moonFullText: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center',
   },
   moonGlyph: {
     display: 'none',
@@ -3563,6 +3602,8 @@ function LandWeatherWithCoords({
   const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
   const todayMoonrise = astroData?.moonrise ?? null;
   const todayMoonset = astroData?.moonset ?? null;
+  const todayMoonDay =
+    astroData?.moonDays?.find((day: any) => day?.date === todayDateKeyLocal()) ?? astroData?.moonDays?.[0] ?? null;
   const hourlyRaw: any[] = forecastData?.hourly ?? [];
 
   const hourly = useMemo(() => {
@@ -3707,7 +3748,8 @@ function LandWeatherWithCoords({
     return { label: 'Feels', value: '—', conf: undefined };
   }, [hi, wc, feelsLikeF]);
 
-  const updatedText = `Updated ${formatUpdatedTime(observationTime)}`;
+  const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime) : null;
+  const updatedText = updatedTimeLabel ? `Updated ${updatedTimeLabel}` : null;
 
   const moistureHint =
     dewpointF != null
@@ -3777,7 +3819,7 @@ function LandWeatherWithCoords({
           dayLengthSec={todayDayLengthSec}
         />
 
-        <Text style={styles.updatedText}>{updatedText}</Text>
+        {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
         <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
 
         {daily.length > 0 ? (
@@ -3863,7 +3905,7 @@ function LandWeatherWithCoords({
             hideWind
           />
 
-          <Text style={styles.updatedText}>{updatedText}</Text>
+          {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
         </Card>
       ) : (
         <NerdyDeepDive
@@ -3883,6 +3925,7 @@ function LandWeatherWithCoords({
           cloudCoverPct={cloudCoverPct}
           uvIndex={uvIndex}
           airQualityLabel={airQualityLabel}
+          airQualityIndex={airQualityIndex}
           precipChancePct={precipChancePct}
           visibilityMi={visibilityMi}
           pressureHpa={pressureHpa}
@@ -3893,6 +3936,9 @@ function LandWeatherWithCoords({
           sunset={todaySunset}
           moonrise={todayMoonrise}
           moonset={todayMoonset}
+          moonIlluminationPct={safeNum(todayMoonDay?.moonIlluminationPct)}
+          moonPhaseDegrees={safeNum(todayMoonDay?.moonPhaseDegrees)}
+          moonPhaseLabel={typeof todayMoonDay?.moonPhaseLabel === 'string' ? todayMoonDay.moonPhaseLabel : null}
           dayLengthSec={todayDayLengthSec}
           feelsDriverLabel={feelsDriver.label}
           feelsDriverValue={feelsDriver.value}

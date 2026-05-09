@@ -13,14 +13,19 @@ type RainViewerMapsResponse = {
   };
 };
 
-// RainViewer timeline endpoint
-const MAPS_JSON = 'https://api.rainviewer.com/public/maps.json';
+// RainViewer timeline endpoint. The legacy /public/maps.json endpoint now
+// returns an empty array, while weather-maps.json contains the live radar paths.
+const MAPS_JSON = 'https://api.rainviewer.com/public/weather-maps.json';
 
 // ✅ Your Cloudflare Worker base (RainViewer tiles are proxied/cached here)
 const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 function toFrame(t: number): RadarFrame {
   return { t, iso: new Date(t * 1000).toISOString() };
+}
+
+function joinUrl(base: string, path: string) {
+  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
 export function createRainViewerProvider(opts?: {
@@ -51,7 +56,7 @@ export function createRainViewerProvider(opts?: {
   const ttlMs = opts?.ttlMs ?? 60_000;
   const includeNowcast = opts?.includeNowcast ?? true;
   const maxFrames = opts?.maxFrames ?? 12;
-  const maxZoom = opts?.maxZoom ?? 10;
+  const maxZoom = opts?.maxZoom ?? 7;
 
   const workerBaseUrl = (opts?.workerBaseUrl ?? OMNIWX_WORKER_BASE).replace(/\/+$/, '');
 
@@ -104,6 +109,12 @@ export function createRainViewerProvider(opts?: {
     return `${workerBaseUrl}/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png?${qs}`;
   }
 
+  function directTileTemplateForPath(path: string) {
+    return `${joinUrl(cachedHost ?? workerBaseUrl, path)}/${tileSize}/{z}/{x}/{y}/${encodeURIComponent(
+      color
+    )}/${smooth}_${snow}.png`;
+  }
+
   let cachedHost: string | null = null;
   let cachedPaths: string[] | null = null;
 
@@ -135,8 +146,10 @@ export function createRainViewerProvider(opts?: {
       const idx = cachedFrames.findIndex((f) => f.t === frame.t);
       const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
 
-      // We keep this for parity / debugging even though the Worker doesn't need it
-      void cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
+      const path = cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
+      if (typeof path === 'string' && path.length > 3) {
+        return directTileTemplateForPath(path);
+      }
 
       const ts = cachedFrames[Math.max(0, Math.min(cachedFrames.length - 1, safeIdx))]?.t;
 
