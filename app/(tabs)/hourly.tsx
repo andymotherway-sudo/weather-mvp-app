@@ -39,7 +39,7 @@ type VisualState = {
   isSunset: boolean;
 };
 
-const GLASS_SURFACE_BG = 'rgba(44, 70, 102, 0.76)';
+const GLASS_SURFACE_BG = 'rgba(44, 70, 102, 0.68)';
 const GLASS_SURFACE_BORDER = 'rgba(255,255,255,0.12)';
 
 function safeNum(v: any): number | null {

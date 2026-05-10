@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppBoot } from '../components/boot/AppBoot';
+import { AlmanacWarmupProvider } from '../components/boot/AlmanacWarmup';
 
 // ✅ NEW: app-wide locations provider (last-known coords + GPS warmup)
 import { LocationsProvider } from './lib/locations/useLocations';
@@ -33,16 +34,18 @@ export default function RootLayout() {
           <PlaceProvider>
             <WxLabProvider>
               <AppBoot>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: APP_BG },
-                  }}
-                >
-                  <Stack.Screen name="(onboarding)" />
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-                </Stack>
+                <AlmanacWarmupProvider>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: APP_BG },
+                    }}
+                  >
+                    <Stack.Screen name="(onboarding)" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+                  </Stack>
+                </AlmanacWarmupProvider>
               </AppBoot>
             </WxLabProvider>
           </PlaceProvider>

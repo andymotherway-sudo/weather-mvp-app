@@ -606,7 +606,7 @@ const styles = StyleSheet.create<Styles>({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 22,
-    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    backgroundColor: 'rgba(44, 70, 102, 0.68)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
@@ -623,7 +623,7 @@ const styles = StyleSheet.create<Styles>({
     overflow: 'hidden',
     padding: theme.spacing.md,
     borderRadius: 26,
-    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    backgroundColor: 'rgba(44, 70, 102, 0.68)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
@@ -735,7 +735,7 @@ const styles = StyleSheet.create<Styles>({
     marginHorizontal: -8,
   },
   wxRowPressableActive: {
-    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    backgroundColor: 'rgba(44, 70, 102, 0.68)',
   },
   wxRow: {
     flexDirection: 'row',

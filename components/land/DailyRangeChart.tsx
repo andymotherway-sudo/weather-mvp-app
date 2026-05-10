@@ -45,7 +45,6 @@ const TABLE_HEADER_HEIGHT = 30;
 const ROW_HEIGHT = 38;
 const CHART_TOP_OFFSET = 8;
 const CHART_BOTTOM_OFFSET = 12;
-const TABLE_TOP_OFFSET = 8;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -142,6 +141,8 @@ export function DailyRangeChart({
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);
+  const [scrollViewTop, setScrollViewTop] = useState(0);
+  const [tableTopInScrollContent, setTableTopInScrollContent] = useState(0);
 
   const lastSelIdxRef = useRef(0);
   const selFromTapRef = useRef(false);
@@ -351,6 +352,7 @@ export function DailyRangeChart({
     { label: 'Clouds', shortLabel: 'CLD', values: data.map((d) => fmtInt(d.cloudCoverAvgPct, '%')) },
     { label: 'Precip', shortLabel: 'PCP', values: data.map((d) => fmtInt(d.precipProbMaxPct, '%')) },
   ];
+  const tableLabelTop = scrollViewTop + tableTopInScrollContent;
 
   return (
     <View style={s.wrap}>
@@ -367,7 +369,10 @@ export function DailyRangeChart({
         decelerationRate="normal"
         contentContainerStyle={{ paddingHorizontal: padX, paddingBottom: 12 }}
         scrollEventThrottle={16}
-        onLayout={(e) => setViewportW(e.nativeEvent.layout.width)}
+        onLayout={(e) => {
+          setViewportW(e.nativeEvent.layout.width);
+          setScrollViewTop(e.nativeEvent.layout.y);
+        }}
         onScroll={(e) => {
           const x = e.nativeEvent.contentOffset.x;
           const idx = idxFromScroll(x);
@@ -744,7 +749,10 @@ export function DailyRangeChart({
 
             </View>
 
-          <View style={[s.tableDataColumns, s.tableInlineData, { paddingLeft: padL }]}>
+          <View
+            onLayout={(e) => setTableTopInScrollContent(e.nativeEvent.layout.y)}
+            style={[s.tableDataColumns, s.tableInlineData, { paddingLeft: padL }]}
+          >
             <View style={s.tableHeaderValuesRow}>
               {data.map((d, idx) => {
                 const { day } = niceDayLabel(d.date);
@@ -785,7 +793,7 @@ export function DailyRangeChart({
           {
             left: 0,
             width: TABLE_LABEL_WIDTH,
-            top: 14 + CHART_TOP_OFFSET + H + CHART_BOTTOM_OFFSET + TABLE_TOP_OFFSET,
+            top: tableLabelTop,
           },
         ]}
       >
@@ -865,7 +873,7 @@ const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
     borderRadius: 24,
-    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    backgroundColor: 'rgba(44, 70, 102, 0.68)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
     paddingTop: 14,
@@ -890,7 +898,7 @@ const s = StyleSheet.create({
     gap: 10,
     marginBottom: 0,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     paddingVertical: 10,
@@ -915,13 +923,13 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
   dayTileActive: {
     borderColor: 'rgba(150,210,255,0.26)',
-    backgroundColor: 'rgba(70,130,220,0.22)',
+    backgroundColor: 'rgba(70,130,220,0.18)',
   },
   dayTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 14, letterSpacing: 0.4 },
   icon: { marginTop: 10, fontSize: 26, opacity: 0.9 },
@@ -1009,12 +1017,12 @@ const s = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
   },
   tableLabelColumn: {
     width: TABLE_LABEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: 'rgba(48,82,118,0.88)',
+    backgroundColor: 'rgba(48,82,118,0.74)',
     borderRightWidth: 1,
     borderRightColor: 'rgba(156,205,245,0.16)',
   },
@@ -1037,7 +1045,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(156,205,245,0.10)',
+    borderTopColor: 'rgba(255,255,255,0.075)',
   },
   tableLabelText: {
     color: 'rgba(214,232,248,0.82)',
@@ -1051,7 +1059,7 @@ const s = StyleSheet.create({
     flexGrow: 0,
   },
   tableDataColumns: {
-    backgroundColor: 'rgba(255,255,255,0.018)',
+    backgroundColor: 'rgba(255,255,255,0.014)',
   },
   tableInlineData: {
     marginTop: 8,
@@ -1078,7 +1086,7 @@ const s = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.075)',
   },
   tableRowAlt: {
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: 'rgba(255,255,255,0.026)',
   },
   tableHeaderText: {
     color: 'rgba(255,255,255,0.62)',

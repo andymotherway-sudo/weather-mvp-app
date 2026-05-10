@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 
+import { useAlmanacPreload } from '../../components/boot/AlmanacWarmup';
 import { ClimatologyChart } from '../../components/land/ClimatologyChart';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
@@ -177,6 +178,7 @@ export default function ClimoTab() {
   const insets = useSafeAreaInsets();
 
   const { active } = usePlace();
+  const preload = useAlmanacPreload();
   const hasPlace = !!active;
 
   const coords = useMemo(() => {
@@ -186,6 +188,11 @@ export default function ClimoTab() {
     if (lat == null || lon == null) return null;
     return { lat, lon };
   }, [active?.lat, active?.lon]);
+
+  const preloadMatches = useMemo(() => {
+    if (!coords || !preload?.coords) return false;
+    return Math.abs(coords.lat - preload.coords.lat) < 0.0001 && Math.abs(coords.lon - preload.coords.lon) < 0.0001;
+  }, [coords?.lat, coords?.lon, preload?.coords?.lat, preload?.coords?.lon]);
 
   const locationLabel = useMemo(() => {
     return active?.name ? active.name : 'Select a location…';
@@ -268,20 +275,23 @@ export default function ClimoTab() {
 
   /* ---------- data hooks ---------- */
 
-  const climo = useClimatologyNormals({
+  const localClimo = useClimatologyNormals({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
-    enabled: hasPlace && !!coords,
+    enabled: hasPlace && !!coords && !preloadMatches,
     preferCache: true,
   } as any);
   const { forecastModel } = useSettings();
+  const climo = preloadMatches && preload?.climo ? preload.climo : localClimo;
 
-  const forecast = useOpenMeteoForecast({
+  const localForecast = useOpenMeteoForecast({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
     model: forecastModel,
+    enabled: hasPlace && !!coords && !preloadMatches,
   });
+  const forecast = preloadMatches && preload?.forecast ? preload.forecast : localForecast;
   const forecastModelName = forecastModelLabel(forecastModel);
 
   const safeForecastDaily = useMemo(() => {
@@ -319,11 +329,12 @@ export default function ClimoTab() {
 
   /* ---------- records ---------- */
 
-  const records = useDailyRecords({
+  const localRecords = useDailyRecords({
     lat: coords?.lat ?? 0,
     lon: coords?.lon ?? 0,
-    enabled: hasPlace && !!coords,
+    enabled: hasPlace && !!coords && !preloadMatches,
   });
+  const records = preloadMatches && preload?.records ? preload.records : localRecords;
 
   const recordsMap = useMemo(() => {
     const raw = (records as any)?.records;

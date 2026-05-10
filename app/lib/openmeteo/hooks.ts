@@ -66,6 +66,7 @@ export type OpenMeteoForecastOpts = {
   days?: number; // default 3
   pastDays?: number; // default 0
   model?: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon';
+  enabled?: boolean;
 };
 
 type OpenMeteoForecastArg = number | OpenMeteoForecastOpts;
@@ -96,13 +97,15 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         days: arg.days ?? 3,
         pastDays: arg.pastDays ?? 0,
         model: arg.model ?? 'best_match',
+        enabled: arg.enabled ?? true,
       };
     }
 
-    return { lat: null, lon: null, days: typeof arg === 'number' ? arg : 3, pastDays: 0, model: 'best_match' };
+    return { lat: null, lon: null, days: typeof arg === 'number' ? arg : 3, pastDays: 0, model: 'best_match', enabled: true };
   }, [arg]);
 
   const model = opts.model ?? 'best_match';
+  const enabled = opts.enabled ?? true;
   const requestedDays = opts.days ?? 3;
   const days =
     model === 'dwd_icon'
@@ -126,6 +129,13 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         setError(null);
         setData(null);
         setLoading(true);
+        setRefreshing(false);
+        return;
+      }
+
+      if (!enabled) {
+        setError(null);
+        setLoading(false);
         setRefreshing(false);
         return;
       }
@@ -306,7 +316,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         setRefreshing(false);
       }
     },
-    [latKey, lonKey, days, pastDays, model]
+    [latKey, lonKey, days, pastDays, model, enabled]
   );
 
   useEffect(() => {

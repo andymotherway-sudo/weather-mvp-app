@@ -1913,11 +1913,11 @@ function StatTile({
 }) {
   const body = (
     <View style={[styles.statTile, style]}>
-      <Text style={styles.tileLabel}>{label}</Text>
-      <Text style={styles.tileValue} numberOfLines={1}>
+      <Text style={styles.tileLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{label}</Text>
+      <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} allowFontScaling={false}>
         {value}
       </Text>
-      {valueHint ? <Text style={styles.tileHint}>{valueHint}</Text> : null}
+      {valueHint ? <Text style={styles.tileHint} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.72} allowFontScaling={false}>{valueHint}</Text> : null}
     </View>
   );
 
@@ -2695,10 +2695,10 @@ function wmoToCondition(code: number | null): string | null {
   return 'Cloudy';
 }
 
-const GLASS_PANEL_BG = 'rgba(44, 70, 102, 0.76)';
-const GLASS_PANEL_BG_STRONG = 'rgba(44, 70, 102, 0.76)';
-const GLASS_INSET_BG = 'rgba(44, 70, 102, 0.76)';
-const GLASS_INSET_BG_SOFT = 'rgba(44, 70, 102, 0.76)';
+const GLASS_PANEL_BG = 'rgba(44, 70, 102, 0.68)';
+const GLASS_PANEL_BG_STRONG = 'rgba(44, 70, 102, 0.70)';
+const GLASS_INSET_BG = 'rgba(44, 70, 102, 0.66)';
+const GLASS_INSET_BG_SOFT = 'rgba(44, 70, 102, 0.62)';
 const GLASS_BORDER = 'rgba(255,255,255,0.18)';
 const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.12)';
 
@@ -2881,9 +2881,9 @@ function NerdyDeepDive({
     { label: 'Dusk', value: formatClock(astro?.civilDusk), topicId: astroLearnTopicId('civil') },
   ];
   const darknessMoments = [
-    { label: 'Nautical Dusk', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
-    { label: 'Astronomical Dusk', value: formatClock(astro?.astronomicalDusk), topicId: astroLearnTopicId('astronomical') },
-    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
+    { label: 'Nautical', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
+    { label: 'Astro Dusk', value: formatClock(astro?.astronomicalDusk), topicId: astroLearnTopicId('astronomical') },
+    { label: 'Night Win', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
     { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
   ];
   const summaryCards = [
@@ -2931,7 +2931,7 @@ function NerdyDeepDive({
             <Text style={nd.panelTitle}>Atmosphere</Text>
             <View style={nd.metricGrid2}>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('apparent-temp')}>
-                <Text style={nd.metricLabel}>Dew Point</Text>
+                <Text style={nd.metricLabel}>Dew Pt</Text>
                 <Text style={nd.metricValue}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('humidity')}>
@@ -2941,11 +2941,11 @@ function NerdyDeepDive({
             </View>
             <View style={nd.metricGrid2}>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
-                <Text style={nd.metricLabel}>Feels Like</Text>
+                <Text style={nd.metricLabel}>Feels</Text>
                 <Text style={nd.metricValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
-                <Text style={nd.metricLabel}>Thermal Spread</Text>
+                <Text style={nd.metricLabel}>Spread</Text>
                 <Text style={nd.metricValue}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
               </Pressable>
             </View>
@@ -2969,14 +2969,14 @@ function NerdyDeepDive({
             </View>
             <View style={nd.metricGrid2Tall}>
               <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind')}>
-                <Text style={nd.metricLabel}>Direction</Text>
+                <Text style={nd.metricLabel}>Dir</Text>
                 <Text style={nd.directionMain} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.74}>
                   {dirHeading}
                 </Text>
                 <Text style={nd.directionSub}>{dirDegrees}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
-                <Text style={nd.metricLabel}>Gust Factor</Text>
+                <Text style={nd.metricLabel}>Gust Fx</Text>
                 <Text style={nd.metricValue}>{gf != null ? gf.toFixed(2) : '—'}</Text>
                 <Text style={nd.metricHint}>{windState}</Text>
               </Pressable>
@@ -3045,8 +3045,8 @@ function NerdyDeepDive({
           <View style={nd.timelineRow}>
             {sunMoments.map((item) => (
               <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.timelineNodeLabel}>{item.label}</Text>
-                <Text style={nd.timelineNodeValue}>{item.value}</Text>
+                <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
+                <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{item.value}</Text>
               </Pressable>
             ))}
           </View>
@@ -3055,8 +3055,8 @@ function NerdyDeepDive({
           <View style={nd.timelineRow}>
             {darknessMoments.map((item) => (
               <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.timelineNodeLabel}>{item.label}</Text>
-                <Text style={nd.timelineNodeValue}>{item.value}</Text>
+                <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
+                <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.54} allowFontScaling={false}>{item.value}</Text>
               </Pressable>
             ))}
           </View>
@@ -3064,17 +3064,17 @@ function NerdyDeepDive({
           <Text style={nd.timelineLabel}>Moon</Text>
           <View style={nd.moonRow}>
             <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
-              <Text style={nd.timelineNodeLabel}>Moonrise</Text>
-              <Text style={nd.timelineNodeValue}>{formatClock(moonrise)}</Text>
+              <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>Moonrise</Text>
+              <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{formatClock(moonrise)}</Text>
             </Pressable>
             <View style={nd.moonCenter}>
               <PremiumMoonIcon size={46} illuminationPct={moonIlluminationPct} phaseDegrees={moonPhaseDegrees} />
-              <Text style={nd.moonPhaseText} numberOfLines={1}>{moonPhaseLabel ?? 'Moon phase'}</Text>
-              <Text style={nd.moonFullText}>{moonFullLabel}</Text>
+              <Text style={nd.moonPhaseText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonPhaseLabel ?? 'Moon phase'}</Text>
+              <Text style={nd.moonFullText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonFullLabel}</Text>
             </View>
             <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonset'))}>
-              <Text style={nd.timelineNodeLabel}>Moonset</Text>
-              <Text style={nd.timelineNodeValue}>{formatClock(moonset)}</Text>
+              <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>Moonset</Text>
+              <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{formatClock(moonset)}</Text>
             </Pressable>
           </View>
 
@@ -3082,8 +3082,8 @@ function NerdyDeepDive({
           <View style={nd.metricGrid4}>
             {summaryCards.map((item) => (
               <Pressable key={item.label} style={nd.summaryCard} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.metricLabel}>{item.label}</Text>
-                <Text style={nd.summaryValue}>{item.value}</Text>
+                <Text style={nd.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
+                <Text style={nd.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.value}</Text>
               </Pressable>
             ))}
           </View>
@@ -3286,19 +3286,21 @@ const nd = StyleSheet.create({
     gap: 8,
   },
   metricLabel: {
-    fontSize: 10,
-    letterSpacing: 0.8,
+    fontSize: 9,
+    letterSpacing: 0.45,
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.48)',
     fontWeight: '900',
-    lineHeight: 13,
+    lineHeight: 11,
+    includeFontPadding: false,
   },
   metricValue: {
     marginTop: 8,
-    fontSize: 15,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 17,
     fontWeight: '900',
     color: 'white',
+    includeFontPadding: false,
   },
   metricValueSmall: {
     marginTop: 8,
@@ -3333,7 +3335,7 @@ const nd = StyleSheet.create({
   },
   directionSub: {
     marginTop: 4,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.58)',
   },
@@ -3395,22 +3397,25 @@ const nd = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 14,
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 0,
     gap: 6,
   },
   timelineNodeLabel: {
-    fontSize: 10,
+    fontSize: 9,
+    lineHeight: 11,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.5)',
+    includeFontPadding: false,
   },
   timelineNodeValue: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     color: 'white',
+    includeFontPadding: false,
   },
   moonRow: {
     flexDirection: 'row',
@@ -3421,7 +3426,7 @@ const nd = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderRadius: 14,
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 0,
@@ -3466,10 +3471,11 @@ const nd = StyleSheet.create({
   },
   summaryValue: {
     marginTop: 8,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     color: 'white',
+    includeFontPadding: false,
   },
 });
 

@@ -1016,7 +1016,7 @@ const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
     borderRadius: 24,
-    backgroundColor: 'rgba(44, 70, 102, 0.76)',
+    backgroundColor: 'rgba(44, 70, 102, 0.68)',
     paddingTop: 14,
     overflow: 'hidden',
     position: 'relative',
@@ -1036,13 +1036,13 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     minHeight: 168,
   },
   hourTileActive: {
-    backgroundColor: 'rgba(70,130,220,0.22)',
+    backgroundColor: 'rgba(70,130,220,0.18)',
     borderColor: 'rgba(150,210,255,0.26)',
   },
   hourTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12, letterSpacing: 0.4 },
@@ -1079,10 +1079,10 @@ const s = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   legPillOff: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
   },
   legText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 11 },
   legSwatchWrap: { width: 18, height: 10, justifyContent: 'center' },
@@ -1164,12 +1164,12 @@ const s = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
   },
   tableLabelColumn: {
     width: TABLE_LABEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: 'rgba(48,82,118,0.88)',
+    backgroundColor: 'rgba(48,82,118,0.74)',
     borderRightWidth: 1,
     borderRightColor: 'rgba(156,205,245,0.16)',
   },
@@ -1206,7 +1206,7 @@ const s = StyleSheet.create({
     flexGrow: 0,
   },
   tableDataColumns: {
-    backgroundColor: 'rgba(255,255,255,0.018)',
+    backgroundColor: 'rgba(255,255,255,0.014)',
   },
   tableInlineData: {
     marginTop: 8,
@@ -1232,7 +1232,7 @@ const s = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.075)',
   },
   tableRowAlt: {
-    backgroundColor: 'rgba(255,255,255,0.035)',
+    backgroundColor: 'rgba(255,255,255,0.026)',
   },
   tableHeaderText: {
     color: 'rgba(255,255,255,0.62)',
