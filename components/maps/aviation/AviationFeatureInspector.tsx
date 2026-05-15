@@ -59,16 +59,22 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 12, right: 12, bottom: 118 },
-  card: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 13 },
+  card: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    backgroundColor: 'rgba(2,6,23,0.95)',
+    borderColor: 'rgba(148,163,184,0.24)',
+  },
   head: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
   eyebrow: { color: 'rgba(125,211,252,0.9)', fontSize: 10, fontWeight: '900' },
   title: { color: 'white', fontSize: 17, fontWeight: '900', marginTop: 3 },
-  close: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)' },
+  close: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.13)' },
   closeText: { color: 'white', fontSize: 11, fontWeight: '900' },
   row: {
     minHeight: 29,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: 'rgba(255,255,255,0.12)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

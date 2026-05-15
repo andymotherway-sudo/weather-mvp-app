@@ -1807,7 +1807,7 @@ function extractMoonPhaseDegrees(props: any): number | null {
 
 function buildAstroLocationCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
-  keyUrl.pathname = "/__cache__/astro/location/v4";
+  keyUrl.pathname = "/__cache__/astro/location/v5";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.02)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.02)));
   const placeName = reqUrl.searchParams.get("placeName");
@@ -3864,7 +3864,7 @@ function sampleSkyScoreBilinear(
 }
 
 function buildSkyScoreGridCacheKey(reqUrl: URL) {
-  const next = new URL(reqUrl.origin + "/__cache__/astro/skyscore-grid/v3");
+  const next = new URL(reqUrl.origin + "/__cache__/astro/skyscore-grid/v4");
   const keys = [
     "west",
     "south",
@@ -3888,7 +3888,7 @@ function buildSkyScoreGridCacheKey(reqUrl: URL) {
 }
 
 function buildAstroInspectCacheKey(reqUrl: URL, lat: number, lon: number, hourOffset: number) {
-  const next = new URL(reqUrl.origin + "/__cache__/astro/inspect/v1");
+  const next = new URL(reqUrl.origin + "/__cache__/astro/inspect/v2");
   next.searchParams.set("lat", String(Math.round(lat * 1000) / 1000));
   next.searchParams.set("lon", String(Math.round(lon * 1000) / 1000));
   next.searchParams.set("hour", String(clampInt(hourOffset, 0, 47)));

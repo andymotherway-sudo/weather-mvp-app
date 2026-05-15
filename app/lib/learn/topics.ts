@@ -965,6 +965,69 @@ export const LEARN_TOPICS: LearnTopic[] = [
   },
 
   {
+    id: 'astro-baseline-brightness',
+    title: 'Baseline Sky Brightness',
+    summary:
+      'Baseline sky brightness is the local site brightness estimate before tonight’s changing moonlight, twilight, clouds, and haze are applied.',
+    references: [
+      { label: 'Best use', value: 'Comparing observing sites' },
+      { label: 'Main driver', value: 'Light pollution / Bortle class' },
+      { label: 'Unit', value: 'mcd/m², where lower is darker' },
+    ],
+    bullets: [
+      'It describes the site itself, not the exact sky at this minute.',
+      'A city site can have a bright baseline even on a cloudless moon-free night.',
+      'When direct luminance is unavailable, OMNIwx derives a practical estimate from the Bortle class.',
+    ],
+    body:
+      'Baseline brightness is the starting point for the sky model. Think of it as the local darkness ceiling: how dark the sky can reasonably get at that location before weather and moon timing change the live conditions.',
+    insight:
+      'Lower baseline brightness means the location has more dark-sky potential.',
+  },
+
+  {
+    id: 'astro-estimated-brightness',
+    title: 'Estimated Brightness Now',
+    summary:
+      'Estimated brightness now adjusts the site baseline for the current light state, including twilight and whether the Moon is up.',
+    references: [
+      { label: 'Starts with', value: 'Baseline sky brightness' },
+      { label: 'Adjusts for', value: 'Twilight + moon illumination' },
+      { label: 'Interpretation', value: 'Lower is better for faint objects' },
+    ],
+    bullets: [
+      'Civil, nautical, and astronomical twilight brighten the sky before true night settles in.',
+      'Moonlight can raise sky brightness substantially when the Moon is above the horizon.',
+      'This is an estimate, not a direct sky-quality meter reading.',
+    ],
+    body:
+      'Estimated brightness now is OMNIwx’s practical live approximation of the sky background. It starts with the local site brightness and applies broad adjustments for solar twilight and moonlight so the number better matches what an observer would experience right now.',
+    insight:
+      'A good baseline site can still be bright right now if the Moon is up or twilight has not ended.',
+  },
+
+  {
+    id: 'astro-aerosols',
+    title: 'Aerosols',
+    summary:
+      'Aerosols are tiny particles in the air, including dust, smoke, haze, and pollution, that reduce sky transparency.',
+    references: [
+      { label: 'Astronomy effect', value: 'Lower contrast and transparency' },
+      { label: 'Common sources', value: 'Smoke, dust, haze, pollution' },
+      { label: 'Different from', value: 'Cloud cover' },
+    ],
+    bullets: [
+      'A clear sky can still be hazy if aerosol loading is high.',
+      'Aerosols scatter light, which can brighten the background sky near cities or moonlight.',
+      'Cleaner aerosol readings usually mean better contrast for stars, planets, and deep-sky objects.',
+    ],
+    body:
+      'Aerosols affect how transparent the atmosphere is. They are not clouds, but they can still soften stars, reduce distant visibility, and make the sky background brighter by scattering nearby light sources.',
+    insight:
+      'For observing, clear is not always transparent. Aerosols help explain that difference.',
+  },
+
+  {
     id: 'aviation-metar',
     title: 'METAR (current airport weather report)',
     summary:

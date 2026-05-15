@@ -46,6 +46,12 @@ function formatElevation(forecast: LocationAstroForecast) {
   return `${Math.round(elevationM).toLocaleString()} m • ${ft.toLocaleString()} ft`;
 }
 
+function formatSiteSource(forecast: LocationAstroForecast) {
+  const source = forecast.diagnostics?.siteSource ?? '';
+  if (source.includes('wa2016')) return 'Source: World Atlas 2016, with sky brightness derived from Bortle class.';
+  return source ? `Source: ${source}` : 'Source pending.';
+}
+
 function heroSubtitle(forecast: LocationAstroForecast) {
   const bortle = forecast.site?.bortleClass;
 
@@ -112,12 +118,9 @@ export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
           <Text style={styles.statLabel}>ELEVATION</Text>
           <Text style={styles.statValue}>{formatElevation(forecast)}</Text>
         </View>
-
-        <View style={styles.statTile}>
-          <Text style={styles.statLabel}>SOURCE</Text>
-          <Text style={styles.statValue}>{forecast.diagnostics?.siteSource ?? 'Pending'}</Text>
-        </View>
       </View>
+
+      <Text style={styles.sourceFinePrint}>{formatSiteSource(forecast)}</Text>
     </View>
   );
 }
@@ -266,5 +269,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     lineHeight: 18,
+  },
+
+  sourceFinePrint: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 10,
   },
 });

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { LocationAstroForecast } from '../../app/lib/astro/locationAstro';
 import { toLocalLabel } from '../../app/lib/astro/locationAstro';
+import { PremiumMoonIcon } from '../weather/PremiumWeatherIcon';
 
 type Props = {
   forecast: LocationAstroForecast;
@@ -46,6 +47,12 @@ function astroLearnTopicId(kind: string) {
       return 'astro-true-dark';
     case 'darkest':
       return 'astro-darkest-window';
+    case 'baseline-brightness':
+      return 'astro-baseline-brightness';
+    case 'estimated-brightness':
+      return 'astro-estimated-brightness';
+    case 'aerosols':
+      return 'astro-aerosols';
     default:
       return 'astro-astronomical-twilight';
   }
@@ -76,29 +83,6 @@ function EventTile({
       {body}
     </Pressable>
   );
-}
-
-function phaseBadgeText(label?: string | null) {
-  switch (label) {
-    case 'New Moon':
-      return '\u25CF';
-    case 'Waxing Crescent':
-      return '\u263D';
-    case 'First Quarter':
-      return '\u25D0';
-    case 'Waxing Gibbous':
-      return '\u25D5';
-    case 'Full Moon':
-      return '\u25CB';
-    case 'Waning Gibbous':
-      return '\u25D6';
-    case 'Last Quarter':
-      return '\u25D1';
-    case 'Waning Crescent':
-      return '\u263E';
-    default:
-      return '\u25EF';
-  }
 }
 
 function parseIso(iso?: string | null) {
@@ -226,6 +210,41 @@ function formatSkyBrightness(forecast: LocationAstroForecast) {
   return `${value.toFixed(2)} mcd/m2`;
 }
 
+function moonIsUpNow(forecast: LocationAstroForecast, nowMs: number) {
+  const rise = parseWallClockParts(forecast.moonrise);
+  const set = parseWallClockParts(forecast.moonset);
+  if (!rise && !set) return false;
+
+  const riseMs = rise ? wallClockToSortableMs(rise) : NaN;
+  const setMs = set ? wallClockToSortableMs(set) : NaN;
+
+  if (Number.isFinite(riseMs) && Number.isFinite(setMs)) {
+    return riseMs <= setMs ? nowMs >= riseMs && nowMs < setMs : nowMs >= riseMs || nowMs < setMs;
+  }
+
+  if (Number.isFinite(riseMs)) return nowMs >= riseMs;
+  if (Number.isFinite(setMs)) return nowMs < setMs;
+  return false;
+}
+
+function formatEstimatedSkyBrightness(forecast: LocationAstroForecast, nowMs: number, lightStateLabel: string) {
+  const baseline = forecast.site?.skyBrightness;
+  if (typeof baseline !== 'number' || !Number.isFinite(baseline)) return 'Pending';
+
+  if (lightStateLabel === 'Sun up') return 'Daylight';
+  if (lightStateLabel.includes('Civil')) return 'Civil twilight';
+  if (lightStateLabel.includes('Nautical')) return `${(baseline * 6).toFixed(2)} mcd/m2`;
+  if (lightStateLabel.includes('Astronomical')) return `${(baseline * 2.2).toFixed(2)} mcd/m2`;
+
+  const illum01 =
+    typeof forecast.moonIlluminationPct === 'number' && Number.isFinite(forecast.moonIlluminationPct)
+      ? Math.max(0, Math.min(1, forecast.moonIlluminationPct / 100))
+      : 0;
+  const moonFactor = moonIsUpNow(forecast, nowMs) ? 1 + illum01 * 5 : 1;
+
+  return `${(baseline * moonFactor).toFixed(2)} mcd/m2`;
+}
+
 function formatElevation(forecast: LocationAstroForecast) {
   const value = forecast.site?.elevationM;
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'Pending';
@@ -243,6 +262,12 @@ function formatAerosols(forecast: LocationAstroForecast) {
   if (typeof idx === 'number' && Number.isFinite(idx)) return idx.toFixed(2);
   if (label) return label;
   return 'Pending';
+}
+
+function formatSiteSource(forecast: LocationAstroForecast) {
+  const source = forecast.diagnostics?.siteSource ?? '';
+  if (source.includes('wa2016')) return 'World Atlas 2016';
+  return source || 'World Atlas derived';
 }
 
 function getCurrentLightState(forecast: LocationAstroForecast, nowMs: number) {
@@ -300,7 +325,6 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
   }, [forecast.timezone]);
   const lightState = useMemo(() => getCurrentLightState(forecast, nowMs), [forecast, nowMs]);
   const phaseLabel = safeMoonPhaseLabel(forecast);
-  const moonBadge = phaseBadgeText(phaseLabel);
   const eventTiles = [
     { label: 'Sunset', value: toLocalLabel(forecast.sunset), topicId: astroLearnTopicId('sunset') },
     { label: 'Sunrise', value: toLocalLabel(forecast.sunrise), topicId: astroLearnTopicId('sunrise') },
@@ -340,7 +364,11 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
         <Text style={styles.infoLabel}>MOON PHASE</Text>
         <View style={styles.phaseRow}>
           <View style={styles.phaseBadge}>
-            <Text style={styles.phaseIcon}>{moonBadge}</Text>
+            <PremiumMoonIcon
+              size={44}
+              illuminationPct={forecast.moonIlluminationPct}
+              phaseDegrees={forecast.moonPhase}
+            />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.phaseTitle}>{phaseLabel}</Text>
@@ -351,13 +379,42 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
 
       <View style={styles.miniGrid}>
         <InfoBox label="BORTLE" value={formatBortle(forecast)} tone="accent" />
-        <InfoBox label="SKY BRIGHTNESS" value={formatSkyBrightness(forecast)} />
+        {onLearnTopic ? (
+          <Pressable style={styles.infoBoxPressable} onPress={() => onLearnTopic(astroLearnTopicId('baseline-brightness'))}>
+            <InfoBox label="BASELINE BRIGHTNESS" value={formatSkyBrightness(forecast)} />
+          </Pressable>
+        ) : (
+          <InfoBox label="BASELINE BRIGHTNESS" value={formatSkyBrightness(forecast)} />
+        )}
       </View>
 
       <View style={styles.miniGrid}>
-        <InfoBox label="ELEVATION" value={formatElevation(forecast)} />
-        <InfoBox label="AEROSOLS" value={formatAerosols(forecast)} />
+        {onLearnTopic ? (
+          <Pressable style={styles.infoBoxPressable} onPress={() => onLearnTopic(astroLearnTopicId('estimated-brightness'))}>
+            <InfoBox
+              label="EST. NOW"
+              value={formatEstimatedSkyBrightness(forecast, nowMs, lightState.label)}
+              tone="accent"
+            />
+          </Pressable>
+        ) : (
+          <InfoBox
+            label="EST. NOW"
+            value={formatEstimatedSkyBrightness(forecast, nowMs, lightState.label)}
+            tone="accent"
+          />
+        )}
+        {onLearnTopic ? (
+          <Pressable style={styles.infoBoxPressable} onPress={() => onLearnTopic(astroLearnTopicId('aerosols'))}>
+            <InfoBox label="AEROSOLS" value={formatAerosols(forecast)} />
+          </Pressable>
+        ) : (
+          <InfoBox label="AEROSOLS" value={formatAerosols(forecast)} />
+        )}
       </View>
+
+      <InfoBox label="ELEVATION" value={formatElevation(forecast)} />
+      <Text style={styles.sourceFinePrint}>Source: {formatSiteSource(forecast)}</Text>
 
       {onLearnTopic ? (
         <Pressable onPress={() => onLearnTopic(astroLearnTopicId('night'))}>
@@ -487,12 +544,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  phaseIcon: {
-    fontSize: 18,
-    color: '#F3F4F6',
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
   phaseTitle: {
     color: '#F9FAFB',
     fontSize: 16,
@@ -503,9 +554,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  sourceFinePrint: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 8,
+  },
   miniGrid: {
     flexDirection: 'row',
     gap: 12,
+  },
+  infoBoxPressable: {
+    flex: 1,
   },
   infoBox: {
     flex: 1,

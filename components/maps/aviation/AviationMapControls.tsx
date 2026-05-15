@@ -126,7 +126,15 @@ export function AviationMapControls(props: {
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', left: 4, right: 18, maxWidth: 620 },
-  tray: { borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9, gap: 8, overflow: 'hidden' },
+  tray: {
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(2,6,23,0.92)',
+    borderColor: 'rgba(148,163,184,0.22)',
+  },
   trayCollapsed: { alignSelf: 'flex-start', minWidth: 150 },
   drawerHeader: {
     minHeight: 30,

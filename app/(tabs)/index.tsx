@@ -2223,16 +2223,34 @@ function SimpleDailyOverview({
     date: string;
     moonrise?: string | null;
     moonset?: string | null;
+    moonPhaseDegrees?: number | null;
+    moonIlluminationPct?: number | null;
+    moonPhaseLabel?: string | null;
   }>;
   dayLengthSec?: number | null;
 }) {
   const today = daily[0] ?? null;
+  const todayKey =
+    typeof today?.date === 'string'
+      ? today.date.slice(0, 10)
+      : typeof today?.time === 'string'
+        ? today.time.slice(0, 10)
+        : '';
   const nextDays = daily.slice(1, 15);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
   const moonByDate = React.useMemo(
     () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
     [moonDays]
   );
+  const todayMoon = (todayKey ? moonByDate.get(todayKey) : undefined) ?? moonDays?.[0];
+  const tonightMoonLabel = [
+    todayMoon?.moonPhaseLabel,
+    typeof todayMoon?.moonIlluminationPct === 'number' && Number.isFinite(todayMoon.moonIlluminationPct)
+      ? `${Math.round(todayMoon.moonIlluminationPct)}% full`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' • ');
   const todaySplit = buildDayNightSummary(today?.date ?? today?.time, hourly);
   const fmtWind = (v: number | null) => (v != null ? `${Math.round(v)} mph` : '—');
   const todayHi =
@@ -2341,10 +2359,17 @@ function SimpleDailyOverview({
               <Text style={styles.dailyFeatureRange}>Low {todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
             </View>
             <View style={styles.dailyNightSummaryRow}>
-              <PremiumMoonIcon size={42} variant="hero" style={styles.dailyNightIconBadge} />
+              <PremiumMoonIcon
+                size={42}
+                variant="hero"
+                style={styles.dailyNightIconBadge}
+                illuminationPct={todayMoon?.moonIlluminationPct}
+                phaseDegrees={todayMoon?.moonPhaseDegrees}
+              />
               <View style={styles.dailyNightText}>
                 <Text style={styles.dailyFeatureCondition}>{todaySplit.night.condition}</Text>
                 <Text style={styles.dailyFeatureNarrative}>{todaySplit.night.narrative}</Text>
+                {tonightMoonLabel ? <Text style={styles.dailyFeatureMoonMeta}>{tonightMoonLabel}</Text> : null}
               </View>
             </View>
             <View style={styles.dailyDetailList}>
@@ -2524,6 +2549,9 @@ function DailyForecastList({
     date: string;
     moonrise?: string | null;
     moonset?: string | null;
+    moonPhaseDegrees?: number | null;
+    moonIlluminationPct?: number | null;
+    moonPhaseLabel?: string | null;
   }>;
   maxDays?: number;
 }) {
@@ -4727,6 +4755,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.76)',
+  },
+  dailyFeatureMoonMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.66)',
   },
   dailyAstroHeroRow: {
     marginTop: 16,

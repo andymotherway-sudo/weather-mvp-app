@@ -37,7 +37,7 @@ export function ModeToggle({ mode, onChange }: ModeToggleProps) {
             mode === 'nerdy' && styles.textActive,
           ]}
         >
-          Nerdy
+          wxLab
         </Text>
       </Pressable>
     </View>

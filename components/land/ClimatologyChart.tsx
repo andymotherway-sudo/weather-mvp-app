@@ -187,6 +187,7 @@ export function ClimatologyChart({
   const [scrubDoy, setScrubDoy] = useState<number | null>(null);
   const [zoomWindow, setZoomWindow] = useState<{ start: number; end: number }>({ start: 1, end: 365 });
   const [expandOpen, setExpandOpen] = useState(false);
+  const [chartBoxWidth, setChartBoxWidth] = useState(0);
   const scrubbingRef = useRef(false);
   const pinchRef = useRef<{
     startDistance: number;
@@ -195,8 +196,10 @@ export function ClimatologyChart({
   } | null>(null);
 
   // ---- Layout
-  const W = chartWidth ?? 360;
-  const H = chartHeight ?? 240;
+  const measuredPreviewWidth = chartBoxWidth > 0 ? Math.floor(chartBoxWidth) : 0;
+  const fallbackPreviewWidth = Math.max(260, Math.min(360, Math.floor(windowWidth - 88)));
+  const W = chartWidth ?? Math.max(260, Math.min(360, measuredPreviewWidth || fallbackPreviewWidth));
+  const H = chartHeight ?? Math.max(210, Math.min(240, Math.round(W * 0.66)));
   const PAD_L = 36;
   const PAD_R = 16;
   const PAD_T = 18;
@@ -615,7 +618,16 @@ export function ClimatologyChart({
         ) : null}
       </View>
 
-      <View {...(panResponder ? panResponder.panHandlers : {})}>
+      <View
+        style={styles.chartBox}
+        onLayout={(event) => {
+          const nextWidth = Math.floor(event.nativeEvent.layout.width);
+          if (nextWidth > 0 && Math.abs(nextWidth - chartBoxWidth) > 1) {
+            setChartBoxWidth(nextWidth);
+          }
+        }}
+      >
+      <View {...(panResponder ? panResponder.panHandlers : {})} style={[styles.chartSurface, { width: W, height: H }]}>
         {/* subtle “glass” rim behind SVG */}
         <View style={[styles.glassFrame, { width: W, height: H }]} />
 
@@ -748,6 +760,7 @@ export function ClimatologyChart({
           </Svg>
         </AView>
       </View>
+      </View>
       <Text style={styles.footer}>
         Tip: drag to scrub days. Open the chart for a closer look. Dark green shows average monthly precip; bright green shows prior-year daily precip.
       </Text>
@@ -836,6 +849,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: 'rgba(235,245,255,0.74)',
+  },
+  chartBox: {
+    width: '100%',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  chartSurface: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 18,
   },
   floatingDetail: {
     position: 'absolute',

@@ -660,7 +660,8 @@ export function PremiumMoonIcon({
   const shadowWidth = illum01 >= 0.98 ? 0 : illum01 >= 0.5 ? Math.max(3, absFromFull * 52) : 54 - illum01 * 40;
   const shadowX = waxing ? 9 : 63 - shadowWidth;
   const terminatorCx = waxing ? shadowX + shadowWidth : shadowX;
-  const litCrescentX = litSideLeft ? 9 : 63 - Math.max(5, illum01 * 24);
+  const crescentShadowOffset = Math.max(2, illum01 * 34);
+  const crescentShadowCx = litSideLeft ? 36 + crescentShadowOffset : 36 - crescentShadowOffset;
 
   return (
     <View
@@ -694,16 +695,8 @@ export function PremiumMoonIcon({
         <G clipPath="url(#moonClipReal)">
           {illum01 < 0.5 ? (
             <>
-              <Circle cx="36" cy="36" r="27" fill="url(#moonShadowReal)" />
-              <Rect x={litCrescentX} y="9" width={Math.max(5, illum01 * 24)} height="54" fill="url(#moonLitReal)" opacity="0.98" />
-              <Ellipse
-                cx={litSideLeft ? litCrescentX + Math.max(5, illum01 * 24) : litCrescentX}
-                cy="36"
-                rx={Math.max(7, 17 - illum01 * 18)}
-                ry="28"
-                fill="url(#moonShadowReal)"
-                opacity="0.9"
-              />
+              <Circle cx="36" cy="36" r="27" fill="url(#moonLitReal)" />
+              <Circle cx={crescentShadowCx} cy="36" r="27.7" fill="url(#moonShadowReal)" opacity="0.96" />
             </>
           ) : (
             <>

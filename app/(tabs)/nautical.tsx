@@ -984,27 +984,22 @@ export default function NauticalScreen() {
       >
         {/* HEADER (standard OMNI) */}
         <View style={styles.headerBlock}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandLeft}>
-              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
-              <View style={{ flex: 1 }}>
-                <View style={styles.domainPill}>
-                  <Text style={styles.domainPillText}>Nautical</Text>
-                </View>
-
-                <Text style={styles.headerTitle} numberOfLines={1}>
-                  {headerLine}
-                </Text>
-                <Text style={styles.headerLine} numberOfLines={1}>
-                  {headerSubLine}
-                </Text>
+          <View style={styles.headerTopRow}>
+            <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+            <View style={styles.headerControls}>
+              <View style={styles.domainPill}>
+                <Text style={styles.domainPillText}>Nautical</Text>
               </View>
-            </View>
-
-            <View style={styles.brandRight}>
               <ModeToggle mode={mode} onChange={setMode} />
             </View>
           </View>
+
+          <Text style={styles.headerTitle} numberOfLines={2}>
+            {headerLine}
+          </Text>
+          <Text style={styles.headerLine} numberOfLines={2}>
+            {headerSubLine}
+          </Text>
         </View>
 
         {/* SEARCH */}
@@ -1137,7 +1132,7 @@ export default function NauticalScreen() {
         {/* NERDY CARD */}
         {!searchActive && mode === 'nerdy' && (conditions || buoyData || forecast) && (
           <Card style={styles.mainCard}>
-            <Text style={styles.sectionLabel}>Nerdy</Text>
+            <Text style={styles.sectionLabel}>wxLab</Text>
 
             {/* Derived indices */}
             <View style={styles.nerdySection}>
@@ -1271,7 +1266,7 @@ export default function NauticalScreen() {
             {__DEV__ && (
               <View style={{ marginTop: 12 }}>
                 <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
-                  NerdyData (debug)
+                  wxLab data (debug)
                 </Text>
                 <Text style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 16 }}>
                   {debugNerdy}
@@ -1305,7 +1300,7 @@ export default function NauticalScreen() {
 
         {supportsTides && mode === 'nerdy' && data && (
           <Card style={styles.mainCard}>
-            <Text style={styles.sectionLabel}>Tide Predictions (Nerdy)</Text>
+            <Text style={styles.sectionLabel}>Tide Predictions (wxLab)</Text>
 
             {predictions.map((p) => (
               <View key={p.time} style={styles.nerdyRow}>
@@ -1396,26 +1391,26 @@ const styles = StyleSheet.create({
   },
   headerLine: {
     ...typography.subtitle,
-    marginTop: 2,
+    marginTop: 4,
   },
   headerTitle: {
     ...typography.title,
+    marginTop: theme.spacing.sm,
   },
-    brandRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  brandLeft: {
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
-    flex: 1,
   },
-  brandRight: { alignItems: 'flex-end', justifyContent: 'center' },
-
-  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+  headerControls: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  brandWordmark: { width: 70, height: 70, backgroundColor: 'transparent' },
 
   domainPill: {
     alignSelf: 'flex-start',
@@ -1425,7 +1420,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
-    marginBottom: 6,
   },
   domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
     searchBox: {

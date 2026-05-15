@@ -43,6 +43,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 9,
+    backgroundColor: 'rgba(2,6,23,0.90)',
+    borderColor: 'rgba(148,163,184,0.20)',
   },
   title: { color: 'white', fontSize: 12, fontWeight: '900' },
   meta: { color: 'rgba(255,255,255,0.74)', fontSize: 11, fontWeight: '800', marginTop: 2 },
