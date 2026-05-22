@@ -342,10 +342,6 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Moon & Darkness</Text>
-        <View style={styles.statePill}>
-          <Text style={styles.stateIcon}>{lightState.icon}</Text>
-          <Text style={styles.stateText}>{lightState.label}</Text>
-        </View>
       </View>
 
       <View style={styles.eventsGrid}>

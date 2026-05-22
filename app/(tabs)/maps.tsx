@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -30,7 +31,11 @@ import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
 import type { RadarProductId } from '../lib/maps/radarIem';
+import { NEXRAD_SITES, type NexradSite } from '../lib/maps/nexradSites';
+import { normalizeRadarSiteId } from '../lib/maps/radarIem';
+import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
+import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '../lib/maps/useAlertMapData';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController } from '../lib/maps/useRadarController';
 import { MAP_VIEWS } from '../lib/maps/views';
@@ -39,6 +44,10 @@ import { useSettings } from '../context/SettingsContext';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+
+const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
+const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
+const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0S', 'NET']);
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -63,7 +72,7 @@ const RADAR_PRODUCT_META: Record<
   {
     chipLabel: string;
     summaryLabel: string;
-    legendStyle: 'reflectivity' | 'velocity';
+    legendStyle: 'reflectivity' | 'velocity' | 'echoTops';
     legendTitle: string;
     legendLeft: string;
     legendMid: string;
@@ -121,9 +130,81 @@ const RADAR_PRODUCT_META: Record<
     legendRight: 'Toward',
     legendNote: 'Velocity with storm motion removed to make rotation easier to inspect.',
   },
+  NET: {
+    chipLabel: 'Echo Tops',
+    summaryLabel: 'Echo tops',
+    legendStyle: 'echoTops',
+    legendTitle: 'Echo Tops',
+    legendLeft: 'LOW TOPS',
+    legendMid: 'Storm top height',
+    legendRight: 'HIGH TOPS',
+    legendNote: 'Estimated storm top height. This is height, not wind or rain intensity.',
+  },
 };
 
 const STORM_RADAR_PRODUCTS: RadarProductId[] = ['N0B', 'N0U', 'N0S'];
+
+type StationRadarProduct = {
+  id: RadarProductId | string;
+  label: string;
+  subtitle: string;
+  enabled: boolean;
+  learnTopicId: string;
+};
+
+const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
+  {
+    id: 'N0B',
+    label: 'Base Reflectivity',
+    subtitle: 'Precip intensity',
+    enabled: true,
+    learnTopicId: 'radar-base-reflectivity',
+  },
+  {
+    id: 'N0U',
+    label: 'Base Velocity',
+    subtitle: 'Radial wind',
+    enabled: true,
+    learnTopicId: 'radar-base-velocity',
+  },
+  {
+    id: 'N0S',
+    label: 'Storm Relative Velocity',
+    subtitle: 'Storm-scale wind',
+    enabled: true,
+    learnTopicId: 'radar-storm-relative-velocity',
+  },
+  {
+    id: 'CC',
+    label: 'Correlation Coef',
+    subtitle: 'Learn only for now',
+    enabled: false,
+    learnTopicId: 'radar-correlation-coefficient',
+  },
+  {
+    id: 'ZDR',
+    label: 'Differential Refl',
+    subtitle: 'Learn only for now',
+    enabled: false,
+    learnTopicId: 'radar-differential-reflectivity',
+  },
+  {
+    id: 'NET',
+    label: 'Echo Tops',
+    subtitle: 'Storm top height',
+    enabled: true,
+    learnTopicId: 'radar-echo-tops',
+  },
+  {
+    id: 'VIL',
+    label: 'VIL',
+    subtitle: 'Learn only for now',
+    enabled: false,
+    learnTopicId: 'radar-vil',
+  },
+];
+
+const STATION_RANGE_RINGS_MI = [25, 50, 100, 150];
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -153,6 +234,85 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
+}
+
+function isNexradSite(site: NexradSite) {
+  return String(site.ownerType ?? '').toUpperCase() === 'NEXRAD';
+}
+
+function getStationDisplayId(site?: NexradSite | null) {
+  if (!site?.id) return '---';
+  const id3 = normalizeRadarSiteId(site.id);
+  return id3.length === 3 ? `K${id3}` : site.id;
+}
+
+function getRadarAnchor(activePlace: any, currentCoords: { lat: number; lon: number } | null | undefined) {
+  if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
+    return { lat: Number(activePlace.lat), lon: Number(activePlace.lon) };
+  }
+  if (currentCoords && Number.isFinite(currentCoords.lat) && Number.isFinite(currentCoords.lon)) {
+    return { lat: currentCoords.lat, lon: currentCoords.lon };
+  }
+  return { lat: 39.5, lon: -98.35 };
+}
+
+function nearestRadarSites(lat: number, lon: number, limit = 8) {
+  return NEXRAD_SITES
+    .filter(isNexradSite)
+    .map((site) => {
+      const dMi = haversineMiles(lat, lon, site.lat, site.lon);
+      return { site, distanceMi: dMi };
+    })
+    .filter((item) => Number.isFinite(item.distanceMi))
+    .sort((a, b) => a.distanceMi - b.distanceMi)
+    .slice(0, limit);
+}
+
+function destinationPoint(lat: number, lon: number, bearingDegValue: number, distanceMi: number) {
+  const radiusMi = 3958.7613;
+  const delta = distanceMi / radiusMi;
+  const theta = (bearingDegValue * Math.PI) / 180;
+  const phi1 = (lat * Math.PI) / 180;
+  const lambda1 = (lon * Math.PI) / 180;
+
+  const sinPhi2 =
+    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
+  const phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
+  const y = Math.sin(theta) * Math.sin(delta) * Math.cos(phi1);
+  const x = Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2);
+  const lambda2 = lambda1 + Math.atan2(y, x);
+
+  return [(lambda2 * 180) / Math.PI, (phi2 * 180) / Math.PI];
+}
+
+function buildRadarStationGeoJson(site: NexradSite | null) {
+  if (!site) return { type: 'FeatureCollection', features: [] };
+
+  const features: any[] = [
+    {
+      type: 'Feature',
+      properties: { kind: 'station', label: getStationDisplayId(site) },
+      geometry: { type: 'Point', coordinates: [site.lon, site.lat] },
+    },
+  ];
+
+  for (const radiusMi of STATION_RANGE_RINGS_MI) {
+    const coords = Array.from({ length: 145 }, (_, index) =>
+      destinationPoint(site.lat, site.lon, (index / 144) * 360, radiusMi),
+    );
+    features.push({
+      type: 'Feature',
+      properties: { kind: 'ring', radiusMi, label: `${radiusMi} mi` },
+      geometry: { type: 'LineString', coordinates: coords },
+    });
+    features.push({
+      type: 'Feature',
+      properties: { kind: 'ring-label', radiusMi, label: `${radiusMi} mi` },
+      geometry: { type: 'Point', coordinates: destinationPoint(site.lat, site.lon, 80, radiusMi) },
+    });
+  }
+
+  return { type: 'FeatureCollection', features };
 }
 
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
@@ -323,8 +483,14 @@ export default function MapsScreen() {
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [rawMode, setRawMode] = useState(false);
   const [stormProduct, setStormProduct] = useState<RadarProductId>('N0B');
+  const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
+  const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
+  const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
+  const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
+  const radarPrefsHydratedRef = useRef(false);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
+  const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
@@ -348,6 +514,8 @@ export default function MapsScreen() {
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
+  const radarStationSeedRegionRef = useRef<Region | null>(null);
+  const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
   const { baseMapStyle } = useSettings();
@@ -366,6 +534,51 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateRadarPrefs() {
+      try {
+        const [storedMode, storedProduct] = await Promise.all([
+          AsyncStorage.getItem(RADAR_MODE_STORAGE_KEY),
+          AsyncStorage.getItem(STATION_PRODUCT_STORAGE_KEY),
+        ]);
+
+        if (cancelled) return;
+
+        if (storedMode === 'station' || storedMode === 'mosaic') {
+          setRadarMode(storedMode);
+          if (storedMode === 'station') {
+            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+          }
+        }
+
+        if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
+          setStationProduct(storedProduct as RadarProductId);
+        }
+      } finally {
+        if (!cancelled) radarPrefsHydratedRef.current = true;
+      }
+    }
+
+    hydrateRadarPrefs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!radarPrefsHydratedRef.current) return;
+    AsyncStorage.setItem(RADAR_MODE_STORAGE_KEY, radarMode).catch(() => {});
+  }, [radarMode]);
+
+  useEffect(() => {
+    if (!radarPrefsHydratedRef.current) return;
+    AsyncStorage.setItem(STATION_PRODUCT_STORAGE_KEY, stationProduct).catch(() => {});
+  }, [stationProduct]);
+
   const lastPanMarkRef = useRef<number>(0);
   const locateRequestIdRef = useRef(0);
   const wildfireLookupRef = useRef<{ incidents: any; perimeters: any; symbols: any }>({
@@ -376,8 +589,45 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const stormMode = state.viewId === 'storm';
-  const product: RadarProductId = stormMode ? stormProduct : 'N0Q';
-  const effectiveRadarProvider = stormMode ? 'iem' : 'rainviewer';
+  const stationRadarMode = state.viewId === 'radar' && radarMode === 'station';
+  const radarAnchor = useMemo(
+    () => getRadarAnchor(activePlace, loc.state.currentCoords),
+    [activePlace, loc.state.currentCoords],
+  );
+  const radarAnchorKey = `${radarAnchor.lat.toFixed(4)},${radarAnchor.lon.toFixed(4)}`;
+  const autoNearestRadar = useMemo(
+    () =>
+      resolveNearestRadar(radarAnchor.lat, radarAnchor.lon, {
+        filter: isNexradSite,
+      }),
+    [radarAnchor.lat, radarAnchor.lon],
+  );
+  const nearbyRadarSites = useMemo(
+    () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
+    [radarAnchor.lat, radarAnchor.lon],
+  );
+  const selectedRadarSite = useMemo(() => {
+    const id3 = manualRadarSiteId3 ?? (autoNearestRadar?.site ? normalizeRadarSiteId(autoNearestRadar.site.id) : null);
+    if (!id3) return autoNearestRadar?.site ?? null;
+    return NEXRAD_SITES.find((site) => isNexradSite(site) && normalizeRadarSiteId(site.id) === id3) ?? autoNearestRadar?.site ?? null;
+  }, [autoNearestRadar, manualRadarSiteId3]);
+  const selectedRadarDistanceMi = useMemo(() => {
+    if (!selectedRadarSite) return null;
+    return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
+  }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
+  const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(stationRadarMode ? selectedRadarSite : null), [
+    stationRadarMode,
+    selectedRadarSite,
+  ]);
+  const product: RadarProductId = stationRadarMode ? stationProduct : stormMode ? stormProduct : 'N0Q';
+  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+
+  useEffect(() => {
+    setManualRadarSiteId3(null);
+    lastCenteredRadarSiteRef.current = null;
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+  }, [radarAnchorKey]);
 
   const handleMapPress = useCallback(
     async (e: any) => {
@@ -432,6 +682,7 @@ export default function MapsScreen() {
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
   const wildfireHotspotsEnabled = !!state.layers?.['wildfire.hotspots']?.enabled;
   const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
+  const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
@@ -554,6 +805,9 @@ export default function MapsScreen() {
   const wildfireFireWxOpacity = Number.isFinite(state.layers?.['wildfire.firewx']?.opacity)
     ? state.layers['wildfire.firewx'].opacity
     : 0.76;
+  const alertsOpacity = Number.isFinite(state.layers?.['alerts.polygons']?.opacity)
+    ? state.layers['alerts.polygons'].opacity
+    : 0.95;
 
   const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
@@ -677,9 +931,10 @@ export default function MapsScreen() {
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
   const centerForRadar = useMemo(() => {
+    if (stationRadarMode && selectedRadarSite) return { lat: selectedRadarSite.lat, lon: selectedRadarSite.lon };
     if (region) return { lat: region.latitude, lon: region.longitude };
     return { lat: 39.5, lon: -98.35 };
-  }, [region]);
+  }, [region, selectedRadarSite, stationRadarMode]);
 
   const radarCtl = useRadarController({
     state,
@@ -690,8 +945,10 @@ export default function MapsScreen() {
     product,
     rawMode,
     region,
-    localMinZoom: Number.POSITIVE_INFINITY,
-    ridgeMinZoom: stormMode ? 7.4 : 8.6,
+    stationMode: stationRadarMode,
+    radarSiteId3: selectedRadarId3,
+    localMinZoom: stormMode ? 10.5 : 12,
+    ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -699,11 +956,11 @@ export default function MapsScreen() {
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
+  const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
 
   const radarTileMaxZ = useMemo(() => {
-    if (effectiveRadarProvider === 'rainviewer') return radarCtl.radarTileMaxZ;
-    return Math.max(radarCtl.radarTileMaxZ, Math.ceil(mapZoom));
-  }, [effectiveRadarProvider, radarCtl.radarTileMaxZ, mapZoom]);
+    return radarCtl.radarTileMaxZ;
+  }, [radarCtl.radarTileMaxZ]);
 
   const mapRadar = useMemo(() => {
     if (!isFocused) {
@@ -735,7 +992,7 @@ export default function MapsScreen() {
       format: 'image/png',
       transparent: true,
       tileSize: 512 as const,
-      maxZoomLevel: 12,
+      maxZoomLevel: 16,
       fadeDurationMs: 90,
       resampling: 'linear' as const,
     };
@@ -785,7 +1042,7 @@ export default function MapsScreen() {
         zIndex: 62,
         enabled: true,
         tileSize: 512,
-        maxZoomLevel: 12,
+        maxZoomLevel: 16,
         fadeDurationMs: 150,
         resampling: 'linear',
       });
@@ -1009,6 +1266,44 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
+  useEffect(() => {
+    if (!stationRadarMode || !selectedRadarSite || !selectedRadarId3) return;
+    if (lastCenteredRadarSiteRef.current === selectedRadarId3) return;
+
+    const nextRegion: Region = {
+      latitude: selectedRadarSite.lat,
+      longitude: selectedRadarSite.lon,
+      latitudeDelta: 2.2,
+      longitudeDelta: 2.2,
+      zoom: approxZoomFromLongitudeDelta(2.2),
+    };
+
+    lastCenteredRadarSiteRef.current = selectedRadarId3;
+    radarStationSeedRegionRef.current = nextRegion;
+    setCameraDebugLabel(`radar-station:${getStationDisplayId(selectedRadarSite)}`);
+    setRegion(nextRegion);
+    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+    setMapResetKey((value) => value + 1);
+
+    requestAnimationFrame(() => {
+      radarStationSeedRegionRef.current = null;
+    });
+  }, [selectedRadarId3, selectedRadarSite, stationRadarMode]);
+
+  useEffect(() => {
+    if (!stationRadarMode) lastCenteredRadarSiteRef.current = null;
+  }, [stationRadarMode]);
+
+  const warningsOverlayEnabled = alertsEnabled || stationRadarMode;
+  const alertsData = useAlertMapData(warningsOverlayEnabled, effectiveRegion);
+  useEffect(() => {
+    if (!warningsOverlayEnabled) setSelectedWeatherAlert(null);
+  }, [warningsOverlayEnabled]);
+  const handleWeatherAlertPress = useCallback((e: any) => {
+    const feature = e?.features?.[0] ?? e?.feature ?? null;
+    const detail = alertFeatureToDetail(feature);
+    if (detail) setSelectedWeatherAlert(detail);
+  }, []);
   const wildfireVectorEnabled =
     state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled;
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
@@ -1017,9 +1312,13 @@ export default function MapsScreen() {
     () => filterVisibleWildfirePerimeters(wildfireData.perimeters),
     [wildfireData.perimeters]
   );
+  const visibleWildfireIncidents = useMemo(
+    () => filterVisibleWildfirePerimeters(wildfireData.incidents),
+    [wildfireData.incidents]
+  );
   const wildfireSymbolData = useMemo(
-    () => buildWildfireSymbolFeatureCollection(visibleWildfirePerimeters),
-    [visibleWildfirePerimeters]
+    () => buildWildfireSymbolFeatureCollection(visibleWildfirePerimeters, visibleWildfireIncidents),
+    [visibleWildfirePerimeters, visibleWildfireIncidents]
   );
   useEffect(() => {
     wildfireLookupRef.current = {
@@ -1207,9 +1506,18 @@ export default function MapsScreen() {
             ? 'Restriction units ready'
             : 'No nearby restriction units'
       : null;
+  const alertStatusLabel = warningsOverlayEnabled
+    ? alertsData.loading
+      ? 'Loading NOAA alerts'
+      : alertsData.error
+        ? 'NOAA alerts unavailable'
+        : alertsData.geojson.features.length > 0
+          ? `${alertsData.geojson.features.length} active alerts nearby`
+          : 'No nearby active alerts'
+    : null;
   const overlayStatusText = aviationStatusLabel
     ? [overlaySummaryText, aviationStatusLabel].filter(Boolean).join(' / ')
-    : [overlaySummaryText, fireRestrictionsStatusLabel].filter(Boolean).join(' / ');
+    : [overlaySummaryText, alertStatusLabel ?? fireRestrictionsStatusLabel].filter(Boolean).join(' / ');
   const fireInteractionEnabled = wildfireEnabled || selectedWildfire != null || selectedRestrictionPoint != null;
   const showRestrictionDetail =
     fireInteractionEnabled &&
@@ -1225,7 +1533,12 @@ export default function MapsScreen() {
           <MapRenderer
             key={`map-${mapResetKey}`}
             engine="maplibre"
-            initialRegion={routeFocusSeedRegionRef.current ?? locateSeedRegionRef.current ?? stableInitialRegion}
+            initialRegion={
+              routeFocusSeedRegionRef.current ??
+              locateSeedRegionRef.current ??
+              radarStationSeedRegionRef.current ??
+              stableInitialRegion
+            }
             mapStyle={baseMapStyle}
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
@@ -1325,6 +1638,87 @@ export default function MapsScreen() {
                 />
               </MapLibreGL.ShapeSource>
             </>
+          ) : null}
+
+          {warningsOverlayEnabled ? (
+            <MapLibreGL.ShapeSource
+              id="weather-alerts-source"
+              shape={alertsData.geojson as any}
+              onPress={handleWeatherAlertPress}
+              hitbox={{ width: 44, height: 44 }}
+            >
+              <MapLibreGL.FillLayer
+                id="weather-alerts-fill"
+                style={{
+                  fillColor: ['coalesce', ['get', 'fillColor'], '#a78bfa'] as any,
+                  fillOpacity: Math.max(0.08, Math.min(0.42, alertsOpacity * 0.28)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="weather-alerts-line"
+                style={{
+                  lineColor: ['coalesce', ['get', 'lineColor'], '#ddd6fe'] as any,
+                  lineOpacity: Math.max(0.38, Math.min(0.96, alertsOpacity)),
+                  lineWidth: ['match', ['get', 'rank'], 8, 3.3, 7, 2.9, 6, 2.6, 5, 2.4, 2] as any,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="weather-alerts-label"
+                minZoomLevel={5}
+                style={{
+                  textField: ['get', 'label'],
+                  textSize: ['interpolate', ['linear'], ['zoom'], 5, 9, 8, 11, 11, 13] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#fff7ed',
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1.35,
+                  textMaxWidth: 12,
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {stationRadarMode && selectedRadarSite ? (
+            <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
+              <MapLibreGL.LineLayer
+                id="radar-station-rings"
+                filter={['==', ['get', 'kind'], 'ring'] as any}
+                style={{
+                  lineColor: 'rgba(226,232,240,0.72)',
+                  lineOpacity: ['interpolate', ['linear'], ['zoom'], 4, 0.28, 8, 0.62, 11, 0.78] as any,
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 4, 0.8, 8, 1.25, 11, 1.8] as any,
+                  lineDasharray: [2, 2],
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="radar-station-dot"
+                filter={['==', ['get', 'kind'], 'station'] as any}
+                style={{
+                  circleColor: '#f8fafc',
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 4, 4.5, 9, 6.5, 12, 8] as any,
+                  circleStrokeColor: '#38bdf8',
+                  circleStrokeWidth: 2,
+                  circleOpacity: 0.96,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="radar-station-labels"
+                minZoomLevel={5}
+                style={{
+                  textField: ['get', 'label'],
+                  textSize: ['match', ['get', 'kind'], 'station', 12, 10] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#f8fafc',
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1.4,
+                  textOffset: ['match', ['get', 'kind'], 'station', [0, 1.35], [0, 0]] as any,
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
           ) : null}
 
           {aviationTurbEnabled ? (
@@ -1881,9 +2275,98 @@ export default function MapsScreen() {
           </View>
         </View>
 
+        {stationRadarMode ? (
+          <View pointerEvents="none" style={styles.stationProductBadgeWrap}>
+            <View
+              style={[
+                styles.stationProductBadge,
+                product === 'NET'
+                  ? styles.stationProductBadgeEcho
+                  : radarProductMeta.legendStyle === 'velocity'
+                    ? styles.stationProductBadgeVelocity
+                    : styles.stationProductBadgeReflectivity,
+              ]}
+            >
+              <Text style={styles.stationProductBadgeKicker}>
+                {product === 'NET' ? 'HEIGHT PRODUCT' : radarProductMeta.legendStyle === 'velocity' ? 'WIND PRODUCT' : 'PRECIP PRODUCT'}
+              </Text>
+              <Text style={styles.stationProductBadgeTitle}>{radarProductMeta.legendTitle}</Text>
+            </View>
+          </View>
+        ) : null}
+
         {showRadarLegend ? (
           <View style={[styles.legendWrap, styles.topLegendWrap]}>
-            <Glass style={styles.legendCard}>
+            <Glass
+              style={[
+                styles.legendCard,
+                stationRadarMode ? styles.stationLegendCard : null,
+                stationRadarMode && stationPanelCollapsed ? styles.stationLegendCardCollapsed : null,
+              ]}
+            >
+              {stationRadarMode && stationPanelCollapsed ? (
+                <View style={styles.stationCollapsedPanel}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.stationCollapsedEyebrow}>STATION RADAR</Text>
+                    <Text style={styles.stationCollapsedTitle} numberOfLines={1}>
+                      {selectedRadarSite
+                        ? `${getStationDisplayId(selectedRadarSite)} - ${radarProductMeta.legendTitle}`
+                        : radarProductMeta.legendTitle}
+                    </Text>
+                    <Text style={styles.stationCollapsedMeta} numberOfLines={1}>
+                      {stationProductLoading
+                        ? `Loading ${radarProductMeta.summaryLabel.toLowerCase()}`
+                        : activeFrameIso
+                          ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                          : selectedRadarDistanceMi != null
+                            ? `${Math.round(selectedRadarDistanceMi)} mi from active place`
+                            : 'Latest station scan'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setStationPanelCollapsed(false)}
+                    style={styles.panelIconButton}
+                    accessibilityLabel="Expand station radar panel"
+                  >
+                    <Text style={styles.panelIconButtonText}>+</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+              {state.viewId === 'radar' ? (
+                <View style={styles.radarModeHeader}>
+                  <View style={styles.radarModeRow}>
+                  <MiniToggle
+                    label="Mosaic"
+                    active={!stationRadarMode}
+                    onPress={() => {
+                      setRadarMode('mosaic');
+                      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                    }}
+                  />
+                  <MiniToggle
+                    label="Station"
+                    active={stationRadarMode}
+                    onPress={() => {
+                      setRadarMode('station');
+                      setStationPanelCollapsed(false);
+                      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                    }}
+                  />
+                  </View>
+                  {stationRadarMode ? (
+                    <Pressable
+                      onPress={() => setStationPanelCollapsed(true)}
+                      style={styles.panelIconButton}
+                      accessibilityLabel="Minimize station radar panel"
+                    >
+                      <Text style={styles.panelIconButtonText}>-</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
               <RadarLegend
                 style={effectiveRadarProvider === 'iem' ? radarProductMeta.legendStyle : 'rainviewer'}
                 title={radarProductMeta.legendTitle}
@@ -1894,9 +2377,133 @@ export default function MapsScreen() {
               />
               <Text style={styles.legendCardMeta}>
                 {effectiveRadarProvider === 'iem'
-                  ? `${radarProductMeta.legendTitle} · ${radarProductMeta.legendNote}`
+                      ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
                   : 'RainViewer colors vary slightly by provider frame.'}
               </Text>
+              {stationRadarMode ? (
+                <View style={styles.stationPanel}>
+                  <View style={styles.stationHeader}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.stationEyebrow}>NEXRAD SITE</Text>
+                      <Text style={styles.stationTitle} numberOfLines={1}>
+                        {selectedRadarSite
+                          ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
+                          : 'Selecting nearest radar'}
+                      </Text>
+                    </View>
+                    <View style={styles.agePill}>
+                      <Text style={styles.agePillText}>
+                        {stationProductLoading
+                          ? `Loading ${radarProductMeta.summaryLabel}`
+                          : activeFrameIso
+                            ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                            : 'Latest'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.stationMeta}>
+                    {selectedRadarDistanceMi != null
+                      ? `${Math.round(selectedRadarDistanceMi)} mi from active place`
+                      : 'Distance pending'}
+                    {' / '}
+                    {stationProductLoading
+                      ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
+                      : radarCtl.usingIemRidgeAnimated
+                        ? 'single-site RIDGE'
+                        : 'loading station scans'}
+                  </Text>
+
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.stationPickerContent}
+                  >
+                    {autoNearestRadar?.site ? (
+                      <Pressable
+                        onPress={() => {
+                          setManualRadarSiteId3(null);
+                          lastCenteredRadarSiteRef.current = null;
+                          dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                        }}
+                        style={[
+                          styles.stationChip,
+                          styles.autoStationChip,
+                          manualRadarSiteId3 == null ? styles.stationChipActive : null,
+                        ]}
+                      >
+                        <Text style={styles.stationChipId}>Auto</Text>
+                        <Text style={styles.stationChipDistance}>{getStationDisplayId(autoNearestRadar.site)}</Text>
+                      </Pressable>
+                    ) : null}
+                    {nearbyRadarSites.map((item) => {
+                      const id3 = normalizeRadarSiteId(item.site.id);
+                      return (
+                        <Pressable
+                          key={id3}
+                          onPress={() => {
+                            setManualRadarSiteId3(id3);
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                          }}
+                          style={[
+                            styles.stationChip,
+                            selectedRadarId3 === id3 ? styles.stationChipActive : null,
+                          ]}
+                        >
+                          <Text style={styles.stationChipId}>{getStationDisplayId(item.site)}</Text>
+                          <Text style={styles.stationChipDistance}>{Math.round(item.distanceMi)} mi</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={styles.stationProductGrid}>
+                    {STATION_RADAR_PRODUCTS.map((item) => {
+                      const active = product === item.id;
+                      const loading = active && stationProductLoading;
+                      return (
+                        <Pressable
+                          key={item.id}
+                          onPress={() => {
+                            if (!item.enabled) {
+                              setLearnTopicId(item.learnTopicId);
+                              setLearnOpen(true);
+                              return;
+                            }
+                            setStationProduct(item.id as RadarProductId);
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                          }}
+                          style={[
+                            styles.stationProductButton,
+                            active ? styles.stationProductButtonActive : null,
+                            active && item.id === 'NET' ? styles.stationProductButtonEchoActive : null,
+                            active && (item.id === 'N0U' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
+                            loading ? styles.stationProductButtonLoading : null,
+                            !item.enabled ? styles.stationProductButtonDisabled : null,
+                          ]}
+                        >
+                          <Text style={styles.stationProductLabel} numberOfLines={1}>
+                            {item.label}
+                          </Text>
+                          <Text style={styles.stationProductSub} numberOfLines={1}>
+                            {loading ? 'Loading scans...' : item.subtitle}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <Pressable
+                    onPress={() => {
+                      const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
+                      setLearnTopicId(topic ?? 'radar-base-reflectivity');
+                      setLearnOpen(true);
+                    }}
+                    style={styles.wxLearnButton}
+                  >
+                    <Text style={styles.wxLearnButtonText}>wxLearn: {radarProductMeta.summaryLabel}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {stormMode ? (
                 <View style={styles.stormProductRow}>
                   {STORM_RADAR_PRODUCTS.map((id) => (
@@ -1912,6 +2519,8 @@ export default function MapsScreen() {
                   ))}
                 </View>
               ) : null}
+                </>
+              )}
             </Glass>
           </View>
         ) : null}
@@ -2184,6 +2793,69 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
+        {selectedWeatherAlert ? (
+          <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
+            <Glass style={styles.alertDetailCard}>
+              <View style={styles.fireDetailHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.alertDetailEyebrow}>NWS ALERT</Text>
+                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
+                    {selectedWeatherAlert.event}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelectedWeatherAlert(null)} style={styles.fireDetailClose}>
+                  <Text style={styles.fireDetailCloseText}>Close</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.fireDetailPills}>
+                {selectedWeatherAlert.severity ? <HudBadge label={selectedWeatherAlert.severity} strong /> : null}
+                {selectedWeatherAlert.urgency ? <HudBadge label={selectedWeatherAlert.urgency} /> : null}
+                {selectedWeatherAlert.certainty ? <HudBadge label={selectedWeatherAlert.certainty} /> : null}
+              </View>
+
+              {selectedWeatherAlert.headline ? (
+                <Text style={styles.fireDetailMeta}>{selectedWeatherAlert.headline}</Text>
+              ) : null}
+
+              <View style={styles.fireDetailRows}>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Area</Text>
+                  <Text style={styles.fireDetailValue} numberOfLines={2}>
+                    {selectedWeatherAlert.areaDesc ?? 'Area pending'}
+                  </Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Effective</Text>
+                  <Text style={styles.fireDetailValue}>{formatAlertDate(selectedWeatherAlert.effective)}</Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Ends</Text>
+                  <Text style={styles.fireDetailValue}>
+                    {formatAlertDate(selectedWeatherAlert.ends ?? selectedWeatherAlert.expires)}
+                  </Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Source</Text>
+                  <Text style={styles.fireDetailValue} numberOfLines={1}>
+                    {selectedWeatherAlert.senderName ?? 'National Weather Service'}
+                  </Text>
+                </View>
+              </View>
+
+              {selectedWeatherAlert.instruction ? (
+                <Text style={styles.alertInstruction} numberOfLines={4}>
+                  {selectedWeatherAlert.instruction}
+                </Text>
+              ) : selectedWeatherAlert.description ? (
+                <Text style={styles.alertInstruction} numberOfLines={4}>
+                  {selectedWeatherAlert.description}
+                </Text>
+              ) : null}
+            </Glass>
+          </View>
+        ) : null}
+
         <LayerSheetModal
           visible={layersSheetOpen}
           onClose={() => setLayersSheetOpen(false)}
@@ -2430,7 +3102,7 @@ function filterVisibleWildfirePerimeters(perimeters: any) {
   return { type: 'FeatureCollection', features };
 }
 
-function buildWildfireSymbolFeatureCollection(perimeters: any) {
+function buildWildfireSymbolFeatureCollection(perimeters: any, incidents?: any) {
   const features: any[] = [];
   const seen = new Set<string>();
   const addPoint = (feature: any, fallbackId: string) => {
@@ -2467,6 +3139,9 @@ function buildWildfireSymbolFeatureCollection(perimeters: any) {
 
   (Array.isArray(perimeters?.features) ? perimeters.features : []).forEach((feature: any, idx: number) =>
     addPoint(feature, `perimeter-${idx}`)
+  );
+  (Array.isArray(incidents?.features) ? incidents.features : []).forEach((feature: any, idx: number) =>
+    addPoint(feature, `incident-${idx}`)
   );
 
   return { type: 'FeatureCollection', features };
@@ -2594,6 +3269,25 @@ function formatWildfireUpdated(value?: string | null) {
   if (diffHr < 24) return `Updated ${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
   const diffDay = Math.round(diffHr / 24);
   return `Updated ${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
+
+function formatAlertDate(value?: string | null) {
+  if (!value) return 'Pending';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Pending';
+  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatFrameAge(value?: string | null) {
+  if (!value) return 'latest';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'latest';
+  const diffMin = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (diffMin <= 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m old`;
+  const hours = Math.floor(diffMin / 60);
+  const mins = diffMin % 60;
+  return mins ? `${hours}h ${mins}m old` : `${hours}h old`;
 }
 
 function filterAviationCollection(
@@ -2881,6 +3575,43 @@ const styles = StyleSheet.create({
   topChromeSpacer: {
     flex: 1,
   },
+  stationProductBadgeWrap: {
+    position: 'absolute',
+    right: 74,
+    top: 86,
+    alignItems: 'flex-end',
+  },
+  stationProductBadge: {
+    minWidth: 118,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  stationProductBadgeReflectivity: {
+    borderColor: 'rgba(34,197,94,0.42)',
+    backgroundColor: 'rgba(20,83,45,0.52)',
+  },
+  stationProductBadgeVelocity: {
+    borderColor: 'rgba(96,165,250,0.46)',
+    backgroundColor: 'rgba(30,58,138,0.54)',
+  },
+  stationProductBadgeEcho: {
+    borderColor: 'rgba(250,204,21,0.54)',
+    backgroundColor: 'rgba(113,63,18,0.58)',
+  },
+  stationProductBadgeKicker: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  stationProductBadgeTitle: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 1,
+  },
   summaryCard: {
     flex: 1,
     borderRadius: 24,
@@ -3158,6 +3889,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     gap: 6,
   },
+  stationLegendCard: {
+    width: 318,
+  },
+  stationLegendCardCollapsed: {
+    width: 230,
+  },
   legendCardTitle: {
     color: 'white',
     fontSize: 12,
@@ -3175,6 +3912,191 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     marginTop: 8,
+  },
+  radarModeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  radarModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 2,
+  },
+  panelIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  panelIconButtonText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
+  stationCollapsedPanel: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  stationCollapsedEyebrow: {
+    color: 'rgba(125,211,252,0.86)',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  stationCollapsedTitle: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  stationCollapsedMeta: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  stationPanel: {
+    gap: 8,
+    marginTop: 4,
+  },
+  stationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  stationEyebrow: {
+    color: 'rgba(125,211,252,0.86)',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  stationTitle: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  stationMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 13,
+  },
+  agePill: {
+    maxWidth: 104,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.22)',
+    backgroundColor: 'rgba(8,47,73,0.55)',
+  },
+  agePillText: {
+    color: 'rgba(224,242,254,0.95)',
+    fontSize: 8,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  stationPickerContent: {
+    gap: 6,
+    paddingRight: 4,
+  },
+  stationChip: {
+    width: 58,
+    paddingVertical: 6,
+    paddingHorizontal: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+  stationChipActive: {
+    borderColor: 'rgba(125,211,252,0.34)',
+    backgroundColor: 'rgba(14,165,233,0.18)',
+  },
+  autoStationChip: {
+    width: 66,
+  },
+  stationChipId: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  stationChipDistance: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  stationProductGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  stationProductButton: {
+    width: '48%',
+    minHeight: 42,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+  stationProductButtonActive: {
+    borderColor: 'rgba(125,211,252,0.34)',
+    backgroundColor: 'rgba(96,165,250,0.16)',
+  },
+  stationProductButtonVelocityActive: {
+    borderColor: 'rgba(96,165,250,0.50)',
+    backgroundColor: 'rgba(37,99,235,0.20)',
+  },
+  stationProductButtonEchoActive: {
+    borderColor: 'rgba(250,204,21,0.54)',
+    backgroundColor: 'rgba(180,83,9,0.22)',
+  },
+  stationProductButtonLoading: {
+    borderColor: 'rgba(45,212,191,0.48)',
+    backgroundColor: 'rgba(20,184,166,0.18)',
+  },
+  stationProductButtonDisabled: {
+    opacity: 0.45,
+  },
+  stationProductLabel: {
+    color: 'rgba(255,255,255,0.94)',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  stationProductSub: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 8,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  wxLearnButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(196,181,253,0.24)',
+    backgroundColor: 'rgba(88,28,135,0.22)',
+  },
+  wxLearnButtonText: {
+    color: 'rgba(237,233,254,0.95)',
+    fontSize: 9,
+    fontWeight: '900',
   },
   restrictionLegend: {
     gap: 6,
@@ -3235,12 +4157,24 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
   },
+  alertDetailWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+  },
   fireDetailCard: {
     borderRadius: 24,
     paddingHorizontal: 14,
     paddingVertical: 14,
     backgroundColor: 'rgba(2,6,23,0.95)',
     borderColor: 'rgba(148,163,184,0.24)',
+  },
+  alertDetailCard: {
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(2,6,23,0.96)',
+    borderColor: 'rgba(248,250,252,0.20)',
   },
   fireDetailHeader: {
     flexDirection: 'row',
@@ -3250,6 +4184,12 @@ const styles = StyleSheet.create({
   },
   fireDetailEyebrow: {
     color: 'rgba(248,113,113,0.86)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  alertDetailEyebrow: {
+    color: 'rgba(251,191,36,0.92)',
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
@@ -3307,6 +4247,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flex: 1,
     textAlign: 'right',
+  },
+  alertInstruction: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 12,
   },
   settingsBackdrop: {
     ...StyleSheet.absoluteFillObject,

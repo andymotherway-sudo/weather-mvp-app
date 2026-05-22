@@ -1163,5 +1163,92 @@ export const LEARN_TOPICS: LearnTopic[] = [
     insight:
       'A front is not just a line on a map. It is a transition zone where wind, temperature, moisture, clouds, and precipitation often change together.',
   },
+  {
+    id: 'radar-base-reflectivity',
+    title: 'Radar Base Reflectivity',
+    summary:
+      'Base reflectivity shows how much energy is returned to the radar from precipitation, hail, insects, and other targets in the lowest available scan.',
+    bullets: [
+      'Higher values usually mean heavier precipitation or hail potential.',
+      'Shape and texture matter: hooks, bows, cores, and gradients can reveal storm structure.',
+      'Reflectivity does not show wind direction; use velocity for motion toward or away from the radar.',
+    ],
+    body:
+      'In station radar mode this comes from a selected NEXRAD site rather than a national mosaic, so local storm structure should stay sharper when you zoom in.',
+    insight:
+      'Reflectivity answers "where is the precipitation and how intense is it?"',
+  },
+  {
+    id: 'radar-base-velocity',
+    title: 'Radar Base Velocity',
+    summary:
+      'Base velocity shows motion toward or away from the radar along the beam. It is the core product for inspecting wind signatures.',
+    bullets: [
+      'Inbound and outbound colors depend on the radar site location, not north/south motion.',
+      'Tight adjacent inbound/outbound couplets can suggest rotation.',
+      'Velocity is easiest to interpret when you know where the selected radar site is.',
+    ],
+    body:
+      'Because velocity is radial, the same storm can look different from different radar sites. Range rings and the station marker help orient the wind field.',
+    insight:
+      'Velocity answers "how is air moving relative to this radar?"',
+  },
+  {
+    id: 'radar-storm-relative-velocity',
+    title: 'Storm Relative Velocity',
+    summary:
+      'Storm relative velocity removes estimated storm motion from base velocity so rotation and storm-scale wind signatures stand out more clearly.',
+    bullets: [
+      'Useful for supercell rotation and mesocyclone inspection.',
+      'Depends on a storm motion estimate, so context matters.',
+      'Best read alongside base velocity and reflectivity.',
+    ],
+    insight:
+      'SRV tries to subtract the storm translation so the internal wind field is easier to see.',
+  },
+  {
+    id: 'radar-correlation-coefficient',
+    title: 'Correlation Coefficient',
+    summary:
+      'Correlation coefficient compares how similarly horizontal and vertical radar pulses behave. It helps identify mixed target types.',
+    bullets: [
+      'Lower values can indicate hail, debris, melting snow, or non-meteorological targets.',
+      'In tornado warning work, a low-CC area collocated with rotation can be important.',
+      'It should be interpreted with reflectivity and velocity, not alone.',
+    ],
+  },
+  {
+    id: 'radar-differential-reflectivity',
+    title: 'Differential Reflectivity',
+    summary:
+      'Differential reflectivity compares horizontal and vertical returned energy, which can reveal drop shape and hydrometeor type.',
+    bullets: [
+      'Large raindrops often produce higher positive values.',
+      'Hail can reduce or complicate the signal.',
+      'ZDR columns can help diagnose strong storm updrafts.',
+    ],
+  },
+  {
+    id: 'radar-echo-tops',
+    title: 'Echo Tops',
+    summary:
+      'Echo tops estimate how high meaningful radar returns extend in a storm.',
+    bullets: [
+      'Higher echo tops often point to deeper convection.',
+      'They are useful for storm growth and aviation awareness.',
+      'They do not directly measure cloud top temperature or lightning risk.',
+    ],
+  },
+  {
+    id: 'radar-vil',
+    title: 'Vertically Integrated Liquid',
+    summary:
+      'VIL estimates the total liquid water content in a vertical column above a point.',
+    bullets: [
+      'High VIL can flag intense precipitation cores.',
+      'Very high values may suggest hail potential in the right storm environment.',
+      'VIL is most useful when compared with storm mode, freezing level, and reflectivity structure.',
+    ],
+  },
 ];
 

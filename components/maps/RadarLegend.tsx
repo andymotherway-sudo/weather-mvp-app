@@ -1,11 +1,12 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 
-type LegendStyle = 'rainviewer' | 'generic' | 'reflectivity' | 'velocity';
+type LegendStyle = 'rainviewer' | 'generic' | 'reflectivity' | 'velocity' | 'echoTops';
 
 const RV_RAMP = ['#1d4ed8', '#38bdf8', '#34d399', '#fde047', '#fb923c', '#dc2626'];
 const REFLECTIVITY_RAMP = ['#1f2937', '#2563eb', '#22c55e', '#84cc16', '#facc15', '#f97316', '#dc2626', '#7e22ce'];
 const VELOCITY_RAMP = ['#1d4ed8', '#38bdf8', '#93c5fd', '#e5e7eb', '#fca5a5', '#ef4444', '#991b1b'];
+const ECHO_TOPS_RAMP = ['#07111f', '#0f766e', '#22c55e', '#bef264', '#facc15', '#fb923c', '#e11d48', '#f5d0fe'];
 
 export function RadarLegend(props: {
   style?: LegendStyle;
@@ -21,6 +22,8 @@ export function RadarLegend(props: {
   const ramp =
     normalizedStyle === 'rainviewer'
       ? RV_RAMP
+      : normalizedStyle === 'echoTops'
+        ? ECHO_TOPS_RAMP
       : normalizedStyle === 'velocity'
         ? VELOCITY_RAMP
         : REFLECTIVITY_RAMP;
@@ -29,6 +32,8 @@ export function RadarLegend(props: {
     props.title ??
     (normalizedStyle === 'rainviewer'
       ? 'Radar intensity'
+      : normalizedStyle === 'echoTops'
+        ? 'Echo Tops'
       : normalizedStyle === 'velocity'
         ? 'Radial velocity'
         : 'Reflectivity');
@@ -36,6 +41,8 @@ export function RadarLegend(props: {
     props.leftLabel ??
     (normalizedStyle === 'rainviewer'
       ? 'Light'
+      : normalizedStyle === 'echoTops'
+        ? 'Low'
       : normalizedStyle === 'velocity'
         ? 'Away'
         : 'Light');
@@ -43,6 +50,8 @@ export function RadarLegend(props: {
     props.midLabel ??
     (normalizedStyle === 'rainviewer'
       ? 'Moderate'
+      : normalizedStyle === 'echoTops'
+        ? 'Storm top height'
       : normalizedStyle === 'velocity'
         ? 'Neutral'
         : 'Moderate');
@@ -50,12 +59,16 @@ export function RadarLegend(props: {
     props.rightLabel ??
     (normalizedStyle === 'rainviewer'
       ? 'Heavy'
+      : normalizedStyle === 'echoTops'
+        ? 'High'
       : normalizedStyle === 'velocity'
         ? 'Toward'
         : 'Severe');
   const helperLabel =
     normalizedStyle === 'rainviewer'
       ? 'Provider colors'
+      : normalizedStyle === 'echoTops'
+        ? 'Height'
       : normalizedStyle === 'velocity'
         ? 'Wind motion'
         : 'Precip intensity';

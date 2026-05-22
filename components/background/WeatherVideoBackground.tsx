@@ -6,23 +6,28 @@ import { resolveVideoFromWeatherCode } from '../../app/lib/weather/backgroundVid
 
 type Props = {
   weatherCode?: number;
+  conditionText?: string | null;
   isEvening?: boolean;
 };
 
 export default function WeatherVideoBackground({
   weatherCode,
+  conditionText,
   isEvening = false,
 }: Props) {
+  const theme = isEvening ? 'evening' : 'day';
   const source = useMemo(() => {
     return resolveVideoFromWeatherCode(
       weatherCode,
-      isEvening ? 'evening' : 'day'
+      theme,
+      conditionText
     );
-  }, [weatherCode, isEvening]);
+  }, [weatherCode, theme, conditionText]);
 
   return (
     <View style={StyleSheet.absoluteFill}>
       <Video
+        key={`${theme}-${weatherCode ?? 'none'}-${conditionText ?? ''}`}
         source={source}
         style={StyleSheet.absoluteFill}
         resizeMode={ResizeMode.COVER}

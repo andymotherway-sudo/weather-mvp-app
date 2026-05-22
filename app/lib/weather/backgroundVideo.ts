@@ -50,11 +50,28 @@ export function resolveVideoKeyFromWeatherCode(code?: number): WxVideoKey {
   return 'clear';
 }
 
+export function resolveVideoKeyFromConditionText(text?: string | null): WxVideoKey | null {
+  const s = String(text ?? '').toLowerCase();
+  if (!s.trim()) return null;
+
+  if (/\b(thunder|t-storm|tstorm|storm|lightning|convective)\b/.test(s)) return 'storm';
+  if (/\b(snow|sleet|flurr|blizzard|ice pellets)\b/.test(s)) return 'snow';
+  if (/\b(rain|shower|drizzle|freezing rain)\b/.test(s)) return 'rain';
+  if (/\b(overcast|cloudy)\b/.test(s)) return 'overcast';
+  if (/\b(partly|mostly clear|few clouds|scattered clouds)\b/.test(s)) return 'partly';
+  if (/\b(clear|sunny|fair)\b/.test(s)) return 'clear';
+
+  return null;
+}
+
 export function resolveVideoFromWeatherCode(
   code?: number,
-  theme: VideoTheme = 'day'
+  theme: VideoTheme = 'day',
+  conditionText?: string | null
 ): any {
-  const key = resolveVideoKeyFromWeatherCode(code);
+  const textKey = resolveVideoKeyFromConditionText(conditionText);
+  const codeKey = resolveVideoKeyFromWeatherCode(code);
+  const key = textKey === 'storm' || codeKey === 'clear' ? (textKey ?? codeKey) : codeKey;
 
   if (theme === 'evening') {
     return EVENING_VIDEO_MAP[key] ?? DAY_VIDEO_MAP[key];

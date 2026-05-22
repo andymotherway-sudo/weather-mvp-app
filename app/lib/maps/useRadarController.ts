@@ -107,8 +107,8 @@ function buildWorkerWmsUrl(args: {
   const ne = lonLatToMercatorMeters(east, north);
   const bbox = `${sw.x},${sw.y},${ne.x},${ne.y}`;
 
-  const width = String(Math.max(768, Math.min(2304, Math.floor(widthPx))));
-  const height = String(Math.max(768, Math.min(2304, Math.floor(heightPx))));
+  const width = String(Math.max(768, Math.min(3072, Math.floor(widthPx))));
+  const height = String(Math.max(768, Math.min(3072, Math.floor(heightPx))));
 
   const u = new URL(`${OMNI_WORKER_BASE}/v2/radar/wms`);
   u.searchParams.set('product', product);
@@ -199,6 +199,12 @@ function getStormMode(state: any) {
   return state?.viewId === 'storm' || state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
 }
 
+function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
+  if (product === 'N0U' || product === 'N0S' || product === 'N0Z') return 'velocity';
+  if (product === 'NET') return 'echoTops';
+  return 'reflectivity';
+}
+
 export function useRadarController(args: {
   state: MapRuntimeState;
   dispatch: React.Dispatch<MapAction>;
@@ -208,10 +214,14 @@ export function useRadarController(args: {
   product: RadarProductId;
   rawMode: boolean;
   region: Region | null;
+  stationMode?: boolean;
+  radarSiteId3?: string | null;
   localMinZoom?: number;
   ridgeMinZoom?: number;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
+  const stationMode = args.stationMode === true;
+  const radarSiteId3 = args.radarSiteId3 ?? null;
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = getStormMode(state);
@@ -303,6 +313,7 @@ export function useRadarController(args: {
   const usingLocalImage =
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
+    !stationMode &&
     (product === 'N0Q' || (stormMode && product === 'N0B')) &&
     mapZoom >= localMinZoom;
 
@@ -458,17 +469,20 @@ export function useRadarController(args: {
   } | null>(null);
 
   const [iemError, setIemError] = useState<string | null>(null);
+  const [iemLoading, setIemLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
-      if (sheetValue.radarProvider !== 'iem') return;
-      if (!radarEnabled) return;
-      if (usingLocalImage) return;
+      if (sheetValue.radarProvider !== 'iem' || !radarEnabled || usingLocalImage) {
+        setIemLoading(false);
+        return;
+      }
 
       try {
         setIemError(null);
+        setIemLoading(true);
 
         const effectiveRidgeMinZoom = stormMode ? Math.min(ridgeMinZoom, 7.5) : ridgeMinZoom;
 
@@ -479,21 +493,24 @@ export function useRadarController(args: {
             zoom: mapZoom,
             product,
             mosaicMaxZoom: 9,
-            ridgeMinZoom: effectiveRidgeMinZoom,
+            ridgeMinZoom: stationMode ? 2 : effectiveRidgeMinZoom,
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
-            maxLocalDistanceKm: stormMode ? 260 : 350,
-            allowMosaicFallback: !stormMode,
-            force: stormMode ? 'ridge' : undefined,
+            maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
+            allowMosaicFallback: !stormMode && !stationMode,
+            force: stormMode || stationMode ? 'ridge' : undefined,
+            forceRadarId3: stationMode ? radarSiteId3 : null,
           },
         });
 
         if (cancelled) return;
         setIemUnified(out);
+        setIemLoading(false);
       } catch (e: any) {
         if (cancelled) return;
         setIemUnified(null);
         setIemError(String(e?.message ?? e ?? 'IEM frames failed'));
+        setIemLoading(false);
       }
     }
 
@@ -505,6 +522,8 @@ export function useRadarController(args: {
     sheetValue.radarProvider,
     radarEnabled,
     usingLocalImage,
+    stationMode,
+    radarSiteId3,
     stormMode,
     centerForRadar.lat,
     centerForRadar.lon,
@@ -513,7 +532,6 @@ export function useRadarController(args: {
     fetchProfile.maxFrames,
     fetchProfile.lookbackMinutes,
     ridgeMinZoom,
-    stormMode,
   ]);
 
   const iemDebugLabel = iemUnified?.debugLabel ?? null;
@@ -590,17 +608,41 @@ export function useRadarController(args: {
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
+  const playlistContextKey = useMemo(
+    () =>
+      [
+        sheetValue.radarProvider,
+        stationMode ? 'station' : 'wide',
+        stormMode ? 'storm' : 'standard',
+        radarSiteId3 ?? 'auto',
+        product,
+        usingLocalImage ? 'image' : 'tiles',
+      ].join('|'),
+    [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
+  );
+
+  useEffect(() => {
+    setPlayFrames([]);
+    setPlayTemplates([]);
+    pendingFramesRef.current = null;
+    pendingTemplatesRef.current = null;
+    slotHoldRef.current = [null, null, null];
+    setPreloadTo(null);
+    setXfade({ from: 0, to: 0, t: 1 });
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playlistContextKey]);
 
   useEffect(() => {
     if (liveFrames.length) return;
-    if (!stormMode) return;
+    if (!stormMode && !stationMode) return;
 
     setPlayFrames([]);
     setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
     slotHoldRef.current = [null, null, null];
-  }, [liveFrames.length, stormMode]);
+  }, [liveFrames.length, stationMode, stormMode]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
@@ -748,7 +790,8 @@ export function useRadarController(args: {
       return out;
     }
 
-    out[from] = radarOpacity * (1 - t);
+    const oldFrameFloor = t < 0.92 ? radarOpacity * 0.28 : 0;
+    out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
     out[to] = radarOpacity * t;
 
     if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
@@ -778,7 +821,7 @@ export function useRadarController(args: {
     }
 
     if (!n) {
-      if (stormMode) {
+      if (stormMode || stationMode) {
         slotHoldRef.current = [null, null, null];
         return { templates: outTemplates, opacities: outOpacities };
       }
@@ -853,6 +896,7 @@ export function useRadarController(args: {
     radarOpacity,
     preloadTo,
     mapZoom,
+    stationMode,
     stormMode,
   ]);
 
@@ -986,8 +1030,10 @@ export function useRadarController(args: {
    * Final switch: localImage vs templates
    * ========================================================================= */
   const radarOverlay: RadarOverlay = useMemo(() => {
+    const productStyle = getRadarProductStyle(product);
+
     if (!radarEnabled) {
-      return { enabled: false, templates: [], opacities: [], tileMaxZ: radarTileMaxZ, localImage: null };
+      return { enabled: false, templates: [], opacities: [], tileMaxZ: radarTileMaxZ, productStyle, localImage: null };
     }
 
     if (usingLocalImage && localImageUrl && localImageCoords) {
@@ -996,6 +1042,7 @@ export function useRadarController(args: {
         templates: [],
         opacities: [],
         tileMaxZ: radarTileMaxZ,
+        productStyle,
         localImage: { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity },
       };
     }
@@ -1005,11 +1052,13 @@ export function useRadarController(args: {
       templates: activeRadar.templates,
       opacities: activeRadar.opacities,
       tileMaxZ: radarTileMaxZ,
+      productStyle,
       localImage: null,
     };
   }, [
     radarEnabled,
     radarTileMaxZ,
+    product,
     usingLocalImage,
     localImageUrl,
     localImageCoords,
@@ -1036,6 +1085,7 @@ export function useRadarController(args: {
     localError,
 
     iemError,
+    iemLoading,
     iemDebugLabel,
     usingIemRidgeAnimated,
 

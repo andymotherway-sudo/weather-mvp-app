@@ -4,7 +4,7 @@
 import { NEXRAD_SITES } from './nexradSites';
 
 export type RadarScan = { iso: string; stamp: string };
-export type RadarProductId = 'N0Q' | 'N0B' | 'N0Z' | 'N0U' | 'N0S';
+export type RadarProductId = 'N0Q' | 'N0B' | 'N0Z' | 'N0U' | 'N0S' | 'NET';
 
 export type RadarFrameUnified = {
   iso: string;
@@ -29,6 +29,7 @@ type ResolveFramesOpts = {
   allowMosaicFallback?: boolean;
 
   force?: 'mosaic' | 'ridge';
+  forceRadarId3?: string | null;
 };
 
 const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
@@ -36,7 +37,7 @@ const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0
 // Mosaic is inherently “coarse”, but keep high so MapLibre can request higher z if available.
 // RIDGE is the real high-res path.
 const MOSAIC_MAX_Z = 14;
-const RIDGE_MAX_Z = 14;
+const RIDGE_MAX_Z = 8;
 
 const DEFAULT_MOSAIC_MINUTES = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
 
@@ -61,7 +62,7 @@ function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: str
   return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png?alpha=1`;
 }
 
-function normalizeRadarSiteId(siteId: string) {
+export function normalizeRadarSiteId(siteId: string) {
   const s = (siteId || '').trim().toUpperCase();
   if (s.length === 4 && s.startsWith('K')) return s.slice(1);
   if (s.length === 3) return s;
@@ -265,7 +266,9 @@ async function fetchRidgeWithProductFallback(args: {
           ? ['N0U', 'N0S']
           : preferred === 'N0S'
             ? ['N0S', 'N0U']
-            : ['N0Z', 'N0Q', 'N0B'];
+            : preferred === 'NET'
+              ? ['NET']
+              : ['N0Z', 'N0Q', 'N0B'];
 
   for (const p of order) {
     const tsList = await fetchIemRidgeScanList({ radarId3, product: p, lookbackMinutes });
@@ -282,9 +285,31 @@ async function findBestRidgeRadar(args: {
   preferredProduct: RadarProductId;
   lookbackMinutes: number;
   maxCandidates?: number;
+  forceRadarId3?: string | null;
 }) {
   const { lat, lon, maxDistanceKm, preferredProduct, lookbackMinutes } = args;
   const MAX_CANDIDATES = clampInt(args.maxCandidates ?? 8, 3, 20);
+
+  const forcedRadarId3 = args.forceRadarId3 ? normalizeRadarSiteId(args.forceRadarId3) : null;
+  if (forcedRadarId3) {
+    const site = NEXRAD_SITES.find((s) => normalizeRadarSiteId(s.id) === forcedRadarId3);
+    const ridge = await fetchRidgeWithProductFallback({
+      radarId3: forcedRadarId3,
+      preferred: preferredProduct,
+      lookbackMinutes,
+    });
+
+    if (ridge.tsList.length) {
+      return {
+        radarId3: forcedRadarId3,
+        ridgeProduct: ridge.product,
+        tsList: ridge.tsList,
+        distanceKm: site ? haversineKm(lat, lon, site.lat, site.lon) : 0,
+      };
+    }
+
+    return null;
+  }
 
   const candidates = NEXRAD_SITES
     .filter((s) => isFiniteNumber(s.lat) && isFiniteNumber(s.lon))
@@ -372,6 +397,7 @@ export async function resolveIemFrames(args: {
       preferredProduct: opts.product,
       lookbackMinutes,
       maxCandidates: 10,
+      forceRadarId3: opts.forceRadarId3,
     });
 
     if (!best) {
@@ -379,7 +405,9 @@ export async function resolveIemFrames(args: {
         return {
           frames: [],
           mode: 'ridge',
-          debugLabel: `Single-site ${opts.product} unavailable within ${opts.maxLocalDistanceKm} km`,
+          debugLabel: opts.forceRadarId3
+            ? `Single-site ${opts.product} unavailable for ${normalizeRadarSiteId(opts.forceRadarId3)}`
+            : `Single-site ${opts.product} unavailable within ${opts.maxLocalDistanceKm} km`,
         };
       }
       const trimmed = mosaicFrames.slice(Math.max(0, mosaicFrames.length - maxFrames));

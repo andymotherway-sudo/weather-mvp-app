@@ -2370,15 +2370,16 @@ useEffect(() => {
             pointerEvents="none"
             style={{
               position: 'absolute',
-              top: insets.top + 26,
-              right: 10,
-              alignItems: 'flex-end',
+              top: insets.top + 86,
+              left: 24,
+              right: 84,
+              alignItems: 'flex-start',
             }}
           >
             <Glass
               style={{
-                maxWidth: 280,
-                minWidth: 196,
+                maxWidth: 344,
+                minWidth: 268,
                 paddingVertical: 8,
                 paddingHorizontal: 10,
                 borderRadius: 18,

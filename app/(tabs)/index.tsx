@@ -78,6 +78,30 @@ function fmt(v: number | null, digits = 0) {
   return digits > 0 ? v.toFixed(digits) : `${Math.round(v)}`;
 }
 
+function formatSurfaceVisibility(valueMi: number | null) {
+  if (valueMi == null || !Number.isFinite(valueMi)) return '—';
+  if (valueMi >= 20) return 'Excellent';
+  if (valueMi >= 10) return 'Very good';
+  if (valueMi >= 6) return 'Good';
+  if (valueMi >= 3) return 'Reduced';
+  if (valueMi >= 1) return 'Poor';
+  return 'Very poor';
+}
+
+function isTemporaryWeatherError(message?: string | null) {
+  if (!message) return false;
+  return /\bHTTP\s+5\d\d\b/i.test(message) || /timeout|timed out|network request failed|failed to fetch/i.test(message);
+}
+
+function formatWeatherError(message?: string | null) {
+  if (!message) return null;
+  if (/\bHTTP\s+502\b/i.test(message)) return 'A weather service returned a temporary bad gateway response. Please try again.';
+  if (/\bHTTP\s+5\d\d\b/i.test(message)) return 'A weather service is temporarily unavailable. Please try again.';
+  if (/timeout|timed out/i.test(message)) return 'The weather request timed out. Please try again.';
+  if (/network request failed|failed to fetch/i.test(message)) return 'The weather service could not be reached. Please check your connection.';
+  return message;
+}
+
 function near(a: number, b: number, eps = 0.0005) {
   return Math.abs(a - b) < eps;
 }
@@ -2276,7 +2300,7 @@ function SimpleDailyOverview({
   const currentMetrics = [
     { value: precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—', label: 'Precip chance' },
     { value: windMph != null ? `${Math.round(windMph)} mph` : '—', label: 'Wind', sub: todayWindSub.replace('???', '—') },
-    { value: humidityPct != null ? `${Math.round(humidityPct)}%` : '—', label: 'Humidity' },
+    { value: humidityPct != null ? `${Math.round(humidityPct)}%` : '—', label: 'RH' },
     { value: uvIndex != null ? `${Math.round(uvIndex)}` : '—', label: 'UV index' },
     { value: currentAqiValue.replace('???', '—'), label: 'AQI', sub: currentAqiSub },
     { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'Dew point' },
@@ -2290,7 +2314,15 @@ function SimpleDailyOverview({
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
           <View style={styles.dailyCurrentText}>
-            <Text style={styles.dailyCurrentCondition}>{condition}</Text>
+            <Text
+              style={styles.dailyCurrentCondition}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.58}
+              allowFontScaling={false}
+            >
+              {condition}
+            </Text>
             <Text style={styles.dailyCurrentSummary}>{heroSummary}</Text>
             <Text style={styles.dailyCurrentFeels}>Feels like {feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
           </View>
@@ -2313,12 +2345,20 @@ function SimpleDailyOverview({
           <View style={styles.dailyTwinColumn}>
             <View style={styles.dailyFeatureTitleRow}>
               <Text style={styles.dailyFeatureMiniTitle}>Today</Text>
-              <Text style={styles.dailyFeatureRange}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'} / {todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+              <Text style={styles.dailyFeatureRange}>High {todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
             </View>
             <View style={styles.dailyFeatureSummaryRow}>
               <PremiumWeatherIcon code={todayCode} size={46} variant="hero" style={styles.dailyFeatureIconBadge} />
               <View style={styles.dailyFeatureSummaryText}>
-                <Text style={styles.dailyFeatureCondition}>{todayCondition}</Text>
+                <Text
+                  style={styles.dailyFeatureCondition}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.62}
+                  allowFontScaling={false}
+                >
+                  {todayCondition}
+                </Text>
                 <Text style={styles.dailyFeatureNarrative}>{todayNarrative}</Text>
               </View>
             </View>
@@ -2335,7 +2375,7 @@ function SimpleDailyOverview({
                 </View>
               </View>
               <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Humidity / DP</Text>
+                <Text style={styles.dailyDetailLabel}>RH / DP</Text>
                 <View style={styles.dailyDetailPair}>
                   <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
                   <Text style={styles.dailyDetailPairDivider}>/</Text>
@@ -2367,7 +2407,15 @@ function SimpleDailyOverview({
                 phaseDegrees={todayMoon?.moonPhaseDegrees}
               />
               <View style={styles.dailyNightText}>
-                <Text style={styles.dailyFeatureCondition}>{todaySplit.night.condition}</Text>
+                <Text
+                  style={styles.dailyFeatureCondition}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.62}
+                  allowFontScaling={false}
+                >
+                  {todaySplit.night.condition}
+                </Text>
                 <Text style={styles.dailyFeatureNarrative}>{todaySplit.night.narrative}</Text>
                 {tonightMoonLabel ? <Text style={styles.dailyFeatureMoonMeta}>{tonightMoonLabel}</Text> : null}
               </View>
@@ -2385,7 +2433,7 @@ function SimpleDailyOverview({
                 </View>
               </View>
               <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Humidity</Text>
+                <Text style={styles.dailyDetailLabel}>RH</Text>
                 <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
               </View>
               <View style={styles.dailyDetailStrip}>
@@ -2456,15 +2504,15 @@ function SimpleDailyOverview({
           const pressureValue =
             safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) ?? null;
           const summaryLine = [
-            pop != null ? `${Math.round(pop)}% precip chance` : null,
             wind != null ? `${Math.round(wind)} mph wind` : null,
+            gust != null ? `${Math.round(gust)} mph gust` : null,
           ]
             .filter(Boolean)
             .join(' • ');
           const metricRows = [
             { label: 'Wind', value: fmtWind(wind), ratio: wind != null ? Math.max(0, Math.min(1, wind / 40)) : 0 },
             { label: 'Wind gusts', value: fmtWind(gust), ratio: gust != null ? Math.max(0, Math.min(1, gust / 50)) : 0 },
-            { label: 'Humidity', value: humidityText.replace('???', '—'), ratio: humidityValue != null ? Math.max(0, Math.min(1, humidityValue / 100)) : 0 },
+            { label: 'RH', value: humidityText.replace('???', '—'), ratio: humidityValue != null ? Math.max(0, Math.min(1, humidityValue / 100)) : 0 },
             { label: 'Precip chance', value: pop != null ? `${Math.round(pop)}%` : '—', ratio: pop != null ? Math.max(0, Math.min(1, pop / 100)) : 0 },
             { label: 'Pressure', value: pressureText.replace('???', '—'), ratio: pressureValue != null ? Math.max(0, Math.min(1, (pressureValue - 980) / 60)) : 0 },
             { label: 'Air quality', value: aqiText.replace('???', '—'), ratio: airQualityIndex != null ? Math.max(0, Math.min(1, airQualityIndex / 150)) : 0 },
@@ -2625,15 +2673,15 @@ function DailyForecastList({
         const windFeel =
           wind == null ? '—' : wind >= 25 ? 'Strong' : wind >= 15 ? 'Breezy' : wind >= 8 ? 'Light' : 'Calm';
         const summaryLine = [
-          pop != null ? `${Math.round(pop)}% precip chance` : null,
           wind != null ? `${Math.round(wind)} mph wind` : null,
+          gust != null ? `${Math.round(gust)} mph gust` : null,
         ]
           .filter(Boolean)
           .join(' • ');
         const barRows = [
           { label: 'Feels like', value: feelsLike != null ? `${Math.round(feelsLike)}°` : '—', ratio: feelsLike != null ? Math.max(0, Math.min(1, (feelsLike - 20) / 90)) : 0 },
           { label: 'Dew point', value: dewPoint != null ? `${Math.round(dewPoint)}°` : '—', ratio: dewPoint != null ? Math.max(0, Math.min(1, dewPoint / 80)) : 0 },
-          { label: 'Humidity', value: humidity != null ? `${Math.round(humidity)}%` : '—', ratio: humidity != null ? Math.max(0, Math.min(1, humidity / 100)) : 0 },
+          { label: 'RH', value: humidity != null ? `${Math.round(humidity)}%` : '—', ratio: humidity != null ? Math.max(0, Math.min(1, humidity / 100)) : 0 },
           { label: 'Cloud cover', value: cloudCover != null ? `${Math.round(cloudCover)}%` : '—', ratio: cloudCover != null ? Math.max(0, Math.min(1, cloudCover / 100)) : 0 },
           { label: 'Precip chance', value: pop != null ? `${Math.round(pop)}%` : '—', ratio: pop != null ? Math.max(0, Math.min(1, pop / 100)) : 0 },
           { label: 'Wind', value: fmtWind(wind), ratio: wind != null ? Math.max(0, Math.min(1, wind / 40)) : 0 },
@@ -2958,7 +3006,7 @@ function NerdyDeepDive({
           <View style={nd.panelHalf}>
             <Text style={nd.panelTitle}>Atmosphere</Text>
             <View style={nd.metricGrid2}>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('apparent-temp')}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
                 <Text style={nd.metricLabel}>Dew Pt</Text>
                 <Text style={nd.metricValue}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
               </Pressable>
@@ -2968,11 +3016,11 @@ function NerdyDeepDive({
               </Pressable>
             </View>
             <View style={nd.metricGrid2}>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('apparent-temp')}>
                 <Text style={nd.metricLabel}>Feels</Text>
                 <Text style={nd.metricValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
               </Pressable>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('spread_temp_dew')}>
                 <Text style={nd.metricLabel}>Spread</Text>
                 <Text style={nd.metricValue}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
               </Pressable>
@@ -2990,20 +3038,20 @@ function NerdyDeepDive({
                 <Text style={nd.metricLabel}>Speed</Text>
                 <Text style={nd.metricValue}>{windMph != null ? `${Math.round(windMph)} mph` : '—'}</Text>
               </Pressable>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('wind')}>
+              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('gusts')}>
                 <Text style={nd.metricLabel}>Gusts</Text>
                 <Text style={nd.metricValue}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
               </Pressable>
             </View>
             <View style={nd.metricGrid2Tall}>
-              <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind')}>
+              <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind-direction')}>
                 <Text style={nd.metricLabel}>Dir</Text>
                 <Text style={nd.directionMain} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.74}>
                   {dirHeading}
                 </Text>
                 <Text style={nd.directionSub}>{dirDegrees}</Text>
               </Pressable>
-              <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
+              <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('gust_factor')}>
                 <Text style={nd.metricLabel}>Gust Fx</Text>
                 <Text style={nd.metricValue}>{gf != null ? gf.toFixed(2) : '—'}</Text>
                 <Text style={nd.metricHint}>{windState}</Text>
@@ -3034,7 +3082,7 @@ function NerdyDeepDive({
                 <Text style={nd.metricValueSmall}>{airQualityIndex != null ? `${Math.round(airQualityIndex)} AQI` : '—'}</Text>
                 {airQualityLabel ? <Text style={nd.metricHint}>{airQualityLabel}</Text> : null}
               </Pressable>
-              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('clouds')}>
+              <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('radiation-regime')}>
                 <Text style={nd.metricLabel}>Radiation Regime</Text>
                 <Text style={nd.metricValueSmall}>{radiationRegime}</Text>
               </Pressable>
@@ -3052,7 +3100,7 @@ function NerdyDeepDive({
             <View style={nd.metricStack}>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('visibility')}>
                 <Text style={nd.metricLabel}>Visibility</Text>
-                <Text style={nd.metricValueSmall}>{visibilityMi != null ? `${visibilityMi.toFixed(1)} mi` : '—'}</Text>
+                <Text style={nd.metricValueSmall}>{formatSurfaceVisibility(visibilityMi)}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('pop')}>
                 <Text style={nd.metricLabel}>POP</Text>
@@ -3526,7 +3574,7 @@ function LandWeatherWithCoords({
   setLearnTopicId: (v: string | undefined) => void;
   setExplainPayload: (p: ExplainPayload | null) => void;
   setExplainOpen: (v: boolean) => void;
-  onWeatherCode: (code: number | null) => void;
+  onWeatherCode: (code: number | null, condition?: string | null) => void;
 }) {
   const units: UnitSystem = 'us';
   const { forecastModel } = useSettings();
@@ -3764,8 +3812,8 @@ function LandWeatherWithCoords({
     '—';
 
   useEffect(() => {
-    onWeatherCode(weatherCode);
-  }, [weatherCode, onWeatherCode]);
+    onWeatherCode(weatherCode, typeof condition === 'string' ? condition : null);
+  }, [weatherCode, condition, onWeatherCode]);
 
   const observationTime: string | null = wx.observedAt ?? wx.timestamp ?? wx.datetime ?? null;
 
@@ -3807,6 +3855,13 @@ function LandWeatherWithCoords({
     [setLearnOpen, setLearnTopicId]
   );
 
+  const rawWeatherError = currentError || forecastError;
+  const hasUsableWeatherData = Boolean(currentData || forecastData || tempF != null || daily.length > 0 || hourly.length > 0);
+  const displayWeatherError =
+    rawWeatherError && (!hasUsableWeatherData || !isTemporaryWeatherError(rawWeatherError))
+      ? formatWeatherError(rawWeatherError)
+      : null;
+
   if (!wxLab) {
     return (
       <>
@@ -3823,10 +3878,10 @@ function LandWeatherWithCoords({
           </View>
         ) : null}
 
-        {currentError || forecastError ? (
+        {displayWeatherError ? (
           <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Error</Text>
-            <Text style={styles.errorText}>{currentError || forecastError}</Text>
+            <Text style={styles.errorTitle}>Weather temporarily unavailable</Text>
+            <Text style={styles.errorText}>{displayWeatherError}</Text>
           </Card>
         ) : null}
 
@@ -3897,10 +3952,10 @@ function LandWeatherWithCoords({
         </View>
       ) : null}
 
-      {currentError || forecastError ? (
+      {displayWeatherError ? (
         <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Error</Text>
-          <Text style={styles.errorText}>{currentError || forecastError}</Text>
+          <Text style={styles.errorTitle}>Weather temporarily unavailable</Text>
+          <Text style={styles.errorText}>{displayWeatherError}</Text>
         </Card>
       ) : null}
 
@@ -4120,6 +4175,7 @@ export default function LandWeatherScreen() {
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
   const [bgWeatherCode, setBgWeatherCode] = useState<number | null>(null);
+  const [bgConditionText, setBgConditionText] = useState<string | null>(null);
 
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -4226,7 +4282,11 @@ export default function LandWeatherScreen() {
   return (
     <View style={styles.root}>
       <View pointerEvents="none" style={styles.videoLayer}>
-        <WeatherVideoBackground weatherCode={bgWeatherCode ?? undefined} isEvening={isNight || isSunset} />
+        <WeatherVideoBackground
+          weatherCode={bgWeatherCode ?? undefined}
+          conditionText={bgConditionText}
+          isEvening={isNight || isSunset}
+        />
       </View>
 
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
@@ -4355,7 +4415,10 @@ export default function LandWeatherScreen() {
                 setLearnTopicId={setLearnTopicId}
                 setExplainPayload={setExplainPayload}
                 setExplainOpen={setExplainOpen}
-                onWeatherCode={(code) => setBgWeatherCode(code)}
+                onWeatherCode={(code, conditionText) => {
+                  setBgWeatherCode(code);
+                  setBgConditionText(conditionText ?? null);
+                }}
               />
             </>
           )}

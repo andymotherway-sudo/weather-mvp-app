@@ -24,6 +24,7 @@ export type RadarOverlay = {
   templates: (string | null)[];
   opacities: number[];
   tileMaxZ: number;
+  productStyle?: 'reflectivity' | 'velocity' | 'echoTops';
   localImage?: RadarLocalImage | null;
 };
 
@@ -413,9 +414,8 @@ export function MapRenderer(props: MapRendererProps) {
 
   const requestMaxZ = useMemo(() => {
     const providerMax = Math.max(0, Math.floor(radar.tileMaxZ ?? 10));
-    const desired = Math.ceil(liveZoom) + (liveZoom >= 8 ? 1 : 2);
-    return clamp(desired, 0, providerMax);
-  }, [liveZoom, radar.tileMaxZ]);
+    return clamp(providerMax, 0, 22);
+  }, [radar.tileMaxZ]);
 
   const layerMaxZ = 24;
   const rasterResampling: 'linear' | 'nearest' = 'linear';
@@ -427,15 +427,22 @@ export function MapRenderer(props: MapRendererProps) {
   const radarRasterStyle = (opacity: number) => {
     const safeOpacity = clamp(opacity, 0, 1);
     const zoomSoftener = liveZoom < 9.5 ? 0.85 : liveZoom < 10.5 ? 0.92 : 1.0;
+    const productStyle = radar.productStyle ?? 'reflectivity';
+    const productTuning =
+      productStyle === 'velocity'
+        ? { saturation: -0.05, contrast: 0.18, brightnessMin: 0.08, brightnessMax: 0.96 }
+        : productStyle === 'echoTops'
+          ? { saturation: 0, contrast: 0, brightnessMin: 0, brightnessMax: 1.0 }
+          : { saturation: -0.2, contrast: 0.12, brightnessMin: 0.10, brightnessMax: 0.92 };
 
     return {
       rasterOpacity: safeOpacity * zoomSoftener,
-      rasterResampling,
+      rasterResampling: productStyle === 'echoTops' ? 'nearest' : rasterResampling,
       rasterFadeDuration,
-      rasterSaturation: -0.2,
-      rasterContrast: 0.12,
-      rasterBrightnessMin: 0.10,
-      rasterBrightnessMax: 0.92,
+      rasterSaturation: productTuning.saturation,
+      rasterContrast: productTuning.contrast,
+      rasterBrightnessMin: productTuning.brightnessMin,
+      rasterBrightnessMax: productTuning.brightnessMax,
     } as any;
   };
 

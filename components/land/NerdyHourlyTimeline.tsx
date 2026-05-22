@@ -208,6 +208,14 @@ function formatGustBucket(gustFactor: number | null): string {
   return 'Steady wind';
 }
 
+function formatFogRiskBucket(fogRisk: number | null): string {
+  if (fogRisk == null) return '—';
+  if (fogRisk >= 75) return 'High';
+  if (fogRisk >= 45) return 'Elevated';
+  if (fogRisk >= 20) return 'Watch';
+  return 'Lower';
+}
+
 function formatCompass(deg: number | null): string {
   if (deg == null) return '—';
   const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -467,7 +475,7 @@ export function NerdyHourlyTimeline({
                     label="Dew point"
                     value={chip(item.dpF, '°')}
                     helper={`RH ${fmtPct(item.rh)}`}
-                    topicId="humidity"
+                    topicId="dewpoint"
                     onExplain={onExplain}
                   />
                   <LearnableWxRow
@@ -481,13 +489,13 @@ export function NerdyHourlyTimeline({
                     label="Sky regime"
                     value={formatCloudBucket(item.cloud)}
                     helper={`Cloud cover ${fmtPct(item.cloud)}`}
-                    topicId="cloud_cover"
+                    topicId="clouds"
                     onExplain={onExplain}
                   />
                   <LearnableWxRow
                     label="Precip chance"
                     value={fmtPct(item.pop)}
-                    topicId="precipitation_probability"
+                    topicId="pop"
                     onExplain={onExplain}
                   />
                   <LearnableWxRow
@@ -500,7 +508,7 @@ export function NerdyHourlyTimeline({
                   <LearnableWxRow
                     label="Wind direction"
                     value={formatCompass(item.wdir)}
-                    topicId="wind_direction"
+                    topicId="wind-direction"
                     onExplain={onExplain}
                   />
                   <LearnableWxRow
@@ -520,7 +528,7 @@ export function NerdyHourlyTimeline({
                   <LearnableWxRow
                     label="Fog risk"
                     value={item.fogRisk == null ? '—' : `${item.fogRisk}/100`}
-                    helper={formatPressureBucket(item.pressureHpa)}
+                    helper={formatFogRiskBucket(item.fogRisk)}
                     topicId="fog_risk"
                     onExplain={onExplain}
                   />

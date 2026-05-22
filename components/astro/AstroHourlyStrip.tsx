@@ -72,7 +72,13 @@ function windMph(mps?: number | null) {
 
 function visMiles(visibilityM?: number | null) {
   if (visibilityM == null || !Number.isFinite(visibilityM)) return '—';
-  return (visibilityM / 1609.344).toFixed(1);
+  const mi = visibilityM / 1609.344;
+  if (mi >= 20) return 'Excellent';
+  if (mi >= 10) return 'Very good';
+  if (mi >= 6) return 'Good';
+  if (mi >= 3) return 'Reduced';
+  if (mi >= 1) return 'Poor';
+  return 'Very poor';
 }
 
 function moonText(hour: AstroHourRow) {
@@ -153,7 +159,7 @@ export function AstroHourlyStrip({
               <View style={styles.metaBlock}>
                 <Text style={styles.meta}>{cloudText(hour)}</Text>
                 <Text style={styles.meta}>{moonText(hour)}</Text>
-                <Text style={styles.meta}>Visibility {visMiles(hour.visibilityM)} mi</Text>
+                <Text style={styles.meta}>Visibility {visMiles(hour.visibilityM)}</Text>
                 <Text style={styles.meta}>Wind {windMph(hour.windMps)} mph</Text>
               </View>
             </View>

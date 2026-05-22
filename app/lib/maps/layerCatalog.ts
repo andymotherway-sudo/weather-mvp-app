@@ -234,8 +234,9 @@ export const LAYER_CATALOG = [
     defaultOpacity: 0.95,
     zIndex: 130,
     source: {
-      name: 'NWS',
-      details: 'Active alert polygons',
+      name: 'NOAA / NWS WWA',
+      details: 'Active watch, warning, advisory, and statement polygons from the NOAA WWA map service.',
+      url: 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/FeatureServer',
     },
     supportsOpacity: true,
     supportsLegend: false,
