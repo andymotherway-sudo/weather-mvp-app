@@ -68,6 +68,8 @@ function monthLabel(m: number) {
 
 const MONTH_MID_DOY = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
 const MONTH_START_DOY = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
+const PRECIP_MONTHLY_REFERENCE_IN = 6;
+const PRECIP_MONTHLY_PEAK_H = 18;
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
@@ -344,12 +346,10 @@ export function ClimatologyChart({
     if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
 
     const baseY = PAD_T + innerH;
-    const peakH = 16;
-    const referenceMax = 6;
     const monthPts = vals.map((v, i) => {
       const x = xForDoy(MONTH_START_DOY[i]);
-      const intensity = Math.sqrt(clamp(v / referenceMax, 0, 1));
-      return { x, y: baseY - intensity * peakH };
+      const intensity = Math.sqrt(clamp(v / PRECIP_MONTHLY_REFERENCE_IN, 0, 1));
+      return { x, y: baseY - intensity * PRECIP_MONTHLY_PEAK_H };
     });
 
     const left = { x: PAD_L, y: monthPts[0]?.y ?? baseY };
@@ -364,38 +364,10 @@ export function ClimatologyChart({
     return { area, ridge };
   };
 
-  const buildDailyPrecipShape = (valsIn?: Array<number | null>) => {
-    if (!Array.isArray(valsIn) || valsIn.length < 365) return { area: '', ridge: '' };
-
-    const vals = valsIn
-      .slice(0, 365)
-      .map((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0));
-    const max = vals.length ? Math.max(...vals) : 0;
-    if (!Number.isFinite(max) || max <= 0) return { area: '', ridge: '' };
-
-    const baseY = PAD_T + innerH;
-    const peakH = 24;
-    const referenceMax = Math.max(0.2, Math.min(1.5, max));
-    const pts = vals.map((v, i) => ({
-      x: PAD_L + (i / 364) * innerW,
-      y: baseY - Math.sqrt(clamp(v / referenceMax, 0, 1)) * peakH,
-    }));
-
-    const ridge = buildPath(pts);
-    const left = pts[0];
-    const right = pts[pts.length - 1];
-    const area =
-      pts.length >= 2
-        ? `${ridge} L ${right.x.toFixed(2)} ${baseY.toFixed(2)} L ${left.x.toFixed(2)} ${baseY.toFixed(2)} Z`
-        : '';
-
-    return { area, ridge };
-  };
-
   const precipShape = useMemo(() => buildPrecipShape(precipMonthlyIn), [precipMonthlyIn, innerW, innerH]);
   const lastYearPrecipShape = useMemo(
-    () => buildDailyPrecipShape(lastYear?.precipDailyIn),
-    [lastYear?.precipDailyIn, innerW, innerH]
+    () => buildPrecipShape(lastYear?.precipMonthlyIn),
+    [lastYear?.precipMonthlyIn, innerW, innerH]
   );
   const smoothedLastYearHigh = useMemo(() => smoothSeries(lastYear?.tmaxF, 3), [lastYear?.tmaxF]);
   const smoothedLastYearLow = useMemo(() => smoothSeries(lastYear?.tminF, 3), [lastYear?.tminF]);
@@ -472,10 +444,10 @@ export function ClimatologyChart({
     const m = monthFromDoy(activeDoy);
     const p = precipMonthlyIn && precipMonthlyIn.length >= 12 ? precipMonthlyIn[m - 1] : null;
     const lastYearPrecip =
-      lastYear?.precipDailyIn && lastYear.precipDailyIn.length > idx
-        ? numOrNull(lastYear.precipDailyIn[idx])
-        : lastYear?.precipMonthlyIn && lastYear.precipMonthlyIn.length >= 12
-          ? lastYear.precipMonthlyIn[m - 1]
+      lastYear?.precipMonthlyIn && lastYear.precipMonthlyIn.length >= 12
+        ? lastYear.precipMonthlyIn[m - 1]
+        : lastYear?.precipDailyIn && lastYear.precipDailyIn.length > idx
+          ? numOrNull(lastYear.precipDailyIn[idx])
           : null;
     const lastYearHigh = lastYear?.tmaxF && lastYear.tmaxF.length > idx ? numOrNull(lastYear.tmaxF[idx]) : null;
     const lastYearLow = lastYear?.tminF && lastYear.tminF.length > idx ? numOrNull(lastYear.tminF[idx]) : null;
@@ -490,7 +462,7 @@ export function ClimatologyChart({
       lastYearLow,
       month: m,
     };
-  }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn, lastYear?.precipDailyIn, lastYear?.precipMonthlyIn, lastYear?.tmaxF, lastYear?.tminF]);
+  }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn, lastYear?.precipMonthlyIn, lastYear?.precipDailyIn, lastYear?.tmaxF, lastYear?.tminF]);
 
   // ---- Scrub handling
   const panResponder = useMemo(() => {

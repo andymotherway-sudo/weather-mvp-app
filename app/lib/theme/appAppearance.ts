@@ -2,7 +2,7 @@ export type AppColorMode = 'classic' | 'grayscale' | 'high_contrast';
 
 export const APP_COLOR_MODE_OPTIONS: Array<{ key: AppColorMode; label: string; helper: string }> = [
   { key: 'classic', label: 'Classic', helper: 'OMNIwx blue glass' },
-  { key: 'grayscale', label: 'Gray Scale', helper: 'Neutral app chrome' },
+  { key: 'grayscale', label: 'Gray Scale', helper: 'Neutral app surfaces' },
   { key: 'high_contrast', label: 'High Contrast', helper: 'Brighter text and edges' },
 ];
 

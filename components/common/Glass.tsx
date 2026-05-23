@@ -1,13 +1,18 @@
 import React from 'react';
 import { StyleProp, View, ViewStyle } from 'react-native';
+import { useSettings } from '../../app/context/SettingsContext';
+import { appChrome } from '../../app/lib/theme/appAppearance';
 
 export function Glass(props: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  const { appColorMode } = useSettings();
+  const chrome = appChrome(appColorMode);
+
   return (
     <View
       style={[
         {
-          backgroundColor: 'rgba(2,6,23,0.66)',
-          borderColor: 'rgba(255,255,255,0.10)',
+          backgroundColor: chrome.card,
+          borderColor: chrome.border,
           borderWidth: 1,
           borderRadius: 18,
           padding: 10,

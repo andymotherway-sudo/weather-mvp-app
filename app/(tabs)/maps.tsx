@@ -520,6 +520,7 @@ export default function MapsScreen() {
   const [showUnknownAviationAltitude, setShowUnknownAviationAltitude] = useState(false);
   const [selectedRestrictionPoint, setSelectedRestrictionPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [wildfireDetailLoading, setWildfireDetailLoading] = useState(false);
+  const [wildfireLegendExpanded, setWildfireLegendExpanded] = useState(false);
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
@@ -694,6 +695,8 @@ export default function MapsScreen() {
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
   const wildfireHotspotsEnabled = !!state.layers?.['wildfire.hotspots']?.enabled;
   const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
+  const showWildfireLegend =
+    state.viewId === 'wildfire' && (wildfireEnabled || wildfireHotspotsEnabled || wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
@@ -2537,7 +2540,49 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
-        {fireRestrictionsEnabled ? (
+        {showWildfireLegend ? (
+          <View
+            style={[
+              styles.legendWrap,
+              showRadarLegend ? styles.restrictionsLegendWrapWithRadar : styles.restrictionsLegendWrap,
+            ]}
+          >
+            <Glass style={[styles.legendCard, styles.wildfireLegendCard]}>
+              <View style={styles.wildfireLegendHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.legendCardTitle}>Wildfire layers</Text>
+                  <Text style={styles.restrictionLegendTitle}>Colors show layer type, not severity</Text>
+                </View>
+                <Pressable
+                  onPress={() => setWildfireLegendExpanded((current) => !current)}
+                  style={styles.legendCollapseButton}
+                  hitSlop={8}
+                >
+                  <Text style={styles.legendCollapseText}>{wildfireLegendExpanded ? '-' : '+'}</Text>
+                </Pressable>
+              </View>
+              <View style={styles.wildfireLegendInline}>
+                <View style={styles.restrictionLegendRow}>
+                  <View style={[styles.restrictionLegendSwatch, { backgroundColor: '#fb923c', borderColor: '#fed7aa' }]} />
+                  <Text style={styles.restrictionLegendLabel}>Perimeter</Text>
+                </View>
+                <View style={styles.restrictionLegendRow}>
+                  <View style={[styles.wildfireLegendDot, { backgroundColor: '#dc2626', borderColor: '#fff1f2' }]} />
+                  <Text style={styles.restrictionLegendLabel}>Incident</Text>
+                </View>
+                <View style={styles.restrictionLegendRow}>
+                  <View style={[styles.restrictionLegendSwatch, { backgroundColor: '#fbbf24', borderColor: '#fef3c7' }]} />
+                  <Text style={styles.restrictionLegendLabel}>Smoke</Text>
+                </View>
+              </View>
+              {wildfireLegendExpanded ? (
+                <Text style={styles.wildfireLegendNote}>
+                  Some incidents are dots only because the incident feed has a location before a current perimeter polygon is published, or the perimeter is outside the current map window.
+                </Text>
+              ) : null}
+            </Glass>
+          </View>
+        ) : fireRestrictionsEnabled ? (
           <View
             style={[
               styles.legendWrap,
@@ -3900,6 +3945,50 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
     gap: 6,
+  },
+  wildfireLegendCard: {
+    width: 286,
+  },
+  wildfireLegendHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  wildfireLegendInline: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: 10,
+    rowGap: 5,
+  },
+  wildfireLegendDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  wildfireLegendNote: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
+  },
+  legendCollapseButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  legendCollapseText: {
+    color: 'white',
+    fontSize: 15,
+    lineHeight: 17,
+    fontWeight: '900',
   },
   stationLegendCard: {
     width: 318,

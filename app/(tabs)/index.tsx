@@ -4757,7 +4757,7 @@ const styles = StyleSheet.create({
   },
   dailyFeatureTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: 12,
   },
@@ -4778,6 +4778,7 @@ const styles = StyleSheet.create({
   dailyFeatureMiniTitle: {
     flex: 1,
     fontSize: 12,
+    lineHeight: 16,
     fontWeight: '900',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
@@ -4791,37 +4792,45 @@ const styles = StyleSheet.create({
   },
   dailyFeatureRange: {
     fontSize: 18,
+    lineHeight: 22,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.9)',
   },
   dailyFeatureSummaryRow: {
-    marginTop: 14,
+    marginTop: 16,
+    minHeight: 112,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    alignItems: 'flex-start',
+    gap: 10,
   },
   dailyFeatureEmoji: {
     fontSize: 46,
   },
-  dailyFeatureIconBadge: {},
+  dailyFeatureIconBadge: {
+    marginTop: 10,
+  },
   dailyFeatureSummaryText: {
     flex: 1,
     minWidth: 0,
+    paddingTop: 2,
   },
   dailyFeatureCondition: {
     fontSize: 18,
+    lineHeight: 22,
     fontWeight: '900',
     color: 'white',
   },
   dailyFeatureNarrative: {
-    marginTop: 4,
-    fontSize: 15,
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 19,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.76)',
   },
   dailyFeatureMoonMeta: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 12,
+    lineHeight: 16,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.66)',
   },
@@ -4856,16 +4865,19 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.84)',
   },
   dailyNightSummaryRow: {
-    marginTop: 14,
+    marginTop: 16,
+    minHeight: 112,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    alignItems: 'flex-start',
+    gap: 10,
   },
   dailyNightEmoji: {
     fontSize: 42,
     display: 'none',
   },
-  dailyNightIconBadge: {},
+  dailyNightIconBadge: {
+    marginTop: 10,
+  },
   dailyNightTemp: {
     fontSize: 60,
     lineHeight: 62,
@@ -4875,10 +4887,11 @@ const styles = StyleSheet.create({
   dailyNightText: {
     flex: 1,
     minWidth: 0,
+    paddingTop: 2,
   },
   dailyDetailList: {
-    marginTop: 18,
-    gap: 12,
+    marginTop: 14,
+    gap: 10,
   },
   dailyDetailRow: {
     flexDirection: 'row',
@@ -4891,7 +4904,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
-    minHeight: 42,
+    minHeight: 40,
     paddingLeft: 14,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(255,255,255,0.14)',

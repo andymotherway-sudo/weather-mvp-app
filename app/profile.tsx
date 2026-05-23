@@ -185,7 +185,7 @@ export default function ProfileScreen() {
 
           <Text style={styles.label}>App Color</Text>
           <Text style={styles.helperText}>
-            Changes app chrome only. Weather layers, precip colors, charts, and graph lines keep their data colors.
+            Applies across OMNIwx surfaces. Weather layers, precip colors, charts, and graph lines keep their data colors.
           </Text>
           <View style={styles.stackButtons}>
             {APP_COLOR_MODE_OPTIONS.map((option) => (

@@ -2,7 +2,7 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect } from 'react';
+import { type ReactNode, useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -13,10 +13,27 @@ import { AlmanacWarmupProvider } from '../components/boot/AlmanacWarmup';
 import { LocationsProvider } from './lib/locations/useLocations';
 
 import { PlaceProvider } from './context/PlaceContext';
-import { SettingsProvider } from './context/SettingsContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { WxLabProvider } from './context/WxLabContext';
+import { appChrome } from './lib/theme/appAppearance';
 
 const APP_BG = '#020617';
+
+function AppChromeFrame({ children }: { children: ReactNode }) {
+  const { appColorMode } = useSettings();
+  const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
+
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(chrome.background).catch(() => {});
+  }, [chrome.background]);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: chrome.background }}>
+      <StatusBar style="light" translucent={false} backgroundColor={chrome.background} />
+      {children}
+    </View>
+  );
+}
 
 export default function RootLayout() {
   useEffect(() => {
@@ -25,10 +42,8 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: APP_BG }}>
-        <StatusBar style="light" translucent={false} backgroundColor={APP_BG} />
-
       <SettingsProvider>
+        <AppChromeFrame>
         {/* ✅ replaces LocationProvider */}
         <LocationsProvider>
           <PlaceProvider>
@@ -38,7 +53,7 @@ export default function RootLayout() {
                   <Stack
                     screenOptions={{
                       headerShown: false,
-                      contentStyle: { backgroundColor: APP_BG },
+                      contentStyle: { backgroundColor: 'transparent' },
                     }}
                   >
                     <Stack.Screen name="(onboarding)" />
@@ -50,8 +65,8 @@ export default function RootLayout() {
             </WxLabProvider>
           </PlaceProvider>
         </LocationsProvider>
-        </SettingsProvider>
-      </View>
+        </AppChromeFrame>
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }

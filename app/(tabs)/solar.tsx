@@ -752,6 +752,12 @@ export default function SolarScreen() {
                   })
                 }
               />
+              <OpenAstroMapCard
+                lat={astro.lat}
+                lon={astro.lon}
+                placeName={astro.placeName}
+                compact
+              />
               <SkyScoreChart hours={chartHours} />
               <AstroHourlyStrip hours={astro.tonightHours} />
               <MoonDarknessCard
@@ -761,159 +767,16 @@ export default function SolarScreen() {
                   setLearnOpen(true);
                 }}
               />
-              <OpenAstroMapCard
-                lat={astro.lat}
-                lon={astro.lon}
-                placeName={astro.placeName}
-              />
             </>
           ) : null}
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Live Solar Views</Text>
+            <Text style={styles.sectionTitle}>Solar Weather</Text>
             <Text style={styles.sectionSubtitle}>
-              Toggle between current solar imagery products without leaving the Space page
+              Solar and geomagnetic conditions that can influence aurora and observing context
             </Text>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Solar imagery</Text>
-              <LearnRow
-                onPress={() => {
-                  setLearnTopicId(activeSolarView.topicId);
-                  setLearnOpen(true);
-                }}
-              />
-            </View>
-
-            <View style={styles.solarChipRow}>
-              {SOLAR_VIEWS.map((view) => (
-                <Pressable
-                  key={view.id}
-                  onPress={() => setSolarViewId(view.id)}
-                  style={[
-                    styles.solarChip,
-                    view.id === activeSolarView.id ? styles.solarChipActive : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.solarChipText,
-                      view.id === activeSolarView.id ? styles.solarChipTextActive : null,
-                    ]}
-                  >
-                    {view.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.solarImageFrame}>
-              <Image
-                source={{ uri: activeSolarView.imageUrl }}
-                style={styles.solarImage}
-                resizeMode="cover"
-                onLoadStart={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loading' }))
-                }
-                onLoad={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loaded' }))
-                }
-                onError={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'error' }))
-                }
-              />
-
-              {activeSolarImageState !== 'loaded' ? (
-                <View style={styles.solarImageOverlay}>
-                  <ActivityIndicator color="#E0F2FE" />
-                  <Text style={styles.solarImageOverlayText}>
-                    {activeSolarImageState === 'error'
-                      ? 'Solar image unavailable right now'
-                      : 'Loading live solar image…'}
-                  </Text>
-                  <Text style={styles.solarImageOverlaySubtext}>
-                    Using a smaller mobile-friendly image and warming the rest in the background
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.solarMetaRow}>
-              <View style={styles.solarSourcePill}>
-                <Text style={styles.solarSourcePillText}>{activeSolarView.source}</Text>
-              </View>
-              <Text style={styles.smallText}>Live image feed</Text>
-            </View>
-
-            <Text style={styles.cardBody}>{activeSolarView.description}</Text>
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Space Weather Context</Text>
-            <Text style={styles.sectionSubtitle}>
-              Solar and geomagnetic conditions that can influence aurora and
-              observing context
-            </Text>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Mars Weather Archive</Text>
-              <LearnRow
-                onPress={() =>
-                  openExplain({
-                    title: 'InSight Mars weather',
-                    summary:
-                      'NASA InSight measured surface temperature, pressure, and wind at Elysium Planitia on Mars.',
-                    whyItMatters:
-                      'The mission is retired, so this is archived context rather than a live Mars forecast.',
-                    howComputed:
-                      'OMNIwx requests the NASA InSight Weather API through the worker and falls back to an archived final-mission sample when the stale feed is unavailable.',
-                    confidence: 'medium',
-                    learnTopicId: 'mars-insight-weather',
-                  })
-                }
-              />
-            </View>
-
-            {marsLoading && !mars ? (
-              <Text style={styles.smallText}>Loading archived Mars weather...</Text>
-            ) : marsError && !mars ? (
-              <Text style={styles.smallText}>{marsError}</Text>
-            ) : mars ? (
-              <>
-                <View style={styles.marsMetricRow}>
-                  <View style={styles.marsMetricTile}>
-                    <Text style={styles.label}>Air temp avg</Text>
-                    <Text style={styles.cardValue}>{fmtMarsTemp(mars.tempC.avg)}</Text>
-                    <Text style={styles.smallText}>
-                      {fmtMarsTemp(mars.tempC.min)} to {fmtMarsTemp(mars.tempC.max)}
-                    </Text>
-                  </View>
-                  <View style={styles.marsMetricTile}>
-                    <Text style={styles.label}>Pressure</Text>
-                    <Text style={styles.cardValue}>{fmtMarsPressure(mars.pressurePa.avg)}</Text>
-                    <Text style={styles.smallText}>Sol {mars.sol}</Text>
-                  </View>
-                </View>
-                <View style={styles.marsMetricRow}>
-                  <View style={styles.marsMetricTile}>
-                    <Text style={styles.label}>Wind avg</Text>
-                    <Text style={styles.cardValue}>{fmtMarsWind(mars.windMps.avg)}</Text>
-                    <Text style={styles.smallText}>Max {fmtMarsWind(mars.windMps.max)}</Text>
-                  </View>
-                  <View style={styles.marsMetricTile}>
-                    <Text style={styles.label}>Date</Text>
-                    <Text style={styles.cardValue}>{mars.terrestrialDate ?? 'Archived'}</Text>
-                    <Text style={styles.smallText}>{mars.season ?? mars.source}</Text>
-                  </View>
-                </View>
-                <Text style={styles.smallText}>{mars.note}</Text>
-              </>
-            ) : null}
-          </View>
 
           {showSpaceWeatherLoading ? (
             <View style={styles.center}>
@@ -1137,6 +1000,151 @@ export default function SolarScreen() {
               </Text>
             </View>
           )}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Live Solar Views</Text>
+            <Text style={styles.sectionSubtitle}>
+              Toggle between current solar imagery products without leaving the Space page
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Solar imagery</Text>
+              <LearnRow
+                onPress={() => {
+                  setLearnTopicId(activeSolarView.topicId);
+                  setLearnOpen(true);
+                }}
+              />
+            </View>
+
+            <View style={styles.solarChipRow}>
+              {SOLAR_VIEWS.map((view) => (
+                <Pressable
+                  key={view.id}
+                  onPress={() => setSolarViewId(view.id)}
+                  style={[
+                    styles.solarChip,
+                    view.id === activeSolarView.id ? styles.solarChipActive : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.solarChipText,
+                      view.id === activeSolarView.id ? styles.solarChipTextActive : null,
+                    ]}
+                  >
+                    {view.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.solarImageFrame}>
+              <Image
+                source={{ uri: activeSolarView.imageUrl }}
+                style={styles.solarImage}
+                resizeMode="cover"
+                onLoadStart={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loading' }))
+                }
+                onLoad={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loaded' }))
+                }
+                onError={() =>
+                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'error' }))
+                }
+              />
+
+              {activeSolarImageState !== 'loaded' ? (
+                <View style={styles.solarImageOverlay}>
+                  <ActivityIndicator color="#E0F2FE" />
+                  <Text style={styles.solarImageOverlayText}>
+                    {activeSolarImageState === 'error'
+                      ? 'Solar image unavailable right now'
+                      : 'Loading live solar image...'}
+                  </Text>
+                  <Text style={styles.solarImageOverlaySubtext}>
+                    Using a smaller mobile-friendly image and warming the rest in the background
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.solarMetaRow}>
+              <View style={styles.solarSourcePill}>
+                <Text style={styles.solarSourcePillText}>{activeSolarView.source}</Text>
+              </View>
+              <Text style={styles.smallText}>Live image feed</Text>
+            </View>
+
+            <Text style={styles.cardBody}>{activeSolarView.description}</Text>
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
+            <Text style={styles.sectionSubtitle}>
+              Retired InSight observations preserved as a historical Mars weather reference
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Mars Weather Archive</Text>
+              <LearnRow
+                onPress={() =>
+                  openExplain({
+                    title: 'InSight Mars weather',
+                    summary:
+                      'NASA InSight measured surface temperature, pressure, and wind at Elysium Planitia on Mars.',
+                    whyItMatters:
+                      'The mission is retired, so this is archived context rather than a live Mars forecast.',
+                    howComputed:
+                      'OMNIwx requests the NASA InSight Weather API through the worker and falls back to an archived final-mission sample when the stale feed is unavailable.',
+                    confidence: 'medium',
+                    learnTopicId: 'mars-insight-weather',
+                  })
+                }
+              />
+            </View>
+
+            {marsLoading && !mars ? (
+              <Text style={styles.smallText}>Loading archived Mars weather...</Text>
+            ) : marsError && !mars ? (
+              <Text style={styles.smallText}>{marsError}</Text>
+            ) : mars ? (
+              <>
+                <View style={styles.marsMetricRow}>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Air temp avg</Text>
+                    <Text style={styles.cardValue}>{fmtMarsTemp(mars.tempC.avg)}</Text>
+                    <Text style={styles.smallText}>
+                      {fmtMarsTemp(mars.tempC.min)} to {fmtMarsTemp(mars.tempC.max)}
+                    </Text>
+                  </View>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Pressure</Text>
+                    <Text style={styles.cardValue}>{fmtMarsPressure(mars.pressurePa.avg)}</Text>
+                    <Text style={styles.smallText}>Sol {mars.sol}</Text>
+                  </View>
+                </View>
+                <View style={styles.marsMetricRow}>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Wind avg</Text>
+                    <Text style={styles.cardValue}>{fmtMarsWind(mars.windMps.avg)}</Text>
+                    <Text style={styles.smallText}>Max {fmtMarsWind(mars.windMps.max)}</Text>
+                  </View>
+                  <View style={styles.marsMetricTile}>
+                    <Text style={styles.label}>Date</Text>
+                    <Text style={styles.cardValue}>{mars.terrestrialDate ?? 'Archived'}</Text>
+                    <Text style={styles.smallText}>{mars.season ?? mars.source}</Text>
+                  </View>
+                </View>
+                <Text style={styles.smallText}>{mars.note}</Text>
+              </>
+            ) : null}
+          </View>
         </ScrollView>
       </SafeAreaView>
 
