@@ -761,8 +761,38 @@ export function ClimatologyChart({
         </AView>
       </View>
       </View>
+      <View style={styles.legendGrid}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendBandSwatch, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+          <Text style={styles.legendText}>Normal temp range</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={styles.legendLinePair}>
+            <View style={[styles.legendLine, { backgroundColor: C.lastYearHigh }]} />
+            <View style={[styles.legendLine, { backgroundColor: C.lastYearLow }]} />
+          </View>
+          <Text style={styles.legendText}>Prior-year high / low</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendAreaSwatch, { backgroundColor: C.precipFill, borderColor: C.precipStroke }]} />
+          <Text style={styles.legendText}>Avg monthly precip</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View
+            style={[
+              styles.legendAreaSwatch,
+              { backgroundColor: C.precipLastYearFill, borderColor: C.precipLastYearStroke },
+            ]}
+          />
+          <Text style={styles.legendText}>Prior-year precip</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendMarkerSwatch, { backgroundColor: C.markerText }]} />
+          <Text style={styles.legendText}>Selected day</Text>
+        </View>
+      </View>
       <Text style={styles.footer}>
-        Tip: drag to scrub days. Open the chart for a closer look. Dark green shows average monthly precip; bright green shows prior-year daily precip.
+        Tip: drag to scrub days. Open the chart for a closer look.
       </Text>
     </Card>
     {allowExpand ? (
@@ -900,6 +930,57 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
+  },
+
+  legendGrid: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
+  },
+  legendText: {
+    color: 'rgba(235,245,255,0.72)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  legendBandSwatch: {
+    width: 18,
+    height: 10,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  legendAreaSwatch: {
+    width: 18,
+    height: 10,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  legendLinePair: {
+    width: 20,
+    gap: 3,
+  },
+  legendLine: {
+    height: 2,
+    borderRadius: 999,
+  },
+  legendMarkerSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(125,210,255,0.28)',
   },
 
   footer: { marginTop: 8, fontSize: 11, color: 'rgba(255,255,255,0.55)', fontWeight: '700' },

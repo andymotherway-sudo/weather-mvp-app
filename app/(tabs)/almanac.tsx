@@ -501,7 +501,9 @@ export default function ClimoTab() {
 }, [climo.data?.normals]);
 
 const hasNormals = chartNormals.length > 0;
-  const showNormalsHint = hasPlace && !hasNormals && !!climo.error && !climo.loading && !climo.refreshing;
+  const showNormalsFailureHint = hasPlace && !hasNormals && !!climo.error && !climo.loading && !climo.refreshing;
+  const normalsLoading = shouldLoadAreaAlmanac && !hasNormals && (climo.loading || climo.refreshing);
+  const normalsFailed = shouldLoadAreaAlmanac && !hasNormals && !!climo.error && !climo.loading && !climo.refreshing;
 
   /* ---------- meta display ---------- */
 
@@ -705,9 +707,12 @@ const hasNormals = chartNormals.length > 0;
             </View>
           </View>
 
-          {showNormalsHint ? (
-            <Text style={[styles.helper, { marginTop: 8 }]}>Normals unavailable right now — we’ll keep trying.</Text>
+          {showNormalsFailureHint ? (
+            <Text style={[styles.helper, { marginTop: 8 }]}>
+              Climate normals could not be downloaded. Forecasts and records can still be used.
+            </Text>
           ) : null}
+
         </View>
 
         {!hasPlace ? (
@@ -978,13 +983,26 @@ const hasNormals = chartNormals.length > 0;
           </View>
         ) : hasPlace && shouldLoadAreaAlmanac ? (
           <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Chart warming up</Text>
-            <Text style={styles.errorText}>
-              The climatology chart will appear once monthly normals finish loading.
+            <Text style={styles.errorTitle}>
+              {normalsFailed ? 'Climate normals need a retry' : 'Downloading climate normals'}
             </Text>
             <Text style={styles.errorText}>
-              Normals: {chartNormals.length} / 12 • DOY: {safeSelectedDoy}
+              {normalsFailed
+                ? 'Climate normals could not be downloaded for this area. You can retry, or keep using forecasts and records.'
+                : normalsLoading
+                  ? 'Monthly normals are downloading for this area. First download can take a minute for a new climate station.'
+                  : 'Download climate normals and records for this area to unlock the full Almanac chart.'}
             </Text>
+            <Text style={styles.errorText}>
+              Normals: {chartNormals.length} / 12 - DOY: {safeSelectedDoy}
+            </Text>
+            {normalsFailed ? (
+              <View style={styles.actionRow}>
+                <Pressable onPress={() => climo.refresh?.()} style={styles.btn}>
+                  <Text style={styles.btnText}>Retry Normals</Text>
+                </Pressable>
+              </View>
+            ) : null}
           </Card>
         ) : null}
         <View style={{ height: Math.max(24, insets.bottom) }} />
