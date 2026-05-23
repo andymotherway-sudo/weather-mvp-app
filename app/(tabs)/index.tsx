@@ -30,6 +30,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
+import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
 
 import type { FavoriteLocation } from '../lib/locations/favorites';
@@ -2253,6 +2254,7 @@ function SimpleDailyOverview({
   }>;
   dayLengthSec?: number | null;
 }) {
+  const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
   const todayKey =
     typeof today?.date === 'string'
@@ -2260,7 +2262,7 @@ function SimpleDailyOverview({
       : typeof today?.time === 'string'
         ? today.time.slice(0, 10)
         : '';
-  const nextDays = daily.slice(1, 15);
+  const nextDays = daily.slice(0, 15);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
   const moonByDate = React.useMemo(
     () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
@@ -2308,7 +2310,7 @@ function SimpleDailyOverview({
 
   return (
     <View style={styles.dailySimpleWrap}>
-      <View style={styles.dailyCurrentCard}>
+      <View style={[styles.dailyCurrentCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <Text style={styles.dailyPanelEyebrow}>Current conditions</Text>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
@@ -2328,7 +2330,7 @@ function SimpleDailyOverview({
           </View>
         </View>
 
-        <View style={styles.dailyCurrentMetricRow}>
+        <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
           {currentMetrics.map((item) => (
             <View key={item.label} style={styles.dailyCurrentMetricCell}>
               <Text style={styles.dailyCurrentMetricValue}>{item.value}</Text>
@@ -2339,7 +2341,7 @@ function SimpleDailyOverview({
         </View>
       </View>
 
-      <View style={styles.dailyFeatureCard}>
+      <View style={[styles.dailyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <Text style={styles.dailyPanelEyebrow}>Today & tonight</Text>
         <View style={styles.dailyTwinColumns}>
           <View style={styles.dailyTwinColumn}>
@@ -2450,7 +2452,7 @@ function SimpleDailyOverview({
       </View>
 
       <View style={styles.nextDaysHeader}>
-        <Text style={styles.nextDaysTitle}>Next 15 days</Text>
+        <Text style={styles.nextDaysTitle}>15-day forecast</Text>
       </View>
       <View style={styles.nextDaysList}>
         {nextDays.map((day: any, idx: number) => {
@@ -2522,7 +2524,12 @@ function SimpleDailyOverview({
             <Pressable
               key={key}
               onPress={() => setExpandedKey((prev) => (prev === key ? null : key))}
-              style={[styles.nextDayRow, expanded && styles.nextDayRowExpanded]}
+              style={[
+                styles.nextDayRow,
+                { backgroundColor: chrome.cardStrong, borderColor: chrome.border },
+                expanded && styles.nextDayRowExpanded,
+                expanded && { borderColor: chrome.borderStrong },
+              ]}
             >
               <View style={styles.dailyForecastTop}>
                 <View style={styles.dailyForecastWhen}>
@@ -4111,6 +4118,7 @@ function LandWeatherWithCoords({
 }
 
 export default function LandWeatherScreen() {
+  const { appColorMode, chrome } = useAppChrome();
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
 
@@ -4280,8 +4288,11 @@ export default function LandWeatherScreen() {
   };
 
   return (
-    <View style={styles.root}>
-      <View pointerEvents="none" style={styles.videoLayer}>
+    <View style={[styles.root, { backgroundColor: chrome.background }]}>
+      <View
+        pointerEvents="none"
+        style={[styles.videoLayer, appColorMode === 'classic' ? null : styles.videoLayerMuted]}
+      >
         <WeatherVideoBackground
           weatherCode={bgWeatherCode ?? undefined}
           conditionText={bgConditionText}
@@ -4302,7 +4313,7 @@ export default function LandWeatherScreen() {
           refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} />}
         >
           <View style={styles.headerHeroWrap}>
-            <View style={styles.headerHeroSurface}>
+            <View style={[styles.headerHeroSurface, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
               <View style={styles.headerCompactTopRow}>
                 <View style={styles.headerCompactLeft}>
                   <Image
@@ -4342,18 +4353,18 @@ export default function LandWeatherScreen() {
               </View>
 
               <View style={styles.headerHeroBottomRow}>
-                <Pressable onPress={() => router.push('/hourly')} style={styles.quickNavBtn}>
+                  <Pressable onPress={() => router.push('/hourly')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                   <Text style={styles.quickNavText}>Hourly</Text>
                 </Pressable>
 
-                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={styles.quickNavBtn}>
+                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                   <Text style={styles.quickNavText}>Almanac</Text>
                 </Pressable>
 
                 <View style={styles.headerModeWrap}>
                   <Pressable
                     onPress={() => setWxLab?.(false)}
-                    style={[styles.headerModeBtn, !wxLab ? styles.headerModeBtnActive : null]}
+                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, !wxLab ? styles.headerModeBtnActive : null, !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
                   >
                     <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
                   </Pressable>
@@ -4363,7 +4374,7 @@ export default function LandWeatherScreen() {
                       if (toggleWxLab && !wxLab) return toggleWxLab();
                       return setWxLab?.(true);
                     }}
-                    style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
+                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, wxLab ? styles.headerModeBtnActive : null, wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
                   >
                     <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
                   </Pressable>
@@ -4458,6 +4469,9 @@ const styles = StyleSheet.create({
   videoLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+  },
+  videoLayerMuted: {
+    opacity: 0.18,
   },
 
   safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },

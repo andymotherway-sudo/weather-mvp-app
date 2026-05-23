@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { LocationAstroForecast } from '../../app/lib/astro/locationAstro';
 import { toLocalLabel } from '../../app/lib/astro/locationAstro';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 type Props = {
   forecast: LocationAstroForecast;
@@ -65,6 +66,7 @@ function heroSubtitle(forecast: LocationAstroForecast) {
 }
 
 export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
+  const { chrome } = useAppChrome();
   const bestWindow = formatWindow(forecast.bestStartTime, forecast.bestEndTime);
   const darkestWindow = formatWindow(
     forecast.darkestStartTime,
@@ -72,7 +74,7 @@ export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
   );
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
       <View style={styles.headerRow}>
         <Text style={styles.eyebrow}>Sky Score</Text>
         {onLearnSkyScore ? (

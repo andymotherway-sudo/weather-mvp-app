@@ -29,6 +29,7 @@ import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useMarsInsightWeather, useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
+import { useAppChrome } from '../lib/theme/useAppChrome';
 
 function fmtUpdated(iso?: string) {
   if (!iso) return '—';
@@ -245,6 +246,7 @@ const SOLAR_VIEWS: SolarViewOption[] = [
 
 export default function SolarScreen() {
   const insets = useSafeAreaInsets();
+  const { chrome } = useAppChrome();
   const { active } = usePlace();
 
   const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary();
@@ -503,7 +505,7 @@ export default function SolarScreen() {
         : 'Bz unavailable';
 
     return (
-      <View style={styles.card}>
+      <View style={themedCard}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardTitle}>Solar Wind Speed – last few hours</Text>
           <LearnRow
@@ -585,7 +587,7 @@ export default function SolarScreen() {
 
   const renderRecentEvents = () => {
   return (
-    <View style={styles.card}>
+    <View style={themedCard}>
       <View style={styles.cardHeaderRow}>
         <Text style={styles.cardTitle}>Recent Space Events</Text>
         <LearnRow
@@ -649,6 +651,14 @@ export default function SolarScreen() {
     }),
     [insets.top, insets.bottom]
   );
+  const themedCard = useMemo(
+    () => [styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }],
+    [chrome.border, chrome.cardStrong]
+  );
+  const themedErrorCard = useMemo(
+    () => [styles.cardError, { borderColor: chrome.borderStrong }],
+    [chrome.borderStrong]
+  );
 
   const astroReady = !!astro;
   const showAstroLoading = astroLoading && !astro;
@@ -691,9 +701,9 @@ export default function SolarScreen() {
 
   return (
     <>
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
         <ScrollView
-          style={styles.container}
+          style={[styles.container, { backgroundColor: chrome.background }]}
           contentContainerStyle={[styles.content, contentPad]}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefreshAll} />
@@ -715,7 +725,7 @@ export default function SolarScreen() {
           </View>
 
           {!active ? (
-            <View style={styles.card}>
+            <View style={themedCard}>
               <Text style={styles.cardTitle}>No selected location</Text>
               <Text style={styles.cardBody}>
                 Choose a location in OMNIwx to load an astro forecast for that
@@ -730,7 +740,7 @@ export default function SolarScreen() {
               <Text style={styles.smallText}>Loading astro forecast…</Text>
             </View>
           ) : astroError && !astro ? (
-            <View style={styles.cardError}>
+            <View style={themedErrorCard}>
               <Text style={styles.cardTitle}>Astro Forecast Error</Text>
               <Text style={styles.cardValue}>{renderable(astroError)}</Text>
             </View>
@@ -784,14 +794,14 @@ export default function SolarScreen() {
               <Text style={styles.smallText}>Loading space weather…</Text>
             </View>
           ) : error ? (
-            <View style={styles.cardError}>
+            <View style={themedErrorCard}>
               <Text style={styles.cardTitle}>Error</Text>
               <Text style={styles.cardValue}>{renderable(error)}</Text>
             </View>
           ) : data ? (
             <>
               {'noaaScales' in data && (data as any).noaaScales ? (
-                <View style={styles.card}>
+                <View style={themedCard}>
                   <View style={styles.cardHeaderRow}>
                     <Text style={styles.cardTitle}>NOAA Scale Status</Text>
                     <LearnRow
@@ -866,7 +876,7 @@ export default function SolarScreen() {
               ) : null}
 
               {'xrayFlux' in data && (data as any).xrayFlux ? (
-                <View style={styles.card}>
+                <View style={themedCard}>
                   <View style={styles.cardHeaderRow}>
                     <Text style={styles.cardTitle}>GOES X-ray Flux</Text>
                     <LearnRow
@@ -905,7 +915,7 @@ export default function SolarScreen() {
                 </View>
               ) : null}
 
-              <View style={styles.card}>
+              <View style={themedCard}>
                 <View style={styles.cardHeaderRow}>
                   <Text style={styles.cardTitle}>Solar Wind (L1)</Text>
                   <LearnRow
@@ -952,7 +962,7 @@ export default function SolarScreen() {
                 {renderSpeedDial(data.solarWindSpeed)}
               </View>
 
-              <View style={styles.card}>
+              <View style={themedCard}>
                 <View style={styles.cardHeaderRow}>
                   <Text style={styles.cardTitle}>Geomagnetic Activity</Text>
                   <LearnRow
@@ -1008,7 +1018,7 @@ export default function SolarScreen() {
             </Text>
           </View>
 
-          <View style={styles.card}>
+          <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardTitle}>Solar imagery</Text>
               <LearnRow
@@ -1089,7 +1099,7 @@ export default function SolarScreen() {
             </Text>
           </View>
 
-          <View style={styles.card}>
+          <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardTitle}>Mars Weather Archive</Text>
               <LearnRow
@@ -1688,3 +1698,4 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
 });
+

@@ -9,6 +9,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import type { AstroHourRow } from '../../app/lib/astro/locationAstro';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 type Props = {
   hours: AstroHourRow[];
@@ -69,6 +70,7 @@ export function SkyScoreChart({
   hours,
   title,
 }: Props) {
+  const { chrome } = useAppChrome();
   const chart = useMemo(() => {
     if (!hours.length) return null;
 
@@ -141,7 +143,7 @@ export function SkyScoreChart({
   const effectiveTitle = title ?? `Sky Score Trend (${hours.length}h)`;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
       <Text style={styles.title}>{effectiveTitle}</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>

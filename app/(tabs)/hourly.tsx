@@ -18,6 +18,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useWxLab } from '../context/WxLabContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
+import { useAppChrome } from '../lib/theme/useAppChrome';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 
@@ -462,7 +463,7 @@ function HourlySimpleTimeline({
   timeZone?: string | null;
 }) {
   const featured = hours[0] ?? null;
-  const rest = hours.slice(1, 9);
+  const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   if (!featured) return null;
@@ -591,7 +592,7 @@ function HourlySimpleTimelineExpanded({
   timeZone?: string | null;
 }) {
   const featured = hours[0] ?? null;
-  const rest = hours.slice(1, 9);
+  const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   if (!featured) return null;
@@ -725,6 +726,7 @@ function HourlyWithCoords({
 }) {
   const units: UnitSystem = 'us';
   const { forecastModel } = useSettings();
+  const { chrome } = useAppChrome();
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
@@ -753,7 +755,7 @@ function HourlyWithCoords({
     [hourly, forecastTimeZone]
   );
 
-  const visibleHourly = useMemo(() => hourly.slice(startIndex), [hourly, startIndex]);
+  const visibleHourly = useMemo(() => hourly.slice(startIndex, startIndex + 72), [hourly, startIndex]);
   const leadHour = visibleHourly[0] ?? hourly[0] ?? null;
 
   useEffect(() => {
@@ -802,7 +804,7 @@ function HourlyWithCoords({
       <>
         <View style={styles.hourlySectionHeader}>
           <Text style={styles.hourlyScreenTitle}>Hourly forecast</Text>
-          <Text style={styles.hourlyScreenMeta}>Model: {modelLabel}</Text>
+          <Text style={styles.hourlyScreenMeta}>72 hours - Model: {modelLabel}</Text>
         </View>
         <HourlySimpleTimelineExpanded
           hours={visibleHourly}
@@ -814,7 +816,7 @@ function HourlyWithCoords({
 
   return (
     <>
-      <View style={styles.heroCard}>
+      <View style={[styles.heroCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <View pointerEvents="none" style={styles.cardGlow} />
         <View pointerEvents="none" style={styles.heroHaze} />
 
@@ -901,6 +903,7 @@ function HourlyWithCoords({
 }
 
 export default function HourlyTab() {
+  const { appColorMode, chrome } = useAppChrome();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const wxLabCtx = useWxLab() as any;
@@ -968,8 +971,11 @@ export default function HourlyTab() {
   }, []);
 
   return (
-    <View style={styles.root}>
-      <View pointerEvents="none" style={styles.videoLayer}>
+    <View style={[styles.root, { backgroundColor: chrome.background }]}>
+      <View
+        pointerEvents="none"
+        style={[styles.videoLayer, appColorMode === 'classic' ? null : styles.videoLayerMuted]}
+      >
         <WeatherVideoBackground
           weatherCode={visualState.weatherCode ?? undefined}
           isEvening={visualState.isNight || visualState.isSunset}
@@ -989,7 +995,7 @@ export default function HourlyTab() {
           refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
         >
           <View style={styles.headerHeroWrap}>
-            <View style={styles.headerHeroSurface}>
+            <View style={[styles.headerHeroSurface, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
               <View style={styles.headerCompactTopRow}>
                 <View style={styles.hourlyHeaderLeft}>
                   <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
@@ -1015,18 +1021,18 @@ export default function HourlyTab() {
               </View>
 
               <View style={styles.headerHeroBottomRow}>
-                <Pressable onPress={() => router.push('/(tabs)')} style={styles.quickNavBtn}>
+                <Pressable onPress={() => router.push('/(tabs)')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                   <Text style={styles.quickNavText}>Land</Text>
                 </Pressable>
 
-                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={styles.quickNavBtn}>
+                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                   <Text style={styles.quickNavText}>Almanac</Text>
                 </Pressable>
 
                 <View style={styles.headerModeWrap}>
                   <Pressable
                     onPress={() => setWxLab?.(false)}
-                    style={[styles.headerModeBtn, !wxLab ? styles.headerModeBtnActive : null]}
+                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, !wxLab ? styles.headerModeBtnActive : null, !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
                   >
                     <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
                   </Pressable>
@@ -1035,7 +1041,7 @@ export default function HourlyTab() {
                       if (toggleWxLab && !wxLab) return toggleWxLab();
                       return setWxLab?.(true);
                     }}
-                    style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
+                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, wxLab ? styles.headerModeBtnActive : null, wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
                   >
                     <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
                   </Pressable>
@@ -1105,6 +1111,9 @@ const styles = StyleSheet.create({
   videoLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+  },
+  videoLayerMuted: {
+    opacity: 0.18,
   },
 
   safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },

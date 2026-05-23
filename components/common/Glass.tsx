@@ -1,11 +1,9 @@
 import React from 'react';
 import { StyleProp, View, ViewStyle } from 'react-native';
-import { useSettings } from '../../app/context/SettingsContext';
-import { appChrome } from '../../app/lib/theme/appAppearance';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 export function Glass(props: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
-  const { appColorMode } = useSettings();
-  const chrome = appChrome(appColorMode);
+  const { chrome } = useAppChrome();
 
   return (
     <View

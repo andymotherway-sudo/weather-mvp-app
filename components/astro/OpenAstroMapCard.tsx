@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 type Props = {
   lat: number;
@@ -11,6 +12,7 @@ type Props = {
 
 export function OpenAstroMapCard({ lat, lon, placeName, compact = false }: Props) {
   const router = useRouter();
+  const { chrome } = useAppChrome();
   const openMap = () =>
     router.push({
       pathname: '/(tabs)/maps',
@@ -33,7 +35,7 @@ export function OpenAstroMapCard({ lat, lon, placeName, compact = false }: Props
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
       <Text style={styles.title}>Explore Astro Map</Text>
       <Text style={styles.body}>
         View observing conditions on the map for {placeName ?? 'this location'}, and jump into the astronomy map centered on the same place.

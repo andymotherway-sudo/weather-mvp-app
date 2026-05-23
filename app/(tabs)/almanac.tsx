@@ -29,6 +29,7 @@ import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useClimatologyNormals } from '../lib/climatology/hook';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
+import { useAppChrome } from '../lib/theme/useAppChrome';
 
 const OBS_START_ISO = '2025-01-01';
 const FORECAST_DAYS = 15;
@@ -177,6 +178,7 @@ function safeString(v: unknown, fallback = '—') {
 
 export default function ClimoTab() {
   const insets = useSafeAreaInsets();
+  const { chrome } = useAppChrome();
 
   const { active } = usePlace();
   const preload = useAlmanacPreload();
@@ -652,9 +654,9 @@ const hasNormals = chartNormals.length > 0;
   safeSelectedDoy <= 366;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: chrome.background }]}
         contentContainerStyle={[
           styles.content,
           { paddingTop: Math.max(theme.spacing.md, Math.round(insets.top * 0.25)) },

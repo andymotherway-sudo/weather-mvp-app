@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { AstroHourRow } from '../../app/lib/astro/locationAstro';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 type Props = {
   hours: AstroHourRow[];
@@ -105,10 +106,11 @@ export function AstroHourlyStrip({
   hours,
   title = 'Hourly Astro Forecast',
 }: Props) {
+  const { chrome } = useAppChrome();
   if (!hours.length) return null;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
       <Text style={styles.title}>{title}</Text>
 
       <ScrollView

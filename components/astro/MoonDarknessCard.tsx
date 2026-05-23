@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 
 import type { LocationAstroForecast } from '../../app/lib/astro/locationAstro';
 import { toLocalLabel } from '../../app/lib/astro/locationAstro';
@@ -317,6 +318,7 @@ function getCurrentLightState(forecast: LocationAstroForecast, nowMs: number) {
 }
 
 export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
+  const { chrome } = useAppChrome();
   const [nowMs, setNowMs] = useState(() => getNowSortableMs(forecast.timezone));
   useEffect(() => {
     setNowMs(getNowSortableMs(forecast.timezone));
@@ -339,7 +341,7 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
   ];
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Moon & Darkness</Text>
       </View>

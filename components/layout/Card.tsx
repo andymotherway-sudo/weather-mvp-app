@@ -1,8 +1,7 @@
 // components/layout/Card.tsx
 import React, { ReactNode } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import { useSettings } from '../../app/context/SettingsContext';
-import { appChrome } from '../../app/lib/theme/appAppearance';
+import { useAppChrome } from '../../app/lib/theme/useAppChrome';
 import { theme } from '../../styles/theme';
 
 type CardProps = {
@@ -11,8 +10,7 @@ type CardProps = {
 };
 
 export function Card({ children, style }: CardProps) {
-  const { appColorMode } = useSettings();
-  const chrome = appChrome(appColorMode);
+  const { chrome } = useAppChrome();
   return <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }, style]}>{children}</View>;
 }
 
