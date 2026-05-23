@@ -47,7 +47,7 @@ const WPC_FRONTS_EXPORT_URL =
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
-const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0S', 'NET']);
+const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0S', 'EET', 'NET']);
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -130,6 +130,16 @@ const RADAR_PRODUCT_META: Record<
     legendRight: 'Toward',
     legendNote: 'Velocity with storm motion removed to make rotation easier to inspect.',
   },
+  EET: {
+    chipLabel: 'Echo Tops',
+    summaryLabel: 'Enhanced echo tops',
+    legendStyle: 'echoTops',
+    legendTitle: 'Echo Tops',
+    legendLeft: 'LOW TOPS',
+    legendMid: 'Storm top height',
+    legendRight: 'HIGH TOPS',
+    legendNote: '8-bit echo top height. This is height, not wind or rain intensity.',
+  },
   NET: {
     chipLabel: 'Echo Tops',
     summaryLabel: 'Echo tops',
@@ -138,7 +148,7 @@ const RADAR_PRODUCT_META: Record<
     legendLeft: 'LOW TOPS',
     legendMid: 'Storm top height',
     legendRight: 'HIGH TOPS',
-    legendNote: 'Estimated storm top height. This is height, not wind or rain intensity.',
+    legendNote: 'Legacy echo top height fallback. This is height, not wind or rain intensity.',
   },
 };
 
@@ -189,7 +199,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-differential-reflectivity',
   },
   {
-    id: 'NET',
+    id: 'EET',
     label: 'Echo Tops',
     subtitle: 'Storm top height',
     enabled: true,
@@ -554,7 +564,9 @@ export default function MapsScreen() {
           }
         }
 
-        if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
+        if (storedProduct === 'NET') {
+          setStationProduct('EET');
+        } else if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
           setStationProduct(storedProduct as RadarProductId);
         }
       } finally {
@@ -2280,7 +2292,7 @@ export default function MapsScreen() {
             <View
               style={[
                 styles.stationProductBadge,
-                product === 'NET'
+                product === 'EET' || product === 'NET'
                   ? styles.stationProductBadgeEcho
                   : radarProductMeta.legendStyle === 'velocity'
                     ? styles.stationProductBadgeVelocity
@@ -2288,7 +2300,7 @@ export default function MapsScreen() {
               ]}
             >
               <Text style={styles.stationProductBadgeKicker}>
-                {product === 'NET' ? 'HEIGHT PRODUCT' : radarProductMeta.legendStyle === 'velocity' ? 'WIND PRODUCT' : 'PRECIP PRODUCT'}
+                {product === 'EET' || product === 'NET' ? 'HEIGHT PRODUCT' : radarProductMeta.legendStyle === 'velocity' ? 'WIND PRODUCT' : 'PRECIP PRODUCT'}
               </Text>
               <Text style={styles.stationProductBadgeTitle}>{radarProductMeta.legendTitle}</Text>
             </View>
@@ -2475,7 +2487,7 @@ export default function MapsScreen() {
                           style={[
                             styles.stationProductButton,
                             active ? styles.stationProductButtonActive : null,
-                            active && item.id === 'NET' ? styles.stationProductButtonEchoActive : null,
+                            active && (item.id === 'EET' || item.id === 'NET') ? styles.stationProductButtonEchoActive : null,
                             active && (item.id === 'N0U' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
                             loading ? styles.stationProductButtonLoading : null,
                             !item.enabled ? styles.stationProductButtonDisabled : null,

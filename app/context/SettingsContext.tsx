@@ -8,6 +8,7 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
+import type { AppColorMode } from '../lib/theme/appAppearance';
 
 export type TempUnit = 'F' | 'C';
 export type BaseMapStyle = 'dark' | 'light';
@@ -18,6 +19,7 @@ const TEMP_UNIT_KEY = 'omniwx:settings:tempUnit';
 const BASE_MAP_STYLE_KEY = 'omniwx:settings:baseMapStyle';
 const RADAR_PROVIDER_KEY = 'omniwx:settings:radarProvider';
 const FORECAST_MODEL_KEY = 'omniwx:settings:forecastModel';
+const APP_COLOR_MODE_KEY = 'omniwx:settings:appColorMode';
 
 interface SettingsContextValue {
   tempUnit: TempUnit;
@@ -28,6 +30,8 @@ interface SettingsContextValue {
   setRadarProvider: (provider: RadarProvider) => void;
   forecastModel: ForecastModel;
   setForecastModel: (model: ForecastModel) => void;
+  appColorMode: AppColorMode;
+  setAppColorMode: (mode: AppColorMode) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(
@@ -39,17 +43,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [baseMapStyle, setBaseMapStyle] = useState<BaseMapStyle>('dark');
   const [radarProvider, setRadarProvider] = useState<RadarProvider>('rainviewer');
   const [forecastModel, setForecastModel] = useState<ForecastModel>('best_match');
+  const [appColorMode, setAppColorMode] = useState<AppColorMode>('classic');
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [storedTempUnit, storedBaseMapStyle, storedRadarProvider, storedForecastModel] = await Promise.all([
+        const [storedTempUnit, storedBaseMapStyle, storedRadarProvider, storedForecastModel, storedAppColorMode] = await Promise.all([
           AsyncStorage.getItem(TEMP_UNIT_KEY),
           AsyncStorage.getItem(BASE_MAP_STYLE_KEY),
           AsyncStorage.getItem(RADAR_PROVIDER_KEY),
           AsyncStorage.getItem(FORECAST_MODEL_KEY),
+          AsyncStorage.getItem(APP_COLOR_MODE_KEY),
         ]);
 
         if (!mounted) return;
@@ -70,6 +76,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           storedForecastModel === 'dwd_icon'
         ) {
           setForecastModel(storedForecastModel);
+        }
+        if (
+          storedAppColorMode === 'classic' ||
+          storedAppColorMode === 'grayscale' ||
+          storedAppColorMode === 'high_contrast'
+        ) {
+          setAppColorMode(storedAppColorMode);
         }
       } catch {
         // Ignore storage failures and keep defaults.
@@ -97,6 +110,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(FORECAST_MODEL_KEY, forecastModel).catch(() => {});
   }, [forecastModel]);
 
+  useEffect(() => {
+    AsyncStorage.setItem(APP_COLOR_MODE_KEY, appColorMode).catch(() => {});
+  }, [appColorMode]);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -108,6 +125,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setRadarProvider,
         forecastModel,
         setForecastModel,
+        appColorMode,
+        setAppColorMode,
       }}
     >
       {children}

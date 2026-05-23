@@ -201,7 +201,7 @@ function getStormMode(state: any) {
 
 function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
   if (product === 'N0U' || product === 'N0S' || product === 'N0Z') return 'velocity';
-  if (product === 'NET') return 'echoTops';
+  if (product === 'EET' || product === 'NET') return 'echoTops';
   return 'reflectivity';
 }
 

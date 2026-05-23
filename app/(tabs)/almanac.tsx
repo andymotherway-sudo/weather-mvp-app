@@ -24,6 +24,7 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useOpenMeteoDayContext } from '../lib/almanac/dayContextHook';
+import { isAlmanacAreaDownloaded, markAlmanacAreaDownloaded } from '../lib/almanac/downloadManifest';
 import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useClimatologyNormals } from '../lib/climatology/hook';
@@ -194,6 +195,33 @@ export default function ClimoTab() {
     return Math.abs(coords.lat - preload.coords.lat) < 0.0001 && Math.abs(coords.lon - preload.coords.lon) < 0.0001;
   }, [coords?.lat, coords?.lon, preload?.coords?.lat, preload?.coords?.lon]);
 
+  const [areaDownloaded, setAreaDownloaded] = useState(false);
+  const [areaDownloadRequested, setAreaDownloadRequested] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setAreaDownloadRequested(false);
+    setAreaDownloaded(false);
+
+    if (!coords) {
+      return;
+    }
+
+    isAlmanacAreaDownloaded(coords.lat, coords.lon)
+      .then((downloaded) => {
+        if (mounted) setAreaDownloaded(downloaded);
+      })
+      .catch(() => {
+        if (mounted) setAreaDownloaded(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [coords?.lat, coords?.lon]);
+
+  const shouldLoadAreaAlmanac = !!coords && (preloadMatches || areaDownloaded || areaDownloadRequested);
+
   const locationLabel = useMemo(() => {
     return active?.name ? active.name : 'Select a location…';
   }, [active]);
@@ -278,7 +306,7 @@ export default function ClimoTab() {
   const localClimo = useClimatologyNormals({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
-    enabled: hasPlace && !!coords && !preloadMatches,
+    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
     preferCache: true,
   } as any);
   const { forecastModel } = useSettings();
@@ -332,9 +360,19 @@ export default function ClimoTab() {
   const localRecords = useDailyRecords({
     lat: coords?.lat ?? 0,
     lon: coords?.lon ?? 0,
-    enabled: hasPlace && !!coords && !preloadMatches,
+    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
   });
   const records = preloadMatches && preload?.records ? preload.records : localRecords;
+
+  useEffect(() => {
+    if (!coords) return;
+    const normalsReady = Array.isArray(climo.data?.normals) && climo.data.normals.length > 0;
+    const rawRecords = (records as any)?.records;
+    const recordsReady = !!rawRecords && typeof rawRecords === 'object' && Object.keys(rawRecords).length > 0;
+    if (!normalsReady || !recordsReady) return;
+    setAreaDownloaded(true);
+    markAlmanacAreaDownloaded(coords.lat, coords.lon).catch(() => {});
+  }, [coords?.lat, coords?.lon, climo.data?.normals, (records as any)?.records]);
 
   const recordsMap = useMemo(() => {
     const raw = (records as any)?.records;
@@ -401,7 +439,7 @@ export default function ClimoTab() {
 
   const progAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!(rLoading || (!recordsEverResolved && hasPlace))) {
+    if (!shouldLoadAreaAlmanac || !(rLoading || (!recordsEverResolved && hasPlace))) {
       progAnim.stopAnimation();
       progAnim.setValue(0);
       return;
@@ -416,9 +454,11 @@ export default function ClimoTab() {
     );
     loop.start();
     return () => loop.stop();
-  }, [progAnim, rLoading, recordsEverResolved, hasPlace]);
+  }, [progAnim, rLoading, recordsEverResolved, hasPlace, shouldLoadAreaAlmanac]);
 
   const recordsStatus = useMemo(() => {
+    if (!shouldLoadAreaAlmanac) return '';
+
     const elapsed = fmtElapsed(recordsElapsedSec);
     const suffix = elapsed ? ` • ${elapsed}` : '';
 
@@ -433,15 +473,16 @@ export default function ClimoTab() {
     }
 
     return '';
-  }, [recordsEverResolved, rLoading, recordsElapsedSec]);
+  }, [recordsEverResolved, rLoading, recordsElapsedSec, shouldLoadAreaAlmanac]);
 
   const recordsHint = useMemo(() => {
+    if (!shouldLoadAreaAlmanac) return '';
     if (!hasPlace) return '';
     if (!recordsEverResolved || rLoading) {
       return 'First load can take a bit — especially on a new station.';
     }
     return '';
-  }, [hasPlace, recordsEverResolved, rLoading]);
+  }, [hasPlace, recordsEverResolved, rLoading, shouldLoadAreaAlmanac]);
 
   /* ---------- normals availability ---------- */
 
@@ -542,9 +583,11 @@ const hasNormals = chartNormals.length > 0;
   const onRefreshAll = useCallback(() => {
     if (!hasPlace || !coords) return;
 
-    try {
-      climo.refresh?.();
-    } catch {}
+    if (shouldLoadAreaAlmanac) {
+      try {
+        climo.refresh?.();
+      } catch {}
+    }
 
     try {
       forecast.refresh?.();
@@ -556,10 +599,12 @@ const hasNormals = chartNormals.length > 0;
       } catch {}
     }
 
-    try {
-      (records as any).refresh?.();
-    } catch {}
-  }, [climo, forecast, mode, dayCtx, hasPlace, coords, records]);
+    if (shouldLoadAreaAlmanac) {
+      try {
+        (records as any).refresh?.();
+      } catch {}
+    }
+  }, [climo, forecast, mode, dayCtx, hasPlace, coords, records, shouldLoadAreaAlmanac]);
 
   const anyLoading =
     hasPlace &&
@@ -599,6 +644,7 @@ const hasNormals = chartNormals.length > 0;
 
   const canRenderChart =
   hasPlace &&
+  shouldLoadAreaAlmanac &&
   chartNormals.length === 12 &&
   safeSelectedDoy >= 1 &&
   safeSelectedDoy <= 366;
@@ -776,6 +822,21 @@ const hasNormals = chartNormals.length > 0;
               </View>
 
               {(() => {
+                if (!shouldLoadAreaAlmanac) {
+                  return (
+                    <View style={styles.recordsBox}>
+                      <Text style={styles.recordsTitle}>Area data</Text>
+                      <Text style={styles.recordsItem}>Records and climate normals are not downloaded for this area yet.</Text>
+                      <Text style={styles.recordsHint}>Download once, then future visits load from saved Almanac data.</Text>
+                      <View style={styles.actionRowTight}>
+                        <Pressable onPress={() => setAreaDownloadRequested(true)} style={styles.primaryBtn}>
+                          <Text style={styles.primaryBtnText}>Download Almanac Data</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                }
+
                 const showWarmup = !recordsEverResolved || (rLoading && !recordsEverResolved);
 
                 if (showWarmup || rLoading) {
@@ -915,7 +976,7 @@ const hasNormals = chartNormals.length > 0;
               lastYear={chartLastYear}
             />
           </View>
-        ) : hasPlace ? (
+        ) : hasPlace && shouldLoadAreaAlmanac ? (
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Chart warming up</Text>
             <Text style={styles.errorText}>
@@ -1004,6 +1065,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   btnText: { color: 'white', fontWeight: '900', fontSize: 12 },
+
+  primaryBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.42)',
+    backgroundColor: 'rgba(14,165,233,0.22)',
+  },
+  primaryBtnText: { color: 'white', fontWeight: '900', fontSize: 12 },
 
   dayCard: { marginBottom: theme.spacing.lg, paddingVertical: 14 },
   dayTopRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },

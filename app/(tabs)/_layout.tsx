@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TabBarIcon from '../../components/ui/TabBarIcon';
 import { Colors } from '../../constants/theme';
 import { useColorScheme } from '../../hooks/use-color-scheme';
+import { useSettings } from '../context/SettingsContext';
+import { appChrome } from '../lib/theme/appAppearance';
 
 function TabLabel({ color, label }: { color: string; label: string }) {
   return (
@@ -25,6 +27,8 @@ export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const tint = Colors[colorScheme].tint;
   const insets = useSafeAreaInsets();
+  const { appColorMode } = useSettings();
+  const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
 
   const tabBarStyle = useMemo(() => {
     const baseHeight = Platform.select({ ios: 58, android: 54, default: 54 }) as number;
@@ -32,8 +36,8 @@ export default function TabsLayout() {
     const padBottom = Math.max(8, insets.bottom);
 
     return {
-      backgroundColor: 'rgba(20,24,38,0.98)',
-      borderTopColor: 'rgba(255,255,255,0.06)',
+      backgroundColor: chrome.tabBar,
+      borderTopColor: chrome.border,
       borderTopWidth: 1,
 
       position: 'absolute',
@@ -51,7 +55,7 @@ export default function TabsLayout() {
       shadowOffset: { width: 0, height: -6 },
       elevation: 18,
     } as const;
-  }, [insets.bottom]);
+  }, [chrome.border, chrome.tabBar, insets.bottom]);
 
   return (
     <Tabs
@@ -70,7 +74,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: 'white',
         tabBarInactiveTintColor: 'rgba(255,255,255,0.55)',
 
-        tabBarActiveBackgroundColor: 'rgba(255,255,255,0.06)',
+        tabBarActiveBackgroundColor: chrome.tabActiveBg,
         tabBarHideOnKeyboard: true,
       }}
     >

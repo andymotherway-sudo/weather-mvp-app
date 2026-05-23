@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import { usePlace } from '../../app/context/PlaceContext';
 import { useSettings } from '../../app/context/SettingsContext';
 import { useDailyRecords } from '../../app/lib/almanac/useDailyRecordsHook';
+import { markAlmanacAreaDownloaded } from '../../app/lib/almanac/downloadManifest';
 import { useClimatologyNormals } from '../../app/lib/climatology/hook';
 import { useOpenMeteoForecast } from '../../app/lib/openmeteo/hooks';
 
@@ -52,6 +53,13 @@ function AlmanacWarmupForCoords({
     enabled: true,
   });
 
+  useEffect(() => {
+    const normalsReady = Array.isArray(climo.data?.normals) && climo.data.normals.length > 0;
+    const recordsReady = !!records.records && Object.keys(records.records).length > 0;
+    if (!normalsReady || !recordsReady) return;
+    markAlmanacAreaDownloaded(lat, lon).catch(() => {});
+  }, [lat, lon, climo.data?.normals, records.records]);
+
   const value = useMemo(
     () => ({ coords: { lat, lon }, climo, forecast, records }),
     [lat, lon, climo, forecast, records]
@@ -62,6 +70,7 @@ function AlmanacWarmupForCoords({
 
 export function AlmanacWarmupProvider({ children }: { children: React.ReactNode }) {
   const { active } = usePlace();
+  const [startupCoords, setStartupCoords] = useState<{ lat: number; lon: number } | null>(null);
 
   const coords = useMemo(() => {
     if (!active) return null;
@@ -69,10 +78,15 @@ export function AlmanacWarmupProvider({ children }: { children: React.ReactNode 
     return { lat: active.lat, lon: active.lon };
   }, [active?.lat, active?.lon]);
 
-  if (!coords) return <AlmanacPreloadContext.Provider value={null}>{children}</AlmanacPreloadContext.Provider>;
+  useEffect(() => {
+    if (startupCoords || !coords) return;
+    setStartupCoords(coords);
+  }, [coords, startupCoords]);
+
+  if (!startupCoords) return <AlmanacPreloadContext.Provider value={null}>{children}</AlmanacPreloadContext.Provider>;
 
   return (
-    <AlmanacWarmupForCoords lat={coords.lat} lon={coords.lon}>
+    <AlmanacWarmupForCoords lat={startupCoords.lat} lon={startupCoords.lon}>
       {children}
     </AlmanacWarmupForCoords>
   );

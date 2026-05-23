@@ -7,6 +7,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { usePlace, type Place } from './context/PlaceContext';
 import { useSettings } from './context/SettingsContext';
 import { formatCompactLocation } from './lib/locations/formats';
+import { APP_COLOR_MODE_OPTIONS, appChrome } from './lib/theme/appAppearance';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 
@@ -39,12 +40,13 @@ export default function ProfileScreen() {
     setTempUnit,
     baseMapStyle,
     setBaseMapStyle,
-    radarProvider,
-    setRadarProvider,
     forecastModel,
     setForecastModel,
+    appColorMode,
+    setAppColorMode,
   } = useSettings();
   const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-mark-word.png'), []);
+  const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,20 +87,28 @@ export default function ProfileScreen() {
 
   const activeLabel =
     active?.source === 'gps' ? 'Current Location (GPS)' : active ? active.name : 'None';
+  const pillStyle = (selected = false, extra?: any) => [
+    styles.pill,
+    {
+      backgroundColor: selected ? chrome.pillActive : chrome.pill,
+      borderColor: selected ? chrome.borderStrong : chrome.border,
+    },
+    extra,
+  ];
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: chrome.background }]}>
         <ActivityIndicator color="white" />
       </View>
     );
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: chrome.background }]}>
       {/* background blobs for “richer” look */}
-      <View style={styles.bgBlobA} />
-      <View style={styles.bgBlobB} />
+      <View style={[styles.bgBlobA, { backgroundColor: chrome.blobA }]} />
+      <View style={[styles.bgBlobB, { backgroundColor: chrome.blobB }]} />
 
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.hero}>
@@ -123,7 +133,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
           <Text style={styles.label}>Active Place</Text>
           <Text style={styles.value}>{activeLabel}</Text>
 
@@ -136,35 +146,35 @@ export default function ProfileScreen() {
 
           <View style={styles.rowButtons}>
             <Pressable
-              style={[styles.pill, defaultCity ? null : styles.pillDisabled]}
+              style={pillStyle(false, defaultCity ? null : styles.pillDisabled)}
               disabled={!defaultCity}
               onPress={() => defaultCity && setActive(placeFromDefaultCity(defaultCity))}
             >
               <Text style={styles.pillText}>Use Default</Text>
             </Pressable>
 
-            <Pressable style={styles.pill} onPress={useGPS}>
+            <Pressable style={pillStyle(false)} onPress={useGPS}>
               <Text style={styles.pillText}>Use GPS</Text>
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
           <Text style={styles.label}>Preferences</Text>
-          <Text style={styles.value}>Units and map behavior</Text>
+          <Text style={styles.value}>Units, appearance, and map behavior</Text>
 
           <View style={{ height: 14 }} />
 
           <Text style={styles.label}>Temperature</Text>
           <View style={styles.rowButtons}>
             <Pressable
-              style={[styles.pill, tempUnit === 'F' ? styles.pillActive : null]}
+              style={pillStyle(tempUnit === 'F')}
               onPress={() => setTempUnit('F')}
             >
               <Text style={styles.pillText}>Fahrenheit</Text>
             </Pressable>
             <Pressable
-              style={[styles.pill, tempUnit === 'C' ? styles.pillActive : null]}
+              style={pillStyle(tempUnit === 'C')}
               onPress={() => setTempUnit('C')}
             >
               <Text style={styles.pillText}>Celsius</Text>
@@ -173,41 +183,40 @@ export default function ProfileScreen() {
 
           <View style={{ height: 14 }} />
 
+          <Text style={styles.label}>App Color</Text>
+          <Text style={styles.helperText}>
+            Changes app chrome only. Weather layers, precip colors, charts, and graph lines keep their data colors.
+          </Text>
+          <View style={styles.stackButtons}>
+            {APP_COLOR_MODE_OPTIONS.map((option) => (
+              <Pressable
+                key={option.key}
+                style={pillStyle(appColorMode === option.key, styles.appearancePill)}
+                onPress={() => setAppColorMode(option.key)}
+              >
+                <Text style={styles.pillText}>{option.label}</Text>
+                <Text style={styles.pillSubText}>{option.helper}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={{ height: 14 }} />
+
           <Text style={styles.label}>Base Map</Text>
           <View style={styles.rowButtons}>
             <Pressable
-              style={[styles.pill, baseMapStyle === 'dark' ? styles.pillActive : null]}
+              style={pillStyle(baseMapStyle === 'dark')}
               onPress={() => setBaseMapStyle('dark')}
             >
               <Text style={styles.pillText}>Dark</Text>
             </Pressable>
             <Pressable
-              style={[styles.pill, baseMapStyle === 'light' ? styles.pillActive : null]}
+              style={pillStyle(baseMapStyle === 'light')}
               onPress={() => setBaseMapStyle('light')}
             >
               <Text style={styles.pillText}>Light</Text>
             </Pressable>
           </View>
-
-          <View style={{ height: 14 }} />
-
-          <Text style={styles.label}>Radar Provider</Text>
-          <View style={styles.rowButtons}>
-            <Pressable
-              style={[styles.pill, radarProvider === 'iem' ? styles.pillActive : null]}
-              onPress={() => setRadarProvider('iem')}
-            >
-              <Text style={styles.pillText}>IEM</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.pill, radarProvider === 'rainviewer' ? styles.pillActive : null]}
-              onPress={() => setRadarProvider('rainviewer')}
-            >
-              <Text style={styles.pillText}>RainViewer</Text>
-            </Pressable>
-          </View>
-
-          <View style={{ height: 14 }} />
 
           <Text style={styles.label}>Forecast Model</Text>
           <Text style={styles.helperText}>Used by wxLab and forecast views. Best match remains the safest default.</Text>
@@ -215,7 +224,7 @@ export default function ProfileScreen() {
             {FORECAST_MODEL_OPTIONS.map((option) => (
               <Pressable
                 key={option.key}
-                style={[styles.pill, forecastModel === option.key ? styles.pillActive : null]}
+                style={pillStyle(forecastModel === option.key)}
                 onPress={() => setForecastModel(option.key)}
               >
                 <Text style={styles.pillText}>{option.label}</Text>
@@ -225,7 +234,7 @@ export default function ProfileScreen() {
         </View>
 
         <Pressable
-          style={styles.primaryButton}
+          style={[styles.primaryButton, { backgroundColor: chrome.primary, borderColor: chrome.primaryBorder }]}
           onPress={() =>
             router.push({
               pathname: '/(onboarding)/default-city' as any,
@@ -325,6 +334,8 @@ const styles = StyleSheet.create({
   },
   pillDisabled: { opacity: 0.45 },
   pillText: { color: 'white', fontWeight: '900' },
+  pillSubText: { marginTop: 4, color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  appearancePill: { flexGrow: 1, flexBasis: '30%', minWidth: 104 },
 
   primaryButton: {
     backgroundColor: '#2563EB',
