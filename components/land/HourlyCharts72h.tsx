@@ -125,6 +125,7 @@ export function HourlyCharts72h({
   hours,
   maxHours = 72,
   units = 'us',
+  timeZone,
 }: Props) {
   const slice = useMemo(() => {
     const base = hours.slice(0, Math.min(hours.length, maxHours));
@@ -134,7 +135,7 @@ export function HourlyCharts72h({
 
   return (
     <Card style={styles.card}>
-      <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} />
+      <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} timeZone={timeZone} />
     </Card>
   );
 }

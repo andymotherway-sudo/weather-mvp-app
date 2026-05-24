@@ -549,10 +549,10 @@ export function ClimatologyChart({
     max: 'rgba(210,225,240,0.50)',
     lastYearHigh: 'rgba(255,110,120,0.95)',
     lastYearLow: 'rgba(110,170,255,0.95)',
-    precipFill: 'rgba(34, 197, 94, 0.18)',
-    precipStroke: 'rgba(34, 197, 94, 0.52)',
-    precipLastYearFill: 'rgba(163, 230, 53, 0.14)',
-    precipLastYearStroke: 'rgba(190, 242, 100, 0.82)',
+    precipFill: 'rgba(34, 197, 94, 0.20)',
+    precipStroke: 'rgba(45, 212, 129, 0.72)',
+    precipLastYearFill: 'rgba(250, 204, 21, 0.10)',
+    precipLastYearStroke: 'rgba(250, 204, 21, 0.92)',
 
     marker: 'rgba(125,210,255,0.55)',
     markerText: 'rgba(170,235,255,0.90)',
@@ -631,15 +631,22 @@ export function ClimatologyChart({
 
           {lastYearPrecipShape.area ? (
             <>
-              <Path d={lastYearPrecipShape.area} fill={C.precipLastYearFill} stroke="none" />
-              <Path d={lastYearPrecipShape.ridge} fill="none" stroke={C.precipLastYearStroke} strokeWidth={1.5} />
+              <Path d={lastYearPrecipShape.area} fill={C.precipLastYearFill} stroke="none" opacity={0.55} />
+              <Path
+                d={lastYearPrecipShape.ridge}
+                fill="none"
+                stroke={C.precipLastYearStroke}
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeDasharray="5 5"
+              />
             </>
           ) : null}
 
           {precipShape.area ? (
             <>
               <Path d={precipShape.area} fill={C.precipFill} stroke="none" />
-              <Path d={precipShape.ridge} fill="none" stroke={C.precipStroke} strokeWidth={1.75} />
+              <Path d={precipShape.ridge} fill="none" stroke={C.precipStroke} strokeWidth={1.9} />
             </>
           ) : null}
 
@@ -694,7 +701,7 @@ export function ClimatologyChart({
               Prior {fmtShortTemp(detail.lastYearLow)} / {fmtShortTemp(detail.lastYearHigh)}
             </Text>
             <Text style={styles.floatingDetailLine}>
-              Avg {fmtInches(detail.precip)} • Prior {fmtInches(detail.lastYearPrecip)}
+              Avg precip {fmtInches(detail.precip)} • Prior precip {fmtInches(detail.lastYearPrecip)}
             </Text>
           </View>
         ) : null}
@@ -750,12 +757,11 @@ export function ClimatologyChart({
           <Text style={styles.legendText}>Avg monthly precip</Text>
         </View>
         <View style={styles.legendItem}>
-          <View
-            style={[
-              styles.legendAreaSwatch,
-              { backgroundColor: C.precipLastYearFill, borderColor: C.precipLastYearStroke },
-            ]}
-          />
+          <View style={styles.legendDashedSwatch}>
+            <View style={[styles.legendDash, { backgroundColor: C.precipLastYearStroke }]} />
+            <View style={[styles.legendDash, { backgroundColor: C.precipLastYearStroke }]} />
+            <View style={[styles.legendDash, { backgroundColor: C.precipLastYearStroke }]} />
+          </View>
           <Text style={styles.legendText}>Prior-year precip</Text>
         </View>
         <View style={styles.legendItem}>
@@ -938,6 +944,18 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 4,
     borderWidth: 1,
+  },
+  legendDashedSwatch: {
+    width: 22,
+    height: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legendDash: {
+    width: 5,
+    height: 3,
+    borderRadius: 999,
   },
   legendLinePair: {
     width: 20,

@@ -357,6 +357,22 @@ function weatherCodeToIconName(code: number | null, isNight = false): keyof type
 
 function formatHourSlot(value: unknown, timeZone?: string | null) {
   if (typeof value !== 'string') return { day: '—', time: '—', short: '—', isNight: false };
+  const wall = extractIsoWallClockParts(value);
+  if (wall) {
+    const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day, 12));
+    const hour12 = ((wall.hour + 11) % 12) + 1;
+    const suffix = wall.hour >= 12 ? 'PM' : 'AM';
+    const label = `${hour12} ${suffix}`;
+    return {
+      day: new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' })
+        .format(date)
+        .toUpperCase(),
+      time: label,
+      short: label,
+      isNight: wall.hour < 6 || wall.hour >= 19,
+    };
+  }
+
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return { day: '—', time: '—', short: '—', isNight: false };
   const opts = timeZone ? { timeZone } : undefined;

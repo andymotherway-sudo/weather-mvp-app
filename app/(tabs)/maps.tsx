@@ -736,7 +736,7 @@ export default function MapsScreen() {
   const [showUnknownAviationAltitude, setShowUnknownAviationAltitude] = useState(false);
   const [selectedRestrictionPoint, setSelectedRestrictionPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [wildfireDetailLoading, setWildfireDetailLoading] = useState(false);
-  const [wildfireLegendExpanded, setWildfireLegendExpanded] = useState(false);
+  const [wildfireLegendExpanded, setWildfireLegendExpanded] = useState(true);
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
@@ -2865,8 +2865,8 @@ export default function MapsScreen() {
             <Glass style={[styles.legendCard, styles.wildfireLegendCard]}>
               <View style={styles.wildfireLegendHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.legendCardTitle}>Wildfire layers</Text>
-                  <Text style={styles.restrictionLegendTitle}>Colors show layer type, not severity</Text>
+                  <Text style={styles.legendCardTitle}>Wildfire legend</Text>
+                  <Text style={styles.restrictionLegendTitle}>Polygons stay on map; dots show incident size</Text>
                 </View>
                 <Pressable
                   onPress={() => setWildfireLegendExpanded((current) => !current)}
@@ -2882,8 +2882,8 @@ export default function MapsScreen() {
                   <Text style={styles.restrictionLegendLabel}>Perimeter</Text>
                 </View>
                 <View style={styles.restrictionLegendRow}>
-                  <View style={[styles.wildfireLegendDot, { backgroundColor: '#dc2626', borderColor: '#fff1f2' }]} />
-                  <Text style={styles.restrictionLegendLabel}>Incident</Text>
+                  <View style={[styles.wildfireLegendDot, { backgroundColor: '#fb923c', borderColor: '#fff7ed' }]} />
+                  <Text style={styles.restrictionLegendLabel}>Incident dots</Text>
                 </View>
                 <View style={styles.restrictionLegendRow}>
                   <View style={[styles.restrictionLegendSwatch, { backgroundColor: '#fbbf24', borderColor: '#fef3c7' }]} />
@@ -2891,9 +2891,33 @@ export default function MapsScreen() {
                 </View>
               </View>
               {wildfireLegendExpanded ? (
-                <Text style={styles.wildfireLegendNote}>
-                  Some incidents are dots only because the incident feed has a location before a current perimeter polygon is published, or the perimeter is outside the current map window.
-                </Text>
+                <View style={styles.wildfireLegendExpandedBody}>
+                  <View style={styles.wildfireSizeScale}>
+                    <View style={styles.wildfireSizeItem}>
+                      <View style={[styles.wildfireLegendDot, styles.wildfireDotUnknown, { backgroundColor: '#fda4af', borderColor: '#fff1f2' }]} />
+                      <Text style={styles.restrictionLegendLabel}>Unknown acres</Text>
+                    </View>
+                    <View style={styles.wildfireSizeItem}>
+                      <View style={[styles.wildfireLegendDot, styles.wildfireDotSmall, { backgroundColor: '#fdba74', borderColor: '#fffbeb' }]} />
+                      <Text style={styles.restrictionLegendLabel}>Under 1k</Text>
+                    </View>
+                    <View style={styles.wildfireSizeItem}>
+                      <View style={[styles.wildfireLegendDot, styles.wildfireDotMedium, { backgroundColor: '#fb923c', borderColor: '#fff7ed' }]} />
+                      <Text style={styles.restrictionLegendLabel}>1k+</Text>
+                    </View>
+                    <View style={styles.wildfireSizeItem}>
+                      <View style={[styles.wildfireLegendDot, styles.wildfireDotLarge, { backgroundColor: '#ea580c', borderColor: '#fff7ed' }]} />
+                      <Text style={styles.restrictionLegendLabel}>10k+</Text>
+                    </View>
+                    <View style={styles.wildfireSizeItem}>
+                      <View style={[styles.wildfireLegendDot, styles.wildfireDotHuge, { backgroundColor: '#dc2626', borderColor: '#fff1f2' }]} />
+                      <Text style={styles.restrictionLegendLabel}>50k+</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.wildfireLegendNote}>
+                    Dots without polygons usually mean the incident feed has a location before a current perimeter is published, or the perimeter is outside the current map window.
+                  </Text>
+                </View>
               ) : null}
             </Glass>
           </View>
@@ -4262,7 +4286,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   wildfireLegendCard: {
-    width: 286,
+    width: 304,
   },
   wildfireLegendHeader: {
     flexDirection: 'row',
@@ -4288,6 +4312,41 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 14,
     fontWeight: '700',
+  },
+  wildfireLegendExpandedBody: {
+    gap: 7,
+  },
+  wildfireSizeScale: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: 10,
+    rowGap: 6,
+  },
+  wildfireSizeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  wildfireDotUnknown: {
+    width: 9,
+    height: 9,
+  },
+  wildfireDotSmall: {
+    width: 10,
+    height: 10,
+  },
+  wildfireDotMedium: {
+    width: 11,
+    height: 11,
+  },
+  wildfireDotLarge: {
+    width: 12,
+    height: 12,
+  },
+  wildfireDotHuge: {
+    width: 13,
+    height: 13,
   },
   legendCollapseButton: {
     width: 24,

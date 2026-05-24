@@ -164,12 +164,52 @@ function normalizeConfidence(v: any): 'low' | 'medium' | 'high' | undefined {
   return undefined;
 }
 
-function formatUpdatedTime(observationTime: string | null) {
+function extractIsoWallClockParts(value: unknown): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} | null {
+  if (typeof value !== 'string') return null;
+  const m = value
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/);
+  if (!m) return null;
+  const parts = { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: Number(m[4]), minute: Number(m[5]) };
+  return Object.values(parts).every((v) => Number.isFinite(v)) ? parts : null;
+}
+
+function formatWallHour(hour: number, minute = 0) {
+  const hour12 = ((hour + 11) % 12) + 1;
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  return minute ? `${hour12}:${String(minute).padStart(2, '0')} ${suffix}` : `${hour12} ${suffix}`;
+}
+
+function wallClockToSortableMs(parts: { year: number; month: number; day: number; hour: number; minute: number }) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
+}
+
+function getNowSortableMs(timeZone?: string | null) {
+  if (timeZone) {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    const parts = fmt.formatToParts(new Date());
+    const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0');
+    return wallClockToSortableMs({ year: pick('year'), month: pick('month'), day: pick('day'), hour: pick('hour'), minute: pick('minute') });
+  }
+  const now = new Date();
+  return wallClockToSortableMs({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(), hour: now.getHours(), minute: now.getMinutes() });
+}
+
+function formatUpdatedTime(observationTime: string | null, timeZone?: string | null) {
   if (!observationTime) return '—';
+  const wall = extractIsoWallClockParts(observationTime);
+  if (wall && !/[zZ]|[+-]\d{2}:\d{2}$/.test(observationTime.trim())) return formatWallHour(wall.hour, wall.minute);
   const d = new Date(observationTime);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: timeZone || undefined });
 }
+
 
 function todayDateKeyLocal() {
   const d = new Date();
@@ -182,15 +222,18 @@ function hpaToInHg(hpa: number) {
   return hpa * 0.029529983071445;
 }
 
-function findClosestHour(hours: any[], targetMs: number) {
+function findClosestHour(hours: any[], targetMs: number, timeZone?: string | null) {
   let best: any = null;
   let bestDt = Infinity;
+  const target = timeZone ? getNowSortableMs(timeZone) : targetMs;
 
   for (const h of hours ?? []) {
-    const t = new Date(h.time ?? h.datetime ?? h.date ?? '').getTime();
+    const raw = h.time ?? h.datetime ?? h.date ?? '';
+    const wall = extractIsoWallClockParts(raw);
+    const t = wall ? wallClockToSortableMs(wall) : new Date(raw).getTime();
     if (!Number.isFinite(t)) continue;
 
-    const dt = Math.abs(t - targetMs);
+    const dt = Math.abs(t - target);
     if (dt < bestDt) {
       bestDt = dt;
       best = h;
@@ -200,10 +243,10 @@ function findClosestHour(hours: any[], targetMs: number) {
   return best;
 }
 
-function pressureTrendFromHourly(hours: any[]) {
+function pressureTrendFromHourly(hours: any[], timeZone?: string | null) {
   const nowMs = Date.now();
-  const now = findClosestHour(hours, nowMs);
-  const past = findClosestHour(hours, nowMs - 3 * 60 * 60 * 1000);
+  const now = findClosestHour(hours, nowMs, timeZone);
+  const past = findClosestHour(hours, nowMs - 3 * 60 * 60 * 1000, timeZone);
 
   const pNow =
     safeNum(now?.pressureHpa ?? now?.pressure_msl ?? now?.pressureMslHpa ?? now?.pressure_hpa ?? now?.pressure) ?? null;
@@ -305,11 +348,13 @@ function formatDailyLabel(dateValue: any) {
   });
 }
 
-function formatClock(iso?: string | null) {
+function formatClock(iso?: string | null, timeZone?: string | null) {
   if (!iso) return '—';
+  const wall = extractIsoWallClockParts(iso);
+  if (wall && !/[zZ]|[+-]\d{2}:\d{2}$/.test(iso.trim())) return formatWallHour(wall.hour, wall.minute);
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timeZone || undefined });
 }
 
 function fmtInt(v: number | null, suffix = '') {
@@ -458,6 +503,8 @@ function activityScaleNote(title: string) {
 }
 
 function formatHourMiniLabel(raw: any) {
+  const wall = extractIsoWallClockParts(raw);
+  if (wall) return formatWallHour(wall.hour);
   const d = new Date(raw ?? '');
   if (Number.isNaN(d.getTime())) return 'Now';
   return d.toLocaleTimeString([], { hour: 'numeric' });
@@ -3326,26 +3373,27 @@ const nd = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: 0,
-    minHeight: 84,
-    paddingVertical: 10,
+    minHeight: 76,
+    paddingVertical: 11,
     paddingHorizontal: 10,
     borderRadius: 14,
     backgroundColor: GLASS_INSET_BG,
     borderWidth: 0,
-    justifyContent: 'flex-start',
-    gap: 8,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 6,
   },
   metricTallCard: {
-    minHeight: 132,
+    minHeight: 116,
   },
   metricDialCard: {
-    minHeight: 132,
-    alignItems: 'center',
-    justifyContent: 'center',
+    minHeight: 116,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   metricWideCard: {
-    minHeight: 92,
-    paddingVertical: 10,
+    minHeight: 82,
+    paddingVertical: 11,
     paddingHorizontal: 10,
     borderRadius: 14,
     backgroundColor: GLASS_INSET_BG,
@@ -3360,7 +3408,7 @@ const nd = StyleSheet.create({
   metricCardFull: {
     width: '100%',
     flexBasis: '100%',
-    minHeight: 72,
+    minHeight: 70,
   },
   metricWideHead: {
     flexDirection: 'row',
@@ -3378,7 +3426,6 @@ const nd = StyleSheet.create({
     includeFontPadding: false,
   },
   metricValue: {
-    marginTop: 8,
     fontSize: 14,
     lineHeight: 17,
     fontWeight: '900',
@@ -3386,7 +3433,6 @@ const nd = StyleSheet.create({
     includeFontPadding: false,
   },
   metricValueSmall: {
-    marginTop: 8,
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '900',
@@ -3398,7 +3444,7 @@ const nd = StyleSheet.create({
     color: 'white',
   },
   metricStackedValue: {
-    marginTop: 8,
+    marginTop: 2,
   },
   metricHint: {
     fontSize: 12,
@@ -3407,13 +3453,12 @@ const nd = StyleSheet.create({
     color: 'rgba(255,255,255,0.58)',
   },
   directionMain: {
-    marginTop: 8,
     width: '100%',
     fontSize: 22,
     lineHeight: 24,
     fontWeight: '900',
     color: 'white',
-    textAlign: 'center',
+    textAlign: 'left',
     includeFontPadding: false,
   },
   directionSub: {
@@ -3685,6 +3730,8 @@ function LandWeatherWithCoords({
   const currentCloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
 
   const daily = (forecastData?.daily ?? []).slice(0, 15);
+  const forecastTimeZone =
+    typeof forecastData?.timezone === 'string' && forecastData.timezone.trim() ? forecastData.timezone.trim() : null;
   const todayDaily = daily[0] ?? null;
   const todaySunrise = typeof todayDaily?.sunrise === 'string' ? todayDaily.sunrise : null;
   const todaySunset = typeof todayDaily?.sunset === 'string' ? todayDaily.sunset : null;
@@ -3712,7 +3759,7 @@ function LandWeatherWithCoords({
     });
   }, [hourlyRaw]);
 
-  const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now()), [hourly]);
+  const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now(), forecastTimeZone), [hourly, forecastTimeZone]);
 
   const tempF =
     currentTempF ??
@@ -3752,7 +3799,7 @@ function LandWeatherWithCoords({
     safeNum(todayDaily?.cloudCoverAvgPct) ??
     null;
 
-  const pressureTrend = useMemo(() => pressureTrendFromHourly(hourly), [hourly]);
+  const pressureTrend = useMemo(() => pressureTrendFromHourly(hourly, forecastTimeZone), [hourly, forecastTimeZone]);
 
   const visibilityMi = (() => {
     const vMi = safeNum(wx.visibilityMi ?? wx.visibility_mi ?? wx.visibility);
@@ -3837,7 +3884,7 @@ function LandWeatherWithCoords({
     return { label: 'Feels', value: '—', conf: undefined };
   }, [hi, wc, feelsLikeF]);
 
-  const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime) : null;
+  const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime, forecastTimeZone) : null;
   const updatedText = updatedTimeLabel ? `Updated ${updatedTimeLabel}` : null;
 
   const moistureHint =
@@ -4085,7 +4132,13 @@ function LandWeatherWithCoords({
             <Text style={styles.cardTitle}>Next 72 hours</Text>
           </View>
 
-          <HourlyCharts72h hours={hourly} maxHours={72} units={units} initialPanel="range" />
+          <HourlyCharts72h
+            hours={hourly}
+            maxHours={72}
+            units={units}
+            initialPanel="range"
+            timeZone={forecastTimeZone ?? undefined}
+          />
 
           <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
         </View>
