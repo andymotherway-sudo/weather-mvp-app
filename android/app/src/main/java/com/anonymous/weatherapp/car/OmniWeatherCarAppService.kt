@@ -24,6 +24,7 @@ import androidx.car.app.validation.HostValidator
 import androidx.core.content.ContextCompat
 import com.anonymous.weatherapp.BuildConfig
 import java.net.HttpURLConnection
+import java.net.UnknownHostException
 import java.net.URL
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -81,19 +82,19 @@ class OmniWeatherCarScreen(carContext: CarContext) : Screen(carContext) {
         pane.addRow(
           Row.Builder()
             .setTitle("OMNIwx Alpha ${BuildConfig.VERSION_NAME}")
-            .addText("${current.placeName} · ${current.updatedLabel}")
+            .addText("${current.placeName} · ${current.locationSource} · ${current.updatedLabel}")
             .build()
         )
         pane.addRow(
           Row.Builder()
             .setTitle("${current.temperatureF.roundLabel()}°F · ${weatherCodeLabel(current.weatherCode)}")
-            .addText(conditionSubtitle(current.weatherCode))
+            .addText("${conditionSubtitle(current.weatherCode)} · feels ${current.feelsLikeF.roundLabel()}°")
             .build()
         )
         pane.addRow(
           Row.Builder()
-            .setTitle("Precip ${current.precipChancePct.roundLabel()}% · Wind ${current.windMph.roundLabel()} mph")
-            .addText("Feels ${current.feelsLikeF.roundLabel()}° · High / Low ${current.highF.roundLabel()}° / ${current.lowF.roundLabel()}° · ${windDirectionLabel(current.windDirectionDeg)} wind")
+            .setTitle("${current.precipChancePct.roundLabel()}% precip · ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph")
+            .addText("Visibility ${current.visibilityMiles.roundLabel()} mi · high ${current.highF.roundLabel()}° / low ${current.lowF.roundLabel()}°")
             .build()
         )
         pane.addRow(alertSummaryRow(current))
@@ -102,14 +103,14 @@ class OmniWeatherCarScreen(carContext: CarContext) : Screen(carContext) {
         pane.addRow(
           Row.Builder()
             .setTitle("Loading weather")
-            .addText("Connecting to your OMNIwx location.")
+            .addText("Connecting to your OMNIwx location. Android Auto may need a moment to wake up data.")
             .build()
         )
       }
       currentError != null -> {
         pane.addRow(
           Row.Builder()
-            .setTitle("Weather unavailable")
+            .setTitle("Weather is still connecting")
             .addText(currentError)
             .build()
         )
@@ -229,8 +230,7 @@ class OmniWeatherCarScreen(carContext: CarContext) : Screen(carContext) {
         report = fetchCurrentWeather(place)
         loaded = true
       } catch (e: Exception) {
-        report = null
-        error = e.message ?: "Could not load current weather."
+        error = friendlyCarError(e)
         loaded = true
       } finally {
         loading = false
@@ -295,11 +295,16 @@ private fun placeFromJson(json: JSONObject, fallbackSource: String): CarPlace? {
   if (!lat.isFinite() || !lon.isFinite()) return null
 
   val source = json.optString("source", fallbackSource).ifBlank { fallbackSource }
-  val name = json.optString("name", "").ifBlank {
+  val rawName = json.optString("name", "").ifBlank {
     if (source == "gps") "Current Location" else "OMNIwx location"
   }
+  val name = if (source == "gps" || looksLikeCoordinateLabel(rawName)) "Current Location" else rawName
 
   return CarPlace(name = name, lat = lat, lon = lon, source = if (source == "gps") "GPS" else source)
+}
+
+private fun looksLikeCoordinateLabel(value: String): Boolean {
+  return Regex("""^\s*-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?\s*$""").matches(value)
 }
 
 private fun readLastKnownLocation(context: Context): CarPlace? {
@@ -397,6 +402,17 @@ private fun fetchCurrentWeather(place: CarPlace): CarWeatherReport {
     )
   } finally {
     conn.disconnect()
+  }
+}
+
+private fun friendlyCarError(error: Exception): String {
+  return when (error) {
+    is UnknownHostException ->
+      "Android Auto could not reach weather data yet. Check signal or tap Refresh once the connection settles."
+    is IllegalStateException ->
+      error.message ?: "Open OMNIwx on your phone once so Android Auto can use your active place."
+    else ->
+      "Weather did not load cleanly. Tap Refresh, or open OMNIwx on your phone if the car connection just started."
   }
 }
 
