@@ -22,7 +22,7 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
-import { useLocations } from '../lib/locations/useLocations';
+import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
 import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
@@ -39,6 +39,8 @@ import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController } from '../lib/maps/useRadarController';
 import { MAP_VIEWS } from '../lib/maps/views';
+import { apiUrl } from '../lib/net/apiBase';
+import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 
@@ -466,6 +468,210 @@ function getViewAccent(viewId: string) {
 const NESDIS_GEOCOLOR_TILE_TEMPLATE =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGED_GeoColor/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
+type FavoriteTemperatureState = {
+  temp: number | null;
+  loading: boolean;
+  updatedAt: number;
+  unit: 'F' | 'C';
+};
+
+const FAVORITE_TEMP_REFRESH_MS = 10 * 60 * 1000;
+
+function favoriteKey(place: Pick<FavoriteLocation, 'id' | 'lat' | 'lon'>) {
+  return `${place.id || 'fav'}:${Number(place.lat).toFixed(4)},${Number(place.lon).toFixed(4)}`;
+}
+
+function dedupeFavoriteLocations(items: Array<FavoriteLocation | any>) {
+  const out: FavoriteLocation[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const lat = Number(item?.lat);
+    const lon = Number(item?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    out.push({
+      id: String(item?.id ?? `fav:${key}`),
+      name: String(item?.name ?? 'Saved place'),
+      lat,
+      lon,
+    });
+  }
+
+  return out;
+}
+
+function tempCircleColor(temp: number | null, unit: 'F' | 'C') {
+  if (temp == null) return 'rgba(15,23,42,0.92)';
+  const f = unit === 'C' ? temp * 1.8 + 32 : temp;
+  if (f <= 32) return '#60a5fa';
+  if (f <= 55) return '#22d3ee';
+  if (f <= 75) return '#34d399';
+  if (f <= 90) return '#facc15';
+  if (f <= 105) return '#fb923c';
+  return '#ef4444';
+}
+
+function tempCircleTextColor(temp: number | null, unit: 'F' | 'C') {
+  if (temp == null) return '#e5e7eb';
+  const f = unit === 'C' ? temp * 1.8 + 32 : temp;
+  return f >= 72 && f <= 105 ? '#111827' : '#f8fafc';
+}
+
+function formatMapTemp(temp: number | null) {
+  return temp == null ? '--' : `${Math.round(temp)}°`;
+}
+
+async function fetchFavoriteTemperature(
+  place: FavoriteLocation,
+  unit: 'F' | 'C',
+  signal: AbortSignal,
+): Promise<number | null> {
+  const units = unit === 'C' ? 'metric' : 'imperial';
+  let url: string;
+
+  try {
+    url = apiUrl(`/api/current?lat=${encodeURIComponent(String(place.lat))}&lon=${encodeURIComponent(String(place.lon))}&units=${units}`);
+  } catch {
+    const temperatureUnit = unit === 'C' ? 'celsius' : 'fahrenheit';
+    url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(place.lat))}` +
+      `&longitude=${encodeURIComponent(String(place.lon))}` +
+      `&current=temperature_2m&temperature_unit=${temperatureUnit}&timezone=auto`;
+  }
+
+  const res = await fetchWithTimeout(url, 8000, { signal });
+  if (!res.ok) throw new Error(`Favorite temperature failed (${res.status})`);
+  const json = await res.json();
+  return safeNum(json?.temp ?? json?.current?.temperature_2m);
+}
+
+function useFavoriteTemperatures(favorites: FavoriteLocation[], unit: 'F' | 'C') {
+  const [lookup, setLookup] = useState<Record<string, FavoriteTemperatureState>>({});
+  const favoriteSignature = useMemo(
+    () => favorites.map((place) => favoriteKey(place)).join('|'),
+    [favorites],
+  );
+
+  useEffect(() => {
+    if (!favorites.length) {
+      setLookup({});
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const now = Date.now();
+    const places = favorites.slice(0, 30);
+    const stale = places.filter((place) => {
+      const key = favoriteKey(place);
+      const existing = lookup[key];
+      return !existing || existing.unit !== unit || now - existing.updatedAt > FAVORITE_TEMP_REFRESH_MS;
+    });
+
+    if (!stale.length) return () => controller.abort();
+
+    setLookup((current) => {
+      const next = { ...current };
+      stale.forEach((place) => {
+        const key = favoriteKey(place);
+        next[key] = {
+          temp: current[key]?.unit === unit ? current[key]?.temp ?? null : null,
+          loading: true,
+          updatedAt: current[key]?.updatedAt ?? 0,
+          unit,
+        };
+      });
+      return next;
+    });
+
+    async function run() {
+      for (let i = 0; i < stale.length; i += 4) {
+        const batch = stale.slice(i, i + 4);
+        await Promise.all(
+          batch.map(async (place) => {
+            const key = favoriteKey(place);
+            try {
+              const temp = await fetchFavoriteTemperature(place, unit, controller.signal);
+              if (cancelled) return;
+              setLookup((current) => ({
+                ...current,
+                [key]: { temp, loading: false, updatedAt: Date.now(), unit },
+              }));
+            } catch {
+              if (cancelled) return;
+              setLookup((current) => ({
+                ...current,
+                [key]: {
+                  temp: current[key]?.unit === unit ? current[key]?.temp ?? null : null,
+                  loading: false,
+                  updatedAt: Date.now(),
+                  unit,
+                },
+              }));
+            }
+          }),
+        );
+      }
+    }
+
+    run();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [favoriteSignature, favorites, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return lookup;
+}
+
+function buildFavoriteTemperatureGeoJson(args: {
+  favorites: FavoriteLocation[];
+  temperatures: Record<string, FavoriteTemperatureState>;
+  activePlace?: { id?: string; lat?: number; lon?: number } | null;
+  activeFavoriteId?: string | null;
+  unit: 'F' | 'C';
+}) {
+  const features = args.favorites.map((place) => {
+    const key = favoriteKey(place);
+    const state = args.temperatures[key];
+    const temp = state?.temp ?? null;
+    const activeById = args.activeFavoriteId === place.id || args.activePlace?.id === place.id;
+    const activeByCoords =
+      args.activePlace?.lat != null &&
+      args.activePlace?.lon != null &&
+      Math.abs(Number(args.activePlace.lat) - place.lat) < 0.0005 &&
+      Math.abs(Number(args.activePlace.lon) - place.lon) < 0.0005;
+    const active = activeById || activeByCoords;
+
+    return {
+      type: 'Feature' as const,
+      id: place.id,
+      properties: {
+        id: place.id,
+        name: place.name,
+        tempText: state?.loading && temp == null ? '...' : formatMapTemp(temp),
+        circleColor: tempCircleColor(temp, args.unit),
+        textColor: tempCircleTextColor(temp, args.unit),
+        strokeColor: active ? '#f8fafc' : 'rgba(15,23,42,0.92)',
+        strokeWidth: active ? 3 : 2,
+        isActive: active ? 1 : 0,
+      },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [place.lon, place.lat],
+      },
+    };
+  });
+
+  return { type: 'FeatureCollection' as const, features };
+}
+
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
@@ -479,14 +685,24 @@ export default function MapsScreen() {
   }>();
   const router = useRouter();
   const isFocused = useIsFocused();
-  const { active: activePlace } = usePlace();
+  const {
+    active: activePlace,
+    favorites: placeFavorites,
+    setActive: setPlaceActive,
+  } = usePlace();
 
   const [state, dispatch] = React.useReducer(mapReducer, undefined, () =>
     createInitialMapState({ viewId: 'radar', nerdy: false }),
   );
 
   const loc = useLocations();
+  const { baseMapStyle, tempUnit } = useSettings();
   const permission = 'granted' as const;
+  const mapFavoriteLocations = useMemo(
+    () => dedupeFavoriteLocations([...(loc.state.favorites ?? []), ...(placeFavorites ?? [])]),
+    [loc.state.favorites, placeFavorites],
+  );
+  const favoriteTemperatures = useFavoriteTemperatures(mapFavoriteLocations, tempUnit);
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [learnOpen, setLearnOpen] = useState(false);
@@ -529,7 +745,6 @@ export default function MapsScreen() {
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
-  const { baseMapStyle } = useSettings();
 
   useEffect(() => {
     const rawView = params?.view ? String(params.view).toLowerCase() : '';
@@ -1281,6 +1496,37 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
+  const activeFavoriteId = loc.active.kind === 'favorite' ? loc.active.id : null;
+  const favoriteTemperatureGeoJson = useMemo(
+    () =>
+      buildFavoriteTemperatureGeoJson({
+        favorites: mapFavoriteLocations,
+        temperatures: favoriteTemperatures,
+        activePlace,
+        activeFavoriteId,
+        unit: tempUnit,
+      }),
+    [activeFavoriteId, activePlace, favoriteTemperatures, mapFavoriteLocations, tempUnit],
+  );
+  const handleFavoriteTemperaturePress = useCallback(
+    (e: any) => {
+      const id = String(e?.features?.[0]?.properties?.id ?? e?.feature?.properties?.id ?? '');
+      const favorite = mapFavoriteLocations.find((item) => item.id === id);
+      if (!favorite) return;
+
+      loc.addOrActivateFavorite(favorite.name, favorite.lat, favorite.lon);
+      setPlaceActive({
+        id: favorite.id,
+        name: favorite.name,
+        lat: favorite.lat,
+        lon: favorite.lon,
+        source: 'favorite',
+      });
+      router.push('/(tabs)' as any);
+    },
+    [loc, mapFavoriteLocations, router, setPlaceActive],
+  );
+
   useEffect(() => {
     if (!stationRadarMode || !selectedRadarSite || !selectedRadarId3) return;
     if (lastCenteredRadarSiteRef.current === selectedRadarId3) return;
@@ -2276,6 +2522,75 @@ export default function MapsScreen() {
                   textOffset: [0, 1.6],
                   textMaxWidth: 12,
                   textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {mapFavoriteLocations.length ? (
+            <MapLibreGL.ShapeSource
+              id="favorite-temperature-source"
+              shape={favoriteTemperatureGeoJson as any}
+              onPress={handleFavoriteTemperaturePress}
+              hitbox={{ width: 56, height: 56 }}
+            >
+              <MapLibreGL.CircleLayer
+                id="favorite-temperature-hit"
+                style={{
+                  circleColor: '#ffffff',
+                  circleOpacity: 0.01,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 22, 7, 28, 11, 34] as any,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="favorite-temperature-halo"
+                style={{
+                  circleColor: ['get', 'circleColor'] as any,
+                  circleOpacity: 0.22,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 17, 7, 22, 11, 27] as any,
+                  circleBlur: 0.45,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="favorite-temperature-circle"
+                style={{
+                  circleColor: ['get', 'circleColor'] as any,
+                  circleOpacity: 0.96,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 13, 7, 17, 11, 21] as any,
+                  circleStrokeColor: ['get', 'strokeColor'] as any,
+                  circleStrokeWidth: ['get', 'strokeWidth'] as any,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="favorite-temperature-label"
+                style={{
+                  textField: ['get', 'tempText'],
+                  textSize: ['interpolate', ['linear'], ['zoom'], 3, 10, 7, 12, 11, 14] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: ['get', 'textColor'] as any,
+                  textHaloColor: 'rgba(2,6,23,0.26)',
+                  textHaloWidth: 0.6,
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="favorite-temperature-name"
+                minZoomLevel={5.5}
+                style={{
+                  textField: ['get', 'name'],
+                  textSize: ['interpolate', ['linear'], ['zoom'], 5.5, 9, 8, 10, 11, 11] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#f8fafc',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1.35,
+                  textOffset: [0, 1.85],
+                  textMaxWidth: 10,
+                  textOptional: true,
+                  textAllowOverlap: false,
                 }}
               />
             </MapLibreGL.ShapeSource>

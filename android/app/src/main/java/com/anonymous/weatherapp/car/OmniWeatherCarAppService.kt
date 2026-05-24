@@ -19,9 +19,6 @@ import androidx.car.app.model.CarIcon
 import androidx.car.app.model.Pane
 import androidx.car.app.model.PaneTemplate
 import androidx.car.app.model.Row
-import androidx.car.app.model.Tab
-import androidx.car.app.model.TabContents
-import androidx.car.app.model.TabTemplate
 import androidx.car.app.model.Template
 import androidx.car.app.validation.HostValidator
 import androidx.core.content.ContextCompat
@@ -51,6 +48,10 @@ class OmniWeatherCarAppService : CarAppService() {
   override fun onCreateSession(sessionInfo: SessionInfo): Session {
     return OmniWeatherCarSession()
   }
+
+  override fun onCreateSession(): Session {
+    return OmniWeatherCarSession()
+  }
 }
 
 class OmniWeatherCarSession : Session() {
@@ -64,49 +65,10 @@ class OmniWeatherCarScreen(carContext: CarContext) : Screen(carContext) {
   @Volatile private var loaded = false
   @Volatile private var report: CarWeatherReport? = null
   @Volatile private var error: String? = null
-  @Volatile private var activeTab = "home"
 
   override fun onGetTemplate(): Template {
     loadWeatherIfNeeded()
-
-    val contents = when (activeTab) {
-      "map" -> buildMapTemplate()
-      "alerts" -> buildAlertsTemplate()
-      else -> buildHomeTemplate()
-    }
-
-    return TabTemplate.Builder(
-      object : TabTemplate.TabCallback {
-        override fun onTabSelected(tabContentId: String) {
-          activeTab = tabContentId
-          invalidate()
-        }
-      }
-    )
-      .addTab(
-        Tab.Builder()
-          .setTitle("Home")
-          .setContentId("home")
-          .setIcon(CarIcon.APP_ICON)
-          .build()
-      )
-      .addTab(
-        Tab.Builder()
-          .setTitle("Map")
-          .setContentId("map")
-          .setIcon(CarIcon.PAN)
-          .build()
-      )
-      .addTab(
-        Tab.Builder()
-          .setTitle("Alerts")
-          .setContentId("alerts")
-          .setIcon(CarIcon.ALERT)
-          .build()
-      )
-      .setActiveTabContentId(activeTab)
-      .setTabContents(TabContents.Builder(contents).build())
-      .build()
+    return buildHomeTemplate()
   }
 
   private fun buildHomeTemplate(): Template {
@@ -131,13 +93,7 @@ class OmniWeatherCarScreen(carContext: CarContext) : Screen(carContext) {
         pane.addRow(
           Row.Builder()
             .setTitle("Precip ${current.precipChancePct.roundLabel()}% · Wind ${current.windMph.roundLabel()} mph")
-            .addText("${windDirectionLabel(current.windDirectionDeg)} wind · Visibility ${current.visibilityMiles.roundLabel()} mi")
-            .build()
-        )
-        pane.addRow(
-          Row.Builder()
-            .setTitle("Feels like ${current.feelsLikeF.roundLabel()}° · High / Low ${current.highF.roundLabel()}° / ${current.lowF.roundLabel()}°")
-            .addText("Source: ${current.locationSource}")
+            .addText("Feels ${current.feelsLikeF.roundLabel()}° · High / Low ${current.highF.roundLabel()}° / ${current.lowF.roundLabel()}° · ${windDirectionLabel(current.windDirectionDeg)} wind")
             .build()
         )
         pane.addRow(alertSummaryRow(current))
