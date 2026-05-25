@@ -269,7 +269,7 @@ async function fetchRidgeWithProductFallback(args: {
           : preferred === 'EET'
             ? ['EET', 'NET']
             : preferred === 'NET'
-              ? ['EET', 'NET']
+              ? ['NET', 'EET']
               : ['N0Z', 'N0Q', 'N0B'];
 
   for (const p of order) {

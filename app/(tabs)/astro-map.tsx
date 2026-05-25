@@ -1388,6 +1388,7 @@ export default function AstroMapScreen() {
   const lastRegionRef = useRef<Region | null>(null);
   const preloadInFlightRef = useRef(false);
   const didFinishInitialPreloadRef = useRef(false);
+  const lastSyncedActiveTargetRef = useRef<string>('');
   const activeSnapshotRef = useRef(active);
 
   const screenKey = navKey;
@@ -1406,6 +1407,12 @@ export default function AstroMapScreen() {
     if (activeSource === 'gps') return `gps:${screenKey}`;
     return `${activeSource}:${activeId}`;
   }, [activeId, activeSource, hasExplicitEntryTarget, screenKey]);
+
+  const activeSyncTargetKey = useMemo(() => {
+    if (activeFollowKey === 'none') return 'none';
+    if (!active?.lat || !active?.lon) return 'none';
+    return `${activeFollowKey}:${active.lat.toFixed(4)}:${active.lon.toFixed(4)}`;
+  }, [active?.lat, active?.lon, activeFollowKey]);
 
   const initialRegion: Region = useMemo(() => {
     const fallback: Region = {
@@ -1965,12 +1972,15 @@ export default function AstroMapScreen() {
     const activePlace = activeSnapshotRef.current;
     if (activeFollowKey === 'none') return;
     if (!activePlace?.lat || !activePlace?.lon) return;
+    if (activeSyncTargetKey === 'none') return;
+    if (lastSyncedActiveTargetRef.current === activeSyncTargetKey) return;
     if (preloadInFlightRef.current) return;
 
     cancelPendingInspect();
     cancelPendingSkyFetch();
     const activeHourOffset = hourOffsetRef.current;
 
+    lastSyncedActiveTargetRef.current = activeSyncTargetKey;
     preloadInFlightRef.current = true;
 
     const nextRegion: Region = {
@@ -2087,6 +2097,7 @@ export default function AstroMapScreen() {
   };
 }, [
   activeFollowKey,
+  activeSyncTargetKey,
   applyGridToMap,
   cancelPendingInspect,
   cancelPendingSkyFetch,
@@ -2370,7 +2381,7 @@ useEffect(() => {
             pointerEvents="none"
             style={{
               position: 'absolute',
-              top: insets.top + 86,
+              top: insets.top + 54,
               left: 24,
               right: 84,
               alignItems: 'flex-start',

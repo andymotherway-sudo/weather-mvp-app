@@ -437,7 +437,7 @@ export function MapRenderer(props: MapRendererProps) {
 
     return {
       rasterOpacity: safeOpacity * zoomSoftener,
-      rasterResampling: productStyle === 'echoTops' ? 'nearest' : rasterResampling,
+      rasterResampling,
       rasterFadeDuration,
       rasterSaturation: productTuning.saturation,
       rasterContrast: productTuning.contrast,

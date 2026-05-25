@@ -137,7 +137,7 @@ export function DailyRangeChart({
   const { wxLab } = useWxLab();
   const T = useMemo(() => getTypography({ wxLab }), [wxLab]);
 
-  const data = useMemo(() => (daily ?? []).filter((d) => d?.date).slice(0, 10), [daily]);
+  const data = useMemo(() => (daily ?? []).filter((d) => d?.date).slice(0, 15), [daily]);
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);

@@ -1394,6 +1394,7 @@ function ActivityForecastSection({
   fireContext: any;
   onLearnTopic?: (topicId: string) => void;
 }) {
+  const { chrome } = useAppChrome();
   const [flippedId, setFlippedId] = useState<string | null>(null);
   const cards = useMemo(
     () =>
@@ -1522,7 +1523,7 @@ function ActivityForecastSection({
           </View>
           <Pressable
             onPress={() => onLearnTopic?.('activity-scores')}
-            style={styles.activityLearnButton}
+            style={[styles.activityLearnButton, { backgroundColor: chrome.pill, borderColor: chrome.border }]}
             hitSlop={8}
           >
             <Ionicons name="information-circle-outline" size={14} color="rgba(191,219,254,0.92)" />
@@ -1544,8 +1545,8 @@ function ActivityForecastSection({
               style={[
                 styles.activityWideCard,
                 {
-                  backgroundColor: GLASS_PANEL_BG_STRONG,
-                  borderColor: colors.border,
+                  backgroundColor: chrome.cardStrong,
+                  borderColor: chrome.border,
                 },
               ]}
             >

@@ -201,9 +201,9 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-differential-reflectivity',
   },
   {
-    id: 'EET',
+    id: 'NET',
     label: 'Echo Tops',
-    subtitle: 'Storm top height',
+    subtitle: 'Radar echo height',
     enabled: true,
     learnTopicId: 'radar-echo-tops',
   },
@@ -712,6 +712,7 @@ export default function MapsScreen() {
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
+  const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
   const radarPrefsHydratedRef = useRef(false);
@@ -780,9 +781,7 @@ export default function MapsScreen() {
           }
         }
 
-        if (storedProduct === 'NET') {
-          setStationProduct('EET');
-        } else if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
+        if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
           setStationProduct(storedProduct as RadarProductId);
         }
       } finally {
@@ -819,8 +818,11 @@ export default function MapsScreen() {
   const stormMode = state.viewId === 'storm';
   const stationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
-    () => getRadarAnchor(activePlace, loc.state.currentCoords),
-    [activePlace, loc.state.currentCoords],
+    () =>
+      stationRadarMode && stationAnchor
+        ? stationAnchor
+        : getRadarAnchor(activePlace, loc.state.currentCoords),
+    [activePlace, loc.state.currentCoords, stationAnchor, stationRadarMode],
   );
   const radarAnchorKey = `${radarAnchor.lat.toFixed(4)},${radarAnchor.lon.toFixed(4)}`;
   const autoNearestRadar = useMemo(
@@ -911,7 +913,7 @@ export default function MapsScreen() {
   const wildfireHotspotsEnabled = !!state.layers?.['wildfire.hotspots']?.enabled;
   const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
   const showWildfireLegend =
-    state.viewId === 'wildfire' && (wildfireEnabled || wildfireHotspotsEnabled || wildfireSmokeEnabled);
+    wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
@@ -1654,10 +1656,26 @@ export default function MapsScreen() {
     [router, effectiveRegion, mapZoom],
   );
 
+  const seedStationAnchorFromMap = useCallback(() => {
+    const anchorRegion = region ?? effectiveRegion;
+    const lat = Number(anchorRegion.latitude);
+    const lon = Number(anchorRegion.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    setStationAnchor({ lat, lon });
+    setManualRadarSiteId3(null);
+    lastCenteredRadarSiteRef.current = null;
+  }, [effectiveRegion, region]);
+
   const recenterToGps = () => {
     locateRequestIdRef.current += 1;
     const cachedCoords = loc.state.currentCoords;
     if (cachedCoords && Number.isFinite(cachedCoords.lat) && Number.isFinite(cachedCoords.lon)) {
+      if (stationRadarMode) {
+        setStationAnchor({ lat: cachedCoords.lat, lon: cachedCoords.lon });
+        setManualRadarSiteId3(null);
+        lastCenteredRadarSiteRef.current = null;
+      }
       const longitudeDelta =
         region?.longitudeDelta && Number.isFinite(region.longitudeDelta) ? region.longitudeDelta : stableInitialRegion.longitudeDelta;
       const latitudeDelta =
@@ -2649,7 +2667,7 @@ export default function MapsScreen() {
                         : activeFrameIso
                           ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
                           : selectedRadarDistanceMi != null
-                            ? `${Math.round(selectedRadarDistanceMi)} mi from active place`
+                            ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
                             : 'Latest station scan'}
                     </Text>
                   </View>
@@ -2663,177 +2681,178 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-              {state.viewId === 'radar' ? (
-                <View style={styles.radarModeHeader}>
-                  <View style={styles.radarModeRow}>
-                  <MiniToggle
-                    label="Mosaic"
-                    active={!stationRadarMode}
-                    onPress={() => {
-                      setRadarMode('mosaic');
-                      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                    }}
-                  />
-                  <MiniToggle
-                    label="Station"
-                    active={stationRadarMode}
-                    onPress={() => {
-                      setRadarMode('station');
-                      setStationPanelCollapsed(false);
-                      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                    }}
-                  />
-                  </View>
-                  {stationRadarMode ? (
-                    <Pressable
-                      onPress={() => setStationPanelCollapsed(true)}
-                      style={styles.panelIconButton}
-                      accessibilityLabel="Minimize station radar panel"
-                    >
-                      <Text style={styles.panelIconButtonText}>-</Text>
-                    </Pressable>
+                  {state.viewId === 'radar' ? (
+                    <View style={styles.radarModeHeader}>
+                      <View style={styles.radarModeRow}>
+                        <MiniToggle
+                          label="Mosaic"
+                          active={!stationRadarMode}
+                          onPress={() => {
+                            setRadarMode('mosaic');
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                          }}
+                        />
+                        <MiniToggle
+                          label="Station"
+                          active={stationRadarMode}
+                          onPress={() => {
+                            seedStationAnchorFromMap();
+                            setRadarMode('station');
+                            setStationPanelCollapsed(false);
+                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                          }}
+                        />
+                      </View>
+                      {stationRadarMode ? (
+                        <Pressable
+                          onPress={() => setStationPanelCollapsed(true)}
+                          style={styles.panelIconButton}
+                          accessibilityLabel="Minimize station radar panel"
+                        >
+                          <Text style={styles.panelIconButtonText}>-</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
                   ) : null}
-                </View>
-              ) : null}
-              <RadarLegend
-                style={effectiveRadarProvider === 'iem' ? radarProductMeta.legendStyle : 'rainviewer'}
-                title={radarProductMeta.legendTitle}
-                leftLabel={radarProductMeta.legendLeft}
-                midLabel={radarProductMeta.legendMid}
-                rightLabel={radarProductMeta.legendRight}
-                compact
-              />
-              <Text style={styles.legendCardMeta}>
-                {effectiveRadarProvider === 'iem'
+                  <RadarLegend
+                    style={effectiveRadarProvider === 'iem' ? radarProductMeta.legendStyle : 'rainviewer'}
+                    title={radarProductMeta.legendTitle}
+                    leftLabel={radarProductMeta.legendLeft}
+                    midLabel={radarProductMeta.legendMid}
+                    rightLabel={radarProductMeta.legendRight}
+                    compact
+                  />
+                  <Text style={styles.legendCardMeta}>
+                    {effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
-                  : 'RainViewer colors vary slightly by provider frame.'}
-              </Text>
-              {stationRadarMode ? (
-                <View style={styles.stationPanel}>
-                  <View style={styles.stationHeader}>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.stationEyebrow}>NEXRAD SITE</Text>
-                      <Text style={styles.stationTitle} numberOfLines={1}>
-                        {selectedRadarSite
-                          ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
-                          : 'Selecting nearest radar'}
-                      </Text>
-                    </View>
-                    <View style={styles.agePill}>
-                      <Text style={styles.agePillText}>
-                        {stationProductLoading
-                          ? `Loading ${radarProductMeta.summaryLabel}`
-                          : activeFrameIso
-                            ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
-                            : 'Latest'}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.stationMeta}>
-                    {selectedRadarDistanceMi != null
-                      ? `${Math.round(selectedRadarDistanceMi)} mi from active place`
-                      : 'Distance pending'}
-                    {' / '}
-                    {stationProductLoading
-                      ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
-                      : radarCtl.usingIemRidgeAnimated
-                        ? 'single-site RIDGE'
-                        : 'loading station scans'}
+                      : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>
+                  {stationRadarMode ? (
+                    <View style={styles.stationPanel}>
+                      <View style={styles.stationHeader}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.stationEyebrow}>NEXRAD SITE</Text>
+                          <Text style={styles.stationTitle} numberOfLines={1}>
+                            {selectedRadarSite
+                              ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
+                              : 'Selecting nearest radar'}
+                          </Text>
+                        </View>
+                        <View style={styles.agePill}>
+                          <Text style={styles.agePillText}>
+                            {stationProductLoading
+                              ? `Loading ${radarProductMeta.summaryLabel}`
+                              : activeFrameIso
+                                ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                                : 'Latest'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.stationMeta}>
+                        {selectedRadarDistanceMi != null
+                          ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
+                          : 'Distance pending'}
+                        {' / '}
+                        {stationProductLoading
+                          ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
+                          : radarCtl.usingIemRidgeAnimated
+                            ? 'single-site RIDGE'
+                            : 'loading station scans'}
+                      </Text>
 
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.stationPickerContent}
-                  >
-                    {autoNearestRadar?.site ? (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.stationPickerContent}
+                      >
+                        {autoNearestRadar?.site ? (
+                          <Pressable
+                            onPress={() => {
+                              setManualRadarSiteId3(null);
+                              lastCenteredRadarSiteRef.current = null;
+                              dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                            }}
+                            style={[
+                              styles.stationChip,
+                              styles.autoStationChip,
+                              manualRadarSiteId3 == null ? styles.stationChipActive : null,
+                            ]}
+                          >
+                            <Text style={styles.stationChipId}>Auto</Text>
+                            <Text style={styles.stationChipDistance}>{getStationDisplayId(autoNearestRadar.site)}</Text>
+                          </Pressable>
+                        ) : null}
+                        {nearbyRadarSites.map((item) => {
+                          const id3 = normalizeRadarSiteId(item.site.id);
+                          return (
+                            <Pressable
+                              key={id3}
+                              onPress={() => {
+                                setManualRadarSiteId3(id3);
+                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                              }}
+                              style={[
+                                styles.stationChip,
+                                selectedRadarId3 === id3 ? styles.stationChipActive : null,
+                              ]}
+                            >
+                              <Text style={styles.stationChipId}>{getStationDisplayId(item.site)}</Text>
+                              <Text style={styles.stationChipDistance}>{Math.round(item.distanceMi)} mi</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+
+                      <View style={styles.stationProductGrid}>
+                        {STATION_RADAR_PRODUCTS.map((item) => {
+                          const active = product === item.id;
+                          const loading = active && stationProductLoading;
+                          return (
+                            <Pressable
+                              key={item.id}
+                              onPress={() => {
+                                if (!item.enabled) {
+                                  setLearnTopicId(item.learnTopicId);
+                                  setLearnOpen(true);
+                                  return;
+                                }
+                                setStationProduct(item.id as RadarProductId);
+                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                              }}
+                              style={[
+                                styles.stationProductButton,
+                                active ? styles.stationProductButtonActive : null,
+                                active && (item.id === 'EET' || item.id === 'NET') ? styles.stationProductButtonEchoActive : null,
+                                active && (item.id === 'N0U' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
+                                loading ? styles.stationProductButtonLoading : null,
+                                !item.enabled ? styles.stationProductButtonDisabled : null,
+                              ]}
+                            >
+                              <Text style={styles.stationProductLabel} numberOfLines={1}>
+                                {item.label}
+                              </Text>
+                              <Text style={styles.stationProductSub} numberOfLines={1}>
+                                {loading ? 'Loading scans...' : item.subtitle}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
                       <Pressable
                         onPress={() => {
-                          setManualRadarSiteId3(null);
-                          lastCenteredRadarSiteRef.current = null;
-                          dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                          const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
+                          setLearnTopicId(topic ?? 'radar-base-reflectivity');
+                          setLearnOpen(true);
                         }}
-                        style={[
-                          styles.stationChip,
-                          styles.autoStationChip,
-                          manualRadarSiteId3 == null ? styles.stationChipActive : null,
-                        ]}
+                        style={styles.wxLearnButton}
                       >
-                        <Text style={styles.stationChipId}>Auto</Text>
-                        <Text style={styles.stationChipDistance}>{getStationDisplayId(autoNearestRadar.site)}</Text>
+                        <Text style={styles.wxLearnButtonText}>wxLearn: {radarProductMeta.summaryLabel}</Text>
                       </Pressable>
-                    ) : null}
-                    {nearbyRadarSites.map((item) => {
-                      const id3 = normalizeRadarSiteId(item.site.id);
-                      return (
-                        <Pressable
-                          key={id3}
-                          onPress={() => {
-                            setManualRadarSiteId3(id3);
-                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                          }}
-                          style={[
-                            styles.stationChip,
-                            selectedRadarId3 === id3 ? styles.stationChipActive : null,
-                          ]}
-                        >
-                          <Text style={styles.stationChipId}>{getStationDisplayId(item.site)}</Text>
-                          <Text style={styles.stationChipDistance}>{Math.round(item.distanceMi)} mi</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-
-                  <View style={styles.stationProductGrid}>
-                    {STATION_RADAR_PRODUCTS.map((item) => {
-                      const active = product === item.id;
-                      const loading = active && stationProductLoading;
-                      return (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => {
-                            if (!item.enabled) {
-                              setLearnTopicId(item.learnTopicId);
-                              setLearnOpen(true);
-                              return;
-                            }
-                            setStationProduct(item.id as RadarProductId);
-                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                          }}
-                          style={[
-                            styles.stationProductButton,
-                            active ? styles.stationProductButtonActive : null,
-                            active && (item.id === 'EET' || item.id === 'NET') ? styles.stationProductButtonEchoActive : null,
-                            active && (item.id === 'N0U' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
-                            loading ? styles.stationProductButtonLoading : null,
-                            !item.enabled ? styles.stationProductButtonDisabled : null,
-                          ]}
-                        >
-                          <Text style={styles.stationProductLabel} numberOfLines={1}>
-                            {item.label}
-                          </Text>
-                          <Text style={styles.stationProductSub} numberOfLines={1}>
-                            {loading ? 'Loading scans...' : item.subtitle}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <Pressable
-                    onPress={() => {
-                      const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
-                      setLearnTopicId(topic ?? 'radar-base-reflectivity');
-                      setLearnOpen(true);
-                    }}
-                    style={styles.wxLearnButton}
-                  >
-                    <Text style={styles.wxLearnButtonText}>wxLearn: {radarProductMeta.summaryLabel}</Text>
-                  </Pressable>
-                </View>
-              ) : null}
+                    </View>
+                  ) : null}
               {stormMode ? (
                 <View style={styles.stormProductRow}>
                   {STORM_RADAR_PRODUCTS.map((id) => (
@@ -4231,6 +4250,8 @@ const styles = StyleSheet.create({
   legendWrap: {
       position: 'absolute',
       left: 12,
+      zIndex: 20,
+      elevation: 20,
     },
   topLegendWrap: {
       top: 8,
