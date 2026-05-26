@@ -45,8 +45,40 @@ function normalizePrecipMonthlyIn(arr?: Array<number | null>) {
   return arr.map((v) => (typeof v === 'number' && Number.isFinite(v) ? v / 10 : v));
 }
 
+function sumFinitePrecip(arr?: Array<number | null>) {
+  if (!Array.isArray(arr)) return null;
+  let sum = 0;
+  let count = 0;
+  for (const value of arr) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    sum += Math.max(0, value);
+    count += 1;
+  }
+  return count ? sum : null;
+}
+
+function repairUnderScaledNormalPrecip(
+  normals?: Array<number | null>,
+  lastYear?: Array<number | null>
+) {
+  if (!Array.isArray(normals) || normals.length !== 12) return normals;
+
+  const normalSum = sumFinitePrecip(normals);
+  const priorSum = sumFinitePrecip(lastYear);
+  if (normalSum == null || priorSum == null) return normals;
+
+  // Older cached worker responses divided already-standard NOAA monthly normals by 10.
+  // Only repair when the annual normal is implausibly tiny and prior-year data gives a sane comparison anchor.
+  if (normalSum > 0 && normalSum < 3 && priorSum >= 6 && priorSum / normalSum >= 2.5) {
+    return normals.map((value) =>
+      typeof value === 'number' && Number.isFinite(value) ? value * 10 : value
+    );
+  }
+
+  return normals;
+}
+
 function normalizeClimoResult(r: ClimatologyResult): ClimatologyResult {
-  const fixed = normalizePrecipMonthlyIn(r.precipMonthlyIn);
   const fixedLastYear = !r.lastYear
     ? r.lastYear
     : {
@@ -54,6 +86,10 @@ function normalizeClimoResult(r: ClimatologyResult): ClimatologyResult {
         precipDailyIn: Array.isArray(r.lastYear.precipDailyIn) ? r.lastYear.precipDailyIn : r.lastYear.precipDailyIn,
         precipMonthlyIn: normalizePrecipMonthlyIn(r.lastYear.precipMonthlyIn),
       };
+  const fixed = repairUnderScaledNormalPrecip(
+    normalizePrecipMonthlyIn(r.precipMonthlyIn),
+    fixedLastYear?.precipMonthlyIn
+  );
   if (fixed === r.precipMonthlyIn && fixedLastYear === r.lastYear) return r;
   return { ...r, precipMonthlyIn: fixed, lastYear: fixedLastYear };
 }

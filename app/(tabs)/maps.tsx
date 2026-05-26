@@ -201,9 +201,9 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-differential-reflectivity',
   },
   {
-    id: 'NET',
+    id: 'EET',
     label: 'Echo Tops',
-    subtitle: 'Radar echo height',
+    subtitle: 'Echo top height',
     enabled: true,
     learnTopicId: 'radar-echo-tops',
   },
@@ -782,7 +782,7 @@ export default function MapsScreen() {
         }
 
         if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
-          setStationProduct(storedProduct as RadarProductId);
+          setStationProduct(storedProduct === 'NET' ? 'EET' : (storedProduct as RadarProductId));
         }
       } finally {
         if (!cancelled) radarPrefsHydratedRef.current = true;
@@ -1189,6 +1189,15 @@ export default function MapsScreen() {
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
+  const stationProductUnavailable = stationRadarMode && !stationProductLoading && frameCount <= 0;
+  const stationProductSourceLabel =
+    product === 'EET'
+      ? 'echo tops mosaic'
+      : radarCtl.usingIemRidgeAnimated
+        ? 'single-site RIDGE'
+        : stationProductUnavailable
+          ? 'source unavailable'
+          : 'loading station scans';
 
   const radarTileMaxZ = useMemo(() => {
     return radarCtl.radarTileMaxZ;
@@ -2666,6 +2675,8 @@ export default function MapsScreen() {
                         ? `Loading ${radarProductMeta.summaryLabel.toLowerCase()}`
                         : activeFrameIso
                           ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                          : stationProductUnavailable
+                            ? `${radarProductMeta.summaryLabel} unavailable`
                           : selectedRadarDistanceMi != null
                             ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
                             : 'Latest station scan'}
@@ -2746,6 +2757,8 @@ export default function MapsScreen() {
                               ? `Loading ${radarProductMeta.summaryLabel}`
                               : activeFrameIso
                                 ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                                : stationProductUnavailable
+                                  ? 'No recent scans'
                                 : 'Latest'}
                           </Text>
                         </View>
@@ -2757,9 +2770,7 @@ export default function MapsScreen() {
                         {' / '}
                         {stationProductLoading
                           ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
-                          : radarCtl.usingIemRidgeAnimated
-                            ? 'single-site RIDGE'
-                            : 'loading station scans'}
+                          : stationProductSourceLabel}
                       </Text>
 
                       <ScrollView
@@ -2834,7 +2845,7 @@ export default function MapsScreen() {
                                 {item.label}
                               </Text>
                               <Text style={styles.stationProductSub} numberOfLines={1}>
-                                {loading ? 'Loading scans...' : item.subtitle}
+                                {loading ? 'Loading scans...' : active && stationProductUnavailable ? 'No recent scans' : item.subtitle}
                               </Text>
                             </Pressable>
                           );

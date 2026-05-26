@@ -497,7 +497,7 @@ export function useRadarController(args: {
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
             maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
-            allowMosaicFallback: !stormMode && !stationMode,
+            allowMosaicFallback: !stormMode && (!stationMode || product === 'EET'),
             force: stormMode || stationMode ? 'ridge' : undefined,
             forceRadarId3: stationMode ? radarSiteId3 : null,
           },

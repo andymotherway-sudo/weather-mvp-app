@@ -18,6 +18,7 @@ import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.CarColor
 import androidx.car.app.model.CarLocation
 import androidx.car.app.model.ItemList
+import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Metadata
 import androidx.car.app.model.Pane
 import androidx.car.app.model.PaneTemplate
@@ -165,55 +166,56 @@ private class OmniWeatherHomeScreen(carContext: CarContext, repository: CarWeath
   override fun onGetTemplate(): Template {
     ensureLoaded()
     val current = repository.report
-    val pane = Pane.Builder()
+    val list = ItemList.Builder()
 
     if (current != null) {
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("Current")
-        .addText("${current.temperatureF.roundLabel()}°F · ${weatherCodeLabel(current.weatherCode)} · feels ${current.feelsLikeF.roundLabel()}°")
-        .addText("Wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph · precip ${current.precipChancePct.roundLabel()}%")
+        .addText("${current.temperatureF.roundLabel()}F - ${weatherCodeLabel(current.weatherCode)} - feels ${current.feelsLikeF.roundLabel()}F")
+        .addText("Wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph - precip ${current.precipChancePct.roundLabel()}%")
         .setOnClickListener { repository.load(force = true) { invalidate() } }
         .build())
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("SkyScore")
         .addText("${current.skyScore?.score ?: "--"} ${current.skyScore?.label ?: "Pending"}")
         .addText(current.skyScore?.bestWindow?.let { "Best $it" } ?: "Open sky details")
         .setOnClickListener { screenManager.push(OmniWeatherSkyScoreScreen(carContext, repository)) }
         .build())
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("Alerts")
         .addText(current.alertTitle ?: "No active alerts")
         .addText(current.alertSubtitle ?: "No NWS alerts found near ${current.placeName}.")
         .setOnClickListener { screenManager.push(OmniWeatherAlertsScreen(carContext, repository)) }
         .build())
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("Forecast")
         .addText(current.forecastHomeSummary())
         .addText("5-day outlook")
         .setOnClickListener { screenManager.push(OmniWeatherFiveDayScreen(carContext, repository)) }
         .build())
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("Next 24 hours")
         .addText(current.hourlyHomeSummary())
         .addText(current.hourlyTrendSummary())
         .setOnClickListener { screenManager.push(OmniWeatherHourlyScreen(carContext, repository)) }
         .build())
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle("Map / Radar")
-        .addText("Nearest NEXRAD ${current.nearestRadar.id} · ${current.nearestRadarDistanceMi.roundLabel()} mi")
+        .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
         .addText("Open nearby weather map")
         .setOnClickListener { screenManager.push(OmniWeatherMapScreen(carContext, repository)) }
         .build())
     } else if (repository.loading) {
-      pane.addRow(Row.Builder().setTitle("Loading weather").addText("Connecting to your OMNIwx location.").build())
+      list.addItem(Row.Builder().setTitle("Loading weather").addText("Connecting to your OMNIwx location.").build())
     } else if (repository.error != null) {
-      pane.addRow(Row.Builder().setTitle("Weather is still connecting").addText(repository.error ?: "Tap Refresh after the car connection settles.").build())
+      list.addItem(Row.Builder().setTitle("Weather is still connecting").addText(repository.error ?: "Tap Refresh after the car connection settles.").build())
     } else {
-      pane.addRow(Row.Builder().setTitle("Location unavailable").addText("Open OMNIwx once on your phone or allow location access.").build())
+      list.addItem(Row.Builder().setTitle("Location unavailable").addText("Open OMNIwx once on your phone or allow location access.").build())
     }
 
-    return PaneTemplate.Builder(pane.build())
-      .setTitle(current?.let { "OMNIwx · ${it.placeName}" } ?: "OMNIwx")
+    return ListTemplate.Builder()
+      .setSingleList(list.build())
+      .setTitle(current?.let { "OMNIwx - ${it.placeName}" } ?: "OMNIwx")
       .setHeaderAction(Action.APP_ICON)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
@@ -225,16 +227,17 @@ private class OmniWeatherFiveDayScreen(carContext: CarContext, repository: CarWe
     ensureLoaded()
     loadingOrErrorTemplate("5-day Forecast")?.let { return it }
     val current = repository.report!!
-    val pane = Pane.Builder()
+    val list = ItemList.Builder()
     current.daily.take(5).forEach { day ->
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle(day.label)
-        .addText("${day.highF.roundLabel()} / ${day.lowF.roundLabel()} · ${weatherCodeLabel(day.weatherCode)}")
+        .addText("${day.highF.roundLabel()} / ${day.lowF.roundLabel()} - ${weatherCodeLabel(day.weatherCode)}")
         .addText("Precip ${day.precipChancePct.roundLabel()}%")
         .build())
     }
-    if (current.daily.isEmpty()) pane.addRow(Row.Builder().setTitle("Forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    return PaneTemplate.Builder(pane.build())
+    if (current.daily.isEmpty()) list.addItem(Row.Builder().setTitle("Forecast loading").addText("Tap Refresh if the car connection just started.").build())
+    return ListTemplate.Builder()
+      .setSingleList(list.build())
       .setTitle("5-day Forecast")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
@@ -247,16 +250,17 @@ private class OmniWeatherHourlyScreen(carContext: CarContext, repository: CarWea
     ensureLoaded()
     loadingOrErrorTemplate("24-hour Forecast")?.let { return it }
     val current = repository.report!!
-    val pane = Pane.Builder()
+    val list = ItemList.Builder()
     listOf(0, 3, 6, 9, 12, 18, 23).mapNotNull { current.hourly.getOrNull(it) }.forEach { hour ->
-      pane.addRow(Row.Builder()
+      list.addItem(Row.Builder()
         .setTitle(hour.label)
-        .addText("${hour.temperatureF.roundLabel()}° · ${weatherCodeLabel(hour.weatherCode)}")
-        .addText("Precip ${hour.precipChancePct.roundLabel()}% · wind ${hour.windMph.roundLabel()} mph")
+        .addText("${hour.temperatureF.roundLabel()}F - ${weatherCodeLabel(hour.weatherCode)}")
+        .addText("Precip ${hour.precipChancePct.roundLabel()}% - wind ${hour.windMph.roundLabel()} mph")
         .build())
     }
-    if (current.hourly.isEmpty()) pane.addRow(Row.Builder().setTitle("Hourly forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    return PaneTemplate.Builder(pane.build())
+    if (current.hourly.isEmpty()) list.addItem(Row.Builder().setTitle("Hourly forecast loading").addText("Tap Refresh if the car connection just started.").build())
+    return ListTemplate.Builder()
+      .setSingleList(list.build())
       .setTitle("24-hour Forecast")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
@@ -297,7 +301,7 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
     val current = repository.report!!
     val sky = current.skyScore ?: placeholderSkyScoreFromWeather(current)
     val pane = Pane.Builder()
-      .addRow(Row.Builder().setTitle("SkyScore ${sky.score} — ${sky.label}").addText(sky.bestWindow?.let { "Best window: $it" } ?: "Best window pending").build())
+      .addRow(Row.Builder().setTitle("SkyScore ${sky.score} - ${sky.label}").addText(sky.bestWindow?.let { "Best window: $it" } ?: "Best window pending").build())
       .addRow(Row.Builder().setTitle("Why").addText(sky.summary ?: "Based on cloud cover, visibility, and current weather.").build())
       .addRow(Row.Builder().setTitle("Driver-safe note").addText("Open OMNIwx on phone for the full astronomy map.").build())
       .build()
@@ -323,16 +327,16 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
 
   private fun buildPlaceListMapTemplate(report: CarWeatherReport): Template {
     val list = ItemList.Builder()
-      .addItem(weatherPoiRow("Current Location", "${report.temperatureF.roundLabel()}° · ${weatherCodeLabel(report.weatherCode)}", report.latitude, report.longitude, "WX") {
+      .addItem(weatherPoiRow("Current Location", "${report.temperatureF.roundLabel()}F - ${weatherCodeLabel(report.weatherCode)}", report.latitude, report.longitude, "WX") {
         screenManager.push(OmniWeatherHomeScreen(carContext, repository))
       })
-      .addItem(weatherPoiRow("Radar: ${report.nearestRadar.id}", "Nearest NEXRAD · ${report.nearestRadarDistanceMi.roundLabel()} mi", report.nearestRadar.lat, report.nearestRadar.lon, "R") {
+      .addItem(weatherPoiRow("Radar: ${report.nearestRadar.id}", "Nearest NEXRAD - ${report.nearestRadarDistanceMi.roundLabel()} mi", report.nearestRadar.lat, report.nearestRadar.lon, "R") {
         screenManager.push(OmniWeatherMapScreen(carContext, repository))
       })
       .addItem(weatherPoiRow("Alerts", report.alertTitle ?: "No active alerts", report.latitude, report.longitude, "!") {
         screenManager.push(OmniWeatherAlertsScreen(carContext, repository))
       })
-      .addItem(weatherPoiRow("SkyScore", "${report.skyScore?.score ?: "--"} ${report.skyScore?.label ?: "Pending"} · best ${report.skyScore?.bestWindow ?: "later"}", report.latitude, report.longitude, "S") {
+      .addItem(weatherPoiRow("SkyScore", "${report.skyScore?.score ?: "--"} ${report.skyScore?.label ?: "Pending"} - best ${report.skyScore?.bestWindow ?: "later"}", report.latitude, report.longitude, "S") {
         screenManager.push(OmniWeatherSkyScoreScreen(carContext, repository))
       })
       .addItem(weatherPoiRow("Forecast Area", "5-day and 24-hour forecast", report.latitude, report.longitude, "F") {
@@ -351,14 +355,15 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
   }
 
   private fun buildMapFallbackTemplate(report: CarWeatherReport): Template {
-    val pane = Pane.Builder()
-      .addRow(Row.Builder().setTitle("Current Location").addText("${report.temperatureF.roundLabel()}° · ${weatherCodeLabel(report.weatherCode)}").build())
-      .addRow(Row.Builder().setTitle("Radar: ${report.nearestRadar.id}").addText("Nearest NEXRAD · ${report.nearestRadarDistanceMi.roundLabel()} mi").build())
-      .addRow(Row.Builder().setTitle("Alerts").addText(report.alertTitle ?: "No active alerts").build())
-      .addRow(Row.Builder().setTitle("SkyScore").addText("${report.skyScore?.score ?: "--"} ${report.skyScore?.label ?: "Pending"}").build())
-      .addRow(Row.Builder().setTitle("Forecast Area").addText("5-day and 24-hour forecast").build())
+    val list = ItemList.Builder()
+      .addItem(Row.Builder().setTitle("Current Location").addText("${report.temperatureF.roundLabel()}F - ${weatherCodeLabel(report.weatherCode)}").build())
+      .addItem(Row.Builder().setTitle("Radar: ${report.nearestRadar.id}").addText("Nearest NEXRAD - ${report.nearestRadarDistanceMi.roundLabel()} mi").build())
+      .addItem(Row.Builder().setTitle("Alerts").addText(report.alertTitle ?: "No active alerts").build())
+      .addItem(Row.Builder().setTitle("SkyScore").addText("${report.skyScore?.score ?: "--"} ${report.skyScore?.label ?: "Pending"}").build())
+      .addItem(Row.Builder().setTitle("Forecast Area").addText("5-day and 24-hour forecast").build())
       .build()
-    return PaneTemplate.Builder(pane)
+    return ListTemplate.Builder()
+      .setSingleList(list)
       .setTitle("Weather Map")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
@@ -651,13 +656,13 @@ private fun CarWeatherReport.forecastHomeSummary(): String {
   if (today == null) return "Forecast details are loading."
   val todayText = "Today ${today.highF.roundLabel()}/${today.lowF.roundLabel()}"
   val tomorrowText = tomorrow?.let { "Tomorrow ${it.highF.roundLabel()}/${it.lowF.roundLabel()}" }
-  return listOfNotNull(todayText, tomorrowText).joinToString(" · ")
+  return listOfNotNull(todayText, tomorrowText).joinToString(" - ")
 }
 
 private fun CarWeatherReport.hourlyHomeSummary(): String {
   if (hourly.isEmpty()) return "Hourly data is loading."
-  return listOf(0, 3, 6).mapNotNull { hourly.getOrNull(it) }.joinToString(" · ") {
-    "${it.label} ${it.temperatureF.roundLabel()}°"
+  return listOf(0, 3, 6).mapNotNull { hourly.getOrNull(it) }.joinToString(" - ") {
+    "${it.label} ${it.temperatureF.roundLabel()}F"
   }
 }
 
@@ -666,7 +671,7 @@ private fun CarWeatherReport.hourlyTrendSummary(): String {
   val maxPop = hourly.mapNotNull { if (it.precipChancePct.isFinite()) it.precipChancePct else null }.maxOrNull()
   val maxWind = hourly.mapNotNull { if (it.windMph.isFinite()) it.windMph else null }.maxOrNull()
   val dominant = hourly.groupingBy { weatherCodeLabel(it.weatherCode) }.eachCount().maxByOrNull { it.value }?.key ?: "conditions"
-  return "Peak precip ${maxPop?.roundToInt()?.toString() ?: "--"}% · wind up to ${maxWind?.roundToInt()?.toString() ?: "--"} mph · $dominant"
+  return "Peak precip ${maxPop?.roundToInt()?.toString() ?: "--"}% - wind up to ${maxWind?.roundToInt()?.toString() ?: "--"} mph - $dominant"
 }
 
 private fun computeCarSkyScore(report: CarWeatherReport): CarSkyScore {

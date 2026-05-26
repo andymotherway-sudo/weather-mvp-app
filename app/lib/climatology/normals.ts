@@ -162,7 +162,12 @@ export async function fetchMonthlyPrecipNormalsIn(
     const v = Number(r.value);
     if (!Number.isFinite(v)) continue;
 
-    const inches = v / 10;
+    const rowUnits = String(r.units ?? prcp?.metadata?.units ?? prcp?.units ?? prcp?.results?.[0]?.units ?? '')
+      .trim()
+      .toLowerCase();
+    let inches = v;
+    if (rowUnits.includes('tenth') || rowUnits.includes('tenths')) inches = inches / 10;
+    if (rowUnits.includes('mm') || rowUnits.includes('millimeter')) inches = inches / 25.4;
     if (inches < 0) continue;
 
     out[m - 1] = inches;

@@ -1382,7 +1382,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 function buildAlmanacCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
-  keyUrl.pathname = "/__cache__/almanac/climo/v12";
+  keyUrl.pathname = "/__cache__/almanac/climo/v13";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
   return new Request(keyUrl.toString(), { method: "GET" });
@@ -1481,6 +1481,14 @@ function normalizeTempToF(valueRaw: number, unitsHint: string) {
   if (u.includes("f")) return v;
   if (Math.abs(valueRaw) > 150) return valueRaw / 10;
   return valueRaw;
+}
+
+function normalizeMonthlyNormalPrecipToIn(valueRaw: number, unitsHint: string) {
+  const u = String(unitsHint ?? "").trim().toLowerCase();
+  let v = valueRaw;
+  if (u.includes("tenth") || u.includes("tenths")) v = v / 10;
+  if (u.includes("mm") || u.includes("millimeter")) return v / 25.4;
+  return v;
 }
 
 async function findNearestNormalsStationForWorker(env: Env, lat: number, lon: number) {
@@ -1599,7 +1607,10 @@ async function fetchMonthlyNormalsForWorker(env: Env, stationId: string) {
     const month = parseMonthFromIso(String(row?.date ?? ""));
     const value = Number(row?.value);
     if (!month || !Number.isFinite(value)) continue;
-    precipMonthlyIn[month - 1] = value / 10;
+    precipMonthlyIn[month - 1] = normalizeMonthlyNormalPrecipToIn(
+      value,
+      String(row?.units ?? prcp?.metadata?.units ?? prcp?.units ?? "")
+    );
   }
 
   return { normals, precipMonthlyIn };

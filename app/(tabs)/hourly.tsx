@@ -478,6 +478,7 @@ function HourlySimpleTimeline({
   hours: any[];
   timeZone?: string | null;
 }) {
+  const { chrome } = useAppChrome();
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -530,7 +531,7 @@ function HourlySimpleTimeline({
 
   return (
     <View style={styles.hourlySimpleWrap}>
-      <View style={styles.hourlyFeatureCard}>
+      <View style={[styles.hourlyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <View style={styles.hourlyFeatureTop}>
           <View style={styles.hourlyFeatureTimeCol}>
             <Text style={styles.hourlyFeatureDay}>{featuredSlot.day}</Text>
@@ -569,7 +570,7 @@ function HourlySimpleTimeline({
       {rest.map((hour, idx) => {
         const slot = formatHourSlot(hour.time, timeZone);
         return (
-          <View key={String(hour.time ?? idx)} style={styles.hourlyMiniCard}>
+          <View key={String(hour.time ?? idx)} style={[styles.hourlyMiniCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
             <View style={styles.hourlyMiniTimeCol}>
               <Text style={styles.hourlyMiniDay}>{slot.day}</Text>
               <Text style={styles.hourlyMiniTime}>{slot.short}</Text>
@@ -607,6 +608,7 @@ function HourlySimpleTimelineExpanded({
   hours: any[];
   timeZone?: string | null;
 }) {
+  const { chrome } = useAppChrome();
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -618,7 +620,7 @@ function HourlySimpleTimelineExpanded({
 
   return (
     <View style={styles.hourlySimpleWrap}>
-      <View style={styles.hourlyFeatureCard}>
+      <View style={[styles.hourlyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <View style={styles.hourlyFeatureTop}>
           <View style={styles.hourlyFeatureTimeCol}>
             <Text style={styles.hourlyFeatureDay}>{featuredSlot.day}</Text>
@@ -668,7 +670,7 @@ function HourlySimpleTimelineExpanded({
           <Pressable
             key={rowKey}
             onPress={() => setExpandedKey((current) => (current === rowKey ? null : rowKey))}
-            style={styles.hourlyMiniCard}
+            style={[styles.hourlyMiniCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}
           >
             <View style={styles.hourlyMiniTopRow}>
               <View style={styles.hourlyMiniTimeCol}>
@@ -1016,7 +1018,7 @@ export default function HourlyTab() {
                 <View style={styles.hourlyHeaderLeft}>
                   <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
 
-                  <View style={styles.headerCompactLocation}>
+                  <View style={[styles.headerCompactLocation, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
                     <View style={styles.hourlyLocationRow}>
                       <Ionicons name="location-outline" size={18} color="rgba(255,255,255,0.92)" />
                       <Text style={styles.locationPrimary} numberOfLines={1}>
@@ -1030,7 +1032,7 @@ export default function HourlyTab() {
                 </View>
 
                 <View style={styles.hourlyHeaderRight}>
-                  <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={styles.settingsIconBtn}>
+                  <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={[styles.settingsIconBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                     <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.92)" />
                   </Pressable>
                 </View>
@@ -1045,7 +1047,7 @@ export default function HourlyTab() {
                   <Text style={styles.quickNavText}>Almanac</Text>
                 </Pressable>
 
-                <View style={styles.headerModeWrap}>
+                <View style={[styles.headerModeWrap, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
                   <Pressable
                     onPress={() => setWxLab?.(false)}
                     style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, !wxLab ? styles.headerModeBtnActive : null, !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
