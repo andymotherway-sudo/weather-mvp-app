@@ -204,7 +204,7 @@ type OpenMeteoCurrentSingleResponse = {
 
 type CurrentResponse = {
   ok: true;
-  source: "open-meteo";
+  source: "open-meteo" | "nws" | "met-norway";
   time: string | null;
   units: Units;
   temp: number | null;
@@ -698,6 +698,7 @@ const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
 const FIRE_CONTEXT_TIMEOUT_MS = 9000;
 const OPEN_METEO_BATCH_SIZE = 75;
+const WEATHER_FALLBACK_USER_AGENT = "omniwx-worker/1.0 (weather fallback; contact: omniwx)";
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -774,6 +775,159 @@ function pickClosestHourlyIndex(times: string[] | undefined) {
   return bestIdx;
 }
 
+function currentJsonResponse(payload: CurrentResponse, provider: CurrentResponse["source"]) {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "X-Omni-Weather-Provider": provider,
+    },
+  });
+}
+
+function hasUsableCurrentPayload(payload: CurrentResponse) {
+  return (
+    payload.temp != null ||
+    payload.feels != null ||
+    payload.dewPoint != null ||
+    payload.humidityPct != null ||
+    payload.cloudCoverPct != null ||
+    payload.wind != null ||
+    payload.windGust != null ||
+    payload.pressureMb != null ||
+    payload.weatherCode != null
+  );
+}
+
+function isLikelyNwsCoveredPoint(lat: number, lon: number) {
+  return lat >= 14 && lat <= 72 && lon >= -180 && lon <= -64;
+}
+
+function nwsValueUnit(value: unknown): number | null {
+  if (!value || typeof value !== "object") return null;
+  return safeNum((value as { value?: unknown }).value);
+}
+
+async function fetchNwsCurrentPayload(lat: number, lon: number, units: Units): Promise<CurrentResponse> {
+  if (!isLikelyNwsCoveredPoint(lat, lon)) {
+    throw new Error("NWS fallback skipped outside likely coverage");
+  }
+
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const pointsUrl = `https://api.weather.gov/points/${encodeURIComponent(String(lat))},${encodeURIComponent(String(lon))}`;
+  const points = await fetchJsonWithTimeout(pointsUrl, OPEN_METEO_TIMEOUT_MS, headers);
+  const stationsUrl = typeof points?.properties?.observationStations === "string" ? points.properties.observationStations : null;
+  if (!stationsUrl) throw new Error("NWS points response missing observation stations");
+
+  const stations = await fetchJsonWithTimeout(stationsUrl, OPEN_METEO_TIMEOUT_MS, headers);
+  const stationUrl =
+    (Array.isArray(stations?.features) && typeof stations.features[0]?.id === "string" ? stations.features[0].id : null) ??
+    (Array.isArray(stations?.observationStations) && typeof stations.observationStations[0] === "string"
+      ? stations.observationStations[0]
+      : null);
+  if (!stationUrl) throw new Error("NWS station list was empty");
+
+  const latest = await fetchJsonWithTimeout(`${stationUrl.replace(/\/+$/, "")}/observations/latest`, OPEN_METEO_TIMEOUT_MS, headers);
+  const props = latest?.properties ?? {};
+
+  const tempC = nwsValueUnit(props.temperature);
+  const heatIndexC = nwsValueUnit(props.heatIndex);
+  const windChillC = nwsValueUnit(props.windChill);
+  const dewPointC = nwsValueUnit(props.dewpoint);
+  const pressurePa = nwsValueUnit(props.barometricPressure);
+  const payload: CurrentResponse = {
+    ok: true,
+    source: "nws",
+    time: typeof props.timestamp === "string" ? props.timestamp : null,
+    units,
+    temp: tempForUnits(tempC, units),
+    feels: tempForUnits(heatIndexC ?? windChillC ?? tempC, units),
+    dewPoint: tempForUnits(dewPointC, units),
+    humidityPct: roundWeatherValue(nwsValueUnit(props.relativeHumidity)),
+    cloudCoverPct: null,
+    wind: windForUnits(nwsValueUnit(props.windSpeed), units),
+    windGust: windForUnits(nwsValueUnit(props.windGust), units),
+    windDir: roundWeatherValue(nwsValueUnit(props.windDirection), 0),
+    pressureMb: pressurePa == null ? null : roundWeatherValue(pressurePa / 100),
+    weatherCode: null,
+  };
+
+  if (!hasUsableCurrentPayload(payload)) throw new Error("NWS returned no usable current weather");
+  return payload;
+}
+
+function metNorwaySymbolToWmo(symbol: unknown): number | null {
+  const s = String(symbol ?? "").toLowerCase();
+  if (!s) return null;
+  if (s.includes("thunder")) return 95;
+  if (s.includes("fog")) return 45;
+  if (s.includes("heavysnow")) return 75;
+  if (s.includes("lightsnow")) return 71;
+  if (s.includes("snow")) return 73;
+  if (s.includes("heavysleet")) return 67;
+  if (s.includes("sleet")) return 66;
+  if (s.includes("heavyrainshowers")) return 82;
+  if (s.includes("lightrainshowers")) return 80;
+  if (s.includes("rainshowers")) return 81;
+  if (s.includes("heavyrain")) return 65;
+  if (s.includes("lightrain")) return 61;
+  if (s.includes("rain")) return 63;
+  if (s.includes("cloudy")) return 3;
+  if (s.includes("partlycloudy")) return 2;
+  if (s.includes("fair")) return 1;
+  if (s.includes("clearsky")) return 0;
+  return null;
+}
+
+async function fetchMetNorwayCurrentPayload(lat: number, lon: number, units: Units): Promise<CurrentResponse> {
+  const url =
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact` +
+    `?lat=${encodeURIComponent(String(lat))}` +
+    `&lon=${encodeURIComponent(String(lon))}`;
+  const json = await fetchJsonWithTimeout(url, OPEN_METEO_TIMEOUT_MS, { "User-Agent": WEATHER_FALLBACK_USER_AGENT });
+  const series = Array.isArray(json?.properties?.timeseries) ? json.properties.timeseries : [];
+  if (!series.length) throw new Error("MET Norway returned no timeseries");
+
+  const now = Date.now();
+  let best = series[0];
+  let bestDiff = Number.POSITIVE_INFINITY;
+  for (const item of series) {
+    const t = new Date(String(item?.time ?? "")).getTime();
+    if (!Number.isFinite(t)) continue;
+    const diff = Math.abs(t - now);
+    if (diff < bestDiff) {
+      best = item;
+      bestDiff = diff;
+    }
+  }
+
+  const details = best?.data?.instant?.details ?? {};
+  const summary =
+    best?.data?.next_1_hours?.summary?.symbol_code ??
+    best?.data?.next_6_hours?.summary?.symbol_code ??
+    best?.data?.next_12_hours?.summary?.symbol_code;
+  const tempC = safeNum(details.air_temperature);
+  const payload: CurrentResponse = {
+    ok: true,
+    source: "met-norway",
+    time: typeof best?.time === "string" ? best.time : null,
+    units,
+    temp: tempForUnits(tempC, units),
+    feels: tempForUnits(tempC, units),
+    dewPoint: tempForUnits(safeNum(details.dew_point_temperature), units),
+    humidityPct: roundWeatherValue(safeNum(details.relative_humidity)),
+    cloudCoverPct: roundWeatherValue(safeNum(details.cloud_area_fraction)),
+    wind: windForUnits(safeNum(details.wind_speed), units),
+    windGust: windForUnits(safeNum(details.wind_speed_of_gust), units),
+    windDir: roundWeatherValue(safeNum(details.wind_from_direction), 0),
+    pressureMb: roundWeatherValue(safeNum(details.air_pressure_at_sea_level)),
+    weatherCode: metNorwaySymbolToWmo(summary),
+  };
+
+  if (!hasUsableCurrentPayload(payload)) throw new Error("MET Norway returned no usable current weather");
+  return payload;
+}
+
 function fmtTemp(v: number | null | undefined, unit: Unit) {
   if (v == null || !Number.isFinite(v)) return "—";
   return unit === "F" ? `${v.toFixed(1)} °F` : `${v.toFixed(1)} °C`;
@@ -838,6 +992,32 @@ function pct01Sky(p: number | null | undefined) {
 function safeNum(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function cToF(v: number | null) {
+  return v == null ? null : (v * 9) / 5 + 32;
+}
+
+function msToMph(v: number | null) {
+  return v == null ? null : v * 2.2369362921;
+}
+
+function msToKmh(v: number | null) {
+  return v == null ? null : v * 3.6;
+}
+
+function roundWeatherValue(v: number | null, digits = 1) {
+  if (v == null || !Number.isFinite(v)) return null;
+  const scale = 10 ** digits;
+  return Math.round(v * scale) / scale;
+}
+
+function tempForUnits(c: number | null, units: Units) {
+  return roundWeatherValue(units === "imperial" ? cToF(c) : c);
+}
+
+function windForUnits(ms: number | null, units: Units) {
+  return roundWeatherValue(units === "imperial" ? msToMph(ms) : msToKmh(ms));
 }
 
 type AerosolSnapshot = {
@@ -5118,114 +5298,130 @@ export default {
     ttlSeconds: CURRENT_TTL_SECONDS,
     staleSeconds: CURRENT_STALE_SECONDS,
     fetchUpstream: async () => {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+      const failures: string[] = [];
 
-      try {
-        const res = await fetch(upstream, { signal: ctrl.signal });
-
-        if (res.ok) {
-          const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
-          const cur = json?.current ?? null;
-
-          const payload: CurrentResponse = {
-            ok: true,
-            source: "open-meteo",
-            time: cur?.time ? String(cur.time) : null,
-            units,
-            temp: cur?.temperature_2m ?? null,
-            feels: cur?.apparent_temperature ?? null,
-            dewPoint: cur?.dew_point_2m ?? null,
-            humidityPct: cur?.relative_humidity_2m ?? null,
-            cloudCoverPct: cur?.cloud_cover ?? null,
-            wind: cur?.wind_speed_10m ?? null,
-            windGust: cur?.wind_gusts_10m ?? null,
-            windDir: cur?.wind_direction_10m ?? null,
-            pressureMb: cur?.pressure_msl ?? null,
-            weatherCode: cur?.weather_code ?? null,
-          };
-
-          return new Response(JSON.stringify(payload), {
-            status: 200,
-            headers: { "content-type": "application/json; charset=utf-8" },
-          });
-        }
-
-        const txt = await res.text().catch(() => "");
-
-        if (res.status === 429) {
-          const fbCtrl = new AbortController();
-          const fbTimer = setTimeout(() => fbCtrl.abort(), OPEN_METEO_TIMEOUT_MS);
-
-          try {
-            const fbRes = await fetch(fallbackUpstream, { signal: fbCtrl.signal });
-
-            if (!fbRes.ok) {
-              const fbTxt = await fbRes.text().catch(() => "");
-              return new Response(
-                JSON.stringify({
-                  ok: false,
-                  error: "Upstream rate limited and fallback failed",
-                  status: fbRes.status,
-                  body: fbTxt.slice(0, 300),
-                }),
-                { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
-              );
-            }
-
-            const fbJson = (await fbRes.json()) as OpenMeteoHourlyFallbackResponse;
-            const h = fbJson?.hourly ?? {};
-            const idx = pickClosestHourlyIndex(h.time);
-
-            if (idx < 0) {
-              return new Response(
-                JSON.stringify({
-                  ok: false,
-                  error: "Upstream rate limited and fallback missing hourly data",
-                }),
-                { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
-              );
-            }
-
-            const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
-              Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
+      const fetchOpenMeteoCurrent = async () => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+        try {
+          const res = await fetch(upstream, { signal: ctrl.signal });
+          if (res.ok) {
+            const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
+            const cur = json?.current ?? null;
 
             const payload: CurrentResponse = {
               ok: true,
               source: "open-meteo",
-              time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
+              time: cur?.time ? String(cur.time) : null,
               units,
-              temp: at(h.temperature_2m, idx),
-              feels: at(h.apparent_temperature, idx),
-              dewPoint: at(h.dew_point_2m, idx),
-              humidityPct: at(h.relative_humidity_2m, idx),
-              cloudCoverPct: at(h.cloud_cover, idx),
-              wind: at(h.wind_speed_10m, idx),
-              windGust: at(h.wind_gusts_10m, idx),
-              windDir: at(h.wind_direction_10m, idx),
-              pressureMb: at(h.pressure_msl, idx),
-              weatherCode: at(h.weather_code, idx),
+              temp: cur?.temperature_2m ?? null,
+              feels: cur?.apparent_temperature ?? null,
+              dewPoint: cur?.dew_point_2m ?? null,
+              humidityPct: cur?.relative_humidity_2m ?? null,
+              cloudCoverPct: cur?.cloud_cover ?? null,
+              wind: cur?.wind_speed_10m ?? null,
+              windGust: cur?.wind_gusts_10m ?? null,
+              windDir: cur?.wind_direction_10m ?? null,
+              pressureMb: cur?.pressure_msl ?? null,
+              weatherCode: cur?.weather_code ?? null,
             };
 
-            return new Response(JSON.stringify(payload), {
-              status: 200,
-              headers: {
-                "content-type": "application/json; charset=utf-8",
-                "X-Omni-Current-Fallback": "hourly",
-              },
-            });
-          } finally {
-            clearTimeout(fbTimer);
+            return currentJsonResponse(payload, "open-meteo");
           }
-        }
 
-        return new Response(
-          JSON.stringify({ ok: false, error: "Upstream error", status: res.status, body: txt.slice(0, 200) }),
-          { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
-        );
-      } finally {
-        clearTimeout(t);
+          const txt = await res.text().catch(() => "");
+          failures.push(`open-meteo current HTTP ${res.status}${txt ? ` ${txt.slice(0, 120)}` : ""}`);
+        } finally {
+          clearTimeout(t);
+        }
+      };
+
+      const fetchOpenMeteoHourlyFallback = async () => {
+        const fbCtrl = new AbortController();
+        const fbTimer = setTimeout(() => fbCtrl.abort(), OPEN_METEO_TIMEOUT_MS);
+
+        try {
+          const fbRes = await fetch(fallbackUpstream, { signal: fbCtrl.signal });
+
+          if (!fbRes.ok) {
+            const fbTxt = await fbRes.text().catch(() => "");
+            failures.push(`open-meteo hourly HTTP ${fbRes.status}${fbTxt ? ` ${fbTxt.slice(0, 120)}` : ""}`);
+            return;
+          }
+
+          const fbJson = (await fbRes.json()) as OpenMeteoHourlyFallbackResponse;
+          const h = fbJson?.hourly ?? {};
+          const idx = pickClosestHourlyIndex(h.time);
+
+          if (idx < 0) {
+            failures.push("open-meteo hourly missing data");
+            return;
+          }
+
+          const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
+            Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
+
+          const payload: CurrentResponse = {
+            ok: true,
+            source: "open-meteo",
+            time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
+            units,
+            temp: at(h.temperature_2m, idx),
+            feels: at(h.apparent_temperature, idx),
+            dewPoint: at(h.dew_point_2m, idx),
+            humidityPct: at(h.relative_humidity_2m, idx),
+            cloudCoverPct: at(h.cloud_cover, idx),
+            wind: at(h.wind_speed_10m, idx),
+            windGust: at(h.wind_gusts_10m, idx),
+            windDir: at(h.wind_direction_10m, idx),
+            pressureMb: at(h.pressure_msl, idx),
+            weatherCode: at(h.weather_code, idx),
+          };
+
+          const response = currentJsonResponse(payload, "open-meteo");
+          response.headers.set("X-Omni-Current-Fallback", "open-meteo-hourly");
+          return response;
+        } finally {
+          clearTimeout(fbTimer);
+        }
+      };
+
+      try {
+        const omCurrent = await fetchOpenMeteoCurrent();
+        if (omCurrent) return omCurrent;
+      } catch (err: any) {
+        failures.push(`open-meteo current ${err?.message ?? String(err)}`);
       }
+
+      try {
+        const omHourly = await fetchOpenMeteoHourlyFallback();
+        if (omHourly) return omHourly;
+      } catch (err: any) {
+        failures.push(`open-meteo hourly ${err?.message ?? String(err)}`);
+      }
+
+      try {
+        const nwsPayload = await fetchNwsCurrentPayload(lat, lon, units);
+        const response = currentJsonResponse(nwsPayload, "nws");
+        response.headers.set("X-Omni-Current-Fallback", "nws");
+        return response;
+      } catch (err: any) {
+        failures.push(`nws ${err?.message ?? String(err)}`);
+      }
+
+      try {
+        const metPayload = await fetchMetNorwayCurrentPayload(lat, lon, units);
+        const response = currentJsonResponse(metPayload, "met-norway");
+        response.headers.set("X-Omni-Current-Fallback", "met-norway");
+        return response;
+      } catch (err: any) {
+        failures.push(`met-norway ${err?.message ?? String(err)}`);
+      }
+
+      return new Response(JSON.stringify({ ok: false, error: "All weather providers failed", providers: failures }), {
+        status: 502,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     },
   });
 }

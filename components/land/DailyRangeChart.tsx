@@ -1,6 +1,6 @@
 // components/land/DailyRangeChart.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import { useWxLab } from '../../app/context/WxLabContext'; // adjust relative path if needed
@@ -134,6 +134,8 @@ export function DailyRangeChart({
   showHumidity,
   showCloudBand,
 }: Props) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height && width >= 640;
   const { wxLab } = useWxLab();
   const T = useMemo(() => getTypography({ wxLab }), [wxLab]);
 
@@ -190,22 +192,22 @@ export function DailyRangeChart({
   };
 
   // Geometry
-  const TILE_W = 132;
-  const GAP = 10;
-  const padX = 14;
+  const TILE_W = isLandscape ? 124 : 132;
+  const GAP = isLandscape ? 8 : 10;
+  const padX = isLandscape ? 12 : 14;
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
-  const H = 332;
+  const H = isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 332;
 
   const axisL = 28; // left margin for °F ticks
   const padL = padX + axisL;
   const padR = padX;
 
-  const padT = 56;
-  const padB = 142;
+  const padT = isLandscape ? 44 : 56;
+  const padB = isLandscape ? 92 : 142;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -340,7 +342,7 @@ export function DailyRangeChart({
     typeof data[selIdx]?.cloudCoverAvgPct === 'number' ? clamp(data[selIdx]!.cloudCoverAvgPct!, 0, 100) : null;
 
   // Wind marker placement (above bottom day labels)
-  const windMarkerY = H - 52; // circle center
+  const windMarkerY = H - (isLandscape ? 40 : 52); // circle center
   const windMarkerLabelY = windMarkerY + 22; // compass text under circle
   const tableRows = [
     { label: 'High', shortLabel: 'HIGH', values: data.map((d) => fmtInt(d.tempMaxF, unitsLabel)) },
@@ -355,10 +357,12 @@ export function DailyRangeChart({
   const tableLabelTop = scrollViewTop + tableTopInScrollContent;
 
   return (
-    <View style={s.wrap}>
-      <View style={s.headerRow}>
-        <Text style={[s.title, T.label]}>Detailed view</Text>
-      </View>
+    <View style={[s.wrap, isLandscape ? s.wrapLandscape : null]}>
+      {!isLandscape ? (
+        <View style={s.headerRow}>
+          <Text style={[s.title, T.label]}>Detailed view</Text>
+        </View>
+      ) : null}
 
       <ScrollView
         ref={(r) => {
@@ -411,6 +415,7 @@ export function DailyRangeChart({
                   <Animated.View
                     style={[
                       s.dayTile,
+                      { width: TILE_W },
                       isSel && s.dayTileActive,
                       isSel && { transform: [{ scale: selScale }] },
                     ]}
@@ -749,6 +754,7 @@ export function DailyRangeChart({
 
             </View>
 
+          {!isLandscape ? (
           <View
             onLayout={(e) => setTableTopInScrollContent(e.nativeEvent.layout.y)}
             style={[s.tableDataColumns, s.tableInlineData, { paddingLeft: padL }]}
@@ -781,31 +787,34 @@ export function DailyRangeChart({
               </View>
             ))}
           </View>
+          ) : null}
 
           </View>
       </ScrollView>
 
-      <View
-        pointerEvents="none"
-        style={[
-          s.tableLabelColumn,
-          s.tableLabelOverlay,
-          {
-            left: 0,
-            width: TABLE_LABEL_WIDTH,
-            top: tableLabelTop,
-          },
-        ]}
-      >
-            <View style={s.tableLabelHeader} />
-            {tableRows.map((row, idx) => (
-              <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
-                <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
-              </View>
-            ))}
-      </View>
+      {!isLandscape ? (
+        <View
+          pointerEvents="none"
+          style={[
+            s.tableLabelColumn,
+            s.tableLabelOverlay,
+            {
+              left: 0,
+              width: TABLE_LABEL_WIDTH,
+              top: tableLabelTop,
+            },
+          ]}
+        >
+              <View style={s.tableLabelHeader} />
+              {tableRows.map((row, idx) => (
+                <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
+                  <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
+                </View>
+              ))}
+        </View>
+      ) : null}
 
-      <View style={s.pillSection}>
+      <View style={[s.pillSection, isLandscape ? s.pillSectionLandscape : null]}>
         <View style={s.legendRow}>
           <LegendPill label="High" kind="line" color={C.high} />
           <LegendPill label="Low" kind="line" color={C.low} />
@@ -879,6 +888,10 @@ const s = StyleSheet.create({
     paddingTop: 14,
     position: 'relative',
   },
+  wrapLandscape: {
+    marginTop: 0,
+    paddingTop: 0,
+  },
   headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   title: {
     color: 'rgba(255,255,255,0.92)',
@@ -891,6 +904,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 14,
+  },
+  pillSectionLandscape: {
+    paddingTop: 6,
+    paddingBottom: 10,
   },
   legendRow: {
     flexDirection: 'row',

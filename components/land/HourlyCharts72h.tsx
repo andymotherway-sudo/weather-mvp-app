@@ -6,7 +6,7 @@
 // ❌ Removes: Expand button + expanded state + expanded prop spread
 
 import React, { useMemo } from 'react';
-import { StyleSheet } from 'react-native';
+import { Modal, SafeAreaView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import type { ForecastHour } from '../../app/lib/openmeteo/hooks';
 import { theme } from '../../styles/theme';
@@ -21,6 +21,7 @@ type Props = {
   units?: UnitSystem;
   initialPanel?: any;
   timeZone?: string;
+  landscapePresentation?: 'inline' | 'modal';
 };
 
 function extractIsoWallClockParts(value: unknown): {
@@ -126,16 +127,55 @@ export function HourlyCharts72h({
   maxHours = 72,
   units = 'us',
   timeZone,
+  landscapePresentation = 'inline',
 }: Props) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height && width >= 640;
+  const landscapeChartHeight = Math.max(250, Math.min(height - 118, 360));
   const slice = useMemo(() => {
     const base = hours.slice(0, Math.min(hours.length, maxHours));
     const { padded } = padSliceToMidnight(base);
     return padded;
   }, [hours, maxHours]);
 
+  if (isLandscape && landscapePresentation === 'modal') {
+    return (
+      <>
+        <Card style={[styles.card, styles.landscapePlaceholder]}>
+          <Text style={styles.landscapePlaceholderText}>Hourly wxLab graph is open full screen</Text>
+        </Card>
+        <Modal visible transparent animationType="fade" supportedOrientations={['landscape-left', 'landscape-right']}>
+          <SafeAreaView style={styles.landscapeOverlay}>
+            <View style={styles.landscapeShell}>
+              <View style={styles.landscapeHeader}>
+                <Text style={styles.landscapeTitle}>Next 72 hours</Text>
+                <Text style={styles.landscapeHint}>Scroll sideways for the full forecast</Text>
+              </View>
+              <HourlyRangeChart
+                hours={slice}
+                maxHours={maxHours}
+                units={units}
+                timeZone={timeZone}
+                landscape
+                chartHeight={landscapeChartHeight}
+              />
+            </View>
+          </SafeAreaView>
+        </Modal>
+      </>
+    );
+  }
+
   return (
     <Card style={styles.card}>
-      <HourlyRangeChart hours={slice} maxHours={maxHours} units={units} timeZone={timeZone} />
+      <HourlyRangeChart
+        hours={slice}
+        maxHours={maxHours}
+        units={units}
+        timeZone={timeZone}
+        landscape={isLandscape}
+        chartHeight={isLandscape ? landscapeChartHeight : undefined}
+      />
     </Card>
   );
 }
@@ -151,6 +191,53 @@ const styles = StyleSheet.create({
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
     elevation: 0,
+  },
+  landscapePlaceholder: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(11,18,32,0.72)',
+  },
+  landscapePlaceholderText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  landscapeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.98)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  landscapeShell: {
+    flex: 1,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(18,28,45,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  landscapeHeader: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  landscapeTitle: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  landscapeHint: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 11,
+    fontWeight: '800',
   },
 
 });

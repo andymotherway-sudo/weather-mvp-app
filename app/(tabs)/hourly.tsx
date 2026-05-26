@@ -905,6 +905,7 @@ function HourlyWithCoords({
             units={units}
             initialPanel="range"
             timeZone={forecastTimeZone ?? undefined}
+            landscapePresentation="modal"
           />
         </View>
       ) : null}

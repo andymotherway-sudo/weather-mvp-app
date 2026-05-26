@@ -248,11 +248,15 @@ export function HourlyRangeChart({
   maxHours = 72,
   units = 'us',
   timeZone,
+  landscape = false,
+  chartHeight,
 }: {
   hours: ForecastHour[];
   maxHours?: number;
   units?: UnitSystem;
   timeZone?: string;
+  landscape?: boolean;
+  chartHeight?: number;
 }) {
   const all = useMemo(() => hours ?? [], [hours]);
 
@@ -337,23 +341,23 @@ export function HourlyRangeChart({
     dirText: 'rgba(255,255,255,0.70)',
   };
 
-  const TILE_W = 92;
-  const GAP = 10;
-  const padX = 14;
+  const TILE_W = landscape ? 86 : 92;
+  const GAP = landscape ? 8 : 10;
+  const padX = landscape ? 12 : 14;
   const step = TILE_W + GAP;
 
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-  const H = 270;
+  const H = chartHeight ?? (landscape ? 320 : 270);
 
   const axisL = 28;
   const padL = padX + axisL;
   const padR = padX;
 
-  const padT = 18;
-  const padB = 114;
+  const padT = landscape ? 20 : 18;
+  const padB = landscape ? 88 : 114;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -367,7 +371,7 @@ export function HourlyRangeChart({
   const cloudBandBot = cloudBandTop + cloudBandH;
 
   const windDirRingR = 12;
-  const windDirCenterY = cloudBandBot + 28;
+  const windDirCenterY = cloudBandBot + (landscape ? 22 : 28);
   const windDirTextY = windDirCenterY - 16;
 
   const xForIdx = (i: number) => padL + i * step + TILE_W / 2;
@@ -515,7 +519,7 @@ export function HourlyRangeChart({
   ];
 
   return (
-    <View style={s.wrap}>
+    <View style={[s.wrap, landscape ? s.wrapLandscape : null]}>
       <ScrollView
         ref={(r) => {
           scrollRef.current = r;
@@ -576,6 +580,7 @@ export function HourlyRangeChart({
                   <Animated.View
                     style={[
                       s.hourTile,
+                      { width: TILE_W },
                       isSel && s.hourTileActive,
                       isSel && { transform: [{ scale: selScale }] },
                       isPad && { opacity: 0.35 },
@@ -847,6 +852,7 @@ export function HourlyRangeChart({
             </Svg>
           </View>
 
+          {!landscape ? (
           <View style={[s.tableDataColumns, s.tableInlineData, { paddingLeft: padL }]}>
             <View style={s.tableHeaderRow}>
               {data.map((h: any, i) => {
@@ -887,22 +893,25 @@ export function HourlyRangeChart({
               </View>
             ))}
           </View>
+          ) : null}
         </View>
         </ScrollView>
 
-      <View
-        pointerEvents="none"
-        style={[s.tableLabelColumn, s.tableLabelOverlay, { left: 0, width: TABLE_LABEL_WIDTH, top: 14 + H + 8 }]}
-      >
-            <View style={s.tableLabelHeader} />
-            {tableRows.map((row, idx) => (
-              <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
-                <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
-              </View>
-            ))}
-      </View>
+      {!landscape ? (
+        <View
+          pointerEvents="none"
+          style={[s.tableLabelColumn, s.tableLabelOverlay, { left: 0, width: TABLE_LABEL_WIDTH, top: 14 + H + 8 }]}
+        >
+              <View style={s.tableLabelHeader} />
+              {tableRows.map((row, idx) => (
+                <View key={`label-${row.label}`} style={[s.tableLabelRow, idx % 2 === 1 ? s.tableRowAlt : null]}>
+                  <Text style={s.tableLabelText}>{row.shortLabel ?? row.label}</Text>
+                </View>
+              ))}
+        </View>
+      ) : null}
 
-      <View style={s.pillSection}>
+      <View style={[s.pillSection, landscape ? s.pillSectionLandscape : null]}>
         <View style={s.legendRow}>
           <ToggleLegendPill
             label={`Temp (${unitsLabel})`}
@@ -1021,6 +1030,12 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
+  wrapLandscape: {
+    flex: 1,
+    marginTop: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+  },
 
   headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   title: { color: 'rgba(255,255,255,0.92)', fontSize: 16, fontWeight: '900', letterSpacing: 0.2 },
@@ -1062,6 +1077,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 14,
+  },
+  pillSectionLandscape: {
+    paddingTop: 6,
+    paddingBottom: 10,
   },
 
   legendRow: {
