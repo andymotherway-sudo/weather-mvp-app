@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.location.Location
 import android.location.LocationManager
+import android.os.Handler
+import android.os.Looper
 import androidx.car.app.CarAppService
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
@@ -80,6 +82,7 @@ private class CarWeatherRepository(private val context: Context) {
   @Volatile var report: CarWeatherReport? = null
   @Volatile var error: String? = null
 
+  private val mainHandler = Handler(Looper.getMainLooper())
   private val callbacks = mutableListOf<() -> Unit>()
 
   fun load(force: Boolean = false, onDone: () -> Unit) {
@@ -100,7 +103,7 @@ private class CarWeatherRepository(private val context: Context) {
     }
 
     if (notifyNow) {
-      onDone()
+      notify(onDone)
       return
     }
     if (!shouldStart) return
@@ -121,8 +124,16 @@ private class CarWeatherRepository(private val context: Context) {
           callbacks.clear()
           copy
         }
-        pending.forEach { it() }
+        pending.forEach { notify(it) }
       }
+    }
+  }
+
+  private fun notify(callback: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      callback()
+    } else {
+      mainHandler.post { callback() }
     }
   }
 }
@@ -376,7 +387,6 @@ private fun weatherPoiRow(title: String, subtitle: String, lat: Double, lon: Dou
     .setTitle(title)
     .addText(subtitle)
     .setMetadata(Metadata.Builder().setPlace(placeFor(lat, lon, marker)).build())
-    .setBrowsable(true)
     .setOnClickListener(onClick)
     .build()
 }

@@ -4101,69 +4101,82 @@ function LandWeatherWithCoords({
       )}
 
       {wxLab && isLandscape && (daily.length > 0 || hourly.length > 0) ? (
-        <Card style={styles.landscapeGraphCard}>
-          <View style={styles.landscapeGraphHeader}>
-            <View>
-              <Text style={styles.cardTitle}>{landscapeGraphMode === 'daily' ? 'Daily Forecast' : 'Next 72 Hours'}</Text>
-              <Text style={styles.landscapeGraphSubtitle}>Horizontal graph view</Text>
-            </View>
-            <View style={styles.landscapeGraphToggle}>
-              <Pressable
-                onPress={() => setLandscapeGraphMode('daily')}
-                disabled={!daily.length}
-                style={[
-                  styles.landscapeGraphToggleButton,
-                  landscapeGraphMode === 'daily' ? styles.landscapeGraphToggleButtonActive : null,
-                  !daily.length ? styles.landscapeGraphToggleButtonDisabled : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.landscapeGraphToggleText,
-                    landscapeGraphMode === 'daily' ? styles.landscapeGraphToggleTextActive : null,
-                  ]}
-                >
-                  Daily
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setLandscapeGraphMode('hourly')}
-                disabled={!hourly.length}
-                style={[
-                  styles.landscapeGraphToggleButton,
-                  landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleButtonActive : null,
-                  !hourly.length ? styles.landscapeGraphToggleButtonDisabled : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.landscapeGraphToggleText,
-                    landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleTextActive : null,
-                  ]}
-                >
-                  Hourly
-                </Text>
-              </Pressable>
-            </View>
-          </View>
+        <>
+          <Card style={styles.landscapeGraphPlaceholder}>
+            <Text style={styles.landscapeGraphPlaceholderText}>Land wxLab graph is open full screen</Text>
+          </Card>
+          <Modal visible transparent animationType="fade" supportedOrientations={['landscape-left', 'landscape-right']}>
+            <SafeAreaView style={styles.landscapeGraphOverlay}>
+              <View style={styles.landscapeGraphShell}>
+                <View style={styles.landscapeGraphHeader}>
+                  <View>
+                    <Text style={styles.cardTitle}>
+                      {landscapeGraphMode === 'daily' ? 'Daily Forecast' : 'Next 72 Hours'}
+                    </Text>
+                    <Text style={styles.landscapeGraphSubtitle}>Horizontal graph view</Text>
+                  </View>
+                  <View style={styles.landscapeGraphToggle}>
+                    <Pressable
+                      onPress={() => setLandscapeGraphMode('daily')}
+                      disabled={!daily.length}
+                      style={[
+                        styles.landscapeGraphToggleButton,
+                        landscapeGraphMode === 'daily' ? styles.landscapeGraphToggleButtonActive : null,
+                        !daily.length ? styles.landscapeGraphToggleButtonDisabled : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.landscapeGraphToggleText,
+                          landscapeGraphMode === 'daily' ? styles.landscapeGraphToggleTextActive : null,
+                        ]}
+                      >
+                        Daily
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setLandscapeGraphMode('hourly')}
+                      disabled={!hourly.length}
+                      style={[
+                        styles.landscapeGraphToggleButton,
+                        landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleButtonActive : null,
+                        !hourly.length ? styles.landscapeGraphToggleButtonDisabled : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.landscapeGraphToggleText,
+                          landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleTextActive : null,
+                        ]}
+                      >
+                        Hourly
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
 
-          {landscapeGraphMode === 'daily' && daily.length > 0 ? <DailyRangeChart daily={daily} /> : null}
-          {landscapeGraphMode === 'hourly' && hourly.length > 0 ? (
-            <HourlyCharts72h
-              hours={hourly}
-              maxHours={72}
-              units={units}
-              initialPanel="range"
-              timeZone={forecastTimeZone ?? undefined}
-            />
-          ) : null}
+                <View style={styles.landscapeGraphBody}>
+                  {landscapeGraphMode === 'daily' && daily.length > 0 ? <DailyRangeChart daily={daily} /> : null}
+                  {landscapeGraphMode === 'hourly' && hourly.length > 0 ? (
+                    <HourlyCharts72h
+                      hours={hourly}
+                      maxHours={72}
+                      units={units}
+                      initialPanel="range"
+                      timeZone={forecastTimeZone ?? undefined}
+                    />
+                  ) : null}
+                </View>
 
-          <Text style={styles.updatedText}>
-            {landscapeGraphMode === 'daily'
-              ? `Model: ${forecastModelLabel(forecastModel)}`
-              : 'Source: Open-Meteo (hourly)'}
-          </Text>
-        </Card>
+                <Text style={styles.landscapeGraphSource}>
+                  {landscapeGraphMode === 'daily'
+                    ? `Model: ${forecastModelLabel(forecastModel)}`
+                    : 'Source: Open-Meteo (hourly)'}
+                </Text>
+              </View>
+            </SafeAreaView>
+          </Modal>
+        </>
       ) : null}
 
       {daily.length > 0 && (!wxLab || !isLandscape) ? (
@@ -5922,18 +5935,40 @@ saveInlineText: {
   },
   cardTitle: { fontSize: 15, fontWeight: '800', color: theme.colors.textPrimary, marginBottom: 10 },
 
-  landscapeGraphCard: {
+  landscapeGraphPlaceholder: {
     marginBottom: theme.spacing.lg,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 26,
-    backgroundColor: 'rgba(16, 26, 43, 0.72)',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+    backgroundColor: 'rgba(11,18,32,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  landscapeGraphPlaceholderText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  landscapeGraphOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.98)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  landscapeGraphShell: {
+    flex: 1,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(18,28,45,0.74)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
   landscapeGraphHeader: {
-    paddingHorizontal: 10,
-    marginBottom: 8,
+    minHeight: 54,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -5942,6 +5977,16 @@ saveInlineText: {
   landscapeGraphSubtitle: {
     marginTop: -6,
     color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  landscapeGraphBody: {
+    flex: 1,
+  },
+  landscapeGraphSource: {
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+    color: 'rgba(255,255,255,0.56)',
     fontSize: 11,
     fontWeight: '800',
   },

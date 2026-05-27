@@ -421,6 +421,94 @@ const tafSummary = (row: any) => {
     .replace(/\bPROB40\b/g, '40% chance');
 };
 
+function categoryTone(category: string | null | undefined): 'low' | 'elevated' | 'high' {
+  const cat = String(category ?? '').toUpperCase();
+  if (cat === 'IFR' || cat === 'LIFR') return 'high';
+  if (cat === 'MVFR') return 'elevated';
+  return 'low';
+}
+
+function categoryColor(category: string | null | undefined) {
+  const cat = String(category ?? '').toUpperCase();
+  if (cat === 'VFR') return '#22c55e';
+  if (cat === 'MVFR') return '#3b82f6';
+  if (cat === 'IFR') return '#ef4444';
+  if (cat === 'LIFR') return '#c084fc';
+  return 'rgba(255,255,255,0.45)';
+}
+
+function pilotDecision(row: any, taf: any) {
+  const cat = flightCat(row);
+  const tone = categoryTone(cat);
+  const vis = visibilityMiles(row);
+  const ceil = ceilingFeet(row);
+  const wind = num(row?.wspd, row?.wind_speed_kt, row?.windSpeedKt);
+  const gust = num(row?.wgst, row?.wind_gust_kt, row?.windGustKt);
+  const rawTaf = tafRaw(taf)?.toUpperCase() ?? '';
+  const hasConvectiveTaf = /\b(TS|VCTS|CB)\b/.test(rawTaf);
+  const hasLowTaf = /\b(IFR|LIFR|OVC00|BKN00|VV00|1\/2SM|1SM|2SM)\b/.test(rawTaf);
+
+  const concerns: string[] = [];
+  if (tone === 'high') concerns.push(`${cat ?? 'Low category'} conditions`);
+  if (tone === 'elevated') concerns.push('Marginal flight category');
+  if (ceil != null && ceil <= 3000) concerns.push(`ceiling ${Math.round(ceil)} ft`);
+  if (vis != null && vis <= 5) concerns.push(`visibility ${vis < 10 ? vis.toFixed(1) : vis.toFixed(0)} sm`);
+  if (gust != null && gust >= 25) concerns.push(`gusts ${Math.round(gust)} kt`);
+  else if (wind != null && wind >= 20) concerns.push(`wind ${Math.round(wind)} kt`);
+  if (hasConvectiveTaf) concerns.push('thunder in TAF');
+  if (hasLowTaf) concerns.push('lower forecast groups');
+
+  if (tone === 'high' || hasConvectiveTaf || hasLowTaf) {
+    return {
+      label: 'High attention',
+      tone: 'high' as const,
+      summary: concerns.slice(0, 3).join(' / ') || 'Airport weather needs a close read.',
+    };
+  }
+  if (tone === 'elevated' || concerns.length) {
+    return {
+      label: 'Watch closely',
+      tone: 'elevated' as const,
+      summary: concerns.slice(0, 3).join(' / ') || 'Conditions are usable but not hands-off.',
+    };
+  }
+  return {
+    label: 'Favorable',
+    tone: 'low' as const,
+    summary: 'Current METAR is VFR with no obvious station-level concern.',
+  };
+}
+
+function tafTimeline(row: any) {
+  const raw = tafRaw(row);
+  if (!raw) return [];
+  const compact = raw.replace(/\s+/g, ' ').trim();
+  const matches = Array.from(compact.matchAll(/\b(FM\d{6}|TEMPO|BECMG|PROB(?:30|40))\b/g));
+  if (!matches.length) return [{ label: 'TAF', text: tafSummary(row) }];
+  return matches.slice(0, 5).map((match, idx) => {
+    const start = match.index ?? 0;
+    const end = idx + 1 < matches.length ? matches[idx + 1].index ?? compact.length : compact.length;
+    const token = match[1];
+    const label = token.startsWith('FM')
+      ? `From ${token.slice(2, 4)}:${token.slice(4, 6)}Z`
+      : token === 'TEMPO'
+        ? 'Temporary'
+        : token === 'BECMG'
+          ? 'Becoming'
+          : token.replace('PROB', 'Chance ');
+    return { label, text: compact.slice(start, end).trim() };
+  });
+}
+
+function routeDecision(samples: Sample[] | undefined) {
+  if (!samples?.length) return { label: 'Route not analyzed', tone: 'low' as const, summary: 'Analyze a flight to build route timing and hazards.' };
+  const high = samples.filter((sample) => sample.severity === 'high').length;
+  const elevated = samples.filter((sample) => sample.severity === 'elevated').length;
+  if (high) return { label: 'High attention', tone: 'high' as const, summary: `${high} route segment${high === 1 ? '' : 's'} matched high-concern aviation weather.` };
+  if (elevated) return { label: 'Watch closely', tone: 'elevated' as const, summary: `${elevated} route segment${elevated === 1 ? '' : 's'} matched elevated aviation weather.` };
+  return { label: 'Favorable corridor', tone: 'low' as const, summary: 'No matched product-based advisories along the sampled route.' };
+}
+
 export default function AviationScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -636,6 +724,7 @@ export default function AviationScreen() {
         {mode === 'station' && station ? (
           <>
             <View style={s.modeAlt}><Seg onPress={() => setReportView('decoded')} active={reportView === 'decoded'} label="Decoded" /><Seg onPress={() => setReportView('raw')} active={reportView === 'raw'} label="Raw" /></View>
+            <AirportWeatherBoard station={station} onOpenLearn={openLearn} />
             <Glass style={s.card}>
               <View style={s.cardHead}><View><Text style={s.cardTitle}>{station.station.code ?? station.station.label}</Text><Text style={s.cardSub}>{station.station.label}</Text></View><Learn onPress={() => openLearn('aviation-metar')} label="wxLearn" /></View>
               <Row label="Flight Category" value={flightCat(station.metar) ?? '--'} />
@@ -648,6 +737,7 @@ export default function AviationScreen() {
             {reportView === 'decoded' ? (
               <>
                 <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded METAR</Text><Learn onPress={() => openLearn('aviation-metar')} label="METAR" /></View><Text style={s.raw}>{`${flightCat(station.metar) ?? 'Unknown'} conditions. Wind ${windText(station.metar)}. Visibility ${visText(station.metar)}. Ceiling ${ceilText(station.metar)}. Temperature / Dew Point ${tempDew(station.metar)}. Altimeter ${altim(station.metar)}.`}</Text></Glass>
+                <TafTimelineCard taf={station.taf} onOpenLearn={openLearn} />
                 <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded TAF</Text><Learn onPress={() => openLearn('aviation-taf')} label="TAF" /></View><Text style={s.raw}>{tafSummary(station.taf)}</Text></Glass>
               </>
             ) : (
@@ -670,6 +760,7 @@ export default function AviationScreen() {
                 </MapLibreGL.ShapeSource>
               </MapRenderer>
             </View></Glass>
+            <RouteProfileCard flight={flight} departureOffsetMin={departureOffsetMin} />
             <View style={s.stats}><Stat label="Distance" value={flight ? fmt(flight.totalDistanceMi, ' mi') : '--'} /><Stat label="Cruise" value={flight ? cruiseLabel(flight.cruiseAltitudeFt) : cruiseLabel(cruiseAltitudeFt)} /><Stat label="Depart" value={flight ? utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin) : departureLabel(departureOffsetMin)} /><Stat label="SIGMET" value={flight ? String(flight.counts.sigmet) : '--'} /></View>
             <View style={s.stats}><Stat label="Turb" value={flight ? String(flight.counts.turbulence) : '--'} /><Stat label="Icing" value={flight ? String(flight.counts.icing) : '--'} /><Stat label="CWA" value={flight ? String(flight.counts.cwa) : '--'} /><Stat label="PIREPs" value={flight ? String(flight.counts.pirep) : '--'} /></View>
             {flight?.samples.map((x) => (
@@ -709,6 +800,150 @@ function Primary({ label, onPress, loading }: { label: string; onPress: () => vo
 function Secondary({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={s.secondary}><Text style={s.secondaryText}>{label}</Text></Pressable>; }
 function Stat({ label, value }: { label: string; value: string }) { return <Glass style={s.stat}><Text style={s.statLabel}>{label}</Text><Text style={s.statValue}>{value}</Text></Glass>; }
 function Row({ label, value }: { label: string; value: string }) { return <View style={s.row}><Text style={s.rowLabel}>{label}</Text><Text style={s.rowValue}>{value}</Text></View>; }
+
+function AirportWeatherBoard({
+  station,
+  onOpenLearn,
+}: {
+  station: Station;
+  onOpenLearn: (id: string) => void;
+}) {
+  const cat = flightCat(station.metar);
+  const decision = pilotDecision(station.metar, station.taf);
+  const toneStyle = decision.tone === 'high' ? s.high : decision.tone === 'elevated' ? s.elevated : s.low;
+  return (
+    <Glass style={s.boardCard}>
+      <View style={s.boardTop}>
+        <View>
+          <Text style={s.sectionLabel}>Airport weather board</Text>
+          <Text style={s.boardTitle}>{station.station.code ?? station.station.label}</Text>
+          <Text style={s.cardSub}>{station.station.label}</Text>
+        </View>
+        <View style={[s.categoryBadge, { borderColor: categoryColor(cat), backgroundColor: `${categoryColor(cat)}33` }]}>
+          <Text style={s.categoryBadgeText}>{cat ?? 'UNK'}</Text>
+        </View>
+      </View>
+
+      <View style={[s.decisionStrip, toneStyle]}>
+        <Text style={s.decisionTitle}>{decision.label}</Text>
+        <Text style={s.decisionText}>{decision.summary}</Text>
+      </View>
+
+      <View style={s.metricGrid}>
+        <MetricTile label="Wind" value={windText(station.metar)} />
+        <MetricTile label="Visibility" value={visText(station.metar)} />
+        <MetricTile label="Ceiling" value={ceilText(station.metar)} />
+        <MetricTile label="Altimeter" value={altim(station.metar)} />
+      </View>
+
+      <View style={s.learnRow}>
+        <Learn onPress={() => onOpenLearn('aviation-flight-category')} label="Flight category" />
+        <Learn onPress={() => onOpenLearn('aviation-metar')} label="METAR" />
+        <Learn onPress={() => onOpenLearn('aviation-taf')} label="TAF trend" />
+      </View>
+    </Glass>
+  );
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={s.metricTile}>
+      <Text style={s.metricLabel}>{label}</Text>
+      <Text style={s.metricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function TafTimelineCard({
+  taf,
+  onOpenLearn,
+}: {
+  taf: any;
+  onOpenLearn: (id: string) => void;
+}) {
+  const periods = tafTimeline(taf);
+  return (
+    <Glass style={s.card}>
+      <View style={s.cardHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardTitle}>TAF trend timeline</Text>
+          <Text style={s.cardSub}>Forecast change groups, split into scan-friendly blocks.</Text>
+        </View>
+        <Learn onPress={() => onOpenLearn('aviation-taf')} label="TAF" />
+      </View>
+      {periods.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tafRail}>
+          {periods.map((period, idx) => (
+            <View key={`${period.label}-${idx}`} style={s.tafBlock}>
+              <Text style={s.tafLabel}>{period.label}</Text>
+              <Text style={s.tafText} numberOfLines={5}>{period.text}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      ) : (
+        <Text style={s.raw}>No TAF returned.</Text>
+      )}
+    </Glass>
+  );
+}
+
+function RouteProfileCard({
+  flight,
+  departureOffsetMin,
+}: {
+  flight: Flight | null;
+  departureOffsetMin: number;
+}) {
+  const decision = routeDecision(flight?.samples);
+  const toneStyle = decision.tone === 'high' ? s.high : decision.tone === 'elevated' ? s.elevated : s.low;
+  return (
+    <Glass style={s.card}>
+      <View style={s.cardHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardTitle}>Route profile</Text>
+          <Text style={s.cardSub}>
+            {flight
+              ? `${cruiseLabel(flight.cruiseAltitudeFt)} / depart ${utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin)}`
+              : 'Analyze a route to show time-aware samples.'}
+          </Text>
+        </View>
+        <View style={[s.pill, toneStyle]}>
+          <Text style={s.pillText}>{decision.label}</Text>
+        </View>
+      </View>
+
+      <Text style={s.raw}>{decision.summary}</Text>
+
+      {flight?.samples.length ? (
+        <>
+          <View style={s.profileTrack}>
+            {flight.samples.map((sample, idx) => (
+              <View
+                key={sample.key}
+                style={[
+                  s.profileSegment,
+                  idx === 0 ? s.profileSegmentFirst : null,
+                  idx === flight.samples.length - 1 ? s.profileSegmentLast : null,
+                  sample.severity === 'high' ? s.profileHigh : sample.severity === 'elevated' ? s.profileElevated : s.profileLow,
+                ]}
+              />
+            ))}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.profileRail}>
+            {flight.samples.map((sample) => (
+              <View key={sample.key} style={s.profilePoint}>
+                <Text style={s.profilePointLabel}>{sample.label}</Text>
+                <Text style={s.profilePointMeta}>{utcShort(sample.etaIso) ?? '--'} / {fmt(sample.distanceMi, ' mi')}</Text>
+                <Text style={s.profilePointWeather}>{fmt(sample.weather.windMph, ' mph')} wind / {fmt(sample.weather.visMi, ' mi', sample.weather.visMi != null && sample.weather.visMi < 10 ? 1 : 0)} vis</Text>
+                <Text style={s.profilePointHazard}>{sample.advisories[0]?.hazard ?? airportRiskText(sample.airportRisk) ?? 'No match'}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
+    </Glass>
+  );
+}
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
@@ -755,6 +990,35 @@ const s = StyleSheet.create({
   summary: { color: 'rgba(255,255,255,0.84)', marginTop: 12, lineHeight: 19 },
   error: { color: '#fca5a5' },
   card: { marginTop: 12, borderRadius: 22, padding: 12 },
+  boardCard: { marginTop: 12, borderRadius: 24, padding: 14 },
+  boardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' },
+  boardTitle: { color: 'white', fontWeight: '900', fontSize: 26, marginTop: 2 },
+  categoryBadge: {
+    minWidth: 70,
+    minHeight: 54,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  categoryBadgeText: { color: 'white', fontWeight: '900', fontSize: 16 },
+  decisionStrip: { marginTop: 12, borderRadius: 18, paddingVertical: 11, paddingHorizontal: 12 },
+  decisionTitle: { color: 'white', fontWeight: '900', fontSize: 15 },
+  decisionText: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 18, marginTop: 4 },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  metricTile: {
+    width: '47.8%',
+    minHeight: 74,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    paddingVertical: 10,
+    paddingHorizontal: 11,
+  },
+  metricLabel: { color: 'rgba(255,255,255,0.54)', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+  metricValue: { color: 'white', fontSize: 15, lineHeight: 19, fontWeight: '900', marginTop: 8 },
   cardTitle: { color: 'white', fontWeight: '900', fontSize: 16 },
   cardSub: { color: 'rgba(255,255,255,0.6)', marginTop: 4, lineHeight: 18 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
@@ -765,6 +1029,46 @@ const s = StyleSheet.create({
   advisoryTitle: { color: 'white', fontSize: 14, fontWeight: '900' },
   advisoryMeta: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 19, marginTop: 3 },
   advisoryId: { color: 'rgba(255,255,255,0.42)', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  tafRail: { gap: 10, paddingTop: 12, paddingRight: 6 },
+  tafBlock: {
+    width: 230,
+    minHeight: 130,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.14)',
+    backgroundColor: 'rgba(14,165,233,0.08)',
+    padding: 12,
+  },
+  tafLabel: { color: 'rgba(125,211,252,0.9)', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tafText: { color: 'rgba(255,255,255,0.82)', lineHeight: 18, fontWeight: '700', marginTop: 8 },
+  profileTrack: {
+    height: 16,
+    borderRadius: 999,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginTop: 14,
+  },
+  profileSegment: { flex: 1, marginRight: 2 },
+  profileSegmentFirst: { borderTopLeftRadius: 999, borderBottomLeftRadius: 999 },
+  profileSegmentLast: { borderTopRightRadius: 999, borderBottomRightRadius: 999, marginRight: 0 },
+  profileLow: { backgroundColor: 'rgba(34,197,94,0.72)' },
+  profileElevated: { backgroundColor: 'rgba(245,158,11,0.78)' },
+  profileHigh: { backgroundColor: 'rgba(239,68,68,0.82)' },
+  profileRail: { gap: 10, paddingTop: 12, paddingRight: 6 },
+  profilePoint: {
+    width: 160,
+    minHeight: 124,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    padding: 11,
+  },
+  profilePointLabel: { color: 'white', fontWeight: '900', fontSize: 13 },
+  profilePointMeta: { color: 'rgba(255,255,255,0.58)', fontWeight: '800', fontSize: 11, marginTop: 5 },
+  profilePointWeather: { color: 'rgba(255,255,255,0.80)', fontWeight: '800', fontSize: 12, marginTop: 9, lineHeight: 16 },
+  profilePointHazard: { color: 'rgba(125,211,252,0.88)', fontWeight: '900', fontSize: 12, marginTop: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
   rowLabel: { color: 'rgba(255,255,255,0.56)', fontWeight: '800', flex: 1 },
   rowValue: { color: 'white', fontWeight: '800', textAlign: 'right', flexShrink: 1 },
