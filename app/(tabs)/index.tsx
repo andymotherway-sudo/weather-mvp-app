@@ -3633,6 +3633,7 @@ function LandWeatherWithCoords({
   const units: UnitSystem = 'us';
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height && width >= 640;
+  const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
   const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
   const { forecastModel } = useSettings();
 
@@ -4156,7 +4157,9 @@ function LandWeatherWithCoords({
                 </View>
 
                 <View style={styles.landscapeGraphBody}>
-                  {landscapeGraphMode === 'daily' && daily.length > 0 ? <DailyRangeChart daily={daily} /> : null}
+                  {landscapeGraphMode === 'daily' && daily.length > 0 ? (
+                    <DailyRangeChart daily={daily} landscape chartHeight={landscapeChartHeight} />
+                  ) : null}
                   {landscapeGraphMode === 'hourly' && hourly.length > 0 ? (
                     <HourlyCharts72h
                       hours={hourly}
@@ -4164,6 +4167,8 @@ function LandWeatherWithCoords({
                       units={units}
                       initialPanel="range"
                       timeZone={forecastTimeZone ?? undefined}
+                      landscapePresentation="content"
+                      chartHeight={landscapeChartHeight}
                     />
                   ) : null}
                 </View>

@@ -30,6 +30,8 @@ type DailyDatum = {
 type Props = {
   daily: DailyDatum[];
   unitsLabel?: string;
+  landscape?: boolean;
+  chartHeight?: number;
 
   /**
    * Optional overrides so you can force-show these overlays even if wxLab=false.
@@ -130,12 +132,14 @@ function normDeg(deg: number) {
 export function DailyRangeChart({
   daily,
   unitsLabel = '°F',
+  landscape,
+  chartHeight,
   showDewPoint,
   showHumidity,
   showCloudBand,
 }: Props) {
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height && width >= 640;
+  const isLandscape = landscape ?? (width > height && width >= 640);
   const { wxLab } = useWxLab();
   const T = useMemo(() => getTypography({ wxLab }), [wxLab]);
 
@@ -200,7 +204,7 @@ export function DailyRangeChart({
 
   // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
-  const H = isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 332;
+  const H = chartHeight ?? (isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 332);
 
   const axisL = 28; // left margin for °F ticks
   const padL = padX + axisL;
@@ -889,8 +893,12 @@ const s = StyleSheet.create({
     position: 'relative',
   },
   wrapLandscape: {
+    flex: 1,
     marginTop: 0,
     paddingTop: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   headerRow: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   title: {

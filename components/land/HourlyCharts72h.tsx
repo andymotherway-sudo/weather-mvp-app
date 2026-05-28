@@ -21,7 +21,8 @@ type Props = {
   units?: UnitSystem;
   initialPanel?: any;
   timeZone?: string;
-  landscapePresentation?: 'inline' | 'modal';
+  landscapePresentation?: 'inline' | 'modal' | 'content';
+  chartHeight?: number;
 };
 
 function extractIsoWallClockParts(value: unknown): {
@@ -128,10 +129,11 @@ export function HourlyCharts72h({
   units = 'us',
   timeZone,
   landscapePresentation = 'inline',
+  chartHeight,
 }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height && width >= 640;
-  const landscapeChartHeight = Math.max(250, Math.min(height - 118, 360));
+  const landscapeChartHeight = chartHeight ?? Math.max(250, Math.min(height - 118, 360));
   const slice = useMemo(() => {
     const base = hours.slice(0, Math.min(hours.length, maxHours));
     const { padded } = padSliceToMidnight(base);
@@ -163,6 +165,19 @@ export function HourlyCharts72h({
           </SafeAreaView>
         </Modal>
       </>
+    );
+  }
+
+  if (isLandscape && landscapePresentation === 'content') {
+    return (
+      <HourlyRangeChart
+        hours={slice}
+        maxHours={maxHours}
+        units={units}
+        timeZone={timeZone}
+        landscape
+        chartHeight={landscapeChartHeight}
+      />
     );
   }
 
