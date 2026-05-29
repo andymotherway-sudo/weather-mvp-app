@@ -3,6 +3,20 @@ import { LAYER_CATALOG } from './layerCatalog';
 import type { LayerId, LayerRuntimeState, MapRuntimeState, MapViewport } from './types';
 import { MAP_VIEWS } from './views';
 
+const AVIATION_LAYER_IDS: LayerId[] = [
+  'aviation.gairmet.turb',
+  'aviation.gairmet.ice',
+  'aviation.sigmet',
+  'aviation.cwa',
+  'aviation.pirep',
+];
+
+const ASTRONOMY_LAYER_IDS: LayerId[] = [
+  'astro.skyScore',
+  'space.aurora.prob',
+  'space.aurora.oval',
+];
+
 export type MapAction =
   | { type: 'SET_VIEW'; viewId: MapRuntimeState['viewId'] }
   | { type: 'SET_NERDY'; nerdy: boolean }
@@ -97,20 +111,23 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         next.radarTime = { ...next.radarTime, playing: false };
       }
 
-      return next;
+      return enforceExclusiveControlSurfaces(next);
     }
 
     case 'SET_NERDY':
       return { ...state, nerdy: action.nerdy };
 
-    case 'SET_LAYER_ENABLED':
-      return {
+    case 'SET_LAYER_ENABLED': {
+      const next = {
         ...state,
         layers: {
           ...state.layers,
           [action.layerId]: { ...state.layers[action.layerId], enabled: action.enabled },
         },
       };
+
+      return enforceExclusiveControlSurfaces(next, action.layerId);
+    }
 
     case 'SET_LAYER_OPACITY':
       return {
@@ -146,6 +163,43 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
     default:
       return state;
   }
+}
+
+function enforceExclusiveControlSurfaces(
+  state: MapRuntimeState,
+  changedLayerId?: LayerId,
+): MapRuntimeState {
+  const changedAviationOn =
+    changedLayerId != null &&
+    AVIATION_LAYER_IDS.includes(changedLayerId) &&
+    state.layers?.[changedLayerId]?.enabled;
+  const changedAstronomyOn =
+    changedLayerId != null &&
+    ASTRONOMY_LAYER_IDS.includes(changedLayerId) &&
+    state.layers?.[changedLayerId]?.enabled;
+
+  const viewWantsAviation = state.viewId === 'aviation';
+  const viewWantsAstronomy = state.viewId === 'astronomer';
+
+  if (!changedAviationOn && !changedAstronomyOn && !viewWantsAviation && !viewWantsAstronomy) {
+    return state;
+  }
+
+  const nextLayers = { ...state.layers };
+
+  if (changedAviationOn || viewWantsAviation) {
+    for (const id of ASTRONOMY_LAYER_IDS) {
+      if (nextLayers[id]) nextLayers[id] = { ...nextLayers[id], enabled: false };
+    }
+  }
+
+  if (changedAstronomyOn || viewWantsAstronomy) {
+    for (const id of AVIATION_LAYER_IDS) {
+      if (nextLayers[id]) nextLayers[id] = { ...nextLayers[id], enabled: false };
+    }
+  }
+
+  return { ...state, layers: nextLayers };
 }
 
 function clamp01(n: number) {

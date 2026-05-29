@@ -50,6 +50,7 @@ const WPC_FRONTS_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0S', 'EET', 'NET']);
+const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -774,11 +775,7 @@ export default function MapsScreen() {
         if (cancelled) return;
 
         if (storedMode === 'station' || storedMode === 'mosaic') {
-          setRadarMode(storedMode);
-          if (storedMode === 'station') {
-            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-          }
+          setRadarMode('mosaic');
         }
 
         if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
@@ -815,14 +812,24 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const stormMode = state.viewId === 'storm';
-  const stationRadarMode = state.viewId === 'radar' && radarMode === 'station';
+  const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
+  const stormMode = state.viewId === 'storm' || state.radarTime.stormMode === true;
+  const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
+  const autoNearestRadarMode =
+    radarEnabled &&
+    state.viewId === 'radar' &&
+    !stormMode &&
+    !manualStationRadarMode &&
+    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+  const stationRadarMode = manualStationRadarMode || autoNearestRadarMode;
+  const showAdvancedRadarControls = manualStationRadarMode;
   const radarAnchor = useMemo(
-    () =>
-      stationRadarMode && stationAnchor
-        ? stationAnchor
-        : getRadarAnchor(activePlace, loc.state.currentCoords),
-    [activePlace, loc.state.currentCoords, stationAnchor, stationRadarMode],
+    () => {
+      if (manualStationRadarMode && stationAnchor) return stationAnchor;
+      if (region) return { lat: region.latitude, lon: region.longitude };
+      return getRadarAnchor(activePlace, loc.state.currentCoords);
+    },
+    [activePlace, loc.state.currentCoords, manualStationRadarMode, region, stationAnchor],
   );
   const radarAnchorKey = `${radarAnchor.lat.toFixed(4)},${radarAnchor.lon.toFixed(4)}`;
   const autoNearestRadar = useMemo(
@@ -850,7 +857,13 @@ export default function MapsScreen() {
     stationRadarMode,
     selectedRadarSite,
   ]);
-  const product: RadarProductId = stationRadarMode ? stationProduct : stormMode ? stormProduct : 'N0Q';
+  const product: RadarProductId = manualStationRadarMode
+    ? stationProduct
+    : stormMode
+      ? stormProduct
+      : stationRadarMode
+        ? 'N0B'
+        : 'N0Q';
   const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
 
   useEffect(() => {
@@ -906,7 +919,6 @@ export default function MapsScreen() {
     [state.viewId, state.layers]
   );
 
-  const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const fireRestrictionsEnabled = !!state.layers?.['fire.restrictions']?.enabled;
   const wildfireSmokeEnabled = !!state.layers?.['wildfire.smoke']?.enabled;
   const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
@@ -2657,11 +2669,11 @@ export default function MapsScreen() {
             <Glass
               style={[
                 styles.legendCard,
-                stationRadarMode ? styles.stationLegendCard : null,
-                stationRadarMode && stationPanelCollapsed ? styles.stationLegendCardCollapsed : null,
+                showAdvancedRadarControls ? styles.stationLegendCard : null,
+                showAdvancedRadarControls && stationPanelCollapsed ? styles.stationLegendCardCollapsed : null,
               ]}
             >
-              {stationRadarMode && stationPanelCollapsed ? (
+              {showAdvancedRadarControls && stationPanelCollapsed ? (
                 <View style={styles.stationCollapsedPanel}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.stationCollapsedEyebrow}>STATION RADAR</Text>
@@ -2696,27 +2708,19 @@ export default function MapsScreen() {
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
-                          label="Mosaic"
-                          active={!stationRadarMode}
+                          label="Storm"
+                          active={stormMode}
                           onPress={() => {
-                            setRadarMode('mosaic');
-                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                          }}
-                        />
-                        <MiniToggle
-                          label="Station"
-                          active={stationRadarMode}
-                          onPress={() => {
-                            seedStationAnchorFromMap();
-                            setRadarMode('station');
-                            setStationPanelCollapsed(false);
+                            const nextStormMode = !stormMode;
+                            if (nextStormMode) setRadarMode('mosaic');
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
                             dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
                             dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />
                       </View>
-                      {stationRadarMode ? (
+                      {showAdvancedRadarControls ? (
                         <Pressable
                           onPress={() => setStationPanelCollapsed(true)}
                           style={styles.panelIconButton}
@@ -2736,11 +2740,13 @@ export default function MapsScreen() {
                     compact
                   />
                   <Text style={styles.legendCardMeta}>
-                    {effectiveRadarProvider === 'iem'
+                    {autoNearestRadarMode && selectedRadarSite
+                      ? `Nearest NEXRAD ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
+                      : effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
                       : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>
-                  {stationRadarMode ? (
+                  {showAdvancedRadarControls ? (
                     <View style={styles.stationPanel}>
                       <View style={styles.stationHeader}>
                         <View style={{ flex: 1, minWidth: 0 }}>

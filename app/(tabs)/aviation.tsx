@@ -596,12 +596,16 @@ export default function AviationScreen() {
       const normalizedHazards = normalizeAviationFeatureCollection(aviation.allHazards);
       const normalizedPireps = normalizeAviationFeatureCollection(aviation.pireps);
       const totalDistanceMi = mi(origin.lat, origin.lon, destination.lat, destination.lon);
-      const count = Math.max(4, Math.min(9, Math.round(totalDistanceMi / 120) + 1));
-      const pts = Array.from({ length: count }, (_, i) => {
-        const t = count === 1 ? 0 : i / (count - 1);
+      const routeFractions = [0, 0.2, 0.4, 0.6, 0.8, 1];
+      const pts = routeFractions.map((t, i) => {
         return {
           key: `pt-${i}`,
-          label: i === 0 ? `Depart ${origin.code ?? origin.label.split(',')[0]}` : i === count - 1 ? `Arrive ${destination.code ?? destination.label.split(',')[0]}` : `${Math.round(t * 100)}%`,
+          label:
+            i === 0
+              ? 'Depart'
+              : i === routeFractions.length - 1
+                ? 'Arrival'
+                : `${Math.round(t * 100)}%`,
           lat: origin.lat + (destination.lat - origin.lat) * t,
           lon: origin.lon + (destination.lon - origin.lon) * t,
           distanceMi: totalDistanceMi * t,
@@ -690,7 +694,7 @@ export default function AviationScreen() {
           <Text style={s.eyebrow}>AVIATION</Text>
           <Text style={s.title}>Flight weather</Text>
           <Text style={s.subtitle}>Pilots can load station reports. Travelers can analyze a route and jump into the aviation map.</Text>
-          <View style={s.mode}><Seg onPress={() => setMode('station')} active={mode === 'station'} label="Station" /><Seg onPress={() => setMode('flight')} active={mode === 'flight'} label="Flight" /></View>
+          <View style={s.mode}><Seg onPress={() => setMode('station')} active={mode === 'station'} label="Airport Briefing" /><Seg onPress={() => setMode('flight')} active={mode === 'flight'} label="Route Briefing" /></View>
 
           {mode === 'station' ? (
             <>
@@ -700,91 +704,32 @@ export default function AviationScreen() {
               <View style={s.learnRow}><Learn onPress={() => openLearn('aviation-metar')} label="METAR" /><Learn onPress={() => openLearn('aviation-taf')} label="TAF" /><Learn onPress={() => openLearn('aviation-flight-category')} label="Flight Cat" /></View>
             </>
           ) : (
-            <>
-              <Label text="From" /><TextInput value={fromInput} onChangeText={setFromInput} autoCapitalize="characters" autoCorrect={false} placeholder="KPHX or Phoenix" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
-              <Label text="To" /><TextInput value={toInput} onChangeText={setToInput} autoCapitalize="characters" autoCorrect={false} placeholder="KDEN or Denver" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
-              <Label text="Cruise altitude" />
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
-                {CRUISE_LEVELS.map((level) => <Seg key={level.feet} onPress={() => setCruiseAltitudeFt(level.feet)} active={cruiseAltitudeFt === level.feet} label={level.label} />)}
-              </ScrollView>
-              <Label text="Departure" />
-              <View style={s.learnRow}>
-                {DEPARTURE_OFFSETS.map((option) => <Seg key={option.minutes} onPress={() => setDepartureOffsetMin(option.minutes)} active={departureOffsetMin === option.minutes} label={option.label} />)}
-              </View>
-              <View style={s.actions}><Primary onPress={analyzeFlight} label="Analyze Flight" loading={loading} /><Secondary onPress={openMap} label="Open Aviation Map" /></View>
-              <View style={s.learnRow}><Learn onPress={() => openLearn('aviation-turbulence')} label="Turbulence" /><Learn onPress={() => openLearn('aviation-icing')} label="Icing" /><Learn onPress={() => openLearn('aviation-pirep')} label="PIREPs" /></View>
-            </>
+            <Text style={s.disclaimer}>For situational awareness only. Not for flight planning or navigation. Verify with official FAA/NWS/AWC briefing sources.</Text>
           )}
 
           <Text style={s.helper}>Three- and four-letter airport codes are supported. US three-letter inputs also try the matching K-prefixed station.</Text>
-          {mode === 'flight' ? <Text style={s.disclaimer}>For situational awareness only. Not for flight planning or navigation. Verify with official FAA/NWS/AWC briefing sources.</Text> : null}
-          <Text style={[s.summary, error ? s.error : null]}>{error ?? (mode === 'station' ? station ? `Loaded ${station.station.code ?? station.station.label}.` : 'Enter a station to load raw and decoded aviation weather.' : flight ? `${flight.samples.filter((x) => x.severity === 'high').length} high-concern segments, ${flight.samples.filter((x) => x.severity === 'elevated').length} elevated.` : 'Enter a route to scan the corridor.')}</Text>
+          {mode === 'station' ? (
+            <Text style={[s.summary, error ? s.error : null]}>{error ?? (station ? `Loaded ${station.station.code ?? station.station.label}.` : 'Enter a station to load raw and decoded aviation weather.')}</Text>
+          ) : null}
         </Card>
 
         {mode === 'station' && station ? (
           <>
-            <View style={s.modeAlt}><Seg onPress={() => setReportView('decoded')} active={reportView === 'decoded'} label="Decoded" /><Seg onPress={() => setReportView('raw')} active={reportView === 'raw'} label="Raw" /></View>
             <AirportWeatherBoard station={station} onOpenLearn={openLearn} />
-            <Glass style={s.card}>
-              <View style={s.cardHead}><View><Text style={s.cardTitle}>{station.station.code ?? station.station.label}</Text><Text style={s.cardSub}>{station.station.label}</Text></View><Learn onPress={() => openLearn('aviation-metar')} label="wxLearn" /></View>
-              <Row label="Flight Category" value={flightCat(station.metar) ?? '--'} />
-              <Row label="Wind" value={windText(station.metar)} />
-              <Row label="Visibility" value={visText(station.metar)} />
-              <Row label="Ceiling" value={ceilText(station.metar)} />
-              <Row label="Temperature / Dew Point" value={tempDew(station.metar)} />
-              <Row label="Altimeter" value={altim(station.metar)} />
-            </Glass>
-            {reportView === 'decoded' ? (
-              <>
-                <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded METAR</Text><Learn onPress={() => openLearn('aviation-metar')} label="METAR" /></View><Text style={s.raw}>{`${flightCat(station.metar) ?? 'Unknown'} conditions. Wind ${windText(station.metar)}. Visibility ${visText(station.metar)}. Ceiling ${ceilText(station.metar)}. Temperature / Dew Point ${tempDew(station.metar)}. Altimeter ${altim(station.metar)}.`}</Text></Glass>
-                <TafTimelineCard taf={station.taf} onOpenLearn={openLearn} />
-                <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded TAF</Text><Learn onPress={() => openLearn('aviation-taf')} label="TAF" /></View><Text style={s.raw}>{tafSummary(station.taf)}</Text></Glass>
-              </>
-            ) : (
-              <>
-                <Glass style={s.card}><Text style={s.cardTitle}>Raw METAR</Text><Text style={s.raw}>{metarRaw(station.metar) ?? 'No METAR returned.'}</Text></Glass>
-                <Glass style={s.card}><Text style={s.cardTitle}>Raw TAF</Text><Text style={s.raw}>{tafRaw(station.taf) ?? 'No TAF returned.'}</Text></Glass>
-              </>
-            )}
+            <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded METAR</Text><Learn onPress={() => openLearn('aviation-metar')} label="METAR" /></View><Text style={s.raw}>{`${flightCat(station.metar) ?? 'Unknown'} conditions. Wind ${windText(station.metar)}. Visibility ${visText(station.metar)}. Ceiling ${ceilText(station.metar)}. Temperature / Dew Point ${tempDew(station.metar)}. Altimeter ${altim(station.metar)}.`}</Text></Glass>
+            <TafTimelineCard taf={station.taf} onOpenLearn={openLearn} />
+            <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded TAF</Text><Learn onPress={() => openLearn('aviation-taf')} label="TAF" /></View><Text style={s.raw}>{tafSummary(station.taf)}</Text></Glass>
+            <Glass style={s.card}><Text style={s.cardTitle}>Raw</Text><Text style={s.sectionLabel}>METAR</Text><Text style={s.raw}>{metarRaw(station.metar) ?? 'No METAR returned.'}</Text><Text style={s.sectionLabel}>TAF</Text><Text style={s.raw}>{tafRaw(station.taf) ?? 'No TAF returned.'}</Text></Glass>
           </>
         ) : null}
 
         {mode === 'flight' ? (
           <>
-            <Glass style={s.card}><Text style={s.cardTitle}>Route map</Text><View style={s.map}>
-              <MapRenderer key={flight ? `${flight.origin.code ?? flight.origin.label}-${flight.destination.code ?? flight.destination.label}` : 'empty'} engine="maplibre" initialRegion={mapRegion} mapStyle="dark" boundaryReliefTone="teal" onPanDrag={() => {}} onRegionChangeComplete={() => {}} radar={{ enabled: false, templates: [null, null, null], opacities: [0, 0, 0], tileMaxZ: 0, localImage: null }} overlays={[]}>
-                <MapLibreGL.ShapeSource id="route-line" shape={routeLine as any}><MapLibreGL.LineLayer id="route-line-layer" style={{ lineColor: '#f8fafc', lineWidth: 3, lineOpacity: 0.92 }} /></MapLibreGL.ShapeSource>
-                <MapLibreGL.ShapeSource id="route-pts" shape={routePts as any}>
-                  <MapLibreGL.CircleLayer id="route-pts-layer" style={{ circleColor: ['match', ['get', 'severity'], 'high', '#ef4444', 'elevated', '#f59e0b', '#22c55e'] as any, circleRadius: 5, circleStrokeColor: 'rgba(2,6,23,0.98)', circleStrokeWidth: 1.5 }} />
-                  <MapLibreGL.SymbolLayer id="route-labels" style={{ textField: ['get', 'label'], textSize: 10, textColor: '#e5e7eb', textHaloColor: 'rgba(2,6,23,0.98)', textHaloWidth: 1, textOffset: [0, 1.2], textAnchor: 'top' }} />
-                </MapLibreGL.ShapeSource>
-              </MapRenderer>
-            </View></Glass>
+            <RouteSummaryCard flight={flight} fromInput={fromInput} toInput={toInput} cruiseAltitudeFt={cruiseAltitudeFt} departureOffsetMin={departureOffsetMin} loading={loading} error={error} />
+            <RouteMapCard flight={flight} routeLine={routeLine} routePts={routePts} mapRegion={mapRegion} />
+            <CompactRouteForm fromInput={fromInput} toInput={toInput} cruiseAltitudeFt={cruiseAltitudeFt} departureOffsetMin={departureOffsetMin} loading={loading} onFromChange={setFromInput} onToChange={setToInput} onCruiseChange={setCruiseAltitudeFt} onDepartureChange={setDepartureOffsetMin} onAnalyze={analyzeFlight} onOpenMap={openMap} onOpenLearn={openLearn} />
             <RouteProfileCard flight={flight} departureOffsetMin={departureOffsetMin} />
-            <View style={s.stats}><Stat label="Distance" value={flight ? fmt(flight.totalDistanceMi, ' mi') : '--'} /><Stat label="Cruise" value={flight ? cruiseLabel(flight.cruiseAltitudeFt) : cruiseLabel(cruiseAltitudeFt)} /><Stat label="Depart" value={flight ? utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin) : departureLabel(departureOffsetMin)} /><Stat label="SIGMET" value={flight ? String(flight.counts.sigmet) : '--'} /></View>
-            <View style={s.stats}><Stat label="Turb" value={flight ? String(flight.counts.turbulence) : '--'} /><Stat label="Icing" value={flight ? String(flight.counts.icing) : '--'} /><Stat label="CWA" value={flight ? String(flight.counts.cwa) : '--'} /><Stat label="PIREPs" value={flight ? String(flight.counts.pirep) : '--'} /></View>
-            {flight?.samples.map((x) => (
-              <Glass key={x.key} style={s.card}>
-                <View style={s.cardHead}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.cardTitle}>{x.label}</Text>
-                    <Text style={s.cardSub}>{fmt(x.distanceMi, ' mi')} from departure · ETA {utcShort(x.etaIso) ?? '--'}</Text>
-                  </View>
-                  <View style={[s.pill, x.severity === 'high' ? s.high : x.severity === 'elevated' ? s.elevated : s.low]}><Text style={s.pillText}>{x.severity.toUpperCase()}</Text></View>
-                </View>
-                <Text style={s.sectionLabel}>Weather context</Text>
-                <Text style={s.raw}>Temp {fmt(x.weather.tempF, ' deg')} / Wind {fmt(x.weather.windMph, ' mph')} / Gust {fmt(x.weather.gustMph, ' mph')} / Visibility {fmt(x.weather.visMi, ' mi', x.weather.visMi != null && x.weather.visMi < 10 ? 1 : 0)} / Clouds {fmt(x.weather.cloudPct, '%')} (context)</Text>
-                {airportRiskText(x.airportRisk) ? <Text style={s.airportRisk}>{airportRiskText(x.airportRisk)}</Text> : null}
-                <Text style={s.sectionLabel}>Aviation advisories</Text>
-                {x.advisories.length ? x.advisories.map((advisory) => (
-                  <View key={`${x.key}-${advisory.key}`} style={s.advisory}>
-                    <Text style={s.advisoryTitle}>{advisory.hazard} · {advisory.product}</Text>
-                    <Text style={s.advisoryMeta}>{advisory.severity ? `${advisory.severity} · ` : ''}{advisory.altitude} · {advisory.valid}</Text>
-                    <Text style={s.advisoryId}>Raw ID {advisory.rawId}</Text>
-                  </View>
-                )) : <Text style={s.raw}>No product-based advisories matched this segment at the selected altitude and valid time.</Text>}
-              </Glass>
-            ))}
+            {flight?.samples.map((sample) => <RouteCheckpointCard key={sample.key} sample={sample} />)}
           </>
         ) : null}
 
@@ -800,6 +745,208 @@ function Primary({ label, onPress, loading }: { label: string; onPress: () => vo
 function Secondary({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={s.secondary}><Text style={s.secondaryText}>{label}</Text></Pressable>; }
 function Stat({ label, value }: { label: string; value: string }) { return <Glass style={s.stat}><Text style={s.statLabel}>{label}</Text><Text style={s.statValue}>{value}</Text></Glass>; }
 function Row({ label, value }: { label: string; value: string }) { return <View style={s.row}><Text style={s.rowLabel}>{label}</Text><Text style={s.rowValue}>{value}</Text></View>; }
+
+function toneStyle(tone: 'low' | 'elevated' | 'high') {
+  return tone === 'high' ? s.high : tone === 'elevated' ? s.elevated : s.low;
+}
+
+function routeName(flight: Flight | null, fromInput: string, toInput: string) {
+  const from = (flight?.origin.code ?? fromInput.trim().toUpperCase()) || 'FROM';
+  const to = (flight?.destination.code ?? toInput.trim().toUpperCase()) || 'TO';
+  return `${from} to ${to}`;
+}
+
+function routePrimaryConcern(flight: Flight | null) {
+  if (!flight?.samples.length) return 'Enter a route to scan corridor weather, airport category, and matched pilot products.';
+  const worst = [...flight.samples].sort((a, b) => {
+    const rank = { high: 3, elevated: 2, low: 1 };
+    return rank[b.severity] - rank[a.severity] || (b.advisories[0]?.rank ?? 0) - (a.advisories[0]?.rank ?? 0);
+  })[0];
+  const advisory = worst.advisories[0];
+  const airportText = airportRiskText(worst.airportRisk);
+  if (advisory) {
+    const sev = advisory.severity ? `${advisory.severity.toLowerCase()} ` : '';
+    return `${worst.label}: ${sev}${advisory.hazard.toLowerCase()} in ${advisory.product}; ${advisory.altitude}.`;
+  }
+  if (airportText) return `${worst.label}: ${airportText}`;
+  return 'No matched advisory products along the sampled route at the selected altitude and time.';
+}
+
+function worstSegment(flight: Flight | null) {
+  if (!flight?.samples.length) return null;
+  const rank = { high: 3, elevated: 2, low: 1 };
+  return [...flight.samples].sort((a, b) => rank[b.severity] - rank[a.severity] || (b.advisories[0]?.rank ?? 0) - (a.advisories[0]?.rank ?? 0))[0];
+}
+
+function flightCategoryBadge(flight: Flight | null) {
+  if (!flight?.samples.length) return 'OK';
+  const hasHigh = flight.samples.some((sample) => sample.airportRisk === 'high');
+  const hasElevated = flight.samples.some((sample) => sample.airportRisk === 'elevated');
+  if (hasHigh) return 'IFR';
+  if (hasElevated) return 'MVFR';
+  return 'VFR';
+}
+
+function RouteSummaryCard({
+  flight,
+  fromInput,
+  toInput,
+  cruiseAltitudeFt,
+  departureOffsetMin,
+  loading,
+  error,
+}: {
+  flight: Flight | null;
+  fromInput: string;
+  toInput: string;
+  cruiseAltitudeFt: number;
+  departureOffsetMin: number;
+  loading: boolean;
+  error: string | null;
+}) {
+  const decision = routeDecision(flight?.samples);
+  const displayedCruise = flight ? flight.cruiseAltitudeFt : cruiseAltitudeFt;
+  const displayedDepart = flight ? utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin) : departureLabel(departureOffsetMin);
+  return (
+    <Glass style={s.routeSummaryCard}>
+      <View style={s.cardHead}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.sectionLabel}>Route briefing</Text>
+          <Text style={s.routeTitle}>{routeName(flight, fromInput, toInput)}</Text>
+          <Text style={s.cardSub}>{cruiseLabel(displayedCruise)} / depart {displayedDepart}</Text>
+        </View>
+        <View style={[s.pill, toneStyle(decision.tone)]}>
+          <Text style={s.pillText}>{loading ? 'LOADING' : decision.label.toUpperCase()}</Text>
+        </View>
+      </View>
+
+      <Text style={[s.routeConcern, error ? s.error : null]}>{error ?? routePrimaryConcern(flight)}</Text>
+
+      <View style={s.badgeGrid}>
+        <RouteBadge label="Turbulence" value={flight ? String(flight.counts.turbulence) : '--'} tone={flight?.counts.turbulence ? 'elevated' : 'low'} />
+        <RouteBadge label="Icing" value={flight ? String(flight.counts.icing) : '--'} tone={flight?.counts.icing ? 'elevated' : 'low'} />
+        <RouteBadge label="Flight cat" value={flightCategoryBadge(flight)} tone={flightCategoryBadge(flight) === 'IFR' ? 'high' : flightCategoryBadge(flight) === 'MVFR' ? 'elevated' : 'low'} />
+        <RouteBadge label="SIGMET" value={flight ? String(flight.counts.sigmet) : '--'} tone={flight?.counts.sigmet ? 'high' : 'low'} />
+        <RouteBadge label="CWA" value={flight ? String(flight.counts.cwa) : '--'} tone={flight?.counts.cwa ? 'elevated' : 'low'} />
+        <RouteBadge label="PIREPs" value={flight ? String(flight.counts.pirep) : '--'} tone={flight?.counts.pirep ? 'elevated' : 'low'} />
+      </View>
+    </Glass>
+  );
+}
+
+function RouteBadge({ label, value, tone }: { label: string; value: string; tone: 'low' | 'elevated' | 'high' }) {
+  return (
+    <View style={[s.routeBadge, toneStyle(tone)]}>
+      <Text style={s.routeBadgeLabel}>{label}</Text>
+      <Text style={s.routeBadgeValue}>{value}</Text>
+    </View>
+  );
+}
+
+function RouteMapCard({ flight, routeLine, routePts, mapRegion }: { flight: Flight | null; routeLine: any; routePts: any; mapRegion: Region }) {
+  return (
+    <Glass style={s.card}>
+      <View style={s.cardHead}>
+        <View>
+          <Text style={s.cardTitle}>Route map</Text>
+          <Text style={s.cardSub}>Visual corridor with risk-coded checkpoints.</Text>
+        </View>
+      </View>
+      <View style={s.map}>
+        <MapRenderer key={flight ? `${flight.origin.code ?? flight.origin.label}-${flight.destination.code ?? flight.destination.label}` : 'empty'} engine="maplibre" initialRegion={mapRegion} mapStyle="dark" boundaryReliefTone="teal" onPanDrag={() => {}} onRegionChangeComplete={() => {}} radar={{ enabled: false, templates: [null, null, null], opacities: [0, 0, 0], tileMaxZ: 0, localImage: null }} overlays={[]}>
+          <MapLibreGL.ShapeSource id="route-line" shape={routeLine as any}><MapLibreGL.LineLayer id="route-line-layer" style={{ lineColor: '#f8fafc', lineWidth: 3, lineOpacity: 0.92 }} /></MapLibreGL.ShapeSource>
+          <MapLibreGL.ShapeSource id="route-pts" shape={routePts as any}>
+            <MapLibreGL.CircleLayer id="route-pts-layer" style={{ circleColor: ['match', ['get', 'severity'], 'high', '#ef4444', 'elevated', '#f59e0b', '#22c55e'] as any, circleRadius: 5, circleStrokeColor: 'rgba(2,6,23,0.98)', circleStrokeWidth: 1.5 }} />
+            <MapLibreGL.SymbolLayer id="route-labels" style={{ textField: ['get', 'label'], textSize: 10, textColor: '#e5e7eb', textHaloColor: 'rgba(2,6,23,0.98)', textHaloWidth: 1, textOffset: [0, 1.2], textAnchor: 'top' }} />
+          </MapLibreGL.ShapeSource>
+        </MapRenderer>
+      </View>
+    </Glass>
+  );
+}
+
+function CompactRouteForm(props: {
+  fromInput: string;
+  toInput: string;
+  cruiseAltitudeFt: number;
+  departureOffsetMin: number;
+  loading: boolean;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  onCruiseChange: (value: number) => void;
+  onDepartureChange: (value: number) => void;
+  onAnalyze: () => void;
+  onOpenMap: () => void;
+  onOpenLearn: (id: string) => void;
+}) {
+  return (
+    <Glass style={s.compactForm}>
+      <View style={s.formGrid}>
+        <View style={s.formCell}>
+          <Label text="From" />
+          <TextInput value={props.fromInput} onChangeText={props.onFromChange} autoCapitalize="characters" autoCorrect={false} placeholder="KPHX" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
+        </View>
+        <View style={s.formCell}>
+          <Label text="To" />
+          <TextInput value={props.toInput} onChangeText={props.onToChange} autoCapitalize="characters" autoCorrect={false} placeholder="KDEN" placeholderTextColor="rgba(255,255,255,0.34)" style={s.input} />
+        </View>
+        <View style={s.formCell}>
+          <Label text="Cruise" />
+          <TextInput value={cruiseLabel(props.cruiseAltitudeFt)} editable={false} style={[s.input, s.lockedInput]} />
+        </View>
+        <View style={s.formCell}>
+          <Label text="Depart" />
+          <TextInput value={departureLabel(props.departureOffsetMin)} editable={false} style={[s.input, s.lockedInput]} />
+        </View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+        {CRUISE_LEVELS.map((level) => <Seg key={level.feet} onPress={() => props.onCruiseChange(level.feet)} active={props.cruiseAltitudeFt === level.feet} label={level.label} />)}
+      </ScrollView>
+      <View style={s.learnRow}>
+        {DEPARTURE_OFFSETS.map((option) => <Seg key={option.minutes} onPress={() => props.onDepartureChange(option.minutes)} active={props.departureOffsetMin === option.minutes} label={option.label} />)}
+      </View>
+      <View style={s.actions}><Primary onPress={props.onAnalyze} label="Analyze Route" loading={props.loading} /><Secondary onPress={props.onOpenMap} label="Open Map" /></View>
+      <View style={s.learnRow}><Learn onPress={() => props.onOpenLearn('aviation-turbulence')} label="Turbulence" /><Learn onPress={() => props.onOpenLearn('aviation-icing')} label="Icing" /><Learn onPress={() => props.onOpenLearn('aviation-pirep')} label="PIREPs" /></View>
+    </Glass>
+  );
+}
+
+function RouteCheckpointCard({ sample }: { sample: Sample }) {
+  const [expanded, setExpanded] = useState(false);
+  const concern = sample.advisories[0]
+    ? `${sample.advisories[0].hazard} / ${sample.advisories[0].product}`
+    : airportRiskText(sample.airportRisk) ?? 'No matched advisory products';
+  return (
+    <Glass style={s.card}>
+      <View style={s.cardHead}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.sectionLabel}>Route checkpoint</Text>
+          <Text style={s.cardTitle}>{sample.label}</Text>
+          <Text style={s.cardSub}>{fmt(sample.distanceMi, ' mi')} from departure / ETA {utcShort(sample.etaIso) ?? '--'}</Text>
+        </View>
+        <View style={[s.pill, toneStyle(sample.severity)]}><Text style={s.pillText}>{sample.severity.toUpperCase()}</Text></View>
+      </View>
+      <Text style={s.routeConcern}>{concern}</Text>
+      <Text style={s.raw}>Temp {fmt(sample.weather.tempF, ' deg')} / Wind {fmt(sample.weather.windMph, ' mph')} / Gust {fmt(sample.weather.gustMph, ' mph')} / Visibility {fmt(sample.weather.visMi, ' mi', sample.weather.visMi != null && sample.weather.visMi < 10 ? 1 : 0)} / Clouds {fmt(sample.weather.cloudPct, '%')}</Text>
+      {sample.advisories.length ? (
+        <View style={s.productChipRow}>
+          {sample.advisories.map((advisory) => <View key={advisory.key} style={s.productChip}><Text style={s.productChipText}>{advisory.hazard} / {advisory.product}</Text></View>)}
+        </View>
+      ) : <Text style={s.raw}>No pilot products matched this checkpoint at the selected altitude and valid time.</Text>}
+      <Pressable onPress={() => setExpanded((value) => !value)} style={s.detailsToggle}>
+        <Text style={s.detailsToggleText}>{expanded ? 'Hide pilot details' : 'Pilot details'}</Text>
+      </Pressable>
+      {expanded ? (
+        sample.advisories.length ? sample.advisories.map((advisory) => (
+          <View key={`${sample.key}-${advisory.key}`} style={s.advisory}>
+            <Text style={s.advisoryTitle}>{advisory.hazard} / {advisory.product}</Text>
+            <Text style={s.advisoryMeta}>{advisory.severity ? `${advisory.severity} / ` : ''}{advisory.altitude} / {advisory.valid}</Text>
+          </View>
+        )) : <Text style={s.raw}>No raw advisory detail is available for this checkpoint.</Text>
+      ) : null}
+    </Glass>
+  );
+}
 
 function AirportWeatherBoard({
   station,
@@ -895,7 +1042,8 @@ function RouteProfileCard({
   departureOffsetMin: number;
 }) {
   const decision = routeDecision(flight?.samples);
-  const toneStyle = decision.tone === 'high' ? s.high : decision.tone === 'elevated' ? s.elevated : s.low;
+  const decisionToneStyle = toneStyle(decision.tone);
+  const worst = worstSegment(flight);
   return (
     <Glass style={s.card}>
       <View style={s.cardHead}>
@@ -903,16 +1051,22 @@ function RouteProfileCard({
           <Text style={s.cardTitle}>Route profile</Text>
           <Text style={s.cardSub}>
             {flight
-              ? `${cruiseLabel(flight.cruiseAltitudeFt)} / depart ${utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin)}`
+              ? `${flight.origin.code ?? flight.origin.label.split(',')[0]} to ${flight.destination.code ?? flight.destination.label.split(',')[0]} / ${cruiseLabel(flight.cruiseAltitudeFt)} / depart ${utcShort(flight.departureIso) ?? departureLabel(departureOffsetMin)}`
               : 'Analyze a route to show time-aware samples.'}
           </Text>
         </View>
-        <View style={[s.pill, toneStyle]}>
+        <View style={[s.pill, decisionToneStyle]}>
           <Text style={s.pillText}>{decision.label}</Text>
         </View>
       </View>
 
       <Text style={s.raw}>{decision.summary}</Text>
+      {worst ? (
+        <View style={s.worstSegment}>
+          <Text style={s.worstLabel}>Worst segment</Text>
+          <Text style={s.worstText}>{worst.label}: {worst.advisories[0]?.hazard ?? airportRiskText(worst.airportRisk) ?? 'No matched concern'}</Text>
+        </View>
+      ) : null}
 
       {flight?.samples.length ? (
         <>
@@ -929,16 +1083,15 @@ function RouteProfileCard({
               />
             ))}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.profileRail}>
+          <View style={s.profileStripLabels}>
             {flight.samples.map((sample) => (
-              <View key={sample.key} style={s.profilePoint}>
+              <View key={sample.key} style={s.profileCheckpoint}>
+                <View style={[s.profileDot, sample.severity === 'high' ? s.profileHigh : sample.severity === 'elevated' ? s.profileElevated : s.profileLow]} />
                 <Text style={s.profilePointLabel}>{sample.label}</Text>
-                <Text style={s.profilePointMeta}>{utcShort(sample.etaIso) ?? '--'} / {fmt(sample.distanceMi, ' mi')}</Text>
-                <Text style={s.profilePointWeather}>{fmt(sample.weather.windMph, ' mph')} wind / {fmt(sample.weather.visMi, ' mi', sample.weather.visMi != null && sample.weather.visMi < 10 ? 1 : 0)} vis</Text>
-                <Text style={s.profilePointHazard}>{sample.advisories[0]?.hazard ?? airportRiskText(sample.airportRisk) ?? 'No match'}</Text>
+                <Text style={s.profilePointMeta}>{utcShort(sample.etaIso) ?? '--'}</Text>
               </View>
             ))}
-          </ScrollView>
+          </View>
         </>
       ) : null}
     </Glass>
@@ -976,6 +1129,7 @@ const s = StyleSheet.create({
   segTextOn: { color: 'white' },
   label: { color: 'rgba(255,255,255,0.58)', fontSize: 12, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 14, marginBottom: 6 },
   input: { minHeight: 52, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.05)', color: 'white', paddingHorizontal: 14, fontSize: 16, fontWeight: '700' },
+  lockedInput: { color: 'rgba(255,255,255,0.76)', backgroundColor: 'rgba(255,255,255,0.035)' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   primary: { flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#0ea5e9', paddingHorizontal: 16 },
   primaryText: { color: 'white', fontWeight: '900', fontSize: 15 },
@@ -990,27 +1144,50 @@ const s = StyleSheet.create({
   summary: { color: 'rgba(255,255,255,0.84)', marginTop: 12, lineHeight: 19 },
   error: { color: '#fca5a5' },
   card: { marginTop: 12, borderRadius: 22, padding: 12 },
-  boardCard: { marginTop: 12, borderRadius: 24, padding: 14 },
+  routeSummaryCard: { marginTop: 12, borderRadius: 22, padding: 12 },
+  routeTitle: { color: 'white', fontWeight: '900', fontSize: 22, marginTop: 2 },
+  routeConcern: { color: 'rgba(255,255,255,0.86)', lineHeight: 19, fontWeight: '800', marginTop: 10 },
+  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  routeBadge: {
+    minWidth: '30.5%',
+    flexGrow: 1,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  routeBadgeLabel: { color: 'rgba(255,255,255,0.62)', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
+  routeBadgeValue: { color: 'white', fontWeight: '900', fontSize: 15, marginTop: 3 },
+  compactForm: { marginTop: 12, borderRadius: 22, padding: 12 },
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  formCell: { width: '48.4%' },
+  productChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
+  productChip: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  productChipText: { color: 'rgba(255,255,255,0.86)', fontSize: 11, fontWeight: '900' },
+  detailsToggle: { alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  detailsToggleText: { color: 'rgba(255,255,255,0.84)', fontSize: 12, fontWeight: '900' },
+  boardCard: { marginTop: 12, borderRadius: 20, padding: 12 },
   boardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' },
-  boardTitle: { color: 'white', fontWeight: '900', fontSize: 26, marginTop: 2 },
+  boardTitle: { color: 'white', fontWeight: '900', fontSize: 22, marginTop: 2 },
   categoryBadge: {
-    minWidth: 70,
-    minHeight: 54,
-    borderRadius: 18,
-    borderWidth: 1.5,
+    minWidth: 64,
+    minHeight: 48,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   categoryBadgeText: { color: 'white', fontWeight: '900', fontSize: 16 },
-  decisionStrip: { marginTop: 12, borderRadius: 18, paddingVertical: 11, paddingHorizontal: 12 },
+  decisionStrip: { marginTop: 10, borderRadius: 16, paddingVertical: 9, paddingHorizontal: 10 },
   decisionTitle: { color: 'white', fontWeight: '900', fontSize: 15 },
   decisionText: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 18, marginTop: 4 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   metricTile: {
     width: '47.8%',
-    minHeight: 74,
-    borderRadius: 18,
+    minHeight: 64,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.09)',
     backgroundColor: 'rgba(255,255,255,0.045)',
@@ -1018,7 +1195,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 11,
   },
   metricLabel: { color: 'rgba(255,255,255,0.54)', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
-  metricValue: { color: 'white', fontSize: 15, lineHeight: 19, fontWeight: '900', marginTop: 8 },
+  metricValue: { color: 'white', fontSize: 14, lineHeight: 18, fontWeight: '900', marginTop: 6 },
   cardTitle: { color: 'white', fontWeight: '900', fontSize: 16 },
   cardSub: { color: 'rgba(255,255,255,0.6)', marginTop: 4, lineHeight: 18 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 },
@@ -1042,7 +1219,7 @@ const s = StyleSheet.create({
   tafLabel: { color: 'rgba(125,211,252,0.9)', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
   tafText: { color: 'rgba(255,255,255,0.82)', lineHeight: 18, fontWeight: '700', marginTop: 8 },
   profileTrack: {
-    height: 16,
+    height: 12,
     borderRadius: 999,
     overflow: 'hidden',
     flexDirection: 'row',
@@ -1056,6 +1233,20 @@ const s = StyleSheet.create({
   profileElevated: { backgroundColor: 'rgba(245,158,11,0.78)' },
   profileHigh: { backgroundColor: 'rgba(239,68,68,0.82)' },
   profileRail: { gap: 10, paddingTop: 12, paddingRight: 6 },
+  worstSegment: {
+    marginTop: 10,
+    borderRadius: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  worstLabel: { color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+  worstText: { color: 'white', fontWeight: '900', marginTop: 4, lineHeight: 18 },
+  profileStripLabels: { flexDirection: 'row', justifyContent: 'space-between', gap: 4, marginTop: 10 },
+  profileCheckpoint: { flex: 1, alignItems: 'center', minWidth: 0 },
+  profileDot: { width: 11, height: 11, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.36)', marginBottom: 5 },
   profilePoint: {
     width: 160,
     minHeight: 124,
