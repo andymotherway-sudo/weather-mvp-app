@@ -49,13 +49,7 @@ private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 
 class OmniWeatherCarAppService : CarAppService() {
   override fun createHostValidator(): HostValidator {
-    return if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-      HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
-    } else {
-      HostValidator.Builder(this)
-        .addAllowedHosts(androidx.car.app.R.array.hosts_allowlist_sample)
-        .build()
-    }
+    return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
   }
 
   override fun onCreateSession(sessionInfo: SessionInfo): Session {
@@ -87,11 +81,10 @@ private class CarWeatherRepository(private val context: Context) {
 
   fun load(force: Boolean = false, onDone: () -> Unit) {
     var shouldStart = false
-    var notifyNow = false
 
     synchronized(this) {
       if (loaded && !force) {
-        notifyNow = true
+        return
       } else {
         callbacks.add(onDone)
         if (!loading) {
@@ -102,10 +95,6 @@ private class CarWeatherRepository(private val context: Context) {
       }
     }
 
-    if (notifyNow) {
-      notify(onDone)
-      return
-    }
     if (!shouldStart) return
 
     thread(name = "omniwx-car-weather") {
@@ -143,7 +132,9 @@ private abstract class OmniWeatherBaseScreen(
   protected val repository: CarWeatherRepository
 ) : Screen(carContext) {
   protected fun ensureLoaded(force: Boolean = false) {
-    repository.load(force) { invalidate() }
+    if (force || (!repository.loaded && !repository.loading)) {
+      repository.load(force) { invalidate() }
+    }
   }
 
   protected fun refreshAction(): Action {
