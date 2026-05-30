@@ -155,8 +155,6 @@ const RADAR_PRODUCT_META: Record<
   },
 };
 
-const STORM_RADAR_PRODUCTS: RadarProductId[] = ['N0B', 'N0U', 'N0S'];
-
 type StationRadarProduct = {
   id: RadarProductId | string;
   label: string;
@@ -709,7 +707,6 @@ export default function MapsScreen() {
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [rawMode, setRawMode] = useState(false);
-  const [stormProduct, setStormProduct] = useState<RadarProductId>('N0B');
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
@@ -813,7 +810,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = state.viewId === 'storm' || state.radarTime.stormMode === true;
+  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const autoNearestRadarMode =
     radarEnabled &&
@@ -821,8 +818,8 @@ export default function MapsScreen() {
     !stormMode &&
     !manualStationRadarMode &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-  const stationRadarMode = manualStationRadarMode || autoNearestRadarMode;
-  const showAdvancedRadarControls = manualStationRadarMode;
+  const stationRadarMode = stormMode || manualStationRadarMode || autoNearestRadarMode;
+  const showAdvancedRadarControls = stormMode || manualStationRadarMode;
   const radarAnchor = useMemo(
     () => {
       if (manualStationRadarMode && stationAnchor) return stationAnchor;
@@ -857,13 +854,11 @@ export default function MapsScreen() {
     stationRadarMode,
     selectedRadarSite,
   ]);
-  const product: RadarProductId = manualStationRadarMode
+  const product: RadarProductId = showAdvancedRadarControls
     ? stationProduct
-    : stormMode
-      ? stormProduct
-      : stationRadarMode
-        ? 'N0B'
-        : 'N0Q';
+    : stationRadarMode
+      ? 'N0B'
+      : 'N0Q';
   const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
 
   useEffect(() => {
@@ -1551,7 +1546,7 @@ export default function MapsScreen() {
   );
 
   useEffect(() => {
-    if (!stationRadarMode || !selectedRadarSite || !selectedRadarId3) return;
+    if (!manualStationRadarMode || !selectedRadarSite || !selectedRadarId3) return;
     if (lastCenteredRadarSiteRef.current === selectedRadarId3) return;
 
     const nextRegion: Region = {
@@ -1572,11 +1567,11 @@ export default function MapsScreen() {
     requestAnimationFrame(() => {
       radarStationSeedRegionRef.current = null;
     });
-  }, [selectedRadarId3, selectedRadarSite, stationRadarMode]);
+  }, [manualStationRadarMode, selectedRadarId3, selectedRadarSite]);
 
   useEffect(() => {
-    if (!stationRadarMode) lastCenteredRadarSiteRef.current = null;
-  }, [stationRadarMode]);
+    if (!manualStationRadarMode) lastCenteredRadarSiteRef.current = null;
+  }, [manualStationRadarMode]);
 
   const warningsOverlayEnabled = alertsEnabled || stationRadarMode;
   const alertsData = useAlertMapData(warningsOverlayEnabled, effectiveRegion);
@@ -1657,26 +1652,6 @@ export default function MapsScreen() {
   const wildfireRestrictionStartDate = wildfireRestrictionCards[0]?.startDate ?? null;
   const wildfireRestrictionSourceUrl = wildfireRestrictionCards[0]?.url ?? wildfireFireContext.data?.restrictions?.source ?? null;
 
-  const pushSpecialMap = useCallback(
-    (pathname: '/astro-map' | '/nautical-map') => {
-      const currentRegion = effectiveRegion;
-
-      router.push({
-        pathname: pathname as any,
-        params: {
-          from: 'maps',
-          nav: String(Date.now()),
-          lat: String(currentRegion.latitude),
-          lon: String(currentRegion.longitude),
-          latDelta: String(currentRegion.latitudeDelta),
-          lonDelta: String(currentRegion.longitudeDelta),
-          zoom: String(Math.round(mapZoom * 10) / 10),
-        },
-      });
-    },
-    [router, effectiveRegion, mapZoom],
-  );
-
   const seedStationAnchorFromMap = useCallback(() => {
     const anchorRegion = region ?? effectiveRegion;
     const lat = Number(anchorRegion.latitude);
@@ -1692,7 +1667,7 @@ export default function MapsScreen() {
     locateRequestIdRef.current += 1;
     const cachedCoords = loc.state.currentCoords;
     if (cachedCoords && Number.isFinite(cachedCoords.lat) && Number.isFinite(cachedCoords.lon)) {
-      if (stationRadarMode) {
+      if (manualStationRadarMode) {
         setStationAnchor({ lat: cachedCoords.lat, lon: cachedCoords.lon });
         setManualRadarSiteId3(null);
         lastCenteredRadarSiteRef.current = null;
@@ -1767,7 +1742,7 @@ export default function MapsScreen() {
     ? activeLayerSummary.subtitle ?? simpleStatus
     : simpleStatus;
 
-  const providerLabel = stormMode ? 'Single-site radar' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const providerLabel = stormMode ? 'Storm Scope' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
   const radarProductLabel = stormMode ? radarProductMeta.summaryLabel : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
@@ -2676,7 +2651,7 @@ export default function MapsScreen() {
               {showAdvancedRadarControls && stationPanelCollapsed ? (
                 <View style={styles.stationCollapsedPanel}>
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.stationCollapsedEyebrow}>STATION RADAR</Text>
+                    <Text style={styles.stationCollapsedEyebrow}>STORM SCOPE</Text>
                     <Text style={styles.stationCollapsedTitle} numberOfLines={1}>
                       {selectedRadarSite
                         ? `${getStationDisplayId(selectedRadarSite)} - ${radarProductMeta.legendTitle}`
@@ -2691,7 +2666,7 @@ export default function MapsScreen() {
                             ? `${radarProductMeta.summaryLabel} unavailable`
                           : selectedRadarDistanceMi != null
                             ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
-                            : 'Latest station scan'}
+                            : 'Latest scan'}
                     </Text>
                   </View>
                   <Pressable
@@ -2708,7 +2683,7 @@ export default function MapsScreen() {
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
-                          label="Storm"
+                          label="Storm Scope"
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
@@ -2750,7 +2725,7 @@ export default function MapsScreen() {
                     <View style={styles.stationPanel}>
                       <View style={styles.stationHeader}>
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={styles.stationEyebrow}>NEXRAD SITE</Text>
+                          <Text style={styles.stationEyebrow}>STORM SCOPE</Text>
                           <Text style={styles.stationTitle} numberOfLines={1}>
                             {selectedRadarSite
                               ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
@@ -2778,49 +2753,6 @@ export default function MapsScreen() {
                           ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
                           : stationProductSourceLabel}
                       </Text>
-
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.stationPickerContent}
-                      >
-                        {autoNearestRadar?.site ? (
-                          <Pressable
-                            onPress={() => {
-                              setManualRadarSiteId3(null);
-                              lastCenteredRadarSiteRef.current = null;
-                              dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                            }}
-                            style={[
-                              styles.stationChip,
-                              styles.autoStationChip,
-                              manualRadarSiteId3 == null ? styles.stationChipActive : null,
-                            ]}
-                          >
-                            <Text style={styles.stationChipId}>Auto</Text>
-                            <Text style={styles.stationChipDistance}>{getStationDisplayId(autoNearestRadar.site)}</Text>
-                          </Pressable>
-                        ) : null}
-                        {nearbyRadarSites.map((item) => {
-                          const id3 = normalizeRadarSiteId(item.site.id);
-                          return (
-                            <Pressable
-                              key={id3}
-                              onPress={() => {
-                                setManualRadarSiteId3(id3);
-                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                              }}
-                              style={[
-                                styles.stationChip,
-                                selectedRadarId3 === id3 ? styles.stationChipActive : null,
-                              ]}
-                            >
-                              <Text style={styles.stationChipId}>{getStationDisplayId(item.site)}</Text>
-                              <Text style={styles.stationChipDistance}>{Math.round(item.distanceMi)} mi</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
 
                       <View style={styles.stationProductGrid}>
                         {STATION_RADAR_PRODUCTS.map((item) => {
@@ -2870,21 +2802,6 @@ export default function MapsScreen() {
                       </Pressable>
                     </View>
                   ) : null}
-              {stormMode ? (
-                <View style={styles.stormProductRow}>
-                  {STORM_RADAR_PRODUCTS.map((id) => (
-                    <MiniToggle
-                      key={id}
-                      label={RADAR_PRODUCT_META[id].chipLabel}
-                      active={product === id}
-                      onPress={() => {
-                        setStormProduct(id);
-                        dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                      }}
-                    />
-                  ))}
-                </View>
-              ) : null}
                 </>
               )}
             </Glass>
@@ -3293,7 +3210,7 @@ export default function MapsScreen() {
           onClose={() => setLayersSheetOpen(false)}
           state={state}
           nerdy={state.nerdy}
-          allowedGroups={['weather', 'fireAir', 'aviation']}
+          allowedGroups={['weather', 'fireAir', 'aviation', 'marine', 'astronomy']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
           onOpenSourceInfo={(layerId) => {
@@ -3308,11 +3225,11 @@ export default function MapsScreen() {
           }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);
-            pushSpecialMap('/astro-map');
+            dispatch({ type: 'SET_VIEW', viewId: 'astronomer' });
           }}
           onOpenNauticalMap={() => {
             setLayersSheetOpen(false);
-            pushSpecialMap('/nautical-map');
+            dispatch({ type: 'SET_VIEW', viewId: 'mariner' });
           }}
           onOpenAviationMap={() => {
             setLayersSheetOpen(false);
@@ -4419,12 +4336,6 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     fontWeight: '700',
     display: 'none',
-  },
-  stormProductRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
   },
   radarModeRow: {
     flexDirection: 'row',

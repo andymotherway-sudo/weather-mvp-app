@@ -116,12 +116,12 @@ export function LayerSheetModal(props: {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator
             >
-              <Section title="Special maps" subtitle="Switch between the standard weather map and focused map experiences">
+              <Section title="Map modes" subtitle="Switch between focused weather, flight, nautical, and sky views">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  <QuickCard title="Standard Map" subtitle="Weather radar" onPress={onOpenStandardMap} />
-                  <QuickCard title="Astronomy Map" subtitle="Sky conditions" onPress={onOpenAstroMap} />
-                  <QuickCard title="Nautical Map" subtitle="Marine view" onPress={onOpenNauticalMap} />
-                  <QuickCard title="Aviation Map" subtitle="Flight weather" onPress={onOpenAviationMap} />
+                  <QuickCard title="Weather Mode" subtitle="Radar and storms" onPress={onOpenStandardMap} />
+                  <QuickCard title="Aviation Mode" subtitle="Flight weather" onPress={onOpenAviationMap} />
+                  <QuickCard title="Nautical Mode" subtitle="Marine view" onPress={onOpenNauticalMap} />
+                  <QuickCard title="Astronomy Mode" subtitle="Sky conditions" onPress={onOpenAstroMap} />
                 </View>
               </Section>
 

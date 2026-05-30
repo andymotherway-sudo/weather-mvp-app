@@ -4,7 +4,7 @@ import type { MapViewDefinition } from './types';
 export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'radar',
-    title: 'Radar',
+    title: 'Weather',
     presetEnabledLayers: ['radar.reflectivity'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
@@ -44,7 +44,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
 
   {
     id: 'storm',
-    title: 'Storm',
+    title: 'Storm Scope',
     presetEnabledLayers: ['radar.reflectivity', 'wx.fronts.day1', 'lightning.strikes', 'alerts.polygons'],
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
@@ -70,7 +70,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
 
   {
     id: 'mariner',
-    title: 'Marine',
+    title: 'Nautical',
     presetEnabledLayers: [],
   },
 

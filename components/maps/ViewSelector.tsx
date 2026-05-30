@@ -6,7 +6,6 @@ import { MAP_VIEWS } from '../../app/lib/maps/views';
 
 const VIEW_SELECTOR_IDS: MapViewId[] = [
   'radar',
-  'wildfire',
   'aviation',
   'mariner',
   'astronomer',
