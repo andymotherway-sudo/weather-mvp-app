@@ -53,7 +53,7 @@ const WPC_FRONTS_EXPORT_URL =
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
-const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0S', 'EET', 'NET']);
+const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
 const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -178,7 +178,14 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   {
     id: 'N0U',
     label: 'Base Velocity',
-    subtitle: 'Radial wind',
+    subtitle: 'Radial wind latest',
+    enabled: true,
+    learnTopicId: 'radar-base-velocity',
+  },
+  {
+    id: 'N0Z',
+    label: 'Legacy Velocity',
+    subtitle: 'Radial wind latest',
     enabled: true,
     learnTopicId: 'radar-base-velocity',
   },
@@ -192,28 +199,28 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   {
     id: 'CC',
     label: 'Correlation Coef',
-    subtitle: 'Learn only for now',
+    subtitle: 'Live source needed',
     enabled: false,
     learnTopicId: 'radar-correlation-coefficient',
   },
   {
     id: 'ZDR',
     label: 'Differential Refl',
-    subtitle: 'Learn only for now',
+    subtitle: 'Live source needed',
     enabled: false,
     learnTopicId: 'radar-differential-reflectivity',
   },
   {
     id: 'EET',
     label: 'Echo Tops',
-    subtitle: 'Echo top height',
+    subtitle: 'Echo top height latest',
     enabled: true,
     learnTopicId: 'radar-echo-tops',
   },
   {
     id: 'VIL',
     label: 'VIL',
-    subtitle: 'Learn only for now',
+    subtitle: 'Live source needed',
     enabled: false,
     learnTopicId: 'radar-vil',
   },
@@ -1413,9 +1420,12 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
   const stationProductUnavailable = stationRadarMode && !stationProductLoading && frameCount <= 0;
+  const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
   const stationProductSourceLabel =
-    product === 'EET'
+    product === 'EET' || product === 'NET'
       ? 'echo tops mosaic'
+      : stationProductLatestOnly
+      ? 'single-site latest tile'
       : radarCtl.usingIemRidgeAnimated
         ? 'single-site RIDGE'
         : stationProductUnavailable
@@ -3207,7 +3217,7 @@ export default function MapsScreen() {
                                 styles.stationProductButton,
                                 active ? styles.stationProductButtonActive : null,
                                 active && (item.id === 'EET' || item.id === 'NET') ? styles.stationProductButtonEchoActive : null,
-                                active && (item.id === 'N0U' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
+                                active && (item.id === 'N0U' || item.id === 'N0Z' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
                                 loading ? styles.stationProductButtonLoading : null,
                                 !item.enabled ? styles.stationProductButtonDisabled : null,
                               ]}

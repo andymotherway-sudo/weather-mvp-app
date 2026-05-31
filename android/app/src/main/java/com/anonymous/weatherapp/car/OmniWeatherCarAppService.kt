@@ -173,11 +173,19 @@ private abstract class OmniWeatherBaseScreen(
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
   }
+
+  protected fun safeTemplate(title: String, block: () -> Template): Template {
+    return try {
+      block()
+    } catch (_: Throwable) {
+      safeErrorTemplate(title)
+    }
+  }
 }
 
 private class OmniWeatherHomeScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
-    try {
+    return safeTemplate("OMNIwx") {
       ensureLoaded()
       val current = repository.report
       val list = ItemList.Builder()
@@ -227,22 +235,21 @@ private class OmniWeatherHomeScreen(carContext: CarContext, repository: CarWeath
         list.addItem(Row.Builder().setTitle("Location unavailable").addText("Open OMNIwx once on your phone or allow location access.").build())
       }
 
-      return ListTemplate.Builder()
+      ListTemplate.Builder()
         .setSingleList(list.build())
         .setTitle(current?.let { "OMNIwx - ${it.placeName}" } ?: "OMNIwx")
         .setHeaderAction(Action.APP_ICON)
         .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
         .build()
-    } catch (_: Throwable) {
-      return safeErrorTemplate("OMNIwx")
     }
   }
 }
 
 private class OmniWeatherFiveDayScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
+    return safeTemplate("5-day Forecast") {
     ensureLoaded()
-    loadingOrErrorTemplate("5-day Forecast")?.let { return it }
+    loadingOrErrorTemplate("5-day Forecast")?.let { return@safeTemplate it }
     val current = repository.report!!
     val list = ItemList.Builder()
     current.daily.take(5).forEach { day ->
@@ -253,19 +260,21 @@ private class OmniWeatherFiveDayScreen(carContext: CarContext, repository: CarWe
         .build())
     }
     if (current.daily.isEmpty()) list.addItem(Row.Builder().setTitle("Forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    return ListTemplate.Builder()
+    ListTemplate.Builder()
       .setSingleList(list.build())
       .setTitle("5-day Forecast")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
+    }
   }
 }
 
 private class OmniWeatherHourlyScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
+    return safeTemplate("24-hour Forecast") {
     ensureLoaded()
-    loadingOrErrorTemplate("24-hour Forecast")?.let { return it }
+    loadingOrErrorTemplate("24-hour Forecast")?.let { return@safeTemplate it }
     val current = repository.report!!
     val list = ItemList.Builder()
     listOf(0, 3, 6, 9, 12, 18, 23).mapNotNull { current.hourly.getOrNull(it) }.forEach { hour ->
@@ -276,19 +285,21 @@ private class OmniWeatherHourlyScreen(carContext: CarContext, repository: CarWea
         .build())
     }
     if (current.hourly.isEmpty()) list.addItem(Row.Builder().setTitle("Hourly forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    return ListTemplate.Builder()
+    ListTemplate.Builder()
       .setSingleList(list.build())
       .setTitle("24-hour Forecast")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
+    }
   }
 }
 
 private class OmniWeatherAlertsScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
+    return safeTemplate("Alerts") {
     ensureLoaded()
-    loadingOrErrorTemplate("Alerts")?.let { return it }
+    loadingOrErrorTemplate("Alerts")?.let { return@safeTemplate it }
     val current = repository.report!!
     val pane = Pane.Builder()
     if (current.alertTitle != null) {
@@ -303,18 +314,20 @@ private class OmniWeatherAlertsScreen(carContext: CarContext, repository: CarWea
         .addText("No NWS alerts found for ${current.placeName}.")
         .build())
     }
-    return PaneTemplate.Builder(pane.build())
+    PaneTemplate.Builder(pane.build())
       .setTitle("Alerts")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
+    }
   }
 }
 
 private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
+    return safeTemplate("SkyScore") {
     ensureLoaded()
-    loadingOrErrorTemplate("SkyScore")?.let { return it }
+    loadingOrErrorTemplate("SkyScore")?.let { return@safeTemplate it }
     val current = repository.report!!
     val sky = current.skyScore ?: placeholderSkyScoreFromWeather(current)
     val pane = Pane.Builder()
@@ -322,18 +335,20 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
       .addRow(Row.Builder().setTitle("Why").addText(sky.summary ?: "Based on cloud cover, visibility, and current weather.").build())
       .addRow(Row.Builder().setTitle("Driver-safe note").addText("Open OMNIwx on phone for the full astronomy map.").build())
       .build()
-    return PaneTemplate.Builder(pane)
+    PaneTemplate.Builder(pane)
       .setTitle("SkyScore")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
+    }
   }
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
+    return safeTemplate("Nearby Weather") {
     ensureLoaded()
-    loadingOrErrorTemplate("Nearby Weather")?.let { return it }
+    loadingOrErrorTemplate("Nearby Weather")?.let { return@safeTemplate it }
     val current = repository.report!!
     val list = ItemList.Builder()
       .addItem(Row.Builder().setTitle("Current Location").addText("${current.temperatureF.roundLabel()}F - ${weatherCodeLabel(current.weatherCode)}").build())
@@ -342,12 +357,13 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .addItem(Row.Builder().setTitle("SkyScore").addText("${current.skyScore?.score ?: "--"} ${current.skyScore?.label ?: "Pending"}").build())
       .addItem(Row.Builder().setTitle("Forecast Area").addText("5-day and 24-hour forecast").build())
       .build()
-    return ListTemplate.Builder()
+    ListTemplate.Builder()
       .setSingleList(list)
       .setTitle("Nearby Weather")
       .setHeaderAction(Action.BACK)
       .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
       .build()
+    }
   }
 }
 

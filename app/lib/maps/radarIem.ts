@@ -16,6 +16,12 @@ export type RadarFrameUnified = {
   radarId3?: string;
 };
 
+type RidgeProductResult = {
+  tsList: string[];
+  product: RadarProductId;
+  latestOnly?: boolean;
+};
+
 type ResolveFramesOpts = {
   zoom: number;
   product: RadarProductId;
@@ -60,6 +66,16 @@ function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: str
   const layer = `ridge::${radarId3}-${product}-${ts}`;
   // Try forcing transparent background (common IEM param pattern)
   return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png?alpha=1`;
+}
+
+function canonicalRidgeProduct(product: RadarProductId): RadarProductId {
+  // IEM's live latest-tile path renders NET for echo tops; EET returned upstream
+  // errors in current product probes.
+  return product === 'EET' ? 'NET' : product;
+}
+
+function supportsLatestRidgeTile(product: RadarProductId) {
+  return ['N0Q', 'N0B', 'N0Z', 'N0U', 'N0S'].includes(product);
 }
 
 export function normalizeRadarSiteId(siteId: string) {
@@ -254,7 +270,7 @@ async function fetchRidgeWithProductFallback(args: {
   radarId3: string;
   preferred: RadarProductId;
   lookbackMinutes: number;
-}) {
+}): Promise<RidgeProductResult> {
   const { radarId3, preferred, lookbackMinutes } = args;
 
   const order: RadarProductId[] =
@@ -267,14 +283,20 @@ async function fetchRidgeWithProductFallback(args: {
           : preferred === 'N0S'
             ? ['N0S']
           : preferred === 'EET'
-            ? ['EET']
+            ? ['NET']
             : preferred === 'NET'
               ? ['NET']
               : ['N0Z', 'N0Q', 'N0B'];
 
   for (const p of order) {
-    const tsList = await fetchIemRidgeScanList({ radarId3, product: p, lookbackMinutes });
-    if (tsList.length) return { tsList, product: p };
+    const product = canonicalRidgeProduct(p);
+    const tsList = await fetchIemRidgeScanList({ radarId3, product, lookbackMinutes });
+    if (tsList.length) return { tsList, product };
+  }
+
+  const latestProduct = canonicalRidgeProduct(preferred);
+  if (supportsLatestRidgeTile(latestProduct)) {
+    return { tsList: ['0'], product: latestProduct, latestOnly: true };
   }
   return { tsList: [] as string[], product: preferred };
 }
@@ -421,10 +443,11 @@ export async function resolveIemFrames(args: {
     }
 
     const keep = best.tsList.slice(Math.max(0, best.tsList.length - maxFrames));
+    const latestOnlyIso = new Date().toISOString();
 
     const ridgeFrames: RadarFrameUnified[] = keep
       .map((ts) => {
-        const iso = iemTsToIso(ts);
+        const iso = ts === '0' ? latestOnlyIso : iemTsToIso(ts);
         if (!iso) return null;
         return {
           iso,
@@ -433,7 +456,7 @@ export async function resolveIemFrames(args: {
           template: iemRidgeTileTemplate(best.radarId3, best.ridgeProduct, ts),
           maxZ: RIDGE_MAX_Z,
           radarId3: best.radarId3,
-          label: `RIDGE ${best.radarId3} ${best.ridgeProduct} ${ts}`,
+          label: ts === '0' ? `RIDGE ${best.radarId3} ${best.ridgeProduct} latest` : `RIDGE ${best.radarId3} ${best.ridgeProduct} ${ts}`,
         } satisfies RadarFrameUnified;
       })
       .filter(Boolean) as RadarFrameUnified[];

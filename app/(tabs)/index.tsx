@@ -25,6 +25,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
@@ -2271,6 +2272,14 @@ function formatRecordPrecip(value: number | null | undefined) {
   return `${value.toFixed(2)} in`;
 }
 
+function formatRecordYears(years: number[] | null | undefined) {
+  if (!Array.isArray(years) || !years.length) return 'Year —';
+  const clean = years.filter((year) => Number.isFinite(year)).sort((a, b) => b - a);
+  if (!clean.length) return 'Year —';
+  if (clean.length === 1) return `Year ${clean[0]}`;
+  return `Years ${clean.slice(0, 2).join(', ')}${clean.length > 2 ? ` +${clean.length - 2}` : ''}`;
+}
+
 function SimpleDailyOverview({
   tempF,
   condition,
@@ -2362,9 +2371,9 @@ function SimpleDailyOverview({
       ? Math.max(0, Math.min(100, ((tempF - todayLo) / (todayHi - todayLo)) * 100))
       : 50;
   const almanacItems = [
-    { label: 'Record high', value: formatRecordTemp(almanacRecord?.recordHighF) },
-    { label: 'Record low', value: formatRecordTemp(almanacRecord?.recordLowF) },
-    { label: 'Record precip', value: formatRecordPrecip(almanacRecord?.recordPrecipIn) },
+    { label: 'Record high', value: formatRecordTemp(almanacRecord?.recordHighF), meta: formatRecordYears(almanacRecord?.recordHighYears) },
+    { label: 'Record low', value: formatRecordTemp(almanacRecord?.recordLowF), meta: formatRecordYears(almanacRecord?.recordLowYears) },
+    { label: 'Record precip', value: formatRecordPrecip(almanacRecord?.recordPrecipIn), meta: formatRecordYears(almanacRecord?.recordPrecipYears) },
   ];
   const todayNarrative = [
     todayCondition,
@@ -2389,7 +2398,7 @@ function SimpleDailyOverview({
   return (
     <View style={styles.dailySimpleWrap}>
       <View style={[styles.dailyCurrentCard, styles.dailyRangeCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
-        <Text style={styles.dailyPanelEyebrow}>Now / High / Low</Text>
+        <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
@@ -2413,10 +2422,6 @@ function SimpleDailyOverview({
 
         <View style={styles.dailyRangeStats}>
           <View style={styles.dailyRangeStat}>
-            <Text style={styles.dailyRangeStatLabel}>Now</Text>
-            <Text style={styles.dailyRangeStatValue}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
-          </View>
-          <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>High</Text>
             <Text style={styles.dailyRangeStatValue}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
           </View>
@@ -2433,7 +2438,12 @@ function SimpleDailyOverview({
             <Text style={styles.dailyTempRangeEndpoint}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
           </View>
           <View style={styles.dailyTempRangeTrack}>
-            <View style={styles.dailyTempRangeFill} />
+            <LinearGradient
+              colors={['rgba(72, 160, 255, 0.82)', 'rgba(255, 205, 92, 0.78)', 'rgba(255, 86, 86, 0.84)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.dailyTempRangeFill}
+            />
             <View style={[styles.dailyTempRangeMarker, { left: `${currentMarkerPct}%` }]}>
               <View style={styles.dailyTempRangeMarkerDot} />
             </View>
@@ -2445,6 +2455,7 @@ function SimpleDailyOverview({
             <View key={item.label} style={styles.dailyAlmanacCell}>
               <Text style={styles.dailyAlmanacLabel}>{item.label}</Text>
               <Text style={styles.dailyAlmanacValue}>{item.value}</Text>
+              <Text style={styles.dailyAlmanacMeta}>{item.meta}</Text>
             </View>
           ))}
         </View>
@@ -2898,6 +2909,9 @@ function NerdyDeepDive({
   moonPhaseDegrees,
   moonPhaseLabel,
   dayLengthSec,
+  todayHighF,
+  todayLowF,
+  almanacRecord,
   feelsDriverLabel,
   feelsDriverValue,
   onOpenLearnTopic,
@@ -2945,6 +2959,9 @@ function NerdyDeepDive({
   moonPhaseDegrees?: number | null;
   moonPhaseLabel?: string | null;
   dayLengthSec?: number | null;
+  todayHighF?: number | null;
+  todayLowF?: number | null;
+  almanacRecord?: AlmanacDailyRecord | null;
   pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
@@ -2966,6 +2983,44 @@ function NerdyDeepDive({
     : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
   const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
+  const todayRangePct =
+    todayHighF != null && todayLowF != null && tempF != null && todayHighF !== todayLowF
+      ? Math.max(0, Math.min(100, ((tempF - todayLowF) / (todayHighF - todayLowF)) * 100))
+      : null;
+  const recordHighDelta =
+    almanacRecord?.recordHighF != null && tempF != null ? almanacRecord.recordHighF - tempF : null;
+  const recordLowDelta =
+    almanacRecord?.recordLowF != null && tempF != null ? tempF - almanacRecord.recordLowF : null;
+  const rangePositionLabel =
+    todayRangePct == null
+      ? 'Range position pending'
+      : todayRangePct >= 80
+        ? 'Near today\'s high'
+        : todayRangePct <= 20
+          ? 'Near today\'s low'
+          : 'Between today\'s endpoints';
+  const climateCards = [
+    {
+      label: 'Today Range',
+      value: todayHighF != null && todayLowF != null ? `${Math.round(todayLowF)}°-${Math.round(todayHighF)}°` : '—',
+      hint: todayRangePct != null ? `${Math.round(todayRangePct)}% through range` : rangePositionLabel,
+    },
+    {
+      label: 'Record High',
+      value: formatRecordTemp(almanacRecord?.recordHighF),
+      hint: recordHighDelta != null ? `${Math.max(0, Math.round(recordHighDelta))}° below record` : formatRecordYears(almanacRecord?.recordHighYears),
+    },
+    {
+      label: 'Record Low',
+      value: formatRecordTemp(almanacRecord?.recordLowF),
+      hint: recordLowDelta != null ? `${Math.max(0, Math.round(recordLowDelta))}° above record` : formatRecordYears(almanacRecord?.recordLowYears),
+    },
+    {
+      label: 'Record Precip',
+      value: formatRecordPrecip(almanacRecord?.recordPrecipIn),
+      hint: formatRecordYears(almanacRecord?.recordPrecipYears),
+    },
+  ];
   const sunMoments = [
     { label: 'Dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
     { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
@@ -3012,6 +3067,49 @@ function NerdyDeepDive({
           {quickChips.map((chip) => (
             <View key={chip} style={nd.chip}>
               <Text style={nd.chipText}>{chip}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={nd.climatePanel}>
+        <View style={nd.climateHeader}>
+          <View>
+            <Text style={nd.panelTitle}>Climatology Context</Text>
+            <Text style={nd.climateSubtitle}>{rangePositionLabel}</Text>
+          </View>
+          <View style={nd.climateBadge}>
+            <Text style={nd.climateBadgeText}>30 yr</Text>
+          </View>
+        </View>
+
+        <View style={nd.climateRangeBlock}>
+          <View style={nd.climateRangeLabels}>
+            <Text style={nd.climateRangeEndpoint}>{todayLowF != null ? `${Math.round(todayLowF)}°` : '—'}</Text>
+            <Text style={nd.climateRangeCurrent}>{tempF != null ? `${Math.round(tempF)}° now` : 'Current —'}</Text>
+            <Text style={nd.climateRangeEndpoint}>{todayHighF != null ? `${Math.round(todayHighF)}°` : '—'}</Text>
+          </View>
+          <View style={nd.climateRangeTrack}>
+            <LinearGradient
+              colors={['rgba(72, 160, 255, 0.82)', 'rgba(255, 205, 92, 0.78)', 'rgba(255, 86, 86, 0.84)']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={nd.climateRangeFill}
+            />
+            {todayRangePct != null ? (
+              <View style={[nd.climateRangeMarker, { left: `${todayRangePct}%` }]}>
+                <View style={nd.climateRangeMarkerDot} />
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={nd.climateCardGrid}>
+          {climateCards.map((card) => (
+            <View key={card.label} style={nd.climateCard}>
+              <Text style={nd.metricLabel}>{card.label}</Text>
+              <Text style={nd.climateCardValue}>{card.value}</Text>
+              <Text style={nd.metricHint}>{card.hint}</Text>
             </View>
           ))}
         </View>
@@ -3273,6 +3371,115 @@ const nd = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.88)',
+  },
+  climatePanel: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    gap: 12,
+  },
+  climateHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  climateSubtitle: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.68)',
+  },
+  climateBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  climateBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  climateRangeBlock: {
+    gap: 8,
+  },
+  climateRangeLabels: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  climateRangeEndpoint: {
+    width: 56,
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  climateRangeCurrent: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.86)',
+  },
+  climateRangeTrack: {
+    height: 11,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'visible',
+  },
+  climateRangeFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+  },
+  climateRangeMarker: {
+    position: 'absolute',
+    top: -5,
+    width: 21,
+    height: 21,
+    marginLeft: -10.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  climateRangeMarkerDot: {
+    width: 13,
+    height: 13,
+    borderRadius: 999,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'rgba(64, 156, 255, 0.9)',
+  },
+  climateCardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  climateCard: {
+    flexBasis: '48%',
+    flexGrow: 1,
+    minHeight: 82,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  climateCardValue: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '900',
+    color: 'white',
   },
   panelGrid: { gap: 10 },
   section: { gap: 10 },
@@ -4069,6 +4276,25 @@ function LandWeatherWithCoords({
           moonPhaseDegrees={safeNum(todayMoonDay?.moonPhaseDegrees)}
           moonPhaseLabel={typeof todayMoonDay?.moonPhaseLabel === 'string' ? todayMoonDay.moonPhaseLabel : null}
           dayLengthSec={todayDayLengthSec}
+          todayHighF={
+            safeNum(
+              (todayDaily as any)?.tempMaxF ??
+                (todayDaily as any)?.temperatureMaxF ??
+                (todayDaily as any)?.temperature_2m_max ??
+                (todayDaily as any)?.maxTempF ??
+                (todayDaily as any)?.highF
+            ) ?? null
+          }
+          todayLowF={
+            safeNum(
+              (todayDaily as any)?.tempMinF ??
+                (todayDaily as any)?.temperatureMinF ??
+                (todayDaily as any)?.temperature_2m_min ??
+                (todayDaily as any)?.minTempF ??
+                (todayDaily as any)?.lowF
+            ) ?? null
+          }
+          almanacRecord={todayAlmanacRecord}
           feelsDriverLabel={feelsDriver.label}
           feelsDriverValue={feelsDriver.value}
           onOpenLearnTopic={openLearnTopic}
@@ -4903,7 +5129,6 @@ const styles = StyleSheet.create({
   dailyTempRangeFill: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
-    backgroundColor: 'rgba(120, 190, 255, 0.50)',
   },
   dailyTempRangeMarker: {
     position: 'absolute',
@@ -4948,6 +5173,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     color: 'white',
+  },
+  dailyAlmanacMeta: {
+    marginTop: 3,
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.56)',
   },
   dailyCurrentMetricRow: {
     flexDirection: 'row',
