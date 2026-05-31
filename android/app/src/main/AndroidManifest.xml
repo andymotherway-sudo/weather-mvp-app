@@ -41,5 +41,23 @@
         <category android:name="androidx.car.app.category.WEATHER"/>
       </intent-filter>
     </service>
+    <receiver android:name=".widget.OmniwxCurrentWidgetProvider" android:exported="false" android:label="OMNIwx Current">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_current_info"/>
+    </receiver>
+    <receiver android:name=".widget.OmniwxSkyScoreWidgetProvider" android:exported="false" android:label="OMNIwx SkyScore">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_sky_score_info"/>
+    </receiver>
+    <receiver android:name=".widget.OmniwxAviationWidgetProvider" android:exported="false" android:label="OMNIwx Aviation">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_aviation_info"/>
+    </receiver>
   </application>
 </manifest>
