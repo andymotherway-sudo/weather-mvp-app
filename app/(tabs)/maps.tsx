@@ -74,6 +74,11 @@ type WildfireIncidentDetails = {
   longitude?: number | null;
 };
 
+type SelectedMarineFeature =
+  | { kind: 'buoy'; id: string }
+  | { kind: 'zone'; id: string }
+  | null;
+
 const RADAR_PRODUCT_META: Record<
   RadarProductId,
   {
@@ -730,6 +735,25 @@ function formatMapTemp(temp: number | null) {
   return temp == null ? '--' : `${Math.round(temp)}°`;
 }
 
+function formatMarineWaterTemp(valueC: number | undefined, unit: 'F' | 'C') {
+  if (!Number.isFinite(valueC)) return '--';
+  const c = Number(valueC);
+  if (unit === 'C') return `${Math.round(c)} C`;
+  return `${Math.round((c * 9) / 5 + 32)} F`;
+}
+
+function formatMarineUpdated(value?: string | null) {
+  if (!value) return 'Latest report';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Latest report';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 async function fetchFavoriteTemperature(
   place: FavoriteLocation,
   unit: 'F' | 'C',
@@ -886,6 +910,7 @@ export default function MapsScreen() {
     focus?: string;
     source?: string;
     targetType?: string;
+    buoyId?: string;
   }>();
   const router = useRouter();
   const isFocused = useIsFocused();
@@ -921,6 +946,7 @@ export default function MapsScreen() {
   const radarPrefsHydratedRef = useRef(false);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
+  const [selectedMarineFeature, setSelectedMarineFeature] = useState<SelectedMarineFeature>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
@@ -1750,8 +1776,32 @@ export default function MapsScreen() {
     marineZones,
     mapZoom,
   ]);
+  const marineBuoys = useMemo(() => (buoyData ?? []).filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon)), [
+    buoyData,
+  ]);
+  const marineZonesById = useMemo(() => new Map(visibleMarineZones.map((zone) => [zone.id, zone])), [visibleMarineZones]);
+  const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
   const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
-  const marineBuoysFc = useMemo(() => buoysToFeatureCollection(buoyData ?? []), [buoyData]);
+  const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
+  const selectedMarineBuoy =
+    selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
+  const selectedMarineZone =
+    selectedMarineFeature?.kind === 'zone' ? marineZonesById.get(selectedMarineFeature.id) ?? null : null;
+
+  useEffect(() => {
+    if (!marineConditionsEnabled) setSelectedMarineFeature(null);
+  }, [marineConditionsEnabled]);
+
+  useEffect(() => {
+    const targetBuoyId = params?.buoyId ? String(params.buoyId).toUpperCase() : '';
+    if (!targetBuoyId || !marineBuoys.length) return;
+
+    const match = marineBuoys.find((buoy) => buoy.id.toUpperCase() === targetBuoyId);
+    if (!match) return;
+
+    setSelectedMarineFeature({ kind: 'buoy', id: match.id });
+  }, [marineBuoys, params?.buoyId]);
+
   const skyOverlayAnchor = useMemo(() => {
     if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
       return { lat: Number(activePlace.lat), lon: Number(activePlace.lon) };
@@ -2339,7 +2389,15 @@ export default function MapsScreen() {
 
           {marineConditionsEnabled ? (
             <>
-              <MapLibreGL.ShapeSource id="marine-zones-source" shape={marineZonesFc as any}>
+              <MapLibreGL.ShapeSource
+                id="marine-zones-source"
+                shape={marineZonesFc as any}
+                onPress={(e: any) => {
+                  const feature = e?.features?.[0];
+                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
+                  if (id) setSelectedMarineFeature({ kind: 'zone', id });
+                }}
+              >
                 <MapLibreGL.FillLayer
                   id="marine-zones-fill"
                   style={{
@@ -2376,6 +2434,25 @@ export default function MapsScreen() {
                 cluster
                 clusterRadius={44}
                 clusterMaxZoomLevel={8}
+                onPress={(e: any) => {
+                  const feature = e?.features?.[0];
+                  const props = feature?.properties ?? {};
+                  const id = String(props.id ?? feature?.id ?? '');
+
+                  if (props?.cluster) {
+                    const coords = feature?.geometry?.coordinates;
+                    if (Array.isArray(coords) && coords.length >= 2) {
+                      mapCameraRef.current?.setCamera?.({
+                        centerCoordinate: [Number(coords[0]), Number(coords[1])],
+                        zoomLevel: clampNumber((mapZoom ?? 5) + 2, 1, 20),
+                        animationDuration: 450,
+                      });
+                    }
+                    return;
+                  }
+
+                  if (id) setSelectedMarineFeature({ kind: 'buoy', id });
+                }}
               >
                 <MapLibreGL.CircleLayer
                   id="marine-buoy-clusters"
@@ -3683,6 +3760,124 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
+        {marineConditionsEnabled && (selectedMarineBuoy || selectedMarineZone) ? (
+          <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
+            <Glass style={styles.alertDetailCard}>
+              <View style={styles.fireDetailHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.marineDetailEyebrow}>
+                    {selectedMarineBuoy ? 'MARINE BUOY' : 'MARINE ZONE'}
+                  </Text>
+                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
+                    {selectedMarineBuoy?.name ?? selectedMarineZone?.name ?? selectedMarineFeature?.id}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelectedMarineFeature(null)} style={styles.fireDetailClose}>
+                  <Text style={styles.fireDetailCloseText}>Close</Text>
+                </Pressable>
+              </View>
+
+              {selectedMarineBuoy ? (
+                <>
+                  <View style={styles.fireDetailPills}>
+                    <HudBadge label={selectedMarineBuoy.id} strong />
+                    {selectedMarineBuoy.waveHeightM != null ? (
+                      <HudBadge label={`${Math.round(selectedMarineBuoy.waveHeightM * 3.28084)} ft waves`} />
+                    ) : null}
+                    {selectedMarineBuoy.windSpeedKts != null ? (
+                      <HudBadge label={`${Math.round(selectedMarineBuoy.windSpeedKts)} kt wind`} />
+                    ) : null}
+                  </View>
+
+                  <Text style={styles.fireDetailMeta}>{formatMarineUpdated(selectedMarineBuoy.updatedAt)}</Text>
+
+                  <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Wind / gust</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedMarineBuoy.windSpeedKts != null
+                          ? `${Math.round(selectedMarineBuoy.windSpeedKts)} kt${
+                              selectedMarineBuoy.windGustKts != null ? ` / ${Math.round(selectedMarineBuoy.windGustKts)} kt` : ''
+                            }`
+                          : 'Unavailable'}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Water temp</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {formatMarineWaterTemp(selectedMarineBuoy.waterTempC, tempUnit)}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Position</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedMarineBuoy.lat.toFixed(2)}, {selectedMarineBuoy.lon.toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.marineDetailActionRow}>
+                    <Pressable
+                      style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/buoy/[buoyId]',
+                          params: {
+                            buoyId: selectedMarineBuoy.id,
+                            name: selectedMarineBuoy.name ?? selectedMarineBuoy.id,
+                          },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.fireDetailCloseText}>Open buoy</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : selectedMarineZone ? (
+                <>
+                  <View style={styles.fireDetailPills}>
+                    <HudBadge label={selectedMarineZone.id} strong />
+                    {selectedMarineZone.wfo ? <HudBadge label={`WFO ${selectedMarineZone.wfo}`} /> : null}
+                  </View>
+
+                  <Text style={styles.fireDetailMeta}>
+                    Tap Forecast to open the existing zone forecast detail for this marine polygon.
+                  </Text>
+
+                  <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Zone</Text>
+                      <Text style={styles.fireDetailValue}>{selectedMarineZone.id}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Office</Text>
+                      <Text style={styles.fireDetailValue}>{selectedMarineZone.wfo ?? 'NWS marine'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.marineDetailActionRow}>
+                    <Pressable
+                      style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/nautical/zone/[zoneId]',
+                          params: {
+                            zoneId: selectedMarineZone.id,
+                            name: selectedMarineZone.name,
+                            wfo: selectedMarineZone.wfo ?? '',
+                          },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.fireDetailCloseText}>Forecast</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
+            </Glass>
+          </View>
+        ) : null}
+
         {selectedWeatherAlert ? (
           <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
             <Glass style={styles.alertDetailCard}>
@@ -3751,7 +3946,7 @@ export default function MapsScreen() {
           onClose={() => setLayersSheetOpen(false)}
           state={state}
           nerdy={state.nerdy}
-          allowedGroups={['weather', 'fireAir', 'aviation', 'marine', 'astronomy']}
+          allowedGroups={['weather', 'fireAir', 'marine']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
           onOpenSourceInfo={(layerId) => {
@@ -5368,6 +5563,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.8,
   },
+  marineDetailEyebrow: {
+    color: 'rgba(125,211,252,0.92)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
   fireDetailTitle: {
     color: 'white',
     fontSize: 18,
@@ -5421,6 +5622,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flex: 1,
     textAlign: 'right',
+  },
+  marineDetailActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 12,
+  },
+  marineDetailPrimary: {
+    backgroundColor: 'rgba(14,165,233,0.22)',
+    borderColor: 'rgba(125,211,252,0.36)',
   },
   alertInstruction: {
     color: 'rgba(255,255,255,0.78)',

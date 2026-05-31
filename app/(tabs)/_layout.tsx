@@ -169,7 +169,6 @@ export default function TabsLayout() {
 
       <Tabs.Screen name="mariner" options={{ href: null }} />
       <Tabs.Screen name="astronomer" options={{ href: null }} />
-      <Tabs.Screen name="nautical-map" options={{ href: null }} />
       <Tabs.Screen name="aviation-map" options={{ href: null, unmountOnBlur: true } as any} />
       <Tabs.Screen name="astro-map" options={{ href: null, unmountOnBlur: true } as any} />
     </Tabs>

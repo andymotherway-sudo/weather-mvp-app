@@ -5,7 +5,7 @@ export type MapDestination = {
   id: MapDestinationId;
   title: string;
   subtitle: string;
-  route: '/maps' | '/astro-map' | '/nautical-map';
+  route: '/maps' | '/astro-map';
   available?: boolean;
 };
 
@@ -26,9 +26,9 @@ export const MAP_DESTINATIONS: ReadonlyArray<MapDestination> = [
   },
   {
     id: 'nautical',
-    title: 'Nautical Map',
+    title: 'Nautical Mode',
     subtitle: 'Buoys, marine zones, offshore conditions',
-    route: '/nautical-map',
+    route: '/maps',
     available: true,
   },
 ] as const;

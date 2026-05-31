@@ -64,7 +64,8 @@ data class WidgetMetar(
 
 object OmniwxWidgetData {
   fun openIntent(context: Context, route: String): PendingIntent {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("weatherapp://omniwx$route"), context, MainActivity::class.java).apply {
+    val cleanRoute = if (route.startsWith("/")) route else "/$route"
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("weatherapp://$cleanRoute"), context, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
       setPackage(context.packageName)
     }

@@ -39,13 +39,18 @@ const LAND_EXTREMES_WORKER_URL = `${API_BASE}/land-extremes`;
 type Severity = 'calm' | 'moderate' | 'rough' | 'extreme';
 type Mode = 'marine' | 'land' | 'space';
 
-function pushBuoyToNauticalMap(router: ReturnType<typeof useRouter>, b: BuoyDetailData) {
+function pushBuoyToMarineMap(router: ReturnType<typeof useRouter>, b: BuoyDetailData) {
   router.push({
-    pathname: '/(tabs)/nautical-map',
+    pathname: '/maps',
     params: {
+      view: 'mariner',
+      focus: 'once',
       buoyId: b.id,
       lat: String(b.lat),
       lon: String(b.lon),
+      label: b.name ?? b.id,
+      source: 'extremes',
+      targetType: 'marine-buoy',
     },
   });
 }
@@ -471,7 +476,7 @@ function MarineSection({
         return (
           <Pressable
             key={b.id}
-            onPress={() => pushBuoyToNauticalMap(router, b)}
+            onPress={() => pushBuoyToMarineMap(router, b)}
             style={({ pressed }) => [styles.row, pressed && { backgroundColor: '#020617' }]}
           >
             <View style={styles.rankCircle}>
@@ -669,7 +674,7 @@ export default function ExtremesScreen() {
             subtitle={topWave ? (topWave.name ?? topWave.id) : '—'}
             primaryText={topWave?.waveHeightM != null ? `${(topWave.waveHeightM * 3.28084).toFixed(1)} ft` : '—'}
             metaText={topWave?.updatedAt ? formatUpdatedAt(topWave.updatedAt) : null}
-            onPress={topWave ? () => pushBuoyToNauticalMap(router, topWave) : undefined}
+            onPress={topWave ? () => pushBuoyToMarineMap(router, topWave) : undefined}
             rightPill={
               topWave ? <SeverityPill severity={getSeverity(topWave.waveHeightM ?? null, topWave.windSpeedKts ?? null)} /> : null
             }
@@ -680,7 +685,7 @@ export default function ExtremesScreen() {
             subtitle={topWind ? (topWind.name ?? topWind.id) : '—'}
             primaryText={topWind?.windSpeedKts != null ? `${topWind.windSpeedKts.toFixed(0)} kt` : '—'}
             metaText={topWind?.updatedAt ? formatUpdatedAt(topWind.updatedAt) : null}
-            onPress={topWind ? () => pushBuoyToNauticalMap(router, topWind) : undefined}
+            onPress={topWind ? () => pushBuoyToMarineMap(router, topWind) : undefined}
             rightPill={
               topWind ? <SeverityPill severity={getSeverity(topWind.waveHeightM ?? null, topWind.windSpeedKts ?? null)} /> : null
             }
