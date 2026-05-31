@@ -3960,7 +3960,19 @@ function wildfireFeatureToIncidentDetails(
 }
 
 function normalizedFireNameKey(name: string) {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\b(co rd|county rd|cr)\b/g, 'county road')
+    .replace(/\b(rd|rd\.)\b/g, 'road')
+    .replace(/\b(hwy|hwy\.)\b/g, 'highway')
+    .replace(/\b(mt|mt\.)\b/g, 'mount')
+    .replace(/\b(st|st\.)\b/g, 'street')
+    .replace(/\b(fire|wildfire|incident)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function wildfireFeatureUpdatedMs(props: any) {

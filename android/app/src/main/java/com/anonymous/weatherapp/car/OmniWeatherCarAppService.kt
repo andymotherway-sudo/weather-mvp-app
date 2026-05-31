@@ -16,7 +16,6 @@ import androidx.car.app.Session
 import androidx.car.app.SessionInfo
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
-import androidx.car.app.model.CarColor
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Pane
@@ -134,7 +133,6 @@ private abstract class OmniWeatherBaseScreen(
   protected fun refreshAction(): Action {
     return Action.Builder()
       .setTitle("Refresh")
-      .setBackgroundColor(CarColor.BLUE)
       .setOnClickListener {
         repository.load(force = true) { invalidate() }
         invalidate()
@@ -188,55 +186,33 @@ private class OmniWeatherHomeScreen(carContext: CarContext, repository: CarWeath
     return safeTemplate("OMNIwx") {
       ensureLoaded()
       val current = repository.report
-      val list = ItemList.Builder()
+      val pane = Pane.Builder()
 
       if (current != null) {
-        list.addItem(Row.Builder()
+        pane.addRow(Row.Builder()
           .setTitle("Current")
           .addText("${current.temperatureF.roundLabel()}F - ${weatherCodeLabel(current.weatherCode)} - feels ${current.feelsLikeF.roundLabel()}F")
           .addText("Wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph - precip ${current.precipChancePct.roundLabel()}%")
-          .setOnClickListener { repository.load(force = true) { invalidate() } }
           .build())
-        list.addItem(Row.Builder()
-          .setTitle("SkyScore")
-          .addText("${current.skyScore?.score ?: "--"} ${current.skyScore?.label ?: "Pending"}")
-          .addText(current.skyScore?.bestWindow?.let { "Best $it" } ?: "Open sky details")
-          .setOnClickListener { screenManager.push(OmniWeatherSkyScoreScreen(carContext, repository)) }
-          .build())
-        list.addItem(Row.Builder()
+        pane.addRow(Row.Builder()
           .setTitle("Alerts")
           .addText(current.alertTitle ?: "No active alerts")
           .addText(current.alertSubtitle ?: "No NWS alerts found near ${current.placeName}.")
-          .setOnClickListener { screenManager.push(OmniWeatherAlertsScreen(carContext, repository)) }
           .build())
-        list.addItem(Row.Builder()
-          .setTitle("Forecast")
-          .addText(current.forecastHomeSummary())
-          .addText("5-day outlook")
-          .setOnClickListener { screenManager.push(OmniWeatherFiveDayScreen(carContext, repository)) }
-          .build())
-        list.addItem(Row.Builder()
-          .setTitle("Next 24 hours")
-          .addText(current.hourlyHomeSummary())
-          .addText(current.hourlyTrendSummary())
-          .setOnClickListener { screenManager.push(OmniWeatherHourlyScreen(carContext, repository)) }
-          .build())
-        list.addItem(Row.Builder()
+        pane.addRow(Row.Builder()
           .setTitle("Nearby radar")
           .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
           .addText("Driver-safe weather summary")
-          .setOnClickListener { screenManager.push(OmniWeatherMapScreen(carContext, repository)) }
           .build())
       } else if (repository.loading) {
-        list.addItem(Row.Builder().setTitle("Loading weather").addText("Connecting to your OMNIwx location.").build())
+        pane.addRow(Row.Builder().setTitle("Loading weather").addText("Connecting to your OMNIwx location.").build())
       } else if (repository.error != null) {
-        list.addItem(Row.Builder().setTitle("Weather is still connecting").addText(repository.error ?: "Tap Refresh after the car connection settles.").build())
+        pane.addRow(Row.Builder().setTitle("Weather is still connecting").addText(repository.error ?: "Tap Refresh after the car connection settles.").build())
       } else {
-        list.addItem(Row.Builder().setTitle("Location unavailable").addText("Open OMNIwx once on your phone or allow location access.").build())
+        pane.addRow(Row.Builder().setTitle("Location unavailable").addText("Open OMNIwx once on your phone or allow location access.").build())
       }
 
-      ListTemplate.Builder()
-        .setSingleList(list.build())
+      PaneTemplate.Builder(pane.build())
         .setTitle(current?.let { "OMNIwx - ${it.placeName}" } ?: "OMNIwx")
         .setHeaderAction(Action.APP_ICON)
         .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
