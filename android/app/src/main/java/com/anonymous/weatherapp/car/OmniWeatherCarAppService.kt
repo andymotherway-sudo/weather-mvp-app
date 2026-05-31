@@ -156,6 +156,13 @@ private abstract class OmniWeatherBaseScreen(
       .build()
   }
 
+  protected fun closeAction(): Action {
+    return Action.Builder()
+      .setTitle("Close")
+      .setOnClickListener { screenManager.pop() }
+      .build()
+  }
+
   protected fun loadingOrErrorTemplate(title: String): Template? {
     val pane = Pane.Builder()
     when {
@@ -392,13 +399,13 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
     val content = PaneTemplate.Builder(pane)
       .setTitle("Radar Snapshot")
       .setHeaderAction(Action.BACK)
-      .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
+      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(refreshAction()).build())
       .build()
 
     MapWithContentTemplate.Builder()
       .setContentTemplate(content)
       .setMapController(MapController.Builder().build())
-      .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
+      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(refreshAction()).build())
       .build()
     }
   }

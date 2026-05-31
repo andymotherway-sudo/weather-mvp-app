@@ -1787,6 +1787,25 @@ export default function MapsScreen() {
     selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
   const selectedMarineZone =
     selectedMarineFeature?.kind === 'zone' ? marineZonesById.get(selectedMarineFeature.id) ?? null : null;
+  const resolveMarineFeatureAtPoint = useCallback(
+    (lat: number, lon: number): SelectedMarineFeature => {
+      if (!marineConditionsEnabled) return null;
+
+      const nearestBuoy = marineBuoys
+        .map((buoy) => ({
+          buoy,
+          distanceMi: haversineMiles(lat, lon, buoy.lat, buoy.lon),
+        }))
+        .filter((item) => item.distanceMi <= marineBuoyHitRadiusMiles(mapZoom))
+        .sort((a, b) => a.distanceMi - b.distanceMi)[0]?.buoy;
+
+      if (nearestBuoy) return { kind: 'buoy', id: nearestBuoy.id };
+
+      const zone = visibleMarineZones.find((item) => geometryContainsPoint(item.geometry, lat, lon));
+      return zone ? { kind: 'zone', id: zone.id } : null;
+    },
+    [mapZoom, marineBuoys, marineConditionsEnabled, visibleMarineZones],
+  );
 
   useEffect(() => {
     if (!marineConditionsEnabled) setSelectedMarineFeature(null);
@@ -1882,16 +1901,30 @@ export default function MapsScreen() {
     if (!manualStationRadarMode) lastCenteredRadarSiteRef.current = null;
   }, [manualStationRadarMode]);
 
-  const warningsOverlayEnabled = alertsEnabled || stationRadarMode;
+  const warningsOverlayEnabled = alertsEnabled;
   const alertsData = useAlertMapData(warningsOverlayEnabled, effectiveRegion);
   useEffect(() => {
     if (!warningsOverlayEnabled) setSelectedWeatherAlert(null);
   }, [warningsOverlayEnabled]);
-  const handleWeatherAlertPress = useCallback((e: any) => {
-    const feature = e?.features?.[0] ?? e?.feature ?? null;
-    const detail = alertFeatureToDetail(feature);
-    if (detail) setSelectedWeatherAlert(detail);
-  }, []);
+  const handleWeatherAlertPress = useCallback(
+    (e: any) => {
+      const feature = e?.features?.[0] ?? e?.feature ?? null;
+      const detail = alertFeatureToDetail(feature);
+      const pressCoords = getMapPressLonLat(e) ?? getGeometryCenter(feature?.geometry);
+
+      if (pressCoords) {
+        const marineFeature = resolveMarineFeatureAtPoint(pressCoords.lat, pressCoords.lon);
+        if (marineFeature) {
+          setSelectedWeatherAlert(null);
+          setSelectedMarineFeature(marineFeature);
+          return;
+        }
+      }
+
+      if (detail) setSelectedWeatherAlert(detail);
+    },
+    [resolveMarineFeatureAtPoint],
+  );
   const wildfireVectorEnabled =
     state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled;
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
@@ -4036,6 +4069,15 @@ function getMapPressLonLat(e: any): { lat: number; lon: number } | null {
   return null;
 }
 
+function getGeometryCenter(geometry: any): { lat: number; lon: number } | null {
+  const bbox = geometryBbox(geometry);
+  if (!bbox) return null;
+  return {
+    lat: (bbox.minLat + bbox.maxLat) / 2,
+    lon: (bbox.minLon + bbox.maxLon) / 2,
+  };
+}
+
 function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const R = 3958.7613;
@@ -4075,6 +4117,13 @@ function geometryBbox(geometry: any) {
   });
 
   return { minLon, maxLon, minLat, maxLat };
+}
+
+function marineBuoyHitRadiusMiles(zoom: number) {
+  if (zoom >= 10) return 1.5;
+  if (zoom >= 8) return 3;
+  if (zoom >= 6) return 7;
+  return 14;
 }
 
 function firstString(...values: any[]) {
