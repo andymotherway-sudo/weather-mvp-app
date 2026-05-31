@@ -71,7 +71,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'mariner',
     title: 'Nautical',
-    presetEnabledLayers: [],
+    presetEnabledLayers: ['marine.conditions'],
   },
 
   {

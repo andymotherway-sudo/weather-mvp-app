@@ -49,7 +49,10 @@ import { typography } from '../../styles/typography';
 import { dewPointBandF, gustFactor, heatIndexF, windChillF } from '../lib/land/nerdyMath';
 
 import { AlertBanner } from '../../components/alerts/AlertBanner';
+import { useAlmanacPreload } from '../../components/boot/AlmanacWarmup';
 import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
+import type { AlmanacDailyRecord } from '../lib/almanac/types';
+import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
@@ -2253,6 +2256,21 @@ function buildDayNightSummary(dateRaw: any, hourly?: any[]) {
   };
 }
 
+function sameRecordCoords(a?: { lat: number; lon: number } | null, b?: { lat: number; lon: number } | null) {
+  if (!a || !b) return false;
+  return Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lon - b.lon) < 0.0005;
+}
+
+function formatRecordTemp(value: number | null | undefined) {
+  return value != null && Number.isFinite(value) ? `${Math.round(value)}°` : '—';
+}
+
+function formatRecordPrecip(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  if (value < 0.01) return 'Trace';
+  return `${value.toFixed(2)} in`;
+}
+
 function SimpleDailyOverview({
   tempF,
   condition,
@@ -2274,6 +2292,7 @@ function SimpleDailyOverview({
   moonset,
   moonDays,
   dayLengthSec,
+  almanacRecord,
 }: {
   tempF: number | null;
   condition: string;
@@ -2302,6 +2321,7 @@ function SimpleDailyOverview({
     moonPhaseLabel?: string | null;
   }>;
   dayLengthSec?: number | null;
+  almanacRecord?: AlmanacDailyRecord | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2337,6 +2357,15 @@ function SimpleDailyOverview({
   const todayCode = safeNum(today?.weatherCode ?? today?.weather_code ?? today?.weathercode ?? today?.code) ?? null;
   const todayCondition = weatherCodeToLabel(todayCode);
   const todayEmoji = weatherCodeToEmoji(todayCode);
+  const currentMarkerPct =
+    todayHi != null && todayLo != null && tempF != null && todayHi !== todayLo
+      ? Math.max(0, Math.min(100, ((tempF - todayLo) / (todayHi - todayLo)) * 100))
+      : 50;
+  const almanacItems = [
+    { label: 'Record high', value: formatRecordTemp(almanacRecord?.recordHighF) },
+    { label: 'Record low', value: formatRecordTemp(almanacRecord?.recordLowF) },
+    { label: 'Record precip', value: formatRecordPrecip(almanacRecord?.recordPrecipIn) },
+  ];
   const todayNarrative = [
     todayCondition,
     todayHi != null && todayHi >= 85 ? 'Warm' : todayHi != null && todayHi <= 55 ? 'Cool' : 'Mild',
@@ -2359,8 +2388,8 @@ function SimpleDailyOverview({
 
   return (
     <View style={styles.dailySimpleWrap}>
-      <View style={[styles.dailyCurrentCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
-        <Text style={styles.dailyPanelEyebrow}>Current conditions</Text>
+      <View style={[styles.dailyCurrentCard, styles.dailyRangeCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+        <Text style={styles.dailyPanelEyebrow}>Now / High / Low</Text>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
@@ -2374,9 +2403,50 @@ function SimpleDailyOverview({
             >
               {condition}
             </Text>
-            <Text style={styles.dailyCurrentSummary}>{heroSummary}</Text>
-            <Text style={styles.dailyCurrentFeels}>Feels like {feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+            <Text style={styles.dailyCurrentSummary}>
+              {[todayNarrative, feelsLikeF != null ? `Feels like ${Math.round(feelsLikeF)}°` : null, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
+                .filter(Boolean)
+                .join(' • ') || heroSummary}
+            </Text>
           </View>
+        </View>
+
+        <View style={styles.dailyRangeStats}>
+          <View style={styles.dailyRangeStat}>
+            <Text style={styles.dailyRangeStatLabel}>Now</Text>
+            <Text style={styles.dailyRangeStatValue}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+          </View>
+          <View style={styles.dailyRangeStat}>
+            <Text style={styles.dailyRangeStatLabel}>High</Text>
+            <Text style={styles.dailyRangeStatValue}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
+          </View>
+          <View style={styles.dailyRangeStat}>
+            <Text style={styles.dailyRangeStatLabel}>Low</Text>
+            <Text style={styles.dailyRangeStatValue}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.dailyTempRangeBlock}>
+          <View style={styles.dailyTempRangeLabels}>
+            <Text style={styles.dailyTempRangeEndpoint}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+            <Text style={styles.dailyTempRangeNow}>Current</Text>
+            <Text style={styles.dailyTempRangeEndpoint}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
+          </View>
+          <View style={styles.dailyTempRangeTrack}>
+            <View style={styles.dailyTempRangeFill} />
+            <View style={[styles.dailyTempRangeMarker, { left: `${currentMarkerPct}%` }]}>
+              <View style={styles.dailyTempRangeMarkerDot} />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.dailyAlmanacRow}>
+          {almanacItems.map((item) => (
+            <View key={item.label} style={styles.dailyAlmanacCell}>
+              <Text style={styles.dailyAlmanacLabel}>{item.label}</Text>
+              <Text style={styles.dailyAlmanacValue}>{item.value}</Text>
+            </View>
+          ))}
         </View>
 
         <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
@@ -2387,116 +2457,6 @@ function SimpleDailyOverview({
               {item.sub ? <Text style={styles.dailyCurrentMetricSub}>{item.sub}</Text> : null}
             </View>
           ))}
-        </View>
-      </View>
-
-      <View style={[styles.dailyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
-        <Text style={styles.dailyPanelEyebrow}>Today & tonight</Text>
-        <View style={styles.dailyTwinColumns}>
-          <View style={styles.dailyTwinColumn}>
-            <View style={styles.dailyFeatureTitleRow}>
-              <Text style={styles.dailyFeatureMiniTitle}>Today</Text>
-              <Text style={styles.dailyFeatureRange}>High {todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
-            </View>
-            <View style={styles.dailyFeatureSummaryRow}>
-              <PremiumWeatherIcon code={todayCode} size={46} variant="hero" style={styles.dailyFeatureIconBadge} />
-              <View style={styles.dailyFeatureSummaryText}>
-                <Text
-                  style={styles.dailyFeatureCondition}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.62}
-                  allowFontScaling={false}
-                >
-                  {todayCondition}
-                </Text>
-                <Text style={styles.dailyFeatureNarrative}>{todayNarrative}</Text>
-              </View>
-            </View>
-            <View style={styles.dailyDetailList}>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Precip</Text>
-                <Text style={styles.dailyDetailValue}>{todayPop != null ? `${Math.round(todayPop)}%` : '—'}</Text>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Wind</Text>
-                <View style={styles.dailyDetailValueStack}>
-                  <Text style={styles.dailyDetailValue}>{todaySplit.day.wind != null ? `${Math.round(todaySplit.day.wind)} mph` : '—'}</Text>
-                  <Text style={styles.dailyDetailSub}>{todaySplit.day.gust != null ? `Gust ${Math.round(todaySplit.day.gust)} mph` : '—'}</Text>
-                </View>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>RH / DP</Text>
-                <View style={styles.dailyDetailPair}>
-                  <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
-                  <Text style={styles.dailyDetailPairDivider}>/</Text>
-                  <Text style={styles.dailyDetailValue}>{dewpointF != null ? `${Math.round(dewpointF)}°` : '—'}</Text>
-                </View>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Sunrise</Text>
-                <Text style={styles.dailyDetailValue}>{formatClock(sunrise)}</Text>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Sunset</Text>
-                <Text style={styles.dailyDetailValue}>{formatClock(sunset)}</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.dailyTwinDivider} />
-          <View style={styles.dailyTwinColumn}>
-            <View style={styles.dailyFeatureTitleRow}>
-              <Text style={styles.dailyFeatureMiniTitle}>Tonight</Text>
-              <Text style={styles.dailyFeatureRange}>Low {todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
-            </View>
-            <View style={styles.dailyNightSummaryRow}>
-              <PremiumMoonIcon
-                size={42}
-                variant="hero"
-                style={styles.dailyNightIconBadge}
-                illuminationPct={todayMoon?.moonIlluminationPct}
-                phaseDegrees={todayMoon?.moonPhaseDegrees}
-              />
-              <View style={styles.dailyNightText}>
-                <Text
-                  style={styles.dailyFeatureCondition}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.62}
-                  allowFontScaling={false}
-                >
-                  {todaySplit.night.condition}
-                </Text>
-                <Text style={styles.dailyFeatureNarrative}>{todaySplit.night.narrative}</Text>
-                {tonightMoonLabel ? <Text style={styles.dailyFeatureMoonMeta}>{tonightMoonLabel}</Text> : null}
-              </View>
-            </View>
-            <View style={styles.dailyDetailList}>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Precip</Text>
-                <Text style={styles.dailyDetailValue}>{todaySplit.night.pop != null ? `${Math.round(todaySplit.night.pop)}%` : '—'}</Text>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Wind</Text>
-                <View style={styles.dailyDetailValueStack}>
-                  <Text style={styles.dailyDetailValue}>{todaySplit.night.wind != null ? `${Math.round(todaySplit.night.wind)} mph` : '—'}</Text>
-                  <Text style={styles.dailyDetailSub}>{tonightWindSub}</Text>
-                </View>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>RH</Text>
-                <Text style={styles.dailyDetailValue}>{humidityPct != null ? `${Math.round(humidityPct)}%` : '—'}</Text>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Moonrise</Text>
-                <Text style={styles.dailyDetailValue}>{formatClock(moonrise)}</Text>
-              </View>
-              <View style={styles.dailyDetailStrip}>
-                <Text style={styles.dailyDetailLabel}>Moonset</Text>
-                <Text style={styles.dailyDetailValue}>{formatClock(moonset)}</Text>
-              </View>
-            </View>
-          </View>
         </View>
       </View>
 
@@ -3636,6 +3596,14 @@ function LandWeatherWithCoords({
   const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
   const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
   const { forecastModel } = useSettings();
+  const almanacPreload = useAlmanacPreload();
+  const almanacPreloadMatches = sameRecordCoords(almanacPreload?.coords, coords);
+  const localRecords = useDailyRecords({
+    lat: coords.lat,
+    lon: coords.lon,
+    enabled: !almanacPreloadMatches,
+  });
+  const almanacRecords = almanacPreloadMatches ? almanacPreload?.records : localRecords;
 
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
@@ -3739,6 +3707,11 @@ function LandWeatherWithCoords({
   const forecastTimeZone =
     typeof forecastData?.timezone === 'string' && forecastData.timezone.trim() ? forecastData.timezone.trim() : null;
   const todayDaily = daily[0] ?? null;
+  const todayRecordKey =
+    typeof todayDaily?.date === 'string'
+      ? todayDaily.date.slice(5, 10)
+      : todayDateKeyLocal().slice(5, 10);
+  const todayAlmanacRecord = almanacRecords?.records?.[todayRecordKey] ?? null;
   const todaySunrise = typeof todayDaily?.sunrise === 'string' ? todayDaily.sunrise : null;
   const todaySunset = typeof todayDaily?.sunset === 'string' ? todayDaily.sunset : null;
   const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
@@ -3972,6 +3945,7 @@ function LandWeatherWithCoords({
           moonset={todayMoonset}
           moonDays={astroData?.moonDays}
           dayLengthSec={todayDayLengthSec}
+          almanacRecord={todayAlmanacRecord}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -4817,6 +4791,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GLASS_BORDER,
   },
+  dailyRangeCard: {
+    gap: 14,
+  },
   dailyCurrentTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -4866,8 +4843,113 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.88)',
   },
+  dailyRangeStats: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dailyRangeStat: {
+    flex: 1,
+    minHeight: 68,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    justifyContent: 'space-between',
+  },
+  dailyRangeStatLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  dailyRangeStatValue: {
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+    color: 'white',
+  },
+  dailyTempRangeBlock: {
+    gap: 8,
+  },
+  dailyTempRangeLabels: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dailyTempRangeEndpoint: {
+    width: 54,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.76)',
+  },
+  dailyTempRangeNow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.48)',
+  },
+  dailyTempRangeTrack: {
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    overflow: 'visible',
+  },
+  dailyTempRangeFill: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    backgroundColor: 'rgba(120, 190, 255, 0.50)',
+  },
+  dailyTempRangeMarker: {
+    position: 'absolute',
+    top: -5,
+    width: 22,
+    height: 22,
+    marginLeft: -11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyTempRangeMarkerDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: 'white',
+    borderWidth: 3,
+    borderColor: 'rgba(64, 156, 255, 0.9)',
+  },
+  dailyAlmanacRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dailyAlmanacCell: {
+    flex: 1,
+    minHeight: 58,
+    borderRadius: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  dailyAlmanacLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.52)',
+  },
+  dailyAlmanacValue: {
+    marginTop: 6,
+    fontSize: 15,
+    fontWeight: '900',
+    color: 'white',
+  },
   dailyCurrentMetricRow: {
-    marginTop: 16,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'stretch',

@@ -457,6 +457,24 @@ export const LAYER_CATALOG = [
   },
 
   {
+    id: 'marine.conditions',
+    group: 'marine',
+    title: 'Marine Conditions',
+    subtitle: 'Zones and buoys',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.9,
+    zIndex: 118,
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+    source: {
+      name: 'NOAA / NDBC',
+      details: 'Marine forecast zones and buoy observations.',
+    },
+  },
+
+  {
     id: 'astro.skyScore',
     group: 'astronomy',
     title: 'Sky Score',

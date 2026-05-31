@@ -23,6 +23,10 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
+import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
+import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+import { useMarineZonesByBbox } from '../lib/nautical/useMarineZonesByBbox';
+import type { NauticalZone } from '../lib/nautical/zones';
 import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
 import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
@@ -216,10 +220,50 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
 ];
 
 const STATION_RANGE_RINGS_MI = [25, 50, 100, 150];
+const SKY_LEGEND_SWATCHES = [
+  'rgba(255,92,92,0.88)',
+  'rgba(255,146,82,0.84)',
+  'rgba(204,112,224,0.80)',
+  'rgba(112,113,255,0.78)',
+  'rgba(66,154,255,0.74)',
+  'rgba(34,211,181,0.70)',
+  'rgba(74,222,128,0.68)',
+  'rgba(187,247,208,0.64)',
+] as const;
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
   return Math.max(0, Math.min(n - 1, Math.floor(i)));
+}
+
+function clampNumber(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function formatAstroHourLabel(hourOffset: number) {
+  const hour = Math.round(hourOffset);
+  return hour === 0 ? 'Now' : `+${hour}h`;
+}
+
+function skyScoreLabel(score: number | null | undefined) {
+  if (score == null || !Number.isFinite(score)) return '--';
+  if (score >= 88) return 'Excellent';
+  if (score >= 75) return 'Very good';
+  if (score >= 62) return 'Good';
+  if (score >= 48) return 'Fair';
+  if (score >= 32) return 'Poor';
+  return 'Very poor';
+}
+
+function skyScoreSentence(score: number, auroraVisibility: number) {
+  const quality = skyScoreLabel(score).toLowerCase();
+  const aurora =
+    auroraVisibility >= 45
+      ? 'aurora may be worth checking'
+      : auroraVisibility >= 18
+        ? 'slight aurora potential'
+        : 'aurora unlikely now';
+  return `Estimated ${quality} observing conditions for this map area; ${aurora}.`;
 }
 
 type SatelliteFrame = {
@@ -324,6 +368,160 @@ function buildRadarStationGeoJson(site: NexradSite | null) {
   }
 
   return { type: 'FeatureCollection', features };
+}
+
+function regionToBbox(region: Region | null | undefined) {
+  if (!region) return null;
+  const latDelta = Number(region.latitudeDelta);
+  const lonDelta = Number(region.longitudeDelta);
+  const lat = Number(region.latitude);
+  const lon = Number(region.longitude);
+  if (![latDelta, lonDelta, lat, lon].every(Number.isFinite)) return null;
+
+  return {
+    west: lon - lonDelta / 2,
+    south: lat - latDelta / 2,
+    east: lon + lonDelta / 2,
+    north: lat + latDelta / 2,
+  };
+}
+
+function closeRingIfNeeded(coords: Array<[number, number]>) {
+  if (coords.length < 3) return coords;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first?.[0] === last?.[0] && first?.[1] === last?.[1]) return coords;
+  return [...coords, first];
+}
+
+function marineZonesToFeatureCollection(zones: NauticalZone[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: zones.map((zone) => {
+      let geometry: any = zone.geometry ?? null;
+
+      if (!geometry && Array.isArray(zone.polygon) && zone.polygon.length) {
+        geometry = {
+          type: 'Polygon' as const,
+          coordinates: [
+            closeRingIfNeeded(zone.polygon.map((point) => [point.longitude, point.latitude] as [number, number])),
+          ],
+        };
+      }
+
+      return {
+        type: 'Feature' as const,
+        id: zone.id,
+        properties: {
+          id: zone.id,
+          name: zone.name,
+          wfo: zone.wfo,
+          type: zone.type,
+        },
+        geometry: geometry ?? { type: 'Point' as const, coordinates: [zone.centroid.longitude, zone.centroid.latitude] },
+      };
+    }),
+  };
+}
+
+function marineBuoySeverity(waveM?: number | null, windKts?: number | null) {
+  const waveFt = waveM != null ? waveM * 3.28084 : null;
+  const wind = windKts ?? 0;
+  if ((waveFt == null || waveFt < 3) && wind < 15) return 'calm';
+  if (waveFt != null && waveFt < 6 && wind < 25) return 'moderate';
+  if ((waveFt != null && waveFt < 10) || wind < 35) return 'rough';
+  return 'extreme';
+}
+
+function buoysToFeatureCollection(buoys: BuoyDetailData[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: buoys
+      .filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon))
+      .map((buoy) => ({
+        type: 'Feature' as const,
+        id: buoy.id,
+        properties: {
+          id: buoy.id,
+          name: buoy.name ?? buoy.id,
+          severity: marineBuoySeverity(buoy.waveHeightM ?? null, buoy.windSpeedKts ?? null),
+          wind: buoy.windSpeedKts != null ? `${Math.round(buoy.windSpeedKts)} kt` : '--',
+          waves: buoy.waveHeightM != null ? `${Math.round(buoy.waveHeightM * 3.28084)} ft` : '--',
+        },
+        geometry: { type: 'Point' as const, coordinates: [buoy.lon, buoy.lat] as [number, number] },
+      })),
+  };
+}
+
+function circlePolygonFeature(args: {
+  id: string;
+  lat: number;
+  lon: number;
+  radiusMi: number;
+  properties: Record<string, any>;
+}) {
+  return {
+    type: 'Feature' as const,
+    id: args.id,
+    properties: args.properties,
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [
+        Array.from({ length: 97 }, (_, index) =>
+          destinationPoint(args.lat, args.lon, (index / 96) * 360, args.radiusMi),
+        ),
+      ],
+    },
+  };
+}
+
+function buildSkyScoreOverlay(lat: number, lon: number) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: [
+      circlePolygonFeature({
+        id: 'sky-score-core',
+        lat,
+        lon,
+        radiusMi: 90,
+        properties: { band: 'good', label: 'SkyScore' },
+      }),
+      circlePolygonFeature({
+        id: 'sky-score-context',
+        lat,
+        lon,
+        radiusMi: 180,
+        properties: { band: 'context', label: 'Observing area' },
+      }),
+      {
+        type: 'Feature' as const,
+        id: 'sky-score-center',
+        properties: { label: 'SkyScore' },
+        geometry: { type: 'Point' as const, coordinates: [lon, lat] as [number, number] },
+      },
+    ],
+  };
+}
+
+function buildAuroraOverlay() {
+  const band = (id: string, south: number, north: number, color: string, label: string) => ({
+    type: 'Feature' as const,
+    id,
+    properties: { color, label },
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [[[-170, south], [-50, south], [-50, north], [-170, north], [-170, south]]],
+    },
+  });
+
+  return {
+    type: 'FeatureCollection' as const,
+    features: [
+      band('aurora-watch', 45, 55, '#7c3aed', 'Aurora watch'),
+      band('aurora-favored', 55, 67, '#22d3ee', 'Aurora favored'),
+      band('aurora-oval', 67, 74, '#a7f3d0', 'Aurora oval'),
+    ],
+  };
 }
 
 function BottomDock(props: { left?: React.ReactNode; center?: React.ReactNode; right?: React.ReactNode }) {
@@ -736,6 +934,8 @@ export default function MapsScreen() {
   const [selectedRestrictionPoint, setSelectedRestrictionPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [wildfireDetailLoading, setWildfireDetailLoading] = useState(false);
   const [wildfireLegendExpanded, setWildfireLegendExpanded] = useState(true);
+  const [astroDrawerExpanded, setAstroDrawerExpanded] = useState(false);
+  const [astroHourOffset, setAstroHourOffset] = useState(0);
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
@@ -932,6 +1132,10 @@ export default function MapsScreen() {
   const aviationSigmetEnabled = !aviationModeActive && !!state.layers?.['aviation.sigmet']?.enabled;
   const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
   const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
+  const marineConditionsEnabled = state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled;
+  const skyScoreEnabled = !!state.layers?.['astro.skyScore']?.enabled;
+  const auroraProbEnabled = !!state.layers?.['space.aurora.prob']?.enabled;
+  const auroraOvalEnabled = !!state.layers?.['space.aurora.oval']?.enabled;
 
   const goesTrueColorEnabled = !!state.layers?.['sat.goes.truecolor']?.enabled;
   const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
@@ -1077,6 +1281,18 @@ export default function MapsScreen() {
     : 0.76;
   const aviationPirepOpacity = Number.isFinite(state.layers?.['aviation.pirep']?.opacity)
     ? state.layers['aviation.pirep'].opacity
+    : 0.9;
+  const marineConditionsOpacity = Number.isFinite(state.layers?.['marine.conditions']?.opacity)
+    ? state.layers['marine.conditions'].opacity
+    : 0.9;
+  const skyScoreOpacity = Number.isFinite(state.layers?.['astro.skyScore']?.opacity)
+    ? state.layers['astro.skyScore'].opacity
+    : 0.85;
+  const auroraProbOpacity = Number.isFinite(state.layers?.['space.aurora.prob']?.opacity)
+    ? state.layers['space.aurora.prob'].opacity
+    : 0.75;
+  const auroraOvalOpacity = Number.isFinite(state.layers?.['space.aurora.oval']?.opacity)
+    ? state.layers['space.aurora.oval'].opacity
     : 0.9;
 
   const aviationOverlayEnabled =
@@ -1514,6 +1730,39 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
+  const marineBbox = useMemo(
+    () => (marineConditionsEnabled && mapZoom >= 4 ? regionToBbox(effectiveRegion) : null),
+    [effectiveRegion, mapZoom, marineConditionsEnabled],
+  );
+  const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
+  const { data: buoyData } = useAllBuoyDetails();
+  const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
+    marineZones,
+    mapZoom,
+  ]);
+  const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
+  const marineBuoysFc = useMemo(() => buoysToFeatureCollection(buoyData ?? []), [buoyData]);
+  const skyOverlayAnchor = useMemo(() => {
+    if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
+      return { lat: Number(activePlace.lat), lon: Number(activePlace.lon) };
+    }
+    return { lat: effectiveRegion.latitude, lon: effectiveRegion.longitude };
+  }, [activePlace, effectiveRegion.latitude, effectiveRegion.longitude]);
+  const skyScoreFc = useMemo(
+    () => buildSkyScoreOverlay(skyOverlayAnchor.lat, skyOverlayAnchor.lon),
+    [skyOverlayAnchor.lat, skyOverlayAnchor.lon],
+  );
+  const auroraFc = useMemo(() => buildAuroraOverlay(), []);
+  const astroEstimatedScore = useMemo(() => {
+    const hourPenalty = Math.abs(astroHourOffset - 10) <= 5 ? 0 : 8;
+    const latitudeBonus = Math.abs(skyOverlayAnchor.lat) > 38 ? 4 : 0;
+    return clampNumber(Math.round(78 + latitudeBonus - hourPenalty), 0, 100);
+  }, [astroHourOffset, skyOverlayAnchor.lat]);
+  const astroAuroraVisibility = useMemo(
+    () => clampNumber(Math.round((Math.abs(skyOverlayAnchor.lat) - 40) * 3.2), 0, 100),
+    [skyOverlayAnchor.lat],
+  );
+  const astronomyModeActive = state.viewId === 'astronomer';
   const activeFavoriteId = loc.active.kind === 'favorite' ? loc.active.id : null;
   const favoriteTemperatureGeoJson = useMemo(
     () =>
@@ -1994,6 +2243,190 @@ export default function MapsScreen() {
                 }}
               />
             </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {skyScoreEnabled ? (
+            <MapLibreGL.ShapeSource id="astro-sky-score-source" shape={skyScoreFc as any}>
+              <MapLibreGL.FillLayer
+                id="astro-sky-score-fill"
+                style={{
+                  fillColor: [
+                    'match',
+                    ['get', 'band'],
+                    'good',
+                    'rgba(52,211,153,1)',
+                    'context',
+                    'rgba(45,212,191,1)',
+                    'rgba(148,163,184,1)',
+                  ] as any,
+                  fillOpacity: ['match', ['get', 'band'], 'good', 0.28 * skyScoreOpacity, 'context', 0.12 * skyScoreOpacity, 0.12] as any,
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="astro-sky-score-line"
+                style={{
+                  lineColor: 'rgba(167,243,208,0.92)',
+                  lineWidth: 1.4,
+                  lineOpacity: 0.72 * skyScoreOpacity,
+                  lineDasharray: [2, 2],
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="astro-sky-score-label"
+                minZoomLevel={4}
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 11,
+                  textColor: '#d1fae5',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1.4,
+                  textOffset: [0, 1.2],
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {auroraProbEnabled || auroraOvalEnabled ? (
+            <MapLibreGL.ShapeSource id="astro-aurora-source" shape={auroraFc as any}>
+              {auroraProbEnabled ? (
+                <MapLibreGL.FillLayer
+                  id="astro-aurora-prob-fill"
+                  filter={['!=', ['get', 'label'], 'Aurora oval'] as any}
+                  style={{
+                    fillColor: ['get', 'color'] as any,
+                    fillOpacity: 0.13 * auroraProbOpacity,
+                  }}
+                />
+              ) : null}
+              {auroraOvalEnabled || auroraProbEnabled ? (
+                <MapLibreGL.LineLayer
+                  id="astro-aurora-line"
+                  style={{
+                    lineColor: ['get', 'color'] as any,
+                    lineWidth: ['match', ['get', 'label'], 'Aurora oval', 2.6, 1.6] as any,
+                    lineOpacity: (auroraOvalEnabled ? 0.82 * auroraOvalOpacity : 0.55 * auroraProbOpacity),
+                    lineDasharray: [3, 2],
+                  }}
+                />
+              ) : null}
+              <MapLibreGL.SymbolLayer
+                id="astro-aurora-label"
+                minZoomLevel={3}
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 10,
+                  textColor: '#e9d5ff',
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1.4,
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {marineConditionsEnabled ? (
+            <>
+              <MapLibreGL.ShapeSource id="marine-zones-source" shape={marineZonesFc as any}>
+                <MapLibreGL.FillLayer
+                  id="marine-zones-fill"
+                  style={{
+                    fillColor: 'rgba(14,165,233,1)',
+                    fillOpacity: 0.14 * marineConditionsOpacity,
+                  }}
+                />
+                <MapLibreGL.LineLayer
+                  id="marine-zones-line"
+                  style={{
+                    lineColor: 'rgba(125,211,252,0.92)',
+                    lineWidth: 1.8,
+                    lineOpacity: 0.82 * marineConditionsOpacity,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="marine-zones-label"
+                  minZoomLevel={5}
+                  style={{
+                    textField: ['coalesce', ['get', 'id'], ['get', 'name']] as any,
+                    textSize: 10,
+                    textColor: '#e0f2fe',
+                    textHaloColor: 'rgba(2,6,23,0.95)',
+                    textHaloWidth: 1.2,
+                    textAllowOverlap: false,
+                    textOptional: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+
+              <MapLibreGL.ShapeSource
+                id="marine-buoys-source"
+                shape={marineBuoysFc as any}
+                cluster
+                clusterRadius={44}
+                clusterMaxZoomLevel={8}
+              >
+                <MapLibreGL.CircleLayer
+                  id="marine-buoy-clusters"
+                  filter={['has', 'point_count'] as any}
+                  style={{
+                    circleColor: 'rgba(14,165,233,0.38)',
+                    circleStrokeColor: 'rgba(186,230,253,0.92)',
+                    circleStrokeWidth: 1.2,
+                    circleRadius: ['step', ['get', 'point_count'], 14, 25, 18, 75, 22, 200, 26] as any,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="marine-buoy-cluster-count"
+                  filter={['has', 'point_count'] as any}
+                  style={{
+                    textField: ['to-string', ['get', 'point_count']] as any,
+                    textSize: 12,
+                    textColor: '#e0f2fe',
+                    textHaloColor: 'rgba(2,6,23,0.95)',
+                    textHaloWidth: 1,
+                  }}
+                />
+                <MapLibreGL.CircleLayer
+                  id="marine-buoy-points"
+                  filter={['!', ['has', 'point_count']] as any}
+                  style={{
+                    circleColor: [
+                      'match',
+                      ['get', 'severity'],
+                      'calm',
+                      '#22c55e',
+                      'moderate',
+                      '#eab308',
+                      'rough',
+                      '#f97316',
+                      'extreme',
+                      '#ef4444',
+                      '#38bdf8',
+                    ] as any,
+                    circleOpacity: 0.94 * marineConditionsOpacity,
+                    circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 3.5, 7, 5.5, 10, 7.5] as any,
+                    circleStrokeColor: 'rgba(2,6,23,0.96)',
+                    circleStrokeWidth: 1.3,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="marine-buoy-labels"
+                  filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 6]] as any}
+                  style={{
+                    textField: ['get', 'id'] as any,
+                    textSize: 10,
+                    textOffset: [0, 1.2],
+                    textAnchor: 'top',
+                    textColor: '#e0f2fe',
+                    textHaloColor: 'rgba(2,6,23,0.95)',
+                    textHaloWidth: 1,
+                    textOptional: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+            </>
           ) : null}
 
           {aviationTurbEnabled ? (
@@ -2906,6 +3339,104 @@ export default function MapsScreen() {
               </View>
             </Glass>
           </View>
+        ) : null}
+
+        {astronomyModeActive ? (
+          <>
+            <View pointerEvents="none" style={[styles.astroLegendWrap, { top: 12 + insets.top }]}>
+              <Glass style={styles.astroLegendCard}>
+                <View style={styles.astroLegendRow}>
+                  <Text style={styles.astroLegendEdge}>WORST</Text>
+                  <View style={styles.astroLegendSwatches}>
+                    {SKY_LEGEND_SWATCHES.map((color, index) => (
+                      <View key={`maps-sky-legend-${index}`} style={[styles.astroLegendSwatch, { backgroundColor: color }]} />
+                    ))}
+                  </View>
+                  <Text style={styles.astroLegendBest}>BEST</Text>
+                </View>
+              </Glass>
+            </View>
+
+            <View style={[styles.astroDrawerWrap, { bottom: 12 + insets.bottom }]}>
+              <Glass style={styles.astroDrawerCard}>
+                <Pressable
+                  onPress={() => setAstroDrawerExpanded((value) => !value)}
+                  style={styles.astroDrawerHandle}
+                  hitSlop={12}
+                >
+                  <View style={styles.astroDrawerHandleBar} />
+                  <Text style={styles.astroDrawerHandleText}>{astroDrawerExpanded ? 'HIDE DETAILS' : 'SKY DETAILS'}</Text>
+                </Pressable>
+
+                <View style={styles.astroDrawerHeader}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.astroDrawerTitle}>Sky {astroEstimatedScore}</Text>
+                    <Text style={styles.astroDrawerSubtitle} numberOfLines={2}>
+                      {skyScoreLabel(astroEstimatedScore)} / {formatAstroHourLabel(astroHourOffset)}
+                    </Text>
+                  </View>
+                  <View style={styles.astroScorePill}>
+                    <Text style={styles.astroScorePillText}>{astroAuroraVisibility}% aurora</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.astroDrawerSummary} numberOfLines={astroDrawerExpanded ? 3 : 2}>
+                  {skyScoreSentence(astroEstimatedScore, astroAuroraVisibility)}
+                </Text>
+
+                <View style={styles.astroControlRow}>
+                  <MiniToggle
+                    label="Sky"
+                    active={skyScoreEnabled}
+                    onPress={() => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'astro.skyScore', enabled: !skyScoreEnabled })}
+                  />
+                  <MiniToggle
+                    label="Aurora"
+                    active={auroraProbEnabled}
+                    onPress={() => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'space.aurora.prob', enabled: !auroraProbEnabled })}
+                  />
+                  <MiniToggle
+                    label="Aurora oval"
+                    active={auroraOvalEnabled}
+                    onPress={() => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'space.aurora.oval', enabled: !auroraOvalEnabled })}
+                  />
+                </View>
+
+                {astroDrawerExpanded ? (
+                  <View style={styles.astroDrawerBody}>
+                    <View style={styles.astroForecastHeader}>
+                      <Text style={styles.astroForecastLabel}>Forecast: {formatAstroHourLabel(astroHourOffset)}</Text>
+                      <Text style={styles.astroForecastRange}>0-24h</Text>
+                    </View>
+                    <View style={styles.astroStepperRow}>
+                      <Pressable
+                        onPress={() => setAstroHourOffset((value) => clampNumber(value - 1, 0, 24))}
+                        style={styles.astroStepButton}
+                      >
+                        <Text style={styles.astroStepText}>-</Text>
+                      </Pressable>
+                      <View style={styles.astroStepTrack}>
+                        <View style={[styles.astroStepFill, { width: `${(astroHourOffset / 24) * 100}%` }]} />
+                      </View>
+                      <Pressable
+                        onPress={() => setAstroHourOffset((value) => clampNumber(value + 1, 0, 24))}
+                        style={styles.astroStepButton}
+                      >
+                        <Text style={styles.astroStepText}>+</Text>
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.astroMetricGrid}>
+                      <AstroMetric label="Quality" value={skyScoreLabel(astroEstimatedScore)} />
+                      <AstroMetric label="SkyScore" value={`${astroEstimatedScore}`} />
+                      <AstroMetric label="Aurora vis" value={`${astroAuroraVisibility}%`} />
+                      <AstroMetric label="Center" value={`${skyOverlayAnchor.lat.toFixed(2)}, ${skyOverlayAnchor.lon.toFixed(2)}`} />
+                    </View>
+                  </View>
+                ) : null}
+              </Glass>
+            </View>
+          </>
         ) : null}
 
         {aviationModeActive ? (
@@ -3871,6 +4402,17 @@ function MiniToggle(props: { label: string; active?: boolean; onPress: () => voi
   );
 }
 
+function AstroMetric(props: { label: string; value: string }) {
+  return (
+    <View style={styles.astroMetric}>
+      <Text style={styles.astroMetricLabel}>{props.label}</Text>
+      <Text style={styles.astroMetricValue} numberOfLines={1}>
+        {props.value}
+      </Text>
+    </View>
+  );
+}
+
 function InfoPill(props: { label: string }) {
   return (
     <View style={styles.infoPill}>
@@ -4202,6 +4744,192 @@ const styles = StyleSheet.create({
       right: 84,
       left: 12,
     },
+  astroLegendWrap: {
+    position: 'absolute',
+    left: 12,
+    right: 84,
+    zIndex: 24,
+    elevation: 24,
+    alignItems: 'flex-start',
+  },
+  astroLegendCard: {
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  astroLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  astroLegendEdge: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  astroLegendBest: {
+    color: 'rgba(187,247,208,0.92)',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  astroLegendSwatches: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+  },
+  astroLegendSwatch: {
+    width: 24,
+    height: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  astroDrawerWrap: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    zIndex: 26,
+    elevation: 26,
+  },
+  astroDrawerCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+  },
+  astroDrawerHandle: {
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  astroDrawerHandleBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  astroDrawerHandleText: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  astroDrawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  astroDrawerTitle: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 22,
+  },
+  astroDrawerSubtitle: {
+    color: 'rgba(255,255,255,0.72)',
+    fontWeight: '800',
+    marginTop: 3,
+    lineHeight: 18,
+  },
+  astroScorePill: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(167,243,208,0.20)',
+    backgroundColor: 'rgba(16,185,129,0.12)',
+  },
+  astroScorePillText: {
+    color: '#d1fae5',
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  astroDrawerSummary: {
+    color: 'rgba(255,255,255,0.74)',
+    fontWeight: '700',
+    lineHeight: 19,
+    marginTop: 10,
+  },
+  astroControlRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  astroDrawerBody: {
+    marginTop: 12,
+    gap: 10,
+  },
+  astroForecastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  astroForecastLabel: {
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '900',
+  },
+  astroForecastRange: {
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: '800',
+  },
+  astroStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  astroStepButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  astroStepText: {
+    color: 'white',
+    fontWeight: '900',
+    fontSize: 18,
+  },
+  astroStepTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    overflow: 'hidden',
+  },
+  astroStepFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(52,211,153,0.72)',
+  },
+  astroMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  astroMetric: {
+    flexGrow: 1,
+    minWidth: 118,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  astroMetricLabel: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  astroMetricValue: {
+    marginTop: 3,
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '900',
+  },
   aviationPanelWrap: {
     position: 'absolute',
     left: 12,

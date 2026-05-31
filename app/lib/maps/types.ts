@@ -39,6 +39,7 @@ export type LayerId =
   | 'astro.skyScore'
   | 'space.aurora.prob'
   | 'space.aurora.oval'
+  | 'marine.conditions'
   | 'aviation.gairmet.turb'
   | 'aviation.gairmet.ice'
   | 'aviation.sigmet'
