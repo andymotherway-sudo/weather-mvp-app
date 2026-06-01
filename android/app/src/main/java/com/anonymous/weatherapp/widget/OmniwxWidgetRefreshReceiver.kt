@@ -1,0 +1,30 @@
+package com.anonymous.weatherapp.widget
+
+import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+
+class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+
+    refreshProvider(context, OmniwxCurrentWidgetProvider::class.java)
+    refreshProvider(context, OmniwxSkyScoreWidgetProvider::class.java)
+    refreshProvider(context, OmniwxAviationWidgetProvider::class.java)
+    refreshProvider(context, OmniwxClimatologyWidgetProvider::class.java)
+  }
+
+  private fun refreshProvider(context: Context, providerClass: Class<*>) {
+    val manager = AppWidgetManager.getInstance(context)
+    val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
+    if (ids.isEmpty()) return
+
+    val updateIntent = Intent(context, providerClass).apply {
+      action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+      putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+    }
+    context.sendBroadcast(updateIntent)
+  }
+}
