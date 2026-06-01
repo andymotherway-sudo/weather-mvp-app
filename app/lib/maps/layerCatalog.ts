@@ -474,59 +474,6 @@ export const LAYER_CATALOG = [
     },
   },
 
-  {
-    id: 'astro.skyScore',
-    group: 'astronomy',
-    title: 'Sky Score',
-    subtitle: 'Observing conditions',
-    visibility: 'both',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.85,
-    zIndex: 70,
-    supportsLegend: false,
-    supportsOpacity: true,
-    supportsSourceInfo: true,
-    source: {
-      name: 'Omni Wx',
-      details: 'Computed from clouds, moonlight, and sky conditions',
-    },
-  },
-
-  {
-    id: 'space.aurora.prob',
-    group: 'astronomy',
-    title: 'Aurora',
-    subtitle: 'Visibility probability',
-    visibility: 'both',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.75,
-    zIndex: 95,
-    supportsLegend: false,
-    supportsOpacity: true,
-    supportsSourceInfo: true,
-    source: {
-      name: 'NOAA SWPC',
-      details: 'OVATION probability grid',
-    },
-  },
-
-  {
-    id: 'space.aurora.oval',
-    group: 'astronomy',
-    title: 'Aurora Oval',
-    subtitle: 'Boundary contour',
-    visibility: 'nerdy',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.9,
-    zIndex: 110,
-    supportsLegend: false,
-    supportsOpacity: true,
-    supportsSourceInfo: true,
-    source: {
-      name: 'NOAA SWPC',
-      details: 'Derived contour from OVATION probabilities',
-    },
-  },
 ] as const satisfies readonly LayerCatalogItem[];
 
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(

@@ -1,4 +1,5 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -48,6 +49,8 @@ type Sample = {
 };
 type Flight = { origin: Stop; destination: Stop; totalDistanceMi: number; cruiseAltitudeFt: number; departureIso: string; samples: Sample[]; counts: Record<string, number> };
 type Station = { station: Stop; metar: any | null; taf: any | null };
+
+const AVIATION_WIDGET_SELECTION_KEY = 'omniwx:widget:aviation:selected:v1';
 
 const CRUISE_LEVELS = [
   { label: '6,000 ft', feet: 6000 },
@@ -263,6 +266,10 @@ function severityFromScore(score: number): 'low' | 'elevated' | 'high' {
   if (score >= 5) return 'high';
   if (score >= 3) return 'elevated';
   return 'low';
+}
+
+function severityRank(severity: Sample['severity']) {
+  return severity === 'high' ? 3 : severity === 'elevated' ? 2 : 1;
 }
 
 function airportRiskText(risk: Sample['airportRisk']) {
@@ -509,6 +516,45 @@ function routeDecision(samples: Sample[] | undefined) {
   return { label: 'Favorable corridor', tone: 'low' as const, summary: 'No matched product-based advisories along the sampled route.' };
 }
 
+async function saveAviationWidgetStation(stop: Stop) {
+  const code = stop.code ?? stop.raw.trim().toUpperCase();
+  if (!code) return;
+  try {
+    await AsyncStorage.setItem(AVIATION_WIDGET_SELECTION_KEY, JSON.stringify({
+      type: 'airport',
+      station: code,
+      name: stop.label,
+      lat: stop.lat,
+      lon: stop.lon,
+      savedAt: Date.now(),
+    }));
+  } catch {}
+}
+
+async function saveAviationWidgetRoute(flight: Flight) {
+  const decision = routeDecision(flight.samples);
+  const worst = [...flight.samples].sort((a, b) => severityRank(b.severity) - severityRank(a.severity))[0];
+  const origin = flight.origin.code ?? flight.origin.label;
+  const destination = flight.destination.code ?? flight.destination.label;
+  const hazards = [
+    flight.counts.turbulence ? `${flight.counts.turbulence} turbulence` : null,
+    flight.counts.icing ? `${flight.counts.icing} icing` : null,
+    flight.counts.sigmet ? `${flight.counts.sigmet} SIGMET` : null,
+    flight.counts.cwa ? `${flight.counts.cwa} CWA` : null,
+    flight.counts.pirep ? `${flight.counts.pirep} PIREP` : null,
+  ].filter(Boolean).join(' / ');
+  try {
+    await AsyncStorage.setItem(AVIATION_WIDGET_SELECTION_KEY, JSON.stringify({
+      type: 'route',
+      title: `${origin} to ${destination}`,
+      category: decision.label,
+      summary: worst ? `${worst.label}: ${worst.severity}` : decision.summary,
+      hazards: hazards || 'No matched route advisories',
+      savedAt: Date.now(),
+    }));
+  } catch {}
+}
+
 export default function AviationScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -561,6 +607,7 @@ export default function AviationScreen() {
       const code = s.code ?? s.raw.trim().toUpperCase();
       const [metar, taf] = await Promise.all([fetchProduct('metar', code), fetchProduct('taf', code)]);
       setStation({ station: s, metar, taf });
+      await saveAviationWidgetStation(s);
       setFlight(null);
       setMapRegion({ latitude: s.lat, longitude: s.lon, latitudeDelta: 3, longitudeDelta: 3, zoom: 6 });
     } catch (err: any) {
@@ -644,7 +691,7 @@ export default function AviationScreen() {
         };
       });
       const matchedAdvisories = Array.from(new Map(samples.flatMap((sample) => sample.advisories).map((advisory) => [advisory.key, advisory])).values());
-      setFlight({
+      const nextFlight = {
         origin,
         destination,
         totalDistanceMi,
@@ -658,7 +705,9 @@ export default function AviationScreen() {
           cwa: matchedAdvisories.filter((f) => f.productType === 'cwa').length,
           pirep: matchedAdvisories.filter((f) => f.productType === 'pirep').length,
         },
-      });
+      };
+      setFlight(nextFlight);
+      await saveAviationWidgetRoute(nextFlight);
       setStation(null);
       setMapRegion(region(pts));
     } catch (err: any) {

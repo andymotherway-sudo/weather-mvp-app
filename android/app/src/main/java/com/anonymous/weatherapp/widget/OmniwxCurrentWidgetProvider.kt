@@ -13,10 +13,13 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
       val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_current).apply {
         setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
         setTextViewText(R.id.widget_title, "OMNIwx")
-        setTextViewText(R.id.widget_primary, "--F")
+        setTextViewText(R.id.widget_primary, "--")
         setTextViewText(R.id.widget_secondary, "Updating current conditions")
+        setTextViewText(R.id.widget_high, "--")
+        setTextViewText(R.id.widget_low, "--")
         setTextViewText(R.id.widget_tertiary, "Open OMNIwx if this stays blank")
-        setTextViewText(R.id.widget_footer, "Last updated --")
+        setTextViewText(R.id.widget_footer, "--")
+        setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
       }
       appWidgetManager.updateAppWidget(id, loading)
     }
@@ -35,22 +38,25 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
       if (weather == null) {
         setTextViewText(R.id.widget_title, "OMNIwx")
-        setTextViewText(R.id.widget_primary, "--F")
+        setTextViewText(R.id.widget_primary, "--")
         setTextViewText(R.id.widget_secondary, "Open OMNIwx to refresh")
+        setTextViewText(R.id.widget_high, "--")
+        setTextViewText(R.id.widget_low, "--")
         setTextViewText(R.id.widget_tertiary, "Set a default city or allow location")
-        setTextViewText(R.id.widget_footer, "Last updated --")
+        setTextViewText(R.id.widget_footer, "--")
+        setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
       } else {
         setTextViewText(R.id.widget_title, weather.place.name)
-        setTextViewText(R.id.widget_primary, "${weather.temperatureF.roundLabel()}F")
-        setTextViewText(
-          R.id.widget_secondary,
-          "${weatherCodeLabel(weather.weatherCode)} - H ${weather.highF.roundLabel()} / L ${weather.lowF.roundLabel()}"
-        )
+        setTextViewText(R.id.widget_primary, "${weather.temperatureF.roundLabel()}")
+        setTextViewText(R.id.widget_secondary, weatherCodeLabel(weather.weatherCode))
+        setTextViewText(R.id.widget_high, "${weather.highF.roundLabel()} high")
+        setTextViewText(R.id.widget_low, "${weather.lowF.roundLabel()} low")
         setTextViewText(
           R.id.widget_tertiary,
           "Wind ${windDirectionLabel(weather.windDirectionDeg)} ${weather.windMph.roundLabel()} mph"
         )
-        setTextViewText(R.id.widget_footer, "Last updated ${weather.updatedLabel}")
+        setTextViewText(R.id.widget_footer, weather.updatedLabel)
+        setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(weather.weatherCode))
       }
     }
   }

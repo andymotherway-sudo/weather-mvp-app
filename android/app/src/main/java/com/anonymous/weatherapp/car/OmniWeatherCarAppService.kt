@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.location.Location
 import android.location.LocationManager
 import android.os.Handler
@@ -25,6 +26,9 @@ import androidx.car.app.SurfaceCallback
 import androidx.car.app.SurfaceContainer
 import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
+import androidx.car.app.model.CarIcon
+import androidx.car.app.model.GridItem
+import androidx.car.app.model.GridTemplate
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Pane
@@ -35,6 +39,7 @@ import androidx.car.app.navigation.model.MapController
 import androidx.car.app.navigation.model.MapWithContentTemplate
 import androidx.car.app.validation.HostValidator
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import java.net.HttpURLConnection
 import java.net.UnknownHostException
 import java.net.URL
@@ -281,15 +286,22 @@ private class OmniWeatherFiveDayScreen(carContext: CarContext, repository: CarWe
     loadingOrErrorTemplate("5-day Forecast")?.let { return@safeTemplate it }
     val current = repository.report!!
     val list = ItemList.Builder()
-    current.daily.take(5).forEach { day ->
-      list.addItem(Row.Builder()
-        .setTitle(day.label)
-        .addText("${day.highF.roundLabel()} / ${day.lowF.roundLabel()} - ${weatherCodeLabel(day.weatherCode)}")
-        .addText("Precip ${day.precipChancePct.roundLabel()}%")
+    if (current.daily.isEmpty()) {
+      list.addItem(GridItem.Builder()
+        .setTitle("Forecast")
+        .setText("Loading")
+        .setImage(carWeatherIcon(-1), GridItem.IMAGE_TYPE_ICON)
         .build())
+    } else {
+      current.daily.take(5).forEach { day ->
+        list.addItem(GridItem.Builder()
+        .setTitle("${day.label} ${day.highF.roundLabel()}/${day.lowF.roundLabel()}")
+        .setText("${weatherCodeLabel(day.weatherCode)} - rain ${day.precipChancePct.roundLabel()}%")
+        .setImage(carWeatherIcon(day.weatherCode), GridItem.IMAGE_TYPE_ICON)
+        .build())
+      }
     }
-    if (current.daily.isEmpty()) list.addItem(Row.Builder().setTitle("Forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    ListTemplate.Builder()
+    GridTemplate.Builder()
       .setSingleList(list.build())
       .setTitle("5-day Forecast")
       .setHeaderAction(Action.BACK)
@@ -306,15 +318,23 @@ private class OmniWeatherHourlyScreen(carContext: CarContext, repository: CarWea
     loadingOrErrorTemplate("24-hour Forecast")?.let { return@safeTemplate it }
     val current = repository.report!!
     val list = ItemList.Builder()
-    listOf(0, 3, 6, 9, 12, 18, 23).mapNotNull { current.hourly.getOrNull(it) }.forEach { hour ->
-      list.addItem(Row.Builder()
-        .setTitle(hour.label)
-        .addText("${hour.temperatureF.roundLabel()}F - ${weatherCodeLabel(hour.weatherCode)}")
-        .addText("Precip ${hour.precipChancePct.roundLabel()}% - wind ${hour.windMph.roundLabel()} mph")
+    val hours = listOf(0, 2, 4, 6, 9, 12).mapNotNull { current.hourly.getOrNull(it) }
+    if (hours.isEmpty()) {
+      list.addItem(GridItem.Builder()
+        .setTitle("Hourly")
+        .setText("Loading")
+        .setImage(carWeatherIcon(-1), GridItem.IMAGE_TYPE_ICON)
         .build())
+    } else {
+      hours.forEach { hour ->
+        list.addItem(GridItem.Builder()
+        .setTitle("${hour.label} ${hour.temperatureF.roundLabel()}F")
+        .setText("${weatherCodeLabel(hour.weatherCode)} - ${hour.precipChancePct.roundLabel()}% - ${hour.windMph.roundLabel()} mph")
+        .setImage(carWeatherIcon(hour.weatherCode), GridItem.IMAGE_TYPE_ICON)
+        .build())
+      }
     }
-    if (current.hourly.isEmpty()) list.addItem(Row.Builder().setTitle("Hourly forecast loading").addText("Tap Refresh if the car connection just started.").build())
-    ListTemplate.Builder()
+    GridTemplate.Builder()
       .setSingleList(list.build())
       .setTitle("24-hour Forecast")
       .setHeaderAction(Action.BACK)
@@ -1282,5 +1302,106 @@ private fun weatherCodeLabel(code: Int): String {
     85, 86 -> "Snow showers"
     95, 96, 99 -> "Thunderstorms"
     else -> "Current conditions"
+  }
+}
+
+private fun carWeatherIcon(code: Int): CarIcon {
+  val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+  val canvas = Canvas(bitmap)
+  val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = Color.rgb(15, 23, 42)
+    style = Paint.Style.FILL
+  }
+  val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = Color.rgb(56, 189, 248)
+    style = Paint.Style.STROKE
+    strokeWidth = 4f
+  }
+  val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = weatherIconColor(code)
+    style = Paint.Style.FILL
+  }
+  val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = weatherIconColor(code)
+    style = Paint.Style.STROKE
+    strokeWidth = 5f
+    strokeCap = Paint.Cap.ROUND
+  }
+  val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = Color.WHITE
+    style = Paint.Style.FILL
+  }
+
+  canvas.drawCircle(48f, 48f, 43f, bgPaint)
+  canvas.drawCircle(48f, 48f, 42f, ringPaint)
+
+  when (code) {
+    0 -> {
+      canvas.drawCircle(48f, 48f, 15f, accentPaint)
+      for (i in 0 until 8) {
+        val angle = Math.toRadians((i * 45).toDouble())
+        val x1 = 48f + (24f * cos(angle)).toFloat()
+        val y1 = 48f + (24f * sin(angle)).toFloat()
+        val x2 = 48f + (33f * cos(angle)).toFloat()
+        val y2 = 48f + (33f * sin(angle)).toFloat()
+        canvas.drawLine(x1, y1, x2, y2, linePaint)
+      }
+    }
+    1, 2, 3 -> drawCloudIcon(canvas, whitePaint, accentPaint, code == 1 || code == 2)
+    45, 48 -> {
+      canvas.drawCircle(33f, 39f, 9f, whitePaint)
+      canvas.drawCircle(49f, 37f, 13f, whitePaint)
+      canvas.drawRoundRect(RectF(25f, 43f, 68f, 58f), 8f, 8f, whitePaint)
+      listOf(64f, 72f).forEach { y -> canvas.drawLine(24f, y, 72f, y, linePaint) }
+    }
+    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> {
+      drawCloudIcon(canvas, whitePaint, accentPaint, false)
+      listOf(31f, 48f, 65f).forEach { x -> canvas.drawLine(x, 62f, x - 6f, 78f, linePaint) }
+    }
+    71, 73, 75, 77, 85, 86 -> {
+      drawCloudIcon(canvas, whitePaint, accentPaint, false)
+      listOf(32f, 48f, 64f).forEach { x ->
+        canvas.drawCircle(x, 72f, 3.5f, accentPaint)
+      }
+    }
+    95, 96, 99 -> {
+      drawCloudIcon(canvas, whitePaint, accentPaint, false)
+      val bolt = android.graphics.Path().apply {
+        moveTo(50f, 56f)
+        lineTo(39f, 76f)
+        lineTo(50f, 73f)
+        lineTo(44f, 88f)
+        lineTo(61f, 66f)
+        lineTo(50f, 69f)
+        close()
+      }
+      canvas.drawPath(bolt, accentPaint)
+    }
+    else -> {
+      canvas.drawCircle(48f, 48f, 15f, accentPaint)
+      canvas.drawRoundRect(RectF(28f, 66f, 68f, 74f), 5f, 5f, whitePaint)
+    }
+  }
+
+  return CarIcon.Builder(IconCompat.createWithBitmap(bitmap)).build()
+}
+
+private fun drawCloudIcon(canvas: Canvas, cloudPaint: Paint, accentPaint: Paint, showSun: Boolean) {
+  if (showSun) canvas.drawCircle(34f, 34f, 12f, accentPaint)
+  canvas.drawCircle(34f, 50f, 11f, cloudPaint)
+  canvas.drawCircle(49f, 45f, 16f, cloudPaint)
+  canvas.drawCircle(63f, 52f, 10f, cloudPaint)
+  canvas.drawRoundRect(RectF(25f, 52f, 73f, 65f), 8f, 8f, cloudPaint)
+}
+
+private fun weatherIconColor(code: Int): Int {
+  return when (code) {
+    0 -> Color.rgb(250, 204, 21)
+    1, 2 -> Color.rgb(251, 191, 36)
+    3, 45, 48 -> Color.rgb(148, 163, 184)
+    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> Color.rgb(56, 189, 248)
+    71, 73, 75, 77, 85, 86 -> Color.rgb(186, 230, 253)
+    95, 96, 99 -> Color.rgb(251, 146, 60)
+    else -> Color.rgb(34, 211, 238)
   }
 }

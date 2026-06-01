@@ -6,57 +6,133 @@
   android:background="@drawable/omniwx_widget_background"
   android:orientation="vertical">
 
-  <TextView
-    android:id="@+id/widget_title"
+  <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:ellipsize="end"
-    android:maxLines="1"
-    android:text="SkyScore"
-    android:textColor="#e0f2fe"
-    android:textSize="13sp"
-    android:textStyle="bold" />
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
 
-  <TextView
-    android:id="@+id/widget_primary"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="7dp"
-    android:text="-- / 100"
-    android:textColor="#ffffff"
-    android:textSize="30sp"
-    android:textStyle="bold" />
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="SKY"
+      android:textColor="#a78bfa"
+      android:textSize="10sp"
+      android:textStyle="bold" />
 
-  <TextView
-    android:id="@+id/widget_secondary"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:ellipsize="end"
-    android:maxLines="1"
-    android:text="Open Space to refresh"
-    android:textColor="#bae6fd"
-    android:textSize="12sp"
-    android:textStyle="bold" />
+    <TextView
+      android:id="@+id/widget_title"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:layout_weight="1"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:text="SkyScore"
+      android:textColor="#f8fafc"
+      android:textSize="14sp"
+      android:textStyle="bold" />
+  </LinearLayout>
 
-  <TextView
-    android:id="@+id/widget_tertiary"
+  <LinearLayout
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="5dp"
-    android:ellipsize="end"
-    android:maxLines="2"
-    android:text="Bortle unavailable - Aurora unavailable"
-    android:textColor="#cbd5e1"
-    android:textSize="11sp" />
+    android:layout_height="0dp"
+    android:layout_marginTop="8dp"
+    android:layout_weight="1"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <FrameLayout
+      android:layout_width="92dp"
+      android:layout_height="92dp">
+
+      <ImageView
+        android:id="@+id/widget_score_ring"
+        android:layout_width="92dp"
+        android:layout_height="92dp"
+        android:contentDescription="@null" />
+
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+          android:id="@+id/widget_primary"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:text="--"
+          android:textColor="#ffffff"
+          android:textSize="30sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="/100"
+          android:textColor="#cbd5e1"
+          android:textSize="10sp" />
+      </LinearLayout>
+    </FrameLayout>
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_marginStart="13dp"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/widget_secondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="Quality --"
+        android:textColor="#bae6fd"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_best_window"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:text="Best window --"
+        android:textColor="#e2e8f0"
+        android:textSize="11sp" />
+
+      <TextView
+        android:id="@+id/widget_tertiary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="Bortle --"
+        android:textColor="#93c5fd"
+        android:textSize="11sp" />
+    </LinearLayout>
+  </LinearLayout>
+
+  <View
+    android:layout_width="match_parent"
+    android:layout_height="1dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="7dp"
+    android:background="@drawable/omniwx_widget_divider" />
 
   <TextView
     android:id="@+id/widget_footer"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="8dp"
     android:ellipsize="end"
     android:maxLines="1"
-    android:text="Last updated --"
-    android:textColor="#94a3b8"
-    android:textSize="10sp" />
+    android:text="Aurora chance --"
+    android:textColor="#86efac"
+    android:textSize="11sp" />
 </LinearLayout>

@@ -982,11 +982,24 @@ export default function MapsScreen() {
     const rawView = params?.view ? String(params.view).toLowerCase() : '';
     if (!rawView) return;
 
+    if (rawView === 'astronomer' || rawView === 'astronomy' || rawView === 'astro') {
+      router.replace({
+        pathname: '/astro-map',
+        params: {
+          lat: params?.lat ? String(params.lat) : '',
+          lon: params?.lon ? String(params.lon) : '',
+          from: 'maps-astronomy-mode',
+          nav: String(Date.now()),
+        },
+      } as any);
+      return;
+    }
+
     const valid = MAP_VIEWS.some((view) => view.id === rawView);
     if (!valid) return;
 
     dispatch({ type: 'SET_VIEW', viewId: rawView as any });
-  }, [params?.view]);
+  }, [params?.lat, params?.lon, params?.view, router]);
 
   useEffect(() => {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
@@ -3994,7 +4007,13 @@ export default function MapsScreen() {
           }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);
-            dispatch({ type: 'SET_VIEW', viewId: 'astronomer' });
+            router.push({
+              pathname: '/astro-map',
+              params: {
+                from: 'maps-layer-sheet',
+                nav: String(Date.now()),
+              },
+            } as any);
           }}
           onOpenNauticalMap={() => {
             setLayersSheetOpen(false);

@@ -15,7 +15,7 @@
     <TextView
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:text="AIR"
+      android:text="CLIMO"
       android:textColor="#7dd3fc"
       android:textSize="10sp"
       android:textStyle="bold" />
@@ -28,19 +28,19 @@
       android:layout_weight="1"
       android:ellipsize="end"
       android:maxLines="1"
-      android:text="Aviation"
+      android:text="Climatology"
       android:textColor="#f8fafc"
       android:textSize="14sp"
       android:textStyle="bold" />
 
     <TextView
-      android:id="@+id/widget_primary"
+      android:id="@+id/widget_month"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:background="@drawable/omniwx_widget_chip"
-      android:text="--"
+      android:text="This month"
       android:textColor="#ffffff"
-      android:textSize="13sp"
+      android:textSize="11sp"
       android:textStyle="bold" />
   </LinearLayout>
 
@@ -61,21 +61,19 @@
       <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="WIND"
+        android:text="NORMAL HIGH"
         android:textColor="#94a3b8"
         android:textSize="9sp"
         android:textStyle="bold" />
 
       <TextView
-        android:id="@+id/widget_secondary"
+        android:id="@+id/widget_high"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="5dp"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:text="Wind --"
-        android:textColor="#e0f2fe"
-        android:textSize="13sp"
+        android:text="--"
+        android:textColor="#fb7185"
+        android:textSize="22sp"
         android:textStyle="bold" />
     </LinearLayout>
 
@@ -90,20 +88,47 @@
       <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="CEILING"
+        android:text="NORMAL LOW"
         android:textColor="#94a3b8"
         android:textSize="9sp"
         android:textStyle="bold" />
 
       <TextView
-        android:id="@+id/widget_tertiary"
+        android:id="@+id/widget_low"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="5dp"
+        android:text="--"
+        android:textColor="#60a5fa"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_marginStart="8dp"
+      android:layout_weight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:orientation="vertical">
+
+      <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PRECIP"
+        android:textColor="#94a3b8"
+        android:textSize="9sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_precip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
         android:ellipsize="end"
         android:maxLines="2"
-        android:text="Ceiling --"
-        android:textColor="#e0f2fe"
+        android:text="--"
+        android:textColor="#67e8f9"
         android:textSize="13sp"
         android:textStyle="bold" />
     </LinearLayout>
@@ -122,7 +147,7 @@
     android:layout_height="wrap_content"
     android:ellipsize="end"
     android:maxLines="1"
-    android:text="Situational awareness only."
+    android:text="Open Almanac to refresh climate normals."
     android:textColor="#cbd5e1"
     android:textSize="10sp" />
 </LinearLayout>

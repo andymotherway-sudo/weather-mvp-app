@@ -15,11 +15,12 @@ export function OpenAstroMapCard({ lat, lon, placeName, compact = false }: Props
   const { chrome } = useAppChrome();
   const openMap = () =>
     router.push({
-      pathname: '/(tabs)/maps',
+      pathname: '/(tabs)/astro-map',
       params: {
-        view: 'astronomy',
         lat: String(lat),
         lon: String(lon),
+        from: 'space-card',
+        nav: String(Date.now()),
       },
     });
 

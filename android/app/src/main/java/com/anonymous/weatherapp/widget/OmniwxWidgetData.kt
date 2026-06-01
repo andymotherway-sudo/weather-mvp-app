@@ -4,11 +4,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.net.Uri
 import com.anonymous.weatherapp.MainActivity
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.atan2
@@ -21,6 +27,9 @@ import org.json.JSONObject
 
 private const val PLACE_STORAGE_KEY = "omniwx.place.v2"
 private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
+private const val AVIATION_WIDGET_SELECTION_KEY = "omniwx:widget:aviation:selected:v1"
+private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
+private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 
 data class WidgetPlace(
   val name: String,
@@ -59,6 +68,24 @@ data class WidgetMetar(
   val visibility: String,
   val ceiling: String,
   val hazards: String,
+  val updatedLabel: String,
+)
+
+data class WidgetAviationBriefing(
+  val title: String,
+  val category: String,
+  val secondary: String,
+  val tertiary: String,
+  val footer: String,
+)
+
+data class WidgetClimatology(
+  val place: WidgetPlace,
+  val stationName: String,
+  val normalHighF: Double?,
+  val normalLowF: Double?,
+  val normalPrecipIn: Double?,
+  val annualPrecipIn: Double?,
   val updatedLabel: String,
 )
 
@@ -152,7 +179,7 @@ object OmniwxWidgetData {
       clamped >= 45 -> "Fair"
       else -> "Poor"
     }
-    val bestWindow = if (clamped >= 65) "Best: 9 PM-12 AM" else "Best: limited tonight"
+    val bestWindow = if (clamped >= 65) "Best window 9 PM-12 AM" else "Best window limited tonight"
     return WidgetSkyScore(
       score = clamped,
       label = label,
@@ -172,6 +199,159 @@ object OmniwxWidgetData {
       return metarFromJson(nearest)
     }
     return null
+  }
+
+  fun fetchAviationBriefing(context: Context): WidgetAviationBriefing? {
+    val selection = readAsyncStorageValue(context, AVIATION_WIDGET_SELECTION_KEY)?.let { raw ->
+      runCatching { JSONObject(raw) }.getOrNull()
+    }
+
+    if (selection?.optString("type") == "route") {
+      val ageMs = System.currentTimeMillis() - selection.optLong("savedAt", 0L)
+      if (ageMs in 0..(6L * 60L * 60L * 1000L)) {
+        return WidgetAviationBriefing(
+          title = selection.optString("title", "Route Briefing").ifBlank { "Route Briefing" },
+          category = selection.optString("category", "--").ifBlank { "--" },
+          secondary = selection.optString("summary", "Route weather snapshot").ifBlank { "Route weather snapshot" },
+          tertiary = selection.optString("hazards", "No matched route advisories").ifBlank { "No matched route advisories" },
+          footer = "Saved ${nowLabel()}. Situational awareness only.",
+        )
+      }
+    }
+
+    val selectedStation = selection
+      ?.takeIf { it.optString("type") == "airport" }
+      ?.optString("station", "")
+      ?.trim()
+      ?.uppercase(Locale.US)
+      ?.takeIf { it.isNotBlank() }
+
+    val metar = selectedStation
+      ?.let { runCatching { fetchMetarForStation(it) }.getOrNull() }
+      ?: readPlace(context)?.let { runCatching { fetchNearestMetar(it) }.getOrNull() }
+      ?: return null
+
+    return WidgetAviationBriefing(
+      title = metar.station,
+      category = metar.category,
+      secondary = "${metar.wind} / ${metar.visibility}",
+      tertiary = metar.ceiling,
+      footer = "${metar.hazards}. ${metar.updatedLabel}",
+    )
+  }
+
+  fun fetchMetarForStation(station: String): WidgetMetar? {
+    val normalized = station.trim().uppercase(Locale.US)
+    if (normalized.isBlank()) return null
+    val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&ids=$normalized"
+    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    if (array.length() == 0) return null
+    return metarFromJson(array.optJSONObject(0) ?: return null)
+  }
+
+  fun fetchClimatology(context: Context): WidgetClimatology? {
+    val place = readPlace(context) ?: return null
+    val cached = readClimoCache(context, place)
+    if (cached != null) return cached
+
+    val url = "$OMNIWX_API_BASE/api/almanac/climo?lat=${place.lat}&lon=${place.lon}"
+    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    return climoFromJson(place, root)
+  }
+
+  fun weatherIconBitmap(code: Int): Bitmap {
+    val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cloudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(241, 245, 249)
+      style = Paint.Style.FILL
+    }
+    val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = weatherIconColor(code)
+      style = Paint.Style.FILL
+    }
+    val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = weatherIconColor(code)
+      style = Paint.Style.STROKE
+      strokeWidth = 7f
+      strokeCap = Paint.Cap.ROUND
+    }
+
+    when (code) {
+      0 -> drawSun(canvas, 64f, 64f, 22f, accentPaint, linePaint)
+      1, 2 -> {
+        drawSun(canvas, 49f, 47f, 18f, accentPaint, linePaint)
+        drawCloud(canvas, cloudPaint, 0f)
+      }
+      3 -> drawCloud(canvas, cloudPaint, 0f)
+      45, 48 -> {
+        drawCloud(canvas, cloudPaint, -7f)
+        listOf(78f, 92f, 106f).forEach { y -> canvas.drawLine(25f, y, 103f, y, linePaint) }
+      }
+      51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> {
+        drawCloud(canvas, cloudPaint, -8f)
+        listOf(43f, 64f, 85f).forEach { x -> canvas.drawLine(x, 79f, x - 9f, 106f, linePaint) }
+      }
+      71, 73, 75, 77, 85, 86 -> {
+        drawCloud(canvas, cloudPaint, -8f)
+        listOf(43f, 64f, 85f).forEach { x -> canvas.drawCircle(x, 98f, 5f, accentPaint) }
+      }
+      95, 96, 99 -> {
+        drawCloud(canvas, cloudPaint, -10f)
+        val bolt = android.graphics.Path().apply {
+          moveTo(68f, 72f)
+          lineTo(51f, 103f)
+          lineTo(67f, 98f)
+          lineTo(57f, 121f)
+          lineTo(82f, 88f)
+          lineTo(66f, 93f)
+          close()
+        }
+        canvas.drawPath(bolt, accentPaint)
+      }
+      else -> {
+        val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          color = Color.rgb(34, 211, 238)
+          alpha = 70
+          style = Paint.Style.FILL
+        }
+        canvas.drawCircle(64f, 64f, 34f, halo)
+        canvas.drawCircle(64f, 64f, 21f, accentPaint)
+      }
+    }
+    return bitmap
+  }
+
+  fun skyScoreRingBitmap(score: Int?): Bitmap {
+    val bitmap = Bitmap.createBitmap(184, 184, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val base = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(15, 23, 42)
+      style = Paint.Style.STROKE
+      strokeWidth = 15f
+      strokeCap = Paint.Cap.ROUND
+    }
+    val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(34, 211, 238)
+      alpha = 62
+      style = Paint.Style.STROKE
+      strokeWidth = 23f
+      strokeCap = Paint.Cap.ROUND
+    }
+    val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = skyScoreColor(score ?: 0)
+      style = Paint.Style.STROKE
+      strokeWidth = 16f
+      strokeCap = Paint.Cap.ROUND
+    }
+    val rect = RectF(22f, 22f, 162f, 162f)
+    canvas.drawArc(rect, -90f, 360f, false, base)
+    if (score != null) {
+      val sweep = (score.coerceIn(0, 100) / 100f) * 360f
+      canvas.drawArc(rect, -90f, sweep, false, glow)
+      canvas.drawArc(rect, -90f, sweep, false, arc)
+    }
+    return bitmap
   }
 
   private fun nearestMetarJson(place: WidgetPlace, array: JSONArray): JSONObject? {
@@ -265,6 +445,53 @@ private fun placeFromJson(json: JSONObject): WidgetPlace? {
   return WidgetPlace(name = name, lat = lat, lon = lon)
 }
 
+private fun readClimoCache(context: Context, place: WidgetPlace): WidgetClimatology? {
+  val key = "$CLIMO_CACHE_PREFIX:${String.format(Locale.US, "%.3f", place.lat)},${String.format(Locale.US, "%.3f", place.lon)}"
+  return readAsyncStorageValue(context, key)?.let { raw ->
+    runCatching { climoFromJson(place, JSONObject(raw)) }.getOrNull()
+  }
+}
+
+private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatology? {
+  val normals = root.optJSONArray("normals") ?: return null
+  val month = Calendar.getInstance().get(Calendar.MONTH) + 1
+  var normalHigh: Double? = null
+  var normalLow: Double? = null
+  for (idx in 0 until normals.length()) {
+    val item = normals.optJSONObject(idx) ?: continue
+    if (item.optInt("month", -1) != month) continue
+    normalHigh = item.optNullableDouble("tmaxF")
+    normalLow = item.optNullableDouble("tminF")
+    break
+  }
+
+  val precipArray = root.optJSONArray("precipMonthlyIn")
+  val monthPrecip = precipArray?.optNullableDouble(month - 1)
+  var annualPrecip: Double? = null
+  if (precipArray != null) {
+    var total = 0.0
+    var count = 0
+    for (idx in 0 until precipArray.length()) {
+      val value = precipArray.optNullableDouble(idx) ?: continue
+      total += value.coerceAtLeast(0.0)
+      count += 1
+    }
+    if (count > 0) annualPrecip = total
+  }
+
+  val station = root.optJSONObject("station")
+  val stationName = station?.optString("name", "")?.ifBlank { null } ?: "Nearest climate station"
+  return WidgetClimatology(
+    place = place,
+    stationName = stationName,
+    normalHighF = normalHigh,
+    normalLowF = normalLow,
+    normalPrecipIn = monthPrecip,
+    annualPrecipIn = annualPrecip,
+    updatedLabel = nowLabel(),
+  )
+}
+
 private fun looksLikeCoordinateLabel(value: String): Boolean {
   return Regex("""^\s*-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?\s*$""").matches(value)
 }
@@ -275,6 +502,18 @@ private fun fetchJsonObject(url: String, userAgent: String): JSONObject {
 
 private fun fetchJsonArray(url: String, userAgent: String): JSONArray {
   return JSONArray(fetchText(url, userAgent))
+}
+
+private fun JSONObject.optNullableDouble(name: String): Double? {
+  if (!has(name) || isNull(name)) return null
+  val value = optDouble(name, Double.NaN)
+  return if (value.isFinite()) value else null
+}
+
+private fun JSONArray.optNullableDouble(index: Int): Double? {
+  if (index < 0 || index >= length() || isNull(index)) return null
+  val value = optDouble(index, Double.NaN)
+  return if (value.isFinite()) value else null
 }
 
 private fun fetchText(url: String, userAgent: String): String {
@@ -290,6 +529,46 @@ private fun fetchText(url: String, userAgent: String): String {
     conn.inputStream.bufferedReader().use { it.readText() }
   } finally {
     conn.disconnect()
+  }
+}
+
+private fun drawSun(canvas: Canvas, cx: Float, cy: Float, radius: Float, fill: Paint, ray: Paint) {
+  canvas.drawCircle(cx, cy, radius, fill)
+  for (i in 0 until 8) {
+    val angle = Math.toRadians((i * 45).toDouble())
+    val x1 = cx + ((radius + 11f) * cos(angle)).toFloat()
+    val y1 = cy + ((radius + 11f) * sin(angle)).toFloat()
+    val x2 = cx + ((radius + 23f) * cos(angle)).toFloat()
+    val y2 = cy + ((radius + 23f) * sin(angle)).toFloat()
+    canvas.drawLine(x1, y1, x2, y2, ray)
+  }
+}
+
+private fun drawCloud(canvas: Canvas, paint: Paint, yOffset: Float) {
+  canvas.drawCircle(43f, 66f + yOffset, 16f, paint)
+  canvas.drawCircle(64f, 58f + yOffset, 24f, paint)
+  canvas.drawCircle(86f, 69f + yOffset, 15f, paint)
+  canvas.drawRoundRect(RectF(31f, 69f + yOffset, 101f, 88f + yOffset), 13f, 13f, paint)
+}
+
+private fun weatherIconColor(code: Int): Int {
+  return when (code) {
+    0 -> Color.rgb(250, 204, 21)
+    1, 2 -> Color.rgb(251, 191, 36)
+    3, 45, 48 -> Color.rgb(148, 163, 184)
+    51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> Color.rgb(56, 189, 248)
+    71, 73, 75, 77, 85, 86 -> Color.rgb(186, 230, 253)
+    95, 96, 99 -> Color.rgb(251, 146, 60)
+    else -> Color.rgb(34, 211, 238)
+  }
+}
+
+private fun skyScoreColor(score: Int): Int {
+  return when {
+    score >= 80 -> Color.rgb(34, 211, 238)
+    score >= 65 -> Color.rgb(96, 165, 250)
+    score >= 45 -> Color.rgb(250, 204, 21)
+    else -> Color.rgb(248, 113, 113)
   }
 }
 

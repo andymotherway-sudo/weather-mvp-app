@@ -77,9 +77,6 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'astronomer',
     title: 'Astronomy',
-    presetEnabledLayers: ['astro.skyScore'],
-    presetLayerOpacity: {
-      'astro.skyScore': 0.85,
-    },
+    presetEnabledLayers: [],
   },
 ];
