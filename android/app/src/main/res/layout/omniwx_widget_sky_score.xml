@@ -119,12 +119,13 @@
     </LinearLayout>
   </LinearLayout>
 
-  <View
+  <TextView
     android:layout_width="match_parent"
     android:layout_height="1dp"
     android:layout_marginTop="8dp"
     android:layout_marginBottom="7dp"
-    android:background="@drawable/omniwx_widget_divider" />
+    android:background="@drawable/omniwx_widget_divider"
+    android:text="" />
 
   <TextView
     android:id="@+id/widget_footer"
