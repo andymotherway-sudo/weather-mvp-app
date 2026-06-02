@@ -29,6 +29,7 @@ private const val PLACE_STORAGE_KEY = "omniwx.place.v2"
 private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val AVIATION_WIDGET_SELECTION_KEY = "omniwx:widget:aviation:selected:v1"
 private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
+private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
 private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 
 data class WidgetPlace(
@@ -58,6 +59,7 @@ data class WidgetSkyScore(
   val label: String,
   val bestWindow: String,
   val bortle: String,
+  val clouds: String,
   val aurora: String,
 )
 
@@ -69,6 +71,12 @@ data class WidgetMetar(
   val ceiling: String,
   val hazards: String,
   val updatedLabel: String,
+)
+
+private data class AirportCandidate(
+  val id: String,
+  val lat: Double,
+  val lon: Double,
 )
 
 data class WidgetAviationBriefing(
@@ -86,7 +94,24 @@ data class WidgetClimatology(
   val normalLowF: Double?,
   val normalPrecipIn: Double?,
   val annualPrecipIn: Double?,
+  val monthlyHighsF: List<Double?> = emptyList(),
+  val monthlyLowsF: List<Double?> = emptyList(),
+  val recordHighF: Double?,
+  val recordHighYear: Int?,
+  val recordLowF: Double?,
+  val recordLowYear: Int?,
+  val recordPrecipIn: Double?,
+  val recordPrecipYear: Int?,
   val updatedLabel: String,
+)
+
+private data class WidgetDailyRecords(
+  val recordHighF: Double?,
+  val recordHighYear: Int?,
+  val recordLowF: Double?,
+  val recordLowYear: Int?,
+  val recordPrecipIn: Double?,
+  val recordPrecipYear: Int?,
 )
 
 object OmniwxWidgetData {
@@ -185,7 +210,29 @@ object OmniwxWidgetData {
       label = label,
       bestWindow = bestWindow,
       bortle = "Bortle unavailable",
+      clouds = "Clouds ${weather.cloudPct.roundLabel()}%",
       aurora = "Aurora unavailable",
+    )
+  }
+
+  fun fetchSkyScore(context: Context): WidgetSkyScore? {
+    val place = readPlace(context) ?: return null
+    val url = "$OMNIWX_API_BASE/api/astro/inspect?lat=${place.lat}&lon=${place.lon}&hour=0"
+    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    val score = root.optInt("skyScore", -1).takeIf { it >= 0 } ?: return null
+    val site = root.optJSONObject("site")
+    val bortleClass = site?.optNullableDouble("bortleClass")
+    val bortleLabel = site?.optString("bortleLabel", "")?.ifBlank { null }
+    val low = root.optNullableDouble("cloudLow")
+    val mid = root.optNullableDouble("cloudMid")
+    val high = root.optNullableDouble("cloudHigh")
+    return WidgetSkyScore(
+      score = score.coerceIn(0, 100),
+      label = skyQualityLabel(score),
+      bestWindow = cloudLayerLine(low, mid, high),
+      bortle = bortleLine(bortleClass, bortleLabel),
+      clouds = cloudLayerShort(low, mid, high),
+      aurora = "Updated ${nowLabel()}",
     )
   }
 
@@ -229,6 +276,7 @@ object OmniwxWidgetData {
     val metar = selectedStation
       ?.let { runCatching { fetchMetarForStation(it) }.getOrNull() }
       ?: readPlace(context)?.let { runCatching { fetchNearestMetar(it) }.getOrNull() }
+      ?: readPlace(context)?.let { runCatching { fetchNearestCandidateMetar(it) }.getOrNull() }
       ?: return null
 
     return WidgetAviationBriefing(
@@ -249,14 +297,41 @@ object OmniwxWidgetData {
     return metarFromJson(array.optJSONObject(0) ?: return null)
   }
 
+  fun fetchNearestCandidateMetar(place: WidgetPlace): WidgetMetar? {
+    val candidates = listOf(
+      AirportCandidate("KFFZ", 33.4659, -111.7212),
+      AirportCandidate("KIWA", 33.3008, -111.6437),
+      AirportCandidate("KPHX", 33.4278, -112.0037),
+      AirportCandidate("KDVT", 33.6883, -112.0825),
+      AirportCandidate("KSDL", 33.6229, -111.9105),
+      AirportCandidate("KTUS", 32.1315, -110.9564),
+      AirportCandidate("KFLG", 35.1385, -111.6712),
+      AirportCandidate("KLAS", 36.0801, -115.1522),
+      AirportCandidate("KDEN", 39.8617, -104.6731),
+      AirportCandidate("KSLC", 40.7884, -111.9778),
+      AirportCandidate("KABQ", 35.0402, -106.6092),
+      AirportCandidate("KLAX", 33.9425, -118.4081),
+      AirportCandidate("KSFO", 37.6190, -122.3750),
+      AirportCandidate("KSEA", 47.4502, -122.3088)
+    ).sortedBy { haversineMiles(place.lat, place.lon, it.lat, it.lon) }
+
+    val ids = candidates.take(4).joinToString(",") { it.id }
+    val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&ids=$ids"
+    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    if (array.length() == 0) return null
+    val nearest = nearestMetarJson(place, array) ?: array.optJSONObject(0) ?: return null
+    return metarFromJson(nearest)
+  }
+
   fun fetchClimatology(context: Context): WidgetClimatology? {
     val place = readPlace(context) ?: return null
+    val records = readTodayRecordsCache(context)
     val cached = readClimoCache(context, place)
-    if (cached != null) return cached
+    if (cached != null) return cached.withRecords(records)
 
     val url = "$OMNIWX_API_BASE/api/almanac/climo?lat=${place.lat}&lon=${place.lon}"
     val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
-    return climoFromJson(place, root)
+    return climoFromJson(place, root)?.withRecords(records)
   }
 
   fun weatherIconBitmap(code: Int): Bitmap {
@@ -354,6 +429,78 @@ object OmniwxWidgetData {
     return bitmap
   }
 
+  fun climateArchBitmap(climo: WidgetClimatology?): Bitmap {
+    val bitmap = Bitmap.createBitmap(520, 104, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(37, 99, 235)
+      alpha = 72
+      style = Paint.Style.STROKE
+      strokeWidth = 1.5f
+    }
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(14, 165, 233)
+      alpha = 42
+      style = Paint.Style.FILL
+    }
+    val highPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(251, 113, 133)
+      style = Paint.Style.STROKE
+      strokeWidth = 4.5f
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+    val lowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(96, 165, 250)
+      style = Paint.Style.STROKE
+      strokeWidth = 4.5f
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+
+    canvas.drawRoundRect(RectF(4f, 8f, 516f, 98f), 18f, 18f, grid)
+    for (i in 1..3) {
+      val y = 8f + (90f / 4f) * i
+      canvas.drawLine(18f, y, 502f, y, grid)
+    }
+
+    val highs = climo?.monthlyHighsF?.takeIf { it.size >= 12 } ?: emptyList()
+    val lows = climo?.monthlyLowsF?.takeIf { it.size >= 12 } ?: emptyList()
+    val values = (highs + lows).mapNotNull { it?.takeIf { value -> value.isFinite() } }
+    if (values.size < 4) return bitmap
+    val min = (values.minOrNull() ?: 0.0) - 5.0
+    val max = (values.maxOrNull() ?: 100.0) + 5.0
+    fun x(index: Int) = 28f + (464f / 11f) * index
+    fun y(value: Double): Float {
+      val pct = ((value - min) / (max - min)).coerceIn(0.0, 1.0)
+      return (88f - pct * 68f).toFloat()
+    }
+
+    val highPath = android.graphics.Path()
+    val lowPath = android.graphics.Path()
+    for (idx in 0 until 12) {
+      val hi = highs.getOrNull(idx)
+      val lo = lows.getOrNull(idx)
+      if (hi != null && hi.isFinite()) {
+        if (idx == 0) highPath.moveTo(x(idx), y(hi)) else highPath.lineTo(x(idx), y(hi))
+      }
+      if (lo != null && lo.isFinite()) {
+        if (idx == 0) lowPath.moveTo(x(idx), y(lo)) else lowPath.lineTo(x(idx), y(lo))
+      }
+    }
+    val bandPath = android.graphics.Path(highPath).apply {
+      for (idx in 11 downTo 0) {
+        val lo = lows.getOrNull(idx)
+        if (lo != null && lo.isFinite()) lineTo(x(idx), y(lo))
+      }
+      close()
+    }
+    canvas.drawPath(bandPath, fill)
+    canvas.drawPath(highPath, highPaint)
+    canvas.drawPath(lowPath, lowPaint)
+    return bitmap
+  }
+
   private fun nearestMetarJson(place: WidgetPlace, array: JSONArray): JSONObject? {
     var best: JSONObject? = null
     var bestDistance = Double.POSITIVE_INFINITY
@@ -436,6 +583,28 @@ private fun readAsyncStorageValue(context: Context, key: String): String? {
   }
 }
 
+private fun readAsyncStorageValuesByPrefix(context: Context, prefix: String): List<String> {
+  val dbFile = context.getDatabasePath("RKStorage")
+  if (!dbFile.exists()) return emptyList()
+
+  var db: SQLiteDatabase? = null
+  return try {
+    db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+    val values = mutableListOf<String>()
+    db.rawQuery(
+      "SELECT value FROM catalystLocalStorage WHERE key LIKE ?",
+      arrayOf("$prefix%")
+    ).use { cursor ->
+      while (cursor.moveToNext()) values.add(cursor.getString(0))
+    }
+    values
+  } catch (_: Exception) {
+    emptyList()
+  } finally {
+    db?.close()
+  }
+}
+
 private fun placeFromJson(json: JSONObject): WidgetPlace? {
   val lat = json.optDouble("lat", Double.NaN)
   val lon = json.optDouble("lon", Double.NaN)
@@ -457,12 +626,19 @@ private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatolo
   val month = Calendar.getInstance().get(Calendar.MONTH) + 1
   var normalHigh: Double? = null
   var normalLow: Double? = null
+  val monthlyHighs = MutableList<Double?>(12) { null }
+  val monthlyLows = MutableList<Double?>(12) { null }
   for (idx in 0 until normals.length()) {
     val item = normals.optJSONObject(idx) ?: continue
-    if (item.optInt("month", -1) != month) continue
-    normalHigh = item.optNullableDouble("tmaxF")
-    normalLow = item.optNullableDouble("tminF")
-    break
+    val itemMonth = item.optInt("month", -1)
+    if (itemMonth in 1..12) {
+      monthlyHighs[itemMonth - 1] = item.optNullableDouble("tmaxF")
+      monthlyLows[itemMonth - 1] = item.optNullableDouble("tminF")
+    }
+    if (itemMonth == month) {
+      normalHigh = item.optNullableDouble("tmaxF")
+      normalLow = item.optNullableDouble("tminF")
+    }
   }
 
   val precipArray = root.optJSONArray("precipMonthlyIn")
@@ -488,8 +664,89 @@ private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatolo
     normalLowF = normalLow,
     normalPrecipIn = monthPrecip,
     annualPrecipIn = annualPrecip,
+    monthlyHighsF = monthlyHighs,
+    monthlyLowsF = monthlyLows,
+    recordHighF = null,
+    recordHighYear = null,
+    recordLowF = null,
+    recordLowYear = null,
+    recordPrecipIn = null,
+    recordPrecipYear = null,
     updatedLabel = nowLabel(),
   )
+}
+
+private fun readTodayRecordsCache(context: Context): WidgetDailyRecords? {
+  val todayKey = SimpleDateFormat("MM-dd", Locale.US).format(Date())
+  var bestSavedAt = 0L
+  var best: WidgetDailyRecords? = null
+  readAsyncStorageValuesByPrefix(context, RECORDS_CACHE_PREFIX).forEach { raw ->
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return@forEach
+    val savedAt = root.optLong("savedAt", 0L)
+    val ttlMs = root.optLong("ttlMs", 30L * 24L * 60L * 60L * 1000L)
+    if (savedAt <= 0L || savedAt + ttlMs < System.currentTimeMillis()) return@forEach
+    val record = root.optJSONObject("data")?.optJSONObject(todayKey) ?: return@forEach
+    if (savedAt < bestSavedAt) return@forEach
+    bestSavedAt = savedAt
+    best = WidgetDailyRecords(
+      recordHighF = record.optNullableDouble("recordHighF"),
+      recordHighYear = firstYear(record.optJSONArray("recordHighYears")),
+      recordLowF = record.optNullableDouble("recordLowF"),
+      recordLowYear = firstYear(record.optJSONArray("recordLowYears")),
+      recordPrecipIn = record.optNullableDouble("recordPrecipIn"),
+      recordPrecipYear = firstYear(record.optJSONArray("recordPrecipYears")),
+    )
+  }
+  return best
+}
+
+private fun WidgetClimatology.withRecords(records: WidgetDailyRecords?): WidgetClimatology {
+  if (records == null) return this
+  return copy(
+    recordHighF = records.recordHighF,
+    recordHighYear = records.recordHighYear,
+    recordLowF = records.recordLowF,
+    recordLowYear = records.recordLowYear,
+    recordPrecipIn = records.recordPrecipIn,
+    recordPrecipYear = records.recordPrecipYear,
+  )
+}
+
+private fun firstYear(years: JSONArray?): Int? {
+  if (years == null || years.length() == 0) return null
+  return years.optInt(0, -1).takeIf { it > 0 }
+}
+
+private fun skyQualityLabel(score: Int): String {
+  return when {
+    score >= 90 -> "Excellent"
+    score >= 80 -> "Very Good"
+    score >= 65 -> "Good"
+    score >= 45 -> "Fair"
+    else -> "Poor"
+  }
+}
+
+private fun bortleLine(bortleClass: Double?, label: String?): String {
+  val b = bortleClass?.takeIf { it.isFinite() }?.roundToInt()
+  return when {
+    b != null && !label.isNullOrBlank() -> "Bortle $b - $label"
+    b != null -> "Bortle $b"
+    !label.isNullOrBlank() -> label
+    else -> "Bortle unavailable"
+  }
+}
+
+private fun cloudLayerLine(low: Double?, mid: Double?, high: Double?): String {
+  return "Low ${pctLabel(low)} / Mid ${pctLabel(mid)} / High ${pctLabel(high)}"
+}
+
+private fun cloudLayerShort(low: Double?, mid: Double?, high: Double?): String {
+  return "Clouds L ${pctLabel(low)} M ${pctLabel(mid)} H ${pctLabel(high)}"
+}
+
+private fun pctLabel(value: Double?): String {
+  return value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "--"
 }
 
 private fun looksLikeCoordinateLabel(value: String): Boolean {

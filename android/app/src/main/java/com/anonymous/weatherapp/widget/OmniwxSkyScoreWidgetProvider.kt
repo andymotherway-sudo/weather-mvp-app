@@ -25,18 +25,18 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
 
     thread(name = "omniwx-sky-widget") {
       val place = OmniwxWidgetData.readPlace(context)
-      val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(it) }.getOrNull() }
-      val sky = weather?.let { OmniwxWidgetData.skyScore(it) }
+      val sky = runCatching { OmniwxWidgetData.fetchSkyScore(context) }.getOrNull()
+        ?: place?.let { runCatching { OmniwxWidgetData.skyScore(OmniwxWidgetData.fetchWeather(it)) }.getOrNull() }
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, weather, sky))
+        appWidgetManager.updateAppWidget(id, buildViews(context, place, sky))
       }
     }
   }
 
-  private fun buildViews(context: Context, weather: WidgetWeather?, sky: WidgetSkyScore?): RemoteViews {
+  private fun buildViews(context: Context, place: WidgetPlace?, sky: WidgetSkyScore?): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_sky_score).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))
-      if (weather == null || sky == null) {
+      if (place == null || sky == null) {
         setTextViewText(R.id.widget_title, "SkyScore")
         setTextViewText(R.id.widget_primary, "--")
         setTextViewText(R.id.widget_secondary, "Quality --")
@@ -45,12 +45,12 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_footer, "Aurora chance --")
         setImageViewBitmap(R.id.widget_score_ring, OmniwxWidgetData.skyScoreRingBitmap(null))
       } else {
-        setTextViewText(R.id.widget_title, weather.place.name)
+        setTextViewText(R.id.widget_title, place.name)
         setTextViewText(R.id.widget_primary, sky.score.toString())
         setTextViewText(R.id.widget_secondary, "Quality ${sky.label}")
-        setTextViewText(R.id.widget_best_window, sky.bestWindow)
-        setTextViewText(R.id.widget_tertiary, sky.bortle)
-        setTextViewText(R.id.widget_footer, "${sky.aurora} - ${weather.updatedLabel}")
+        setTextViewText(R.id.widget_best_window, sky.bortle)
+        setTextViewText(R.id.widget_tertiary, sky.bestWindow)
+        setTextViewText(R.id.widget_footer, "${sky.clouds} - ${sky.aurora}")
         setImageViewBitmap(R.id.widget_score_ring, OmniwxWidgetData.skyScoreRingBitmap(sky.score))
       }
     }

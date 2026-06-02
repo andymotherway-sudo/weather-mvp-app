@@ -1496,7 +1496,7 @@ export default function AstroMapScreen() {
   const [activeAstro, setActiveAstro] = useState<AstroLocationPayload | null>(null);
   const [inspectDetail, setInspectDetail] = useState<AstroInspectPayload | null>(null);
 
-  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('collapsed');
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>('full');
   const [inspect, setInspect] = useState<SkyInspect | null>(null);
   const [viewRegion, setViewRegion] = useState<Region>(initialRegion);
   const { baseMapStyle } = useSettings();

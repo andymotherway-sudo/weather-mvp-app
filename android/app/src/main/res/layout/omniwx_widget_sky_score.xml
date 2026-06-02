@@ -102,7 +102,7 @@
         android:layout_marginTop="8dp"
         android:ellipsize="end"
         android:maxLines="2"
-        android:text="Best window --"
+        android:text="Bortle --"
         android:textColor="#e2e8f0"
         android:textSize="11sp" />
 
@@ -112,8 +112,8 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:ellipsize="end"
-        android:maxLines="1"
-        android:text="Bortle --"
+        android:maxLines="2"
+        android:text="Low -- / Mid -- / High --"
         android:textColor="#93c5fd"
         android:textSize="11sp" />
     </LinearLayout>

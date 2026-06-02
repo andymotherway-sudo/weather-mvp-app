@@ -22,6 +22,7 @@ class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_low, "--")
         setTextViewText(R.id.widget_precip, "Updating")
         setTextViewText(R.id.widget_footer, "Loading climate normals")
+        setImageViewBitmap(R.id.widget_arch, OmniwxWidgetData.climateArchBitmap(null))
       }
       appWidgetManager.updateAppWidget(id, loading)
     }
@@ -44,24 +45,53 @@ class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_low, "--")
         setTextViewText(R.id.widget_precip, "Open Almanac")
         setTextViewText(R.id.widget_footer, "Open OMNIwx to refresh climate normals.")
+        setImageViewBitmap(R.id.widget_arch, OmniwxWidgetData.climateArchBitmap(null))
       } else {
         setTextViewText(R.id.widget_title, climo.place.name)
-        setTextViewText(R.id.widget_high, tempLabel(climo.normalHighF))
-        setTextViewText(R.id.widget_low, tempLabel(climo.normalLowF))
-        setTextViewText(R.id.widget_precip, precipLabel(climo.normalPrecipIn, climo.annualPrecipIn))
-        setTextViewText(R.id.widget_footer, "${climo.stationName}. Updated ${climo.updatedLabel}")
+        setTextViewText(R.id.widget_high, recordTempLabel(climo.recordHighF, climo.recordHighYear, climo.normalHighF))
+        setTextViewText(R.id.widget_low, recordTempLabel(climo.recordLowF, climo.recordLowYear, climo.normalLowF))
+        setTextViewText(
+          R.id.widget_precip,
+          recordPrecipLabel(climo.recordPrecipIn, climo.recordPrecipYear, climo.normalPrecipIn, climo.annualPrecipIn)
+        )
+        setTextViewText(R.id.widget_footer, footerLabel(climo))
+        setImageViewBitmap(R.id.widget_arch, OmniwxWidgetData.climateArchBitmap(climo))
       }
     }
+  }
+
+  private fun recordTempLabel(record: Double?, year: Int?, normal: Double?): String {
+    val value = record?.takeIf { it.isFinite() } ?: normal?.takeIf { it.isFinite() } ?: return "--"
+    val suffix = year?.let { "\n$it" } ?: "\nnormal"
+    return "${value.roundToInt()}°$suffix"
   }
 
   private fun tempLabel(value: Double?): String {
     return value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}°" } ?: "--"
   }
 
+  private fun recordPrecipLabel(record: Double?, year: Int?, month: Double?, annual: Double?): String {
+    val dailyRecord = record?.takeIf { it.isFinite() }?.let {
+      String.format(Locale.US, "%.2f in%s", it, year?.let { recordYear -> "\n$recordYear" } ?: "")
+    }
+    if (dailyRecord != null) return dailyRecord
+    return precipLabel(month, annual)
+  }
+
   private fun precipLabel(month: Double?, annual: Double?): String {
     val monthly = month?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.1f in", it) } ?: "--"
     val yearly = annual?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.1f in yr", it) }
     return listOfNotNull(monthly, yearly).joinToString("\n")
+  }
+
+  private fun footerLabel(climo: WidgetClimatology): String {
+    val normal = "Normals ${tempLabel(climo.normalHighF)}/${tempLabel(climo.normalLowF)}"
+    val records = if (climo.recordHighF == null && climo.recordLowF == null && climo.recordPrecipIn == null) {
+      "open Almanac for records"
+    } else {
+      "records for today"
+    }
+    return "$normal - $records - ${climo.updatedLabel}"
   }
 
   private fun monthLabel(): String {
