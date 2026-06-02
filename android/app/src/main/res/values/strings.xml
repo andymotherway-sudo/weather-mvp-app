@@ -3,7 +3,10 @@
   <string name="widget_current_description">OMNIwx current conditions</string>
   <string name="widget_sky_score_description">OMNIwx SkyScore</string>
   <string name="widget_aviation_description">OMNIwx aviation weather</string>
+  <string name="widget_airport_board_description">OMNIwx airport METAR board</string>
+  <string name="widget_route_briefing_description">OMNIwx saved route briefing</string>
   <string name="widget_climatology_description">OMNIwx climatology normals</string>
+  <string name="widget_climate_arch_description">OMNIwx large climate normal arch</string>
   <string name="expo_system_ui_user_interface_style" translatable="false">automatic</string>
   <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>

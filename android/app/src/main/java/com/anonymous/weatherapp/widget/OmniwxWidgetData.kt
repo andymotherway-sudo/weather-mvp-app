@@ -59,16 +59,21 @@ data class WidgetSkyScore(
   val label: String,
   val bestWindow: String,
   val bortle: String,
+  val cloudLow: String,
+  val cloudMid: String,
+  val cloudHigh: String,
   val clouds: String,
   val aurora: String,
 )
 
 data class WidgetMetar(
   val station: String,
+  val stationName: String,
   val category: String,
   val wind: String,
   val visibility: String,
   val ceiling: String,
+  val altimeter: String,
   val hazards: String,
   val updatedLabel: String,
 )
@@ -84,6 +89,34 @@ data class WidgetAviationBriefing(
   val category: String,
   val secondary: String,
   val tertiary: String,
+  val footer: String,
+)
+
+data class WidgetAirportBoard(
+  val station: String,
+  val stationName: String,
+  val category: String,
+  val statusTitle: String,
+  val statusSummary: String,
+  val wind: String,
+  val visibility: String,
+  val ceiling: String,
+  val altimeter: String,
+  val tafTrend: String,
+  val footer: String,
+)
+
+data class WidgetRouteBriefing(
+  val title: String,
+  val category: String,
+  val detail: String,
+  val concern: String,
+  val turbulence: String,
+  val icing: String,
+  val flightCategory: String,
+  val sigmet: String,
+  val cwa: String,
+  val pirep: String,
   val footer: String,
 )
 
@@ -210,6 +243,9 @@ object OmniwxWidgetData {
       label = label,
       bestWindow = bestWindow,
       bortle = "Bortle unavailable",
+      cloudLow = "--",
+      cloudMid = "--",
+      cloudHigh = "${weather.cloudPct.roundLabel()}%",
       clouds = "Clouds ${weather.cloudPct.roundLabel()}%",
       aurora = "Aurora unavailable",
     )
@@ -229,8 +265,11 @@ object OmniwxWidgetData {
     return WidgetSkyScore(
       score = score.coerceIn(0, 100),
       label = skyQualityLabel(score),
-      bestWindow = cloudLayerLine(low, mid, high),
+      bestWindow = skyWindowLine(score, low, mid, high),
       bortle = bortleLine(bortleClass, bortleLabel),
+      cloudLow = pctLabel(low),
+      cloudMid = pctLabel(mid),
+      cloudHigh = pctLabel(high),
       clouds = cloudLayerShort(low, mid, high),
       aurora = "Updated ${nowLabel()}",
     )
@@ -288,6 +327,66 @@ object OmniwxWidgetData {
     )
   }
 
+  fun fetchAirportBoard(context: Context): WidgetAirportBoard? {
+    val selection = readAviationSelection(context)
+    val selectedStation = selection
+      ?.takeIf { it.optString("type") == "airport" }
+      ?.optString("station", "")
+      ?.trim()
+      ?.uppercase(Locale.US)
+      ?.takeIf { it.isNotBlank() }
+    val selectedName = selection
+      ?.takeIf { it.optString("type") == "airport" }
+      ?.optString("name", "")
+      ?.ifBlank { null }
+
+    val metar = selectedStation
+      ?.let { runCatching { fetchMetarForStation(it) }.getOrNull() }
+      ?: readPlace(context)?.let { runCatching { fetchNearestMetar(it) }.getOrNull() }
+      ?: readPlace(context)?.let { runCatching { fetchNearestCandidateMetar(it) }.getOrNull() }
+      ?: return null
+
+    val taf = runCatching { fetchTafText(metar.station) }.getOrNull()
+    val statusTitle = airportStatusTitle(metar.category, metar.hazards)
+    return WidgetAirportBoard(
+      station = metar.station,
+      stationName = selectedName ?: metar.stationName.ifBlank { "Selected airport" },
+      category = metar.category.ifBlank { "--" },
+      statusTitle = statusTitle,
+      statusSummary = airportStatusSummary(metar),
+      wind = metar.wind,
+      visibility = metar.visibility,
+      ceiling = metar.ceiling.removePrefix("Ceiling "),
+      altimeter = metar.altimeter,
+      tafTrend = tafTrendLabel(taf),
+      footer = "METAR ${metar.updatedLabel}. Situational awareness only.",
+    )
+  }
+
+  fun fetchRouteBriefing(context: Context): WidgetRouteBriefing? {
+    val selection = readAviationSelection(context)?.takeIf { it.optString("type") == "route" } ?: return null
+    val ageMs = System.currentTimeMillis() - selection.optLong("savedAt", 0L)
+    if (ageMs !in 0..(6L * 60L * 60L * 1000L)) return null
+    val counts = selection.optJSONObject("counts")
+    val hazardText = selection.optString("hazards", "").ifBlank { "No matched route advisories" }
+    val altitude = selection.optNullableDouble("altitudeFt")?.let { formatAltitudeFt(it) }
+    val depart = selection.optString("departureIso", "").ifBlank { null }?.let { utcShortLabel(it) }
+    val detail = listOfNotNull(altitude, depart?.let { "depart $it" }).joinToString(" / ").ifBlank { "Saved route" }
+    return WidgetRouteBriefing(
+      title = selection.optString("title", "Route Briefing").ifBlank { "Route Briefing" },
+      category = selection.optString("category", "--").ifBlank { "--" },
+      detail = detail,
+      concern = selection.optString("summary", "").ifBlank { hazardText },
+      turbulence = countLabel(counts, "turbulence", hazardText, "turbulence"),
+      icing = countLabel(counts, "icing", hazardText, "icing"),
+      flightCategory = selection.optString("flightCategory", "").ifBlank { "VFR" },
+      sigmet = countLabel(counts, "sigmet", hazardText, "SIGMET"),
+      cwa = countLabel(counts, "cwa", hazardText, "CWA"),
+      pirep = countLabel(counts, "pirep", hazardText, "PIREP"),
+      footer = "Saved ${nowLabel()}. Situational awareness only.",
+    )
+  }
+
   fun fetchMetarForStation(station: String): WidgetMetar? {
     val normalized = station.trim().uppercase(Locale.US)
     if (normalized.isBlank()) return null
@@ -295,6 +394,15 @@ object OmniwxWidgetData {
     val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
     if (array.length() == 0) return null
     return metarFromJson(array.optJSONObject(0) ?: return null)
+  }
+
+  fun fetchTafText(station: String): String? {
+    val normalized = station.trim().uppercase(Locale.US)
+    if (normalized.isBlank()) return null
+    val url = "https://aviationweather.gov/api/data/taf?format=json&hours=8&ids=$normalized"
+    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    val item = array.optJSONObject(0) ?: return null
+    return item.optString("rawTAF", "").ifBlank { item.optString("raw_text", "").ifBlank { item.optString("raw", "") } }.ifBlank { null }
   }
 
   fun fetchNearestCandidateMetar(place: WidgetPlace): WidgetMetar? {
@@ -501,6 +609,128 @@ object OmniwxWidgetData {
     return bitmap
   }
 
+  fun climateArchLargeBitmap(climo: WidgetClimatology?): Bitmap {
+    val bitmap = Bitmap.createBitmap(960, 520, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val plot = RectF(78f, 38f, 918f, 430f)
+    val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(71, 85, 105)
+      alpha = 110
+      style = Paint.Style.STROKE
+      strokeWidth = 2f
+    }
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(203, 213, 225)
+      textSize = 25f
+      typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    }
+    val mutedText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(148, 163, 184)
+      textSize = 21f
+      typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    }
+    val bandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(226, 232, 240)
+      alpha = 115
+      style = Paint.Style.FILL
+    }
+    val highPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(251, 113, 133)
+      style = Paint.Style.STROKE
+      strokeWidth = 7f
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+    val lowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(96, 165, 250)
+      style = Paint.Style.STROKE
+      strokeWidth = 7f
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+    val todayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(125, 211, 252)
+      alpha = 185
+      style = Paint.Style.STROKE
+      strokeWidth = 3f
+    }
+    val todayDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(125, 211, 252)
+      style = Paint.Style.FILL
+    }
+
+    canvas.drawRoundRect(RectF(8f, 8f, 952f, 512f), 30f, 30f, grid)
+    val highs = climo?.monthlyHighsF?.takeIf { it.size >= 12 } ?: emptyList()
+    val lows = climo?.monthlyLowsF?.takeIf { it.size >= 12 } ?: emptyList()
+    val values = (highs + lows).mapNotNull { it?.takeIf { value -> value.isFinite() } }
+    if (values.size < 4) {
+      canvas.drawText("Open OMNIwx to load climate normals", 84f, 250f, text)
+      return bitmap
+    }
+
+    val minValue = ((values.minOrNull() ?: 0.0) - 8.0).coerceAtMost(20.0)
+    val maxValue = ((values.maxOrNull() ?: 100.0) + 8.0).coerceAtLeast(100.0)
+    fun x(index: Int) = plot.left + (plot.width() / 11f) * index
+    fun y(value: Double): Float {
+      val pct = ((value - minValue) / (maxValue - minValue)).coerceIn(0.0, 1.0)
+      return (plot.bottom - pct * plot.height()).toFloat()
+    }
+
+    val gridValues = listOf(maxValue, (maxValue + minValue) / 2.0, minValue)
+    gridValues.forEach { value ->
+      val yy = y(value)
+      canvas.drawLine(plot.left, yy, plot.right, yy, grid)
+      canvas.drawText(value.roundToInt().toString(), 28f, yy + 8f, mutedText)
+    }
+
+    val highPath = android.graphics.Path()
+    val lowPath = android.graphics.Path()
+    for (idx in 0 until 12) {
+      val hi = highs.getOrNull(idx)
+      val lo = lows.getOrNull(idx)
+      if (hi != null && hi.isFinite()) {
+        if (idx == 0) highPath.moveTo(x(idx), y(hi)) else highPath.lineTo(x(idx), y(hi))
+      }
+      if (lo != null && lo.isFinite()) {
+        if (idx == 0) lowPath.moveTo(x(idx), y(lo)) else lowPath.lineTo(x(idx), y(lo))
+      }
+    }
+    val bandPath = android.graphics.Path(highPath).apply {
+      for (idx in 11 downTo 0) {
+        val lo = lows.getOrNull(idx)
+        if (lo != null && lo.isFinite()) lineTo(x(idx), y(lo))
+      }
+      close()
+    }
+    canvas.drawPath(bandPath, bandPaint)
+    canvas.drawPath(highPath, highPaint)
+    canvas.drawPath(lowPath, lowPaint)
+
+    val monthLabels = listOf("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
+    monthLabels.forEachIndexed { idx, label ->
+      canvas.drawText(label, x(idx) - 7f, 480f, mutedText)
+    }
+
+    val cal = Calendar.getInstance()
+    val month = cal.get(Calendar.MONTH)
+    val day = cal.get(Calendar.DAY_OF_MONTH)
+    val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH).coerceAtLeast(1)
+    val todayX = x(month.coerceIn(0, 11)) + ((day - 1).toFloat() / maxDay.toFloat()) * (plot.width() / 11f)
+    canvas.drawLine(todayX, plot.top, todayX, plot.bottom, todayPaint)
+    canvas.drawCircle(todayX, plot.top + 28f, 10f, todayDot)
+    canvas.drawText("Today", todayX + 14f, plot.top + 36f, text)
+    return bitmap
+  }
+
+  fun climateVarianceLabel(climo: WidgetClimatology?): String {
+    val highs = climo?.monthlyHighsF.orEmpty().mapNotNull { it?.takeIf { value -> value.isFinite() } }
+    val lows = climo?.monthlyLowsF.orEmpty().mapNotNull { it?.takeIf { value -> value.isFinite() } }
+    if (highs.isEmpty() || lows.isEmpty()) return "Seasonal range --"
+    val winterLow = lows.minOrNull() ?: return "Seasonal range --"
+    val summerHigh = highs.maxOrNull() ?: return "Seasonal range --"
+    return "Seasonal spread ${(summerHigh - winterLow).roundToInt()}°"
+  }
+
   private fun nearestMetarJson(place: WidgetPlace, array: JSONArray): JSONObject? {
     var best: JSONObject? = null
     var bestDistance = Double.POSITIVE_INFINITY
@@ -521,6 +751,9 @@ object OmniwxWidgetData {
   private fun metarFromJson(json: JSONObject): WidgetMetar {
     val raw = json.optString("rawOb", "").ifBlank { json.optString("rawText", "") }
     val station = json.optString("icaoId", "").ifBlank { "Nearest METAR" }
+    val stationName = json.optString("name", "")
+      .ifBlank { json.optString("site", "") }
+      .ifBlank { json.optString("reportingStation", "") }
     val category = json.optString("fltCat", "").ifBlank { json.optString("flightCategory", "").ifBlank { "--" } }
     val wspd = json.optDouble("wspd", Double.NaN)
     val wgst = json.optDouble("wgst", Double.NaN)
@@ -533,13 +766,54 @@ object OmniwxWidgetData {
     }
     return WidgetMetar(
       station = station,
+      stationName = stationName,
       category = category,
       wind = wind,
       visibility = "$vis sm",
       ceiling = ceilingLabel(json.optJSONArray("clouds")),
+      altimeter = altimeterLabel(json),
       hazards = hazardSummary(raw),
       updatedLabel = nowLabel(),
     )
+  }
+
+  private fun altimeterLabel(json: JSONObject): String {
+    val value = json.optDouble("altim", Double.NaN).takeIf { it.isFinite() }
+      ?: json.optDouble("altimeter", Double.NaN).takeIf { it.isFinite() }
+      ?: json.optDouble("altimeter_hpa", Double.NaN).takeIf { it.isFinite() }
+      ?: json.optDouble("altimeter_in_hg", Double.NaN).takeIf { it.isFinite() }
+      ?: return "--"
+    return if (value > 100) "${value.roundToInt()} hPa" else String.format(Locale.US, "%.2f inHg", value)
+  }
+
+  private fun airportStatusTitle(category: String, hazards: String): String {
+    val cat = category.uppercase(Locale.US)
+    return when {
+      cat == "VFR" && !hazards.startsWith("Hazards") -> "Favorable"
+      cat == "MVFR" -> "Marginal"
+      cat == "IFR" || cat == "LIFR" -> "Instrument conditions"
+      hazards.startsWith("Hazards") -> "Watch hazards"
+      else -> "Airport weather"
+    }
+  }
+
+  private fun airportStatusSummary(metar: WidgetMetar): String {
+    val cat = metar.category.ifBlank { "category unavailable" }
+    if (metar.hazards.startsWith("Hazards")) return "${metar.hazards}. Check official briefing."
+    return "Current METAR is $cat with no obvious station-level concern."
+  }
+
+  private fun tafTrendLabel(raw: String?): String {
+    val text = raw?.uppercase(Locale.US) ?: return "TAF --"
+    return when {
+      text.contains("LIFR") -> "TAF LIFR possible"
+      text.contains("IFR") || Regex("""\bOVC00|BKN00|VV00""").containsMatchIn(text) -> "TAF IFR possible"
+      text.contains("TS") || text.contains("CB") -> "TAF storms possible"
+      text.contains("TEMPO") -> "TAF has TEMPO"
+      text.contains("BECMG") -> "TAF changing"
+      text.isNotBlank() -> "TAF available"
+      else -> "TAF --"
+    }
   }
 
   private fun hazardSummary(raw: String): String {
@@ -566,6 +840,12 @@ object OmniwxWidgetData {
   }
 }
 
+private fun readAviationSelection(context: Context): JSONObject? {
+  return readAsyncStorageValue(context, AVIATION_WIDGET_SELECTION_KEY)?.let { raw ->
+    runCatching { JSONObject(raw) }.getOrNull()
+  }
+}
+
 private fun readAsyncStorageValue(context: Context, key: String): String? {
   val dbFile = context.getDatabasePath("RKStorage")
   if (!dbFile.exists()) return null
@@ -581,6 +861,36 @@ private fun readAsyncStorageValue(context: Context, key: String): String? {
   } finally {
     db?.close()
   }
+}
+
+private fun countLabel(counts: JSONObject?, key: String, hazardText: String, fallbackToken: String): String {
+  val direct = counts?.optInt(key, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
+  if (direct != null) return direct.toString()
+  val match = Regex("""(\d+)\s+${Regex.escape(fallbackToken)}""", RegexOption.IGNORE_CASE).find(hazardText)
+  return match?.groupValues?.getOrNull(1) ?: "0"
+}
+
+private fun formatAltitudeFt(value: Double): String {
+  if (!value.isFinite()) return ""
+  return if (value >= 18000) "FL${(value / 100.0).roundToInt().toString().padStart(3, '0')}" else "${value.roundToInt()} ft"
+}
+
+private fun utcShortLabel(value: String): String? {
+  val formats = listOf(
+    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+    "yyyy-MM-dd'T'HH:mm:ssXXX",
+  )
+  for (pattern in formats) {
+    val parsed = runCatching {
+      SimpleDateFormat(pattern, Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(value)
+    }.getOrNull()
+    if (parsed != null) return SimpleDateFormat("HHmm'Z'", Locale.US).apply {
+      timeZone = java.util.TimeZone.getTimeZone("UTC")
+    }.format(parsed)
+  }
+  return null
 }
 
 private fun readAsyncStorageValuesByPrefix(context: Context, prefix: String): List<String> {
@@ -743,6 +1053,16 @@ private fun cloudLayerLine(low: Double?, mid: Double?, high: Double?): String {
 
 private fun cloudLayerShort(low: Double?, mid: Double?, high: Double?): String {
   return "Clouds L ${pctLabel(low)} M ${pctLabel(mid)} H ${pctLabel(high)}"
+}
+
+private fun skyWindowLine(score: Int, low: Double?, mid: Double?, high: Double?): String {
+  val worstCloud = listOfNotNull(low, mid, high).filter { it.isFinite() }.maxOrNull()
+  return when {
+    score >= 80 && (worstCloud == null || worstCloud <= 25) -> "Best window favorable tonight"
+    score >= 65 -> "Best window worth checking"
+    score >= 45 -> "Best window limited tonight"
+    else -> "Poor observing window"
+  }
 }
 
 private fun pctLabel(value: Double?): String {

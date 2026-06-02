@@ -2394,6 +2394,10 @@ function SimpleDailyOverview({
     { value: currentAqiValue.replace('???', '—'), label: 'AQI', sub: currentAqiSub },
     { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'Dew point' },
   ];
+  const dailyCurrentSummaryText =
+    [todayNarrative, feelsLikeF != null ? `Feels like ${Math.round(feelsLikeF)}°` : null, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
+      .filter(Boolean)
+      .join(' • ') || heroSummary;
 
   return (
     <View style={styles.dailySimpleWrap}>
@@ -2412,12 +2416,10 @@ function SimpleDailyOverview({
             >
               {condition}
             </Text>
-            <Text style={styles.dailyCurrentSummary}>
-              {[todayNarrative, feelsLikeF != null ? `Feels like ${Math.round(feelsLikeF)}°` : null, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
-                .filter(Boolean)
-                .join(' • ') || heroSummary}
-            </Text>
           </View>
+        </View>
+        <View style={styles.dailyCurrentSummaryBox}>
+          <Text style={styles.dailyCurrentSummary}>{dailyCurrentSummaryText}</Text>
         </View>
 
         <View style={styles.dailyRangeStats}>
@@ -5050,18 +5052,26 @@ const styles = StyleSheet.create({
   dailyCurrentText: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 12,
+    paddingTop: 10,
   },
   dailyCurrentCondition: {
     fontSize: 26,
     fontWeight: '900',
     color: 'white',
   },
+  dailyCurrentSummaryBox: {
+    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
   dailyCurrentSummary: {
-    marginTop: 4,
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.82)',
   },
   dailyCurrentFeels: {
     marginTop: 4,

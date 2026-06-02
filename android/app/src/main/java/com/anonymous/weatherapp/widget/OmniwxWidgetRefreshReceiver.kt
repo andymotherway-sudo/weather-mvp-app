@@ -13,7 +13,10 @@ class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
     refreshProvider(context, OmniwxCurrentWidgetProvider::class.java)
     refreshProvider(context, OmniwxSkyScoreWidgetProvider::class.java)
     refreshProvider(context, OmniwxAviationWidgetProvider::class.java)
+    refreshProvider(context, OmniwxAirportBoardWidgetProvider::class.java)
+    refreshProvider(context, OmniwxRouteBriefingWidgetProvider::class.java)
     refreshProvider(context, OmniwxClimatologyWidgetProvider::class.java)
+    refreshProvider(context, OmniwxClimateArchWidgetProvider::class.java)
   }
 
   private fun refreshProvider(context: Context, providerClass: Class<*>) {

@@ -60,11 +60,29 @@
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_aviation_info"/>
     </receiver>
+    <receiver android:name=".widget.OmniwxAirportBoardWidgetProvider" android:exported="false" android:label="OMNIwx Airport Board">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_airport_board_info"/>
+    </receiver>
+    <receiver android:name=".widget.OmniwxRouteBriefingWidgetProvider" android:exported="false" android:label="OMNIwx Route Briefing">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_route_briefing_info"/>
+    </receiver>
     <receiver android:name=".widget.OmniwxClimatologyWidgetProvider" android:exported="false" android:label="OMNIwx Climatology">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climatology_info"/>
+    </receiver>
+    <receiver android:name=".widget.OmniwxClimateArchWidgetProvider" android:exported="false" android:label="OMNIwx Climate Arch">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climate_arch_info"/>
     </receiver>
     <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="false">
       <intent-filter>

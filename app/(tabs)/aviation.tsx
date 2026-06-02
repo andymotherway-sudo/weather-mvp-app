@@ -550,6 +550,20 @@ async function saveAviationWidgetRoute(flight: Flight) {
       category: decision.label,
       summary: worst ? `${worst.label}: ${worst.severity}` : decision.summary,
       hazards: hazards || 'No matched route advisories',
+      altitudeFt: flight.cruiseAltitudeFt,
+      departureIso: flight.departureIso,
+      counts: flight.counts,
+      worstSegment: worst
+        ? {
+            label: worst.label,
+            distanceMi: worst.distanceMi,
+            etaIso: worst.etaIso,
+            severity: worst.severity,
+            concern: worst.advisories[0]
+              ? `${worst.advisories[0].product} ${worst.advisories[0].hazard} ${worst.advisories[0].altitude}`
+              : `Airport/weather risk ${worst.severity}`,
+          }
+        : null,
       savedAt: Date.now(),
     }));
   } catch {}

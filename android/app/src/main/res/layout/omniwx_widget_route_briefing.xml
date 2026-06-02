@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/omniwx_widget_background"
+  android:orientation="vertical">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ROUTE BRIEFING"
+        android:textColor="#7dd3fc"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_route_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="Route Briefing"
+        android:textColor="#ffffff"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/widget_route_category"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:background="@drawable/omniwx_widget_chip"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:text="--"
+      android:textColor="#ffffff"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+  </LinearLayout>
+
+  <TextView
+    android:id="@+id/widget_route_detail"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="3dp"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:text="Altitude / depart"
+    android:textColor="#a1a1aa"
+    android:textSize="12sp"
+    android:textStyle="bold" />
+
+  <TextView
+    android:id="@+id/widget_route_concern"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="9dp"
+    android:ellipsize="end"
+    android:maxLines="2"
+    android:text="Analyze a route to scan corridor weather."
+    android:textColor="#f8fafc"
+    android:textSize="12sp"
+    android:textStyle="bold" />
+
+  <GridLayout
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="8dp"
+    android:layout_weight="1"
+    android:columnCount="3"
+    android:rowCount="2">
+
+    <TextView
+      android:id="@+id/widget_turbulence"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="TURB\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_icing"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_marginStart="7dp"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="ICE\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_flight_cat"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_marginStart="7dp"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="CAT\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_sigmet"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_marginTop="7dp"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="SIGMET\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_cwa"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_marginStart="7dp"
+      android:layout_marginTop="7dp"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="CWA\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_pirep"
+      android:layout_width="0dp"
+      android:layout_height="0dp"
+      android:layout_columnWeight="1"
+      android:layout_marginStart="7dp"
+      android:layout_marginTop="7dp"
+      android:layout_rowWeight="1"
+      android:background="@drawable/omniwx_widget_panel"
+      android:text="PIREP\n--"
+      android:textColor="#f8fafc"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+  </GridLayout>
+
+  <TextView
+    android:layout_width="match_parent"
+    android:layout_height="1dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="6dp"
+    android:background="@drawable/omniwx_widget_divider"
+    android:text="" />
+
+  <TextView
+    android:id="@+id/widget_footer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:text="Situational awareness only."
+    android:textColor="#cbd5e1"
+    android:textSize="10sp" />
+</LinearLayout>
