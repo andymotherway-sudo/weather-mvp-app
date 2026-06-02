@@ -9,6 +9,7 @@ import kotlin.concurrent.thread
 
 class OmniwxAirportBoardWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    OmniwxWidgetScheduler.schedule(context)
     appWidgetIds.forEach { id ->
       appWidgetManager.updateAppWidget(id, buildViews(context, null, loading = true))
     }

@@ -1,6 +1,7 @@
 <resources>
   <string name="app_name">OMNIwx Alpha</string>
   <string name="widget_current_description">OMNIwx current conditions</string>
+  <string name="widget_current_radar_description">OMNIwx current conditions and radar snapshot</string>
   <string name="widget_sky_score_description">OMNIwx SkyScore</string>
   <string name="widget_aviation_description">OMNIwx aviation weather</string>
   <string name="widget_airport_board_description">OMNIwx airport METAR board</string>

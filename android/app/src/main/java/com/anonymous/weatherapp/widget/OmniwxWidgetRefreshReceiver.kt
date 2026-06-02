@@ -8,9 +8,11 @@ import android.content.Intent
 
 class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+    if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED && intent.action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS) return
+    OmniwxWidgetScheduler.schedule(context)
 
     refreshProvider(context, OmniwxCurrentWidgetProvider::class.java)
+    refreshProvider(context, OmniwxCurrentRadarWidgetProvider::class.java)
     refreshProvider(context, OmniwxSkyScoreWidgetProvider::class.java)
     refreshProvider(context, OmniwxAviationWidgetProvider::class.java)
     refreshProvider(context, OmniwxAirportBoardWidgetProvider::class.java)

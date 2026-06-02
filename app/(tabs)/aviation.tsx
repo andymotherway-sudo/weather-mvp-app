@@ -1,7 +1,7 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,8 +49,11 @@ type Sample = {
 };
 type Flight = { origin: Stop; destination: Stop; totalDistanceMi: number; cruiseAltitudeFt: number; departureIso: string; samples: Sample[]; counts: Record<string, number> };
 type Station = { station: Stop; metar: any | null; taf: any | null };
+type SavedAirport = { id: string; code: string; label: string; lat: number; lon: number; savedAt: number };
+type SavedRoute = { id: string; from: string; to: string; label: string; cruiseAltitudeFt: number; departureOffsetMin: number; savedAt: number };
 
 const AVIATION_WIDGET_SELECTION_KEY = 'omniwx:widget:aviation:selected:v1';
+const AVIATION_FAVORITES_KEY = 'omniwx:aviation:favorites:v1';
 
 const CRUISE_LEVELS = [
   { label: '6,000 ft', feet: 6000 },
@@ -569,6 +572,73 @@ async function saveAviationWidgetRoute(flight: Flight) {
   } catch {}
 }
 
+function airportFavoriteFromStop(stop: Stop): SavedAirport | null {
+  const code = (stop.code ?? stop.raw).trim().toUpperCase();
+  if (!code) return null;
+  return {
+    id: code,
+    code,
+    label: stop.label,
+    lat: stop.lat,
+    lon: stop.lon,
+    savedAt: Date.now(),
+  };
+}
+
+function routeFavoriteFromFlight(flight: Flight, departureOffsetMin: number): SavedRoute {
+  const from = flight.origin.code ?? flight.origin.raw.trim().toUpperCase();
+  const to = flight.destination.code ?? flight.destination.raw.trim().toUpperCase();
+  return {
+    id: `${from}:${to}:${flight.cruiseAltitudeFt}`,
+    from,
+    to,
+    label: `${from} to ${to}`,
+    cruiseAltitudeFt: flight.cruiseAltitudeFt,
+    departureOffsetMin,
+    savedAt: Date.now(),
+  };
+}
+
+async function loadAviationFavorites() {
+  try {
+    const raw = await AsyncStorage.getItem(AVIATION_FAVORITES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const airports = Array.isArray(parsed?.airports) ? parsed.airports : [];
+    const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
+    return {
+      airports: airports
+        .map((item: any) => ({
+          id: String(item.id ?? item.code ?? ''),
+          code: String(item.code ?? item.id ?? '').toUpperCase(),
+          label: String(item.label ?? item.code ?? 'Saved airport'),
+          lat: Number(item.lat),
+          lon: Number(item.lon),
+          savedAt: Number(item.savedAt ?? 0),
+        }))
+        .filter((item: SavedAirport) => item.id && item.code && Number.isFinite(item.lat) && Number.isFinite(item.lon)),
+      routes: routes
+        .map((item: any) => ({
+          id: String(item.id ?? ''),
+          from: String(item.from ?? '').toUpperCase(),
+          to: String(item.to ?? '').toUpperCase(),
+          label: String(item.label ?? 'Saved route'),
+          cruiseAltitudeFt: Number(item.cruiseAltitudeFt),
+          departureOffsetMin: Number(item.departureOffsetMin ?? 0),
+          savedAt: Number(item.savedAt ?? 0),
+        }))
+        .filter((item: SavedRoute) => item.id && item.from && item.to && Number.isFinite(item.cruiseAltitudeFt)),
+    };
+  } catch {
+    return { airports: [] as SavedAirport[], routes: [] as SavedRoute[] };
+  }
+}
+
+async function saveAviationFavorites(airports: SavedAirport[], routes: SavedRoute[]) {
+  try {
+    await AsyncStorage.setItem(AVIATION_FAVORITES_KEY, JSON.stringify({ airports, routes }));
+  } catch {}
+}
+
 export default function AviationScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -587,6 +657,51 @@ export default function AviationScreen() {
   const [mapRegion, setMapRegion] = useState<Region>(DEFAULT_REGION);
   const [learnVisible, setLearnVisible] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
+  const [savedAirports, setSavedAirports] = useState<SavedAirport[]>([]);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    loadAviationFavorites().then((favorites) => {
+      if (!mounted) return;
+      setSavedAirports(favorites.airports);
+      setSavedRoutes(favorites.routes);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const persistAirportFavorite = async (stop: Stop) => {
+    const favorite = airportFavoriteFromStop(stop);
+    if (!favorite) return;
+    const next = [favorite, ...savedAirports.filter((item) => item.id !== favorite.id)].slice(0, 20);
+    setSavedAirports(next);
+    await saveAviationFavorites(next, savedRoutes);
+    await saveAviationWidgetStation(stop);
+  };
+
+  const persistRouteFavorite = async (nextFlight: Flight) => {
+    const favorite = routeFavoriteFromFlight(nextFlight, departureOffsetMin);
+    const next = [favorite, ...savedRoutes.filter((item) => item.id !== favorite.id)].slice(0, 20);
+    setSavedRoutes(next);
+    await saveAviationFavorites(savedAirports, next);
+    await saveAviationWidgetRoute(nextFlight);
+  };
+
+  const activateAirportFavorite = (favorite: SavedAirport) => {
+    setMode('station');
+    setStationInput(favorite.code);
+  };
+
+  const activateRouteFavorite = (favorite: SavedRoute) => {
+    setMode('flight');
+    setFromInput(favorite.from);
+    setToInput(favorite.to);
+    setCruiseAltitudeFt(favorite.cruiseAltitudeFt);
+    setDepartureOffsetMin(favorite.departureOffsetMin);
+  };
+
   const openLearn = (id: string) => {
     setLearnTopicId(id);
     setLearnVisible(true);
@@ -758,6 +873,24 @@ export default function AviationScreen() {
           <Text style={s.title}>Flight weather</Text>
           <Text style={s.subtitle}>Pilots can load station reports. Travelers can analyze a route and jump into the aviation map.</Text>
           <View style={s.mode}><Seg onPress={() => setMode('station')} active={mode === 'station'} label="Airport Briefing" /><Seg onPress={() => setMode('flight')} active={mode === 'flight'} label="Route Briefing" /></View>
+          {mode === 'station' && savedAirports.length ? (
+            <FavoriteRail
+              label="Favorite fields"
+              items={savedAirports}
+              getKey={(item) => item.id}
+              getLabel={(item) => item.code}
+              onPress={activateAirportFavorite}
+            />
+          ) : null}
+          {mode === 'flight' && savedRoutes.length ? (
+            <FavoriteRail
+              label="Favorite routes"
+              items={savedRoutes}
+              getKey={(item) => item.id}
+              getLabel={(item) => item.label}
+              onPress={activateRouteFavorite}
+            />
+          ) : null}
 
           {mode === 'station' ? (
             <>
@@ -779,6 +912,7 @@ export default function AviationScreen() {
         {mode === 'station' && station ? (
           <>
             <AirportWeatherBoard station={station} onOpenLearn={openLearn} />
+            <View style={s.actions}><Secondary onPress={() => persistAirportFavorite(station.station)} label="Save Favorite Field" /><Secondary onPress={() => saveAviationWidgetStation(station.station)} label="Use on Widget" /></View>
             <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded METAR</Text><Learn onPress={() => openLearn('aviation-metar')} label="METAR" /></View><Text style={s.raw}>{`${flightCat(station.metar) ?? 'Unknown'} conditions. Wind ${windText(station.metar)}. Visibility ${visText(station.metar)}. Ceiling ${ceilText(station.metar)}. Temperature / Dew Point ${tempDew(station.metar)}. Altimeter ${altim(station.metar)}.`}</Text></Glass>
             <TafTimelineCard taf={station.taf} onOpenLearn={openLearn} />
             <Glass style={s.card}><View style={s.cardHead}><Text style={s.cardTitle}>Decoded TAF</Text><Learn onPress={() => openLearn('aviation-taf')} label="TAF" /></View><Text style={s.raw}>{tafSummary(station.taf)}</Text></Glass>
@@ -791,6 +925,7 @@ export default function AviationScreen() {
             <RouteSummaryCard flight={flight} fromInput={fromInput} toInput={toInput} cruiseAltitudeFt={cruiseAltitudeFt} departureOffsetMin={departureOffsetMin} loading={loading} error={error} />
             <RouteMapCard flight={flight} routeLine={routeLine} routePts={routePts} mapRegion={mapRegion} />
             <CompactRouteForm fromInput={fromInput} toInput={toInput} cruiseAltitudeFt={cruiseAltitudeFt} departureOffsetMin={departureOffsetMin} loading={loading} onFromChange={setFromInput} onToChange={setToInput} onCruiseChange={setCruiseAltitudeFt} onDepartureChange={setDepartureOffsetMin} onAnalyze={analyzeFlight} onOpenMap={openMap} onOpenLearn={openLearn} />
+            {flight ? <View style={s.actions}><Secondary onPress={() => persistRouteFavorite(flight)} label="Save Favorite Route" /><Secondary onPress={() => saveAviationWidgetRoute(flight)} label="Use on Widget" /></View> : null}
             <RouteProfileCard flight={flight} departureOffsetMin={departureOffsetMin} />
             {flight?.samples.map((sample) => <RouteCheckpointCard key={sample.key} sample={sample} />)}
           </>
@@ -808,6 +943,33 @@ function Primary({ label, onPress, loading }: { label: string; onPress: () => vo
 function Secondary({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={s.secondary}><Text style={s.secondaryText}>{label}</Text></Pressable>; }
 function Stat({ label, value }: { label: string; value: string }) { return <Glass style={s.stat}><Text style={s.statLabel}>{label}</Text><Text style={s.statValue}>{value}</Text></Glass>; }
 function Row({ label, value }: { label: string; value: string }) { return <View style={s.row}><Text style={s.rowLabel}>{label}</Text><Text style={s.rowValue}>{value}</Text></View>; }
+
+function FavoriteRail<T>({
+  label,
+  items,
+  getKey,
+  getLabel,
+  onPress,
+}: {
+  label: string;
+  items: T[];
+  getKey: (item: T) => string;
+  getLabel: (item: T) => string;
+  onPress: (item: T) => void;
+}) {
+  return (
+    <View style={s.favoriteBlock}>
+      <Text style={s.favoriteLabel}>{label}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.favoriteRail}>
+        {items.map((item) => (
+          <Pressable key={getKey(item)} onPress={() => onPress(item)} style={s.favoriteChip}>
+            <Text style={s.favoriteChipText}>{getLabel(item)}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
 
 function toneStyle(tone: 'low' | 'elevated' | 'high') {
   return tone === 'high' ? s.high : tone === 'elevated' ? s.elevated : s.low;
@@ -1202,6 +1364,11 @@ const s = StyleSheet.create({
   learnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   learn: { paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.06)' },
   learnText: { color: 'rgba(255,255,255,0.82)', fontWeight: '800', fontSize: 12 },
+  favoriteBlock: { marginTop: 12 },
+  favoriteLabel: { color: 'rgba(125,211,252,0.78)', fontSize: 10, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  favoriteRail: { gap: 8, paddingTop: 7, paddingRight: 8 },
+  favoriteChip: { paddingVertical: 7, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(125,211,252,0.20)', backgroundColor: 'rgba(14,165,233,0.10)' },
+  favoriteChipText: { color: 'white', fontSize: 12, fontWeight: '900' },
   helper: { color: 'rgba(255,255,255,0.5)', marginTop: 10, fontSize: 12, lineHeight: 18 },
   disclaimer: { color: 'rgba(255,255,255,0.48)', marginTop: 8, fontSize: 11, lineHeight: 16 },
   summary: { color: 'rgba(255,255,255,0.84)', marginTop: 12, lineHeight: 19 },

@@ -168,6 +168,13 @@ private abstract class OmniWeatherBaseScreen(
       .build()
   }
 
+  protected fun homeAction(): Action {
+    return Action.Builder()
+      .setTitle("Home")
+      .setOnClickListener { screenManager.popToRoot() }
+      .build()
+  }
+
   protected fun loadingOrErrorTemplate(title: String): Template? {
     val pane = Pane.Builder()
     when {
@@ -183,7 +190,7 @@ private abstract class OmniWeatherBaseScreen(
       .build()
   }
 
-  protected fun safeErrorTemplate(title: String): Template {
+  protected fun safeErrorTemplate(title: String, headerAction: Action = Action.BACK): Template {
     val pane = Pane.Builder()
       .addRow(
         Row.Builder()
@@ -195,23 +202,23 @@ private abstract class OmniWeatherBaseScreen(
 
     return PaneTemplate.Builder(pane)
       .setTitle(title)
-      .setHeaderAction(Action.APP_ICON)
-      .setActionStrip(ActionStrip.Builder().addAction(refreshAction()).build())
+      .setHeaderAction(headerAction)
+      .setActionStrip(ActionStrip.Builder().addAction(homeAction()).addAction(refreshAction()).build())
       .build()
   }
 
-  protected fun safeTemplate(title: String, block: () -> Template): Template {
+  protected fun safeTemplate(title: String, fallbackHeaderAction: Action = Action.BACK, block: () -> Template): Template {
     return try {
       block()
     } catch (_: Throwable) {
-      safeErrorTemplate(title)
+      safeErrorTemplate(title, fallbackHeaderAction)
     }
   }
 }
 
 private class OmniWeatherHomeScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   override fun onGetTemplate(): Template {
-    return safeTemplate("OMNIwx") {
+    return safeTemplate("OMNIwx", Action.APP_ICON) {
       ensureLoaded()
       val current = repository.report
 

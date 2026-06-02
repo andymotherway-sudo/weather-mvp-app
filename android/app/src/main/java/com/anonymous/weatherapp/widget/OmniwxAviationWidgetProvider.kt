@@ -9,6 +9,7 @@ import kotlin.concurrent.thread
 
 class OmniwxAviationWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    OmniwxWidgetScheduler.schedule(context)
     appWidgetIds.forEach { id ->
       val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_aviation).apply {
         setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))

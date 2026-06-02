@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-  android:description="@string/widget_aviation_description"
-  android:initialLayout="@layout/omniwx_widget_aviation"
+  android:description="@string/widget_current_radar_description"
+  android:initialLayout="@layout/omniwx_widget_current_radar"
   android:minWidth="250dp"
-  android:minHeight="110dp"
-  android:previewLayout="@layout/omniwx_widget_aviation"
+  android:minHeight="180dp"
+  android:previewLayout="@layout/omniwx_widget_current_radar"
   android:resizeMode="horizontal|vertical"
   android:targetCellWidth="4"
-  android:targetCellHeight="2"
+  android:targetCellHeight="3"
   android:updatePeriodMillis="900000"
   android:widgetCategory="home_screen" />

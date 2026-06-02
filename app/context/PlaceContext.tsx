@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatCompactLocation } from '../lib/locations/formats';
+import { warmFavoriteLocationCaches } from '../lib/locations/favoriteWarmup';
 import { useLocations } from '../lib/locations/useLocations';
 
 export type Place = {
@@ -226,6 +227,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
       return next.slice(0, 30);
     });
     setActiveState(fav);
+    warmFavoriteLocationCaches(fav.lat, fav.lon).catch(() => {});
   };
 
   const removeFavorite = (id: string) => {

@@ -9,9 +9,11 @@ import kotlin.concurrent.thread
 
 class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    OmniwxWidgetScheduler.schedule(context)
     appWidgetIds.forEach { id ->
       val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_current).apply {
         setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
+        setOnClickPendingIntent(R.id.widget_brand, OmniwxWidgetData.refreshIntent(context))
         setTextViewText(R.id.widget_title, "OMNIwx")
         setTextViewText(R.id.widget_primary, "--")
         setTextViewText(R.id.widget_secondary, "Updating current conditions")
@@ -36,6 +38,7 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
   private fun buildViews(context: Context, weather: WidgetWeather?): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
+      setOnClickPendingIntent(R.id.widget_brand, OmniwxWidgetData.refreshIntent(context))
       if (weather == null) {
         setTextViewText(R.id.widget_title, "OMNIwx")
         setTextViewText(R.id.widget_primary, "--")

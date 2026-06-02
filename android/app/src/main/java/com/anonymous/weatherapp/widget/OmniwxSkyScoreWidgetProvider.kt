@@ -9,6 +9,7 @@ import kotlin.concurrent.thread
 
 class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    OmniwxWidgetScheduler.schedule(context)
     appWidgetIds.forEach { id ->
       val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_sky_score).apply {
         setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))

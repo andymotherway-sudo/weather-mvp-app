@@ -30,6 +30,7 @@ private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val AVIATION_WIDGET_SELECTION_KEY = "omniwx:widget:aviation:selected:v1"
 private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
 private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
+private const val SKY_SCORE_CACHE_PREFIX = "omniwx:skyScore:v1"
 private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 
 data class WidgetPlace(
@@ -148,6 +149,8 @@ private data class WidgetDailyRecords(
 )
 
 object OmniwxWidgetData {
+  const val ACTION_REFRESH_WIDGETS = "com.anonymous.weatherapp.widget.REFRESH_WIDGETS"
+
   fun openIntent(context: Context, route: String): PendingIntent {
     val cleanRoute = if (route.startsWith("/")) route else "/$route"
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("weatherapp://$cleanRoute"), context, MainActivity::class.java).apply {
@@ -157,6 +160,19 @@ object OmniwxWidgetData {
     return PendingIntent.getActivity(
       context,
       route.hashCode(),
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+  }
+
+  fun refreshIntent(context: Context): PendingIntent {
+    val intent = Intent(context, OmniwxWidgetRefreshReceiver::class.java).apply {
+      action = ACTION_REFRESH_WIDGETS
+      setPackage(context.packageName)
+    }
+    return PendingIntent.getBroadcast(
+      context,
+      ACTION_REFRESH_WIDGETS.hashCode(),
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
@@ -253,26 +269,10 @@ object OmniwxWidgetData {
 
   fun fetchSkyScore(context: Context): WidgetSkyScore? {
     val place = readPlace(context) ?: return null
+    readSkyScoreCache(context, place)?.let { return it }
     val url = "$OMNIWX_API_BASE/api/astro/inspect?lat=${place.lat}&lon=${place.lon}&hour=0"
     val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
-    val score = root.optInt("skyScore", -1).takeIf { it >= 0 } ?: return null
-    val site = root.optJSONObject("site")
-    val bortleClass = site?.optNullableDouble("bortleClass")
-    val bortleLabel = site?.optString("bortleLabel", "")?.ifBlank { null }
-    val low = root.optNullableDouble("cloudLow")
-    val mid = root.optNullableDouble("cloudMid")
-    val high = root.optNullableDouble("cloudHigh")
-    return WidgetSkyScore(
-      score = score.coerceIn(0, 100),
-      label = skyQualityLabel(score),
-      bestWindow = skyWindowLine(score, low, mid, high),
-      bortle = bortleLine(bortleClass, bortleLabel),
-      cloudLow = pctLabel(low),
-      cloudMid = pctLabel(mid),
-      cloudHigh = pctLabel(high),
-      clouds = cloudLayerShort(low, mid, high),
-      aurora = "Updated ${nowLabel()}",
-    )
+    return skyScoreFromInspectJson(root)?.copy(aurora = "Updated ${nowLabel()}")
   }
 
   fun fetchNearestMetar(place: WidgetPlace): WidgetMetar? {
@@ -731,6 +731,59 @@ object OmniwxWidgetData {
     return "Seasonal spread ${(summerHigh - winterLow).roundToInt()}°"
   }
 
+  fun radarSnapshotBitmap(weather: WidgetWeather?): Bitmap {
+    val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(5, 17, 36)
+      style = Paint.Style.FILL
+    }
+    canvas.drawRect(0f, 0f, 720f, 360f, bg)
+    val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(56, 189, 248)
+      alpha = 54
+      strokeWidth = 2f
+    }
+    for (x in 0..720 step 72) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), 360f, grid)
+    for (y in 0..360 step 60) canvas.drawLine(0f, y.toFloat(), 720f, y.toFloat(), grid)
+    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(34, 211, 238)
+      alpha = 92
+      style = Paint.Style.STROKE
+      strokeWidth = 4f
+    }
+    val cx = 360f
+    val cy = 180f
+    listOf(54f, 108f, 162f).forEach { canvas.drawCircle(cx, cy, it, ring) }
+    val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(56, 189, 248)
+      style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, 12f, dot)
+    val precipCode = weather?.weatherCode ?: -1
+    val activePrecip = precipCode in listOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99)
+    if (activePrecip) {
+      val colors = listOf(Color.rgb(34, 197, 94), Color.rgb(234, 179, 8), Color.rgb(249, 115, 22), Color.rgb(239, 68, 68))
+      colors.forEachIndexed { idx, color ->
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          this.color = color
+          alpha = 160 - idx * 18
+          style = Paint.Style.FILL
+        }
+        canvas.drawOval(RectF(420f + idx * 18f, 72f + idx * 18f, 650f - idx * 8f, 260f - idx * 2f), p)
+      }
+    } else {
+      val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(148, 163, 184)
+        alpha = 92
+        textSize = 28f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+      }
+      canvas.drawText("No nearby precip signal", 226f, 320f, clear)
+    }
+    return bitmap
+  }
+
   private fun nearestMetarJson(place: WidgetPlace, array: JSONArray): JSONObject? {
     var best: JSONObject? = null
     var bestDistance = Double.POSITIVE_INFINITY
@@ -929,6 +982,39 @@ private fun readClimoCache(context: Context, place: WidgetPlace): WidgetClimatol
   return readAsyncStorageValue(context, key)?.let { raw ->
     runCatching { climoFromJson(place, JSONObject(raw)) }.getOrNull()
   }
+}
+
+private fun readSkyScoreCache(context: Context, place: WidgetPlace): WidgetSkyScore? {
+  val key = "$SKY_SCORE_CACHE_PREFIX:${String.format(Locale.US, "%.3f", place.lat)},${String.format(Locale.US, "%.3f", place.lon)}"
+  return readAsyncStorageValue(context, key)?.let { raw ->
+    runCatching {
+      val payload = JSONObject(raw)
+      val savedAt = payload.optLong("savedAt", 0L)
+      if (savedAt <= 0L || System.currentTimeMillis() - savedAt > 6L * 60L * 60L * 1000L) return@runCatching null
+      skyScoreFromInspectJson(payload.optJSONObject("data") ?: return@runCatching null)
+    }.getOrNull()
+  }
+}
+
+private fun skyScoreFromInspectJson(root: JSONObject): WidgetSkyScore? {
+  val score = root.optInt("skyScore", -1).takeIf { it >= 0 } ?: return null
+  val site = root.optJSONObject("site")
+  val bortleClass = site?.optNullableDouble("bortleClass")
+  val bortleLabel = site?.optString("bortleLabel", "")?.ifBlank { null }
+  val low = root.optNullableDouble("cloudLow")
+  val mid = root.optNullableDouble("cloudMid")
+  val high = root.optNullableDouble("cloudHigh")
+  return WidgetSkyScore(
+    score = score.coerceIn(0, 100),
+    label = skyQualityLabel(score),
+    bestWindow = skyWindowLine(score, low, mid, high),
+    bortle = bortleLine(bortleClass, bortleLabel),
+    cloudLow = pctLabel(low),
+    cloudMid = pctLabel(mid),
+    cloudHigh = pctLabel(high),
+    clouds = cloudLayerShort(low, mid, high),
+    aurora = "Cached ${nowLabel()}",
+  )
 }
 
 private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatology? {
