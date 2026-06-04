@@ -4,11 +4,11 @@
 // Focus of this version:
 // - Keeps your smoother / less-blocky worker WMS path
 // - Keeps unified IEM + RainViewer provider handling
-// - Fixes visible "jump back" behavior by:
-//   1) using ping-pong playback (forward then backward)
-//   2) freezing the animation playlist while playback is running
-//   3) only swapping in fresh live frames/templates at safe edges
-//   4) preserving the displayed timestamp when a new playlist is promoted
+// - Improves playback smoothness by:
+//   1) freezing the animation playlist while playback is running
+//   2) only swapping in fresh live frames/templates at safe edges
+//   3) preserving the displayed timestamp when a new playlist is promoted
+//   4) prewarming upcoming frames before they become visible
 //
 // Assumptions (matches your codebase):
 // - types: RadarOverlay, Region come from components/maps/MapRenderer
@@ -129,7 +129,9 @@ function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
+export type AnimationQuality = 'smooth' | 'cinematic' | 'presentation';
+
+function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean, quality: AnimationQuality) {
   const z = Math.max(2, Math.min(12, zoom));
 
   if (raw) {
@@ -142,53 +144,101 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean) {
     };
   }
 
+  const tune = (profile: {
+    blendMs: number;
+    dwellMs: number;
+    opacityMult: number;
+    enableTemporal3: boolean;
+    label: string;
+  }) => {
+    if (quality === 'smooth') {
+      return {
+        ...profile,
+        blendMs: Math.round(profile.blendMs * 0.78),
+        dwellMs: Math.round(profile.dwellMs * 1.08),
+        enableTemporal3: profile.enableTemporal3 && z <= 5,
+        label: profile.label === 'Cinematic' ? 'Smooth' : profile.label,
+      };
+    }
+    if (quality === 'presentation') {
+      return {
+        ...profile,
+        blendMs: Math.round(profile.blendMs * 1.12),
+        dwellMs: Math.round(profile.dwellMs * 0.88),
+        enableTemporal3: true,
+        label: 'Presentation',
+      };
+    }
+    return profile;
+  };
+
   if (z <= 5) {
-    return {
-      blendMs: 700,
-      dwellMs: nerdy ? 1450 : 1600,
+    return tune({
+      blendMs: 900,
+      dwellMs: nerdy ? 1550 : 1700,
       opacityMult: nerdy ? 0.82 : 0.76,
       enableTemporal3: true,
       label: 'Smooth (wide)',
-    };
+    });
   }
 
   if (z <= 8) {
-    return {
-      blendMs: 600,
-      dwellMs: nerdy ? 1200 : 1325,
+    return tune({
+      blendMs: 760,
+      dwellMs: nerdy ? 1325 : 1450,
       opacityMult: nerdy ? 0.92 : 0.86,
-      enableTemporal3: false,
-      label: 'Smooth',
-    };
+      enableTemporal3: true,
+      label: 'Cinematic',
+    });
   }
 
-  return {
-    blendMs: 450,
-    dwellMs: nerdy ? 900 : 1000,
+  return tune({
+    blendMs: 560,
+    dwellMs: nerdy ? 1025 : 1125,
     opacityMult: 1.0,
     enableTemporal3: false,
     label: 'Smooth (local)',
-  };
+  });
 }
 
-function getRadarFetchProfile(zoom: number, provider: 'iem' | 'rainviewer', stormMode: boolean) {
+function getRadarFetchProfile(
+  zoom: number,
+  provider: 'iem' | 'rainviewer',
+  stormMode: boolean,
+  quality: AnimationQuality,
+) {
   const z = Math.max(2, Math.min(12, zoom));
+  const tune = (profile: { maxFrames: number; lookbackMinutes: number }) => {
+    if (quality === 'smooth') {
+      return {
+        maxFrames: Math.max(8, Math.round(profile.maxFrames * 0.72)),
+        lookbackMinutes: Math.max(45, Math.round(profile.lookbackMinutes * 0.72)),
+      };
+    }
+    if (quality === 'presentation') {
+      return {
+        maxFrames: Math.min(30, Math.round(profile.maxFrames * 1.25)),
+        lookbackMinutes: Math.min(180, Math.round(profile.lookbackMinutes * 1.35)),
+      };
+    }
+    return profile;
+  };
 
   if (provider === 'rainviewer') {
-    if (z <= 5) return { maxFrames: 8, lookbackMinutes: 40 };
-    if (z <= 8) return { maxFrames: 10, lookbackMinutes: 55 };
-    return { maxFrames: 12, lookbackMinutes: 70 };
+    if (z <= 5) return tune({ maxFrames: 24, lookbackMinutes: 120 });
+    if (z <= 8) return tune({ maxFrames: 22, lookbackMinutes: 110 });
+    return tune({ maxFrames: 18, lookbackMinutes: 90 });
   }
 
   if (stormMode) {
-    if (z <= 6) return { maxFrames: 6, lookbackMinutes: 45 };
-    if (z <= 9) return { maxFrames: 5, lookbackMinutes: 40 };
-    return { maxFrames: 3, lookbackMinutes: 25 };
+    if (z <= 6) return tune({ maxFrames: 18, lookbackMinutes: 90 });
+    if (z <= 9) return tune({ maxFrames: 14, lookbackMinutes: 75 });
+    return tune({ maxFrames: 10, lookbackMinutes: 55 });
   }
 
-  if (z <= 5) return { maxFrames: 7, lookbackMinutes: 35 };
-  if (z <= 8) return { maxFrames: 9, lookbackMinutes: 50 };
-  return { maxFrames: 10, lookbackMinutes: 65 };
+  if (z <= 5) return tune({ maxFrames: 24, lookbackMinutes: 120 });
+  if (z <= 8) return tune({ maxFrames: 22, lookbackMinutes: 110 });
+  return tune({ maxFrames: 18, lookbackMinutes: 90 });
 }
 
 export type RadarControllerSheetValue = {
@@ -218,8 +268,10 @@ export function useRadarController(args: {
   radarSiteId3?: string | null;
   localMinZoom?: number;
   ridgeMinZoom?: number;
+  animationQuality?: AnimationQuality;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
+  const animationQuality = args.animationQuality ?? 'cinematic';
   const stationMode = args.stationMode === true;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
@@ -227,12 +279,12 @@ export function useRadarController(args: {
   const stormMode = getStormMode(state);
 
   const profile = useMemo(
-    () => getRadarProfile(mapZoom, rawMode, state.nerdy),
-    [mapZoom, rawMode, state.nerdy],
+    () => getRadarProfile(mapZoom, rawMode, state.nerdy, animationQuality),
+    [mapZoom, rawMode, state.nerdy, animationQuality],
   );
   const fetchProfile = useMemo(
-    () => getRadarFetchProfile(mapZoom, sheetValue.radarProvider, stormMode),
-    [mapZoom, sheetValue.radarProvider, stormMode],
+    () => getRadarFetchProfile(mapZoom, sheetValue.radarProvider, stormMode, animationQuality),
+    [mapZoom, sheetValue.radarProvider, stormMode, animationQuality],
   );
 
   const radarOpacity = useMemo(() => {
@@ -270,7 +322,7 @@ export function useRadarController(args: {
     createRainViewerProvider({
       ttlMs: 60_000,
       includeNowcast: false,
-      maxFrames: 10,
+      maxFrames: 24,
       maxZoom: 7,
     }),
   );
@@ -313,6 +365,7 @@ export function useRadarController(args: {
   const usingLocalImage =
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
+    !state.radarTime.playing &&
     !stationMode &&
     (product === 'N0Q' || (stormMode && product === 'N0B')) &&
     mapZoom >= localMinZoom;
@@ -450,13 +503,6 @@ export function useRadarController(args: {
     debouncedRefreshLocal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs, stormMode]);
-
-  useEffect(() => {
-    if (usingLocalImage && state.radarTime.playing) {
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage]);
 
   /* =========================================================================
    * IEM unified frames
@@ -815,20 +861,30 @@ export function useRadarController(args: {
     const n = effectiveTemplates.length;
     const outTemplates: Array<string | null> = [null, null, null];
     const outOpacities: number[] = [0, 0, 0];
+    const warmTemplates: Array<string | null> = [];
+
+    const addWarm = (index: number) => {
+      if (n <= 1) return;
+      const tpl = effectiveTemplates[clampIndex(index, n)] ?? null;
+      if (!tpl) return;
+      if (outTemplates.includes(tpl)) return;
+      if (warmTemplates.includes(tpl)) return;
+      warmTemplates.push(tpl);
+    };
 
     if (usingLocalImage) {
-      return { templates: outTemplates, opacities: outOpacities };
+      return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
     if (!n) {
       if (stormMode || stationMode) {
         slotHoldRef.current = [null, null, null];
-        return { templates: outTemplates, opacities: outOpacities };
+        return { templates: outTemplates, opacities: outOpacities, warmTemplates };
       }
       outTemplates[0] = slotHoldRef.current[0];
       outTemplates[1] = slotHoldRef.current[1];
       outTemplates[2] = slotHoldRef.current[2];
-      return { templates: outTemplates, opacities: outOpacities };
+      return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
     if (preloadTo !== null) {
@@ -847,7 +903,10 @@ export function useRadarController(args: {
       slotHoldRef.current[1] = outTemplates[1];
       slotHoldRef.current[2] = null;
 
-      return { templates: outTemplates, opacities: outOpacities };
+      addWarm(pre + 1);
+      addWarm(pre + 2);
+
+      return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
     const from = clampIndex(xfade.from, n);
@@ -863,7 +922,10 @@ export function useRadarController(args: {
       slotHoldRef.current[1] = null;
       slotHoldRef.current[2] = null;
 
-      return { templates: outTemplates, opacities: outOpacities };
+      addWarm(to + 1);
+      addWarm(to + 2);
+
+      return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
     outTemplates[0] = effectiveTemplates[from] ?? slotHoldRef.current[0];
@@ -884,7 +946,11 @@ export function useRadarController(args: {
     if (outTemplates[1]) slotHoldRef.current[1] = outTemplates[1];
     if (outTemplates[2]) slotHoldRef.current[2] = outTemplates[2];
 
-    return { templates: outTemplates, opacities: outOpacities };
+    const direction = to >= from ? 1 : -1;
+    addWarm(to + direction);
+    addWarm(to + direction * 2);
+
+    return { templates: outTemplates, opacities: outOpacities, warmTemplates };
   }, [
     usingLocalImage,
     effectiveTemplates,
@@ -1051,6 +1117,7 @@ export function useRadarController(args: {
       enabled: true,
       templates: activeRadar.templates,
       opacities: activeRadar.opacities,
+      warmTemplates: activeRadar.warmTemplates,
       tileMaxZ: radarTileMaxZ,
       productStyle,
       localImage: null,
@@ -1065,6 +1132,7 @@ export function useRadarController(args: {
     radarOpacity,
     activeRadar.templates,
     activeRadar.opacities,
+    activeRadar.warmTemplates,
   ]);
 
   return {

@@ -23,6 +23,7 @@ export type RadarOverlay = {
   enabled: boolean;
   templates: (string | null)[];
   opacities: number[];
+  warmTemplates?: (string | null)[];
   tileMaxZ: number;
   productStyle?: 'reflectivity' | 'velocity' | 'echoTops';
   localImage?: RadarLocalImage | null;
@@ -154,9 +155,9 @@ const BOUNDARY_RELIEF = {
     county: 'rgba(94,234,212,0.46)',
   },
   orange: {
-    glow: 'rgba(251,146,60,0.92)',
+    glow: 'rgba(251,146,60,0.96)',
     core: 'rgba(255,237,213,0.98)',
-    county: 'rgba(253,186,116,0.44)',
+    county: 'rgba(253,186,116,0.52)',
   },
 } as const;
 
@@ -168,6 +169,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
       <MapLibreGL.LineLayer
         id={`boundary-country-glow-${tone}`}
         sourceLayerID="boundary"
+        layerIndex={901}
         minZoomLevel={1}
         filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
         style={{
@@ -181,6 +183,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
       <MapLibreGL.LineLayer
         id={`boundary-country-core-${tone}`}
         sourceLayerID="boundary"
+        layerIndex={902}
         minZoomLevel={1}
         filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
         style={{
@@ -193,6 +196,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
       <MapLibreGL.LineLayer
         id={`boundary-state-glow-${tone}`}
         sourceLayerID="boundary"
+        layerIndex={903}
         minZoomLevel={3}
         filter={['all', ['==', 'admin_level', 4], ['==', 'maritime', 0]] as any}
         style={{
@@ -206,6 +210,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
       <MapLibreGL.LineLayer
         id={`boundary-state-core-${tone}`}
         sourceLayerID="boundary"
+        layerIndex={904}
         minZoomLevel={3}
         filter={['all', ['==', 'admin_level', 4], ['==', 'maritime', 0]] as any}
         style={{
@@ -218,6 +223,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
       <MapLibreGL.LineLayer
         id={`boundary-county-core-${tone}`}
         sourceLayerID="boundary"
+        layerIndex={905}
         minZoomLevel={7}
         filter={['all', ['==', 'admin_level', 6], ['==', 'maritime', 0]] as any}
         style={{
@@ -400,6 +406,11 @@ export function MapRenderer(props: MapRendererProps) {
     return 2;
   }, [isDegraded, liveZoom, radar.opacities, radar.templates]);
 
+  const warmRadarTemplates = useMemo(() => {
+    if (useLocalImage || isDegraded) return [] as string[];
+    return (radar.warmTemplates ?? []).filter((tpl): tpl is string => !!tpl).slice(0, liveZoom >= 8.5 ? 1 : 2);
+  }, [isDegraded, liveZoom, radar.warmTemplates, useLocalImage]);
+
   const radarTemplates = useMemo(() => {
     const base = radar.templates ?? [];
     if (!base.length) return [] as (string | null)[];
@@ -487,6 +498,31 @@ export function MapRenderer(props: MapRendererProps) {
                 </MapLibreGL.ImageSource>
               );
             })()
+          : null}
+
+        {!useLocalImage && radar.enabled && warmRadarTemplates.length
+          ? warmRadarTemplates.map((tpl, slotIdx) => {
+              const tplKey = shortHash(tpl);
+              const srcId = `radar-warm-src-${slotIdx}-${tplKey}`;
+              const lyrId = `radar-warm-lyr-${slotIdx}-${tplKey}`;
+
+              return (
+                <MapLibreGL.RasterSource
+                  key={srcId}
+                  id={srcId}
+                  tileUrlTemplates={[tpl]}
+                  tileSize={256}
+                  maxZoomLevel={requestMaxZ}
+                >
+                  <MapLibreGL.RasterLayer
+                    id={lyrId}
+                    sourceID={srcId}
+                    maxZoomLevel={layerMaxZ}
+                    style={radarRasterStyle(0.01)}
+                  />
+                </MapLibreGL.RasterSource>
+              );
+            })
           : null}
 
         {!useLocalImage && radar.enabled

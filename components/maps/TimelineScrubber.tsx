@@ -68,12 +68,13 @@ type TimelineScrubberProps = {
   frameIndex: number;
   playing: boolean;
   frames?: FrameLike[];
+  modeLabel?: string;
   onSetFrame: (frameIndex: number) => void;
   onSetPlaying: (playing: boolean) => void;
 };
 
 function TimelineScrubberInner(props: TimelineScrubberProps) {
-  const { frameIndex, playing, frames = [], onSetFrame, onSetPlaying } = props;
+  const { frameIndex, playing, frames = [], modeLabel, onSetFrame, onSetPlaying } = props;
 
   const fallbackFrames = useMemo(() => buildFallbackFrames({ minutesBack: 120, stepMinutes: 5 }), []);
   const effectiveFrames = frames.length ? frames : fallbackFrames;
@@ -212,7 +213,7 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
             <Text style={styles.primaryLabel}>{label}</Text>
             <View style={[styles.modeBadge, playing ? styles.modeBadgeLive : scrubbing ? styles.modeBadgeScrub : null]}>
               <Text style={styles.modeBadgeText}>
-                {scrubbing ? 'Scrubbing' : playing ? 'Live loop' : 'Paused'}
+                {scrubbing ? 'Scrubbing' : playing ? (modeLabel ?? 'Live loop') : 'Paused'}
               </Text>
             </View>
           </View>

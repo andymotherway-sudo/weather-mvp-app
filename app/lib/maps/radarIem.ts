@@ -384,7 +384,7 @@ export async function resolveIemFrames(args: {
   const { lat, lon, opts } = args;
 
   const zoom = Number.isFinite(opts.zoom) ? opts.zoom : 4;
-  const maxFrames = clampInt(opts.maxFrames, 4, 18);
+  const maxFrames = clampInt(opts.maxFrames, 4, 30);
   const lookbackMinutes = clampInt(opts.lookbackMinutes, 20, 180);
   const allowMosaicFallback = opts.allowMosaicFallback !== false;
 

@@ -40,6 +40,8 @@ import androidx.car.app.navigation.model.MapWithContentTemplate
 import androidx.car.app.validation.HostValidator
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import java.net.HttpURLConnection
 import java.net.UnknownHostException
 import java.net.URL
@@ -402,16 +404,48 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
   private val radarRenderer = CarRadarSurfaceRenderer(repository)
+  private val appManager = runCatching { carContext.getCarService(AppManager::class.java) }.getOrNull()
+  private var surfaceEnabled = false
 
   init {
-    carContext.getCarService(AppManager::class.java).setSurfaceCallback(radarRenderer)
+    surfaceEnabled = runCatching {
+      appManager?.setSurfaceCallback(radarRenderer)
+      appManager != null
+    }.getOrDefault(false)
+
+    lifecycle.addObserver(object : DefaultLifecycleObserver {
+      override fun onDestroy(owner: LifecycleOwner) {
+        runCatching { appManager?.setSurfaceCallback(EmptyCarSurfaceCallback) }
+        radarRenderer.release()
+      }
+    })
   }
 
   override fun onGetTemplate(): Template {
     return safeTemplate("Nearby Weather") {
-    ensureLoaded()
-    loadingOrErrorTemplate("Nearby Weather")?.let { return@safeTemplate it }
-    val current = repository.report!!
+      ensureLoaded()
+      loadingOrErrorTemplate("Nearby Weather")?.let { return@safeTemplate it }
+      val current = repository.report!!
+      val content = radarBriefingTemplate(current)
+
+      if (!surfaceEnabled) {
+        return@safeTemplate content
+      }
+
+      runCatching {
+        MapWithContentTemplate.Builder()
+          .setContentTemplate(content)
+          .setMapController(MapController.Builder().build())
+          .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(radarRefreshAction()).build())
+          .build()
+      }.getOrElse {
+        surfaceEnabled = false
+        content
+      }
+    }
+  }
+
+  private fun radarBriefingTemplate(current: CarWeatherReport): Template {
     val pane = Pane.Builder()
       .addRow(Row.Builder()
         .setTitle("${current.temperatureF.roundLabel()}F - ${weatherCodeLabel(current.weatherCode)}")
@@ -423,20 +457,30 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
         .addText(current.alertSubtitle ?: "Radar snapshot refreshes when you tap Refresh.")
         .build())
       .build()
-    val content = PaneTemplate.Builder(pane)
+
+    return PaneTemplate.Builder(pane)
       .setTitle("Radar Snapshot")
       .setHeaderAction(Action.BACK)
-      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(refreshAction()).build())
+      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(radarRefreshAction()).build())
       .build()
+  }
 
-    MapWithContentTemplate.Builder()
-      .setContentTemplate(content)
-      .setMapController(MapController.Builder().build())
-      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(refreshAction()).build())
+  private fun radarRefreshAction(): Action {
+    return Action.Builder()
+      .setTitle("Refresh")
+      .setOnClickListener {
+        repository.load(force = true) {
+          radarRenderer.requestRefresh()
+          invalidate()
+        }
+        radarRenderer.requestRefresh()
+        invalidate()
+      }
       .build()
-    }
   }
 }
+
+private object EmptyCarSurfaceCallback : SurfaceCallback
 
 private class CarRadarSurfaceRenderer(private val repository: CarWeatherRepository) : SurfaceCallback {
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -455,11 +499,12 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
   @Volatile private var radarTimestamp: String? = null
   @Volatile private var radarError: String? = null
+  private val tileLock = Any()
 
   override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
     surface = surfaceContainer
     draw()
-    fetchRadarIfNeeded()
+    fetchRadarIfNeeded(force = false)
   }
 
   override fun onVisibleAreaChanged(visibleArea: Rect) {
@@ -472,24 +517,43 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
 
   override fun onSurfaceDestroyed(surfaceContainer: SurfaceContainer) {
     surface = null
-    radarTiles.forEach { it.bitmap.recycle() }
-    radarTiles = emptyList()
+    release()
   }
 
-  private fun fetchRadarIfNeeded() {
+  fun requestRefresh() {
+    fetchRadarIfNeeded(force = true)
+  }
+
+  fun release() {
+    val oldTiles = synchronized(tileLock) {
+      val old = radarTiles
+      radarTiles = emptyList()
+      radarTimestamp = null
+      radarError = null
+      old
+    }
+    oldTiles.forEach { runCatching { it.bitmap.recycle() } }
+  }
+
+  private fun fetchRadarIfNeeded(force: Boolean) {
     if (fetchInFlight || repository.report == null) return
+    if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
     fetchInFlight = true
     thread(name = "omniwx-car-radar") {
       try {
         val report = repository.report ?: return@thread
         val ts = latestRainViewerTimestamp()
         val tiles = fetchRadarTileMosaic(report.latitude, report.longitude, ts)
-        radarTiles.forEach { it.bitmap.recycle() }
-        radarTiles = tiles
-        radarTimestamp = radarAgeLabel(ts)
-        radarError = null
+        val oldTiles = synchronized(tileLock) {
+          val old = radarTiles
+          radarTiles = tiles
+          radarTimestamp = radarAgeLabel(ts)
+          radarError = null
+          old
+        }
+        oldTiles.forEach { runCatching { it.bitmap.recycle() } }
       } catch (e: Exception) {
-        radarError = "Radar unavailable"
+        synchronized(tileLock) { radarError = "Radar unavailable" }
       } finally {
         fetchInFlight = false
         Handler(Looper.getMainLooper()).post { draw() }
@@ -523,15 +587,18 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
       return
     }
 
-    val tiles = radarTiles
-    if (tiles.isEmpty()) {
-      drawCenteredText(canvas, width, height, if (fetchInFlight) "Loading latest radar" else (radarError ?: "Radar snapshot pending"))
-    } else {
-      drawTiles(canvas, width, height, report, tiles)
+    val timestamp = synchronized(tileLock) {
+      val tiles = radarTiles
+      if (tiles.isEmpty()) {
+        drawCenteredText(canvas, width, height, if (fetchInFlight) "Loading latest radar" else (radarError ?: "Radar snapshot pending"))
+      } else {
+        drawTiles(canvas, width, height, report, tiles)
+      }
+      radarTimestamp
     }
 
     drawLocationMarker(canvas, width / 2f, height / 2f)
-    drawHeader(canvas, width, report)
+    drawHeader(canvas, width, report, timestamp)
     drawLegend(canvas, width, height)
   }
 
@@ -574,12 +641,12 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
     canvas.drawCircle(width / 2f, height / 2f, minOf(width, height) * 0.38f, paint)
   }
 
-  private fun drawHeader(canvas: Canvas, width: Int, report: CarWeatherReport) {
+  private fun drawHeader(canvas: Canvas, width: Int, report: CarWeatherReport, timestamp: String?) {
     paint.style = Paint.Style.FILL
     paint.color = Color.argb(205, 2, 6, 23)
     canvas.drawRoundRect(18f, 18f, width - 18f, 108f, 24f, 24f, paint)
     canvas.drawText("OMNIwx Radar - ${report.placeName}", 38f, 56f, textPaint)
-    val subtitle = "${report.temperatureF.roundLabel()}F ${weatherCodeLabel(report.weatherCode)} - ${radarTimestamp ?: "latest radar"}"
+    val subtitle = "${report.temperatureF.roundLabel()}F ${weatherCodeLabel(report.weatherCode)} - ${timestamp ?: "latest radar"}"
     canvas.drawText(subtitle, 38f, 88f, smallTextPaint)
   }
 
