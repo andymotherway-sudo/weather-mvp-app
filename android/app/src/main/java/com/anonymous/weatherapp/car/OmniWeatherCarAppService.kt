@@ -403,66 +403,59 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
-  private val radarRenderer = CarRadarSurfaceRenderer(repository)
-  private val appManager = runCatching { carContext.getCarService(AppManager::class.java) }.getOrNull()
-  private var surfaceEnabled = false
-
-  init {
-    surfaceEnabled = runCatching {
-      appManager?.setSurfaceCallback(radarRenderer)
-      appManager != null
-    }.getOrDefault(false)
-
-    lifecycle.addObserver(object : DefaultLifecycleObserver {
-      override fun onDestroy(owner: LifecycleOwner) {
-        runCatching { appManager?.setSurfaceCallback(EmptyCarSurfaceCallback) }
-        radarRenderer.release()
-      }
-    })
-  }
+  @Volatile private var fetchInFlight = false
+  @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
+  @Volatile private var radarTimestamp: String? = null
+  @Volatile private var radarError: String? = null
+  private val tileLock = Any()
 
   override fun onGetTemplate(): Template {
-    return safeTemplate("Nearby Weather") {
+    return safeTemplate("Radar Snapshot") {
       ensureLoaded()
-      loadingOrErrorTemplate("Nearby Weather")?.let { return@safeTemplate it }
+      loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
-      val content = radarBriefingTemplate(current)
+      fetchRadarIfNeeded(force = false)
 
-      if (!surfaceEnabled) {
-        return@safeTemplate content
+      val tilesSnapshot = synchronized(tileLock) { radarTiles.toList() }
+      val timestampSnapshot = synchronized(tileLock) { radarTimestamp }
+      val errorSnapshot = synchronized(tileLock) { radarError }
+      val radarStatus = when {
+        tilesSnapshot.isNotEmpty() -> timestampSnapshot ?: "latest radar"
+        fetchInFlight -> "loading latest radar"
+        errorSnapshot != null -> errorSnapshot
+        else -> "radar snapshot pending"
       }
 
-      runCatching {
-        MapWithContentTemplate.Builder()
-          .setContentTemplate(content)
-          .setMapController(MapController.Builder().build())
-          .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(radarRefreshAction()).build())
+      val list = ItemList.Builder()
+      list.addItem(
+        GridItem.Builder()
+          .setTitle("Radar near ${current.placeName}")
+          .setText("${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi - $radarStatus")
+          .setImage(carRadarSnapshotIcon(current, tilesSnapshot, fetchInFlight, errorSnapshot), GridItem.IMAGE_TYPE_LARGE)
           .build()
-      }.getOrElse {
-        surfaceEnabled = false
-        content
-      }
+      )
+      list.addItem(
+        GridItem.Builder()
+          .setTitle("${current.temperatureF.roundLabel()}F ${weatherCodeLabel(current.weatherCode)}")
+          .setText("Wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph")
+          .setImage(carWeatherIcon(current.weatherCode), GridItem.IMAGE_TYPE_ICON)
+          .build()
+      )
+      list.addItem(
+        GridItem.Builder()
+          .setTitle(current.alertTitle ?: "No active alerts")
+          .setText(current.alertSubtitle ?: "Tap Refresh for latest radar")
+          .setImage(carAlertIcon(current.alertTitle != null), GridItem.IMAGE_TYPE_ICON)
+          .build()
+      )
+
+      GridTemplate.Builder()
+        .setSingleList(list.build())
+        .setTitle("Radar Snapshot")
+        .setHeaderAction(Action.BACK)
+        .setActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
+        .build()
     }
-  }
-
-  private fun radarBriefingTemplate(current: CarWeatherReport): Template {
-    val pane = Pane.Builder()
-      .addRow(Row.Builder()
-        .setTitle("${current.temperatureF.roundLabel()}F - ${weatherCodeLabel(current.weatherCode)}")
-        .addText("Static latest radar near ${current.placeName}.")
-        .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
-        .build())
-      .addRow(Row.Builder()
-        .setTitle(current.alertTitle ?: "No active alerts")
-        .addText(current.alertSubtitle ?: "Radar snapshot refreshes when you tap Refresh.")
-        .build())
-      .build()
-
-    return PaneTemplate.Builder(pane)
-      .setTitle("Radar Snapshot")
-      .setHeaderAction(Action.BACK)
-      .setActionStrip(ActionStrip.Builder().addAction(closeAction()).addAction(radarRefreshAction()).build())
-      .build()
   }
 
   private fun radarRefreshAction(): Action {
@@ -470,13 +463,39 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .setTitle("Refresh")
       .setOnClickListener {
         repository.load(force = true) {
-          radarRenderer.requestRefresh()
+          fetchRadarIfNeeded(force = true)
           invalidate()
         }
-        radarRenderer.requestRefresh()
+        fetchRadarIfNeeded(force = true)
         invalidate()
       }
       .build()
+  }
+
+  private fun fetchRadarIfNeeded(force: Boolean) {
+    val report = repository.report ?: return
+    if (fetchInFlight) return
+    if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
+
+    fetchInFlight = true
+    thread(name = "omniwx-car-radar-card") {
+      try {
+        val ts = latestRainViewerTimestamp()
+        val tiles = fetchRadarTileMosaic(report.latitude, report.longitude, ts)
+        synchronized(tileLock) {
+          radarTiles = tiles
+          radarTimestamp = radarAgeLabel(ts)
+          radarError = if (tiles.isEmpty()) "radar tiles unavailable" else null
+        }
+      } catch (_: Throwable) {
+        synchronized(tileLock) {
+          radarError = "radar unavailable"
+        }
+      } finally {
+        fetchInFlight = false
+        Handler(Looper.getMainLooper()).post { invalidate() }
+      }
+    }
   }
 }
 
@@ -1377,6 +1396,121 @@ private fun weatherCodeLabel(code: Int): String {
     95, 96, 99 -> "Thunderstorms"
     else -> "Current conditions"
   }
+}
+
+private fun carRadarSnapshotIcon(
+  report: CarWeatherReport,
+  tiles: List<RadarTileBitmap>,
+  loading: Boolean,
+  error: String?
+): CarIcon {
+  val cardWidth = 480
+  val cardHeight = 270
+  val centerX = cardWidth / 2f
+  val centerY = cardHeight / 2f
+  val bitmap = Bitmap.createBitmap(cardWidth, cardHeight, Bitmap.Config.ARGB_8888)
+  val canvas = Canvas(bitmap)
+  val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = Color.WHITE
+    textSize = 24f
+    typeface = android.graphics.Typeface.DEFAULT_BOLD
+    setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
+  }
+  val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = Color.rgb(203, 213, 225)
+    textSize = 18f
+    setShadowLayer(4f, 0f, 2f, Color.rgb(2, 6, 23))
+  }
+
+  canvas.drawColor(Color.rgb(5, 17, 36))
+  paint.style = Paint.Style.STROKE
+  paint.strokeWidth = 2f
+  paint.color = Color.argb(54, 56, 189, 248)
+  for (x in 0..cardWidth step 60) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), cardHeight.toFloat(), paint)
+  for (y in 0..cardHeight step 45) canvas.drawLine(0f, y.toFloat(), cardWidth.toFloat(), y.toFloat(), paint)
+
+  if (tiles.isNotEmpty()) {
+    val zoom = 7
+    val tileSize = 512.0
+    val centerWorld = latLonToWorldPixels(report.latitude, report.longitude, zoom, tileSize)
+    val tilePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { alpha = 225 }
+    tiles.forEach { tile ->
+      val tileLeftWorld = tile.x * tileSize
+      val tileTopWorld = tile.y * tileSize
+      val left = ((tileLeftWorld - centerWorld.first) + centerX).toFloat()
+      val top = ((tileTopWorld - centerWorld.second) + centerY).toFloat()
+      canvas.drawBitmap(tile.bitmap, null, RectF(left, top, left + tile.bitmap.width, top + tile.bitmap.height), tilePaint)
+    }
+  } else {
+    val message = when {
+      loading -> "Loading latest radar"
+      error != null -> "Radar unavailable"
+      else -> "Radar snapshot pending"
+    }
+    val w = text.measureText(message)
+    canvas.drawText(message, (cardWidth - w) / 2f, centerY + 5f, text)
+  }
+
+  paint.style = Paint.Style.STROKE
+  paint.strokeWidth = 4f
+  paint.color = Color.argb(112, 34, 211, 238)
+  listOf(42f, 84f, 126f).forEach { canvas.drawCircle(centerX, centerY, it, paint) }
+
+  paint.style = Paint.Style.FILL
+  paint.color = Color.argb(95, 14, 165, 233)
+  canvas.drawCircle(centerX, centerY, 28f, paint)
+  paint.color = Color.WHITE
+  canvas.drawCircle(centerX, centerY, 12f, paint)
+  paint.color = Color.rgb(14, 165, 233)
+  canvas.drawCircle(centerX, centerY, 7f, paint)
+
+  paint.style = Paint.Style.FILL
+  paint.color = Color.argb(210, 2, 6, 23)
+  canvas.drawRoundRect(14f, 14f, cardWidth - 14f, 72f, 16f, 16f, paint)
+  canvas.drawText("OMNIwx Radar - ${report.placeName.take(18)}", 28f, 39f, text)
+  canvas.drawText("${report.nearestRadar.id} ${report.nearestRadarDistanceMi.roundLabel()} mi - static snapshot", 28f, 62f, small)
+
+  paint.color = Color.argb(210, 2, 6, 23)
+  canvas.drawRoundRect(14f, cardHeight - 50f, cardWidth - 14f, cardHeight - 14f, 14f, 14f, paint)
+  drawMiniLegend(canvas, paint, small, 36f, cardHeight - 27f, Color.rgb(34, 197, 94), "Light")
+  drawMiniLegend(canvas, paint, small, 126f, cardHeight - 27f, Color.rgb(234, 179, 8), "Mod")
+  drawMiniLegend(canvas, paint, small, 224f, cardHeight - 27f, Color.rgb(239, 68, 68), "Heavy")
+
+  return CarIcon.Builder(IconCompat.createWithBitmap(bitmap)).build()
+}
+
+private fun drawMiniLegend(canvas: Canvas, paint: Paint, text: Paint, x: Float, y: Float, color: Int, label: String) {
+  paint.style = Paint.Style.FILL
+  paint.color = color
+  canvas.drawCircle(x, y - 6f, 8f, paint)
+  canvas.drawText(label, x + 14f, y, text)
+}
+
+private fun carAlertIcon(active: Boolean): CarIcon {
+  val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+  val canvas = Canvas(bitmap)
+  val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  paint.style = Paint.Style.FILL
+  paint.color = Color.rgb(15, 23, 42)
+  canvas.drawCircle(48f, 48f, 43f, paint)
+  paint.style = Paint.Style.STROKE
+  paint.strokeWidth = 4f
+  paint.color = if (active) Color.rgb(251, 146, 60) else Color.rgb(56, 189, 248)
+  canvas.drawCircle(48f, 48f, 42f, paint)
+  paint.style = Paint.Style.FILL
+  paint.color = if (active) Color.rgb(251, 146, 60) else Color.rgb(34, 197, 94)
+  val path = android.graphics.Path().apply {
+    moveTo(48f, 18f)
+    lineTo(78f, 72f)
+    lineTo(18f, 72f)
+    close()
+  }
+  canvas.drawPath(path, paint)
+  paint.color = Color.WHITE
+  canvas.drawRect(45f, 36f, 51f, 56f, paint)
+  canvas.drawCircle(48f, 65f, 4f, paint)
+  return CarIcon.Builder(IconCompat.createWithBitmap(bitmap)).build()
 }
 
 private fun carWeatherIcon(code: Int): CarIcon {

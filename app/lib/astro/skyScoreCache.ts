@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
+import type { LocationAstroForecast } from './locationAstro';
 
 const KEY_PREFIX = 'omniwx:skyScore:v1';
 
@@ -11,6 +12,37 @@ function keyFor(lat: number, lon: number) {
 
 function isFiniteCoord(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatWindow(start?: string | null, end?: string | null) {
+  if (!start) return 'Best window --';
+  const startLabel = new Date(start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (!end) return `Best window ${startLabel}`;
+  const endLabel = new Date(end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `Best window ${startLabel}-${endLabel}`;
+}
+
+function formatBortle(forecast: LocationAstroForecast) {
+  const cls = forecast.site?.bortleClass;
+  const label = forecast.site?.bortleLabel;
+  if (cls == null && !label) return 'Bortle unavailable';
+  if (cls != null && label) return `Bortle ${cls} - ${label}`;
+  if (cls != null) return `Bortle ${cls}`;
+  return label ?? 'Bortle unavailable';
+}
+
+function pct(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : '--';
+}
+
+function bestCloudHour(forecast: LocationAstroForecast) {
+  const targetScore = forecast.peakScore;
+  return (
+    forecast.tonightHours.find((hour) => hour.score === targetScore) ??
+    forecast.tonightHours[0] ??
+    forecast.hours[0] ??
+    null
+  );
 }
 
 export async function primeSkyScoreCache(lat: number, lon: number) {
@@ -28,4 +60,26 @@ export async function primeSkyScoreCache(lat: number, lon: number) {
   } catch {
     return null;
   }
+}
+
+export async function writeSkyScoreWidgetCache(forecast: LocationAstroForecast) {
+  if (!isFiniteCoord(forecast.lat) || !isFiniteCoord(forecast.lon)) return;
+
+  const hour = bestCloudHour(forecast);
+  const widget = {
+    score: forecast.peakScore,
+    label: forecast.peakLabel,
+    bestWindow: formatWindow(forecast.bestStartTime, forecast.bestEndTime),
+    bortle: formatBortle(forecast),
+    cloudLow: pct(hour?.cloudLow),
+    cloudMid: pct(hour?.cloudMid),
+    cloudHigh: pct(hour?.cloudHigh),
+    clouds: `Low ${pct(hour?.cloudLow)} / Mid ${pct(hour?.cloudMid)} / High ${pct(hour?.cloudHigh)}`,
+    footer: `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
+  };
+
+  await AsyncStorage.setItem(
+    keyFor(forecast.lat, forecast.lon),
+    JSON.stringify({ savedAt: Date.now(), widget })
+  );
 }

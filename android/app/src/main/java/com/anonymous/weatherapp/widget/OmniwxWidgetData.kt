@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
 import com.anonymous.weatherapp.MainActivity
@@ -65,6 +67,11 @@ data class WidgetSkyScore(
   val cloudHigh: String,
   val clouds: String,
   val aurora: String,
+)
+
+private data class TilePoint(
+  val x: Double,
+  val y: Double,
 )
 
 data class WidgetMetar(
@@ -731,7 +738,9 @@ object OmniwxWidgetData {
     return "Seasonal spread ${(summerHigh - winterLow).roundToInt()}°"
   }
 
-  fun radarSnapshotBitmap(weather: WidgetWeather?): Bitmap {
+  fun radarSnapshotBitmap(place: WidgetPlace?, weather: WidgetWeather?): Bitmap {
+    place?.let { fetchRadarTileComposite(it) }?.let { return it }
+
     val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -782,6 +791,119 @@ object OmniwxWidgetData {
       canvas.drawText("No nearby precip signal", 226f, 320f, clear)
     }
     return bitmap
+  }
+
+  private fun fetchRadarTileComposite(place: WidgetPlace): Bitmap? {
+    return runCatching {
+      val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
+      val canvas = Canvas(bitmap)
+      val background = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(5, 17, 36)
+        style = Paint.Style.FILL
+      }
+      canvas.drawRect(0f, 0f, 720f, 360f, background)
+
+      val zoom = 7
+      val tileSize = 256.0
+      val center = lonLatToTilePoint(place.lon, place.lat, zoom)
+      val centerPxX = center.x * tileSize
+      val centerPxY = center.y * tileSize
+      val topLeftPxX = centerPxX - 360.0
+      val topLeftPxY = centerPxY - 180.0
+      val minTileX = kotlin.math.floor(topLeftPxX / tileSize).toInt()
+      val maxTileX = kotlin.math.floor((topLeftPxX + 720.0) / tileSize).toInt()
+      val minTileY = kotlin.math.floor(topLeftPxY / tileSize).toInt()
+      val maxTileY = kotlin.math.floor((topLeftPxY + 360.0) / tileSize).toInt()
+      val tileMax = 1 shl zoom
+
+      fun drawTileLayer(template: String, alpha: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+          this.alpha = alpha
+        }
+        for (tileX in minTileX..maxTileX) {
+          for (tileY in minTileY..maxTileY) {
+            if (tileY < 0 || tileY >= tileMax) continue
+            val wrappedX = ((tileX % tileMax) + tileMax) % tileMax
+            val url = template
+              .replace("{z}", zoom.toString())
+              .replace("{x}", wrappedX.toString())
+              .replace("{y}", tileY.toString())
+            val tile = fetchBitmap(url) ?: continue
+            val left = ((tileX * tileSize) - topLeftPxX).toFloat()
+            val top = ((tileY * tileSize) - topLeftPxY).toFloat()
+            canvas.drawBitmap(tile, null, Rect(left.toInt(), top.toInt(), (left + 256f).toInt(), (top + 256f).toInt()), paint)
+          }
+        }
+      }
+
+      drawTileLayer("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", 235)
+      drawTileLayer("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png", 230)
+
+      val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(38, 2, 6, 23)
+        style = Paint.Style.FILL
+      }
+      canvas.drawRect(0f, 0f, 720f, 360f, wash)
+
+      val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(34, 211, 238)
+        alpha = 120
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+      }
+      val cx = 360f
+      val cy = 180f
+      listOf(54f, 108f, 162f).forEach { canvas.drawCircle(cx, cy, it, ring) }
+      val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(56, 189, 248)
+        style = Paint.Style.FILL
+      }
+      canvas.drawCircle(cx, cy, 13f, dot)
+      val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(56, 189, 248)
+        alpha = 78
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+      }
+      canvas.drawCircle(cx, cy, 22f, halo)
+
+      val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        alpha = 218
+        textSize = 25f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
+      }
+      canvas.drawText(place.name.take(22), 386f, 188f, labelPaint)
+
+      bitmap
+    }.getOrNull()
+  }
+
+  private fun fetchBitmap(url: String): Bitmap? {
+    var connection: HttpURLConnection? = null
+    return try {
+      connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 4500
+        readTimeout = 4500
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "OMNIwx Alpha Android Widget")
+      }
+      if (connection.responseCode !in 200..299) return null
+      connection.inputStream.use { stream -> BitmapFactory.decodeStream(stream) }
+    } catch (_: Exception) {
+      null
+    } finally {
+      connection?.disconnect()
+    }
+  }
+
+  private fun lonLatToTilePoint(lon: Double, lat: Double, zoom: Int): TilePoint {
+    val latRad = Math.toRadians(lat.coerceIn(-85.05112878, 85.05112878))
+    val scale = (1 shl zoom).toDouble()
+    val x = ((lon + 180.0) / 360.0) * scale
+    val y = (1.0 - kotlin.math.ln(kotlin.math.tan(latRad) + 1.0 / kotlin.math.cos(latRad)) / Math.PI) / 2.0 * scale
+    return TilePoint(x, y)
   }
 
   private fun nearestMetarJson(place: WidgetPlace, array: JSONArray): JSONObject? {
@@ -991,9 +1113,25 @@ private fun readSkyScoreCache(context: Context, place: WidgetPlace): WidgetSkySc
       val payload = JSONObject(raw)
       val savedAt = payload.optLong("savedAt", 0L)
       if (savedAt <= 0L || System.currentTimeMillis() - savedAt > 6L * 60L * 60L * 1000L) return@runCatching null
+      payload.optJSONObject("widget")?.let { return@runCatching skyScoreFromWidgetJson(it) }
       skyScoreFromInspectJson(payload.optJSONObject("data") ?: return@runCatching null)
     }.getOrNull()
   }
+}
+
+private fun skyScoreFromWidgetJson(root: JSONObject): WidgetSkyScore? {
+  val score = root.optInt("score", -1).takeIf { it >= 0 } ?: return null
+  return WidgetSkyScore(
+    score = score.coerceIn(0, 100),
+    label = root.optString("label", "").ifBlank { skyQualityLabel(score) },
+    bestWindow = root.optString("bestWindow", "").ifBlank { "Best window --" },
+    bortle = root.optString("bortle", "").ifBlank { "Bortle unavailable" },
+    cloudLow = root.optString("cloudLow", "").ifBlank { "--" },
+    cloudMid = root.optString("cloudMid", "").ifBlank { "--" },
+    cloudHigh = root.optString("cloudHigh", "").ifBlank { "--" },
+    clouds = root.optString("clouds", "").ifBlank { "Cloud layers --" },
+    aurora = root.optString("footer", "").ifBlank { "Cached ${nowLabel()}" },
+  )
 }
 
 private fun skyScoreFromInspectJson(root: JSONObject): WidgetSkyScore? {

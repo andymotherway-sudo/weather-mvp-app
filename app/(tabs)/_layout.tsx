@@ -1,7 +1,9 @@
 // app/(tabs)/_layout.tsx
-import { Tabs } from 'expo-router';
-import React, { useMemo } from 'react';
-import { Platform, Text } from 'react-native';
+import { Tabs, usePathname, useRouter } from 'expo-router';
+import React, { useCallback, useMemo } from 'react';
+import { Platform, Text, useWindowDimensions, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TabBarIcon from '../../components/ui/TabBarIcon';
@@ -23,10 +25,35 @@ function TabLabel({ color, label }: { color: string; label: string }) {
   );
 }
 
+const SWIPE_TABS = [
+  { name: 'index', href: '/' },
+  { name: 'hourly', href: '/hourly' },
+  { name: 'almanac', href: '/almanac' },
+  { name: 'maps', href: '/maps' },
+  { name: 'solar', href: '/solar' },
+  { name: 'nautical', href: '/nautical' },
+  { name: 'aviation', href: '/aviation' },
+  { name: 'extremes', href: '/extremes' },
+] as const;
+
+const EDGE_SWIPE_WIDTH = 34;
+
+function currentSwipeTabIndex(pathname: string) {
+  const cleanPath = pathname.replace(/\/+$/, '') || '/';
+  if (cleanPath === '/') return 0;
+
+  const segment = cleanPath.split('/').filter(Boolean)[0] ?? '';
+  return SWIPE_TABS.findIndex((tab) => tab.name === segment);
+}
+
 export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const tint = Colors[colorScheme].tint;
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const pathname = usePathname();
+  const router = useRouter();
+  const swipeStartX = useSharedValue(0);
   const { appColorMode } = useSettings();
   const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
 
@@ -57,8 +84,44 @@ export default function TabsLayout() {
     } as const;
   }, [chrome.border, chrome.tabBar, insets.bottom]);
 
+  const navigateBySwipe = useCallback(
+    (direction: -1 | 1) => {
+      const currentIndex = currentSwipeTabIndex(pathname);
+      if (currentIndex < 0) return;
+
+      const nextIndex = Math.max(0, Math.min(SWIPE_TABS.length - 1, currentIndex + direction));
+      if (nextIndex === currentIndex) return;
+
+      router.replace(SWIPE_TABS[nextIndex].href as any);
+    },
+    [pathname, router],
+  );
+
+  const swipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-72, 72])
+        .failOffsetY([-36, 36])
+        .onBegin((event) => {
+          swipeStartX.value = event.x;
+        })
+        .onEnd((event) => {
+          const startedAtEdge = swipeStartX.value <= EDGE_SWIPE_WIDTH || swipeStartX.value >= width - EDGE_SWIPE_WIDTH;
+          if (!startedAtEdge) return;
+
+          const distance = event.translationX;
+          const velocity = event.velocityX;
+          if (Math.abs(distance) < 96 && Math.abs(velocity) < 700) return;
+
+          runOnJS(navigateBySwipe)(distance < 0 ? 1 : -1);
+        }),
+    [navigateBySwipe, swipeStartX, width],
+  );
+
   return (
-    <Tabs
+    <GestureDetector gesture={swipeGesture}>
+      <View style={{ flex: 1 }}>
+        <Tabs
       screenOptions={{
         sceneStyle: { backgroundColor: 'transparent' },
         headerShown: false,
@@ -171,6 +234,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="astronomer" options={{ href: null }} />
       <Tabs.Screen name="aviation-map" options={{ href: null, unmountOnBlur: true } as any} />
       <Tabs.Screen name="astro-map" options={{ href: null, unmountOnBlur: true } as any} />
-    </Tabs>
+        </Tabs>
+      </View>
+    </GestureDetector>
   );
 }

@@ -26,6 +26,7 @@ import {
 import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
+import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { useMarsInsightWeather, useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
@@ -280,6 +281,11 @@ export default function SolarScreen() {
   const [solarImageState, setSolarImageState] = useState<Record<string, 'idle' | 'loading' | 'loaded' | 'error'>>(
     {}
   );
+
+  useEffect(() => {
+    if (!astro) return;
+    writeSkyScoreWidgetCache(astro).catch(() => {});
+  }, [astro]);
 
   const openExplain = (p: ExplainPayload) => {
     setExplainPayload(p);

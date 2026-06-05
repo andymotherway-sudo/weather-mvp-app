@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { type ReactNode, useEffect, useMemo } from 'react';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppBoot } from '../components/boot/AppBoot';
@@ -41,7 +42,8 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
       <SettingsProvider>
         <AppChromeFrame>
         {/* ✅ replaces LocationProvider */}
@@ -67,6 +69,7 @@ export default function RootLayout() {
         </LocationsProvider>
         </AppChromeFrame>
       </SettingsProvider>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

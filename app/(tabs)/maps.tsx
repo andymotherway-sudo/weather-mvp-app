@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
@@ -43,6 +43,7 @@ import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '../lib/maps/useAlertMapData';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
+import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
 import { apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
@@ -282,6 +283,7 @@ function skyScoreSentence(score: number, auroraVisibility: number) {
 type SatelliteFrame = {
   index: number;
   iso: string;
+  sourceName?: string;
 };
 
 const SATELLITE_LOOP_MINUTES_BACK = 120;
@@ -418,6 +420,46 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
     const minutesAgo = (frameCount - 1 - index) * stepMinutes;
     return { index, iso: new Date(latestMs - minutesAgo * 60_000).toISOString() };
   });
+}
+
+async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {
+  const query = new URL(`${NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL.replace(/\/exportImage$/, '')}/query`);
+  query.searchParams.set('f', 'json');
+  query.searchParams.set('where', '1=1');
+  query.searchParams.set('outFields', 'name,start_time,end_time');
+  query.searchParams.set('orderByFields', 'end_time desc');
+  query.searchParams.set('returnGeometry', 'false');
+  query.searchParams.set('resultRecordCount', '240');
+
+  const res = await fetchWithTimeout(query.toString(), 14000);
+  if (!res.ok) throw new Error(`GeoColor catalog returned ${res.status}.`);
+  const json = await res.json();
+  const features = Array.isArray(json?.features) ? json.features : [];
+  const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
+  const seen = new Set<string>();
+
+  return features
+    .map((feature: any) => {
+      const attrs = feature?.attributes ?? {};
+      const start = Number(attrs.start_time ?? attrs.Start_Time);
+      const end = Number(attrs.end_time ?? attrs.End_Time);
+      const name = String(attrs.name ?? attrs.Name ?? '');
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < cutoff) return null;
+
+      // Ask ArcGIS for a time inside the raster's valid window instead of a synthetic boundary.
+      const midpoint = start + Math.max(0, Math.min(end - start, 4 * 60_000));
+      const key = name || String(end);
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        index: 0,
+        iso: new Date(midpoint).toISOString(),
+        sourceName: name || undefined,
+      } satisfies SatelliteFrame;
+    })
+    .filter(Boolean)
+    .reverse()
+    .map((frame: SatelliteFrame, index: number) => ({ ...frame, index }));
 }
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
@@ -1059,6 +1101,8 @@ export default function MapsScreen() {
   const [animationRecordMode, setAnimationRecordMode] = useState(false);
   const [animationRecordRegion, setAnimationRecordRegion] = useState<Region | null>(null);
   const [animationBufferStatus, setAnimationBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [animationExporting, setAnimationExporting] = useState(false);
+  const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
@@ -1071,6 +1115,7 @@ export default function MapsScreen() {
     if (animationRecordMode) return;
     setAnimationRecordRegion(null);
     setAnimationBufferStatus(null);
+    setAnimationExportStatus(null);
   }, [animationRecordMode]);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
@@ -1326,6 +1371,8 @@ export default function MapsScreen() {
   const [satelliteFrames, setSatelliteFrames] = useState<SatelliteFrame[]>(() =>
     buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
   );
+  const [trueColorFrames, setTrueColorFrames] = useState<SatelliteFrame[]>([]);
+  const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
   const [satelliteFrameIndex, setSatelliteFrameIndex] = useState(() =>
     Math.max(0, buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }).length - 1),
   );
@@ -1337,6 +1384,42 @@ export default function MapsScreen() {
   });
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
+  const satellitePlaybackFrames =
+    goesTrueColorEnabled && trueColorFrames.length > 1 ? trueColorFrames : satelliteFrames;
+  const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
+  const trueColorUsingCatalog = goesTrueColorEnabled && trueColorFrames.length > 1;
+
+  useEffect(() => {
+    if (!goesTrueColorEnabled) {
+      setTrueColorFrames([]);
+      setTrueColorFrameStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setTrueColorFrameStatus('loading');
+    fetchNesdisGeoColorFrames(satelliteLoopMinutes)
+      .then((frames) => {
+        if (cancelled) return;
+        if (frames.length > 1) {
+          setTrueColorFrames(frames);
+          setSatelliteFrameIndex(frames.length - 1);
+          setTrueColorFrameStatus('ready');
+        } else {
+          setTrueColorFrames([]);
+          setTrueColorFrameStatus('fallback');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTrueColorFrames([]);
+        setTrueColorFrameStatus('fallback');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [goesTrueColorEnabled, satelliteLoopMinutes]);
 
   useEffect(() => {
     if (!animatedSatelliteEnabled) {
@@ -1382,24 +1465,24 @@ export default function MapsScreen() {
   }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
 
   useEffect(() => {
-    if (!animatedSatelliteEnabled || !satellitePlaying || satelliteFrames.length < 2) return;
+    if (!animatedSatelliteEnabled || !satellitePlaying || satellitePlaybackFrameCount < 2) return;
 
     const timer = setInterval(() => {
-      setSatelliteFrameIndex((current) => (clampIndex(current, satelliteFrames.length) + 1) % satelliteFrames.length);
+      setSatelliteFrameIndex((current) => (clampIndex(current, satellitePlaybackFrameCount) + 1) % satellitePlaybackFrameCount);
     }, satellitePlayIntervalMs);
 
     return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, satelliteFrames.length, satellitePlaying, satellitePlayIntervalMs]);
+  }, [animatedSatelliteEnabled, satellitePlaybackFrameCount, satellitePlaying, satellitePlayIntervalMs]);
 
   useEffect(() => {
-    if (!animatedSatelliteEnabled || satelliteFrames.length < 2) {
+    if (!animatedSatelliteEnabled || satellitePlaybackFrameCount < 2) {
       setSatelliteBlend({ from: satelliteFrameIndex, to: satelliteFrameIndex, t: 1 });
       satelliteFrameIndexRef.current = satelliteFrameIndex;
       return;
     }
 
-    const previous = clampIndex(satelliteFrameIndexRef.current, satelliteFrames.length);
-    const next = clampIndex(satelliteFrameIndex, satelliteFrames.length);
+    const previous = clampIndex(satelliteFrameIndexRef.current, satellitePlaybackFrameCount);
+    const next = clampIndex(satelliteFrameIndex, satellitePlaybackFrameCount);
     if (previous === next) {
       setSatelliteBlend({ from: next, to: next, t: 1 });
       satelliteFrameIndexRef.current = next;
@@ -1419,7 +1502,7 @@ export default function MapsScreen() {
     }, 40);
 
     return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, satelliteFrameIndex, satelliteFrames.length]);
+  }, [animatedSatelliteEnabled, satelliteFrameIndex, satellitePlaybackFrameCount]);
 
   const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
     ? state.layers['sat.clouds'].opacity
@@ -1658,12 +1741,12 @@ export default function MapsScreen() {
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     const list: WmsOverlayConfig[] = [];
-    const satelliteFromFrame = satelliteFrames[clampIndex(satelliteBlend.from, satelliteFrames.length)] ?? null;
-    const satelliteToFrame = satelliteFrames[clampIndex(satelliteBlend.to, satelliteFrames.length)] ?? null;
-    const satelliteCurrentFrame = satelliteFrames[clampIndex(satelliteFrameIndex, satelliteFrames.length)] ?? null;
+    const satelliteFromFrame = satellitePlaybackFrames[clampIndex(satelliteBlend.from, satellitePlaybackFrames.length)] ?? null;
+    const satelliteToFrame = satellitePlaybackFrames[clampIndex(satelliteBlend.to, satellitePlaybackFrames.length)] ?? null;
+    const satelliteCurrentFrame = satellitePlaybackFrames[clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length)] ?? null;
     const satelliteWarmFrame =
-      satelliteFrames.length > 1
-        ? satelliteFrames[(clampIndex(satelliteFrameIndex, satelliteFrames.length) + 1) % satelliteFrames.length]
+      satellitePlaybackFrames.length > 1
+        ? satellitePlaybackFrames[(clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length) + 1) % satellitePlaybackFrames.length]
         : null;
     const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
 
@@ -1936,7 +2019,7 @@ export default function MapsScreen() {
     satelliteBlend.t,
     satelliteBlend.to,
     satelliteFrameIndex,
-    satelliteFrames,
+    satellitePlaybackFrames,
   ]);
 
   const renderedOverlays = useMemo(() => {
@@ -2330,9 +2413,9 @@ export default function MapsScreen() {
     frameCount,
   });
 
-  const satelliteFrameCount = satelliteFrames.length;
+  const satelliteFrameCount = satellitePlaybackFrames.length;
   const satelliteTimelineActive = !radarEnabled && animatedSatelliteEnabled && satelliteFrameCount > 1;
-  const timelineFrames = radarEnabled ? uiFrames : satelliteFrames;
+  const timelineFrames = radarEnabled ? uiFrames : satellitePlaybackFrames;
   const timelineFrameIndex = radarEnabled ? state.radarTime.frameIndex : satelliteFrameIndex;
   const timelinePlaying = radarEnabled ? state.radarTime.playing : satellitePlaying;
   const showTimeline = isFocused && !animationRecordMode && ((radarEnabled && frameCount > 1) || satelliteTimelineActive);
@@ -2413,7 +2496,7 @@ export default function MapsScreen() {
   const showFireDetailPanel = fireInteractionEnabled && (wildfireDetailLoading || selectedWildfire != null || showRestrictionDetail);
   const showAviationPanel = state.viewId === 'aviation' && aviationOverlayEnabled;
   const animationViewportRegion = animationRecordRegion ?? effectiveRegion;
-  const animationFrameSource = animationCompositorKind === 'radar' ? uiFrames : satelliteFrames;
+  const animationFrameSource = animationCompositorKind === 'radar' ? uiFrames : satellitePlaybackFrames;
   const animationCompositorFrames = useMemo(
     () =>
       animationFrameSource
@@ -2489,6 +2572,106 @@ export default function MapsScreen() {
     },
     [animationViewportRegion, product, stormMode],
   );
+
+  const animationProductLabel = useMemo(() => {
+    if (animationCompositorKind === 'radar') return radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
+    if (animationCompositorKind === 'truecolor') return 'True color';
+    if (animationCompositorKind === 'ir') return 'Infrared';
+    if (animationCompositorKind === 'wv-east' || animationCompositorKind === 'wv-west') return 'Water vapor';
+    if (animationCompositorKind === 'clouds') return 'Visible cloud loop';
+    return 'Weather loop';
+  }, [animationCompositorKind, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
+
+  const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
+    if (!animationCompositorKind || animationCompositorFrames.length < 2) return [];
+    const width = 1280;
+    const height = 720;
+    return animationCompositorFrames.map((frame) => {
+      const label = new Date(frame.iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (animationCompositorKind === 'radar') {
+        return { label, urls: [buildAnimationUrl('radar', frame, width, height)] };
+      }
+      if (animationCompositorKind === 'truecolor') {
+        return { label, urls: [buildAnimationUrl('geocolor', frame, width, height)] };
+      }
+      if (animationCompositorKind === 'ir') {
+        return {
+          label,
+          urls: [
+            buildAnimationUrl('goes-east-ir', frame, width, height),
+            buildAnimationUrl('goes-west-ir', frame, width, height),
+          ],
+        };
+      }
+      if (animationCompositorKind === 'wv-west') {
+        return { label, urls: [buildAnimationUrl('goes-west-wv', frame, width, height)] };
+      }
+      if (animationCompositorKind === 'wv-east') {
+        return { label, urls: [buildAnimationUrl('goes-east-wv', frame, width, height)] };
+      }
+      return {
+        label,
+        urls: [
+          buildAnimationUrl('goes-east-visible', frame, width, height),
+          buildAnimationUrl('goes-west-visible', frame, width, height),
+        ],
+      };
+    });
+  }, [animationCompositorFrames, animationCompositorKind, buildAnimationUrl]);
+
+  const handleAnimationRecordPress = useCallback(async () => {
+    const exportFrames = animationExportFrames;
+    if (!animationCompositorKind || exportFrames.length < 2) {
+      Alert.alert('Animation not ready', 'Turn on an animated radar or satellite layer first.');
+      return;
+    }
+    if (!canExportAnimationVideo()) {
+      Alert.alert('Video export unavailable', 'Install an Android build with the OMNIwx video exporter to save MP4 loops.');
+      return;
+    }
+
+    setAnimationRecordRegion(effectiveRegion);
+    setAnimationBufferStatus(null);
+    setAnimationRecordMode(true);
+    setAnimationExporting(true);
+    setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
+    if (radarEnabled) {
+      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+    } else {
+      setSatellitePlaying(true);
+    }
+
+    try {
+      const placeLabel = activePlace?.name ?? 'Current map';
+      const result = await exportAnimationVideo({
+        frames: exportFrames,
+        title: 'OMNIwx',
+        subtitle: placeLabel,
+        productLabel: animationProductLabel,
+        width: 1280,
+        height: 720,
+        fps: 30,
+        secondsPerSourceFrame: animationQuality === 'presentation' ? 0.42 : 0.52,
+        transitionSeconds: animationQuality === 'presentation' ? 0.18 : 0.22,
+      });
+      setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
+      Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
+    } catch (error: any) {
+      const message = error?.message ?? 'The video export failed before it could be saved.';
+      setAnimationExportStatus('Export failed');
+      Alert.alert('Could not save video', message);
+    } finally {
+      setAnimationExporting(false);
+    }
+  }, [
+    activePlace?.name,
+    animationCompositorKind,
+    animationExportFrames,
+    animationProductLabel,
+    animationQuality,
+    effectiveRegion,
+    radarEnabled,
+  ]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -3610,11 +3793,13 @@ export default function MapsScreen() {
           <View pointerEvents="box-none" style={[styles.recordExitWrap, { top: 12 + insets.top }]}>
             <Pressable onPress={() => setAnimationRecordMode(false)} style={styles.recordExitButton}>
               <Text style={styles.recordExitText}>
-                {animationBufferStatus && animationBufferStatus.total > 0
-                  ? `Buffered ${animationBufferStatus.ready}/${animationBufferStatus.total} / Exit`
-                  : 'Exit record mode'}
+                {animationExportStatus ??
+                  (animationBufferStatus && animationBufferStatus.total > 0
+                    ? `Buffered ${animationBufferStatus.ready}/${animationBufferStatus.total} / Exit`
+                    : 'Exit record mode')}
               </Text>
             </Pressable>
+            {animationExporting ? <Text style={styles.recordExportHint}>Building smooth MP4 in the background</Text> : null}
           </View>
         ) : (
           <View pointerEvents="box-none" style={styles.topChrome}>
@@ -4077,19 +4262,11 @@ export default function MapsScreen() {
                       })}
                     </View>
                     <Pressable
-                      onPress={() => {
-                        setAnimationRecordRegion(effectiveRegion);
-                        setAnimationBufferStatus(null);
-                        setAnimationRecordMode(true);
-                        if (radarEnabled) {
-                          dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                        } else {
-                          setSatellitePlaying(true);
-                        }
-                      }}
-                      style={styles.recordModeButton}
+                      onPress={handleAnimationRecordPress}
+                      disabled={animationExporting}
+                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
                     >
-                      <Text style={styles.recordModeButtonText}>Record</Text>
+                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
                     </Pressable>
                   </View>
                   {satelliteTimelineActive ? (
@@ -4116,7 +4293,16 @@ export default function MapsScreen() {
                           );
                         })}
                       </View>
-                      <Text style={styles.satelliteLoopMeta}>{satelliteFrameCount} frames</Text>
+                      <Text style={styles.satelliteLoopMeta}>
+                        {satelliteFrameCount} frames
+                        {goesTrueColorEnabled
+                          ? trueColorUsingCatalog
+                            ? ' / catalog'
+                            : trueColorFrameStatus === 'loading'
+                              ? ' / loading'
+                              : ' / fallback'
+                          : ''}
+                      </Text>
                     </View>
                   ) : null}
                   <TimelineScrubber
@@ -6146,6 +6332,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 10,
   },
+  recordModeButtonDisabled: {
+    opacity: 0.62,
+  },
   recordModeButtonText: {
     color: '#fee2e2',
     fontSize: 10,
@@ -6171,6 +6360,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0,
+  },
+  recordExportHint: {
+    marginTop: 6,
+    color: 'rgba(226,232,240,0.78)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
   },
   satelliteLoopControls: {
     flexDirection: 'row',

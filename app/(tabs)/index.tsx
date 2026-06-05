@@ -2302,6 +2302,9 @@ function SimpleDailyOverview({
   moonDays,
   dayLengthSec,
   almanacRecord,
+  wxLab,
+  setWxLab,
+  toggleWxLab,
 }: {
   tempF: number | null;
   condition: string;
@@ -2331,6 +2334,9 @@ function SimpleDailyOverview({
   }>;
   dayLengthSec?: number | null;
   almanacRecord?: AlmanacDailyRecord | null;
+  wxLab: boolean;
+  setWxLab?: ((value: boolean) => void) | null;
+  toggleWxLab?: (() => void) | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2402,7 +2408,34 @@ function SimpleDailyOverview({
   return (
     <View style={styles.dailySimpleWrap}>
       <View style={[styles.dailyCurrentCard, styles.dailyRangeCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
-        <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
+        <View style={styles.dailyRangeHeaderRow}>
+          <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
+          <View style={[styles.dailyModeWrap, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
+            <Pressable
+              onPress={() => setWxLab?.(false)}
+              style={[
+                styles.dailyModeBtn,
+                !wxLab ? styles.dailyModeBtnActive : null,
+                !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
+              ]}
+            >
+              <Text style={[styles.dailyModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (toggleWxLab && !wxLab) return toggleWxLab();
+                return setWxLab?.(true);
+              }}
+              style={[
+                styles.dailyModeBtn,
+                wxLab ? styles.dailyModeBtnActive : null,
+                wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
+              ]}
+            >
+              <Text style={[styles.dailyModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
+            </Pressable>
+          </View>
+        </View>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
@@ -2424,12 +2457,12 @@ function SimpleDailyOverview({
 
         <View style={styles.dailyRangeStats}>
           <View style={styles.dailyRangeStat}>
-            <Text style={styles.dailyRangeStatLabel}>High</Text>
-            <Text style={styles.dailyRangeStatValue}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
-          </View>
-          <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>Low</Text>
             <Text style={styles.dailyRangeStatValue}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+          </View>
+          <View style={styles.dailyRangeStat}>
+            <Text style={styles.dailyRangeStatLabel}>High</Text>
+            <Text style={styles.dailyRangeStatValue}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
           </View>
         </View>
 
@@ -3782,6 +3815,8 @@ function LandWeatherWithCoords({
   coords,
   activeLabel,
   wxLab,
+  setWxLab,
+  toggleWxLab,
   onPressAlert,
   setLearnOpen,
   setLearnTopicId,
@@ -3792,6 +3827,8 @@ function LandWeatherWithCoords({
   coords: { lat: number; lon: number };
   activeLabel: string;
   wxLab: boolean;
+  setWxLab?: ((value: boolean) => void) | null;
+  toggleWxLab?: (() => void) | null;
   onPressAlert: (primary: any, alerts: any[]) => void;
   setLearnOpen: (v: boolean) => void;
   setLearnTopicId: (v: string | undefined) => void;
@@ -4155,6 +4192,9 @@ function LandWeatherWithCoords({
           moonDays={astroData?.moonDays}
           dayLengthSec={todayDayLengthSec}
           almanacRecord={todayAlmanacRecord}
+          wxLab={wxLab}
+          setWxLab={setWxLab}
+          toggleWxLab={toggleWxLab}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -4702,34 +4742,6 @@ export default function LandWeatherScreen() {
                 </Pressable>
               </View>
 
-              <View style={styles.headerHeroBottomRow}>
-                  <Pressable onPress={() => router.push('/hourly')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                  <Text style={styles.quickNavText}>Hourly</Text>
-                </Pressable>
-
-                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                  <Text style={styles.quickNavText}>Almanac</Text>
-                </Pressable>
-
-                <View style={styles.headerModeWrap}>
-                  <Pressable
-                    onPress={() => setWxLab?.(false)}
-                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, !wxLab ? styles.headerModeBtnActive : null, !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
-                  >
-                    <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => {
-                      if (toggleWxLab && !wxLab) return toggleWxLab();
-                      return setWxLab?.(true);
-                    }}
-                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, wxLab ? styles.headerModeBtnActive : null, wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
-                  >
-                    <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
-                  </Pressable>
-                </View>
-              </View>
             </View>
           </View>
 
@@ -4771,6 +4783,8 @@ export default function LandWeatherScreen() {
                 coords={coords}
                 activeLabel={locationLabel}
                 wxLab={wxLab}
+                setWxLab={setWxLab}
+                toggleWxLab={toggleWxLab}
                 onPressAlert={onPressAlert}
                 setLearnOpen={setLearnOpen}
                 setLearnTopicId={setLearnTopicId}
@@ -4843,14 +4857,17 @@ const styles = StyleSheet.create({
   },
 
   headerHeroWrap: {
-    marginBottom: theme.spacing.md,
+    marginBottom: 10,
     position: 'relative',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 420,
   },
 
   headerHeroSurface: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 22,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 20,
     backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -4873,8 +4890,8 @@ const styles = StyleSheet.create({
   },
 
   headerCompactLogo: {
-    width: 80,
-    height: 80,
+    width: 58,
+    height: 58,
     opacity: 0.96,
   },
 
@@ -4882,7 +4899,7 @@ const styles = StyleSheet.create({
   flex: 1,
   minWidth: 0,
   marginRight: 4,
-  paddingVertical: 6,
+  paddingVertical: 7,
   paddingHorizontal: 10,
   borderRadius: 16,
   backgroundColor: GLASS_PANEL_BG,
@@ -4939,14 +4956,6 @@ const styles = StyleSheet.create({
   },
 
   quickNavText: { color: 'white', fontWeight: '900', fontSize: 12 },
-
-  headerHeroBottomRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
   smallText: { ...typography.small, marginTop: theme.spacing.sm },
@@ -5022,6 +5031,12 @@ const styles = StyleSheet.create({
   dailyRangeCard: {
     gap: 14,
   },
+  dailyRangeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   dailyCurrentTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -5029,6 +5044,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   dailyPanelEyebrow: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.8,
@@ -5318,6 +5335,36 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.66)',
+  },
+  dailyModeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: GLASS_PANEL_BG,
+  },
+  dailyModeBtn: {
+    minHeight: 30,
+    minWidth: 70,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyModeBtnActive: {
+    borderWidth: 1,
+    borderColor: 'rgba(145,205,255,0.35)',
+  },
+  dailyModeText: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dailyModeTextActive: {
+    color: 'white',
   },
   dailyAstroHeroRow: {
     marginTop: 16,
@@ -5656,37 +5703,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  headerModeWrap: {
-    flexDirection: 'row',
-    gap: 8 as any,
-    padding: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: GLASS_PANEL_BG,
-  },
-
-  headerModeBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-
-  headerModeBtnActive: {
-    backgroundColor: 'rgba(72, 201, 176, 0.20)',
-    borderWidth: 1,
-    borderColor: 'rgba(109, 236, 198, 0.34)',
-  },
-
-  headerModeText: {
-    color: 'rgba(255,255,255,0.70)',
-    fontWeight: '800',
-    fontSize: 12,
-  },
-
-  headerModeTextActive: {
-    color: '#DDFCF4',
-  },
   dailyMetaRow: {
     marginTop: 4,
     flexDirection: 'row',

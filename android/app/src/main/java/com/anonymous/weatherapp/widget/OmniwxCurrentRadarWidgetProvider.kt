@@ -36,7 +36,7 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_wind, "Wind --")
         setTextViewText(R.id.widget_footer, "Radar snapshot pending")
         setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
-        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(null))
+        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(null, null))
         return@apply
       }
       if (weather == null) {
@@ -48,7 +48,7 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_wind, "Wind --")
         setTextViewText(R.id.widget_footer, "Tap refresh after opening OMNIwx once")
         setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
-        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(null))
+        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(null, null))
         return@apply
       }
       setTextViewText(R.id.widget_title, weather.place.name)
@@ -59,7 +59,7 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
       setTextViewText(R.id.widget_wind, "Wind ${windDirectionLabel(weather.windDirectionDeg)} ${weather.windMph.roundLabel()} mph")
       setTextViewText(R.id.widget_footer, "Updated ${weather.updatedLabel}")
       setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(weather.weatherCode))
-      setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(weather))
+      setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(weather.place, weather))
     }
   }
 }
