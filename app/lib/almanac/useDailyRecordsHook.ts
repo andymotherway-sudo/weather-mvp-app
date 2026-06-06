@@ -81,6 +81,10 @@ function minYmd(a: string, b: string) {
   return a <= b ? a : b; // ISO ymd sorts lexicographically
 }
 
+function maxYmd(a: string, b: string) {
+  return a >= b ? a : b;
+}
+
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
@@ -505,6 +509,87 @@ export function useDailyRecords({
 
         const endOverallIso = minYmd(stationMaxIso, todayIso);
 
+        if (force) {
+          const cachedForRefresh = await readRecordsCache<RecordsMap>(cacheKey);
+          const cachedRefreshKeys = Object.keys(cachedForRefresh?.data ?? {}).length;
+
+          if (cachedForRefresh && metaMatches(cachedForRefresh.meta, wantMeta) && cachedRefreshKeys > 0) {
+            const map: RecordsMap = JSON.parse(JSON.stringify(cachedForRefresh.data ?? {}));
+            const savedIso = localYmd(new Date(cachedForRefresh.savedAt));
+            const incrementalStart = maxYmd(`${yearTo}-01-01`, savedIso);
+            const incrementalEnd = endOverallIso.startsWith(`${yearTo}-`) ? endOverallIso : `${yearTo}-12-31`;
+
+            if (incrementalStart <= incrementalEnd) {
+              safeSet(() =>
+                setProgress({
+                  phase: 'build',
+                  message: `Refreshing NOAA records since ${incrementalStart}...`,
+                  pages: 0,
+                  rows: 0,
+                  pct: 0,
+                  yearFrom,
+                  yearTo,
+                  curYear: yearTo,
+                })
+              );
+
+              let offset = 1;
+              let incrementalRows = 0;
+              while (true) {
+                if (ac.signal.aborted) throw makeAbortError();
+
+                const url = buildDataUrl({ stationId, start: incrementalStart, end: incrementalEnd, offset });
+                const json = await fetchJsonWithRetry(url, ac);
+                const results: any[] = json?.results ?? [];
+
+                dbgRef.current.pages += 1;
+                dbgRef.current.totalRows += results.length;
+                incrementalRows += results.length;
+                applyRecordRows(map, results, yearFrom, yearTo);
+
+                safeSet(() =>
+                  setProgress({
+                    phase: 'build',
+                    message: `Refreshing records... ${dbgRef.current.pages} pages / ${dbgRef.current.totalRows} rows`,
+                    pages: dbgRef.current.pages,
+                    rows: dbgRef.current.totalRows,
+                    pct: results.length < LIMIT ? 1 : 0.5,
+                    yearFrom,
+                    yearTo,
+                    curYear: yearTo,
+                  })
+                );
+
+                if (!results.length || results.length < LIMIT) break;
+                offset += LIMIT;
+              }
+
+              if (DEBUG_RECORDS) {
+                // eslint-disable-next-line no-console
+                console.log('[records] incremental refresh', { incrementalStart, incrementalEnd, incrementalRows });
+              }
+            } else {
+              safeSet(() =>
+                setProgress({
+                  phase: 'saving',
+                  message: 'Records are already current.',
+                  yearFrom,
+                  yearTo,
+                })
+              );
+            }
+
+            safeSet(() => {
+              setRecords(map);
+              haveRecordsRef.current = true;
+            });
+
+            await writeRecordsCache(cacheKey, wantMeta, map, CACHE_TTL_MS);
+            safeSet(() => setProgress(null));
+            return;
+          }
+        }
+
         safeSet(() =>
           setProgress({
             phase: 'probe',
@@ -709,4 +794,49 @@ export function useDailyRecords({
   const refresh = useCallback(() => load(true), [load]);
 
   return { records, stationIdUsed, stationNameUsed, years, loading, refreshing, error, refresh, progress };
+}
+
+function applyRecordRows(map: RecordsMap, rows: any[], yearFrom: number, yearTo: number) {
+  for (const r of rows) {
+    const year = Number(String(r?.date ?? '').slice(0, 4));
+    if (!Number.isFinite(year)) continue;
+    if (year < yearFrom || year > yearTo) continue;
+
+    const mmdd = mmddFromIso(r.date);
+    const raw = Number(r.value);
+
+    if (!map[mmdd]) map[mmdd] = initRec(mmdd);
+    const rec = map[mmdd];
+
+    if (r.datatype === 'TMAX' && Number.isFinite(raw)) {
+      const f = c10ToF(raw);
+
+      const hi = upsertTieBest(rec.recordHighF, rec.recordHighYears, f, year, 1);
+      rec.recordHighF = hi.value;
+      rec.recordHighYears = hi.years;
+
+      const lowMax = upsertTieBest(rec.recordLowMaxF ?? null, rec.recordLowMaxYears, f, year, -1);
+      rec.recordLowMaxF = lowMax.value;
+      rec.recordLowMaxYears = lowMax.years;
+    }
+
+    if (r.datatype === 'TMIN' && Number.isFinite(raw)) {
+      const f = c10ToF(raw);
+
+      const lo = upsertTieBest(rec.recordLowF, rec.recordLowYears, f, year, -1);
+      rec.recordLowF = lo.value;
+      rec.recordLowYears = lo.years;
+
+      const hiMin = upsertTieBest(rec.recordHighMinF ?? null, rec.recordHighMinYears, f, year, 1);
+      rec.recordHighMinF = hiMin.value;
+      rec.recordHighMinYears = hiMin.years;
+    }
+
+    if (r.datatype === 'PRCP' && Number.isFinite(raw)) {
+      const inches = prcp10mmToIn(raw);
+      const pr = upsertTieBest(rec.recordPrecipIn ?? null, rec.recordPrecipYears, inches, year, 1);
+      rec.recordPrecipIn = pr.value;
+      rec.recordPrecipYears = pr.years;
+    }
+  }
 }

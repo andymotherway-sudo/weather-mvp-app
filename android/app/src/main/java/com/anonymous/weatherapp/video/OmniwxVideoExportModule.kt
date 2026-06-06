@@ -62,8 +62,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           PreparedFrame(
             label = frame.label,
             bitmaps = frame.urls.mapNotNull { downloadBitmap(it) },
+            expectedBitmapCount = frame.urls.size,
           )
-        }.filter { it.bitmaps.isNotEmpty() }
+        }.filter { it.bitmaps.isNotEmpty() && it.bitmaps.size == it.expectedBitmapCount }
         if (prepared.size < 2) throw IllegalStateException("Could not download enough frames to export video.")
 
         val output = File(reactContext.cacheDir, "omniwx-export-${System.currentTimeMillis()}.mp4")
@@ -114,6 +115,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       setInteger(MediaFormat.KEY_BIT_RATE, (width * height * 5.2).roundToInt().coerceAtLeast(2_400_000))
       setInteger(MediaFormat.KEY_FRAME_RATE, fps)
       setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+      runCatching { setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline) }
+      runCatching { setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31) }
     }
     val codec = MediaCodec.createEncoderByType(mime)
     val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -195,7 +198,6 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     bufferInfo: MediaCodec.BufferInfo,
     onDrain: () -> Unit,
   ): Long {
-    drainEncoder(codec, null, bufferInfo, false) { -1 }
     val inputIndex = codec.dequeueInputBuffer(10_000)
     if (inputIndex < 0) return frameIndex
     val input = codec.getInputBuffer(inputIndex) ?: return frameIndex
@@ -224,6 +226,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         }
         status >= 0 -> {
           val output = codec.getOutputBuffer(status)
+          if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+            bufferInfo.size = 0
+          }
           if (bufferInfo.size > 0 && muxer != null && output != null) {
             val trackIndex = ensureTrack()
             output.position(bufferInfo.offset)
@@ -254,12 +259,31 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
-    current.bitmaps.forEach { drawBitmapCover(canvas, it, width, height, paint.apply { alpha = (255 * (1f - blend)).roundToInt() }) }
+
+    val currentScene = composeSatelliteScene(width, height, current)
     if (next != null && blend > 0f) {
-      next.bitmaps.forEach { drawBitmapCover(canvas, it, width, height, paint.apply { alpha = (255 * blend).roundToInt() }) }
+      val nextScene = composeSatelliteScene(width, height, next)
+      canvas.drawBitmap(currentScene, 0f, 0f, paint.apply { alpha = (255 * (1f - blend)).roundToInt() })
+      canvas.drawBitmap(nextScene, 0f, 0f, paint.apply { alpha = (255 * blend).roundToInt() })
+      nextScene.recycle()
+    } else {
+      canvas.drawBitmap(currentScene, 0f, 0f, paint.apply { alpha = 255 })
     }
+    currentScene.recycle()
+
     paint.alpha = 255
     drawExportChrome(canvas, width, height, title, subtitle, product, current.label)
+    return out
+  }
+
+  private fun composeSatelliteScene(width: Int, height: Int, frame: PreparedFrame): Bitmap {
+    val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply { alpha = 255 }
+
+    canvas.drawColor(Color.rgb(5, 10, 22))
+    drawExportGrid(canvas, width, height)
+    frame.bitmaps.forEach { drawBitmapFit(canvas, it, width, height, paint) }
     return out
   }
 
@@ -318,19 +342,19 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     canvas.drawText(scaleText, width - pad - 24f - smallPaint.measureText(scaleText), height - pad - 17f, smallPaint)
   }
 
-  private fun drawBitmapCover(canvas: Canvas, bitmap: Bitmap, width: Int, height: Int, paint: Paint) {
+  private fun drawBitmapFit(canvas: Canvas, bitmap: Bitmap, width: Int, height: Int, paint: Paint) {
     val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
     val dstRatio = width.toFloat() / height.toFloat()
-    val src = if (srcRatio > dstRatio) {
-      val cropW = (bitmap.height * dstRatio).roundToInt()
-      val left = (bitmap.width - cropW) / 2
-      Rect(left, 0, left + cropW, bitmap.height)
+    val dst = if (srcRatio > dstRatio) {
+      val fitH = (width / srcRatio).roundToInt()
+      val top = (height - fitH) / 2
+      Rect(0, top, width, top + fitH)
     } else {
-      val cropH = (bitmap.width / dstRatio).roundToInt()
-      val top = (bitmap.height - cropH) / 2
-      Rect(0, top, bitmap.width, top + cropH)
+      val fitW = (height * srcRatio).roundToInt()
+      val left = (width - fitW) / 2
+      Rect(left, 0, left + fitW, height)
     }
-    canvas.drawBitmap(bitmap, src, Rect(0, 0, width, height), paint)
+    canvas.drawBitmap(bitmap, null, dst, paint)
   }
 
   private fun argbBitmapToYuv420(bitmap: Bitmap, width: Int, height: Int, colorFormat: Int, out: ByteArray) {
@@ -448,7 +472,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 }
 
 private data class ExportFrame(val label: String, val urls: List<String>)
-private data class PreparedFrame(val label: String, val bitmaps: List<Bitmap>)
+private data class PreparedFrame(val label: String, val bitmaps: List<Bitmap>, val expectedBitmapCount: Int)
 
 private fun ReadableMap.optInt(name: String, fallback: Int): Int =
   if (hasKey(name) && !isNull(name)) getInt(name) else fallback

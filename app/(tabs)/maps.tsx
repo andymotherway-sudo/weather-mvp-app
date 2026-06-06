@@ -299,19 +299,20 @@ const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const ANIMATION_QUALITY_OPTIONS: Array<{ id: AnimationQuality; label: string; meta: string }> = [
-  { id: 'smooth', label: 'Smooth', meta: 'lighter' },
+  { id: 'smooth', label: 'Smooth', meta: 'lighter loop' },
   { id: 'cinematic', label: 'Cinematic', meta: 'balanced' },
-  { id: 'presentation', label: 'Presentation', meta: 'record' },
+  { id: 'presentation', label: 'Presentation', meta: 'best export' },
 ];
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
-function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null) {
+function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512) {
   const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true${timeParam}&f=image`;
+  const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
+  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}&f=image`;
 }
 
 function lonLatToMercatorMeters(lon: number, lat: number) {
@@ -347,6 +348,58 @@ function mercatorBbox(region: Region) {
   const sw = lonLatToMercatorMeters(west, south);
   const ne = lonLatToMercatorMeters(east, north);
   return `${sw.x},${sw.y},${ne.x},${ne.y}`;
+}
+
+function evenDimension(value: number, minValue = 480, maxValue = 1600) {
+  const clamped = Math.max(minValue, Math.min(maxValue, Math.round(value)));
+  return clamped % 2 === 0 ? clamped : clamped - 1;
+}
+
+function satelliteQualityForZoom(zoom: number) {
+  const z = Number.isFinite(zoom) ? zoom : 5;
+  if (z >= 8.5) {
+    return {
+      tileSize: 1024,
+      exportLongEdge: 1920,
+      maxZoomLevel: 18,
+      label: 'local',
+    };
+  }
+  if (z >= 6.5) {
+    return {
+      tileSize: z >= 7.5 ? 1024 : 512,
+      exportLongEdge: 1600,
+      maxZoomLevel: 17,
+      label: 'regional',
+    };
+  }
+  return {
+    tileSize: 512,
+    exportLongEdge: 1280,
+    maxZoomLevel: 16,
+    label: 'wide',
+  };
+}
+
+function animationExportDimensions(region: Region, kind?: AnimationCompositorKind | null, zoom = 5) {
+  if (kind === 'radar') {
+    return { width: 1280, height: 720 };
+  }
+
+  const quality = satelliteQualityForZoom(zoom);
+  const { west, east, south, north } = regionBounds(region, 1);
+  const sw = lonLatToMercatorMeters(west, south);
+  const ne = lonLatToMercatorMeters(east, north);
+  const mercatorWidth = Math.max(1, Math.abs(ne.x - sw.x));
+  const mercatorHeight = Math.max(1, Math.abs(ne.y - sw.y));
+  const aspect = Math.max(0.35, Math.min(2.2, mercatorWidth / mercatorHeight));
+  const longEdge = quality.exportLongEdge;
+
+  if (aspect >= 1) {
+    return { width: evenDimension(longEdge, 480, 1920), height: evenDimension(longEdge / aspect, 480, 1920) };
+  }
+
+  return { width: evenDimension(longEdge * aspect, 480, 1920), height: evenDimension(longEdge, 480, 1920) };
 }
 
 function buildArcGisImageExportUrl(args: {
@@ -1759,6 +1812,7 @@ export default function MapsScreen() {
         ? satellitePlaybackFrames[(clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length) + 1) % satellitePlaybackFrames.length]
         : null;
     const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
+    const satelliteQuality = satelliteQualityForZoom(mapZoom);
 
     const shared = {
       enabled: true,
@@ -1766,8 +1820,8 @@ export default function MapsScreen() {
       crs: 'EPSG:3857' as const,
       format: 'image/png',
       transparent: true,
-      tileSize: 512 as const,
-      maxZoomLevel: 16,
+      tileSize: satelliteQuality.tileSize,
+      maxZoomLevel: satelliteQuality.maxZoomLevel,
       fadeDurationMs: 90,
       resampling: 'linear' as const,
     };
@@ -1858,12 +1912,12 @@ export default function MapsScreen() {
       if (warmIso && warmIso !== currentIso) {
         list.push({
           id: `${args.id}-warm`,
-          tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, warmIso)],
+          tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, warmIso, satelliteQuality.tileSize)],
           opacity: Math.min(opacity, SATELLITE_WARM_OPACITY),
           zIndex: args.zIndex - 0.01,
           enabled: true,
-          tileSize: 512,
-          maxZoomLevel: 16,
+          tileSize: satelliteQuality.tileSize,
+          maxZoomLevel: satelliteQuality.maxZoomLevel,
           fadeDurationMs: 0,
           resampling: 'linear',
         });
@@ -1871,12 +1925,12 @@ export default function MapsScreen() {
 
       list.push({
         id: args.id,
-        tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, currentIso)],
+        tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, currentIso, satelliteQuality.tileSize)],
         opacity,
         zIndex: args.zIndex,
         enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 16,
+        tileSize: satelliteQuality.tileSize,
+        maxZoomLevel: satelliteQuality.maxZoomLevel,
         fadeDurationMs: 0,
         resampling: 'linear',
       });
@@ -2025,6 +2079,7 @@ export default function MapsScreen() {
     goesEastWvOpacity,
     goesWestWvEnabled,
     goesWestWvOpacity,
+    mapZoom,
     satelliteBlend.from,
     satelliteBlend.t,
     satelliteBlend.to,
@@ -2577,6 +2632,10 @@ export default function MapsScreen() {
     animationQuality === 'presentation' ? 900 : animationQuality === 'smooth' ? 2100 : 1500;
   const animationCompositorBlend =
     animationQuality === 'presentation' ? 420 : animationQuality === 'smooth' ? 220 : 340;
+  const animationExportSize = useMemo(
+    () => animationExportDimensions(animationViewportRegion, activeAnimationKind, mapZoom),
+    [activeAnimationKind, animationViewportRegion, mapZoom],
+  );
   const buildAnimationUrl = useCallback(
     (
       source: 'radar' | 'geocolor' | 'goes-east-ir' | 'goes-west-ir' | 'goes-east-wv' | 'goes-west-wv' | 'goes-east-visible' | 'goes-west-visible',
@@ -2634,8 +2693,7 @@ export default function MapsScreen() {
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
     if (!activeAnimationKind || animationCompositorFrames.length < 2) return [];
-    const width = 1280;
-    const height = 720;
+    const { width, height } = animationExportSize;
     return animationCompositorFrames.map((frame) => {
       const label = new Date(frame.iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       if (activeAnimationKind === 'radar') {
@@ -2667,7 +2725,7 @@ export default function MapsScreen() {
         ],
       };
     });
-  }, [activeAnimationKind, animationCompositorFrames, buildAnimationUrl]);
+  }, [activeAnimationKind, animationCompositorFrames, animationExportSize, buildAnimationUrl]);
 
   const handleAnimationRecordPress = useCallback(async () => {
     const exportFrames = animationExportFrames;
@@ -2693,16 +2751,17 @@ export default function MapsScreen() {
 
     try {
       const placeLabel = activePlace?.name ?? 'Current map';
+      const { width, height } = animationExportSize;
       const result = await exportAnimationVideo({
         frames: exportFrames,
         title: 'OMNIwx',
         subtitle: placeLabel,
         productLabel: animationProductLabel,
-        width: 1280,
-        height: 720,
+        width,
+        height,
         fps: 30,
-        secondsPerSourceFrame: animationQuality === 'presentation' ? 0.42 : 0.52,
-        transitionSeconds: animationQuality === 'presentation' ? 0.18 : 0.22,
+        secondsPerSourceFrame: animationQuality === 'presentation' ? 0.46 : 0.56,
+        transitionSeconds: animationQuality === 'presentation' ? 0.24 : 0.28,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
@@ -2717,6 +2776,7 @@ export default function MapsScreen() {
     activePlace?.name,
     activeAnimationKind,
     animationExportFrames,
+    animationExportSize,
     animationProductLabel,
     animationQuality,
     effectiveRegion,

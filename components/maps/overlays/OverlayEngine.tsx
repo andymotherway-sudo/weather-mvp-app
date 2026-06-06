@@ -16,7 +16,7 @@ export type WmsOverlayConfig = {
   crs?: 'EPSG:3857' | 'EPSG:4326';
   time?: string | null;
   extraParams?: Record<string, string>;
-  tileSize?: 256 | 512;
+  tileSize?: number;
   minZoomLevel?: number;
   maxZoomLevel?: number;
   fadeDurationMs?: number;

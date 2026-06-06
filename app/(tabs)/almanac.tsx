@@ -587,28 +587,16 @@ const hasNormals = chartNormals.length > 0;
   const onRefreshAll = useCallback(() => {
     if (!hasPlace || !coords) return;
 
-    if (shouldLoadAreaAlmanac) {
-      try {
-        climo.refresh?.();
-      } catch {}
-    }
-
     try {
       forecast.refresh?.();
     } catch {}
-
-    if (mode === 'observed') {
-      try {
-        dayCtx.refresh?.();
-      } catch {}
-    }
 
     if (shouldLoadAreaAlmanac) {
       try {
         (records as any).refresh?.();
       } catch {}
     }
-  }, [climo, forecast, mode, dayCtx, hasPlace, coords, records, shouldLoadAreaAlmanac]);
+  }, [forecast, hasPlace, coords, records, shouldLoadAreaAlmanac]);
 
   const anyLoading =
     hasPlace &&
@@ -617,8 +605,7 @@ const hasNormals = chartNormals.length > 0;
       (mode === 'observed' && dayCtx.loading && !dayCtx.data));
 
   const recordsRefreshing = !!(records as any)?.refreshing || !!(records as any)?.loading;
-  const anyRefreshing =
-    hasPlace && (!!climo.refreshing || !!forecast.refreshing || !!dayCtx.refreshing || recordsRefreshing);
+  const anyRefreshing = hasPlace && (!!forecast.refreshing || recordsRefreshing);
 
   const markerLabel = useMemo(
     () => (selectedIso === todayIso ? 'Today' : fmtMonDay(selectedIso)),
