@@ -2302,9 +2302,6 @@ function SimpleDailyOverview({
   moonDays,
   dayLengthSec,
   almanacRecord,
-  wxLab,
-  setWxLab,
-  toggleWxLab,
 }: {
   tempF: number | null;
   condition: string;
@@ -2334,9 +2331,6 @@ function SimpleDailyOverview({
   }>;
   dayLengthSec?: number | null;
   almanacRecord?: AlmanacDailyRecord | null;
-  wxLab: boolean;
-  setWxLab?: ((value: boolean) => void) | null;
-  toggleWxLab?: (() => void) | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2410,31 +2404,6 @@ function SimpleDailyOverview({
       <View style={[styles.dailyCurrentCard, styles.dailyRangeCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
         <View style={styles.dailyRangeHeaderRow}>
           <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
-          <View style={[styles.dailyModeWrap, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-            <Pressable
-              onPress={() => setWxLab?.(false)}
-              style={[
-                styles.dailyModeBtn,
-                !wxLab ? styles.dailyModeBtnActive : null,
-                !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
-              ]}
-            >
-              <Text style={[styles.dailyModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                if (toggleWxLab && !wxLab) return toggleWxLab();
-                return setWxLab?.(true);
-              }}
-              style={[
-                styles.dailyModeBtn,
-                wxLab ? styles.dailyModeBtnActive : null,
-                wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
-              ]}
-            >
-              <Text style={[styles.dailyModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
-            </Pressable>
-          </View>
         </View>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
@@ -4192,9 +4161,6 @@ function LandWeatherWithCoords({
           moonDays={astroData?.moonDays}
           dayLengthSec={todayDayLengthSec}
           almanacRecord={todayAlmanacRecord}
-          wxLab={wxLab}
-          setWxLab={setWxLab}
-          toggleWxLab={toggleWxLab}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -4742,6 +4708,36 @@ export default function LandWeatherScreen() {
                 </Pressable>
               </View>
 
+              <View style={styles.headerModeRow}>
+                <View style={[styles.dailyModeWrap, styles.headerModeToggle, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
+                  <Pressable
+                    onPress={() => setWxLab?.(false)}
+                    style={[
+                      styles.dailyModeBtn,
+                      styles.headerModeBtn,
+                      !wxLab ? styles.dailyModeBtnActive : null,
+                      !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
+                    ]}
+                  >
+                    <Text style={[styles.dailyModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      if (toggleWxLab && !wxLab) return toggleWxLab();
+                      return setWxLab?.(true);
+                    }}
+                    style={[
+                      styles.dailyModeBtn,
+                      styles.headerModeBtn,
+                      wxLab ? styles.dailyModeBtnActive : null,
+                      wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
+                    ]}
+                  >
+                    <Text style={[styles.dailyModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
+                  </Pressable>
+                </View>
+              </View>
+
             </View>
           </View>
 
@@ -4906,6 +4902,22 @@ const styles = StyleSheet.create({
   borderWidth: 1,
   borderColor: 'rgba(255,255,255,0.12)',
 },
+
+  headerModeRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+
+  headerModeToggle: {
+    alignSelf: 'flex-end',
+  },
+
+  headerModeBtn: {
+    minHeight: 28,
+    minWidth: 66,
+    paddingHorizontal: 10,
+  },
 
   actionRow: {
     marginTop: 10,

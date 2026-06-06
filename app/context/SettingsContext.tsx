@@ -20,6 +20,7 @@ const BASE_MAP_STYLE_KEY = 'omniwx:settings:baseMapStyle';
 const RADAR_PROVIDER_KEY = 'omniwx:settings:radarProvider';
 const FORECAST_MODEL_KEY = 'omniwx:settings:forecastModel';
 const APP_COLOR_MODE_KEY = 'omniwx:settings:appColorMode';
+const ALWAYS_USE_WXLAB_KEY = 'omniwx:settings:alwaysUseWxLab';
 
 interface SettingsContextValue {
   tempUnit: TempUnit;
@@ -32,6 +33,8 @@ interface SettingsContextValue {
   setForecastModel: (model: ForecastModel) => void;
   appColorMode: AppColorMode;
   setAppColorMode: (mode: AppColorMode) => void;
+  alwaysUseWxLab: boolean;
+  setAlwaysUseWxLab: (enabled: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(
@@ -44,18 +47,27 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [radarProvider, setRadarProvider] = useState<RadarProvider>('rainviewer');
   const [forecastModel, setForecastModel] = useState<ForecastModel>('best_match');
   const [appColorMode, setAppColorMode] = useState<AppColorMode>('classic');
+  const [alwaysUseWxLab, setAlwaysUseWxLab] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     (async () => {
       try {
-        const [storedTempUnit, storedBaseMapStyle, storedRadarProvider, storedForecastModel, storedAppColorMode] = await Promise.all([
+        const [
+          storedTempUnit,
+          storedBaseMapStyle,
+          storedRadarProvider,
+          storedForecastModel,
+          storedAppColorMode,
+          storedAlwaysUseWxLab,
+        ] = await Promise.all([
           AsyncStorage.getItem(TEMP_UNIT_KEY),
           AsyncStorage.getItem(BASE_MAP_STYLE_KEY),
           AsyncStorage.getItem(RADAR_PROVIDER_KEY),
           AsyncStorage.getItem(FORECAST_MODEL_KEY),
           AsyncStorage.getItem(APP_COLOR_MODE_KEY),
+          AsyncStorage.getItem(ALWAYS_USE_WXLAB_KEY),
         ]);
 
         if (!mounted) return;
@@ -83,6 +95,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           storedAppColorMode === 'high_contrast'
         ) {
           setAppColorMode(storedAppColorMode);
+        }
+        if (storedAlwaysUseWxLab === 'true' || storedAlwaysUseWxLab === 'false') {
+          setAlwaysUseWxLab(storedAlwaysUseWxLab === 'true');
         }
       } catch {
         // Ignore storage failures and keep defaults.
@@ -114,6 +129,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(APP_COLOR_MODE_KEY, appColorMode).catch(() => {});
   }, [appColorMode]);
 
+  useEffect(() => {
+    AsyncStorage.setItem(ALWAYS_USE_WXLAB_KEY, alwaysUseWxLab ? 'true' : 'false').catch(() => {});
+  }, [alwaysUseWxLab]);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -127,6 +146,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setForecastModel,
         appColorMode,
         setAppColorMode,
+        alwaysUseWxLab,
+        setAlwaysUseWxLab,
       }}
     >
       {children}

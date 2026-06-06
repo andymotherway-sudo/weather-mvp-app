@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
@@ -79,6 +79,11 @@ type WildfireIncidentDetails = {
 type SelectedMarineFeature =
   | { kind: 'buoy'; id: string }
   | { kind: 'zone'; id: string }
+  | null;
+
+type WeatherAlertForecastTarget =
+  | { kind: 'marine'; zoneId: string; name?: string | null; wfo?: string | null }
+  | { kind: 'land'; lat: number; lon: number }
   | null;
 
 const RADAR_PRODUCT_META: Record<
@@ -292,6 +297,7 @@ const SATELLITE_PLAY_INTERVAL_MS = 1800;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
+type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const ANIMATION_QUALITY_OPTIONS: Array<{ id: AnimationQuality; label: string; meta: string }> = [
   { id: 'smooth', label: 'Smooth', meta: 'lighter' },
   { id: 'cinematic', label: 'Cinematic', meta: 'balanced' },
@@ -427,7 +433,6 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
   query.searchParams.set('f', 'json');
   query.searchParams.set('where', '1=1');
   query.searchParams.set('outFields', 'name,start_time,end_time');
-  query.searchParams.set('orderByFields', 'end_time desc');
   query.searchParams.set('returnGeometry', 'false');
   query.searchParams.set('resultRecordCount', '240');
 
@@ -438,7 +443,7 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
   const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
   const seen = new Set<string>();
 
-  return features
+  const frames = features
     .map((feature: any) => {
       const attrs = feature?.attributes ?? {};
       const start = Number(attrs.start_time ?? attrs.Start_Time);
@@ -457,8 +462,10 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
         sourceName: name || undefined,
       } satisfies SatelliteFrame;
     })
-    .filter(Boolean)
-    .reverse()
+    .filter(Boolean) as SatelliteFrame[];
+
+  return frames
+    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
     .map((frame: SatelliteFrame, index: number) => ({ ...frame, index }));
 }
 
@@ -1119,6 +1126,8 @@ export default function MapsScreen() {
   }, [animationRecordMode]);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
+  const [selectedWeatherAlertForecastTarget, setSelectedWeatherAlertForecastTarget] =
+    useState<WeatherAlertForecastTarget>(null);
   const [selectedMarineFeature, setSelectedMarineFeature] = useState<SelectedMarineFeature>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
@@ -1707,20 +1716,21 @@ export default function MapsScreen() {
     return radarCtl.radarTileMaxZ;
   }, [radarCtl.radarTileMaxZ]);
 
-  const animationCompositorKind: 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds' | null =
-    animationRecordMode && radarEnabled
+  const activeAnimationKind: AnimationCompositorKind | null =
+    radarEnabled
       ? 'radar'
-      : animationRecordMode && goesTrueColorEnabled
+      : goesTrueColorEnabled
         ? 'truecolor'
-        : animationRecordMode && goesEastIrEnabled
+        : goesEastIrEnabled
           ? 'ir'
-          : animationRecordMode && goesEastWvEnabled
+          : goesEastWvEnabled
             ? 'wv-east'
-            : animationRecordMode && goesWestWvEnabled
+            : goesWestWvEnabled
               ? 'wv-west'
-              : animationRecordMode && cloudsEnabled
+              : cloudsEnabled
                 ? 'clouds'
                 : null;
+  const animationCompositorKind = animationRecordMode ? activeAnimationKind : null;
 
   const mapRadar = useMemo(() => {
     if (!isFocused || animationCompositorKind === 'radar') {
@@ -2158,6 +2168,13 @@ export default function MapsScreen() {
     },
     [mapZoom, marineBuoys, marineConditionsEnabled, visibleMarineZones],
   );
+  const resolveMarineZoneAtPoint = useCallback(
+    (lat: number, lon: number) => {
+      if (!marineConditionsEnabled) return null;
+      return visibleMarineZones.find((item) => geometryContainsPoint(item.geometry, lat, lon)) ?? null;
+    },
+    [marineConditionsEnabled, visibleMarineZones],
+  );
 
   useEffect(() => {
     if (!marineConditionsEnabled) setSelectedMarineFeature(null);
@@ -2256,7 +2273,10 @@ export default function MapsScreen() {
   const warningsOverlayEnabled = alertsEnabled;
   const alertsData = useAlertMapData(warningsOverlayEnabled, effectiveRegion);
   useEffect(() => {
-    if (!warningsOverlayEnabled) setSelectedWeatherAlert(null);
+    if (!warningsOverlayEnabled) {
+      setSelectedWeatherAlert(null);
+      setSelectedWeatherAlertForecastTarget(null);
+    }
   }, [warningsOverlayEnabled]);
   const handleWeatherAlertPress = useCallback(
     (e: any) => {
@@ -2264,19 +2284,49 @@ export default function MapsScreen() {
       const detail = alertFeatureToDetail(feature);
       const pressCoords = getMapPressLonLat(e) ?? getGeometryCenter(feature?.geometry);
 
-      if (pressCoords) {
-        const marineFeature = resolveMarineFeatureAtPoint(pressCoords.lat, pressCoords.lon);
-        if (marineFeature) {
-          setSelectedWeatherAlert(null);
-          setSelectedMarineFeature(marineFeature);
-          return;
-        }
-      }
+      if (!detail) return;
 
-      if (detail) setSelectedWeatherAlert(detail);
+      const marineZone = pressCoords ? resolveMarineZoneAtPoint(pressCoords.lat, pressCoords.lon) : null;
+      setSelectedWeatherAlertForecastTarget(
+        marineZone
+          ? {
+              kind: 'marine',
+              zoneId: marineZone.id,
+              name: marineZone.name,
+              wfo: marineZone.wfo ?? '',
+            }
+          : pressCoords
+            ? { kind: 'land', lat: pressCoords.lat, lon: pressCoords.lon }
+            : null,
+      );
+      setSelectedMarineFeature(null);
+      setSelectedWeatherAlert(detail);
     },
-    [resolveMarineFeatureAtPoint],
+    [resolveMarineZoneAtPoint],
   );
+  const openSelectedAlertForecast = useCallback(() => {
+    const target = selectedWeatherAlertForecastTarget;
+    if (!target) return;
+
+    if (target.kind === 'marine') {
+      router.push({
+        pathname: '/nautical/zone/[zoneId]',
+        params: {
+          zoneId: target.zoneId,
+          name: target.name ?? target.zoneId,
+          wfo: target.wfo ?? '',
+        },
+      } as any);
+      return;
+    }
+
+    const url = `https://forecast.weather.gov/MapClick.php?lat=${encodeURIComponent(
+      target.lat.toFixed(4),
+    )}&lon=${encodeURIComponent(target.lon.toFixed(4))}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Forecast unavailable', 'Unable to open the official NWS point forecast.');
+    });
+  }, [router, selectedWeatherAlertForecastTarget]);
   const wildfireVectorEnabled =
     state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled;
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
@@ -2496,7 +2546,7 @@ export default function MapsScreen() {
   const showFireDetailPanel = fireInteractionEnabled && (wildfireDetailLoading || selectedWildfire != null || showRestrictionDetail);
   const showAviationPanel = state.viewId === 'aviation' && aviationOverlayEnabled;
   const animationViewportRegion = animationRecordRegion ?? effectiveRegion;
-  const animationFrameSource = animationCompositorKind === 'radar' ? uiFrames : satellitePlaybackFrames;
+  const animationFrameSource = activeAnimationKind === 'radar' ? uiFrames : satellitePlaybackFrames;
   const animationCompositorFrames = useMemo(
     () =>
       animationFrameSource
@@ -2512,15 +2562,15 @@ export default function MapsScreen() {
     [animationViewportRegion],
   );
   const animationCompositorOpacity =
-    animationCompositorKind === 'radar'
+    activeAnimationKind === 'radar'
       ? radarCtl.radarOpacity
-      : animationCompositorKind === 'truecolor'
+      : activeAnimationKind === 'truecolor'
         ? goesTrueColorOpacity
-        : animationCompositorKind === 'ir'
+        : activeAnimationKind === 'ir'
           ? goesEastIrOpacity
-          : animationCompositorKind === 'wv-east'
+          : activeAnimationKind === 'wv-east'
             ? goesEastWvOpacity
-            : animationCompositorKind === 'wv-west'
+            : activeAnimationKind === 'wv-west'
               ? goesWestWvOpacity
               : cloudsOpacity;
   const animationCompositorInterval =
@@ -2574,27 +2624,27 @@ export default function MapsScreen() {
   );
 
   const animationProductLabel = useMemo(() => {
-    if (animationCompositorKind === 'radar') return radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
-    if (animationCompositorKind === 'truecolor') return 'True color';
-    if (animationCompositorKind === 'ir') return 'Infrared';
-    if (animationCompositorKind === 'wv-east' || animationCompositorKind === 'wv-west') return 'Water vapor';
-    if (animationCompositorKind === 'clouds') return 'Visible cloud loop';
+    if (activeAnimationKind === 'radar') return radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
+    if (activeAnimationKind === 'truecolor') return 'True color';
+    if (activeAnimationKind === 'ir') return 'Infrared';
+    if (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west') return 'Water vapor';
+    if (activeAnimationKind === 'clouds') return 'Visible cloud loop';
     return 'Weather loop';
-  }, [animationCompositorKind, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
+  }, [activeAnimationKind, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
-    if (!animationCompositorKind || animationCompositorFrames.length < 2) return [];
+    if (!activeAnimationKind || animationCompositorFrames.length < 2) return [];
     const width = 1280;
     const height = 720;
     return animationCompositorFrames.map((frame) => {
       const label = new Date(frame.iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      if (animationCompositorKind === 'radar') {
+      if (activeAnimationKind === 'radar') {
         return { label, urls: [buildAnimationUrl('radar', frame, width, height)] };
       }
-      if (animationCompositorKind === 'truecolor') {
+      if (activeAnimationKind === 'truecolor') {
         return { label, urls: [buildAnimationUrl('geocolor', frame, width, height)] };
       }
-      if (animationCompositorKind === 'ir') {
+      if (activeAnimationKind === 'ir') {
         return {
           label,
           urls: [
@@ -2603,10 +2653,10 @@ export default function MapsScreen() {
           ],
         };
       }
-      if (animationCompositorKind === 'wv-west') {
+      if (activeAnimationKind === 'wv-west') {
         return { label, urls: [buildAnimationUrl('goes-west-wv', frame, width, height)] };
       }
-      if (animationCompositorKind === 'wv-east') {
+      if (activeAnimationKind === 'wv-east') {
         return { label, urls: [buildAnimationUrl('goes-east-wv', frame, width, height)] };
       }
       return {
@@ -2617,11 +2667,11 @@ export default function MapsScreen() {
         ],
       };
     });
-  }, [animationCompositorFrames, animationCompositorKind, buildAnimationUrl]);
+  }, [activeAnimationKind, animationCompositorFrames, buildAnimationUrl]);
 
   const handleAnimationRecordPress = useCallback(async () => {
     const exportFrames = animationExportFrames;
-    if (!animationCompositorKind || exportFrames.length < 2) {
+    if (!activeAnimationKind || exportFrames.length < 2) {
       Alert.alert('Animation not ready', 'Turn on an animated radar or satellite layer first.');
       return;
     }
@@ -2635,7 +2685,7 @@ export default function MapsScreen() {
     setAnimationRecordMode(true);
     setAnimationExporting(true);
     setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
-    if (radarEnabled) {
+    if (activeAnimationKind === 'radar') {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
     } else {
       setSatellitePlaying(true);
@@ -2665,12 +2715,11 @@ export default function MapsScreen() {
     }
   }, [
     activePlace?.name,
-    animationCompositorKind,
+    activeAnimationKind,
     animationExportFrames,
     animationProductLabel,
     animationQuality,
     effectiveRegion,
-    radarEnabled,
   ]);
 
   return (
@@ -4627,7 +4676,13 @@ export default function MapsScreen() {
                     {selectedWeatherAlert.event}
                   </Text>
                 </View>
-                <Pressable onPress={() => setSelectedWeatherAlert(null)} style={styles.fireDetailClose}>
+                <Pressable
+                  onPress={() => {
+                    setSelectedWeatherAlert(null);
+                    setSelectedWeatherAlertForecastTarget(null);
+                  }}
+                  style={styles.fireDetailClose}
+                >
                   <Text style={styles.fireDetailCloseText}>Close</Text>
                 </Pressable>
               </View>
@@ -4675,6 +4730,19 @@ export default function MapsScreen() {
                 <Text style={styles.alertInstruction} numberOfLines={4}>
                   {selectedWeatherAlert.description}
                 </Text>
+              ) : null}
+
+              {selectedWeatherAlertForecastTarget ? (
+                <View style={styles.marineDetailActionRow}>
+                  <Pressable
+                    style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                    onPress={openSelectedAlertForecast}
+                  >
+                    <Text style={styles.fireDetailCloseText}>
+                      {selectedWeatherAlertForecastTarget.kind === 'marine' ? 'NOAA marine forecast' : 'NWS forecast'}
+                    </Text>
+                  </Pressable>
+                </View>
               ) : null}
             </Glass>
           </View>

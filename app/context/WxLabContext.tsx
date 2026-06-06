@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useSettings } from './SettingsContext';
 
 type WxLabContextValue = {
   wxLab: boolean;
@@ -9,7 +10,12 @@ type WxLabContextValue = {
 const WxLabContext = createContext<WxLabContextValue | null>(null);
 
 export function WxLabProvider({ children }: { children: React.ReactNode }) {
+  const { alwaysUseWxLab } = useSettings();
   const [wxLab, setWxLab] = useState(false);
+
+  useEffect(() => {
+    if (alwaysUseWxLab) setWxLab(true);
+  }, [alwaysUseWxLab]);
 
   const value = useMemo(
     () => ({
