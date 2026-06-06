@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
@@ -350,6 +350,37 @@ function mercatorBbox(region: Region) {
   return `${sw.x},${sw.y},${ne.x},${ne.y}`;
 }
 
+function mercatorAspect(region: Region) {
+  const { west, east, south, north } = regionBounds(region, 1);
+  const sw = lonLatToMercatorMeters(west, south);
+  const ne = lonLatToMercatorMeters(east, north);
+  const mercatorWidth = Math.max(1, Math.abs(ne.x - sw.x));
+  const mercatorHeight = Math.max(1, Math.abs(ne.y - sw.y));
+  return mercatorWidth / mercatorHeight;
+}
+
+function regionForViewportAspect(region: Region, viewport?: { width: number; height: number }) {
+  const vw = viewport?.width && Number.isFinite(viewport.width) ? viewport.width : 0;
+  const vh = viewport?.height && Number.isFinite(viewport.height) ? viewport.height : 0;
+  if (vw <= 0 || vh <= 0) return region;
+
+  const targetAspect = Math.max(0.35, Math.min(2.2, vw / vh));
+  const currentAspect = Math.max(0.01, mercatorAspect(region));
+  if (Math.abs(currentAspect - targetAspect) / targetAspect < 0.04) return region;
+
+  if (currentAspect > targetAspect) {
+    return {
+      ...region,
+      latitudeDelta: Math.min(170, Math.max(0.0001, region.latitudeDelta * (currentAspect / targetAspect))),
+    };
+  }
+
+  return {
+    ...region,
+    longitudeDelta: Math.min(360, Math.max(0.0001, region.longitudeDelta * (targetAspect / currentAspect))),
+  };
+}
+
 function evenDimension(value: number, minValue = 480, maxValue = 1600) {
   const clamped = Math.max(minValue, Math.min(maxValue, Math.round(value)));
   return clamped % 2 === 0 ? clamped : clamped - 1;
@@ -381,19 +412,24 @@ function satelliteQualityForZoom(zoom: number) {
   };
 }
 
-function animationExportDimensions(region: Region, kind?: AnimationCompositorKind | null, zoom = 5) {
-  if (kind === 'radar') {
-    return { width: 1280, height: 720 };
-  }
-
+function animationExportDimensions(
+  region: Region,
+  kind?: AnimationCompositorKind | null,
+  zoom = 5,
+  viewport?: { width: number; height: number },
+) {
   const quality = satelliteQualityForZoom(zoom);
-  const { west, east, south, north } = regionBounds(region, 1);
-  const sw = lonLatToMercatorMeters(west, south);
-  const ne = lonLatToMercatorMeters(east, north);
-  const mercatorWidth = Math.max(1, Math.abs(ne.x - sw.x));
-  const mercatorHeight = Math.max(1, Math.abs(ne.y - sw.y));
-  const aspect = Math.max(0.35, Math.min(2.2, mercatorWidth / mercatorHeight));
-  const longEdge = quality.exportLongEdge;
+  const vw = viewport?.width && Number.isFinite(viewport.width) ? viewport.width : 0;
+  const vh = viewport?.height && Number.isFinite(viewport.height) ? viewport.height : 0;
+  const viewportAspect = vw > 0 && vh > 0 ? vw / vh : null;
+  const geographicAspect = (() => {
+    return mercatorAspect(region);
+  })();
+  const aspect =
+    kind === 'radar' && !viewportAspect
+      ? 16 / 9
+      : Math.max(0.35, Math.min(2.2, viewportAspect ?? geographicAspect));
+  const longEdge = kind === 'radar' ? (aspect >= 1 ? 1280 : 1280) : quality.exportLongEdge;
 
   if (aspect >= 1) {
     return { width: evenDimension(longEdge, 480, 1920), height: evenDimension(longEdge / aspect, 480, 1920) };
@@ -1122,6 +1158,7 @@ function buildFavoriteTemperatureGeoJson(args: {
 
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{
     view?: string;
     lat?: string;
@@ -2629,12 +2666,44 @@ export default function MapsScreen() {
               ? goesWestWvOpacity
               : cloudsOpacity;
   const animationCompositorInterval =
-    animationQuality === 'presentation' ? 900 : animationQuality === 'smooth' ? 2100 : 1500;
+    activeAnimationKind === 'truecolor'
+      ? animationQuality === 'presentation'
+        ? 1050
+        : animationQuality === 'smooth'
+          ? 2400
+          : 1650
+      : animationQuality === 'presentation'
+        ? 900
+        : animationQuality === 'smooth'
+          ? 2100
+          : 1500;
   const animationCompositorBlend =
-    animationQuality === 'presentation' ? 420 : animationQuality === 'smooth' ? 220 : 340;
+    activeAnimationKind === 'truecolor'
+      ? animationQuality === 'presentation'
+        ? 680
+        : animationQuality === 'smooth'
+          ? 560
+          : 620
+      : animationQuality === 'presentation'
+        ? 420
+        : animationQuality === 'smooth'
+          ? 220
+          : 340;
   const animationExportSize = useMemo(
-    () => animationExportDimensions(animationViewportRegion, activeAnimationKind, mapZoom),
-    [activeAnimationKind, animationViewportRegion, mapZoom],
+    () =>
+      animationExportDimensions(animationViewportRegion, activeAnimationKind, mapZoom, {
+        width: viewportWidth,
+        height: viewportHeight,
+      }),
+    [activeAnimationKind, animationViewportRegion, mapZoom, viewportHeight, viewportWidth],
+  );
+  const animationExportRegion = useMemo(
+    () =>
+      regionForViewportAspect(animationViewportRegion, {
+        width: viewportWidth,
+        height: viewportHeight,
+      }),
+    [animationViewportRegion, viewportHeight, viewportWidth],
   );
   const buildAnimationUrl = useCallback(
     (
@@ -2646,7 +2715,7 @@ export default function MapsScreen() {
       if (source === 'radar') {
         return buildRadarCompositorUrl({
           product,
-          region: animationViewportRegion,
+          region: animationExportRegion,
           iso: frame.iso,
           width,
           height,
@@ -2656,7 +2725,7 @@ export default function MapsScreen() {
       if (source === 'geocolor') {
         return buildArcGisImageExportUrl({
           baseUrl: NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL,
-          region: animationViewportRegion,
+          region: animationExportRegion,
           iso: frame.iso,
           width,
           height,
@@ -2673,13 +2742,13 @@ export default function MapsScreen() {
       return buildGoesWmsImageUrl({
         endpoint,
         layer,
-        region: animationViewportRegion,
+        region: animationExportRegion,
         iso: frame.iso,
         width,
         height,
       });
     },
-    [animationViewportRegion, product, stormMode],
+    [animationExportRegion, product, stormMode],
   );
 
   const animationProductLabel = useMemo(() => {
@@ -2760,8 +2829,10 @@ export default function MapsScreen() {
         width,
         height,
         fps: 30,
-        secondsPerSourceFrame: animationQuality === 'presentation' ? 0.46 : 0.56,
-        transitionSeconds: animationQuality === 'presentation' ? 0.24 : 0.28,
+        secondsPerSourceFrame:
+          activeAnimationKind === 'truecolor' ? (animationQuality === 'presentation' ? 0.62 : 0.7) : animationQuality === 'presentation' ? 0.46 : 0.56,
+        transitionSeconds:
+          activeAnimationKind === 'truecolor' ? (animationQuality === 'presentation' ? 0.44 : 0.46) : animationQuality === 'presentation' ? 0.24 : 0.28,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
