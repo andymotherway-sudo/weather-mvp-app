@@ -7,7 +7,7 @@
 // This enables scaling to 250–500+ US sites without device fan-out.
 
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { useMarsInsightWeather } from '../lib/spaceweather/hooks';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
@@ -157,6 +158,20 @@ type LandExtreme = {
 
 type LandGroup = { title: string; subtitle: string; items: LandExtreme[] };
 
+type SavedPlaceExtreme = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  updatedAt: string | null;
+  tempC: number | null;
+  windKph: number | null;
+  windMph: number | null;
+  valueText: string;
+  subtitle: string;
+  kind: 'hot' | 'cold' | 'wind';
+};
+
 type LandHookResult = {
   loading: boolean;
   error: string | null;
@@ -208,25 +223,64 @@ function stripWettest(groups: LandGroup[]) {
   return (groups ?? []).filter((g) => !isWettestGroup(g));
 }
 
-function splitLandGroups(groups: LandGroup[]) {
-  const global: LandGroup[] = [];
-  const us: LandGroup[] = [];
+function normalizeLandGroupTitle(title: string, items: LandExtreme[]) {
+  const raw = String(title || '').toLowerCase();
+  const sampleKind = items.find((item) => item?.kind)?.kind;
+  if (raw.includes('hot') || sampleKind === 'hot') return 'Hottest Land Temperatures';
+  if (raw.includes('cold') || sampleKind === 'cold') return 'Coldest Land Temperatures';
+  if (raw.includes('wind') || sampleKind === 'wind') return 'Windiest Land Stations';
+  return title.replace(/\b(us|u\.s\.|global)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Land Extremes';
+}
 
-  for (const g of groups ?? []) {
-    const items = Array.isArray(g.items) ? g.items : [];
+function normalizeLandGroupSubtitle(title: string) {
+  const raw = String(title || '').toLowerCase();
+  if (raw.includes('hot')) return 'Current land temperature ranking across available stations';
+  if (raw.includes('cold')) return 'Current cold spots across available stations';
+  if (raw.includes('wind')) return 'Strongest current winds across available stations';
+  return 'Ranked extremes regardless of country or source list';
+}
 
-    // Heuristic: a group is "global" if:
-    // - its title mentions "global", OR
-    // - >50% of items have badge === "Global"
-    const globalCount = items.filter((x) => String(x.badge || '').toLowerCase() === 'global').length;
-    const isGlobalByTitle = String(g.title || '').toLowerCase().includes('global');
-    const isGlobalByMix = items.length > 0 && globalCount / items.length >= 0.5;
+function landExtremeSortValue(item: LandExtreme) {
+  const match = String(item.valueText ?? '').match(/-?\d+(?:\.\d+)?/);
+  const value = match ? Number(match[0]) : Number.NaN;
+  return Number.isFinite(value) ? value : null;
+}
 
-    if (isGlobalByTitle || isGlobalByMix) global.push(g);
-    else us.push(g);
+function mergeLandGroups(groups: LandGroup[]) {
+  const buckets = new Map<string, { title: string; subtitle: string; items: LandExtreme[] }>();
+
+  for (const group of stripWettest(groups ?? [])) {
+    const items = Array.isArray(group.items) ? group.items : [];
+    if (!items.length) continue;
+    const title = normalizeLandGroupTitle(group.title, items);
+    const existing = buckets.get(title) ?? {
+      title,
+      subtitle: normalizeLandGroupSubtitle(title),
+      items: [],
+    };
+    existing.items.push(...items);
+    buckets.set(title, existing);
   }
 
-  return { us, global };
+  return Array.from(buckets.values()).map((group) => {
+    const seen = new Set<string>();
+    const unique = group.items.filter((item) => {
+      const key = item.id || `${item.name}:${item.lat}:${item.lon}:${item.kind}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const desc = group.title.toLowerCase().includes('coldest') ? -1 : 1;
+    unique.sort((a, b) => {
+      const av = landExtremeSortValue(a);
+      const bv = landExtremeSortValue(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return desc * (bv - av);
+    });
+    return { ...group, items: unique.slice(0, MAX_ROWS) };
+  });
 }
 
 function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
@@ -313,11 +367,95 @@ function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
   const bootRef = useRef(false);
   if (!bootRef.current) {
     bootRef.current = true;
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     refresh();
   }
 
   return { loading, error, updatedAt, heroes, groups, refresh };
+}
+
+function safeNum(value: any): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatWindFromKph(kph: number | null, unit: 'F' | 'C') {
+  if (kph == null) return '—';
+  if (unit === 'C') return `${Math.round(kph)} km/h`;
+  return `${Math.round(kph * 0.621371)} mph`;
+}
+
+async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'): Promise<SavedPlaceExtreme | null> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(place.lat))}` +
+    `&longitude=${encodeURIComponent(String(place.lon))}` +
+    `&current=temperature_2m,wind_speed_10m` +
+    `&temperature_unit=celsius` +
+    `&wind_speed_unit=kmh` +
+    `&timezone=auto`;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6500);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const current = json?.current ?? {};
+    const tempC = safeNum(current.temperature_2m);
+    const windKph = safeNum(current.wind_speed_10m);
+    const updatedAt = typeof current.time === 'string' ? current.time : null;
+    const valueText =
+      tempC != null
+        ? `${formatTemp(tempC, unit)} • ${formatWindFromKph(windKph, unit)}`
+        : formatWindFromKph(windKph, unit);
+    return {
+      id: place.id,
+      name: place.name,
+      lat: place.lat,
+      lon: place.lon,
+      updatedAt,
+      tempC,
+      windKph,
+      windMph: windKph != null ? windKph * 0.621371 : null,
+      valueText,
+      subtitle: 'Saved place current conditions',
+      kind: 'hot',
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<SavedPlaceExtreme[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const signature = useMemo(() => favorites.map((fav) => `${fav.id}:${fav.lat}:${fav.lon}`).join('|'), [favorites]);
+
+  const refresh = useCallback(async () => {
+    if (!favorites.length) {
+      setItems([]);
+      setUpdatedAt(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const results = await Promise.all(favorites.slice(0, 24).map((fav) => fetchSavedPlaceExtreme(fav, unit)));
+      const next = results.filter(Boolean) as SavedPlaceExtreme[];
+      setItems(next);
+      setUpdatedAt(new Date().toISOString());
+    } finally {
+      setLoading(false);
+    }
+  }, [favorites, unit]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh, signature]);
+
+  return { loading, items, updatedAt, refresh };
 }
 
 type SpaceExtreme = {
@@ -553,10 +691,98 @@ function LandSection({ title, subtitle, items }: { title: string; subtitle: stri
   );
 }
 
+function SavedPlacesExtremeSection({
+  favorites,
+  items,
+  loading,
+  tempUnit,
+}: {
+  favorites: FavoriteLocation[];
+  items: SavedPlaceExtreme[];
+  loading: boolean;
+  tempUnit: 'F' | 'C';
+}) {
+  const router = useRouter();
+  const hottest = useMemo(
+    () => items.filter((item) => item.tempC != null).slice().sort((a, b) => (b.tempC ?? -Infinity) - (a.tempC ?? -Infinity))[0] ?? null,
+    [items],
+  );
+  const coldest = useMemo(
+    () => items.filter((item) => item.tempC != null).slice().sort((a, b) => (a.tempC ?? Infinity) - (b.tempC ?? Infinity))[0] ?? null,
+    [items],
+  );
+  const windiest = useMemo(
+    () => items.filter((item) => item.windKph != null).slice().sort((a, b) => (b.windKph ?? -Infinity) - (a.windKph ?? -Infinity))[0] ?? null,
+    [items],
+  );
+  const rows = [
+    hottest ? { ...hottest, label: 'Hottest saved place', value: formatTemp(hottest.tempC, tempUnit) } : null,
+    coldest ? { ...coldest, label: 'Coldest saved place', value: formatTemp(coldest.tempC, tempUnit) } : null,
+    windiest ? { ...windiest, label: 'Windiest saved place', value: formatWindFromKph(windiest.windKph, tempUnit) } : null,
+  ].filter(Boolean) as Array<SavedPlaceExtreme & { label: string; value: string }>;
+
+  return (
+    <Card style={styles.sectionCard}>
+      <View style={styles.sectionHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle}>Saved Places</Text>
+          <Text style={styles.sectionSubtitle}>
+            {favorites.length ? 'Extremes from your saved locations' : 'Save places on Land and they will appear here'}
+          </Text>
+        </View>
+        {loading ? <ActivityIndicator size="small" /> : favorites.length ? <Text style={styles.sectionCount}>{favorites.length} saved</Text> : null}
+      </View>
+
+      {!favorites.length ? (
+        <Pressable
+          onPress={() => router.push('/')}
+          style={({ pressed }) => [styles.emptyBox, pressed && { backgroundColor: '#0b1220' }]}
+        >
+          <Text style={styles.emptyTitle}>Add places to Extremes</Text>
+          <Text style={styles.emptyText}>Save locations from the Land tab, then compare your own hot, cold, and windy spots here.</Text>
+        </Pressable>
+      ) : rows.length ? (
+        rows.map((item, idx) => (
+          <Pressable
+            key={`${item.label}-${item.id}`}
+            onPress={() => pushLandExtremeToMap(router, item)}
+            style={({ pressed }) => [styles.row, pressed && { backgroundColor: '#020617' }]}
+          >
+            <View style={styles.rankCircle}>
+              <Text style={styles.rankText}>{idx + 1}</Text>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.buoyName}>{item.name}</Text>
+              <Text style={styles.buoyMeta}>{item.label}</Text>
+              <Text style={styles.buoyMetaSmall}>
+                {formatWindFromKph(item.windKph, tempUnit)} wind • {formatLatLon(item.lat, item.lon)}
+              </Text>
+            </View>
+
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Saved</Text>
+            </View>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.valueText}>
+              {item.value}
+            </Text>
+          </Pressable>
+        ))
+      ) : (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>Saved place weather unavailable</Text>
+          <Text style={styles.emptyText}>Pull to refresh and OMNIwx will retry the saved-location scan.</Text>
+        </View>
+      )}
+    </Card>
+  );
+}
+
 export default function ExtremesScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
   const { tempUnit } = useSettings();
+  const locations = useLocations();
   const [mode, setMode] = useState<Mode>('marine');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -605,17 +831,19 @@ export default function ExtremesScreen() {
 
   // Land + Space
   const land = useLandExtremes(tempUnit);
+  const savedLand = useSavedPlaceExtremes(locations.favorites ?? [], tempUnit);
+  const refreshSavedLand = savedLand.refresh;
   const mars = useMarsInsightWeather();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (mode === 'land') await land.refresh();
+      if (mode === 'land') await Promise.all([land.refresh(), refreshSavedLand()]);
       if (mode === 'space') await mars.refresh();
     } finally {
       setRefreshing(false);
     }
-  }, [land, mars, mode]);
+  }, [land, mars, mode, refreshSavedLand]);
 
   const headerSubtitle =
     mode === 'marine'
@@ -773,55 +1001,39 @@ export default function ExtremesScreen() {
 
           {!land.loading && !land.error ? (
             (() => {
-              const { us: usGroupsRaw, global: globalGroupsRaw } = splitLandGroups(land.groups);
-              const usGroups = stripWettest(usGroupsRaw);
-              const globalGroups = stripWettest(globalGroupsRaw);
+              const mergedGroups = mergeLandGroups(land.groups);
 
               return (
                 <>
-                  {/* US Extremes */}
+                  <SavedPlacesExtremeSection
+                    favorites={locations.favorites ?? []}
+                    items={savedLand.items}
+                    loading={savedLand.loading}
+                    tempUnit={tempUnit}
+                  />
+
                   <Card style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>US Extremes</Text>
+                    <Text style={styles.sectionTitle}>World Land Extremes</Text>
                     <Text style={styles.sectionSubtitle}>
-                      Top rankings from US airports + capitals + major cities (and other US notables)
+                      Ranked together from every available land station list, regardless of country
                     </Text>
                   </Card>
 
-                  {usGroups.length ? (
-                    usGroups.map((g) => (
-                      <LandSection key={`us-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
+                  {mergedGroups.length ? (
+                    mergedGroups.map((g) => (
+                      <LandSection key={`land-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
                     ))
                   ) : (
                     <Card style={styles.sectionCard}>
                       <View style={styles.emptyBox}>
-                        <Text style={styles.emptyTitle}>No US extremes yet</Text>
-                        <Text style={styles.emptyText}>Pull to refresh — the Worker may still be warming up.</Text>
-                      </View>
-                    </Card>
-                  )}
-
-                  {/* Global Extremes */}
-                  <Card style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>Global Extremes</Text>
-                    <Text style={styles.sectionSubtitle}>
-                      Curated “interesting places” around the world (deserts, polar stations, etc.)
-                    </Text>
-                  </Card>
-
-                  {globalGroups.length ? (
-                    globalGroups.map((g) => (
-                      <LandSection key={`gl-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
-                    ))
-                  ) : (
-                    <Card style={styles.sectionCard}>
-                      <View style={styles.emptyBox}>
-                        <Text style={styles.emptyTitle}>No global extremes yet</Text>
-                        <Text style={styles.emptyText}>Pull to refresh — global groups will appear when available.</Text>
+                        <Text style={styles.emptyTitle}>No land extremes yet</Text>
+                        <Text style={styles.emptyText}>Pull to refresh. The Worker may still be warming up.</Text>
                       </View>
                     </Card>
                   )}
                 </>
               );
+
             })()
           ) : null}
         </>

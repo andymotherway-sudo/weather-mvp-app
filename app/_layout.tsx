@@ -1,5 +1,6 @@
 // app/_layout.tsx
 import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { type ReactNode, useEffect, useMemo } from 'react';
@@ -19,6 +20,15 @@ import { WxLabProvider } from './context/WxLabContext';
 import { appChrome } from './lib/theme/appAppearance';
 
 const APP_BG = '#020617';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 function AppChromeFrame({ children }: { children: ReactNode }) {
   const { appColorMode } = useSettings();

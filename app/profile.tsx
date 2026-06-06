@@ -7,6 +7,8 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { usePlace, type Place } from './context/PlaceContext';
 import { useSettings } from './context/SettingsContext';
 import { formatCompactLocation } from './lib/locations/formats';
+import { NOTIFICATION_CATEGORIES } from './lib/notifications/preferences';
+import { useNotificationPreferences } from './lib/notifications/useNotificationPreferences';
 import { APP_COLOR_MODE_OPTIONS, appChrome } from './lib/theme/appAppearance';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
@@ -49,6 +51,7 @@ export default function ProfileScreen() {
   } = useSettings();
   const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-mark-word.png'), []);
   const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
+  const notificationSettings = useNotificationPreferences();
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -89,6 +92,13 @@ export default function ProfileScreen() {
 
   const activeLabel =
     active?.source === 'gps' ? 'Current Location (GPS)' : active ? active.name : 'None';
+  const notificationPrefs = notificationSettings.preferences;
+  const notificationStatus =
+    notificationPrefs.permission === 'granted'
+      ? `${notificationSettings.enabledCount} categories on`
+      : notificationPrefs.permission === 'denied'
+        ? 'Permission denied'
+        : 'Not enabled';
   const pillStyle = (selected = false, extra?: any) => [
     styles.pill,
     {
@@ -255,6 +265,85 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.label}>Notifications</Text>
+              <Text style={styles.value}>Weather alerts you choose</Text>
+              <Text style={styles.helperText}>{notificationStatus}</Text>
+            </View>
+            {notificationSettings.loading || notificationSettings.busy ? <ActivityIndicator color="white" /> : null}
+          </View>
+
+          <Pressable
+            style={[
+              styles.toggleRow,
+              { backgroundColor: chrome.pill, borderColor: notificationPrefs.enabled ? chrome.borderStrong : chrome.border },
+            ]}
+            onPress={() => notificationSettings.setEnabled(!notificationPrefs.enabled)}
+            disabled={notificationSettings.loading || notificationSettings.busy}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.toggleTitle}>Push notifications</Text>
+              <Text style={styles.toggleHelp}>
+                NWS alerts, new fires, Kp spikes, aviation changes, sky score, and extremes.
+              </Text>
+            </View>
+            <View style={[styles.toggleTrack, notificationPrefs.enabled ? styles.toggleTrackOn : null]}>
+              <View style={[styles.toggleKnob, notificationPrefs.enabled ? styles.toggleKnobOn : null]} />
+            </View>
+          </Pressable>
+
+          <View style={styles.miniActionRow}>
+            <Pressable
+              style={pillStyle(false, styles.miniPill)}
+              onPress={() => notificationSettings.selectAllCategories(true)}
+              disabled={notificationSettings.loading || notificationSettings.busy}
+            >
+              <Text style={styles.miniPillText}>All</Text>
+            </Pressable>
+            <Pressable
+              style={pillStyle(false, styles.miniPill)}
+              onPress={() => notificationSettings.selectAllCategories(false)}
+              disabled={notificationSettings.loading || notificationSettings.busy}
+            >
+              <Text style={styles.miniPillText}>None</Text>
+            </Pressable>
+            <Pressable
+              style={pillStyle(false, styles.miniPill)}
+              onPress={notificationSettings.sendTest}
+              disabled={!notificationPrefs.enabled || notificationPrefs.permission !== 'granted' || notificationSettings.busy}
+            >
+              <Text style={styles.miniPillText}>Test</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.notificationList}>
+            {NOTIFICATION_CATEGORIES.map((category) => {
+              const selected = notificationPrefs.categories[category.id];
+              return (
+                <Pressable
+                  key={category.id}
+                  style={[
+                    styles.notificationRow,
+                    { backgroundColor: selected ? 'rgba(14,165,233,0.14)' : chrome.pill, borderColor: selected ? chrome.borderStrong : chrome.border },
+                  ]}
+                  onPress={() => notificationSettings.toggleCategory(category.id)}
+                  disabled={notificationSettings.loading || notificationSettings.busy}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.notificationTitle}>{category.title}</Text>
+                    <Text style={styles.notificationHelp}>{category.helper}</Text>
+                  </View>
+                  <View style={[styles.checkDot, selected ? styles.checkDotOn : null]}>
+                    <Text style={styles.checkDotText}>{selected ? 'On' : 'Off'}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         <Pressable
           style={[styles.primaryButton, { backgroundColor: chrome.primary, borderColor: chrome.primaryBorder }]}
           onPress={() =>
@@ -335,13 +424,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.10)',
     marginBottom: 14,
   },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   label: { color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
   value: { color: 'white', fontSize: 15, fontWeight: '900', marginTop: 5 },
   helperText: { color: 'rgba(255,255,255,0.62)', fontSize: 11, lineHeight: 16, marginTop: 5, marginBottom: 9 },
 
-  rowButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  rowButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', width: '100%' },
   stackButtons: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  optionGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  optionGrid: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', width: '100%' },
   pill: {
     minHeight: 42,
     paddingVertical: 9,
@@ -361,8 +451,11 @@ const styles = StyleSheet.create({
   pillText: { color: 'white', fontWeight: '900', fontSize: 13, textAlign: 'center' },
   pillSubText: { marginTop: 3, color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '800', textAlign: 'center' },
   optionPillHalf: { flexGrow: 1, flexBasis: '46%', minWidth: 118 },
-  compactPill: { flexGrow: 1, flexBasis: '22%', minWidth: 78 },
+  compactPill: { flexGrow: 1, flexShrink: 1, flexBasis: '44%', minWidth: 104 },
   appearancePill: { flexGrow: 1, flexBasis: '46%', minWidth: 132 },
+  miniActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  miniPill: { minHeight: 34, paddingVertical: 6, paddingHorizontal: 12, flexGrow: 1, flexBasis: '30%', minWidth: 76 },
+  miniPillText: { color: 'white', fontWeight: '900', fontSize: 12, textAlign: 'center' },
   toggleRow: {
     minHeight: 58,
     flexDirection: 'row',
@@ -398,6 +491,31 @@ const styles = StyleSheet.create({
     transform: [{ translateX: 20 }],
     backgroundColor: 'white',
   },
+  notificationList: { gap: 8, marginTop: 10 },
+  notificationRow: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+  },
+  notificationTitle: { color: 'white', fontSize: 13, fontWeight: '900' },
+  notificationHelp: { color: 'rgba(255,255,255,0.58)', fontSize: 10.5, lineHeight: 15, marginTop: 3 },
+  checkDot: {
+    minWidth: 42,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  checkDotOn: { backgroundColor: 'rgba(14,165,233,0.28)', borderColor: 'rgba(125,211,252,0.55)' },
+  checkDotText: { color: 'white', fontSize: 10, fontWeight: '900' },
 
   primaryButton: {
     backgroundColor: '#2563EB',

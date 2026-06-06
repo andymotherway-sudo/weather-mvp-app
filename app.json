@@ -2,7 +2,7 @@
   "expo": {
     "name": "OMNIwx Alpha",
     "slug": "weather-app",
-    "version": "1.1.67",
+    "version": "1.1.68",
     "owner": "andymotherway",
     "orientation": "default",
     "icon": "./assets/brand/icon-alpha.png",
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "versionCode": 10075,
+      "versionCode": 10076,
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#020617",
@@ -53,6 +53,7 @@
       ],
       "@maplibre/maplibre-react-native",
       "expo-font",
+      "expo-notifications",
       "expo-web-browser"
     ],
     "experiments": {

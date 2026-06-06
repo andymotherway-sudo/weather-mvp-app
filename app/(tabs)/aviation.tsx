@@ -1186,7 +1186,7 @@ function AirportWeatherBoard({
   return (
     <Glass style={s.boardCard}>
       <View style={s.boardTop}>
-        <View>
+        <View style={s.boardIdentity}>
           <Text style={s.sectionLabel}>Airport weather board</Text>
           <Text style={s.boardTitle}>{station.station.code ?? station.station.label}</Text>
           <Text style={s.cardSub}>{station.station.label}</Text>
@@ -1398,10 +1398,13 @@ const s = StyleSheet.create({
   detailsToggle: { alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
   detailsToggleText: { color: 'rgba(255,255,255,0.84)', fontSize: 12, fontWeight: '900' },
   boardCard: { marginTop: 12, borderRadius: 20, padding: 12 },
-  boardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' },
+  boardTop: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', width: '100%' },
+  boardIdentity: { flex: 1, minWidth: 0, paddingRight: 4 },
   boardTitle: { color: 'white', fontWeight: '900', fontSize: 22, marginTop: 2 },
   categoryBadge: {
     minWidth: 64,
+    maxWidth: 88,
+    flexShrink: 0,
     minHeight: 48,
     borderRadius: 16,
     borderWidth: 1,
@@ -1413,9 +1416,12 @@ const s = StyleSheet.create({
   decisionStrip: { marginTop: 10, borderRadius: 16, paddingVertical: 9, paddingHorizontal: 10 },
   decisionTitle: { color: 'white', fontWeight: '900', fontSize: 15 },
   decisionText: { color: 'rgba(255,255,255,0.78)', fontWeight: '800', lineHeight: 18, marginTop: 4 },
-  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, width: '100%' },
   metricTile: {
-    width: '47.8%',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: '46%',
+    minWidth: 136,
     minHeight: 64,
     borderRadius: 16,
     borderWidth: 1,
