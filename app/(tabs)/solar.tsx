@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -28,7 +28,9 @@ import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { fetchLatestEarthDisk, type EarthDiskImage } from '../lib/spaceweather/earthDisk';
 import { useMarsInsightWeather, useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
+import { maybeCreateSolarEventCapture } from '../lib/spaceweather/solarCapture';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 
@@ -281,16 +283,48 @@ export default function SolarScreen() {
   const [solarImageState, setSolarImageState] = useState<Record<string, 'idle' | 'loading' | 'loaded' | 'error'>>(
     {}
   );
+  const [earthDisk, setEarthDisk] = useState<EarthDiskImage | null>(null);
+  const [earthDiskLoading, setEarthDiskLoading] = useState(true);
+  const [earthDiskError, setEarthDiskError] = useState<string | null>(null);
+  const [earthDiskImageState, setEarthDiskImageState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const solarCaptureRunKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!astro) return;
     writeSkyScoreWidgetCache(astro).catch(() => {});
   }, [astro]);
 
+  const solarCaptureEventSignature = useMemo(
+    () => events.map((event) => event.id).join('|'),
+    [events]
+  );
+
+  useEffect(() => {
+    if (!data || eventsLoading) return;
+    const key = `${data.updatedAt ?? 'space'}|${data.noaaScalesUpdatedAt ?? 'scale'}|${solarCaptureEventSignature}`;
+    if (solarCaptureRunKeyRef.current === key) return;
+    solarCaptureRunKeyRef.current = key;
+    maybeCreateSolarEventCapture({ summary: data, events }).catch(() => {});
+  }, [data, events, eventsLoading, solarCaptureEventSignature]);
+
   const openExplain = (p: ExplainPayload) => {
     setExplainPayload(p);
     setExplainOpen(true);
   };
+
+  const refreshEarthDisk = useCallback(async () => {
+    setEarthDiskLoading(true);
+    setEarthDiskError(null);
+    setEarthDiskImageState('loading');
+    try {
+      const next = await fetchLatestEarthDisk();
+      setEarthDisk(next);
+    } catch (err: any) {
+      setEarthDiskError(err?.message ? String(err.message) : 'Earth disk unavailable right now.');
+    } finally {
+      setEarthDiskLoading(false);
+    }
+  }, []);
 
   const onRefreshAll = async () => {
     try {
@@ -298,13 +332,18 @@ export default function SolarScreen() {
         Promise.resolve(refresh()),
         Promise.resolve(refreshAstro()),
         Promise.resolve(refreshMars()),
+        Promise.resolve(refreshEarthDisk()),
       ]);
     } catch {
       // no-op
     }
   };
 
-  const isRefreshing = refreshing || astroRefreshing || marsRefreshing;
+  useEffect(() => {
+    refreshEarthDisk();
+  }, [refreshEarthDisk]);
+
+  const isRefreshing = refreshing || astroRefreshing || marsRefreshing || earthDiskLoading;
   const chartHours = useMemo(() => {
     const hours = astro?.hours ?? [];
     if (!hours.length) return hours;
@@ -1098,6 +1137,73 @@ export default function SolarScreen() {
             <Text style={styles.cardBody}>{activeSolarView.description}</Text>
           </View>
 
+          <View style={themedCard}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardTitle}>Earth disk</Text>
+              <LearnRow
+                onPress={() =>
+                  openExplain({
+                    title: 'Earth disk view',
+                    summary:
+                      'This is the latest available natural-color full-disk Earth view from the DSCOVR spacecraft at the Sun-Earth L1 point.',
+                    whyItMatters:
+                      'It gives the Space page a planet-scale context view: cloud systems, daylit hemisphere, and Earth as seen from near the solar wind monitoring point.',
+                    howComputed:
+                      'OMNIwx requests the latest NASA EPIC metadata and builds the matching archive image URL for the newest natural-color PNG.',
+                    confidence: 'high',
+                    learnTopicId: 'earth-disk',
+                  })
+                }
+              />
+            </View>
+
+            <View style={styles.earthDiskFrame}>
+              {earthDisk?.imageUrl ? (
+                <Image
+                  source={{ uri: earthDisk.imageUrl }}
+                  style={styles.earthDiskImage}
+                  resizeMode="contain"
+                  onLoadStart={() => setEarthDiskImageState('loading')}
+                  onLoad={() => setEarthDiskImageState('loaded')}
+                  onError={() => setEarthDiskImageState('error')}
+                />
+              ) : null}
+
+              {earthDiskLoading || earthDiskError || earthDiskImageState === 'error' || earthDiskImageState !== 'loaded' ? (
+                <View style={styles.solarImageOverlay}>
+                  {earthDiskLoading ? <ActivityIndicator color="#E0F2FE" /> : null}
+                  <Text style={styles.solarImageOverlayText}>
+                    {earthDiskError || earthDiskImageState === 'error'
+                      ? 'Earth disk unavailable right now'
+                      : 'Loading latest Earth disk...'}
+                  </Text>
+                  <Text style={styles.solarImageOverlaySubtext}>
+                    NASA EPIC imagery is latest available and can lag real time
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.solarMetaRow}>
+              <View style={styles.solarSourcePill}>
+                <Text style={styles.solarSourcePillText}>{earthDisk?.source ?? 'NASA EPIC / DSCOVR'}</Text>
+              </View>
+              <Text style={styles.smallText}>
+                {earthDisk?.date ? fmtUpdated(earthDisk.date) : 'Latest available'}
+              </Text>
+            </View>
+
+            <Text style={styles.cardBody}>
+              {earthDisk?.caption ??
+                'Natural-color full-disk Earth imagery from DSCOVR EPIC, shown as a latest available context view.'}
+            </Text>
+            {earthDisk?.centroid ? (
+              <Text style={styles.smallText}>
+                Disk center near {earthDisk.centroid.lat.toFixed(1)}°, {earthDisk.centroid.lon.toFixed(1)}°
+              </Text>
+            ) : null}
+          </View>
+
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
             <Text style={styles.sectionSubtitle}>
@@ -1341,6 +1447,22 @@ const styles = StyleSheet.create({
   solarImage: {
     width: '100%',
     height: '100%',
+  },
+
+  earthDiskFrame: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.12)',
+  },
+
+  earthDiskImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#020617',
   },
 
   solarImageOverlay: {

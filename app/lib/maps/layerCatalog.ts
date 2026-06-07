@@ -179,8 +179,10 @@ export const LAYER_CATALOG = [
     zIndex: 63,
     legendKey: 'satelliteInfrared',
     source: {
-      name: 'GOES-East / GOES-West',
-      details: 'Combined infrared imagery using ABI Band 13 from both East and West sectors for day and night cloud-top structure.',
+      name: 'NOAA NESDIS',
+      details:
+        'Time-enabled ABI Band 13 infrared archive for day and night cloud-top structure. Frames are selected from the 24-hour rolling raster catalog for smoother loops and exports.',
+      url: 'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer',
     },
     supportsLegend: true,
     supportsOpacity: true,

@@ -9,6 +9,7 @@ import { useSettings } from './context/SettingsContext';
 import { formatCompactLocation } from './lib/locations/formats';
 import { NOTIFICATION_CATEGORIES } from './lib/notifications/preferences';
 import { useNotificationPreferences } from './lib/notifications/useNotificationPreferences';
+import { loadSolarCaptureEnabled, saveSolarCaptureEnabled } from './lib/spaceweather/solarCapture';
 import { APP_COLOR_MODE_OPTIONS, appChrome } from './lib/theme/appAppearance';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
@@ -54,6 +55,9 @@ export default function ProfileScreen() {
   const notificationSettings = useNotificationPreferences();
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [loading, setLoading] = useState(true);
+  const [solarCaptureEnabled, setSolarCaptureEnabled] = useState(false);
+  const [solarCaptureLoading, setSolarCaptureLoading] = useState(true);
+  const [solarCaptureBusy, setSolarCaptureBusy] = useState(false);
 
   const leaveSettings = () => {
     if (router.canGoBack()) {
@@ -89,6 +93,35 @@ export default function ProfileScreen() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const enabled = await loadSolarCaptureEnabled();
+        if (mounted) setSolarCaptureEnabled(enabled);
+      } finally {
+        if (mounted) setSolarCaptureLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const toggleSolarCaptureVideos = async () => {
+    const next = !solarCaptureEnabled;
+    setSolarCaptureBusy(true);
+    try {
+      if (next && !notificationPrefs.enabled) {
+        await notificationSettings.requestAndEnable();
+      }
+      await saveSolarCaptureEnabled(next);
+      setSolarCaptureEnabled(next);
+    } finally {
+      setSolarCaptureBusy(false);
+    }
+  };
 
   const activeLabel =
     active?.source === 'gps' ? 'Current Location (GPS)' : active ? active.name : 'None';
@@ -292,6 +325,30 @@ export default function ProfileScreen() {
             <View style={[styles.toggleTrack, notificationPrefs.enabled ? styles.toggleTrackOn : null]}>
               <View style={[styles.toggleKnob, notificationPrefs.enabled ? styles.toggleKnobOn : null]} />
             </View>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.toggleRow,
+              { backgroundColor: chrome.pill, borderColor: solarCaptureEnabled ? chrome.borderStrong : chrome.border },
+            ]}
+            onPress={toggleSolarCaptureVideos}
+            disabled={notificationSettings.loading || notificationSettings.busy || solarCaptureLoading || solarCaptureBusy}
+          >
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.toggleTitle}>Solar event capture videos</Text>
+              <Text style={styles.toggleHelp}>
+                Off by default. When enabled, OMNIwx saves a short solar MP4 after major flares, fast CMEs, particle events,
+                or geomagnetic storm spikes are detected while Space refreshes.
+              </Text>
+            </View>
+            {solarCaptureBusy || solarCaptureLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <View style={[styles.toggleTrack, solarCaptureEnabled ? styles.toggleTrackOn : null]}>
+                <View style={[styles.toggleKnob, solarCaptureEnabled ? styles.toggleKnobOn : null]} />
+              </View>
+            )}
           </Pressable>
 
           <View style={styles.miniActionRow}>

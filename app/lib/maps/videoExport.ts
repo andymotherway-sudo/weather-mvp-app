@@ -3,6 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 export type AnimationVideoFrame = {
   label: string;
   urls: string[];
+  underlayUrls?: string[];
   tileTemplate?: string | null;
   basemapTemplate?: string | null;
   region?: {
@@ -57,13 +58,14 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     .map((frame) => ({
       label: frame.label,
       urls: frame.urls.filter(Boolean),
+      underlayUrls: frame.underlayUrls?.filter(Boolean) ?? [],
       tileTemplate: frame.tileTemplate ?? null,
       basemapTemplate: frame.basemapTemplate ?? null,
       region: frame.region ?? null,
       zoom: frame.zoom ?? null,
       opacity: frame.opacity ?? null,
     }))
-    .filter((frame) => frame.urls.length > 0 || !!frame.tileTemplate);
+    .filter((frame) => frame.urls.length > 0 || frame.underlayUrls.length > 0 || !!frame.tileTemplate);
 
   // Native export expects every source frame to have at least one prepared
   // image layer or renderable tile template. Rejecting here gives the UI a

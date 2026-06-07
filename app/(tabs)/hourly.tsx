@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -924,7 +923,6 @@ function HourlyWithCoords({
 export default function HourlyTab() {
   const { appColorMode, chrome } = useAppChrome();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
   const setWxLab =
@@ -1020,12 +1018,9 @@ export default function HourlyTab() {
                   <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
 
                   <View style={styles.headerCompactLocation}>
-                    <View style={styles.hourlyLocationRow}>
-                      <Ionicons name="location-outline" size={18} color="rgba(255,255,255,0.92)" />
-                      <Text style={styles.locationPrimary} numberOfLines={1}>
-                        {locationLabel}
-                      </Text>
-                    </View>
+                    <Text style={styles.locationPrimary} numberOfLines={1} ellipsizeMode="tail">
+                      {locationLabel}
+                    </Text>
                   </View>
                 </View>
 
@@ -1047,9 +1042,6 @@ export default function HourlyTab() {
                     <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
                   </Pressable>
                 </View>
-                  <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={styles.settingsIconBtn}>
-                    <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.92)" />
-                  </Pressable>
                 </View>
               </View>
             </View>
@@ -1167,12 +1159,6 @@ const styles = StyleSheet.create({
     borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
 
-  hourlyLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-
   hourlyHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1187,17 +1173,6 @@ const styles = StyleSheet.create({
   },
 
   locationPrimary: { fontSize: 15, fontWeight: '900', color: 'white' },
-
-  settingsIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: GLASS_SURFACE_INSET,
-    borderWidth: 1,
-    borderColor: GLASS_SURFACE_BORDER_SOFT,
-  },
 
   headerModeWrap: {
     flexDirection: 'row',

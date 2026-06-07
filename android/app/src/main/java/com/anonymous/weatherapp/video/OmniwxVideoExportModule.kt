@@ -82,7 +82,10 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
         val prepared = frames.map { frame ->
-          val tileScene = renderTileScene(width, height, frame)
+          val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it) }
+          val tileScene =
+            if (underlayBitmaps.size == frame.underlayUrls.size) renderTileScene(width, height, frame, underlayBitmaps) else null
+          underlayBitmaps.forEach { runCatching { it.recycle() } }
           val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it) }
           val bitmaps = listOfNotNull(tileScene) + urlBitmaps
           val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
@@ -326,7 +329,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return out
   }
 
-  private fun renderTileScene(width: Int, height: Int, frame: ExportFrame): Bitmap? {
+  private fun renderTileScene(width: Int, height: Int, frame: ExportFrame, underlays: List<Bitmap> = emptyList()): Bitmap? {
     val template = frame.tileTemplate ?: return null
     val region = frame.region ?: return null
     val z = (frame.zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 12)
@@ -385,6 +388,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     }
 
     drawTemplateLayer(frame.basemapTemplate, 245)
+    underlays.forEach { drawBitmapFit(canvas, it, width, height, paint.apply { alpha = 255 }) }
     drawTemplateLayer(template, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
     paint.alpha = 255
     return out
@@ -601,12 +605,20 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           urlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
         }
       }
+      val underlayUrlsArray = item.getArray("underlayUrls")
+      val underlayUrls = mutableListOf<String>()
+      if (underlayUrlsArray != null) {
+        for (j in 0 until underlayUrlsArray.size()) {
+          underlayUrlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { underlayUrls.add(it) }
+        }
+      }
       val tileTemplate = item.optNullableString("tileTemplate")
-      if (urls.isNotEmpty() || !tileTemplate.isNullOrBlank()) {
+      if (urls.isNotEmpty() || underlayUrls.isNotEmpty() || !tileTemplate.isNullOrBlank()) {
         list.add(
           ExportFrame(
             label = item.optString("label", "Frame ${i + 1}"),
             urls = urls,
+            underlayUrls = underlayUrls,
             tileTemplate = tileTemplate,
             basemapTemplate = item.optNullableString("basemapTemplate"),
             region = item.getMap("region")?.toExportRegion(),
@@ -630,6 +642,7 @@ private data class ExportRegion(
 private data class ExportFrame(
   val label: String,
   val urls: List<String>,
+  val underlayUrls: List<String> = emptyList(),
   val tileTemplate: String? = null,
   val basemapTemplate: String? = null,
   val region: ExportRegion? = null,

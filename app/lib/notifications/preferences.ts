@@ -9,6 +9,7 @@ export type NotificationCategoryId =
   | 'kpSpikes'
   | 'aviationCategory'
   | 'skyScore'
+  | 'solarCaptures'
   | 'extremes';
 
 export type NotificationPermissionState = 'unknown' | 'granted' | 'denied' | 'undetermined';
@@ -54,6 +55,11 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     id: 'skyScore',
     title: 'Sky score',
     helper: 'Meaningful night-sky score and best-window changes for saved locations.',
+  },
+  {
+    id: 'solarCaptures',
+    title: 'Solar captures',
+    helper: 'Local alert when OMNIwx saves an opt-in solar event capture video.',
   },
   {
     id: 'extremes',

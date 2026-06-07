@@ -255,6 +255,25 @@ function clampIndex(i: number, n: number) {
   return Math.max(0, Math.min(n - 1, Math.floor(i)));
 }
 
+function nearestFrameIndexByIso(frames: Array<{ iso?: string | null }>, iso?: string | null) {
+  if (!iso || !frames.length) return -1;
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return -1;
+
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  frames.forEach((frame, index) => {
+    const time = frame?.iso ? new Date(frame.iso).getTime() : Number.NaN;
+    if (!Number.isFinite(time)) return;
+    const distance = Math.abs(time - target);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
 function clampNumber(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -289,6 +308,7 @@ type SatelliteFrame = {
   index: number;
   iso: string;
   sourceName?: string;
+  rasterId?: number;
 };
 
 const SATELLITE_LOOP_MINUTES_BACK = 120;
@@ -302,14 +322,24 @@ const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
+const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
+  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 
-function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512) {
+function arcGisLockedRasterParam(rasterId?: number | null) {
+  if (rasterId == null || !Number.isFinite(rasterId)) return '';
+  return `&mosaicRule=${encodeURIComponent(
+    JSON.stringify({ mosaicMethod: 'esriMosaicLockRaster', lockRasterIds: [Math.round(rasterId)] }),
+  )}`;
+}
+
+function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512, rasterId?: number | null) {
   const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
+  const mosaicParam = arcGisLockedRasterParam(rasterId);
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}&f=image`;
+  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
 }
 
 function lonLatToMercatorMeters(lon: number, lat: number) {
@@ -439,14 +469,16 @@ function buildArcGisImageExportUrl(args: {
   baseUrl: string;
   region: Region;
   iso?: string | null;
+  rasterId?: number | null;
   width: number;
   height: number;
 }) {
   const timeMs = args.iso ? new Date(args.iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
+  const mosaicParam = arcGisLockedRasterParam(args.rasterId);
   return `${args.baseUrl}?bbox=${encodeURIComponent(mercatorBbox(args.region))}&bboxSR=3857&imageSR=3857&size=${Math.round(
     args.width,
-  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}&f=image`;
+  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
 }
 
 function buildGoesWmsImageUrl(args: {
@@ -514,16 +546,16 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
   });
 }
 
-async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {
-  const query = new URL(`${NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL.replace(/\/exportImage$/, '')}/query`);
+async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
+  const query = new URL(`${exportUrl.replace(/\/exportImage$/, '')}/query`);
   query.searchParams.set('f', 'json');
-  query.searchParams.set('where', '1=1');
-  query.searchParams.set('outFields', 'name,start_time,end_time');
+  query.searchParams.set('where', 'end_time is not null');
+  query.searchParams.set('outFields', 'objectid,name,start_time,end_time');
   query.searchParams.set('returnGeometry', 'false');
   query.searchParams.set('resultRecordCount', '240');
 
   const res = await fetchWithTimeout(query.toString(), 14000);
-  if (!res.ok) throw new Error(`GeoColor catalog returned ${res.status}.`);
+  if (!res.ok) throw new Error(`NESDIS catalog returned ${res.status}.`);
   const json = await res.json();
   const features = Array.isArray(json?.features) ? json.features : [];
   const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
@@ -532,6 +564,7 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
   const frames = features
     .map((feature: any) => {
       const attrs = feature?.attributes ?? {};
+      const objectId = Number(attrs.objectid ?? attrs.OBJECTID ?? attrs.ObjectID);
       const start = Number(attrs.start_time ?? attrs.Start_Time);
       const end = Number(attrs.end_time ?? attrs.End_Time);
       const name = String(attrs.name ?? attrs.Name ?? '');
@@ -546,6 +579,7 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
         index: 0,
         iso: new Date(midpoint).toISOString(),
         sourceName: name || undefined,
+        rasterId: Number.isFinite(objectId) ? objectId : undefined,
       } satisfies SatelliteFrame;
     })
     .filter(Boolean) as SatelliteFrame[];
@@ -553,6 +587,14 @@ async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<Satellite
   return frames
     .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
     .map((frame: SatelliteFrame, index: number) => ({ ...frame, index }));
+}
+
+async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {
+  return fetchNesdisImageServerFrames(NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL, minutesBack);
+}
+
+async function fetchNesdisAbi13Frames(minutesBack: number): Promise<SatelliteFrame[]> {
+  return fetchNesdisImageServerFrames(NESDIS_ABI13_ARCHIVE_EXPORT_URL, minutesBack);
 }
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
@@ -1467,6 +1509,8 @@ export default function MapsScreen() {
   );
   const [trueColorFrames, setTrueColorFrames] = useState<SatelliteFrame[]>([]);
   const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
+  const [infraredFrames, setInfraredFrames] = useState<SatelliteFrame[]>([]);
+  const [infraredFrameStatus, setInfraredFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
   const [satelliteFrameIndex, setSatelliteFrameIndex] = useState(() =>
     Math.max(0, buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }).length - 1),
   );
@@ -1479,9 +1523,14 @@ export default function MapsScreen() {
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
   const satellitePlaybackFrames =
-    goesTrueColorEnabled && trueColorFrames.length > 1 ? trueColorFrames : satelliteFrames;
+    goesTrueColorEnabled && trueColorFrames.length > 1
+      ? trueColorFrames
+      : goesEastIrEnabled && infraredFrames.length > 1
+        ? infraredFrames
+        : satelliteFrames;
   const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
   const trueColorUsingCatalog = goesTrueColorEnabled && trueColorFrames.length > 1;
+  const infraredUsingCatalog = goesEastIrEnabled && infraredFrames.length > 1;
 
   useEffect(() => {
     if (!goesTrueColorEnabled) {
@@ -1514,6 +1563,38 @@ export default function MapsScreen() {
       cancelled = true;
     };
   }, [goesTrueColorEnabled, satelliteLoopMinutes]);
+
+  useEffect(() => {
+    if (!goesEastIrEnabled) {
+      setInfraredFrames([]);
+      setInfraredFrameStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setInfraredFrameStatus('loading');
+    fetchNesdisAbi13Frames(satelliteLoopMinutes)
+      .then((frames) => {
+        if (cancelled) return;
+        if (frames.length > 1) {
+          setInfraredFrames(frames);
+          setSatelliteFrameIndex(frames.length - 1);
+          setInfraredFrameStatus('ready');
+        } else {
+          setInfraredFrames([]);
+          setInfraredFrameStatus('fallback');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInfraredFrames([]);
+        setInfraredFrameStatus('fallback');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [goesEastIrEnabled, satelliteLoopMinutes]);
 
   useEffect(() => {
     if (!animatedSatelliteEnabled) {
@@ -1559,14 +1640,14 @@ export default function MapsScreen() {
   }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
 
   useEffect(() => {
-    if (!animatedSatelliteEnabled || !satellitePlaying || satellitePlaybackFrameCount < 2) return;
+    if (radarEnabled || !animatedSatelliteEnabled || !satellitePlaying || satellitePlaybackFrameCount < 2) return;
 
     const timer = setInterval(() => {
       setSatelliteFrameIndex((current) => (clampIndex(current, satellitePlaybackFrameCount) + 1) % satellitePlaybackFrameCount);
     }, satellitePlayIntervalMs);
 
     return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, satellitePlaybackFrameCount, satellitePlaying, satellitePlayIntervalMs]);
+  }, [animatedSatelliteEnabled, radarEnabled, satellitePlaybackFrameCount, satellitePlaying, satellitePlayIntervalMs]);
 
   useEffect(() => {
     if (!animatedSatelliteEnabled || satellitePlaybackFrameCount < 2) {
@@ -1798,6 +1879,20 @@ export default function MapsScreen() {
           ? 'source unavailable'
           : 'loading station scans';
 
+  useEffect(() => {
+    if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
+    const nearestIndex = nearestFrameIndexByIso(satellitePlaybackFrames, activeFrameIso);
+    if (nearestIndex < 0) return;
+    setSatelliteFrameIndex((current) => (current === nearestIndex ? current : nearestIndex));
+    setSatellitePlaying(state.radarTime.playing);
+  }, [
+    activeFrameIso,
+    animatedSatelliteEnabled,
+    radarEnabled,
+    satellitePlaybackFrames,
+    state.radarTime.playing,
+  ]);
+
   const radarTileMaxZ = useMemo(() => {
     return radarCtl.radarTileMaxZ;
   }, [radarCtl.radarTileMaxZ]);
@@ -1941,11 +2036,13 @@ export default function MapsScreen() {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
       const currentIso = satelliteCurrentFrame?.iso ?? satelliteToFrame?.iso ?? null;
       const warmIso = satelliteWarmFrame?.iso ?? null;
+      const currentRasterId = satelliteCurrentFrame?.rasterId ?? null;
+      const warmRasterId = satelliteWarmFrame?.rasterId ?? null;
 
       if (warmIso && warmIso !== currentIso) {
         list.push({
           id: `${args.id}-warm`,
-          tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, warmIso, satelliteQuality.tileSize)],
+          tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, warmIso, satelliteQuality.tileSize, warmRasterId)],
           opacity: Math.min(opacity, SATELLITE_WARM_OPACITY),
           zIndex: args.zIndex - 0.01,
           enabled: true,
@@ -1958,7 +2055,7 @@ export default function MapsScreen() {
 
       list.push({
         id: args.id,
-        tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, currentIso, satelliteQuality.tileSize)],
+        tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, currentIso, satelliteQuality.tileSize, currentRasterId)],
         opacity,
         zIndex: args.zIndex,
         enabled: true,
@@ -2056,17 +2153,9 @@ export default function MapsScreen() {
     }
 
     if (goesEastIrEnabled) {
-      addAnimatedSatelliteWms({
-        id: 'goes-east-ir',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
-        layers: 'conus_ch13',
-        opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
-        zIndex: 63,
-      });
-      addAnimatedSatelliteWms({
-        id: 'goes-west-ir',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
-        layers: 'conus_ch13',
+      addAnimatedArcGisImageServer({
+        id: 'goes-abi13-ir',
+        url: NESDIS_ABI13_ARCHIVE_EXPORT_URL,
         opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
         zIndex: 63,
       });
@@ -2124,6 +2213,7 @@ export default function MapsScreen() {
     if (!animationCompositorKind || animationCompositorKind === 'radar') return overlays;
     const satellitePrefixes = [
       'goes-truecolor',
+      'goes-abi13-ir',
       'goes-east-ir',
       'goes-west-ir',
       'goes-east-wv',
@@ -2642,6 +2732,7 @@ export default function MapsScreen() {
         .map((frame: any, index: number) => ({
           id: `${index}-${frame.iso}`,
           iso: frame.iso,
+          rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
         })),
     [animationFrameSource],
   );
@@ -2688,7 +2779,7 @@ export default function MapsScreen() {
   const buildAnimationUrl = useCallback(
     (
       source: 'radar' | 'geocolor' | 'goes-east-ir' | 'goes-west-ir' | 'goes-east-wv' | 'goes-west-wv' | 'goes-east-visible' | 'goes-west-visible',
-      frame: { iso: string },
+      frame: { iso: string; rasterId?: number },
       width: number,
       height: number,
     ) => {
@@ -2707,6 +2798,17 @@ export default function MapsScreen() {
           baseUrl: NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL,
           region: animationExportRegion,
           iso: frame.iso,
+          rasterId: frame.rasterId,
+          width,
+          height,
+        });
+      }
+      if (source === 'goes-east-ir') {
+        return buildArcGisImageExportUrl({
+          baseUrl: NESDIS_ABI13_ARCHIVE_EXPORT_URL,
+          region: animationExportRegion,
+          iso: frame.iso,
+          rasterId: frame.rasterId,
           width,
           height,
         });
@@ -2732,13 +2834,18 @@ export default function MapsScreen() {
   );
 
   const animationProductLabel = useMemo(() => {
-    if (activeAnimationKind === 'radar') return radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
+    if (activeAnimationKind === 'radar') {
+      const radarLabel = radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
+      if (goesTrueColorEnabled) return `${radarLabel} + true color`;
+      if (goesEastIrEnabled) return `${radarLabel} + infrared`;
+      return radarLabel;
+    }
     if (activeAnimationKind === 'truecolor') return 'True color';
     if (activeAnimationKind === 'ir') return 'Infrared';
     if (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west') return 'Water vapor';
     if (activeAnimationKind === 'clouds') return 'Visible cloud loop';
     return 'Weather loop';
-  }, [activeAnimationKind, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
+  }, [activeAnimationKind, goesEastIrEnabled, goesTrueColorEnabled, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
     if (!activeAnimationKind || animationCompositorFrames.length < 2) return [];
@@ -2748,9 +2855,18 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'radar') {
         const idx = animationCompositorFrames.findIndex((candidate) => candidate.id === frame.id);
         const tileTemplate = idx >= 0 ? uiTemplates[idx] : null;
+        const satelliteIndex = nearestFrameIndexByIso(satellitePlaybackFrames, frame.iso);
+        const satelliteFrame = satelliteIndex >= 0 ? satellitePlaybackFrames[satelliteIndex] : null;
+        const underlayUrls =
+          satelliteFrame && goesTrueColorEnabled
+            ? [buildAnimationUrl('geocolor', satelliteFrame, width, height)]
+            : satelliteFrame && goesEastIrEnabled
+              ? [buildAnimationUrl('goes-east-ir', satelliteFrame, width, height)]
+              : [];
         return {
           label,
           urls: tileTemplate ? [] : [buildAnimationUrl('radar', frame, width, height)],
+          underlayUrls,
           tileTemplate,
           basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
           region: animationExportRegion,
@@ -2764,10 +2880,7 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'ir') {
         return {
           label,
-          urls: [
-            buildAnimationUrl('goes-east-ir', frame, width, height),
-            buildAnimationUrl('goes-west-ir', frame, width, height),
-          ],
+          urls: [buildAnimationUrl('goes-east-ir', frame, width, height)],
         };
       }
       if (activeAnimationKind === 'wv-west') {
@@ -2792,6 +2905,9 @@ export default function MapsScreen() {
     buildAnimationUrl,
     mapZoom,
     radarCtl.radarOpacity,
+    goesEastIrEnabled,
+    goesTrueColorEnabled,
+    satellitePlaybackFrames,
     uiTemplates,
   ]);
 
@@ -2919,29 +3035,17 @@ export default function MapsScreen() {
                 />
               ) : null}
               {animationCompositorKind === 'ir' ? (
-                <>
-                  <AnimationCompositor
-                    id="record-goes-east-ir"
-                    frames={animationCompositorFrames}
-                    coordinates={animationCompositorCoordinates}
-                    opacity={animationCompositorOpacity}
-                    playing={animationRecordMode}
-                    intervalMs={animationCompositorInterval}
-                    blendMs={animationCompositorBlend}
-                    buildUrl={(frame, width, height) => buildAnimationUrl('goes-east-ir', frame, width, height)}
-                    onBufferStatus={setAnimationBufferStatus}
-                  />
-                  <AnimationCompositor
-                    id="record-goes-west-ir"
-                    frames={animationCompositorFrames}
-                    coordinates={animationCompositorCoordinates}
-                    opacity={animationCompositorOpacity}
-                    playing={animationRecordMode}
-                    intervalMs={animationCompositorInterval}
-                    blendMs={animationCompositorBlend}
-                    buildUrl={(frame, width, height) => buildAnimationUrl('goes-west-ir', frame, width, height)}
-                  />
-                </>
+                <AnimationCompositor
+                  id="record-goes-abi13-ir"
+                  frames={animationCompositorFrames}
+                  coordinates={animationCompositorCoordinates}
+                  opacity={animationCompositorOpacity}
+                  playing={animationRecordMode}
+                  intervalMs={animationCompositorInterval}
+                  blendMs={animationCompositorBlend}
+                  buildUrl={(frame, width, height) => buildAnimationUrl('goes-east-ir', frame, width, height)}
+                  onBufferStatus={setAnimationBufferStatus}
+                />
               ) : null}
               {animationCompositorKind === 'wv-east' || animationCompositorKind === 'wv-west' ? (
                 <AnimationCompositor
@@ -4459,6 +4563,12 @@ export default function MapsScreen() {
                             : trueColorFrameStatus === 'loading'
                               ? ' / loading'
                               : ' / fallback'
+                          : goesEastIrEnabled
+                            ? infraredUsingCatalog
+                              ? ' / catalog'
+                              : infraredFrameStatus === 'loading'
+                                ? ' / loading'
+                                : ' / fallback'
                           : ''}
                       </Text>
                     </View>
