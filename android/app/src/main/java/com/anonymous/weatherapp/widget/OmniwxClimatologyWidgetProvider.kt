@@ -11,6 +11,9 @@ import java.util.Locale
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
+// Medium climatology widget. It summarizes today's normal/record context from
+// the same cached Almanac data the app uses, then renders a small native chart
+// bitmap because RemoteViews cannot host the React Native Almanac chart.
 class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -86,6 +89,8 @@ class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
   }
 
   private fun footerLabel(climo: WidgetClimatology): String {
+    // The footer tells you whether today's daily-record cache was available or
+    // whether the widget is only showing normal climatology.
     val normal = "Normals ${tempLabel(climo.normalHighF)}/${tempLabel(climo.normalLowF)}"
     val records = if (climo.recordHighF == null && climo.recordLowF == null && climo.recordPrecipIn == null) {
       "open Almanac for records"

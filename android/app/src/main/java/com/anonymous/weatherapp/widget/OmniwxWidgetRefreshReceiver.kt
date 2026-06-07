@@ -6,6 +6,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 
+// Central refresh fan-out for all home-screen widgets. Individual refresh
+// buttons and the 15-minute scheduler both land here, then each installed
+// provider receives a normal ACTION_APPWIDGET_UPDATE broadcast.
 class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED && intent.action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS) return

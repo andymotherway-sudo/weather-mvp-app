@@ -7,6 +7,8 @@ import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import kotlin.concurrent.thread
 
+// Legacy/general aviation widget. Newer pilot widgets split airport boards and
+// route briefings, but this remains as a compact nearest-field awareness card.
 class OmniwxAviationWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -32,7 +34,7 @@ class OmniwxAviationWidgetProvider : AppWidgetProvider() {
 
   private fun buildViews(context: Context, briefing: WidgetAviationBriefing?): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_aviation).apply {
-        setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
+      setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
       if (briefing == null) {
         setTextViewText(R.id.widget_title, "Aviation")
         setTextViewText(R.id.widget_primary, "--")

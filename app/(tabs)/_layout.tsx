@@ -37,6 +37,9 @@ const SWIPE_TABS = [
   { name: 'extremes', href: '/extremes' },
 ] as const;
 
+// Tab swipes are intentionally gated. Full-screen maps need horizontal touch
+// for panning, so map-heavy tabs only accept swipes from the tab-bar/home-row
+// area while normal forecast tabs also accept narrow edge swipes.
 const EDGE_SWIPE_WIDTH = 28;
 const HOME_ROW_EXTRA_HEIGHT = 18;
 const SWIPE_ACTIVATE_DISTANCE = 18;
@@ -107,6 +110,9 @@ export default function TabsLayout() {
     [pathname, router],
   );
 
+  // The home-row hit area is a little taller than the visible tab bar. That
+  // gives the "flip book" gesture a forgiving start zone without stealing
+  // normal scroll gestures from the forecast cards.
   const tabBarHitTop = useMemo(() => {
     const baseHeight = Platform.select({ ios: 58, android: 54, default: 54 }) as number;
     const padTop = 6;
@@ -143,6 +149,8 @@ export default function TabsLayout() {
           const absX = Math.abs(dx);
           const absY = Math.abs(dy);
 
+          // Vertical scroll wins early. This is what keeps a daily forecast
+          // fling from accidentally changing tabs.
           if (absY > SWIPE_VERTICAL_SLOP && absY > absX) {
             manager.fail();
             return;

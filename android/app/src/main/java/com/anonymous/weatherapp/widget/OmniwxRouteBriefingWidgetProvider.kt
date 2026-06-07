@@ -7,6 +7,8 @@ import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import kotlin.concurrent.thread
 
+// Route briefing widget. It intentionally shows the last analyzed/saved route
+// instead of running a fresh flight briefing from the home screen.
 class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -54,6 +56,8 @@ class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
     }
   }
 
+  // Keep the six badges compact; a widget should answer "anything I should
+  // care about?" without trying to replace the full Aviation route screen.
   private fun RemoteViews.setCounts(turb: String, icing: String, cat: String, sigmet: String, cwa: String, pirep: String) {
     setTextViewText(R.id.widget_turbulence, "TURB\n$turb")
     setTextViewText(R.id.widget_icing, "ICE\n$icing")

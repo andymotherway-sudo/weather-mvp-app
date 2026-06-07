@@ -7,6 +7,8 @@ import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import kotlin.concurrent.thread
 
+// Pilot-facing airport widget. This is separate from the generic aviation
+// widget so a saved/home airport can get a dense METAR-style board.
 class OmniwxAirportBoardWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -15,6 +17,8 @@ class OmniwxAirportBoardWidgetProvider : AppWidgetProvider() {
     }
 
     thread(name = "omniwx-airport-board-widget") {
+      // The data helper decides whether to use a saved field, selected airport,
+      // or nearest sensible station; the provider only maps that board to XML.
       val board = runCatching { OmniwxWidgetData.fetchAirportBoard(context) }.getOrNull()
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, board, loading = false))

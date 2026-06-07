@@ -64,8 +64,26 @@ private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
 private const val OMNIWX_RADAR_WORKER_BASE = "https://omniwx-api.omniwx.workers.dev"
 
+/*
+ * Android Auto entry point for OMNIwx.
+ *
+ * This is not the phone UI mirrored into the vehicle. Android Auto requires a
+ * separate "car app" built from approved templates. That is why the screens
+ * below are Kotlin classes using PaneTemplate/ListTemplate/MapTemplate instead
+ * of React Native views.
+ *
+ * Mental model:
+ *   Service -> Session -> Screen stack -> Templates
+ *
+ * The car app reads the same stored OMNIwx place/default city that the phone app
+ * writes into AsyncStorage, then fetches a compact weather payload suitable for
+ * dashboard use.
+ */
 class OmniWeatherCarAppService : CarAppService() {
   override fun createHostValidator(): HostValidator {
+    // Development-friendly validator. In a more locked-down production car app,
+    // this can be replaced with a validator that only accepts known Android Auto
+    // hosts signed by Google/OEMs.
     return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
   }
 
@@ -82,11 +100,21 @@ class OmniWeatherCarSession : Session() {
   private lateinit var repository: CarWeatherRepository
 
   override fun onCreateScreen(intent: Intent): Screen {
+    // One repository is shared by every screen in this car session so navigating
+    // between Current, Hourly, Alerts, Radar, etc. does not refetch the same
+    // weather on every template render.
     repository = CarWeatherRepository(carContext)
     return OmniWeatherHomeScreen(carContext, repository)
   }
 }
 
+/*
+ * Small in-memory data cache for Android Auto.
+ *
+ * Android Auto may ask a Screen for its Template repeatedly. The repository
+ * keeps network fetches off the UI thread, deduplicates concurrent refresh
+ * requests, and calls invalidate() on waiting screens when data arrives.
+ */
 private class CarWeatherRepository(private val context: Context) {
   @Volatile var loading: Boolean = false
   @Volatile var loaded: Boolean = false
@@ -116,6 +144,8 @@ private class CarWeatherRepository(private val context: Context) {
 
     thread(name = "omniwx-car-weather") {
       try {
+        // Prefer the app's active/saved place. If that is unavailable, fall back
+        // to Android's last known location when permissions allow it.
         val place = resolveCarPlace(context)
           ?: throw IllegalStateException("No GPS or saved OMNIwx place found.")
         report = fetchCurrentWeather(place)
@@ -148,6 +178,11 @@ private abstract class OmniWeatherBaseScreen(
   carContext: CarContext,
   protected val repository: CarWeatherRepository
 ) : Screen(carContext) {
+  /*
+   * Common screen helpers. Android Auto is unforgiving if a template builder
+   * throws, so every user-facing screen goes through safeTemplate() and has a
+   * predictable loading/error fallback.
+   */
   protected fun ensureLoaded(force: Boolean = false) {
     if (force || (!repository.loaded && !repository.loading)) {
       repository.load(force) { invalidate() }
@@ -179,6 +214,8 @@ private abstract class OmniWeatherBaseScreen(
   }
 
   protected fun loadingOrErrorTemplate(title: String): Template? {
+    // Return null when data is ready. Screens use this as:
+    // loadingOrErrorTemplate(...)?.let { return it }
     val pane = Pane.Builder()
     when {
       repository.loading -> pane.addRow(Row.Builder().setTitle("Loading weather").addText("Connecting to your OMNIwx location.").build())
@@ -211,6 +248,9 @@ private abstract class OmniWeatherBaseScreen(
   }
 
   protected fun safeTemplate(title: String, fallbackHeaderAction: Action = Action.BACK, block: () -> Template): Template {
+    // A defensive wrapper for head units. If a template crashes in the vehicle,
+    // Android Auto may show a generic "unexpected error". This gives the user a
+    // recoverable OMNIwx screen instead.
     return try {
       block()
     } catch (_: Throwable) {
@@ -407,6 +447,9 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
   private val radarSurface = CarRadarSurfaceRenderer(repository)
 
   init {
+    // MapTemplate gives us a drawable surface separate from the list/pane UI.
+    // We register our renderer while this screen is alive and unregister it when
+    // the screen is destroyed so another car screen does not keep drawing radar.
     carContext.getCarService(AppManager::class.java).setSurfaceCallback(radarSurface)
     lifecycle.addObserver(object : DefaultLifecycleObserver {
       override fun onDestroy(owner: LifecycleOwner) {
@@ -422,6 +465,8 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
 
+      // The pane is the template-safe information card shown over/near the map.
+      // The actual radar pixels are drawn by CarRadarSurfaceRenderer below.
       val pane = Pane.Builder()
         .addRow(
           Row.Builder()
@@ -439,6 +484,8 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
         .build()
 
       val mapController = MapController.Builder()
+        // Android Auto puts map controls in a separate action strip from normal
+        // screen actions. Keep this short and driver-safe.
         .setMapActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
         .build()
 
@@ -468,6 +515,14 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
 
 private object EmptyCarSurfaceCallback : SurfaceCallback
 
+/*
+ * Draws the Android Auto radar surface.
+ *
+ * React Native/MapLibre cannot render inside Android Auto's car-app surface, so
+ * this class manually fetches RainViewer tiles and paints them onto a Canvas.
+ * It is intentionally a static snapshot: safer in-car, simpler to reason about,
+ * and less likely to overwhelm lower-powered head units.
+ */
 private class CarRadarSurfaceRenderer(private val repository: CarWeatherRepository) : SurfaceCallback {
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -488,6 +543,9 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   private val tileLock = Any()
 
   override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
+    // Android Auto hands us a SurfaceContainer when the head unit is ready to
+    // display the map area. Draw immediately so the user sees a placeholder,
+    // then fetch radar tiles in the background.
     surface = surfaceContainer
     draw()
     fetchRadarIfNeeded(force = false)
@@ -511,6 +569,8 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   fun release() {
+    // Bitmaps are native memory. Recycle them when the screen goes away so the
+    // car app does not keep stale radar tile memory alive.
     val oldTiles = synchronized(tileLock) {
       val old = radarTiles
       radarTiles = emptyList()
@@ -522,12 +582,16 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   private fun fetchRadarIfNeeded(force: Boolean) {
+    // Avoid overlapping downloads. Car screens can invalidate frequently, and
+    // without this guard a refresh could start several tile mosaics at once.
     if (fetchInFlight || repository.report == null) return
     if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
     fetchInFlight = true
     thread(name = "omniwx-car-radar") {
       try {
         val report = repository.report ?: return@thread
+        // RainViewer gives the latest available mosaic timestamp; individual
+        // tile URLs are then generated through our worker cache.
         val ts = latestRainViewerTimestamp()
         val tiles = fetchRadarTileMosaic(report.latitude, report.longitude, ts)
         val oldTiles = synchronized(tileLock) {
@@ -548,6 +612,8 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   private fun draw() {
+    // Surface drawing must lock/unlock the Canvas. If the head unit tears down
+    // the surface mid-draw, fail silently and wait for the next surface event.
     val target = surface ?: return
     val targetSurface = target.surface ?: return
     val canvas = try {
@@ -564,6 +630,8 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   private fun drawRadarCanvas(canvas: Canvas, width: Int, height: Int) {
+    // Base layer: OMNIwx dark radar board. Tiles are optional; the grid/marker
+    // still makes the screen understandable while radar is loading/unavailable.
     canvas.drawColor(Color.rgb(8, 13, 25))
     drawGrid(canvas, width, height)
 
@@ -589,6 +657,9 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   private fun drawTiles(canvas: Canvas, width: Int, height: Int, report: CarWeatherReport, tiles: List<RadarTileBitmap>) {
+    // Convert the user's lat/lon into Web Mercator world pixels, then position
+    // nearby tiles relative to the screen center. This is a tiny map renderer:
+    // no pan/zoom, just "put the user's location in the middle."
     val zoom = 7
     val tileSize = 512.0
     val centerWorld = latLonToWorldPixels(report.latitude, report.longitude, zoom, tileSize)
@@ -607,6 +678,9 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   private fun drawGrid(canvas: Canvas, width: Int, height: Int) {
+    // The grid/range rings preserve useful context even when there is no nearby
+    // precipitation. They also keep the radar surface from looking like a blank
+    // thumbnail on Android Auto.
     paint.style = Paint.Style.STROKE
     paint.strokeWidth = 2f
     paint.color = Color.argb(70, 96, 165, 250)
@@ -736,6 +810,18 @@ private data class NexradSite(
   val lon: Double,
 )
 
+/*
+ * Location resolution for Android Auto.
+ *
+ * Order of preference:
+ *   1. OMNIwx active place from AsyncStorage.
+ *   2. If active place is GPS, Android's last known location.
+ *   3. OMNIwx default city from AsyncStorage.
+ *   4. Android last known location as a final fallback.
+ *
+ * We avoid live GPS polling here. A car template should appear quickly and stay
+ * predictable; if location is stale, the phone app can refresh it.
+ */
 private fun resolveCarPlace(context: Context): CarPlace? {
   val activePlace = readStoredActivePlace(context)
   if (activePlace?.source == "gps") {
@@ -810,6 +896,9 @@ private fun readLastKnownLocation(context: Context): CarPlace? {
 }
 
 private fun readAsyncStorageValue(context: Context, key: String): String? {
+  // React Native AsyncStorage on Android stores key/value rows in RKStorage.
+  // Native widgets and Android Auto cannot call JS hooks, so they read the same
+  // SQLite store directly for the small bits of state they need.
   val dbFile = context.getDatabasePath("RKStorage")
   if (!dbFile.exists()) return null
 
@@ -827,6 +916,8 @@ private fun readAsyncStorageValue(context: Context, key: String): String? {
 }
 
 private fun fetchCurrentWeather(place: CarPlace): CarWeatherReport {
+  // Keep the car payload compact. This single Open-Meteo call powers Current,
+  // Hourly, Daily, SkyScore fallback, and the radar screen header.
   val url =
     "https://api.open-meteo.com/v1/forecast" +
       "?latitude=${place.lat}" +
@@ -856,6 +947,8 @@ private fun fetchCurrentWeather(place: CarPlace): CarWeatherReport {
     val hourly = root.optJSONObject("hourly")
     val daily = root.optJSONObject("daily")
     val precipChance = hourly?.optJSONArray("precipitation_probability")?.optDouble(0, Double.NaN) ?: Double.NaN
+    // Alert and nearest-radar data are extra calls because Open-Meteo does not
+    // provide official NWS alert text or NEXRAD station metadata.
     val alert = fetchWeatherAlert(place)
     val nearestRadar = nearestNexradSite(place.lat, place.lon)
 
@@ -889,6 +982,9 @@ private fun fetchCurrentWeather(place: CarPlace): CarWeatherReport {
 }
 
 private fun latestRainViewerTimestamp(): Long {
+  // RainViewer separates timeline discovery from tile fetching. First find the
+  // freshest timestamp, then request tiles for that timestamp through OMNIwx's
+  // worker cache.
   val conn = (URL(RAINVIEWER_TIMELINE_URL).openConnection() as HttpURLConnection).apply {
     connectTimeout = 7000
     readTimeout = 7000
@@ -919,6 +1015,8 @@ private fun latestRainViewerTimestamp(): Long {
 }
 
 private fun fetchRadarTileMosaic(lat: Double, lon: Double, timestamp: Long): List<RadarTileBitmap> {
+  // A 3x3 tile mosaic is enough for a static in-car snapshot around the user.
+  // Larger mosaics cost more network and memory with little dashboard benefit.
   val zoom = 7
   val centerTile = latLonToTile(lat, lon, zoom)
   val tiles = mutableListOf<RadarTileBitmap>()
@@ -992,6 +1090,8 @@ private fun friendlyCarError(error: Exception): String {
 }
 
 private fun parseHourlyForecast(hourly: JSONObject?): List<CarHourlyForecast> {
+  // The home/head-unit UI only needs the next day of hourly data. More rows make
+  // the car list harder to scan and run into template limits.
   if (hourly == null) return emptyList()
   val times = hourly.optJSONArray("time") ?: return emptyList()
   val temps = hourly.optJSONArray("temperature_2m")
@@ -1012,6 +1112,8 @@ private fun parseHourlyForecast(hourly: JSONObject?): List<CarHourlyForecast> {
 }
 
 private fun parseDailyForecast(daily: JSONObject?): List<CarDailyForecast> {
+  // Android Auto is glanceable, so five days is a better fit than the full phone
+  // app forecast table.
   if (daily == null) return emptyList()
   val times = daily.optJSONArray("time") ?: return emptyList()
   val highs = daily.optJSONArray("temperature_2m_max")
@@ -1056,10 +1158,15 @@ private fun CarWeatherReport.hourlyTrendSummary(): String {
 }
 
 private fun computeCarSkyScore(report: CarWeatherReport): CarSkyScore {
+  // TODO: Replace this fallback with the same canonical Sky Score cache/API used
+  // by the phone app and SkyScore widget so every surface reports the same value.
   return placeholderSkyScoreFromWeather(report)
 }
 
 private fun placeholderSkyScoreFromWeather(report: CarWeatherReport): CarSkyScore {
+  // Car-safe fallback when the richer astronomy cache is unavailable. It is
+  // intentionally simple: weather code and visibility become a rough observing
+  // quality estimate, not a full astronomy forecast.
   var score = 80
   score -= when (report.weatherCode) {
     0 -> 0

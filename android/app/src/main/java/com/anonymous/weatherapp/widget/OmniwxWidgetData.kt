@@ -35,6 +35,21 @@ private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
 private const val SKY_SCORE_CACHE_PREFIX = "omniwx:skyScore:v1"
 private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 
+/*
+ * Shared data/rendering helper for all Android home-screen widgets.
+ *
+ * Important: widgets cannot render React Native components. Android launchers
+ * only accept RemoteViews, which are built from native XML layouts plus simple
+ * text/bitmap updates. This object is the bridge between OMNIwx app state and
+ * those native widget layouts.
+ *
+ * What this file does:
+ *   - Reads app state from React Native AsyncStorage's SQLite database.
+ *   - Fetches small weather/aviation/climatology payloads when needed.
+ *   - Converts cached app data into native widget models.
+ *   - Draws custom bitmaps, such as weather icons, sky rings, radar snapshots,
+ *     and climate arches, because RemoteViews cannot run our React components.
+ */
 data class WidgetPlace(
   val name: String,
   val lat: Double,
@@ -159,6 +174,9 @@ object OmniwxWidgetData {
   const val ACTION_REFRESH_WIDGETS = "com.anonymous.weatherapp.widget.REFRESH_WIDGETS"
 
   fun openIntent(context: Context, route: String): PendingIntent {
+    // Widgets open the real Expo Router screen through the app's weatherapp://
+    // deep-link scheme. Keep route names aligned with actual routes or Android
+    // will launch the app into Expo Router's "Unmatched Route" screen.
     val cleanRoute = if (route.startsWith("/")) route else "/$route"
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("weatherapp://$cleanRoute"), context, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -173,6 +191,8 @@ object OmniwxWidgetData {
   }
 
   fun refreshIntent(context: Context): PendingIntent {
+    // All refresh buttons fan into one BroadcastReceiver, which then asks every
+    // installed OMNIwx widget provider to update itself.
     val intent = Intent(context, OmniwxWidgetRefreshReceiver::class.java).apply {
       action = ACTION_REFRESH_WIDGETS
       setPackage(context.packageName)
@@ -186,6 +206,9 @@ object OmniwxWidgetData {
   }
 
   fun readPlace(context: Context): WidgetPlace? {
+    // Prefer the active place written by PlaceContext. If that is missing, use
+    // the default city from Settings/onboarding. Widgets deliberately avoid live
+    // GPS here so they can update cheaply and predictably in the background.
     readAsyncStorageValue(context, PLACE_STORAGE_KEY)?.let { raw ->
       runCatching {
         val root = JSONObject(raw)
@@ -204,6 +227,8 @@ object OmniwxWidgetData {
   }
 
   fun fetchWeather(place: WidgetPlace): WidgetWeather {
+    // Compact one-day Open-Meteo request used by current/radar/sky widgets.
+    // The full phone app can fetch richer data; widgets should stay cheap.
     val url =
       "https://api.open-meteo.com/v1/forecast" +
         "?latitude=${place.lat}" +
@@ -237,6 +262,8 @@ object OmniwxWidgetData {
   }
 
   fun skyScore(weather: WidgetWeather): WidgetSkyScore {
+    // Fallback-only Sky Score. Prefer fetchSkyScore(), which reads the canonical
+    // app cache. This keeps the widget useful before the Space tab has refreshed.
     var score = 86
     score -= when (weather.weatherCode) {
       0 -> 0
@@ -275,6 +302,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchSkyScore(context: Context): WidgetSkyScore? {
+    // Best path: read the Sky Score cache produced by the React Native Space
+    // screen. Fallback path: call the worker's astro inspect endpoint so a new
+    // widget can still populate before the user opens Space.
     val place = readPlace(context) ?: return null
     readSkyScoreCache(context, place)?.let { return it }
     val url = "$OMNIWX_API_BASE/api/astro/inspect?lat=${place.lat}&lon=${place.lon}&hour=0"
@@ -283,6 +313,8 @@ object OmniwxWidgetData {
   }
 
   fun fetchNearestMetar(place: WidgetPlace): WidgetMetar? {
+    // AviationWeather's bbox search can miss sparse areas, so expand outward in
+    // steps and stop as soon as we get a usable nearest METAR.
     val deltas = listOf(0.75, 1.5, 3.0)
     for (delta in deltas) {
       val bbox = "${place.lon - delta},${place.lat - delta},${place.lon + delta},${place.lat + delta}"
@@ -295,6 +327,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchAviationBriefing(context: Context): WidgetAviationBriefing? {
+    // Legacy/general aviation widget: show either the saved route snapshot or a
+    // nearby/selected airport. The newer dedicated widgets below split airport
+    // board and route briefing into separate surfaces.
     val selection = readAsyncStorageValue(context, AVIATION_WIDGET_SELECTION_KEY)?.let { raw ->
       runCatching { JSONObject(raw) }.getOrNull()
     }
@@ -335,6 +370,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchAirportBoard(context: Context): WidgetAirportBoard? {
+    // Airport Board widget answers: "What is my selected/home field doing now?"
+    // It prefers the explicitly selected airport, then falls back to nearby
+    // METAR discovery for the active OMNIwx place.
     val selection = readAviationSelection(context)
     val selectedStation = selection
       ?.takeIf { it.optString("type") == "airport" }
@@ -371,6 +409,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchRouteBriefing(context: Context): WidgetRouteBriefing? {
+    // Route widget is intentionally cache-based. Full route analysis is a phone
+    // app workflow; the widget shows the last saved route snapshot if it is
+    // recent enough to be meaningful.
     val selection = readAviationSelection(context)?.takeIf { it.optString("type") == "route" } ?: return null
     val ageMs = System.currentTimeMillis() - selection.optLong("savedAt", 0L)
     if (ageMs !in 0..(6L * 60L * 60L * 1000L)) return null
@@ -413,6 +454,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchNearestCandidateMetar(place: WidgetPlace): WidgetMetar? {
+    // Last-resort airport lookup for the Southwest-heavy alpha use case. This
+    // prevents a totally blank aviation widget if bbox search fails around Mesa.
+    // Long term, replace with a broader airport index.
     val candidates = listOf(
       AirportCandidate("KFFZ", 33.4659, -111.7212),
       AirportCandidate("KIWA", 33.3008, -111.6437),
@@ -439,6 +483,9 @@ object OmniwxWidgetData {
   }
 
   fun fetchClimatology(context: Context): WidgetClimatology? {
+    // Climatology widgets should mostly use app-generated caches so they do not
+    // hammer NOAA/worker endpoints from the launcher. If no cache exists, fetch
+    // a compact fallback from the worker.
     val place = readPlace(context) ?: return null
     val records = readTodayRecordsCache(context)
     val cached = readClimoCache(context, place)
@@ -450,6 +497,8 @@ object OmniwxWidgetData {
   }
 
   fun weatherIconBitmap(code: Int): Bitmap {
+    // RemoteViews cannot use React Native/SVG weather icons, so we draw simple
+    // native bitmap equivalents that match the dark-glass widget style.
     val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val cloudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -513,6 +562,8 @@ object OmniwxWidgetData {
   }
 
   fun skyScoreRingBitmap(score: Int?): Bitmap {
+    // Draw a reusable circular progress ring for Sky Score widgets. RemoteViews
+    // can display the resulting Bitmap but cannot animate/draw this itself.
     val bitmap = Bitmap.createBitmap(184, 184, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val base = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -545,6 +596,9 @@ object OmniwxWidgetData {
   }
 
   fun climateArchBitmap(climo: WidgetClimatology?): Bitmap {
+    // Compact climate arch for medium widgets: high line, low line, and the
+    // normal temperature range band. The large 4x4 widget uses the richer
+    // climateArchLargeBitmap() below.
     val bitmap = Bitmap.createBitmap(520, 104, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -617,6 +671,8 @@ object OmniwxWidgetData {
   }
 
   fun climateArchLargeBitmap(climo: WidgetClimatology?): Bitmap {
+    // Large 4x4 climate widget chart. This is deliberately drawn as a bitmap so
+    // Android launchers can render it without running React Native or Skia.
     val bitmap = Bitmap.createBitmap(960, 520, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val plot = RectF(78f, 38f, 918f, 430f)
@@ -730,6 +786,8 @@ object OmniwxWidgetData {
   }
 
   fun climateVarianceLabel(climo: WidgetClimatology?): String {
+    // A quick human label for climate volatility: Minneapolis-like climates show
+    // a bigger spread than maritime or low-variance coastal locations.
     val highs = climo?.monthlyHighsF.orEmpty().mapNotNull { it?.takeIf { value -> value.isFinite() } }
     val lows = climo?.monthlyLowsF.orEmpty().mapNotNull { it?.takeIf { value -> value.isFinite() } }
     if (highs.isEmpty() || lows.isEmpty()) return "Seasonal range --"
@@ -739,6 +797,9 @@ object OmniwxWidgetData {
   }
 
   fun radarSnapshotBitmap(place: WidgetPlace?, weather: WidgetWeather?): Bitmap {
+    // Best case: draw a real RainViewer/base-map composite for the user's place.
+    // Fallback: draw the OMNIwx radar board so the widget remains useful even
+    // when network imagery fails or the user has no saved place.
     place?.let { fetchRadarTileComposite(it) }?.let { return it }
 
     val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
@@ -794,6 +855,9 @@ object OmniwxWidgetData {
   }
 
   private fun fetchRadarTileComposite(place: WidgetPlace): Bitmap? {
+    // Native mini-map renderer for the current+radar widget. It pulls base map
+    // and radar tiles around the saved location and composites them into one
+    // bitmap because RemoteViews cannot host a live MapLibre map.
     return runCatching {
       val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
       val canvas = Canvas(bitmap)
@@ -817,6 +881,8 @@ object OmniwxWidgetData {
       val tileMax = 1 shl zoom
 
       fun drawTileLayer(template: String, alpha: Int) {
+        // Template URLs use {z}/{x}/{y}; this replaces them tile-by-tile and
+        // wraps X at the antimeridian like normal Web Mercator maps.
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
           this.alpha = alpha
         }
@@ -1022,6 +1088,8 @@ private fun readAviationSelection(context: Context): JSONObject? {
 }
 
 private fun readAsyncStorageValue(context: Context, key: String): String? {
+  // Same AsyncStorage SQLite access pattern used by Android Auto. This lets
+  // native widgets read app-written state without waking the React Native bridge.
   val dbFile = context.getDatabasePath("RKStorage")
   if (!dbFile.exists()) return null
 
@@ -1039,6 +1107,8 @@ private fun readAsyncStorageValue(context: Context, key: String): String? {
 }
 
 private fun countLabel(counts: JSONObject?, key: String, hazardText: String, fallbackToken: String): String {
+  // Route widget can receive structured counts or older plain-English hazard
+  // text. Prefer structured values, then parse the text as a compatibility path.
   val direct = counts?.optInt(key, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }
   if (direct != null) return direct.toString()
   val match = Regex("""(\d+)\s+${Regex.escape(fallbackToken)}""", RegexOption.IGNORE_CASE).find(hazardText)
@@ -1069,6 +1139,8 @@ private fun utcShortLabel(value: String): String? {
 }
 
 private fun readAsyncStorageValuesByPrefix(context: Context, prefix: String): List<String> {
+  // Cache keys include lat/lon/date suffixes, so prefix scans are used when the
+  // widget needs "any current cache for this feature" instead of one exact key.
   val dbFile = context.getDatabasePath("RKStorage")
   if (!dbFile.exists()) return emptyList()
 
@@ -1100,6 +1172,8 @@ private fun placeFromJson(json: JSONObject): WidgetPlace? {
 }
 
 private fun readClimoCache(context: Context, place: WidgetPlace): WidgetClimatology? {
+  // The phone app stores climate normals keyed by rounded coordinates. Widgets
+  // use the same rounding so the launcher and app point at the same cache row.
   val key = "$CLIMO_CACHE_PREFIX:${String.format(Locale.US, "%.3f", place.lat)},${String.format(Locale.US, "%.3f", place.lon)}"
   return readAsyncStorageValue(context, key)?.let { raw ->
     runCatching { climoFromJson(place, JSONObject(raw)) }.getOrNull()
@@ -1107,6 +1181,8 @@ private fun readClimoCache(context: Context, place: WidgetPlace): WidgetClimatol
 }
 
 private fun readSkyScoreCache(context: Context, place: WidgetPlace): WidgetSkyScore? {
+  // Keep Sky Score fresh enough for a glanceable widget. Six hours prevents an
+  // old evening score from pretending to be current the next day.
   val key = "$SKY_SCORE_CACHE_PREFIX:${String.format(Locale.US, "%.3f", place.lat)},${String.format(Locale.US, "%.3f", place.lon)}"
   return readAsyncStorageValue(context, key)?.let { raw ->
     runCatching {
@@ -1120,6 +1196,8 @@ private fun readSkyScoreCache(context: Context, place: WidgetPlace): WidgetSkySc
 }
 
 private fun skyScoreFromWidgetJson(root: JSONObject): WidgetSkyScore? {
+  // Preferred cache shape: the React Native app pre-formats the exact widget
+  // strings so native Android does not re-implement the whole astronomy model.
   val score = root.optInt("score", -1).takeIf { it >= 0 } ?: return null
   return WidgetSkyScore(
     score = score.coerceIn(0, 100),
@@ -1135,6 +1213,8 @@ private fun skyScoreFromWidgetJson(root: JSONObject): WidgetSkyScore? {
 }
 
 private fun skyScoreFromInspectJson(root: JSONObject): WidgetSkyScore? {
+  // Fallback worker/API shape. This has raw inspect values, so format the core
+  // widget strings here.
   val score = root.optInt("skyScore", -1).takeIf { it >= 0 } ?: return null
   val site = root.optJSONObject("site")
   val bortleClass = site?.optNullableDouble("bortleClass")
@@ -1156,6 +1236,8 @@ private fun skyScoreFromInspectJson(root: JSONObject): WidgetSkyScore? {
 }
 
 private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatology? {
+  // Worker/cache JSON -> widget model. The widget needs both the current month
+  // normals and the full 12-month high/low arrays for the climate arch.
   val normals = root.optJSONArray("normals") ?: return null
   val month = Calendar.getInstance().get(Calendar.MONTH) + 1
   var normalHigh: Double? = null
@@ -1211,6 +1293,8 @@ private fun climoFromJson(place: WidgetPlace, root: JSONObject): WidgetClimatolo
 }
 
 private fun readTodayRecordsCache(context: Context): WidgetDailyRecords? {
+  // Records are date-specific. Scan valid records caches and pick the freshest
+  // one that contains today's MM-DD entry.
   val todayKey = SimpleDateFormat("MM-dd", Locale.US).format(Date())
   var bestSavedAt = 0L
   var best: WidgetDailyRecords? = null

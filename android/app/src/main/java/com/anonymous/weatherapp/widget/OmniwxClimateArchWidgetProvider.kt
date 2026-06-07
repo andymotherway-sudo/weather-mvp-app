@@ -11,6 +11,8 @@ import java.util.Locale
 import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
+// Large 4x4 climatology widget. This gives the annual temperature/precip arch
+// enough room to show how variable a place is across the full year.
 class OmniwxClimateArchWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -62,6 +64,8 @@ class OmniwxClimateArchWidgetProvider : AppWidgetProvider() {
   }
 
   private fun recordsLabel(climo: WidgetClimatology): String {
+    // Keep records in one line so the chart remains the hero of the large
+    // widget; detailed year-by-year context belongs on the Almanac screen.
     val high = climo.recordHighF?.takeIf { it.isFinite() }?.let {
       "High ${it.roundToInt()}°${yearSuffix(climo.recordHighYear)}"
     }

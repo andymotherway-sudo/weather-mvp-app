@@ -25,6 +25,9 @@ type Props = {
   onBufferStatus?: (status: AnimationBufferStatus) => void;
 };
 
+// This compositor is for on-map playback, not the saved MP4 path. It preloads
+// static frame URLs, then cross-fades two MapLibre raster image sources so
+// radar/satellite loops feel smoother than a hard source swap.
 function clampIndex(index: number, count: number) {
   if (count <= 0) return 0;
   return Math.max(0, Math.min(count - 1, Math.floor(index)));
@@ -94,6 +97,9 @@ export function AnimationCompositor(props: Props) {
 
     let cancelled = false;
     urls.forEach(({ url }) => {
+      // Prefetching is a practical readiness signal for React Native images.
+      // Failed frames are still marked ready so one bad satellite/radar URL
+      // does not freeze the entire loop.
       Image.prefetch(url)
         .then(() => {
           if (cancelled) return;
@@ -129,6 +135,8 @@ export function AnimationCompositor(props: Props) {
       const current = clampIndex(currentIndexRef.current, count);
       const next = current >= count - 1 ? 0 : current + 1;
       const nextUrl = urls[next]?.url;
+      // Hold the current frame until the next one is at least attempted. This
+      // avoids the worst "blank between frames" flash on slow tile loads.
       if (!nextUrl || !readyRef.current.has(nextUrl)) return;
 
       setPreviousIndex(current);

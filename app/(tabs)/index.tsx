@@ -376,6 +376,9 @@ function buildArcPath(
   cycleEnd: number,
   opts: { width: number; margin: number; baseline: number; height: number }
 ) {
+  // SVG arcs are sampled as short line segments instead of a single cubic
+  // curve because sunrise/sunset and moonrise/moonset can cross midnight. The
+  // segment model keeps wraparound cases predictable.
   const span = Math.max(1, cycleEnd - cycleStart);
   const samples = 20;
   const points: string[] = [];
@@ -391,6 +394,8 @@ function buildArcPath(
 }
 
 function dayArcSegments(startMinute: number | null, endMinute: number | null) {
+  // If the event ends after midnight, split it into two visible pieces so the
+  // chart still reads left-to-right across one local day.
   if (startMinute == null || endMinute == null) return [];
   const normalizedEnd = endMinute <= startMinute ? endMinute + 1440 : endMinute;
   if (normalizedEnd <= 1440) {
@@ -408,13 +413,20 @@ function DayMoonArc({
   moonrise,
   moonset,
   showMoon = false,
+  showTimes = true,
+  embedded = false,
 }: {
   sunrise?: string | null;
   sunset?: string | null;
   moonrise?: string | null;
   moonset?: string | null;
   showMoon?: boolean;
+  showTimes?: boolean;
+  embedded?: boolean;
 }) {
+  // Simple mode uses only the sun arc; wxLab can add moonrise/moonset in the
+  // same compact space. The colors are intentionally distinct but muted enough
+  // to live inside the glass daily card.
   const width = 320;
   const height = 104;
   const margin = 24;
@@ -430,7 +442,7 @@ function DayMoonArc({
   const hasMoon = moonSegments.length > 0;
 
   return (
-    <View style={styles.dayArcCard}>
+    <View style={[styles.dayArcCard, embedded ? styles.dayArcEmbedded : null]}>
       <View style={styles.dayArcHeader}>
         <Text style={styles.dayArcTitle}>{showMoon ? 'Sun & moon arc' : 'Sun arc'}</Text>
         <View style={styles.dayArcLegend}>
@@ -483,28 +495,30 @@ function DayMoonArc({
         {showMoon && moonStart != null ? <Circle cx={margin + (moonStart / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
         {showMoon && moonEnd != null ? <Circle cx={margin + (moonEnd / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
       </Svg>
-      <View style={styles.dayArcTimes}>
-        <View style={styles.dayArcTimeBlock}>
-          <Text style={styles.dayArcTimeLabel}>Sunrise</Text>
-          <Text style={styles.dayArcTimeValue}>{formatClock(sunrise)}</Text>
+      {showTimes ? (
+        <View style={styles.dayArcTimes}>
+          <View style={styles.dayArcTimeBlock}>
+            <Text style={styles.dayArcTimeLabel}>Sunrise</Text>
+            <Text style={styles.dayArcTimeValue}>{formatClock(sunrise)}</Text>
+          </View>
+          <View style={styles.dayArcTimeBlock}>
+            <Text style={styles.dayArcTimeLabel}>Sunset</Text>
+            <Text style={styles.dayArcTimeValue}>{formatClock(sunset)}</Text>
+          </View>
+          {showMoon ? (
+            <>
+              <View style={styles.dayArcTimeBlock}>
+                <Text style={styles.dayArcTimeLabel}>Moonrise</Text>
+                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonrise)}</Text>
+              </View>
+              <View style={styles.dayArcTimeBlock}>
+                <Text style={styles.dayArcTimeLabel}>Moonset</Text>
+                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonset)}</Text>
+              </View>
+            </>
+          ) : null}
         </View>
-        <View style={styles.dayArcTimeBlock}>
-          <Text style={styles.dayArcTimeLabel}>Sunset</Text>
-          <Text style={styles.dayArcTimeValue}>{formatClock(sunset)}</Text>
-        </View>
-        {showMoon ? (
-          <>
-            <View style={styles.dayArcTimeBlock}>
-              <Text style={styles.dayArcTimeLabel}>Moonrise</Text>
-              <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonrise)}</Text>
-            </View>
-            <View style={styles.dayArcTimeBlock}>
-              <Text style={styles.dayArcTimeLabel}>Moonset</Text>
-              <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonset)}</Text>
-            </View>
-          </>
-        ) : null}
-      </View>
+      ) : null}
       {!hasSun && (!showMoon || !hasMoon) ? <Text style={styles.dayArcPending}>Arc timing pending</Text> : null}
     </View>
   );
@@ -1697,10 +1711,6 @@ function ActivityForecastSection({
               onPress={() => setFlippedId((current) => (current === card.id ? null : card.id))}
               style={[
                 styles.activityWideCard,
-                {
-                  backgroundColor: chrome.cardStrong,
-                  borderColor: chrome.border,
-                },
               ]}
             >
               <View style={styles.activityMiniTopRow}>
@@ -3091,22 +3101,10 @@ function NerdyDeepDive({
     : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
   const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
-  const sunMoments = [
-    { label: 'Dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
-    { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
-    { label: 'Sunset', value: formatClock(sunset), topicId: astroLearnTopicId('sunset') },
-    { label: 'Dusk', value: formatClock(astro?.civilDusk), topicId: astroLearnTopicId('civil') },
-  ];
-  const darknessMoments = [
-    { label: 'Nautical', value: formatClock(astro?.nauticalDusk), topicId: astroLearnTopicId('nautical') },
-    { label: 'Astro Dusk', value: formatClock(astro?.astronomicalDusk), topicId: astroLearnTopicId('astronomical') },
-    { label: 'Night Win', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
-    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
-  ];
   const summaryCards = [
     { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
-    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
     { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime), topicId: astroLearnTopicId('best') },
+    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
     { label: 'Day Length', value: formatDayLength(dayLengthSec), topicId: astroLearnTopicId('sunrise') },
   ];
   const quickChips = [moistureState, windState, cloudState, pressureState];
@@ -3141,9 +3139,6 @@ function NerdyDeepDive({
           ))}
         </View>
       </View>
-
-      <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon />
-
       <View style={nd.panelGrid}>
         <View style={nd.panelRow}>
           <View style={nd.panelHalf}>
@@ -3259,45 +3254,19 @@ function NerdyDeepDive({
 
         <View style={nd.panelFull}>
           <Text style={nd.panelTitle}>Sun & Moon</Text>
+          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon showTimes={false} embedded />
 
-          <Text style={nd.timelineLabel}>Sun</Text>
-          <View style={nd.timelineRow}>
-            {sunMoments.map((item) => (
-              <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
-                <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{item.value}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={nd.timelineLabel}>Darkness</Text>
-          <View style={nd.timelineRow}>
-            {darknessMoments.map((item) => (
-              <Pressable key={item.label} style={nd.timelineNode} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
-                <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.54} allowFontScaling={false}>{item.value}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={nd.timelineLabel}>Moon</Text>
-          <View style={nd.moonRow}>
-            <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
-              <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>Moonrise</Text>
-              <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{formatClock(moonrise)}</Text>
-            </Pressable>
-            <View style={nd.moonCenter}>
+          <View style={nd.moonSummaryRow}>
+            <Pressable style={nd.moonPhaseCard} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
               <PremiumMoonIcon size={46} illuminationPct={moonIlluminationPct} phaseDegrees={moonPhaseDegrees} />
-              <Text style={nd.moonPhaseText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonPhaseLabel ?? 'Moon phase'}</Text>
-              <Text style={nd.moonFullText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonFullLabel}</Text>
-            </View>
-            <Pressable style={nd.moonNode} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonset'))}>
-              <Text style={nd.timelineNodeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>Moonset</Text>
-              <Text style={nd.timelineNodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} allowFontScaling={false}>{formatClock(moonset)}</Text>
+              <View style={nd.moonPhaseCopy}>
+                <Text style={nd.timelineNodeLabel}>Moon Phase</Text>
+                <Text style={[nd.moonPhaseText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonPhaseLabel ?? 'Moon phase'}</Text>
+                <Text style={[nd.moonFullText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonFullLabel}</Text>
+              </View>
             </Pressable>
           </View>
 
-          <Text style={nd.timelineLabel}>Windows & Summary</Text>
           <View style={nd.metricGrid4}>
             {summaryCards.map((item) => (
               <Pressable key={item.label} style={nd.summaryCard} onPress={() => onOpenLearnTopic(item.topicId)}>
@@ -3639,6 +3608,10 @@ const nd = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
   },
+  moonSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
   moonNode: {
     flex: 1,
     minWidth: 0,
@@ -3654,6 +3627,22 @@ const nd = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  moonPhaseCard: {
+    flex: 1,
+    minHeight: 84,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  moonPhaseCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   moonPhaseText: {
     marginTop: 5,
     maxWidth: 92,
@@ -3662,6 +3651,10 @@ const nd = StyleSheet.create({
     fontWeight: '800',
     color: 'rgba(255,255,255,0.66)',
     textAlign: 'center',
+  },
+  moonPhaseTextWide: {
+    maxWidth: '100%',
+    textAlign: 'left',
   },
   moonFullText: {
     marginTop: 2,
@@ -5089,6 +5082,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.075)',
     overflow: 'hidden',
   },
+  dayArcEmbedded: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.055)',
+    paddingBottom: 4,
+  },
   dayArcHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -6065,6 +6063,8 @@ saveInlineText: {
     paddingHorizontal: 16,
     paddingVertical: 15,
     borderWidth: 1,
+    backgroundColor: GLASS_PANEL_BG_STRONG,
+    borderColor: GLASS_BORDER,
     overflow: 'hidden',
   },
 

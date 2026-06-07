@@ -31,6 +31,9 @@ type NativeVideoExport = {
 
 const nativeExporter = NativeModules.OmniwxVideoExport as NativeVideoExport | undefined;
 
+// Video export is native-only because React Native/MapLibre do not provide a
+// reliable way to record the composed map surface into an MP4. Android builds
+// expose OmniwxVideoExport through MainApplication.
 export function canExportAnimationVideo() {
   return Platform.OS === 'android' && !!nativeExporter?.exportAnimation;
 }
@@ -47,6 +50,9 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     }))
     .filter((frame) => frame.urls.length > 0);
 
+  // Native export expects every source frame to have at least one prepared
+  // image layer. Rejecting here gives the UI a useful message before Kotlin
+  // starts allocating bitmaps/video encoders.
   if (frames.length < 2) {
     throw new Error('At least two prepared frames are required for video export.');
   }
@@ -56,6 +62,8 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     title: options.title,
     subtitle: options.subtitle,
     productLabel: options.productLabel,
+    // Defaults are landscape-friendly; callers can override dimensions for
+    // portrait exports so infrared/true-color recordings keep the phone shape.
     width: options.width ?? 1280,
     height: options.height ?? 720,
     fps: options.fps ?? 30,

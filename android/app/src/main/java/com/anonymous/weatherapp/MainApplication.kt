@@ -17,6 +17,14 @@ import com.anonymous.weatherapp.video.OmniwxVideoExportPackage
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 
+/*
+ * Native application bootstrap.
+ *
+ * This is where Android starts the React Native runtime and where we register
+ * any native modules that Expo autolinking cannot discover by itself. Most of
+ * the app is TypeScript, but native features like MP4 export need to be exposed
+ * to JavaScript through a ReactPackage here.
+ */
 class MainApplication : Application(), ReactApplication {
 
   override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
@@ -24,8 +32,9 @@ class MainApplication : Application(), ReactApplication {
       object : DefaultReactNativeHost(this) {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
-              // Packages that cannot be autolinked yet can be added manually here, for example:
-              // add(MyReactNativePackage())
+              // Manual package registration. The video exporter is custom
+              // Kotlin code, so React Native will not know about it unless we
+              // add its package to the generated package list.
               add(OmniwxVideoExportPackage())
             }
 
@@ -42,17 +51,21 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // React Native has several release levels. If Gradle supplies an unknown
+    // value, fall back to STABLE so a bad build flag cannot prevent startup.
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
       ReleaseLevel.STABLE
     }
     loadReactNative(this)
+    // Allows Expo modules to receive Application.onCreate lifecycle events.
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
+    // Forward orientation/theme/font-scale/etc. changes into Expo modules.
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }
 }

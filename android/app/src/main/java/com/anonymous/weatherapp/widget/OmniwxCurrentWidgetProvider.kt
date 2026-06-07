@@ -7,6 +7,9 @@ import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import kotlin.concurrent.thread
 
+// Small current-conditions widget. AppWidgetProvider callbacks run on the main
+// thread, so we push network/cache reads into a short background thread and
+// immediately show a loading RemoteViews state.
 class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -35,6 +38,8 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
     }
   }
 
+  // RemoteViews is a constrained native view tree: no React components, no
+  // arbitrary layout logic at render time, only setting text/bitmaps on XML ids.
   private fun buildViews(context: Context, weather: WidgetWeather?): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))

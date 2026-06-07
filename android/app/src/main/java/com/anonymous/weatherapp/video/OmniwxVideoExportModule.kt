@@ -38,12 +38,29 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/*
+ * Native MP4 exporter for radar/satellite animation loops.
+ *
+ * The phone map can animate frames with React Native/MapLibre, but exporting a
+ * playable video is a native-media job. This module is called from JS through
+ * NativeModules.OmniwxVideoExport and returns a MediaStore URI after encoding.
+ *
+ * Pipeline:
+ *   JS sends frame labels + image URLs
+ *   -> Kotlin downloads each image
+ *   -> composeFrame draws OMNIwx chrome + weather imagery
+ *   -> MediaCodec encodes H.264 frames
+ *   -> MediaMuxer writes MP4
+ *   -> saveToMovies publishes it to the user's Movies collection
+ */
 class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
   override fun getName(): String = "OmniwxVideoExport"
 
   @ReactMethod
   fun exportAnimation(options: ReadableMap, promise: Promise) {
+    // Encoding and network downloads must not run on React Native's JS thread.
+    // The Promise is resolved/rejected when this background worker finishes.
     thread(name = "omniwx-video-export") {
       try {
         val frames = readFrames(options.getArray("frames"))
@@ -58,6 +75,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         val subtitle = options.optString("subtitle", "Weather animation")
         val product = options.optString("productLabel", "Weather loop")
 
+        // Require every URL for a source frame to download. Some products are
+        // composite layers; exporting partial layers would cause flashing or
+        // misleading blank frames.
         val prepared = frames.map { frame ->
           PreparedFrame(
             label = frame.label,
@@ -108,6 +128,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     subtitle: String,
     product: String,
   ) {
+    // Android's broadly compatible MP4 choice is H.264/AVC. We manually feed
+    // YUV420 frames to the codec rather than using a Surface so we can draw the
+    // exact same composition for radar, infrared, and true color exports.
     val mime = MediaFormat.MIMETYPE_VIDEO_AVC
     val colorFormat = selectAvcColorFormat()
     val format = MediaFormat.createVideoFormat(mime, width, height).apply {
@@ -134,6 +157,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       val solidFrames = max(1, holdFrames - transitionFrames)
 
       frames.forEachIndexed { index, current ->
+        // Forward loop: after the last frame, blend back to the first. This
+        // matches user expectation better than ping-pong playback for weather.
         val next = frames[(index + 1) % frames.size]
         repeat(solidFrames) {
           val bitmap = composeFrame(width, height, current, null, 0f, title, subtitle, product)
@@ -198,6 +223,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     bufferInfo: MediaCodec.BufferInfo,
     onDrain: () -> Unit,
   ): Long {
+    // MediaCodec wants raw YUV bytes, not Android Bitmap pixels. Convert ARGB
+    // into the selected YUV420 layout, queue it with a presentation timestamp,
+    // then drain any encoded output now available.
     val inputIndex = codec.dequeueInputBuffer(10_000)
     if (inputIndex < 0) return frameIndex
     val input = codec.getInputBuffer(inputIndex) ?: return frameIndex
@@ -217,6 +245,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     endOfStream: Boolean,
     ensureTrack: () -> Int,
   ) {
+    // Encoders produce output asynchronously. This loop pulls encoded chunks and
+    // writes them into the MP4 muxer. The muxer cannot start until the codec
+    // reports its output format, which is why ensureTrack() is deferred.
     while (true) {
       val status = codec.dequeueOutputBuffer(bufferInfo, if (endOfStream) 10_000 else 0)
       when {
@@ -253,6 +284,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     subtitle: String,
     product: String,
   ): Bitmap {
+    // Compose one final video frame. "Scene" is the weather imagery; "chrome"
+    // is the OMNIwx title/footer overlay. During transitions we render both
+    // current and next scenes and alpha-blend them.
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(out)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
@@ -277,6 +311,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun composeSatelliteScene(width: Int, height: Int, frame: PreparedFrame): Bitmap {
+    // A source frame may include more than one bitmap layer. Draw every layer
+    // with aspect-fit rules so radar/satellite products keep their shape.
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(out)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply { alpha = 255 }
@@ -307,6 +343,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun drawExportChrome(canvas: Canvas, width: Int, height: Int, title: String, subtitle: String, product: String, frameLabel: String) {
+    // Minimal branding/context baked into the video. This avoids needing a
+    // separate subtitle track and makes screen-recordable/shared clips readable.
     val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = Color.argb(190, 2, 6, 23)
       style = Paint.Style.FILL
@@ -343,6 +381,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun drawBitmapFit(canvas: Canvas, bitmap: Bitmap, width: Int, height: Int, paint: Paint) {
+    // Preserve source aspect ratio. If this becomes "fill" instead of "fit",
+    // infrared/true-color products can look stretched in portrait exports.
     val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
     val dstRatio = width.toFloat() / height.toFloat()
     val dst = if (srcRatio > dstRatio) {
@@ -358,6 +398,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun argbBitmapToYuv420(bitmap: Bitmap, width: Int, height: Int, colorFormat: Int, out: ByteArray) {
+    // H.264 encoders typically want YUV420, not ARGB. This is a straightforward
+    // RGB -> YUV conversion with chroma sampled once for each 2x2 pixel block.
     val pixels = IntArray(width * height)
     bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
     val frameSize = width * height
@@ -392,6 +434,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun selectAvcColorFormat(): Int {
+    // Devices advertise different YUV layouts. Pick the first common format the
+    // available AVC encoder supports, then fall back to flexible YUV420.
     val preferred = listOf(
       MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar,
       MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
@@ -410,6 +454,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun saveToMovies(source: File): Uri {
+    // Android 10+ requires MediaStore scoped-storage writes. Older Android
+    // versions can write directly into Movies/OMNIwx.
     val fileName = "OMNIwx-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.mp4"
     val resolver = reactContext.contentResolver
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -438,6 +484,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun downloadBitmap(url: String): Bitmap? {
+    // Fail a single URL by returning null; exportAnimation decides whether there
+    // are still enough complete frames to proceed.
     val conn = (URL(url).openConnection() as HttpURLConnection).apply {
       connectTimeout = 12_000
       readTimeout = 18_000
@@ -454,6 +502,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun readFrames(array: ReadableArray?): List<ExportFrame> {
+    // Defensive parser for the JS bridge payload. Bad/empty frames are skipped
+    // here so the encoder only sees frames with at least one image URL.
     if (array == null) return emptyList()
     val list = mutableListOf<ExportFrame>()
     for (i in 0 until array.size()) {

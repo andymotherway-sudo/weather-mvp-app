@@ -8,6 +8,9 @@ import android.os.SystemClock
 
 private const val WIDGET_REFRESH_INTERVAL_MS = 15L * 60L * 1000L
 
+// Lightweight periodic refresh for widgets. Inexact repeating is deliberate:
+// Android can batch it with other work, which is friendlier to battery than an
+// exact alarm for glanceable weather cards.
 object OmniwxWidgetScheduler {
   fun schedule(context: Context) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return

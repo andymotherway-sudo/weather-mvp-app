@@ -41,7 +41,10 @@ type VisualState = {
 };
 
 const GLASS_SURFACE_BG = 'rgba(44, 70, 102, 0.68)';
-const GLASS_SURFACE_BORDER = 'rgba(255,255,255,0.12)';
+const GLASS_SURFACE_BG_STRONG = 'rgba(44, 70, 102, 0.70)';
+const GLASS_SURFACE_INSET = 'rgba(44, 70, 102, 0.62)';
+const GLASS_SURFACE_BORDER = 'rgba(255,255,255,0.18)';
+const GLASS_SURFACE_BORDER_SOFT = 'rgba(255,255,255,0.12)';
 
 function safeNum(v: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v;
@@ -478,7 +481,6 @@ function HourlySimpleTimeline({
   hours: any[];
   timeZone?: string | null;
 }) {
-  const { chrome } = useAppChrome();
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -531,7 +533,7 @@ function HourlySimpleTimeline({
 
   return (
     <View style={styles.hourlySimpleWrap}>
-      <View style={[styles.hourlyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+      <View style={styles.hourlyFeatureCard}>
         <View style={styles.hourlyFeatureTop}>
           <View style={styles.hourlyFeatureTimeCol}>
             <Text style={styles.hourlyFeatureDay}>{featuredSlot.day}</Text>
@@ -570,7 +572,7 @@ function HourlySimpleTimeline({
       {rest.map((hour, idx) => {
         const slot = formatHourSlot(hour.time, timeZone);
         return (
-          <View key={String(hour.time ?? idx)} style={[styles.hourlyMiniCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+          <View key={String(hour.time ?? idx)} style={styles.hourlyMiniCard}>
             <View style={styles.hourlyMiniTimeCol}>
               <Text style={styles.hourlyMiniDay}>{slot.day}</Text>
               <Text style={styles.hourlyMiniTime}>{slot.short}</Text>
@@ -608,7 +610,6 @@ function HourlySimpleTimelineExpanded({
   hours: any[];
   timeZone?: string | null;
 }) {
-  const { chrome } = useAppChrome();
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -620,7 +621,7 @@ function HourlySimpleTimelineExpanded({
 
   return (
     <View style={styles.hourlySimpleWrap}>
-      <View style={[styles.hourlyFeatureCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+      <View style={styles.hourlyFeatureCard}>
         <View style={styles.hourlyFeatureTop}>
           <View style={styles.hourlyFeatureTimeCol}>
             <Text style={styles.hourlyFeatureDay}>{featuredSlot.day}</Text>
@@ -670,7 +671,7 @@ function HourlySimpleTimelineExpanded({
           <Pressable
             key={rowKey}
             onPress={() => setExpandedKey((current) => (current === rowKey ? null : rowKey))}
-            style={[styles.hourlyMiniCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}
+            style={styles.hourlyMiniCard}
           >
             <View style={styles.hourlyMiniTopRow}>
               <View style={styles.hourlyMiniTimeCol}>
@@ -744,7 +745,6 @@ function HourlyWithCoords({
 }) {
   const units: UnitSystem = 'us';
   const { forecastModel } = useSettings();
-  const { chrome } = useAppChrome();
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
@@ -834,7 +834,7 @@ function HourlyWithCoords({
 
   return (
     <>
-      <View style={[styles.heroCard, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+      <View style={styles.heroCard}>
         <View pointerEvents="none" style={styles.cardGlow} />
         <View pointerEvents="none" style={styles.heroHaze} />
 
@@ -1014,12 +1014,12 @@ export default function HourlyTab() {
           refreshControl={<RefreshControl refreshing={!!isRefreshing} onRefresh={onPullToRefresh} />}
         >
           <View style={styles.headerHeroWrap}>
-            <View style={[styles.headerHeroSurface, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
+            <View style={styles.headerHeroSurface}>
               <View style={styles.headerCompactTopRow}>
                 <View style={styles.hourlyHeaderLeft}>
                   <Image source={OMNI_MARK_WORD} style={styles.headerCompactLogo} resizeMode="contain" />
 
-                  <View style={[styles.headerCompactLocation, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
+                  <View style={styles.headerCompactLocation}>
                     <View style={styles.hourlyLocationRow}>
                       <Ionicons name="location-outline" size={18} color="rgba(255,255,255,0.92)" />
                       <Text style={styles.locationPrimary} numberOfLines={1}>
@@ -1032,26 +1032,11 @@ export default function HourlyTab() {
                   </View>
                 </View>
 
-                <View style={styles.hourlyHeaderRight}>
-                  <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={[styles.settingsIconBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                    <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.92)" />
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.headerHeroBottomRow}>
-                <Pressable onPress={() => router.push('/(tabs)')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                  <Text style={styles.quickNavText}>Land</Text>
-                </Pressable>
-
-                <Pressable onPress={() => router.push('/(tabs)/almanac')} style={[styles.quickNavBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                  <Text style={styles.quickNavText}>Almanac</Text>
-                </Pressable>
-
-                <View style={[styles.headerModeWrap, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
+                <View style={styles.hourlyHeaderActions}>
+                  <View style={styles.headerModeWrap}>
                   <Pressable
                     onPress={() => setWxLab?.(false)}
-                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, !wxLab ? styles.headerModeBtnActive : null, !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
+                    style={[styles.headerModeBtn, !wxLab ? styles.headerModeBtnActive : null]}
                   >
                     <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
                   </Pressable>
@@ -1060,9 +1045,13 @@ export default function HourlyTab() {
                       if (toggleWxLab && !wxLab) return toggleWxLab();
                       return setWxLab?.(true);
                     }}
-                    style={[styles.headerModeBtn, { backgroundColor: chrome.pill, borderColor: chrome.border }, wxLab ? styles.headerModeBtnActive : null, wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null]}
+                    style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
                   >
                     <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
+                  </Pressable>
+                </View>
+                  <Pressable onPress={() => router.push('/profile')} hitSlop={12} style={styles.settingsIconBtn}>
+                    <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.92)" />
                   </Pressable>
                 </View>
               </View>
@@ -1146,9 +1135,9 @@ const styles = StyleSheet.create({
 
   headerHeroSurface: {
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     borderRadius: 22,
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
     overflow: 'hidden',
@@ -1156,9 +1145,9 @@ const styles = StyleSheet.create({
 
   headerCompactTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
   },
 
   hourlyHeaderLeft: {
@@ -1166,7 +1155,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
 
   headerCompactLocation: {
@@ -1176,9 +1165,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 18,
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_INSET,
     borderWidth: 1,
-    borderColor: GLASS_SURFACE_BORDER,
+    borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
 
   hourlyLocationRow: {
@@ -1187,14 +1176,16 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
-  hourlyHeaderRight: {
-    alignItems: 'flex-end',
+  hourlyHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
+    flexShrink: 0,
   },
 
   headerCompactLogo: {
-    width: 80,
-    height: 80,
+    width: 58,
+    height: 58,
     opacity: 0.96,
   },
 
@@ -1207,26 +1198,29 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_INSET,
     borderWidth: 1,
-    borderColor: GLASS_SURFACE_BORDER,
+    borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
 
   headerModeWrap: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
     padding: 4,
     borderRadius: 999,
-    backgroundColor: GLASS_SURFACE_BG,
-    marginLeft: 'auto',
+    backgroundColor: GLASS_SURFACE_INSET,
+    borderWidth: 1,
+    borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
   headerModeBtn: {
-    paddingVertical: 7,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 999,
   },
   headerModeBtnActive: {
-    backgroundColor: 'rgba(146, 238, 205, 0.20)',
+    backgroundColor: 'rgba(58, 117, 214, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(150, 190, 255, 0.52)',
   },
   headerModeText: {
     color: 'rgba(255,255,255,0.70)',
@@ -1236,27 +1230,6 @@ const styles = StyleSheet.create({
   headerModeTextActive: {
     color: '#E9FFF8',
   },
-  quickNavBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: GLASS_SURFACE_BORDER,
-    backgroundColor: GLASS_SURFACE_BG,
-  },
-  quickNavText: {
-    color: 'white',
-    fontWeight: '900',
-    fontSize: 12,
-  },
-  headerHeroBottomRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-
   heroCard: {
     position: 'relative',
     overflow: 'hidden',
@@ -1264,7 +1237,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.lg,
     paddingHorizontal: theme.spacing.lg,
     borderRadius: 28,
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
   },
@@ -1463,7 +1436,7 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     paddingHorizontal: 18,
     borderRadius: 28,
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
     overflow: 'hidden',
@@ -1594,7 +1567,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     borderRadius: 24,
-    backgroundColor: GLASS_SURFACE_BG,
+    backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
     overflow: 'hidden',
