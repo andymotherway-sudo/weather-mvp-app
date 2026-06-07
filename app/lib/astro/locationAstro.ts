@@ -51,16 +51,49 @@ function wallClockToSortableMs(parts: {
   );
 }
 
-function toLocalLabel(iso?: string | null) {
-  const d = parseLocalDate(iso);
-  if (!d) return '—';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function hasExplicitTimezone(value?: string | null) {
+  return typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim());
 }
 
-function toShortHourLabel(iso?: string | null) {
+function formatWallTime(hour: number, minute: number, options?: { shortHour?: boolean }) {
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 || 12;
+  if (options?.shortHour) return `${h12} ${suffix}`;
+  return `${h12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function toLocalLabel(iso?: string | null, timeZone?: string | null) {
+  const wall = parseWallClockParts(iso);
+  if (wall && !hasExplicitTimezone(iso)) {
+    return formatWallTime(wall.hour, wall.minute);
+  }
+
   const d = parseLocalDate(iso);
   if (!d) return '—';
-  return d.toLocaleTimeString([], { hour: 'numeric' });
+  try {
+    return d.toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: timeZone || undefined,
+    });
+  } catch {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+}
+
+function toShortHourLabel(iso?: string | null, timeZone?: string | null) {
+  const wall = parseWallClockParts(iso);
+  if (wall && !hasExplicitTimezone(iso)) {
+    return formatWallTime(wall.hour, wall.minute, { shortHour: true });
+  }
+
+  const d = parseLocalDate(iso);
+  if (!d) return '—';
+  try {
+    return d.toLocaleTimeString([], { hour: 'numeric', timeZone: timeZone || undefined });
+  } catch {
+    return d.toLocaleTimeString([], { hour: 'numeric' });
+  }
 }
 
 function isFiniteNumber(v: unknown): v is number {
@@ -204,6 +237,29 @@ function pickRelevantMoonDay(args: {
     );
 
   return withUsefulMoonData ?? moonDays[0];
+}
+
+function pickMoonEventInWindow(args: {
+  moonDays?: Array<{
+    date: string;
+    moonrise?: string | null;
+    moonset?: string | null;
+  }>;
+  field: 'moonrise' | 'moonset';
+  startIso?: string;
+  endIso?: string;
+}) {
+  const start = parseLocalDate(args.startIso);
+  const end = parseLocalDate(args.endIso);
+  if (!start || !end || end <= start) return undefined;
+
+  return args.moonDays
+    ?.map((day) => day[args.field])
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .find((value) => {
+      const eventDate = parseLocalDate(value);
+      return !!eventDate && eventDate >= start && eventDate <= end;
+    });
 }
 
 function fallbackMoonPhaseLabel(
@@ -585,6 +641,20 @@ async function fetchLocationAstroForecast(args: {
     nightStartIso,
     nightEndIso,
   });
+  const nightMoonrise =
+    pickMoonEventInWindow({
+      moonDays: payload.moonDays,
+      field: 'moonrise',
+      startIso: nightStartIso,
+      endIso: nightEndIso,
+    }) ?? relevantMoonDay?.moonrise ?? undefined;
+  const nightMoonset =
+    pickMoonEventInWindow({
+      moonDays: payload.moonDays,
+      field: 'moonset',
+      startIso: nightStartIso,
+      endIso: nightEndIso,
+    }) ?? relevantMoonDay?.moonset ?? undefined;
 
   const moonByDate = new Map(
     (payload.moonDays ?? []).map((m) => [m.date, m] as const)
@@ -730,7 +800,7 @@ async function fetchLocationAstroForecast(args: {
 
     return {
       time,
-      timeLabel: toShortHourLabel(time),
+      timeLabel: toShortHourLabel(time, payload.timezone),
       score: finalScore,
       label,
       summary,
@@ -768,8 +838,8 @@ async function fetchLocationAstroForecast(args: {
   const darkest = pickDarkestWindowPrecise({
     trueDarkStartTime,
     trueDarkEndTime,
-    moonrise: relevantMoonDay?.moonrise ?? undefined,
-    moonset: relevantMoonDay?.moonset ?? undefined,
+    moonrise: nightMoonrise,
+    moonset: nightMoonset,
   });
 
   const peakScore = best.bestHour?.score ?? 0;
@@ -784,8 +854,8 @@ async function fetchLocationAstroForecast(args: {
 
     sunset: payload.sun?.todaySunset ?? undefined,
     sunrise: payload.sun?.tomorrowSunrise ?? payload.sun?.todaySunrise ?? undefined,
-    moonrise: relevantMoonDay?.moonrise ?? undefined,
-    moonset: relevantMoonDay?.moonset ?? undefined,
+    moonrise: nightMoonrise,
+    moonset: nightMoonset,
 
     civilDusk: payload.twilight?.todayCivilDusk ?? undefined,
     nauticalDusk: payload.twilight?.todayNauticalDusk ?? undefined,

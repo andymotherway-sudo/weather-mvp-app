@@ -34,6 +34,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
+import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -75,15 +77,16 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         val subtitle = options.optString("subtitle", "Weather animation")
         val product = options.optString("productLabel", "Weather loop")
 
-        // Require every URL for a source frame to download. Some products are
-        // composite layers; exporting partial layers would cause flashing or
-        // misleading blank frames.
+        // Require every URL/layer for a source frame to prepare. Some products
+        // are composite layers; exporting partial layers would cause flashing or
+        // misleading blank frames. Radar frames can now arrive as tile templates
+        // so the MP4 uses the same time-resolved source as the on-map animation.
         val prepared = frames.map { frame ->
-          PreparedFrame(
-            label = frame.label,
-            bitmaps = frame.urls.mapNotNull { downloadBitmap(it) },
-            expectedBitmapCount = frame.urls.size,
-          )
+          val tileScene = renderTileScene(width, height, frame)
+          val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it) }
+          val bitmaps = listOfNotNull(tileScene) + urlBitmaps
+          val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
+          PreparedFrame(label = frame.label, bitmaps = bitmaps, expectedBitmapCount = expectedCount)
         }.filter { it.bitmaps.isNotEmpty() && it.bitmaps.size == it.expectedBitmapCount }
         if (prepared.size < 2) throw IllegalStateException("Could not download enough frames to export video.")
 
@@ -323,6 +326,70 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return out
   }
 
+  private fun renderTileScene(width: Int, height: Int, frame: ExportFrame): Bitmap? {
+    val template = frame.tileTemplate ?: return null
+    val region = frame.region ?: return null
+    val z = (frame.zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 12)
+    val tileSize = 256
+    val worldSize = tileSize * (1 shl z).toDouble()
+    val center = lonLatToWorldPixel(region.longitude, region.latitude, z, tileSize)
+    val west = region.longitude - region.longitudeDelta / 2.0
+    val east = region.longitude + region.longitudeDelta / 2.0
+    val north = (region.latitude + region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val south = (region.latitude - region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val westPx = lonToWorldPixel(west, z, tileSize)
+    val eastPx = lonToWorldPixel(east, z, tileSize)
+    val northPy = latToWorldPixel(north, z, tileSize)
+    val southPy = latToWorldPixel(south, z, tileSize)
+    val spanX = max(1.0, kotlin.math.abs(eastPx - westPx))
+    val spanY = max(1.0, kotlin.math.abs(southPy - northPy))
+    val scale = min(width / spanX, height / spanY)
+    val leftWorld = center.first - width / (2.0 * scale)
+    val topWorld = center.second - height / (2.0 * scale)
+    val rightWorld = center.first + width / (2.0 * scale)
+    val bottomWorld = center.second + height / (2.0 * scale)
+    val minTileX = floor(leftWorld / tileSize).toInt() - 1
+    val maxTileX = floor(rightWorld / tileSize).toInt() + 1
+    val minTileY = max(0, floor(topWorld / tileSize).toInt() - 1)
+    val maxTileY = min((1 shl z) - 1, floor(bottomWorld / tileSize).toInt() + 1)
+
+    val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+    canvas.drawColor(Color.rgb(5, 10, 22))
+    drawExportGrid(canvas, width, height)
+
+    fun drawTemplateLayer(tileTemplate: String?, alpha: Int) {
+      if (tileTemplate.isNullOrBlank()) return
+      paint.alpha = alpha.coerceIn(0, 255)
+      for (ty in minTileY..maxTileY) {
+        for (txRaw in minTileX..maxTileX) {
+          val tx = ((txRaw % (1 shl z)) + (1 shl z)) % (1 shl z)
+          val url = tileTemplate
+            .replace("{z}", z.toString())
+            .replace("{x}", tx.toString())
+            .replace("{y}", ty.toString())
+          val tile = downloadBitmap(url) ?: continue
+          val left = ((txRaw * tileSize) - leftWorld) * scale
+          val top = ((ty * tileSize) - topWorld) * scale
+          val dst = RectF(
+            left.toFloat(),
+            top.toFloat(),
+            (left + tileSize * scale).toFloat(),
+            (top + tileSize * scale).toFloat(),
+          )
+          canvas.drawBitmap(tile, null, dst, paint)
+          tile.recycle()
+        }
+      }
+    }
+
+    drawTemplateLayer(frame.basemapTemplate, 245)
+    drawTemplateLayer(template, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
+    paint.alpha = 255
+    return out
+  }
+
   private fun drawExportGrid(canvas: Canvas, width: Int, height: Int) {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       style = Paint.Style.STROKE
@@ -396,6 +463,24 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     }
     canvas.drawBitmap(bitmap, null, dst, paint)
   }
+
+  private fun approxZoom(lonDelta: Double): Double =
+    (ln(360.0 / lonDelta.coerceAtLeast(0.0001)) / ln(2.0)).coerceIn(1.0, 12.0)
+
+  private fun lonToWorldPixel(lon: Double, z: Int, tileSize: Int): Double {
+    val worldSize = tileSize * (1 shl z).toDouble()
+    return ((lon + 180.0) / 360.0) * worldSize
+  }
+
+  private fun latToWorldPixel(lat: Double, z: Int, tileSize: Int): Double {
+    val clipped = lat.coerceIn(-85.05112878, 85.05112878)
+    val sinLat = kotlin.math.sin(Math.toRadians(clipped))
+    val worldSize = tileSize * (1 shl z).toDouble()
+    return (0.5 - ln((1.0 + sinLat) / (1.0 - sinLat)) / (4.0 * Math.PI)) * worldSize
+  }
+
+  private fun lonLatToWorldPixel(lon: Double, lat: Double, z: Int, tileSize: Int): Pair<Double, Double> =
+    Pair(lonToWorldPixel(lon, z, tileSize), latToWorldPixel(lat, z, tileSize))
 
   private fun argbBitmapToYuv420(bitmap: Bitmap, width: Int, height: Int, colorFormat: Int, out: ByteArray) {
     // H.264 encoders typically want YUV420, not ARGB. This is a straightforward
@@ -503,25 +588,54 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 
   private fun readFrames(array: ReadableArray?): List<ExportFrame> {
     // Defensive parser for the JS bridge payload. Bad/empty frames are skipped
-    // here so the encoder only sees frames with at least one image URL.
+    // here so the encoder only sees frames with at least one image URL or a
+    // renderable radar tile template.
     if (array == null) return emptyList()
     val list = mutableListOf<ExportFrame>()
     for (i in 0 until array.size()) {
       val item = array.getMap(i) ?: continue
-      val urlsArray = item.getArray("urls") ?: continue
+      val urlsArray = item.getArray("urls")
       val urls = mutableListOf<String>()
-      for (j in 0 until urlsArray.size()) {
-        urlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
+      if (urlsArray != null) {
+        for (j in 0 until urlsArray.size()) {
+          urlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
+        }
       }
-      if (urls.isNotEmpty()) {
-        list.add(ExportFrame(label = item.optString("label", "Frame ${i + 1}"), urls = urls))
+      val tileTemplate = item.optNullableString("tileTemplate")
+      if (urls.isNotEmpty() || !tileTemplate.isNullOrBlank()) {
+        list.add(
+          ExportFrame(
+            label = item.optString("label", "Frame ${i + 1}"),
+            urls = urls,
+            tileTemplate = tileTemplate,
+            basemapTemplate = item.optNullableString("basemapTemplate"),
+            region = item.getMap("region")?.toExportRegion(),
+            zoom = item.optNullableDouble("zoom"),
+            opacity = item.optNullableDouble("opacity"),
+          )
+        )
       }
     }
     return list
   }
 }
 
-private data class ExportFrame(val label: String, val urls: List<String>)
+private data class ExportRegion(
+  val latitude: Double,
+  val longitude: Double,
+  val latitudeDelta: Double,
+  val longitudeDelta: Double,
+)
+
+private data class ExportFrame(
+  val label: String,
+  val urls: List<String>,
+  val tileTemplate: String? = null,
+  val basemapTemplate: String? = null,
+  val region: ExportRegion? = null,
+  val zoom: Double? = null,
+  val opacity: Double? = null,
+)
 private data class PreparedFrame(val label: String, val bitmaps: List<Bitmap>, val expectedBitmapCount: Int)
 
 private fun ReadableMap.optInt(name: String, fallback: Int): Int =
@@ -532,6 +646,26 @@ private fun ReadableMap.optDouble(name: String, fallback: Double): Double =
 
 private fun ReadableMap.optString(name: String, fallback: String): String =
   if (hasKey(name) && !isNull(name)) getString(name) ?: fallback else fallback
+
+private fun ReadableMap.optNullableString(name: String): String? =
+  if (hasKey(name) && !isNull(name)) getString(name) else null
+
+private fun ReadableMap.optNullableDouble(name: String): Double? =
+  if (hasKey(name) && !isNull(name)) getDouble(name) else null
+
+private fun ReadableMap.toExportRegion(): ExportRegion? {
+  val lat = optNullableDouble("latitude") ?: return null
+  val lon = optNullableDouble("longitude") ?: return null
+  val latDelta = optNullableDouble("latitudeDelta") ?: return null
+  val lonDelta = optNullableDouble("longitudeDelta") ?: return null
+  if (!lat.isFinite() || !lon.isFinite() || !latDelta.isFinite() || !lonDelta.isFinite()) return null
+  return ExportRegion(
+    latitude = lat,
+    longitude = lon,
+    latitudeDelta = latDelta.coerceAtLeast(0.0001),
+    longitudeDelta = lonDelta.coerceAtLeast(0.0001),
+  )
+}
 
 private fun normalizedEven(value: Int, minValue: Int, maxValue: Int): Int {
   val clamped = value.coerceIn(minValue, maxValue)

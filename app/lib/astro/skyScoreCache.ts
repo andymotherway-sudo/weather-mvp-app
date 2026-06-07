@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 import type { LocationAstroForecast } from './locationAstro';
+import { toLocalLabel } from './locationAstro';
 
 const KEY_PREFIX = 'omniwx:skyScore:v1';
 
@@ -14,11 +15,11 @@ function isFiniteCoord(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function formatWindow(start?: string | null, end?: string | null) {
+function formatWindow(start?: string | null, end?: string | null, timeZone?: string | null) {
   if (!start) return 'Best window --';
-  const startLabel = new Date(start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const startLabel = toLocalLabel(start, timeZone);
   if (!end) return `Best window ${startLabel}`;
-  const endLabel = new Date(end).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const endLabel = toLocalLabel(end, timeZone);
   return `Best window ${startLabel}-${endLabel}`;
 }
 
@@ -69,7 +70,7 @@ export async function writeSkyScoreWidgetCache(forecast: LocationAstroForecast) 
   const widget = {
     score: forecast.peakScore,
     label: forecast.peakLabel,
-    bestWindow: formatWindow(forecast.bestStartTime, forecast.bestEndTime),
+    bestWindow: formatWindow(forecast.bestStartTime, forecast.bestEndTime, forecast.timezone),
     bortle: formatBortle(forecast),
     cloudLow: pct(hour?.cloudLow),
     cloudMid: pct(hour?.cloudMid),

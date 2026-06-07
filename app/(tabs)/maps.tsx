@@ -292,21 +292,18 @@ type SatelliteFrame = {
 };
 
 const SATELLITE_LOOP_MINUTES_BACK = 120;
-const SATELLITE_FRAME_STEP_MINUTES = 10;
-const SATELLITE_PLAY_INTERVAL_MS = 1800;
+const SATELLITE_FRAME_STEP_MINUTES = 5;
+const SATELLITE_PLAY_INTERVAL_MS = 950;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
-const ANIMATION_QUALITY_OPTIONS: Array<{ id: AnimationQuality; label: string; meta: string }> = [
-  { id: 'smooth', label: 'Smooth', meta: 'lighter loop' },
-  { id: 'cinematic', label: 'Cinematic', meta: 'balanced' },
-  { id: 'presentation', label: 'Presentation', meta: 'best export' },
-];
+const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
+const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 
 function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512) {
   const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
@@ -1194,7 +1191,6 @@ export default function MapsScreen() {
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [rawMode, setRawMode] = useState(false);
-  const [animationQuality, setAnimationQuality] = useState<AnimationQuality>('cinematic');
   const [animationRecordMode, setAnimationRecordMode] = useState(false);
   const [animationRecordRegion, setAnimationRecordRegion] = useState<Region | null>(null);
   const [animationBufferStatus, setAnimationBufferStatus] = useState<AnimationBufferStatus | null>(null);
@@ -1464,9 +1460,8 @@ export default function MapsScreen() {
   const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled;
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
-  const satelliteFrameStepMinutes = animationQuality === 'presentation' ? 5 : SATELLITE_FRAME_STEP_MINUTES;
-  const satellitePlayIntervalMs =
-    animationQuality === 'presentation' ? 950 : animationQuality === 'smooth' ? 2200 : SATELLITE_PLAY_INTERVAL_MS;
+  const satelliteFrameStepMinutes = SATELLITE_FRAME_STEP_MINUTES;
+  const satellitePlayIntervalMs = SATELLITE_PLAY_INTERVAL_MS;
   const [satelliteFrames, setSatelliteFrames] = useState<SatelliteFrame[]>(() =>
     buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
   );
@@ -1780,10 +1775,11 @@ export default function MapsScreen() {
     radarSiteId3: selectedRadarId3,
     localMinZoom: stormMode ? 10.5 : 12,
     ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
-    animationQuality,
+    animationQuality: BEST_ANIMATION_QUALITY,
   });
 
   const uiFrames = radarCtl.uiFrames;
+  const uiTemplates = radarCtl.uiTemplates ?? [];
   const frameCount = radarCtl.frameCount;
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
@@ -2667,28 +2663,12 @@ export default function MapsScreen() {
               : cloudsOpacity;
   const animationCompositorInterval =
     activeAnimationKind === 'truecolor'
-      ? animationQuality === 'presentation'
-        ? 1050
-        : animationQuality === 'smooth'
-          ? 2400
-          : 1650
-      : animationQuality === 'presentation'
-        ? 900
-        : animationQuality === 'smooth'
-          ? 2100
-          : 1500;
+      ? 1050
+      : 900;
   const animationCompositorBlend =
     activeAnimationKind === 'truecolor'
-      ? animationQuality === 'presentation'
-        ? 680
-        : animationQuality === 'smooth'
-          ? 560
-          : 620
-      : animationQuality === 'presentation'
-        ? 420
-        : animationQuality === 'smooth'
-          ? 220
-          : 340;
+      ? 680
+      : 420;
   const animationExportSize = useMemo(
     () =>
       animationExportDimensions(animationViewportRegion, activeAnimationKind, mapZoom, {
@@ -2766,7 +2746,17 @@ export default function MapsScreen() {
     return animationCompositorFrames.map((frame) => {
       const label = new Date(frame.iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       if (activeAnimationKind === 'radar') {
-        return { label, urls: [buildAnimationUrl('radar', frame, width, height)] };
+        const idx = animationCompositorFrames.findIndex((candidate) => candidate.id === frame.id);
+        const tileTemplate = idx >= 0 ? uiTemplates[idx] : null;
+        return {
+          label,
+          urls: tileTemplate ? [] : [buildAnimationUrl('radar', frame, width, height)],
+          tileTemplate,
+          basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
+          region: animationExportRegion,
+          zoom: mapZoom,
+          opacity: radarCtl.radarOpacity,
+        };
       }
       if (activeAnimationKind === 'truecolor') {
         return { label, urls: [buildAnimationUrl('geocolor', frame, width, height)] };
@@ -2794,7 +2784,16 @@ export default function MapsScreen() {
         ],
       };
     });
-  }, [activeAnimationKind, animationCompositorFrames, animationExportSize, buildAnimationUrl]);
+  }, [
+    activeAnimationKind,
+    animationCompositorFrames,
+    animationExportRegion,
+    animationExportSize,
+    buildAnimationUrl,
+    mapZoom,
+    radarCtl.radarOpacity,
+    uiTemplates,
+  ]);
 
   const handleAnimationRecordPress = useCallback(async () => {
     const exportFrames = animationExportFrames;
@@ -2830,9 +2829,9 @@ export default function MapsScreen() {
         height,
         fps: 30,
         secondsPerSourceFrame:
-          activeAnimationKind === 'truecolor' ? (animationQuality === 'presentation' ? 0.62 : 0.7) : animationQuality === 'presentation' ? 0.46 : 0.56,
+          activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
         transitionSeconds:
-          activeAnimationKind === 'truecolor' ? (animationQuality === 'presentation' ? 0.44 : 0.46) : animationQuality === 'presentation' ? 0.24 : 0.28,
+          activeAnimationKind === 'truecolor' ? 0.44 : 0.24,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
@@ -2849,7 +2848,6 @@ export default function MapsScreen() {
     animationExportFrames,
     animationExportSize,
     animationProductLabel,
-    animationQuality,
     effectiveRegion,
   ]);
 
@@ -4420,27 +4418,7 @@ export default function MapsScreen() {
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
                   <View style={styles.animationControlStrip}>
-                    <View style={styles.animationQualityChips}>
-                      {ANIMATION_QUALITY_OPTIONS.map((option) => {
-                        const active = animationQuality === option.id;
-                        return (
-                          <Pressable
-                            key={option.id}
-                            onPress={() => setAnimationQuality(option.id)}
-                            style={[styles.animationQualityChip, active ? styles.animationQualityChipActive : null]}
-                          >
-                            <Text
-                              style={[
-                                styles.animationQualityText,
-                                active ? styles.animationQualityTextActive : null,
-                              ]}
-                            >
-                              {option.label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
+                    <View style={styles.animationControlSpacer} />
                     <Pressable
                       onPress={handleAnimationRecordPress}
                       disabled={animationExporting}
@@ -4489,7 +4467,7 @@ export default function MapsScreen() {
                     frameIndex={timelineFrameIndex}
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
-                    modeLabel={radarEnabled ? 'Cinematic' : 'Satellite loop'}
+                    modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -6492,34 +6470,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 7,
   },
-  animationQualityChips: {
+  animationControlSpacer: {
     flex: 1,
-    flexDirection: 'row',
-    gap: 5,
-  },
-  animationQualityChip: {
-    flex: 1,
-    minHeight: 26,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.22)',
-    backgroundColor: 'rgba(15,23,42,0.68)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  animationQualityChipActive: {
-    borderColor: 'rgba(125,211,252,0.62)',
-    backgroundColor: 'rgba(14,116,144,0.42)',
-  },
-  animationQualityText: {
-    color: 'rgba(226,232,240,0.74)',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  animationQualityTextActive: {
-    color: '#ffffff',
   },
   recordModeButton: {
     minHeight: 26,

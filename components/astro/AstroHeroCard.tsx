@@ -10,10 +10,10 @@ type Props = {
   onLearnSkyScore?: () => void;
 };
 
-function formatWindow(start?: string | null, end?: string | null) {
+function formatWindow(start?: string | null, end?: string | null, timeZone?: string | null) {
   if (!start) return '—';
-  if (!end) return toLocalLabel(start);
-  return `${toLocalLabel(start)}–${toLocalLabel(end)}`;
+  if (!end) return toLocalLabel(start, timeZone);
+  return `${toLocalLabel(start, timeZone)}–${toLocalLabel(end, timeZone)}`;
 }
 
 function formatBortle(forecast: LocationAstroForecast) {
@@ -67,10 +67,11 @@ function heroSubtitle(forecast: LocationAstroForecast) {
 
 export function AstroHeroCard({ forecast, onLearnSkyScore }: Props) {
   const { chrome } = useAppChrome();
-  const bestWindow = formatWindow(forecast.bestStartTime, forecast.bestEndTime);
+  const bestWindow = formatWindow(forecast.bestStartTime, forecast.bestEndTime, forecast.timezone);
   const darkestWindow = formatWindow(
     forecast.darkestStartTime,
-    forecast.darkestEndTime
+    forecast.darkestEndTime,
+    forecast.timezone
   );
 
   return (

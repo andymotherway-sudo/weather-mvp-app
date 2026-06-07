@@ -18,7 +18,7 @@ export function BestWindowCard({ forecast }: Props) {
       {hasWindow ? (
         <>
           <Text style={styles.window}>
-            {toLocalLabel(forecast.bestStartTime)}–{toLocalLabel(forecast.bestEndTime)}
+            {toLocalLabel(forecast.bestStartTime, forecast.timezone)}–{toLocalLabel(forecast.bestEndTime, forecast.timezone)}
           </Text>
           <Text style={styles.summary}>
             {forecast.bestSummary ?? `${forecast.peakLabel} observing conditions expected during the best part of the night.`}

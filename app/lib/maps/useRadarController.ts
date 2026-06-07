@@ -1138,6 +1138,7 @@ export function useRadarController(args: {
   return {
     radar: radarOverlay,
     uiFrames: effectiveFrames,
+    uiTemplates: effectiveTemplates,
     frameCount,
     safeFrameIndex,
     activeFrameIso: effectiveFrames[safeFrameIndex]?.iso ?? null,

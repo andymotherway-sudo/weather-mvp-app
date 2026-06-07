@@ -163,10 +163,10 @@ function sameMinute(a?: string | null, b?: string | null) {
   );
 }
 
-function formatWindow(start?: string | null, end?: string | null) {
+function formatWindow(start?: string | null, end?: string | null, timeZone?: string | null) {
   if (!start) return '--';
-  if (!end || sameMinute(start, end)) return toLocalLabel(start);
-  return `${toLocalLabel(start)}-${toLocalLabel(end)}`;
+  if (!end || sameMinute(start, end)) return toLocalLabel(start, timeZone);
+  return `${toLocalLabel(start, timeZone)}-${toLocalLabel(end, timeZone)}`;
 }
 
 function formatDuration(start?: string | null, end?: string | null) {
@@ -319,6 +319,7 @@ function getCurrentLightState(forecast: LocationAstroForecast, nowMs: number) {
 
 export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
   const { chrome } = useAppChrome();
+  const timeZone = forecast.timezone;
   const [nowMs, setNowMs] = useState(() => getNowSortableMs(forecast.timezone));
   useEffect(() => {
     setNowMs(getNowSortableMs(forecast.timezone));
@@ -328,16 +329,16 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
   const lightState = useMemo(() => getCurrentLightState(forecast, nowMs), [forecast, nowMs]);
   const phaseLabel = safeMoonPhaseLabel(forecast);
   const eventTiles = [
-    { label: 'Sunset', value: toLocalLabel(forecast.sunset), topicId: astroLearnTopicId('sunset') },
-    { label: 'Sunrise', value: toLocalLabel(forecast.sunrise), topicId: astroLearnTopicId('sunrise') },
-    { label: 'Moonrise', value: toLocalLabel(forecast.moonrise), topicId: astroLearnTopicId('moonrise') },
-    { label: 'Moonset', value: toLocalLabel(forecast.moonset), topicId: astroLearnTopicId('moonset') },
-    { label: 'Civil dusk', value: toLocalLabel(forecast.civilDusk), topicId: astroLearnTopicId('civil') },
-    { label: 'Civil dawn', value: toLocalLabel(forecast.civilDawn), topicId: astroLearnTopicId('civil') },
-    { label: 'Nautical dusk', value: toLocalLabel(forecast.nauticalDusk), topicId: astroLearnTopicId('nautical') },
-    { label: 'Nautical dawn', value: toLocalLabel(forecast.nauticalDawn), topicId: astroLearnTopicId('nautical') },
-    { label: 'Astronomical dusk', value: toLocalLabel(forecast.astronomicalDusk), topicId: astroLearnTopicId('astronomical') },
-    { label: 'Astronomical dawn', value: toLocalLabel(forecast.astronomicalDawn), topicId: astroLearnTopicId('astronomical') },
+    { label: 'Sunset', value: toLocalLabel(forecast.sunset, timeZone), topicId: astroLearnTopicId('sunset') },
+    { label: 'Sunrise', value: toLocalLabel(forecast.sunrise, timeZone), topicId: astroLearnTopicId('sunrise') },
+    { label: 'Moonrise', value: toLocalLabel(forecast.moonrise, timeZone), topicId: astroLearnTopicId('moonrise') },
+    { label: 'Moonset', value: toLocalLabel(forecast.moonset, timeZone), topicId: astroLearnTopicId('moonset') },
+    { label: 'Civil dusk', value: toLocalLabel(forecast.civilDusk, timeZone), topicId: astroLearnTopicId('civil') },
+    { label: 'Civil dawn', value: toLocalLabel(forecast.civilDawn, timeZone), topicId: astroLearnTopicId('civil') },
+    { label: 'Nautical dusk', value: toLocalLabel(forecast.nauticalDusk, timeZone), topicId: astroLearnTopicId('nautical') },
+    { label: 'Nautical dawn', value: toLocalLabel(forecast.nauticalDawn, timeZone), topicId: astroLearnTopicId('nautical') },
+    { label: 'Astronomical dusk', value: toLocalLabel(forecast.astronomicalDusk, timeZone), topicId: astroLearnTopicId('astronomical') },
+    { label: 'Astronomical dawn', value: toLocalLabel(forecast.astronomicalDawn, timeZone), topicId: astroLearnTopicId('astronomical') },
   ];
 
   return (
@@ -416,28 +417,28 @@ export function MoonDarknessCard({ forecast, onLearnTopic }: Props) {
 
       {onLearnTopic ? (
         <Pressable onPress={() => onLearnTopic(astroLearnTopicId('night'))}>
-          <InfoBox label="NIGHT WINDOW" value={formatWindow(forecast.nightStartTime, forecast.nightEndTime)} />
+          <InfoBox label="NIGHT WINDOW" value={formatWindow(forecast.nightStartTime, forecast.nightEndTime, timeZone)} />
         </Pressable>
       ) : (
-        <InfoBox label="NIGHT WINDOW" value={formatWindow(forecast.nightStartTime, forecast.nightEndTime)} />
+        <InfoBox label="NIGHT WINDOW" value={formatWindow(forecast.nightStartTime, forecast.nightEndTime, timeZone)} />
       )}
 
       <InfoBox label="NIGHT LENGTH" value={formatDuration(forecast.nightStartTime, forecast.nightEndTime)} />
 
       {onLearnTopic ? (
         <Pressable onPress={() => onLearnTopic(astroLearnTopicId('true-dark'))}>
-          <InfoBox label="TRUE DARK" value={formatWindow(forecast.trueDarkStartTime, forecast.trueDarkEndTime)} />
+          <InfoBox label="TRUE DARK" value={formatWindow(forecast.trueDarkStartTime, forecast.trueDarkEndTime, timeZone)} />
         </Pressable>
       ) : (
-        <InfoBox label="TRUE DARK" value={formatWindow(forecast.trueDarkStartTime, forecast.trueDarkEndTime)} />
+        <InfoBox label="TRUE DARK" value={formatWindow(forecast.trueDarkStartTime, forecast.trueDarkEndTime, timeZone)} />
       )}
 
       {onLearnTopic ? (
         <Pressable onPress={() => onLearnTopic(astroLearnTopicId('darkest'))}>
-          <InfoBox label="DARKEST WINDOW" value={formatWindow(forecast.darkestStartTime, forecast.darkestEndTime)} />
+          <InfoBox label="DARKEST WINDOW" value={formatWindow(forecast.darkestStartTime, forecast.darkestEndTime, timeZone)} />
         </Pressable>
       ) : (
-        <InfoBox label="DARKEST WINDOW" value={formatWindow(forecast.darkestStartTime, forecast.darkestEndTime)} />
+        <InfoBox label="DARKEST WINDOW" value={formatWindow(forecast.darkestStartTime, forecast.darkestEndTime, timeZone)} />
       )}
     </View>
   );

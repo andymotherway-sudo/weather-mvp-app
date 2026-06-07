@@ -3,6 +3,16 @@ import { NativeModules, Platform } from 'react-native';
 export type AnimationVideoFrame = {
   label: string;
   urls: string[];
+  tileTemplate?: string | null;
+  basemapTemplate?: string | null;
+  region?: {
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null;
+  zoom?: number | null;
+  opacity?: number | null;
 };
 
 export type AnimationVideoExportOptions = {
@@ -47,12 +57,17 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     .map((frame) => ({
       label: frame.label,
       urls: frame.urls.filter(Boolean),
+      tileTemplate: frame.tileTemplate ?? null,
+      basemapTemplate: frame.basemapTemplate ?? null,
+      region: frame.region ?? null,
+      zoom: frame.zoom ?? null,
+      opacity: frame.opacity ?? null,
     }))
-    .filter((frame) => frame.urls.length > 0);
+    .filter((frame) => frame.urls.length > 0 || !!frame.tileTemplate);
 
   // Native export expects every source frame to have at least one prepared
-  // image layer. Rejecting here gives the UI a useful message before Kotlin
-  // starts allocating bitmaps/video encoders.
+  // image layer or renderable tile template. Rejecting here gives the UI a
+  // useful message before Kotlin starts allocating bitmaps/video encoders.
   if (frames.length < 2) {
     throw new Error('At least two prepared frames are required for video export.');
   }
