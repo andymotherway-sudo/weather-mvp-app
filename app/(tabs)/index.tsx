@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
@@ -50,10 +51,7 @@ import { typography } from '../../styles/typography';
 import { dewPointBandF, gustFactor, heatIndexF, windChillF } from '../lib/land/nerdyMath';
 
 import { AlertBanner } from '../../components/alerts/AlertBanner';
-import { useAlmanacPreload } from '../../components/boot/AlmanacWarmup';
 import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
-import type { AlmanacDailyRecord } from '../lib/almanac/types';
-import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
@@ -360,6 +358,156 @@ function formatClock(iso?: string | null, timeZone?: string | null) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timeZone || undefined });
+}
+
+function minutesFromClockIso(iso?: string | null) {
+  const wall = extractIsoWallClockParts(iso);
+  if (wall) return wall.hour * 60 + wall.minute;
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function buildArcPath(
+  displayStart: number,
+  displayEnd: number,
+  cycleStart: number,
+  cycleEnd: number,
+  opts: { width: number; margin: number; baseline: number; height: number }
+) {
+  const span = Math.max(1, cycleEnd - cycleStart);
+  const samples = 20;
+  const points: string[] = [];
+  for (let i = 0; i <= samples; i += 1) {
+    const t = displayStart + ((displayEnd - displayStart) * i) / samples;
+    const dayMinute = ((t % 1440) + 1440) % 1440;
+    const x = opts.margin + (dayMinute / 1440) * (opts.width - opts.margin * 2);
+    const progress = Math.max(0, Math.min(1, (t - cycleStart) / span));
+    const y = opts.baseline - Math.sin(progress * Math.PI) * opts.height;
+    points.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
+  }
+  return points.join(' ');
+}
+
+function dayArcSegments(startMinute: number | null, endMinute: number | null) {
+  if (startMinute == null || endMinute == null) return [];
+  const normalizedEnd = endMinute <= startMinute ? endMinute + 1440 : endMinute;
+  if (normalizedEnd <= 1440) {
+    return [{ displayStart: startMinute, displayEnd: normalizedEnd, cycleStart: startMinute, cycleEnd: normalizedEnd }];
+  }
+  return [
+    { displayStart: startMinute, displayEnd: 1440, cycleStart: startMinute, cycleEnd: normalizedEnd },
+    { displayStart: 1440, displayEnd: normalizedEnd, cycleStart: startMinute, cycleEnd: normalizedEnd },
+  ];
+}
+
+function DayMoonArc({
+  sunrise,
+  sunset,
+  moonrise,
+  moonset,
+  showMoon = false,
+}: {
+  sunrise?: string | null;
+  sunset?: string | null;
+  moonrise?: string | null;
+  moonset?: string | null;
+  showMoon?: boolean;
+}) {
+  const width = 320;
+  const height = 104;
+  const margin = 24;
+  const baseline = 66;
+  const arcHeight = 38;
+  const sunStart = minutesFromClockIso(sunrise);
+  const sunEnd = minutesFromClockIso(sunset);
+  const moonStart = minutesFromClockIso(moonrise);
+  const moonEnd = minutesFromClockIso(moonset);
+  const sunSegments = dayArcSegments(sunStart, sunEnd);
+  const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd) : [];
+  const hasSun = sunSegments.length > 0;
+  const hasMoon = moonSegments.length > 0;
+
+  return (
+    <View style={styles.dayArcCard}>
+      <View style={styles.dayArcHeader}>
+        <Text style={styles.dayArcTitle}>{showMoon ? 'Sun & moon arc' : 'Sun arc'}</Text>
+        <View style={styles.dayArcLegend}>
+          <View style={[styles.dayArcLegendDot, { backgroundColor: 'rgba(255, 198, 89, 0.96)' }]} />
+          <Text style={styles.dayArcLegendText}>Sun</Text>
+          {showMoon ? (
+            <>
+              <View style={[styles.dayArcLegendDot, { backgroundColor: 'rgba(96, 190, 255, 0.96)' }]} />
+              <Text style={styles.dayArcLegendText}>Moon</Text>
+            </>
+          ) : null}
+        </View>
+      </View>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Path
+          d={`M ${margin} ${baseline} L ${width - margin} ${baseline}`}
+          stroke="rgba(255,255,255,0.16)"
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+        <Path
+          d={`M ${margin} ${baseline} C ${width * 0.33} ${baseline - 18}, ${width * 0.67} ${baseline - 18}, ${width - margin} ${baseline}`}
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth={1}
+          strokeDasharray="4 7"
+          fill="none"
+        />
+        {moonSegments.map((segment, idx) => (
+          <Path
+            key={`moon-${idx}`}
+            d={buildArcPath(segment.displayStart, segment.displayEnd, segment.cycleStart, segment.cycleEnd, { width, margin, baseline, height: arcHeight - 8 })}
+            stroke="rgba(96, 190, 255, 0.92)"
+            strokeWidth={4}
+            strokeLinecap="round"
+            fill="none"
+          />
+        ))}
+        {sunSegments.map((segment, idx) => (
+          <Path
+            key={`sun-${idx}`}
+            d={buildArcPath(segment.displayStart, segment.displayEnd, segment.cycleStart, segment.cycleEnd, { width, margin, baseline, height: arcHeight })}
+            stroke="rgba(255, 198, 89, 0.96)"
+            strokeWidth={5}
+            strokeLinecap="round"
+            fill="none"
+          />
+        ))}
+        {sunStart != null ? <Circle cx={margin + (sunStart / 1440) * (width - margin * 2)} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
+        {sunEnd != null ? <Circle cx={margin + (sunEnd / 1440) * (width - margin * 2)} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
+        {showMoon && moonStart != null ? <Circle cx={margin + (moonStart / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
+        {showMoon && moonEnd != null ? <Circle cx={margin + (moonEnd / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
+      </Svg>
+      <View style={styles.dayArcTimes}>
+        <View style={styles.dayArcTimeBlock}>
+          <Text style={styles.dayArcTimeLabel}>Sunrise</Text>
+          <Text style={styles.dayArcTimeValue}>{formatClock(sunrise)}</Text>
+        </View>
+        <View style={styles.dayArcTimeBlock}>
+          <Text style={styles.dayArcTimeLabel}>Sunset</Text>
+          <Text style={styles.dayArcTimeValue}>{formatClock(sunset)}</Text>
+        </View>
+        {showMoon ? (
+          <>
+            <View style={styles.dayArcTimeBlock}>
+              <Text style={styles.dayArcTimeLabel}>Moonrise</Text>
+              <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonrise)}</Text>
+            </View>
+            <View style={styles.dayArcTimeBlock}>
+              <Text style={styles.dayArcTimeLabel}>Moonset</Text>
+              <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonset)}</Text>
+            </View>
+          </>
+        ) : null}
+      </View>
+      {!hasSun && (!showMoon || !hasMoon) ? <Text style={styles.dayArcPending}>Arc timing pending</Text> : null}
+    </View>
+  );
 }
 
 function fmtInt(v: number | null, suffix = '') {
@@ -2257,29 +2405,6 @@ function buildDayNightSummary(dateRaw: any, hourly?: any[]) {
   };
 }
 
-function sameRecordCoords(a?: { lat: number; lon: number } | null, b?: { lat: number; lon: number } | null) {
-  if (!a || !b) return false;
-  return Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lon - b.lon) < 0.0005;
-}
-
-function formatRecordTemp(value: number | null | undefined) {
-  return value != null && Number.isFinite(value) ? `${Math.round(value)}°` : '—';
-}
-
-function formatRecordPrecip(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '—';
-  if (value < 0.01) return 'Trace';
-  return `${value.toFixed(2)} in`;
-}
-
-function formatRecordYears(years: number[] | null | undefined) {
-  if (!Array.isArray(years) || !years.length) return 'Year —';
-  const clean = years.filter((year) => Number.isFinite(year)).sort((a, b) => b - a);
-  if (!clean.length) return 'Year —';
-  if (clean.length === 1) return `Year ${clean[0]}`;
-  return `Years ${clean.slice(0, 2).join(', ')}${clean.length > 2 ? ` +${clean.length - 2}` : ''}`;
-}
-
 function SimpleDailyOverview({
   tempF,
   condition,
@@ -2301,7 +2426,6 @@ function SimpleDailyOverview({
   moonset,
   moonDays,
   dayLengthSec,
-  almanacRecord,
 }: {
   tempF: number | null;
   condition: string;
@@ -2330,7 +2454,6 @@ function SimpleDailyOverview({
     moonPhaseLabel?: string | null;
   }>;
   dayLengthSec?: number | null;
-  almanacRecord?: AlmanacDailyRecord | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2370,11 +2493,6 @@ function SimpleDailyOverview({
     todayHi != null && todayLo != null && tempF != null && todayHi !== todayLo
       ? Math.max(0, Math.min(100, ((tempF - todayLo) / (todayHi - todayLo)) * 100))
       : 50;
-  const almanacItems = [
-    { label: 'Record high', value: formatRecordTemp(almanacRecord?.recordHighF), meta: formatRecordYears(almanacRecord?.recordHighYears) },
-    { label: 'Record low', value: formatRecordTemp(almanacRecord?.recordLowF), meta: formatRecordYears(almanacRecord?.recordLowYears) },
-    { label: 'Record precip', value: formatRecordPrecip(almanacRecord?.recordPrecipIn), meta: formatRecordYears(almanacRecord?.recordPrecipYears) },
-  ];
   const todayNarrative = [
     todayCondition,
     todayHi != null && todayHi >= 85 ? 'Warm' : todayHi != null && todayHi <= 55 ? 'Cool' : 'Mild',
@@ -2454,15 +2572,7 @@ function SimpleDailyOverview({
           </View>
         </View>
 
-        <View style={styles.dailyAlmanacRow}>
-          {almanacItems.map((item) => (
-            <View key={item.label} style={styles.dailyAlmanacCell}>
-              <Text style={styles.dailyAlmanacLabel}>{item.label}</Text>
-              <Text style={styles.dailyAlmanacValue}>{item.value}</Text>
-              <Text style={styles.dailyAlmanacMeta}>{item.meta}</Text>
-            </View>
-          ))}
-        </View>
+        <DayMoonArc sunrise={sunrise} sunset={sunset} />
 
         <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
           {currentMetrics.map((item) => (
@@ -2913,9 +3023,6 @@ function NerdyDeepDive({
   moonPhaseDegrees,
   moonPhaseLabel,
   dayLengthSec,
-  todayHighF,
-  todayLowF,
-  almanacRecord,
   feelsDriverLabel,
   feelsDriverValue,
   onOpenLearnTopic,
@@ -2963,9 +3070,6 @@ function NerdyDeepDive({
   moonPhaseDegrees?: number | null;
   moonPhaseLabel?: string | null;
   dayLengthSec?: number | null;
-  todayHighF?: number | null;
-  todayLowF?: number | null;
-  almanacRecord?: AlmanacDailyRecord | null;
   pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
@@ -2987,44 +3091,6 @@ function NerdyDeepDive({
     : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
   const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
-  const todayRangePct =
-    todayHighF != null && todayLowF != null && tempF != null && todayHighF !== todayLowF
-      ? Math.max(0, Math.min(100, ((tempF - todayLowF) / (todayHighF - todayLowF)) * 100))
-      : null;
-  const recordHighDelta =
-    almanacRecord?.recordHighF != null && tempF != null ? almanacRecord.recordHighF - tempF : null;
-  const recordLowDelta =
-    almanacRecord?.recordLowF != null && tempF != null ? tempF - almanacRecord.recordLowF : null;
-  const rangePositionLabel =
-    todayRangePct == null
-      ? 'Range position pending'
-      : todayRangePct >= 80
-        ? 'Near today\'s high'
-        : todayRangePct <= 20
-          ? 'Near today\'s low'
-          : 'Between today\'s endpoints';
-  const climateCards = [
-    {
-      label: 'Today Range',
-      value: todayHighF != null && todayLowF != null ? `${Math.round(todayLowF)}°-${Math.round(todayHighF)}°` : '—',
-      hint: todayRangePct != null ? `${Math.round(todayRangePct)}% through range` : rangePositionLabel,
-    },
-    {
-      label: 'Record High',
-      value: formatRecordTemp(almanacRecord?.recordHighF),
-      hint: recordHighDelta != null ? `${Math.max(0, Math.round(recordHighDelta))}° below record` : formatRecordYears(almanacRecord?.recordHighYears),
-    },
-    {
-      label: 'Record Low',
-      value: formatRecordTemp(almanacRecord?.recordLowF),
-      hint: recordLowDelta != null ? `${Math.max(0, Math.round(recordLowDelta))}° above record` : formatRecordYears(almanacRecord?.recordLowYears),
-    },
-    {
-      label: 'Record Precip',
-      value: formatRecordPrecip(almanacRecord?.recordPrecipIn),
-      hint: formatRecordYears(almanacRecord?.recordPrecipYears),
-    },
-  ];
   const sunMoments = [
     { label: 'Dawn', value: formatClock(astro?.civilDawn), topicId: astroLearnTopicId('civil') },
     { label: 'Sunrise', value: formatClock(sunrise), topicId: astroLearnTopicId('sunrise') },
@@ -3076,48 +3142,7 @@ function NerdyDeepDive({
         </View>
       </View>
 
-      <View style={nd.climatePanel}>
-        <View style={nd.climateHeader}>
-          <View>
-            <Text style={nd.panelTitle}>Climatology Context</Text>
-            <Text style={nd.climateSubtitle}>{rangePositionLabel}</Text>
-          </View>
-          <View style={nd.climateBadge}>
-            <Text style={nd.climateBadgeText}>30 yr</Text>
-          </View>
-        </View>
-
-        <View style={nd.climateRangeBlock}>
-          <View style={nd.climateRangeLabels}>
-            <Text style={nd.climateRangeEndpoint}>{todayLowF != null ? `${Math.round(todayLowF)}°` : '—'}</Text>
-            <Text style={nd.climateRangeCurrent}>{tempF != null ? `${Math.round(tempF)}° now` : 'Current —'}</Text>
-            <Text style={nd.climateRangeEndpoint}>{todayHighF != null ? `${Math.round(todayHighF)}°` : '—'}</Text>
-          </View>
-          <View style={nd.climateRangeTrack}>
-            <LinearGradient
-              colors={['rgba(72, 160, 255, 0.82)', 'rgba(255, 205, 92, 0.78)', 'rgba(255, 86, 86, 0.84)']}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={nd.climateRangeFill}
-            />
-            {todayRangePct != null ? (
-              <View style={[nd.climateRangeMarker, { left: `${todayRangePct}%` }]}>
-                <View style={nd.climateRangeMarkerDot} />
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={nd.climateCardGrid}>
-          {climateCards.map((card) => (
-            <View key={card.label} style={nd.climateCard}>
-              <Text style={nd.metricLabel}>{card.label}</Text>
-              <Text style={nd.climateCardValue}>{card.value}</Text>
-              <Text style={nd.metricHint}>{card.hint}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
+      <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon />
 
       <View style={nd.panelGrid}>
         <View style={nd.panelRow}>
@@ -3375,115 +3400,6 @@ const nd = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.88)',
-  },
-  climatePanel: {
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    backgroundColor: GLASS_PANEL_BG,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER_SOFT,
-    gap: 12,
-  },
-  climateHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  climateSubtitle: {
-    marginTop: 5,
-    fontSize: 13,
-    lineHeight: 17,
-    fontWeight: '800',
-    color: 'rgba(255,255,255,0.68)',
-  },
-  climateBadge: {
-    paddingVertical: 6,
-    paddingHorizontal: 9,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  climateBadgeText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.72)',
-  },
-  climateRangeBlock: {
-    gap: 8,
-  },
-  climateRangeLabels: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  climateRangeEndpoint: {
-    width: 56,
-    fontSize: 11,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.72)',
-  },
-  climateRangeCurrent: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.86)',
-  },
-  climateRangeTrack: {
-    height: 11,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    overflow: 'visible',
-  },
-  climateRangeFill: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-  },
-  climateRangeMarker: {
-    position: 'absolute',
-    top: -5,
-    width: 21,
-    height: 21,
-    marginLeft: -10.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  climateRangeMarkerDot: {
-    width: 13,
-    height: 13,
-    borderRadius: 999,
-    backgroundColor: 'white',
-    borderWidth: 3,
-    borderColor: 'rgba(64, 156, 255, 0.9)',
-  },
-  climateCardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  climateCard: {
-    flexBasis: '48%',
-    flexGrow: 1,
-    minHeight: 82,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: GLASS_INSET_BG_SOFT,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER_SOFT,
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  climateCardValue: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '900',
-    color: 'white',
   },
   panelGrid: { gap: 10 },
   section: { gap: 10 },
@@ -3811,15 +3727,6 @@ function LandWeatherWithCoords({
   const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
   const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
   const { forecastModel } = useSettings();
-  const almanacPreload = useAlmanacPreload();
-  const almanacPreloadMatches = sameRecordCoords(almanacPreload?.coords, coords);
-  const localRecords = useDailyRecords({
-    lat: coords.lat,
-    lon: coords.lon,
-    enabled: !almanacPreloadMatches,
-  });
-  const almanacRecords = almanacPreloadMatches ? almanacPreload?.records : localRecords;
-
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
     lon: coords.lon,
@@ -3922,11 +3829,6 @@ function LandWeatherWithCoords({
   const forecastTimeZone =
     typeof forecastData?.timezone === 'string' && forecastData.timezone.trim() ? forecastData.timezone.trim() : null;
   const todayDaily = daily[0] ?? null;
-  const todayRecordKey =
-    typeof todayDaily?.date === 'string'
-      ? todayDaily.date.slice(5, 10)
-      : todayDateKeyLocal().slice(5, 10);
-  const todayAlmanacRecord = almanacRecords?.records?.[todayRecordKey] ?? null;
   const todaySunrise = typeof todayDaily?.sunrise === 'string' ? todayDaily.sunrise : null;
   const todaySunset = typeof todayDaily?.sunset === 'string' ? todayDaily.sunset : null;
   const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
@@ -4160,7 +4062,6 @@ function LandWeatherWithCoords({
           moonset={todayMoonset}
           moonDays={astroData?.moonDays}
           dayLengthSec={todayDayLengthSec}
-          almanacRecord={todayAlmanacRecord}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -4284,25 +4185,6 @@ function LandWeatherWithCoords({
           moonPhaseDegrees={safeNum(todayMoonDay?.moonPhaseDegrees)}
           moonPhaseLabel={typeof todayMoonDay?.moonPhaseLabel === 'string' ? todayMoonDay.moonPhaseLabel : null}
           dayLengthSec={todayDayLengthSec}
-          todayHighF={
-            safeNum(
-              (todayDaily as any)?.tempMaxF ??
-                (todayDaily as any)?.temperatureMaxF ??
-                (todayDaily as any)?.temperature_2m_max ??
-                (todayDaily as any)?.maxTempF ??
-                (todayDaily as any)?.highF
-            ) ?? null
-          }
-          todayLowF={
-            safeNum(
-              (todayDaily as any)?.tempMinF ??
-                (todayDaily as any)?.temperatureMinF ??
-                (todayDaily as any)?.temperature_2m_min ??
-                (todayDaily as any)?.minTempF ??
-                (todayDaily as any)?.lowF
-            ) ?? null
-          }
-          almanacRecord={todayAlmanacRecord}
           feelsDriverLabel={feelsDriver.label}
           feelsDriverValue={feelsDriver.value}
           onOpenLearnTopic={openLearnTopic}
@@ -4672,16 +4554,24 @@ export default function LandWeatherScreen() {
             <View style={[styles.headerHeroSurface, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
               <View style={styles.headerCompactTopRow}>
                 <View style={styles.headerCompactLeft}>
-                  <Image
-                    source={require('../../assets/brand/omniwx-mark-word.png')}
-                    style={styles.headerCompactLogo}
-                    resizeMode="contain"
-                  />
+                  <Pressable
+                    onPress={() => router.push('/profile')}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open settings"
+                    style={styles.headerLogoButton}
+                  >
+                    <Image
+                      source={require('../../assets/brand/omniwx-mark-word.png')}
+                      style={styles.headerCompactLogo}
+                      resizeMode="contain"
+                    />
+                  </Pressable>
 
                   {/* Location + Save inline */}
                   <Pressable onPress={() => setPickerOpen(true)} style={styles.headerCompactLocation}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={styles.locationPrimary} numberOfLines={1}>
+                    <View style={styles.headerLocationInner}>
+                      <Text style={styles.locationPrimary} numberOfLines={1} ellipsizeMode="tail">
                         {locationLabel}
                       </Text>
 
@@ -4699,27 +4589,16 @@ export default function LandWeatherScreen() {
                   </Pressable>
                 </View>
 
-                <Pressable
-                  onPress={() => router.push('/profile')}
-                  hitSlop={12}
-                  style={styles.settingsIconBtn}
-                >
-                  <Ionicons name="settings-outline" size={18} color="rgba(255,255,255,0.9)" />
-                </Pressable>
-              </View>
-
-              <View style={styles.headerModeRow}>
-                <View style={[styles.dailyModeWrap, styles.headerModeToggle, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
+                <View style={[styles.headerModeToggle, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
                   <Pressable
                     onPress={() => setWxLab?.(false)}
                     style={[
-                      styles.dailyModeBtn,
                       styles.headerModeBtn,
                       !wxLab ? styles.dailyModeBtnActive : null,
                       !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
                     ]}
                   >
-                    <Text style={[styles.dailyModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
+                    <Text style={[styles.headerModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => {
@@ -4727,13 +4606,12 @@ export default function LandWeatherScreen() {
                       return setWxLab?.(true);
                     }}
                     style={[
-                      styles.dailyModeBtn,
                       styles.headerModeBtn,
                       wxLab ? styles.dailyModeBtnActive : null,
                       wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
                     ]}
                   >
-                    <Text style={[styles.dailyModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
+                    <Text style={[styles.headerModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
                   </Pressable>
                 </View>
               </View>
@@ -4838,22 +4716,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
-  locationPrimary: { fontSize: 13, fontWeight: '900', color: 'white' },
+  locationPrimary: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '900', color: 'white' },
   locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
 
-  settingsIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: GLASS_PANEL_BG,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-
   headerHeroWrap: {
-    marginBottom: 10,
+    marginBottom: 8,
     position: 'relative',
     alignSelf: 'center',
     width: '100%',
@@ -4861,9 +4728,9 @@ const styles = StyleSheet.create({
   },
 
   headerHeroSurface: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 18,
     backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -4874,7 +4741,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
 
   headerCompactLeft: {
@@ -4882,41 +4749,67 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+  },
+
+  headerLogoButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   headerCompactLogo: {
-    width: 58,
-    height: 58,
+    width: 42,
+    height: 42,
     opacity: 0.96,
   },
 
   headerCompactLocation: {
-  flex: 1,
-  minWidth: 0,
-  marginRight: 4,
-  paddingVertical: 7,
-  paddingHorizontal: 10,
-  borderRadius: 16,
-  backgroundColor: GLASS_PANEL_BG,
-  borderWidth: 1,
-  borderColor: 'rgba(255,255,255,0.12)',
-},
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
 
-  headerModeRow: {
-    marginTop: 8,
+  headerLocationInner: {
+    minWidth: 0,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
   },
 
   headerModeToggle: {
-    alignSelf: 'flex-end',
+    width: 108,
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    padding: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: GLASS_PANEL_BG,
   },
 
   headerModeBtn: {
-    minHeight: 28,
-    minWidth: 66,
-    paddingHorizontal: 10,
+    flex: 1,
+    minHeight: 30,
+    paddingHorizontal: 4,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  headerModeText: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   actionRow: {
@@ -5186,38 +5079,84 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(64, 156, 255, 0.9)',
   },
-  dailyAlmanacRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  dailyAlmanacCell: {
-    flex: 1,
-    minHeight: 58,
-    borderRadius: 14,
-    paddingVertical: 9,
-    paddingHorizontal: 10,
+  dayArcCard: {
+    borderRadius: 18,
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.045)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(255,255,255,0.075)',
+    overflow: 'hidden',
   },
-  dailyAlmanacLabel: {
+  dayArcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  dayArcTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.62)',
+  },
+  dayArcLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dayArcLegendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+  },
+  dayArcLegendText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  dayArcTimes: {
+    marginTop: -8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dayArcTimeBlock: {
+    flexGrow: 1,
+    flexBasis: '22%',
+    minWidth: 72,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.055)',
+  },
+  dayArcTimeLabel: {
     fontSize: 9,
     fontWeight: '900',
-    letterSpacing: 0.7,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.52)',
+    color: 'rgba(255,255,255,0.46)',
   },
-  dailyAlmanacValue: {
-    marginTop: 6,
-    fontSize: 15,
-    fontWeight: '900',
-    color: 'white',
-  },
-  dailyAlmanacMeta: {
+  dayArcTimeValue: {
     marginTop: 3,
-    fontSize: 10,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255, 216, 132, 0.96)',
+  },
+  dayArcMoonText: {
+    color: 'rgba(132, 209, 255, 0.96)',
+  },
+  dayArcPending: {
+    marginTop: 6,
+    fontSize: 11,
     fontWeight: '800',
-    color: 'rgba(255,255,255,0.56)',
+    color: 'rgba(255,255,255,0.5)',
   },
   dailyCurrentMetricRow: {
     flexDirection: 'row',

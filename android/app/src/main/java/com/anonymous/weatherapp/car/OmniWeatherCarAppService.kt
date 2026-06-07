@@ -29,6 +29,7 @@ import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.CarIcon
 import androidx.car.app.model.GridItem
 import androidx.car.app.model.GridTemplate
+import androidx.car.app.model.Header
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
 import androidx.car.app.model.Pane
@@ -36,7 +37,7 @@ import androidx.car.app.model.PaneTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.MapController
-import androidx.car.app.navigation.model.MapWithContentTemplate
+import androidx.car.app.navigation.model.MapTemplate
 import androidx.car.app.validation.HostValidator
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -403,56 +404,48 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
-  @Volatile private var fetchInFlight = false
-  @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
-  @Volatile private var radarTimestamp: String? = null
-  @Volatile private var radarError: String? = null
-  private val tileLock = Any()
+  private val radarSurface = CarRadarSurfaceRenderer(repository)
+
+  init {
+    carContext.getCarService(AppManager::class.java).setSurfaceCallback(radarSurface)
+    lifecycle.addObserver(object : DefaultLifecycleObserver {
+      override fun onDestroy(owner: LifecycleOwner) {
+        carContext.getCarService(AppManager::class.java).setSurfaceCallback(EmptyCarSurfaceCallback)
+        radarSurface.release()
+      }
+    })
+  }
 
   override fun onGetTemplate(): Template {
     return safeTemplate("Radar Snapshot") {
       ensureLoaded()
       loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
-      fetchRadarIfNeeded(force = false)
 
-      val tilesSnapshot = synchronized(tileLock) { radarTiles.toList() }
-      val timestampSnapshot = synchronized(tileLock) { radarTimestamp }
-      val errorSnapshot = synchronized(tileLock) { radarError }
-      val radarStatus = when {
-        tilesSnapshot.isNotEmpty() -> timestampSnapshot ?: "latest radar"
-        fetchInFlight -> "loading latest radar"
-        errorSnapshot != null -> errorSnapshot
-        else -> "radar snapshot pending"
-      }
+      val pane = Pane.Builder()
+        .addRow(
+          Row.Builder()
+            .setTitle("Radar near ${current.placeName}")
+            .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
+            .addText("${current.temperatureF.roundLabel()}F ${weatherCodeLabel(current.weatherCode)} - wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph")
+            .build()
+        )
+        .addRow(
+          Row.Builder()
+            .setTitle(current.alertTitle ?: "No active alerts")
+            .addText(current.alertSubtitle ?: "Static radar surface refreshes when you tap Refresh.")
+            .build()
+        )
+        .build()
 
-      val list = ItemList.Builder()
-      list.addItem(
-        GridItem.Builder()
-          .setTitle("Radar near ${current.placeName}")
-          .setText("${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi - $radarStatus")
-          .setImage(carRadarSnapshotIcon(current, tilesSnapshot, fetchInFlight, errorSnapshot), GridItem.IMAGE_TYPE_LARGE)
-          .build()
-      )
-      list.addItem(
-        GridItem.Builder()
-          .setTitle("${current.temperatureF.roundLabel()}F ${weatherCodeLabel(current.weatherCode)}")
-          .setText("Wind ${windDirectionLabel(current.windDirectionDeg)} ${current.windMph.roundLabel()} mph")
-          .setImage(carWeatherIcon(current.weatherCode), GridItem.IMAGE_TYPE_ICON)
-          .build()
-      )
-      list.addItem(
-        GridItem.Builder()
-          .setTitle(current.alertTitle ?: "No active alerts")
-          .setText(current.alertSubtitle ?: "Tap Refresh for latest radar")
-          .setImage(carAlertIcon(current.alertTitle != null), GridItem.IMAGE_TYPE_ICON)
-          .build()
-      )
+      val mapController = MapController.Builder()
+        .setMapActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
+        .build()
 
-      GridTemplate.Builder()
-        .setSingleList(list.build())
-        .setTitle("Radar Snapshot")
-        .setHeaderAction(Action.BACK)
+      MapTemplate.Builder()
+        .setHeader(Header.Builder().setStartHeaderAction(Action.BACK).setTitle("Radar Snapshot").build())
+        .setMapController(mapController)
+        .setPane(pane)
         .setActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
         .build()
     }
@@ -463,39 +456,13 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .setTitle("Refresh")
       .setOnClickListener {
         repository.load(force = true) {
-          fetchRadarIfNeeded(force = true)
+          radarSurface.requestRefresh()
           invalidate()
         }
-        fetchRadarIfNeeded(force = true)
+        radarSurface.requestRefresh()
         invalidate()
       }
       .build()
-  }
-
-  private fun fetchRadarIfNeeded(force: Boolean) {
-    val report = repository.report ?: return
-    if (fetchInFlight) return
-    if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
-
-    fetchInFlight = true
-    thread(name = "omniwx-car-radar-card") {
-      try {
-        val ts = latestRainViewerTimestamp()
-        val tiles = fetchRadarTileMosaic(report.latitude, report.longitude, ts)
-        synchronized(tileLock) {
-          radarTiles = tiles
-          radarTimestamp = radarAgeLabel(ts)
-          radarError = if (tiles.isEmpty()) "radar tiles unavailable" else null
-        }
-      } catch (_: Throwable) {
-        synchronized(tileLock) {
-          radarError = "radar unavailable"
-        }
-      } finally {
-        fetchInFlight = false
-        Handler(Looper.getMainLooper()).post { invalidate() }
-      }
-    }
   }
 }
 

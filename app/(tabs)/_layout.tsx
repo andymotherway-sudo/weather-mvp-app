@@ -1,5 +1,6 @@
 // app/(tabs)/_layout.tsx
 import { Tabs, usePathname, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import React, { useCallback, useMemo } from 'react';
 import { Platform, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -36,7 +37,13 @@ const SWIPE_TABS = [
   { name: 'extremes', href: '/extremes' },
 ] as const;
 
-const EDGE_SWIPE_WIDTH = 34;
+const EDGE_SWIPE_WIDTH = 28;
+const HOME_ROW_EXTRA_HEIGHT = 18;
+const SWIPE_ACTIVATE_DISTANCE = 18;
+const SWIPE_MIN_DISTANCE = 44;
+const SWIPE_MIN_VELOCITY = 420;
+const SWIPE_VERTICAL_SLOP = 32;
+const MAP_TOUCH_TABS = new Set(['maps', 'aviation-map', 'astro-map']);
 
 function currentSwipeTabIndex(pathname: string) {
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
@@ -50,10 +57,12 @@ export default function TabsLayout() {
   const colorScheme = useColorScheme();
   const tint = Colors[colorScheme].tint;
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const pathname = usePathname();
   const router = useRouter();
   const swipeStartX = useSharedValue(0);
+  const swipeStartY = useSharedValue(0);
+  const swipeCanActivate = useSharedValue(false);
   const { appColorMode } = useSettings();
   const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
 
@@ -92,30 +101,67 @@ export default function TabsLayout() {
       const nextIndex = Math.max(0, Math.min(SWIPE_TABS.length - 1, currentIndex + direction));
       if (nextIndex === currentIndex) return;
 
+      Haptics.selectionAsync().catch(() => {});
       router.replace(SWIPE_TABS[nextIndex].href as any);
     },
     [pathname, router],
   );
 
+  const tabBarHitTop = useMemo(() => {
+    const baseHeight = Platform.select({ ios: 58, android: 54, default: 54 }) as number;
+    const padTop = 6;
+    const padBottom = Math.max(8, insets.bottom);
+    return Math.max(0, height - (baseHeight + padBottom + padTop + HOME_ROW_EXTRA_HEIGHT));
+  }, [height, insets.bottom]);
+
+  const isMapTouchTab = useMemo(() => {
+    const cleanPath = pathname.replace(/\/+$/, '') || '/';
+    const segment = cleanPath === '/' ? 'index' : cleanPath.split('/').filter(Boolean)[0] ?? '';
+    return MAP_TOUCH_TABS.has(segment);
+  }, [pathname]);
+
   const swipeGesture = useMemo(
     () =>
       Gesture.Pan()
-        .activeOffsetX([-72, 72])
-        .failOffsetY([-36, 36])
+        .manualActivation(true)
         .onBegin((event) => {
           swipeStartX.value = event.x;
+          swipeStartY.value = event.y;
+          const startedInHomeRow = event.y >= tabBarHitTop;
+          const startedAtEdge = event.x <= EDGE_SWIPE_WIDTH || event.x >= width - EDGE_SWIPE_WIDTH;
+          swipeCanActivate.value = startedInHomeRow || (!isMapTouchTab && startedAtEdge);
+        })
+        .onTouchesMove((event, manager) => {
+          if (!swipeCanActivate.value || event.numberOfTouches !== 1) {
+            manager.fail();
+            return;
+          }
+
+          const touch = event.allTouches[0];
+          const dx = touch.x - swipeStartX.value;
+          const dy = touch.y - swipeStartY.value;
+          const absX = Math.abs(dx);
+          const absY = Math.abs(dy);
+
+          if (absY > SWIPE_VERTICAL_SLOP && absY > absX) {
+            manager.fail();
+            return;
+          }
+
+          if (absX >= SWIPE_ACTIVATE_DISTANCE && absX > absY * 1.35) {
+            manager.activate();
+          }
         })
         .onEnd((event) => {
-          const startedAtEdge = swipeStartX.value <= EDGE_SWIPE_WIDTH || swipeStartX.value >= width - EDGE_SWIPE_WIDTH;
-          if (!startedAtEdge) return;
+          if (!swipeCanActivate.value) return;
 
           const distance = event.translationX;
           const velocity = event.velocityX;
-          if (Math.abs(distance) < 96 && Math.abs(velocity) < 700) return;
+          if (Math.abs(distance) < SWIPE_MIN_DISTANCE && Math.abs(velocity) < SWIPE_MIN_VELOCITY) return;
 
           runOnJS(navigateBySwipe)(distance < 0 ? 1 : -1);
         }),
-    [navigateBySwipe, swipeStartX, width],
+    [isMapTouchTab, navigateBySwipe, swipeCanActivate, swipeStartX, swipeStartY, tabBarHitTop, width],
   );
 
   return (
