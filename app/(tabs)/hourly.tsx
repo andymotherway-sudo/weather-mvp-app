@@ -1026,9 +1026,6 @@ export default function HourlyTab() {
                         {locationLabel}
                       </Text>
                     </View>
-                    <Text style={styles.locationSecondary}>
-                      {wxLab ? 'Detailed hourly analysis' : 'Simple hour-by-hour view'}
-                    </Text>
                   </View>
                 </View>
 
@@ -1162,7 +1159,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     marginRight: 4,
-    paddingVertical: 8,
+    paddingVertical: 11,
     paddingHorizontal: 12,
     borderRadius: 18,
     backgroundColor: GLASS_SURFACE_INSET,
@@ -1190,7 +1187,6 @@ const styles = StyleSheet.create({
   },
 
   locationPrimary: { fontSize: 15, fontWeight: '900', color: 'white' },
-  locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
 
   settingsIconBtn: {
     width: 38,

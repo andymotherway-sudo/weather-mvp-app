@@ -1711,6 +1711,10 @@ function ActivityForecastSection({
               onPress={() => setFlippedId((current) => (current === card.id ? null : card.id))}
               style={[
                 styles.activityWideCard,
+                {
+                  backgroundColor: chrome.cardStrong,
+                  borderColor: chrome.border,
+                },
               ]}
             >
               <View style={styles.activityMiniTopRow}>
@@ -3254,7 +3258,7 @@ function NerdyDeepDive({
 
         <View style={nd.panelFull}>
           <Text style={nd.panelTitle}>Sun & Moon</Text>
-          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon showTimes={false} embedded />
+          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon embedded />
 
           <View style={nd.moonSummaryRow}>
             <Pressable style={nd.moonPhaseCard} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
@@ -4746,16 +4750,16 @@ const styles = StyleSheet.create({
   },
 
   headerLogoButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   headerCompactLogo: {
-    width: 42,
-    height: 42,
+    width: 52,
+    height: 52,
     opacity: 0.96,
   },
 
