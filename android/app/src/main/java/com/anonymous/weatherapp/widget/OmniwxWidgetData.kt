@@ -1,5 +1,6 @@
 package com.anonymous.weatherapp.widget
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -11,7 +12,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import android.location.Location
+import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import com.anonymous.weatherapp.MainActivity
 import java.net.HttpURLConnection
 import java.net.URL
@@ -28,6 +32,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val PLACE_STORAGE_KEY = "omniwx.place.v2"
+private const val LAST_COORDS_STORAGE_KEY = "omniwx:lastCoords:v1"
 private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val AVIATION_WIDGET_SELECTION_KEY = "omniwx:widget:aviation:selected:v1"
 private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
@@ -207,16 +212,23 @@ object OmniwxWidgetData {
   }
 
   fun readPlace(context: Context): WidgetPlace? {
-    // Prefer the active place written by PlaceContext. If that is missing, use
-    // the default city from Settings/onboarding. Widgets deliberately avoid live
-    // GPS here so they can update cheaply and predictably in the background.
+    // Prefer the active place written by PlaceContext. If the active place is
+    // "Current Location", refresh it from the newest cheap background source
+    // available, then fall back to the app's default city.
     readAsyncStorageValue(context, PLACE_STORAGE_KEY)?.let { raw ->
       runCatching {
         val root = JSONObject(raw)
         val active = root.optJSONObject("active")
-        if (active != null) return placeFromJson(active)
+        if (active != null) {
+          if (active.optString("source", "") == "gps") {
+            return currentPlace(context, placeFromJson(active)) ?: placeFromJson(active)
+          }
+          return placeFromJson(active)
+        }
       }
     }
+
+    currentPlace(context, null)?.let { return it }
 
     readAsyncStorageValue(context, DEFAULT_CITY_STORAGE_KEY)?.let { raw ->
       runCatching {
@@ -1237,6 +1249,53 @@ private fun placeFromJson(json: JSONObject): WidgetPlace? {
   val name = if (looksLikeCoordinateLabel(rawName)) "Current Location" else rawName
   return WidgetPlace(name = name, lat = lat, lon = lon)
 }
+
+private fun currentPlace(context: Context, fallback: WidgetPlace?): WidgetPlace? {
+  val stored = readAsyncStorageValue(context, LAST_COORDS_STORAGE_KEY)
+    ?.let { raw -> runCatching { currentPlaceFromJson(JSONObject(raw)) }.getOrNull() }
+  val nativeLastKnown = lastKnownCurrentPlace(context)
+  return nativeLastKnown ?: stored ?: fallback
+}
+
+private fun currentPlaceFromJson(json: JSONObject): WidgetPlace? {
+  val lat = json.optDouble("lat", Double.NaN)
+  val lon = json.optDouble("lon", Double.NaN)
+  if (!lat.isFinite() || !lon.isFinite()) return null
+  val label = json.optString("label", "").trim().ifBlank { "Current Location" }
+  return WidgetPlace(name = label, lat = lat, lon = lon)
+}
+
+private fun lastKnownCurrentPlace(context: Context): WidgetPlace? {
+  if (!hasLocationPermission(context)) return null
+  val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+  val providers = listOf(
+    LocationManager.FUSED_PROVIDER,
+    LocationManager.GPS_PROVIDER,
+    LocationManager.NETWORK_PROVIDER,
+    LocationManager.PASSIVE_PROVIDER,
+  ).distinct()
+
+  val best = providers
+    .mapNotNull { provider ->
+      runCatching {
+        if (manager.allProviders.contains(provider)) manager.getLastKnownLocation(provider) else null
+      }.getOrNull()
+    }
+    .filter { it.hasUsableCoordinates() }
+    .maxWithOrNull(compareBy<Location> { it.time }.thenByDescending { if (it.hasAccuracy()) it.accuracy else Float.MAX_VALUE })
+    ?: return null
+
+  return WidgetPlace(name = "Current Location", lat = best.latitude, lon = best.longitude)
+}
+
+private fun hasLocationPermission(context: Context): Boolean {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+  return context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+    context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+}
+
+private fun Location.hasUsableCoordinates(): Boolean =
+  latitude.isFinite() && longitude.isFinite() && latitude in -90.0..90.0 && longitude in -180.0..180.0
 
 private fun readClimoCache(context: Context, place: WidgetPlace): WidgetClimatology? {
   // The phone app stores climate normals keyed by rounded coordinates. Widgets

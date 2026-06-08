@@ -11,7 +11,13 @@ import android.content.Intent
 // provider receives a normal ACTION_APPWIDGET_UPDATE broadcast.
 class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED && intent.action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS) return
+    val action = intent.action
+    if (
+      action != Intent.ACTION_MY_PACKAGE_REPLACED &&
+      action != Intent.ACTION_BOOT_COMPLETED &&
+      action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
+      action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS
+    ) return
     OmniwxWidgetScheduler.schedule(context)
 
     refreshProvider(context, OmniwxCurrentWidgetProvider::class.java)

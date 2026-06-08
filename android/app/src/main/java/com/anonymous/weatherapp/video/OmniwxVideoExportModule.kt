@@ -619,18 +619,21 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   private fun downloadBitmap(url: String, connectTimeoutMs: Int = 12_000, readTimeoutMs: Int = 18_000): Bitmap? {
     // Fail a single URL by returning null; exportAnimation decides whether there
     // are still enough complete frames to proceed.
-    val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-      connectTimeout = connectTimeoutMs
-      readTimeout = readTimeoutMs
-      requestMethod = "GET"
-      setRequestProperty("User-Agent", "OMNIwx Alpha Video Export")
-      setRequestProperty("Accept", "image/png,image/jpeg,image/*")
-    }
+    var conn: HttpURLConnection? = null
     return try {
+      conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = connectTimeoutMs
+        readTimeout = readTimeoutMs
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "OMNIwx Alpha Video Export")
+        setRequestProperty("Accept", "image/png,image/jpeg,image/*")
+      }
       if (conn.responseCode !in 200..299) return null
       BitmapFactory.decodeStream(conn.inputStream)
+    } catch (_: Exception) {
+      null
     } finally {
-      conn.disconnect()
+      conn?.disconnect()
     }
   }
 
