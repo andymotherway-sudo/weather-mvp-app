@@ -16,6 +16,11 @@ type UnitSystem = 'us' | 'metric';
 const TABLE_LABEL_WIDTH = 42;
 const TABLE_HEADER_HEIGHT = 30;
 const ROW_HEIGHT = 38;
+const GLASS_CARD = 'rgba(18,28,45,0.56)';
+const GLASS_INSET = 'rgba(255,255,255,0.08)';
+const GLASS_INSET_SOFT = 'rgba(255,255,255,0.06)';
+const GLASS_BORDER = 'rgba(255,255,255,0.10)';
+const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.08)';
 
 function safeNum(v: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v;
@@ -1025,7 +1030,9 @@ const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
     borderRadius: 24,
-    backgroundColor: 'rgba(44, 70, 102, 0.68)',
+    backgroundColor: GLASS_CARD,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
     paddingTop: 14,
     overflow: 'hidden',
     position: 'relative',
@@ -1051,14 +1058,14 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_SOFT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GLASS_BORDER_SOFT,
     minHeight: 168,
   },
   hourTileActive: {
-    backgroundColor: 'rgba(70,130,220,0.18)',
-    borderColor: 'rgba(150,210,255,0.26)',
+    backgroundColor: 'rgba(37,99,235,0.22)',
+    borderColor: 'rgba(147,197,253,0.36)',
   },
   hourTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 12, letterSpacing: 0.4 },
   hilo: { marginTop: 8, color: 'white', fontWeight: '900', fontSize: 18 },
@@ -1098,10 +1105,12 @@ const s = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: GLASS_INSET,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
   },
   legPillOff: {
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_SOFT,
   },
   legText: { color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 11 },
   legSwatchWrap: { width: 18, height: 10, justifyContent: 'center' },
@@ -1118,7 +1127,7 @@ const s = StyleSheet.create({
     height: 10,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: GLASS_INSET_SOFT,
   },
   swAreaFill: {
     position: 'absolute',
@@ -1148,7 +1157,7 @@ const s = StyleSheet.create({
     height: 10,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: GLASS_INSET_SOFT,
     justifyContent: 'flex-end',
   },
   swMountainFill: {
@@ -1182,15 +1191,15 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderColor: GLASS_BORDER,
+    backgroundColor: GLASS_INSET_SOFT,
   },
   tableLabelColumn: {
     width: TABLE_LABEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: 'rgba(48,82,118,0.74)',
+    backgroundColor: 'rgba(18,28,45,0.50)',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(156,205,245,0.16)',
+    borderRightColor: GLASS_BORDER,
   },
   tableLabelOverlay: {
     position: 'absolute',
@@ -1203,7 +1212,7 @@ const s = StyleSheet.create({
   tableLabelHeader: {
     height: TABLE_HEADER_HEIGHT,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: GLASS_BORDER_SOFT,
   },
   tableLabelRow: {
     height: ROW_HEIGHT,
@@ -1211,7 +1220,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(156,205,245,0.10)',
+    borderTopColor: GLASS_BORDER_SOFT,
   },
   tableLabelText: {
     color: 'rgba(214,232,248,0.82)',
@@ -1225,7 +1234,7 @@ const s = StyleSheet.create({
     flexGrow: 0,
   },
   tableDataColumns: {
-    backgroundColor: 'rgba(255,255,255,0.014)',
+    backgroundColor: 'transparent',
   },
   tableInlineData: {
     marginTop: 8,
@@ -1234,7 +1243,7 @@ const s = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: GLASS_BORDER,
     overflow: 'hidden',
   },
   tableHeaderRow: {
@@ -1242,16 +1251,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     height: TABLE_HEADER_HEIGHT,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: GLASS_BORDER_SOFT,
   },
   tableDataRow: {
     height: ROW_HEIGHT,
     justifyContent: 'center',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.075)',
+    borderTopColor: GLASS_BORDER_SOFT,
   },
   tableRowAlt: {
-    backgroundColor: 'rgba(255,255,255,0.026)',
+    backgroundColor: GLASS_INSET_SOFT,
   },
   tableHeaderText: {
     color: 'rgba(255,255,255,0.62)',

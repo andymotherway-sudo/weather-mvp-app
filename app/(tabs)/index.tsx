@@ -4746,11 +4746,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
 
   headerLogoButton: {
-    width: 48,
+    width: 54,
     height: 48,
     borderRadius: 20,
     alignItems: 'center',
@@ -4758,7 +4758,7 @@ const styles = StyleSheet.create({
   },
 
   headerCompactLogo: {
-    width: 48,
+    width: 54,
     height: 48,
     opacity: 0.96,
   },

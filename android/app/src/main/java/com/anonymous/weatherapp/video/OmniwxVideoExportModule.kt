@@ -89,7 +89,15 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it) }
           val bitmaps = listOfNotNull(tileScene) + urlBitmaps
           val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
-          PreparedFrame(label = frame.label, bitmaps = bitmaps, expectedBitmapCount = expectedCount)
+          PreparedFrame(
+            label = frame.label,
+            bitmaps = bitmaps,
+            expectedBitmapCount = expectedCount,
+            basemapTemplate = frame.basemapTemplate,
+            basemapOverlayTemplate = frame.basemapOverlayTemplate,
+            region = frame.region,
+            zoom = frame.zoom,
+          )
         }.filter { it.bitmaps.isNotEmpty() && it.bitmaps.size == it.expectedBitmapCount }
         if (prepared.size < 2) throw IllegalStateException("Could not download enough frames to export video.")
 
@@ -325,7 +333,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
+    drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, frame.region, frame.zoom, 245)
     frame.bitmaps.forEach { drawBitmapFit(canvas, it, width, height, paint) }
+    drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, frame.region, frame.zoom, 235)
     return out
   }
 
@@ -362,36 +372,70 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
 
-    fun drawTemplateLayer(tileTemplate: String?, alpha: Int) {
-      if (tileTemplate.isNullOrBlank()) return
-      paint.alpha = alpha.coerceIn(0, 255)
-      for (ty in minTileY..maxTileY) {
-        for (txRaw in minTileX..maxTileX) {
-          val tx = ((txRaw % (1 shl z)) + (1 shl z)) % (1 shl z)
-          val url = tileTemplate
-            .replace("{z}", z.toString())
-            .replace("{x}", tx.toString())
-            .replace("{y}", ty.toString())
-          val tile = downloadBitmap(url) ?: continue
-          val left = ((txRaw * tileSize) - leftWorld) * scale
-          val top = ((ty * tileSize) - topWorld) * scale
-          val dst = RectF(
-            left.toFloat(),
-            top.toFloat(),
-            (left + tileSize * scale).toFloat(),
-            (top + tileSize * scale).toFloat(),
-          )
-          canvas.drawBitmap(tile, null, dst, paint)
-          tile.recycle()
-        }
-      }
-    }
-
-    drawTemplateLayer(frame.basemapTemplate, 245)
+    drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, region, frame.zoom, 245)
     underlays.forEach { drawBitmapFit(canvas, it, width, height, paint.apply { alpha = 255 }) }
-    drawTemplateLayer(template, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
+    drawTileTemplateLayer(canvas, width, height, template, region, frame.zoom, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
+    drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, region, frame.zoom, 235)
     paint.alpha = 255
     return out
+  }
+
+  private fun drawTileTemplateLayer(
+    canvas: Canvas,
+    width: Int,
+    height: Int,
+    tileTemplate: String?,
+    region: ExportRegion?,
+    zoom: Double?,
+    alpha: Int,
+  ) {
+    if (tileTemplate.isNullOrBlank() || region == null) return
+    val z = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 12)
+    val tileSize = 256
+    val center = lonLatToWorldPixel(region.longitude, region.latitude, z, tileSize)
+    val west = region.longitude - region.longitudeDelta / 2.0
+    val east = region.longitude + region.longitudeDelta / 2.0
+    val north = (region.latitude + region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val south = (region.latitude - region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val westPx = lonToWorldPixel(west, z, tileSize)
+    val eastPx = lonToWorldPixel(east, z, tileSize)
+    val northPy = latToWorldPixel(north, z, tileSize)
+    val southPy = latToWorldPixel(south, z, tileSize)
+    val spanX = max(1.0, kotlin.math.abs(eastPx - westPx))
+    val spanY = max(1.0, kotlin.math.abs(southPy - northPy))
+    val scale = min(width / spanX, height / spanY)
+    val leftWorld = center.first - width / (2.0 * scale)
+    val topWorld = center.second - height / (2.0 * scale)
+    val rightWorld = center.first + width / (2.0 * scale)
+    val bottomWorld = center.second + height / (2.0 * scale)
+    val minTileX = floor(leftWorld / tileSize).toInt() - 1
+    val maxTileX = floor(rightWorld / tileSize).toInt() + 1
+    val minTileY = max(0, floor(topWorld / tileSize).toInt() - 1)
+    val maxTileY = min((1 shl z) - 1, floor(bottomWorld / tileSize).toInt() + 1)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+      this.alpha = alpha.coerceIn(0, 255)
+    }
+
+    for (ty in minTileY..maxTileY) {
+      for (txRaw in minTileX..maxTileX) {
+        val tx = ((txRaw % (1 shl z)) + (1 shl z)) % (1 shl z)
+        val url = tileTemplate
+          .replace("{z}", z.toString())
+          .replace("{x}", tx.toString())
+          .replace("{y}", ty.toString())
+        val tile = downloadBitmap(url) ?: continue
+        val left = ((txRaw * tileSize) - leftWorld) * scale
+        val top = ((ty * tileSize) - topWorld) * scale
+        val dst = RectF(
+          left.toFloat(),
+          top.toFloat(),
+          (left + tileSize * scale).toFloat(),
+          (top + tileSize * scale).toFloat(),
+        )
+        canvas.drawBitmap(tile, null, dst, paint)
+        tile.recycle()
+      }
+    }
   }
 
   private fun drawExportGrid(canvas: Canvas, width: Int, height: Int) {
@@ -621,6 +665,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             underlayUrls = underlayUrls,
             tileTemplate = tileTemplate,
             basemapTemplate = item.optNullableString("basemapTemplate"),
+            basemapOverlayTemplate = item.optNullableString("basemapOverlayTemplate"),
             region = item.getMap("region")?.toExportRegion(),
             zoom = item.optNullableDouble("zoom"),
             opacity = item.optNullableDouble("opacity"),
@@ -645,11 +690,20 @@ private data class ExportFrame(
   val underlayUrls: List<String> = emptyList(),
   val tileTemplate: String? = null,
   val basemapTemplate: String? = null,
+  val basemapOverlayTemplate: String? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
   val opacity: Double? = null,
 )
-private data class PreparedFrame(val label: String, val bitmaps: List<Bitmap>, val expectedBitmapCount: Int)
+private data class PreparedFrame(
+  val label: String,
+  val bitmaps: List<Bitmap>,
+  val expectedBitmapCount: Int,
+  val basemapTemplate: String? = null,
+  val basemapOverlayTemplate: String? = null,
+  val region: ExportRegion? = null,
+  val zoom: Double? = null,
+)
 
 private fun ReadableMap.optInt(name: String, fallback: Int): Int =
   if (hasKey(name) && !isNull(name)) getInt(name) else fallback

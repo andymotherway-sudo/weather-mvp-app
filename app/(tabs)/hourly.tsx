@@ -1123,7 +1123,7 @@ const styles = StyleSheet.create({
   },
 
   headerHeroSurface: {
-    paddingVertical: 6,
+    paddingVertical: 5,
     paddingHorizontal: 7,
     borderRadius: 18,
     backgroundColor: GLASS_SURFACE_BG_STRONG,
@@ -1151,7 +1151,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     marginRight: 0,
-    paddingVertical: 9,
+    paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 16,
     backgroundColor: GLASS_SURFACE_INSET,
@@ -1172,9 +1172,11 @@ const styles = StyleSheet.create({
     opacity: 0.96,
   },
 
-  locationPrimary: { fontSize: 15, fontWeight: '900', color: 'white' },
+  locationPrimary: { fontSize: 13, fontWeight: '900', color: 'white' },
 
   headerModeWrap: {
+    width: 108,
+    flexShrink: 0,
     flexDirection: 'row',
     gap: 3,
     padding: 3,
@@ -1184,10 +1186,12 @@ const styles = StyleSheet.create({
     borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
   headerModeBtn: {
+    flex: 1,
     minHeight: 30,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 4,
     borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerModeBtnActive: {
     backgroundColor: 'rgba(37,99,235,0.35)',
@@ -1195,9 +1199,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(147,197,253,0.55)',
   },
   headerModeText: {
-    color: 'rgba(255,255,255,0.70)',
-    fontWeight: '800',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.64)',
+    fontWeight: '900',
+    fontSize: 10,
   },
   headerModeTextActive: {
     color: '#E9FFF8',

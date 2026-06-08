@@ -15,6 +15,11 @@ import { PremiumMetricIcon, PremiumWeatherIcon } from '../weather/PremiumWeather
 
 type Mode = 'simple' | 'wxlab';
 
+const GLASS_CARD = 'rgba(18,28,45,0.56)';
+const GLASS_INSET = 'rgba(255,255,255,0.08)';
+const GLASS_BORDER = 'rgba(255,255,255,0.10)';
+const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.08)';
+
 export type HourlyExplainPayload = {
   title: string;
   learnTopicId?: string;
@@ -614,9 +619,9 @@ const styles = StyleSheet.create<Styles>({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 22,
-    backgroundColor: 'rgba(44, 70, 102, 0.68)',
+    backgroundColor: GLASS_CARD,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: GLASS_BORDER,
   },
   hTitle: { ...(typography.title as TextStyle), fontSize: 18, color: '#F7FBFF' },
   hSub: {
@@ -631,9 +636,9 @@ const styles = StyleSheet.create<Styles>({
     overflow: 'hidden',
     padding: theme.spacing.md,
     borderRadius: 26,
-    backgroundColor: 'rgba(44, 70, 102, 0.68)',
+    backgroundColor: GLASS_CARD,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: GLASS_BORDER,
   },
   rowTop: { flexDirection: 'row', alignItems: 'center' },
   left: { width: 74 },
@@ -673,7 +678,7 @@ const styles = StyleSheet.create<Styles>({
     paddingTop: 14,
     paddingBottom: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.10)',
+    borderTopColor: GLASS_BORDER,
     flexDirection: 'row',
     alignItems: 'stretch',
   },
@@ -686,7 +691,7 @@ const styles = StyleSheet.create<Styles>({
   },
   metricStripDivider: {
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: GLASS_BORDER,
   },
   metricStripValue: {
     color: 'white',
@@ -710,7 +715,7 @@ const styles = StyleSheet.create<Styles>({
     marginTop: theme.spacing.sm,
     paddingTop: theme.spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: GLASS_BORDER_SOFT,
     gap: 8,
   },
   simpleStatRow: {
@@ -733,7 +738,7 @@ const styles = StyleSheet.create<Styles>({
     marginTop: theme.spacing.sm,
     paddingTop: theme.spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderTopColor: GLASS_BORDER_SOFT,
     gap: 6,
   },
   wxRowPressable: {
@@ -743,7 +748,7 @@ const styles = StyleSheet.create<Styles>({
     marginHorizontal: -8,
   },
   wxRowPressableActive: {
-    backgroundColor: 'rgba(44, 70, 102, 0.68)',
+    backgroundColor: GLASS_INSET,
   },
   wxRow: {
     flexDirection: 'row',

@@ -7,6 +7,12 @@ import { useWxLab } from '../../app/context/WxLabContext'; // adjust relative pa
 import { getTypography } from '../../styles/typography';
 import { PremiumWeatherIcon } from '../weather/PremiumWeatherIcon';
 
+const GLASS_CARD = 'rgba(18,28,45,0.56)';
+const GLASS_INSET = 'rgba(255,255,255,0.08)';
+const GLASS_INSET_SOFT = 'rgba(255,255,255,0.06)';
+const GLASS_BORDER = 'rgba(255,255,255,0.10)';
+const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.08)';
+
 type DailyDatum = {
   date: string; // ISO yyyy-mm-dd
   tempMaxF: number | null;
@@ -886,9 +892,9 @@ const s = StyleSheet.create({
   wrap: {
     marginTop: 10,
     borderRadius: 24,
-    backgroundColor: 'rgba(44, 70, 102, 0.68)',
+    backgroundColor: GLASS_CARD,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: GLASS_BORDER,
     paddingTop: 14,
     position: 'relative',
   },
@@ -923,9 +929,9 @@ const s = StyleSheet.create({
     gap: 10,
     marginBottom: 0,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: GLASS_INSET,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: GLASS_BORDER_SOFT,
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
@@ -948,13 +954,13 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_SOFT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GLASS_BORDER_SOFT,
   },
   dayTileActive: {
-    borderColor: 'rgba(150,210,255,0.26)',
-    backgroundColor: 'rgba(70,130,220,0.18)',
+    borderColor: 'rgba(147,197,253,0.36)',
+    backgroundColor: 'rgba(37,99,235,0.22)',
   },
   dayTop: { color: 'rgba(255,255,255,0.85)', fontWeight: '900', fontSize: 14, letterSpacing: 0.4 },
   icon: { marginTop: 10, fontSize: 26, opacity: 0.9 },
@@ -977,7 +983,7 @@ const s = StyleSheet.create({
     height: 10,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: GLASS_INSET_SOFT,
   },
   swAreaFill: {
     position: 'absolute',
@@ -1007,7 +1013,7 @@ const s = StyleSheet.create({
     height: 10,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: GLASS_INSET_SOFT,
     justifyContent: 'flex-end',
   },
   swMountainFill: {
@@ -1041,15 +1047,15 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.025)',
+    borderColor: GLASS_BORDER,
+    backgroundColor: GLASS_INSET_SOFT,
   },
   tableLabelColumn: {
     width: TABLE_LABEL_WIDTH,
     flexShrink: 0,
-    backgroundColor: 'rgba(48,82,118,0.74)',
+    backgroundColor: 'rgba(18,28,45,0.50)',
     borderRightWidth: 1,
-    borderRightColor: 'rgba(156,205,245,0.16)',
+    borderRightColor: GLASS_BORDER,
   },
   tableLabelOverlay: {
     position: 'absolute',
@@ -1062,7 +1068,7 @@ const s = StyleSheet.create({
   tableLabelHeader: {
     height: TABLE_HEADER_HEIGHT,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: GLASS_BORDER_SOFT,
   },
   tableLabelRow: {
     height: ROW_HEIGHT,
@@ -1070,7 +1076,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.075)',
+    borderTopColor: GLASS_BORDER_SOFT,
   },
   tableLabelText: {
     color: 'rgba(214,232,248,0.82)',
@@ -1084,7 +1090,7 @@ const s = StyleSheet.create({
     flexGrow: 0,
   },
   tableDataColumns: {
-    backgroundColor: 'rgba(255,255,255,0.014)',
+    backgroundColor: 'transparent',
   },
   tableInlineData: {
     marginTop: 8,
@@ -1093,7 +1099,7 @@ const s = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: GLASS_BORDER,
     overflow: 'hidden',
   },
   tableHeaderValuesRow: {
@@ -1101,17 +1107,17 @@ const s = StyleSheet.create({
     alignItems: 'center',
     height: TABLE_HEADER_HEIGHT,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: GLASS_BORDER_SOFT,
   },
   tableDataValuesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     height: ROW_HEIGHT,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.075)',
+    borderTopColor: GLASS_BORDER_SOFT,
   },
   tableRowAlt: {
-    backgroundColor: 'rgba(255,255,255,0.026)',
+    backgroundColor: GLASS_INSET_SOFT,
   },
   tableHeaderText: {
     color: 'rgba(255,255,255,0.62)',
