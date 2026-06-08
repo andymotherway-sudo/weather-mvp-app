@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RectF
 import android.media.MediaCodec
@@ -81,24 +82,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // are composite layers; exporting partial layers would cause flashing or
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
-        val prepared = frames.map { frame ->
-          val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
-          val tileScene =
-            if (underlayBitmaps.size == frame.underlayUrls.size) renderTileScene(width, height, frame, underlayBitmaps) else null
-          underlayBitmaps.forEach { runCatching { it.recycle() } }
-          val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
-          val bitmaps = listOfNotNull(tileScene) + urlBitmaps
-          val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
-          PreparedFrame(
-            label = frame.label,
-            bitmaps = bitmaps,
-            expectedBitmapCount = expectedCount,
-            basemapTemplate = frame.basemapTemplate,
-            basemapOverlayTemplate = frame.basemapOverlayTemplate,
-            region = frame.region,
-            zoom = frame.zoom,
-          )
-        }.filter { it.bitmaps.isNotEmpty() && it.bitmaps.size == it.expectedBitmapCount }
+        val prepared = frames.mapNotNull { frame -> prepareFrame(width, height, frame) }
         if (prepared.size < 2) throw IllegalStateException("Could not download enough frames to export video.")
 
         val output = File(reactContext.cacheDir, "omniwx-export-${System.currentTimeMillis()}.mp4")
@@ -222,7 +206,43 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       codec.release()
       runCatching { muxer.stop() }
       muxer.release()
-      frames.flatMap { it.bitmaps }.forEach { runCatching { it.recycle() } }
+      frames.forEach { runCatching { it.scene.recycle() } }
+    }
+  }
+
+  private fun prepareFrame(width: Int, height: Int, frame: ExportFrame): PreparedFrame? {
+    val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
+    if (underlayBitmaps.size != frame.underlayUrls.size) {
+      underlayBitmaps.forEach { runCatching { it.recycle() } }
+      return null
+    }
+
+    val tileScene = renderTileScene(width, height, frame, underlayBitmaps)
+    underlayBitmaps.forEach { runCatching { it.recycle() } }
+
+    val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
+    val sourceBitmaps = listOfNotNull(tileScene) + urlBitmaps
+    val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
+    if (sourceBitmaps.isEmpty() || sourceBitmaps.size != expectedCount) {
+      sourceBitmaps.forEach { runCatching { it.recycle() } }
+      return null
+    }
+
+    return try {
+      val scene = composeSatelliteScene(
+        width,
+        height,
+        RenderSourceFrame(
+          bitmaps = sourceBitmaps,
+          basemapTemplate = frame.basemapTemplate,
+          basemapOverlayTemplate = frame.basemapOverlayTemplate,
+          region = frame.region,
+          zoom = frame.zoom,
+        )
+      )
+      PreparedFrame(label = frame.label, scene = scene)
+    } finally {
+      sourceBitmaps.forEach { runCatching { it.recycle() } }
     }
   }
 
@@ -298,9 +318,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     subtitle: String,
     product: String,
   ): Bitmap {
-    // Compose one final video frame. "Scene" is the weather imagery; "chrome"
-    // is the OMNIwx title/footer overlay. During transitions we render both
-    // current and next scenes and alpha-blend them.
+    // Compose one final video frame. Source scenes are pre-rendered once before
+    // encoding, so holds/transitions only redraw cached bitmaps instead of
+    // re-downloading map tiles for every output frame.
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(out)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
@@ -308,23 +328,19 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
 
-    val currentScene = composeSatelliteScene(width, height, current)
     if (next != null && blend > 0f) {
-      val nextScene = composeSatelliteScene(width, height, next)
-      canvas.drawBitmap(currentScene, 0f, 0f, paint.apply { alpha = (255 * (1f - blend)).roundToInt() })
-      canvas.drawBitmap(nextScene, 0f, 0f, paint.apply { alpha = (255 * blend).roundToInt() })
-      nextScene.recycle()
+      canvas.drawBitmap(current.scene, 0f, 0f, paint.apply { alpha = (255 * (1f - blend)).roundToInt() })
+      canvas.drawBitmap(next.scene, 0f, 0f, paint.apply { alpha = (255 * blend).roundToInt() })
     } else {
-      canvas.drawBitmap(currentScene, 0f, 0f, paint.apply { alpha = 255 })
+      canvas.drawBitmap(current.scene, 0f, 0f, paint.apply { alpha = 255 })
     }
-    currentScene.recycle()
 
     paint.alpha = 255
     drawExportChrome(canvas, width, height, title, subtitle, product, current.label)
     return out
   }
 
-  private fun composeSatelliteScene(width: Int, height: Int, frame: PreparedFrame): Bitmap {
+  private fun composeSatelliteScene(width: Int, height: Int, frame: RenderSourceFrame): Bitmap {
     // A source frame may include more than one bitmap layer. Draw every layer
     // with aspect-fit rules so radar/satellite products keep their shape.
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -369,13 +385,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(out)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
-    canvas.drawColor(Color.rgb(5, 10, 22))
-    drawExportGrid(canvas, width, height)
-
-    drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, region, frame.zoom, 245)
+    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
     underlays.forEach { drawBitmapFit(canvas, it, width, height, paint.apply { alpha = 255 }) }
     drawTileTemplateLayer(canvas, width, height, template, region, frame.zoom, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
-    drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, region, frame.zoom, 235)
     paint.alpha = 255
     return out
   }
@@ -698,14 +710,18 @@ private data class ExportFrame(
   val zoom: Double? = null,
   val opacity: Double? = null,
 )
-private data class PreparedFrame(
-  val label: String,
+
+private data class RenderSourceFrame(
   val bitmaps: List<Bitmap>,
-  val expectedBitmapCount: Int,
   val basemapTemplate: String? = null,
   val basemapOverlayTemplate: String? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
+)
+
+private data class PreparedFrame(
+  val label: String,
+  val scene: Bitmap,
 )
 
 private fun ReadableMap.optInt(name: String, fallback: Int): Int =
