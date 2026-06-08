@@ -2926,12 +2926,12 @@ function wmoToCondition(code: number | null): string | null {
   return 'Cloudy';
 }
 
-const GLASS_PANEL_BG = 'rgba(44, 70, 102, 0.68)';
-const GLASS_PANEL_BG_STRONG = 'rgba(44, 70, 102, 0.70)';
-const GLASS_INSET_BG = 'rgba(44, 70, 102, 0.66)';
-const GLASS_INSET_BG_SOFT = 'rgba(44, 70, 102, 0.62)';
-const GLASS_BORDER = 'rgba(255,255,255,0.18)';
-const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.12)';
+const GLASS_PANEL_BG = 'rgba(18,28,45,0.56)';
+const GLASS_PANEL_BG_STRONG = 'rgba(18,28,45,0.56)';
+const GLASS_INSET_BG = 'rgba(255,255,255,0.08)';
+const GLASS_INSET_BG_SOFT = 'rgba(255,255,255,0.06)';
+const GLASS_BORDER = 'rgba(255,255,255,0.10)';
+const GLASS_BORDER_SOFT = 'rgba(255,255,255,0.08)';
 
 const ss = StyleSheet.create({
   wrap: { marginTop: 10, gap: 10 },
@@ -3365,9 +3365,9 @@ const nd = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: 'rgba(18, 37, 63, 0.26)',
+    backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GLASS_BORDER_SOFT,
   },
   chipText: {
     fontSize: 12,
@@ -4711,7 +4711,7 @@ const styles = StyleSheet.create({
 
   safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
-  content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
+  content: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing['2xl'] },
 
   locationPrimary: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: '900', color: 'white' },
   locationSecondary: { marginTop: 2, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.55)' },
@@ -4725,8 +4725,8 @@ const styles = StyleSheet.create({
   },
 
   headerHeroSurface: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 7,
     borderRadius: 18,
     backgroundColor: GLASS_PANEL_BG,
     borderWidth: 1,
@@ -4750,16 +4750,16 @@ const styles = StyleSheet.create({
   },
 
   headerLogoButton: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   headerCompactLogo: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     opacity: 0.96,
   },
 
@@ -4892,9 +4892,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: GLASS_BORDER_SOFT,
   },
 
   
@@ -4923,15 +4923,15 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   dailyCurrentCard: {
-    paddingVertical: 20,
-    paddingHorizontal: 18,
-    borderRadius: 28,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 24,
     backgroundColor: GLASS_PANEL_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
   },
   dailyRangeCard: {
-    gap: 14,
+    gap: 12,
   },
   dailyRangeHeaderRow: {
     flexDirection: 'row',
@@ -4942,8 +4942,8 @@ const styles = StyleSheet.create({
   dailyCurrentTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 14,
-    marginTop: 8,
+    gap: 12,
+    marginTop: 4,
   },
   dailyPanelEyebrow: {
     flex: 1,
@@ -4982,9 +4982,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.055)',
+    backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: GLASS_BORDER_SOFT,
   },
   dailyCurrentSummary: {
     fontSize: 14,
@@ -5081,14 +5081,14 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingHorizontal: 12,
     paddingBottom: 12,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.075)',
+    borderColor: GLASS_BORDER_SOFT,
     overflow: 'hidden',
   },
   dayArcEmbedded: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderColor: 'rgba(255,255,255,0.055)',
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderColor: GLASS_BORDER_SOFT,
     paddingBottom: 4,
   },
   dayArcHeader: {
@@ -5134,9 +5134,9 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.055)',
+    borderColor: GLASS_BORDER_SOFT,
   },
   dayArcTimeLabel: {
     fontSize: 9,
@@ -6239,9 +6239,9 @@ saveInlineText: {
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 22,
-    backgroundColor: 'rgba(11,18,32,0.72)',
+    backgroundColor: GLASS_PANEL_BG_STRONG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: GLASS_BORDER,
   },
   landscapeGraphPlaceholderText: {
     color: 'rgba(255,255,255,0.72)',

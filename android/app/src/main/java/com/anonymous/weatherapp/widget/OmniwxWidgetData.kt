@@ -1074,10 +1074,25 @@ object OmniwxWidgetData {
       val cloud = clouds.optJSONObject(idx) ?: continue
       val cover = cloud.optString("cover", "").uppercase(Locale.US)
       if (cover != "BKN" && cover != "OVC" && cover != "VV") continue
-      val base = cloud.optInt("base", -1)
-      if (base >= 0 && (lowest == null || base < lowest!!)) lowest = base
+      val base = cloudBaseFeet(cloud)
+      if (base != null && (lowest == null || base < lowest!!)) lowest = base
     }
-    return lowest?.let { "Ceiling ${it}00 ft" } ?: "Ceiling unlimited"
+    return lowest?.let { "Ceiling $it ft" } ?: "Ceiling unlimited"
+  }
+
+  private fun cloudBaseFeet(cloud: JSONObject): Int? {
+    // AviationWeather JSON currently returns clouds[].base in feet AGL. Older
+    // METAR encodings use hundreds of feet, so only multiply fields that are
+    // explicitly named that way. This prevents BKN250/25000 ft from becoming
+    // the obviously bogus 2,500,000 ft on widgets.
+    val feet = cloud.optDouble("base", Double.NaN).takeIf { it.isFinite() }
+      ?: cloud.optDouble("base_ft_agl", Double.NaN).takeIf { it.isFinite() }
+      ?: cloud.optDouble("cloud_base_ft_agl", Double.NaN).takeIf { it.isFinite() }
+    if (feet != null) return feet.roundToInt().takeIf { it in 0..60000 }
+
+    val hundreds = cloud.optDouble("base_hundreds", Double.NaN).takeIf { it.isFinite() }
+      ?: cloud.optDouble("baseHundreds", Double.NaN).takeIf { it.isFinite() }
+    return hundreds?.let { (it * 100.0).roundToInt() }?.takeIf { it in 0..60000 }
   }
 }
 

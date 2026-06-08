@@ -39,11 +39,11 @@ type VisualState = {
   isSunset: boolean;
 };
 
-const GLASS_SURFACE_BG = 'rgba(44, 70, 102, 0.68)';
-const GLASS_SURFACE_BG_STRONG = 'rgba(44, 70, 102, 0.70)';
-const GLASS_SURFACE_INSET = 'rgba(44, 70, 102, 0.62)';
-const GLASS_SURFACE_BORDER = 'rgba(255,255,255,0.18)';
-const GLASS_SURFACE_BORDER_SOFT = 'rgba(255,255,255,0.12)';
+const GLASS_SURFACE_BG = 'rgba(18,28,45,0.56)';
+const GLASS_SURFACE_BG_STRONG = 'rgba(18,28,45,0.56)';
+const GLASS_SURFACE_INSET = 'rgba(255,255,255,0.08)';
+const GLASS_SURFACE_BORDER = 'rgba(255,255,255,0.10)';
+const GLASS_SURFACE_BORDER_SOFT = 'rgba(255,255,255,0.08)';
 
 function safeNum(v: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v;
@@ -1115,17 +1115,17 @@ const styles = StyleSheet.create({
 
   safe: { flex: 1, backgroundColor: 'transparent', zIndex: 10 },
   container: { flex: 1, backgroundColor: 'transparent' },
-  content: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
+  content: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing['2xl'] },
 
   headerHeroWrap: {
-    marginBottom: theme.spacing.md,
+    marginBottom: 8,
     position: 'relative',
   },
 
   headerHeroSurface: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 22,
+    paddingVertical: 6,
+    paddingHorizontal: 7,
+    borderRadius: 18,
     backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
@@ -1136,7 +1136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
 
   hourlyHeaderLeft: {
@@ -1144,16 +1144,16 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
 
   headerCompactLocation: {
     flex: 1,
     minWidth: 0,
-    marginRight: 4,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+    marginRight: 0,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 16,
     backgroundColor: GLASS_SURFACE_INSET,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER_SOFT,
@@ -1162,13 +1162,13 @@ const styles = StyleSheet.create({
   hourlyHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flexShrink: 0,
   },
 
   headerCompactLogo: {
-    width: 58,
-    height: 58,
+    width: 48,
+    height: 48,
     opacity: 0.96,
   },
 
@@ -1176,22 +1176,23 @@ const styles = StyleSheet.create({
 
   headerModeWrap: {
     flexDirection: 'row',
-    gap: 4,
-    padding: 4,
+    gap: 3,
+    padding: 3,
     borderRadius: 999,
     backgroundColor: GLASS_SURFACE_INSET,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
   headerModeBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    minHeight: 30,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 999,
   },
   headerModeBtnActive: {
-    backgroundColor: 'rgba(58, 117, 214, 0.78)',
+    backgroundColor: 'rgba(37,99,235,0.35)',
     borderWidth: 1,
-    borderColor: 'rgba(150, 190, 255, 0.52)',
+    borderColor: 'rgba(147,197,253,0.55)',
   },
   headerModeText: {
     color: 'rgba(255,255,255,0.70)',
@@ -1640,7 +1641,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(18, 37, 63, 0.26)',
+    backgroundColor: GLASS_SURFACE_INSET,
+    borderWidth: 1,
+    borderColor: GLASS_SURFACE_BORDER_SOFT,
   },
   hourlyMiniFactLabel: {
     fontSize: 11,

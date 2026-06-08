@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
@@ -552,6 +562,7 @@ async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: numb
   query.searchParams.set('where', 'end_time is not null');
   query.searchParams.set('outFields', 'objectid,name,start_time,end_time');
   query.searchParams.set('returnGeometry', 'false');
+  query.searchParams.set('orderByFields', 'end_time desc');
   query.searchParams.set('resultRecordCount', '240');
 
   const res = await fetchWithTimeout(query.toString(), 14000);
@@ -2035,23 +2046,7 @@ export default function MapsScreen() {
     }) => {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
       const currentIso = satelliteCurrentFrame?.iso ?? satelliteToFrame?.iso ?? null;
-      const warmIso = satelliteWarmFrame?.iso ?? null;
       const currentRasterId = satelliteCurrentFrame?.rasterId ?? null;
-      const warmRasterId = satelliteWarmFrame?.rasterId ?? null;
-
-      if (warmIso && warmIso !== currentIso) {
-        list.push({
-          id: `${args.id}-warm`,
-          tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, warmIso, satelliteQuality.tileSize, warmRasterId)],
-          opacity: Math.min(opacity, SATELLITE_WARM_OPACITY),
-          zIndex: args.zIndex - 0.01,
-          enabled: true,
-          tileSize: satelliteQuality.tileSize,
-          maxZoomLevel: satelliteQuality.maxZoomLevel,
-          fadeDurationMs: 0,
-          resampling: 'linear',
-        });
-      }
 
       list.push({
         id: args.id,
@@ -2647,8 +2642,61 @@ export default function MapsScreen() {
   const timelineFrameIndex = radarEnabled ? state.radarTime.frameIndex : satelliteFrameIndex;
   const timelinePlaying = radarEnabled ? state.radarTime.playing : satellitePlaying;
   const showTimeline = isFocused && !animationRecordMode && ((radarEnabled && frameCount > 1) || satelliteTimelineActive);
+  const satelliteLoadStatus = useMemo(() => {
+    if (!satelliteTimelineActive) return null;
+
+    const product = goesTrueColorEnabled
+      ? 'GeoColor'
+      : goesEastIrEnabled
+        ? 'Infrared'
+        : goesEastWvEnabled || goesWestWvEnabled
+          ? 'Water vapor'
+          : 'Visible satellite';
+    const source = goesTrueColorEnabled || goesEastIrEnabled ? 'NESDIS catalog' : 'satellite timeline';
+    const status = goesTrueColorEnabled ? trueColorFrameStatus : goesEastIrEnabled ? infraredFrameStatus : 'ready';
+    const expectedFrames = goesTrueColorEnabled
+      ? Math.max(2, Math.floor(satelliteLoopMinutes / 30))
+      : goesEastIrEnabled
+        ? Math.max(2, Math.floor(satelliteLoopMinutes / 10))
+        : Math.max(2, Math.floor(satelliteLoopMinutes / SATELLITE_FRAME_STEP_MINUTES));
+    const coverage = Math.max(0, Math.min(1, satelliteFrameCount / expectedFrames));
+    const percent = status === 'loading' ? 0.18 : coverage;
+    const sparse = status === 'ready' && coverage < 0.7;
+
+    return {
+      loading: status === 'loading',
+      percent,
+      title:
+        status === 'loading'
+          ? `Loading ${product} source imagery`
+          : status === 'fallback'
+            ? `${product} source is slow`
+            : sparse
+              ? `${product} source coverage is limited`
+              : `${product} source ready`,
+      detail:
+        status === 'loading'
+          ? `Building a ${satelliteLoopHours}h loop from ${source}. High-quality frames can take a moment.`
+          : status === 'fallback'
+            ? `Using a fallback timeline while ${source} catches up.`
+            : sparse
+              ? `${satelliteFrameCount} frames are available for this ${satelliteLoopHours}h window right now.`
+              : `${satelliteFrameCount} frames loaded for this ${satelliteLoopHours}h window.`,
+    };
+  }, [
+    goesEastIrEnabled,
+    goesEastWvEnabled,
+    goesTrueColorEnabled,
+    goesWestWvEnabled,
+    infraredFrameStatus,
+    satelliteFrameCount,
+    satelliteLoopHours,
+    satelliteLoopMinutes,
+    satelliteTimelineActive,
+    trueColorFrameStatus,
+  ]);
   const dockBottom = 12 + insets.bottom;
-  const DOCK_ESTIMATED_HEIGHT = 102;
+  const DOCK_ESTIMATED_HEIGHT = satelliteLoadStatus ? 154 : 102;
   const legendBottom = showTimeline ? dockBottom + DOCK_ESTIMATED_HEIGHT + 10 : dockBottom + 6;
 
   const accentBg = getViewAccent(String(state.viewId));
@@ -4570,6 +4618,32 @@ export default function MapsScreen() {
                                 ? ' / loading'
                                 : ' / fallback'
                           : ''}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {satelliteLoadStatus ? (
+                    <View style={styles.satelliteLoadPanel}>
+                      <View style={styles.satelliteLoadHeader}>
+                        {satelliteLoadStatus.loading ? (
+                          <ActivityIndicator size="small" color="#7dd3fc" />
+                        ) : null}
+                        <Text style={styles.satelliteLoadTitle} numberOfLines={1}>
+                          {satelliteLoadStatus.title}
+                        </Text>
+                        <Text style={styles.satelliteLoadPct}>
+                          {Math.round(satelliteLoadStatus.percent * 100)}%
+                        </Text>
+                      </View>
+                      <View style={styles.satelliteLoadTrack}>
+                        <View
+                          style={[
+                            styles.satelliteLoadFill,
+                            { width: `${Math.round(satelliteLoadStatus.percent * 100)}%` },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.satelliteLoadDetail} numberOfLines={2}>
+                        {satelliteLoadStatus.detail}
                       </Text>
                     </View>
                   ) : null}
@@ -6681,6 +6755,55 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0,
+  },
+  satelliteLoadPanel: {
+    marginHorizontal: 4,
+    marginBottom: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.18)',
+    backgroundColor: 'rgba(15,23,42,0.62)',
+  },
+  satelliteLoadHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  satelliteLoadTitle: {
+    flex: 1,
+    color: 'rgba(241,245,249,0.92)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  satelliteLoadPct: {
+    color: 'rgba(125,211,252,0.88)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  satelliteLoadTrack: {
+    height: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(148,163,184,0.18)',
+    marginTop: 7,
+  },
+  satelliteLoadFill: {
+    height: '100%',
+    minWidth: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34,211,238,0.78)',
+  },
+  satelliteLoadDetail: {
+    marginTop: 6,
+    color: 'rgba(203,213,225,0.74)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0,
+    lineHeight: 12,
   },
   fireDetailWrap: {
     position: 'absolute',

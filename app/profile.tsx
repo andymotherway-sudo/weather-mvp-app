@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePlace, type Place } from './context/PlaceContext';
 import { useSettings } from './context/SettingsContext';
@@ -37,6 +38,7 @@ const FORECAST_MODEL_OPTIONS = [
 
 export default function ProfileScreen() {
   const params = useLocalSearchParams<{ returnTo?: string; returnLabel?: string }>();
+  const insets = useSafeAreaInsets();
   const { active, useGPS, setActive } = usePlace();
   const {
     tempUnit,
@@ -155,7 +157,12 @@ export default function ProfileScreen() {
       <View style={[styles.bgBlobA, { backgroundColor: chrome.blobA }]} />
       <View style={[styles.bgBlobB, { backgroundColor: chrome.blobB }]} />
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: Math.max(18, insets.top + 10), paddingBottom: 28 + insets.bottom },
+        ]}
+      >
         <View style={styles.hero}>
           <Pressable style={styles.backButton} onPress={leaveSettings}>
             <Text style={styles.backButtonText}>
