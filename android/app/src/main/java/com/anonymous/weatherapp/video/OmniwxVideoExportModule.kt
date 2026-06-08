@@ -82,11 +82,11 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
         val prepared = frames.map { frame ->
-          val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it) }
+          val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
           val tileScene =
             if (underlayBitmaps.size == frame.underlayUrls.size) renderTileScene(width, height, frame, underlayBitmaps) else null
           underlayBitmaps.forEach { runCatching { it.recycle() } }
-          val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it) }
+          val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
           val bitmaps = listOfNotNull(tileScene) + urlBitmaps
           val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
           PreparedFrame(
@@ -423,7 +423,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           .replace("{z}", z.toString())
           .replace("{x}", tx.toString())
           .replace("{y}", ty.toString())
-        val tile = downloadBitmap(url) ?: continue
+        val tile = downloadBitmap(url, connectTimeoutMs = 2_500, readTimeoutMs = 3_500) ?: continue
         val left = ((txRaw * tileSize) - leftWorld) * scale
         val top = ((ty * tileSize) - topWorld) * scale
         val dst = RectF(
@@ -616,12 +616,12 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return Uri.fromFile(dest)
   }
 
-  private fun downloadBitmap(url: String): Bitmap? {
+  private fun downloadBitmap(url: String, connectTimeoutMs: Int = 12_000, readTimeoutMs: Int = 18_000): Bitmap? {
     // Fail a single URL by returning null; exportAnimation decides whether there
     // are still enough complete frames to proceed.
     val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-      connectTimeout = 12_000
-      readTimeout = 18_000
+      connectTimeout = connectTimeoutMs
+      readTimeout = readTimeoutMs
       requestMethod = "GET"
       setRequestProperty("User-Agent", "OMNIwx Alpha Video Export")
       setRequestProperty("Accept", "image/png,image/jpeg,image/*")

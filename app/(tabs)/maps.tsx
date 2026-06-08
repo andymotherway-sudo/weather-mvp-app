@@ -467,7 +467,11 @@ function animationExportDimensions(
     kind === 'radar' && !viewportAspect
       ? 16 / 9
       : Math.max(0.35, Math.min(2.2, viewportAspect ?? geographicAspect));
-  const longEdge = kind === 'radar' ? (aspect >= 1 ? 1280 : 1280) : quality.exportLongEdge;
+  const satelliteVideoLongEdge =
+    kind === 'truecolor' || kind === 'ir' || kind === 'wv-east' || kind === 'wv-west' || kind === 'clouds'
+      ? Math.min(1280, quality.exportLongEdge)
+      : quality.exportLongEdge;
+  const longEdge = kind === 'radar' ? 1280 : satelliteVideoLongEdge;
 
   if (aspect >= 1) {
     return { width: evenDimension(longEdge, 480, 1920), height: evenDimension(longEdge / aspect, 480, 1920) };
