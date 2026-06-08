@@ -65,6 +65,7 @@ data class WidgetWeather(
   val windMph: Double,
   val gustMph: Double,
   val windDirectionDeg: Double,
+  val dewPointF: Double,
   val visibilityMiles: Double,
   val humidityPct: Double,
   val cloudPct: Double,
@@ -233,7 +234,7 @@ object OmniwxWidgetData {
       "https://api.open-meteo.com/v1/forecast" +
         "?latitude=${place.lat}" +
         "&longitude=${place.lon}" +
-        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,visibility,relative_humidity_2m,cloud_cover" +
+        "&current=temperature_2m,apparent_temperature,dew_point_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,visibility,relative_humidity_2m,cloud_cover" +
         "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
         "&temperature_unit=fahrenheit" +
         "&wind_speed_unit=mph" +
@@ -253,6 +254,7 @@ object OmniwxWidgetData {
       windMph = current.optDouble("wind_speed_10m", Double.NaN),
       gustMph = current.optDouble("wind_gusts_10m", Double.NaN),
       windDirectionDeg = current.optDouble("wind_direction_10m", Double.NaN),
+      dewPointF = current.optDouble("dew_point_2m", Double.NaN),
       visibilityMiles = metersToMiles(current.optDouble("visibility", Double.NaN)),
       humidityPct = current.optDouble("relative_humidity_2m", Double.NaN),
       cloudPct = current.optDouble("cloud_cover", Double.NaN),
@@ -800,7 +802,7 @@ object OmniwxWidgetData {
     // Best case: draw a real RainViewer/base-map composite for the user's place.
     // Fallback: draw the OMNIwx radar board so the widget remains useful even
     // when network imagery fails or the user has no saved place.
-    place?.let { fetchRadarTileComposite(it) }?.let { return it }
+    place?.let { fetchRadarTileComposite(it, weather) }?.let { return it }
 
     val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
@@ -811,25 +813,11 @@ object OmniwxWidgetData {
     canvas.drawRect(0f, 0f, 720f, 360f, bg)
     val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = Color.rgb(56, 189, 248)
-      alpha = 54
+      alpha = 38
       strokeWidth = 2f
     }
     for (x in 0..720 step 72) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), 360f, grid)
     for (y in 0..360 step 60) canvas.drawLine(0f, y.toFloat(), 720f, y.toFloat(), grid)
-    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      color = Color.rgb(34, 211, 238)
-      alpha = 92
-      style = Paint.Style.STROKE
-      strokeWidth = 4f
-    }
-    val cx = 360f
-    val cy = 180f
-    listOf(54f, 108f, 162f).forEach { canvas.drawCircle(cx, cy, it, ring) }
-    val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      color = Color.rgb(56, 189, 248)
-      style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, 12f, dot)
     val precipCode = weather?.weatherCode ?: -1
     val activePrecip = precipCode in listOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99)
     if (activePrecip) {
@@ -842,19 +830,12 @@ object OmniwxWidgetData {
         }
         canvas.drawOval(RectF(420f + idx * 18f, 72f + idx * 18f, 650f - idx * 8f, 260f - idx * 2f), p)
       }
-    } else {
-      val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(148, 163, 184)
-        alpha = 92
-        textSize = 28f
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-      }
-      canvas.drawText("No nearby precip signal", 226f, 320f, clear)
     }
+    drawRadarWidgetOverlays(canvas, place?.name ?: "OMNIwx", weather, hasLiveTiles = false)
     return bitmap
   }
 
-  private fun fetchRadarTileComposite(place: WidgetPlace): Bitmap? {
+  private fun fetchRadarTileComposite(place: WidgetPlace, weather: WidgetWeather?): Bitmap? {
     // Native mini-map renderer for the current+radar widget. It pulls base map
     // and radar tiles around the saved location and composites them into one
     // bitmap because RemoteViews cannot host a live MapLibre map.
@@ -904,46 +885,117 @@ object OmniwxWidgetData {
 
       drawTileLayer("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", 235)
       drawTileLayer("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png", 230)
+      drawTileLayer("https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png", 230)
 
       val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(38, 2, 6, 23)
+        color = Color.argb(30, 2, 6, 23)
         style = Paint.Style.FILL
       }
       canvas.drawRect(0f, 0f, 720f, 360f, wash)
 
-      val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(34, 211, 238)
-        alpha = 120
-        style = Paint.Style.STROKE
-        strokeWidth = 4f
-      }
-      val cx = 360f
-      val cy = 180f
-      listOf(54f, 108f, 162f).forEach { canvas.drawCircle(cx, cy, it, ring) }
-      val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(56, 189, 248)
-        style = Paint.Style.FILL
-      }
-      canvas.drawCircle(cx, cy, 13f, dot)
-      val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(56, 189, 248)
-        alpha = 78
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-      }
-      canvas.drawCircle(cx, cy, 22f, halo)
-
-      val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        alpha = 218
-        textSize = 25f
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-        setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
-      }
-      canvas.drawText(place.name.take(22), 386f, 188f, labelPaint)
-
+      drawRadarWidgetOverlays(canvas, place.name, weather, hasLiveTiles = true)
       bitmap
     }.getOrNull()
+  }
+
+  private fun drawRadarWidgetOverlays(canvas: Canvas, placeName: String, weather: WidgetWeather?, hasLiveTiles: Boolean) {
+    val width = 720f
+    val height = 360f
+    val cx = width / 2f
+    val cy = height / 2f
+
+    val vignette = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.argb(55, 2, 6, 23)
+      style = Paint.Style.FILL
+    }
+    canvas.drawRoundRect(RectF(0f, 0f, width, height), 24f, 24f, vignette)
+
+    val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(34, 211, 238)
+      alpha = 88
+      style = Paint.Style.STROKE
+      strokeWidth = 3.5f
+    }
+    listOf(58f, 116f, 174f).forEach { radius -> canvas.drawCircle(cx, cy, radius, ring) }
+
+    val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(125, 211, 252)
+      alpha = 42
+      strokeWidth = 2f
+    }
+    canvas.drawLine(cx, 24f, cx, height - 24f, cross)
+    canvas.drawLine(24f, cy, width - 24f, cy, cross)
+
+    val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(226, 245, 255)
+      alpha = if (hasLiveTiles) 180 else 132
+      textSize = 19f
+      typeface = android.graphics.Typeface.DEFAULT_BOLD
+      setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
+    }
+    canvas.drawText(placeName.take(22), cx + 30f, cy + 8f, label)
+    label.textSize = 16f
+    label.alpha = 104
+    canvas.drawText("25 mi", cx + 78f, cy - 53f, label)
+    canvas.drawText("50 mi", cx + 136f, cy - 110f, label)
+    canvas.drawText("Local radar", 28f, height - 30f, label)
+
+    val pulse = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(56, 189, 248)
+      alpha = 58
+      style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, 29f, pulse)
+    pulse.alpha = 96
+    canvas.drawCircle(cx, cy, 20f, pulse)
+    val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(125, 211, 252)
+      style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, 12f, dot)
+    val dotStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.WHITE
+      alpha = 220
+      style = Paint.Style.STROKE
+      strokeWidth = 4f
+    }
+    canvas.drawCircle(cx, cy, 13f, dotStroke)
+
+    drawRadarChip(canvas, 24f, 24f, radarStatusLabel(weather), accent = true)
+    drawRadarChip(canvas, width - 164f, 24f, "Radar ${weather?.updatedLabel ?: "--"}", accent = false)
+  }
+
+  private fun drawRadarChip(canvas: Canvas, left: Float, top: Float, text: String, accent: Boolean) {
+    val chip = RectF(left, top, left + if (accent) 210f else 140f, top + 38f)
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = if (accent) Color.argb(178, 8, 47, 73) else Color.argb(150, 15, 23, 42)
+      style = Paint.Style.FILL
+    }
+    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = if (accent) Color.rgb(34, 211, 238) else Color.rgb(148, 163, 184)
+      alpha = if (accent) 118 else 72
+      style = Paint.Style.STROKE
+      strokeWidth = 1.5f
+    }
+    canvas.drawRoundRect(chip, 19f, 19f, fill)
+    canvas.drawRoundRect(chip, 19f, 19f, stroke)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.WHITE
+      alpha = 232
+      textSize = 18f
+      typeface = android.graphics.Typeface.DEFAULT_BOLD
+    }
+    canvas.drawText(text.take(if (accent) 22 else 15), left + 16f, top + 25f, paint)
+  }
+
+  private fun radarStatusLabel(weather: WidgetWeather?): String {
+    val code = weather?.weatherCode ?: return "Radar loading"
+    return when (code) {
+      51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> "Rain signal nearby"
+      71, 73, 75, 77, 85, 86 -> "Snow signal nearby"
+      95, 96, 99 -> "Storms possible"
+      else -> "No precip nearby"
+    }
   }
 
   private fun fetchBitmap(url: String): Bitmap? {
