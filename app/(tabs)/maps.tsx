@@ -336,6 +336,7 @@ const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE = 'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
@@ -2931,6 +2932,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('geocolor', frame, width, height)],
+          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -2940,6 +2942,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-east-ir', frame, width, height)],
+          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -2949,6 +2952,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-west-wv', frame, width, height)],
+          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -2958,6 +2962,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-east-wv', frame, width, height)],
+          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -2969,6 +2974,7 @@ export default function MapsScreen() {
           buildAnimationUrl('goes-east-visible', frame, width, height),
           buildAnimationUrl('goes-west-visible', frame, width, height),
         ],
+        basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
         basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
         region: animationExportRegion,
         zoom: mapZoom,

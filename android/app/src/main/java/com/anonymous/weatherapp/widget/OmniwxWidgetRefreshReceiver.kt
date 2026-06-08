@@ -1,6 +1,7 @@
 package com.anonymous.weatherapp.widget
 
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -18,27 +19,48 @@ class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
       action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
       action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS
     ) return
-    OmniwxWidgetScheduler.schedule(context)
-
-    refreshProvider(context, OmniwxCurrentWidgetProvider::class.java)
-    refreshProvider(context, OmniwxCurrentRadarWidgetProvider::class.java)
-    refreshProvider(context, OmniwxSkyScoreWidgetProvider::class.java)
-    refreshProvider(context, OmniwxAviationWidgetProvider::class.java)
-    refreshProvider(context, OmniwxAirportBoardWidgetProvider::class.java)
-    refreshProvider(context, OmniwxRouteBriefingWidgetProvider::class.java)
-    refreshProvider(context, OmniwxClimatologyWidgetProvider::class.java)
-    refreshProvider(context, OmniwxClimateArchWidgetProvider::class.java)
+    refreshAll(context)
   }
 
-  private fun refreshProvider(context: Context, providerClass: Class<*>) {
-    val manager = AppWidgetManager.getInstance(context)
-    val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
-    if (ids.isEmpty()) return
+  companion object {
+    private val providers = listOf(
+      OmniwxCurrentWidgetProvider::class.java,
+      OmniwxCurrentRadarWidgetProvider::class.java,
+      OmniwxSkyScoreWidgetProvider::class.java,
+      OmniwxAviationWidgetProvider::class.java,
+      OmniwxAirportBoardWidgetProvider::class.java,
+      OmniwxRouteBriefingWidgetProvider::class.java,
+      OmniwxClimatologyWidgetProvider::class.java,
+      OmniwxClimateArchWidgetProvider::class.java,
+    )
 
-    val updateIntent = Intent(context, providerClass).apply {
-      action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-      putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+    fun refreshAll(context: Context): Boolean {
+      val manager = AppWidgetManager.getInstance(context)
+      var hasWidgets = false
+      providers.forEach { providerClass ->
+        hasWidgets = refreshProvider(context, manager, providerClass) || hasWidgets
+      }
+      if (hasWidgets) {
+        OmniwxWidgetScheduler.schedule(context)
+      } else {
+        OmniwxWidgetScheduler.cancel(context)
+      }
+      return hasWidgets
     }
-    context.sendBroadcast(updateIntent)
+
+    fun hasInstalledWidgets(context: Context): Boolean {
+      val manager = AppWidgetManager.getInstance(context)
+      return providers.any { providerClass ->
+        manager.getAppWidgetIds(ComponentName(context, providerClass)).isNotEmpty()
+      }
+    }
+
+    private fun refreshProvider(context: Context, manager: AppWidgetManager, providerClass: Class<out AppWidgetProvider>): Boolean {
+      val ids = manager.getAppWidgetIds(ComponentName(context, providerClass))
+      if (ids.isEmpty()) return false
+
+      providerClass.getDeclaredConstructor().newInstance().onUpdate(context, manager, ids)
+      return true
+    }
   }
 }

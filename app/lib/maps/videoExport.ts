@@ -6,6 +6,7 @@ export type AnimationVideoFrame = {
   underlayUrls?: string[];
   tileTemplate?: string | null;
   basemapTemplate?: string | null;
+  basemapBoundaryTemplate?: string | null;
   basemapOverlayTemplate?: string | null;
   region?: {
     latitude: number;
@@ -62,6 +63,7 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
       underlayUrls: frame.underlayUrls?.filter(Boolean) ?? [],
       tileTemplate: frame.tileTemplate ?? null,
       basemapTemplate: frame.basemapTemplate ?? null,
+      basemapBoundaryTemplate: frame.basemapBoundaryTemplate ?? null,
       basemapOverlayTemplate: frame.basemapOverlayTemplate ?? null,
       region: frame.region ?? null,
       zoom: frame.zoom ?? null,

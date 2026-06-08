@@ -13,6 +13,8 @@ import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.anonymous.weatherapp.video.OmniwxVideoExportPackage
+import com.anonymous.weatherapp.widget.OmniwxWidgetRefreshReceiver
+import com.anonymous.weatherapp.widget.OmniwxWidgetScheduler
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
@@ -61,6 +63,9 @@ class MainApplication : Application(), ReactApplication {
     loadReactNative(this)
     // Allows Expo modules to receive Application.onCreate lifecycle events.
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+    if (OmniwxWidgetRefreshReceiver.hasInstalledWidgets(this)) {
+      OmniwxWidgetScheduler.schedule(this)
+    }
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

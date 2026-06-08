@@ -44,6 +44,7 @@
         <category android:name="androidx.car.app.category.WEATHER"/>
       </intent-filter>
     </service>
+    <service android:name=".widget.OmniwxWidgetRefreshJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
     <receiver android:name=".widget.OmniwxCurrentWidgetProvider" android:exported="false" android:label="OMNIwx Current">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
@@ -92,7 +93,7 @@
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climate_arch_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="false">
+    <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>

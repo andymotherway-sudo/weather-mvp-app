@@ -235,6 +235,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         RenderSourceFrame(
           bitmaps = sourceBitmaps,
           basemapTemplate = frame.basemapTemplate,
+          basemapBoundaryTemplate = frame.basemapBoundaryTemplate,
           basemapOverlayTemplate = frame.basemapOverlayTemplate,
           region = frame.region,
           zoom = frame.zoom,
@@ -351,6 +352,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     drawExportGrid(canvas, width, height)
     drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, frame.region, frame.zoom, 245)
     frame.bitmaps.forEach { drawBitmapFit(canvas, it, width, height, paint) }
+    drawTileTemplateLayer(canvas, width, height, frame.basemapBoundaryTemplate, frame.region, frame.zoom, 190)
     drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, frame.region, frame.zoom, 235)
     return out
   }
@@ -680,6 +682,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             underlayUrls = underlayUrls,
             tileTemplate = tileTemplate,
             basemapTemplate = item.optNullableString("basemapTemplate"),
+            basemapBoundaryTemplate = item.optNullableString("basemapBoundaryTemplate"),
             basemapOverlayTemplate = item.optNullableString("basemapOverlayTemplate"),
             region = item.getMap("region")?.toExportRegion(),
             zoom = item.optNullableDouble("zoom"),
@@ -705,6 +708,7 @@ private data class ExportFrame(
   val underlayUrls: List<String> = emptyList(),
   val tileTemplate: String? = null,
   val basemapTemplate: String? = null,
+  val basemapBoundaryTemplate: String? = null,
   val basemapOverlayTemplate: String? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
@@ -714,6 +718,7 @@ private data class ExportFrame(
 private data class RenderSourceFrame(
   val bitmaps: List<Bitmap>,
   val basemapTemplate: String? = null,
+  val basemapBoundaryTemplate: String? = null,
   val basemapOverlayTemplate: String? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
