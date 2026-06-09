@@ -36,6 +36,7 @@ import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapDa
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+import { MARINE_AREAS, type MarineArea } from '../lib/nautical/areas';
 import { useMarineZonesByBbox } from '../lib/nautical/useMarineZonesByBbox';
 import type { NauticalZone } from '../lib/nautical/zones';
 import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
@@ -92,6 +93,7 @@ type WildfireIncidentDetails = {
 type SelectedMarineFeature =
   | { kind: 'buoy'; id: string }
   | { kind: 'zone'; id: string }
+  | { kind: 'model-area'; id: string }
   | null;
 
 type WeatherAlertForecastTarget =
@@ -329,6 +331,9 @@ const SATELLITE_FRAME_STEP_MINUTES = 5;
 const SATELLITE_PLAY_INTERVAL_MS = 950;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
+const GIBS_DAILY_FRAME_COUNT = 5;
+const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
+const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
@@ -341,6 +346,7 @@ const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE = 'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
+const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -355,6 +361,21 @@ function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, til
   const mosaicParam = arcGisLockedRasterParam(rasterId);
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
   return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
+}
+
+function isoDateDaysAgo(daysAgo: number, now = new Date()) {
+  const d = new Date(now.getTime() - Math.max(0, daysAgo) * 86_400_000);
+  return d.toISOString().slice(0, 10);
+}
+
+function gibsWmtsTileTemplate(args: {
+  layer: string;
+  matrixSet: string;
+  extension: 'jpeg' | 'png';
+  time?: string | null;
+}) {
+  const timePath = args.time?.trim() ? `/${encodeURIComponent(args.time.trim())}` : '';
+  return `${GIBS_WMTS_BASE}/${args.layer}/default${timePath}/${args.matrixSet}/{z}/{y}/{x}.${args.extension}`;
 }
 
 function lonLatToMercatorMeters(lon: number, lat: number) {
@@ -565,6 +586,46 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
   });
 }
 
+function buildGibsDailyFrames(opts?: { days?: number; now?: Date }): SatelliteFrame[] {
+  const count = Math.max(2, Math.round(opts?.days ?? GIBS_DAILY_FRAME_COUNT));
+  const now = opts?.now ?? new Date();
+  return Array.from({ length: count }, (_, index) => {
+    const daysAgo = count - index;
+    const date = isoDateDaysAgo(daysAgo, now);
+    return { index, iso: `${date}T12:00:00.000Z` };
+  });
+}
+
+function buildGibsImergFrames(opts?: { minutesBack?: number; now?: Date }): SatelliteFrame[] {
+  const minutesBack = Math.max(GIBS_IMERG_FRAME_STEP_MINUTES, opts?.minutesBack ?? SATELLITE_LOOP_MINUTES_BACK);
+  const now = opts?.now ?? new Date();
+  const stepMs = GIBS_IMERG_FRAME_STEP_MINUTES * 60_000;
+  const sourceLagMs = GIBS_IMERG_SOURCE_LAG_MINUTES * 60_000;
+  const alignedMs = Math.floor((now.getTime() - sourceLagMs) / stepMs) * stepMs;
+  const frameCount = Math.floor(minutesBack / GIBS_IMERG_FRAME_STEP_MINUTES) + 1;
+
+  return Array.from({ length: frameCount }, (_, index) => {
+    const minutesAgo = (frameCount - 1 - index) * GIBS_IMERG_FRAME_STEP_MINUTES;
+    return { index, iso: new Date(alignedMs - minutesAgo * 60_000).toISOString() };
+  });
+}
+
+function gibsDailyTime(frame?: { iso?: string | null } | null) {
+  const iso = frame?.iso;
+  if (!iso) return isoDateDaysAgo(1);
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms)) return isoDateDaysAgo(1);
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function gibsHalfHourTime(frame?: { iso?: string | null } | null) {
+  const iso = frame?.iso;
+  const ms = iso ? new Date(iso).getTime() : Number.NaN;
+  if (!Number.isFinite(ms)) return null;
+  const stepMs = GIBS_IMERG_FRAME_STEP_MINUTES * 60_000;
+  return new Date(Math.floor(ms / stepMs) * stepMs).toISOString().replace('.000Z', 'Z');
+}
+
 async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
   const query = new URL(`${exportUrl.replace(/\/exportImage$/, '')}/query`);
   query.searchParams.set('f', 'json');
@@ -754,6 +815,46 @@ function marineZonesToFeatureCollection(zones: NauticalZone[]) {
   };
 }
 
+function bboxIntersects(
+  a: { west: number; south: number; east: number; north: number } | null | undefined,
+  b: { west: number; south: number; east: number; north: number },
+) {
+  if (!a) return true;
+  return a.west <= b.east && a.east >= b.west && a.south <= b.north && a.north >= b.south;
+}
+
+function marineAreaToPolygon(area: MarineArea) {
+  const { minLat, maxLat, minLon, maxLon } = area.bounds;
+  return closeRingIfNeeded([
+    [minLon, minLat],
+    [maxLon, minLat],
+    [maxLon, maxLat],
+    [minLon, maxLat],
+  ] as Array<[number, number]>);
+}
+
+function marineModelAreasToFeatureCollection(areas: MarineArea[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: areas.map((area) => ({
+      type: 'Feature' as const,
+      id: area.id,
+      properties: {
+        id: area.id,
+        name: area.name,
+        region: area.region,
+        ocean: area.ocean,
+        kind: area.kind,
+        sourceType: 'model-area',
+      },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [marineAreaToPolygon(area)],
+      },
+    })),
+  };
+}
+
 function marineBuoySeverity(waveM?: number | null, windKts?: number | null) {
   const waveFt = waveM != null ? waveM * 3.28084 : null;
   const wind = windKts ?? 0;
@@ -888,6 +989,10 @@ function getSimpleStatus(args: {
   goesEastIrEnabled: boolean;
   goesEastWvEnabled: boolean;
   goesWestWvEnabled: boolean;
+  globalTrueColorEnabled: boolean;
+  globalCloudTopsEnabled: boolean;
+  globalInfraredEnabled: boolean;
+  globalPrecipEnabled: boolean;
   playing: boolean;
   frameCount: number;
 }) {
@@ -907,10 +1012,18 @@ function getSimpleStatus(args: {
     goesEastIrEnabled,
     goesEastWvEnabled,
     goesWestWvEnabled,
+    globalTrueColorEnabled,
+    globalCloudTopsEnabled,
+    globalInfraredEnabled,
+    globalPrecipEnabled,
     playing,
     frameCount,
   } = args;
 
+  if (globalPrecipEnabled) return 'Global satellite precip active';
+  if (globalCloudTopsEnabled) return 'Global cloud tops active';
+  if (globalInfraredEnabled) return 'Global infrared active';
+  if (globalTrueColorEnabled) return 'Global true color active';
   if (goesTrueColorEnabled) return 'GOES true color active';
   if (cloudsEnabled) return 'GOES visible active';
   if (goesEastIrEnabled) return 'GOES infrared active';
@@ -921,7 +1034,7 @@ function getSimpleStatus(args: {
   if (frontsDay3Enabled) return 'WPC Day 3 fronts active';
 
   if (viewId === 'clouds') {
-    return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
+    return cloudsEnabled || globalCloudTopsEnabled || globalTrueColorEnabled ? 'Cloud layer active' : 'Cloud layer off';
   }
 
   if (viewId === 'wildfire') {
@@ -1521,9 +1634,27 @@ export default function MapsScreen() {
   const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
   const goesEastWvEnabled = !!state.layers?.['sat.goesEast.wv']?.enabled;
   const goesWestWvEnabled = !!state.layers?.['sat.goesWest.wv']?.enabled;
+  const globalTrueColorEnabled = !!state.layers?.['sat.global.truecolor']?.enabled;
+  const globalCloudTopsEnabled = !!state.layers?.['sat.global.cloudtops']?.enabled;
+  const globalInfraredEnabled = !!state.layers?.['sat.global.infrared']?.enabled;
+  const globalPrecipEnabled = !!state.layers?.['sat.global.precip']?.enabled;
   const animatedSatelliteEnabled =
-    cloudsEnabled || goesTrueColorEnabled || goesEastIrEnabled || goesEastWvEnabled || goesWestWvEnabled;
-  const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled;
+    cloudsEnabled ||
+    goesTrueColorEnabled ||
+    goesEastIrEnabled ||
+    goesEastWvEnabled ||
+    goesWestWvEnabled ||
+    globalTrueColorEnabled ||
+    globalCloudTopsEnabled ||
+    globalInfraredEnabled ||
+    globalPrecipEnabled;
+  const anySatelliteEnabled =
+    animatedSatelliteEnabled ||
+    goesTrueColorEnabled ||
+    globalTrueColorEnabled ||
+    globalCloudTopsEnabled ||
+    globalInfraredEnabled ||
+    globalPrecipEnabled;
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
   const satelliteFrameStepMinutes = SATELLITE_FRAME_STEP_MINUTES;
@@ -1546,12 +1677,21 @@ export default function MapsScreen() {
   });
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
+  const gibsImergFrames = useMemo(
+    () => buildGibsImergFrames({ minutesBack: satelliteLoopMinutes }),
+    [satelliteLoopMinutes],
+  );
+  const gibsDailyFrames = useMemo(() => buildGibsDailyFrames(), []);
   const satellitePlaybackFrames =
     goesTrueColorEnabled && trueColorFrames.length > 1
       ? trueColorFrames
       : goesEastIrEnabled && infraredFrames.length > 1
         ? infraredFrames
-        : satelliteFrames;
+        : globalPrecipEnabled
+          ? gibsImergFrames
+          : globalTrueColorEnabled || globalCloudTopsEnabled || globalInfraredEnabled
+            ? gibsDailyFrames
+            : satelliteFrames;
   const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
   const trueColorUsingCatalog = goesTrueColorEnabled && trueColorFrames.length > 1;
   const infraredUsingCatalog = goesEastIrEnabled && infraredFrames.length > 1;
@@ -1743,6 +1883,22 @@ export default function MapsScreen() {
   const goesWestWvOpacity = Number.isFinite(state.layers?.['sat.goesWest.wv']?.opacity)
     ? state.layers['sat.goesWest.wv'].opacity
     : 0.94;
+
+  const globalTrueColorOpacity = Number.isFinite(state.layers?.['sat.global.truecolor']?.opacity)
+    ? state.layers['sat.global.truecolor'].opacity
+    : 0.82;
+
+  const globalCloudTopsOpacity = Number.isFinite(state.layers?.['sat.global.cloudtops']?.opacity)
+    ? state.layers['sat.global.cloudtops'].opacity
+    : 0.72;
+
+  const globalInfraredOpacity = Number.isFinite(state.layers?.['sat.global.infrared']?.opacity)
+    ? state.layers['sat.global.infrared'].opacity
+    : 0.72;
+
+  const globalPrecipOpacity = Number.isFinite(state.layers?.['sat.global.precip']?.opacity)
+    ? state.layers['sat.global.precip'].opacity
+    : 0.78;
   const aviationTurbOpacity = Number.isFinite(state.layers?.['aviation.gairmet.turb']?.opacity)
     ? state.layers['aviation.gairmet.turb'].opacity
     : 0.72;
@@ -1965,6 +2121,8 @@ export default function MapsScreen() {
         : null;
     const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
     const satelliteQuality = satelliteQualityForZoom(mapZoom);
+    const gibsDailyDate = gibsDailyTime(satelliteCurrentFrame);
+    const gibsPrecipTime = gibsHalfHourTime(satelliteCurrentFrame);
 
     const shared = {
       enabled: true,
@@ -2073,6 +2231,90 @@ export default function MapsScreen() {
         resampling: 'linear',
       });
     };
+
+    if (globalTrueColorEnabled) {
+      list.push({
+        id: 'gibs-global-truecolor',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+            time: gibsDailyDate,
+            matrixSet: 'GoogleMapsCompatible_Level9',
+            extension: 'jpeg',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalTrueColorOpacity))),
+        zIndex: 58,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (globalCloudTopsEnabled) {
+      list.push({
+        id: 'gibs-global-cloudtops',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'MODIS_Aqua_Cloud_Top_Temp_Day',
+            time: gibsDailyDate,
+            matrixSet: 'GoogleMapsCompatible_Level6',
+            extension: 'png',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalCloudTopsOpacity))),
+        zIndex: 66,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 6,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (globalInfraredEnabled) {
+      list.push({
+        id: 'gibs-global-infrared',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'MODIS_Aqua_Brightness_Temp_Band31_Night',
+            time: gibsDailyDate,
+            matrixSet: 'GoogleMapsCompatible_Level7',
+            extension: 'png',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalInfraredOpacity))),
+        zIndex: 67,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 7,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (globalPrecipEnabled) {
+      list.push({
+        id: 'gibs-global-precip',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'IMERG_Precipitation_Rate_30min',
+            time: gibsPrecipTime,
+            matrixSet: 'GoogleMapsCompatible_Level6',
+            extension: 'png',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalPrecipOpacity))),
+        zIndex: 102,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 6,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
 
     if (goesTrueColorEnabled) {
       addAnimatedArcGisImageServer({
@@ -2209,6 +2451,14 @@ export default function MapsScreen() {
     goesEastWvOpacity,
     goesWestWvEnabled,
     goesWestWvOpacity,
+    globalCloudTopsEnabled,
+    globalCloudTopsOpacity,
+    globalInfraredEnabled,
+    globalInfraredOpacity,
+    globalPrecipEnabled,
+    globalPrecipOpacity,
+    globalTrueColorEnabled,
+    globalTrueColorOpacity,
     mapZoom,
     satelliteBlend.from,
     satelliteBlend.t,
@@ -2329,12 +2579,35 @@ export default function MapsScreen() {
   ]);
   const marineZonesById = useMemo(() => new Map(visibleMarineZones.map((zone) => [zone.id, zone])), [visibleMarineZones]);
   const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
+  const visibleMarineModelAreas = useMemo(
+    () =>
+      MARINE_AREAS.filter((area) => {
+        if (area.country !== 'INTL') return false;
+        return bboxIntersects(marineBbox, {
+          west: area.bounds.minLon,
+          south: area.bounds.minLat,
+          east: area.bounds.maxLon,
+          north: area.bounds.maxLat,
+        });
+      }),
+    [marineBbox],
+  );
+  const marineModelAreasById = useMemo(
+    () => new Map(MARINE_AREAS.filter((area) => area.country === 'INTL').map((area) => [area.id, area])),
+    [],
+  );
   const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
+  const marineModelAreasFc = useMemo(
+    () => marineModelAreasToFeatureCollection(visibleMarineModelAreas),
+    [visibleMarineModelAreas],
+  );
   const selectedMarineBuoy =
     selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
   const selectedMarineZone =
     selectedMarineFeature?.kind === 'zone' ? marineZonesById.get(selectedMarineFeature.id) ?? null : null;
+  const selectedMarineModelArea =
+    selectedMarineFeature?.kind === 'model-area' ? marineModelAreasById.get(selectedMarineFeature.id) ?? null : null;
   const resolveMarineFeatureAtPoint = useCallback(
     (lat: number, lon: number): SelectedMarineFeature => {
       if (!marineConditionsEnabled) return null;
@@ -2350,9 +2623,18 @@ export default function MapsScreen() {
       if (nearestBuoy) return { kind: 'buoy', id: nearestBuoy.id };
 
       const zone = visibleMarineZones.find((item) => geometryContainsPoint(item.geometry, lat, lon));
-      return zone ? { kind: 'zone', id: zone.id } : null;
+      if (zone) return { kind: 'zone', id: zone.id };
+
+      const modelArea = visibleMarineModelAreas.find(
+        (area) =>
+          lat >= area.bounds.minLat &&
+          lat <= area.bounds.maxLat &&
+          lon >= area.bounds.minLon &&
+          lon <= area.bounds.maxLon,
+      );
+      return modelArea ? { kind: 'model-area', id: modelArea.id } : null;
     },
-    [mapZoom, marineBuoys, marineConditionsEnabled, visibleMarineZones],
+    [mapZoom, marineBuoys, marineConditionsEnabled, visibleMarineModelAreas, visibleMarineZones],
   );
   const resolveMarineZoneAtPoint = useCallback(
     (lat: number, lon: number) => {
@@ -2375,6 +2657,23 @@ export default function MapsScreen() {
 
     setSelectedMarineFeature({ kind: 'buoy', id: match.id });
   }, [marineBuoys, params?.buoyId]);
+
+  useEffect(() => {
+    if (params?.targetType !== 'marine-model-extreme') return;
+    const lat = Number(params?.lat);
+    const lon = Number(params?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const modelArea = MARINE_AREAS.find(
+      (area) =>
+        area.country === 'INTL' &&
+        lat >= area.bounds.minLat &&
+        lat <= area.bounds.maxLat &&
+        lon >= area.bounds.minLon &&
+        lon <= area.bounds.maxLon,
+    );
+    if (modelArea) setSelectedMarineFeature({ kind: 'model-area', id: modelArea.id });
+  }, [params?.lat, params?.lon, params?.targetType]);
 
   const skyOverlayAnchor = useMemo(() => {
     if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
@@ -2645,6 +2944,10 @@ export default function MapsScreen() {
     goesEastIrEnabled,
     goesEastWvEnabled,
     goesWestWvEnabled,
+    globalTrueColorEnabled,
+    globalCloudTopsEnabled,
+    globalInfraredEnabled,
+    globalPrecipEnabled,
     playing: state.radarTime.playing,
     frameCount,
   });
@@ -2664,14 +2967,33 @@ export default function MapsScreen() {
         ? 'Infrared'
         : goesEastWvEnabled || goesWestWvEnabled
           ? 'Water vapor'
-          : 'Visible satellite';
-    const source = goesTrueColorEnabled || goesEastIrEnabled ? 'NESDIS catalog' : 'satellite timeline';
+          : globalPrecipEnabled
+            ? 'IMERG precip'
+            : globalCloudTopsEnabled
+              ? 'Global cloud tops'
+              : globalInfraredEnabled
+                ? 'Global infrared'
+                : globalTrueColorEnabled
+                  ? 'Global true color'
+                  : 'Visible satellite';
+    const source =
+      goesTrueColorEnabled || goesEastIrEnabled
+        ? 'NESDIS catalog'
+        : globalPrecipEnabled
+          ? 'NASA GIBS 30-minute tiles'
+          : globalTrueColorEnabled || globalCloudTopsEnabled || globalInfraredEnabled
+            ? 'NASA GIBS daily tiles'
+            : 'satellite timeline';
     const status = goesTrueColorEnabled ? trueColorFrameStatus : goesEastIrEnabled ? infraredFrameStatus : 'ready';
     const expectedFrames = goesTrueColorEnabled
       ? Math.max(2, Math.floor(satelliteLoopMinutes / 30))
       : goesEastIrEnabled
         ? Math.max(2, Math.floor(satelliteLoopMinutes / 10))
-        : Math.max(2, Math.floor(satelliteLoopMinutes / SATELLITE_FRAME_STEP_MINUTES));
+        : globalPrecipEnabled
+          ? Math.max(2, Math.floor(satelliteLoopMinutes / GIBS_IMERG_FRAME_STEP_MINUTES))
+          : globalTrueColorEnabled || globalCloudTopsEnabled || globalInfraredEnabled
+            ? GIBS_DAILY_FRAME_COUNT
+            : Math.max(2, Math.floor(satelliteLoopMinutes / SATELLITE_FRAME_STEP_MINUTES));
     const coverage = Math.max(0, Math.min(1, satelliteFrameCount / expectedFrames));
     const percent = status === 'loading' ? 0.18 : coverage;
     const sparse = status === 'ready' && coverage < 0.7;
@@ -2699,6 +3021,10 @@ export default function MapsScreen() {
   }, [
     goesEastIrEnabled,
     goesEastWvEnabled,
+    globalCloudTopsEnabled,
+    globalInfraredEnabled,
+    globalPrecipEnabled,
+    globalTrueColorEnabled,
     goesTrueColorEnabled,
     goesWestWvEnabled,
     infraredFrameStatus,
@@ -2715,9 +3041,9 @@ export default function MapsScreen() {
   const accentBg = getViewAccent(String(state.viewId));
   const activeOverlayCount = activeLayerSummary.count ?? 0;
   const boundaryReliefTone =
-    goesEastIrEnabled
+    goesEastIrEnabled || globalInfraredEnabled || globalCloudTopsEnabled
       ? 'orange'
-      : cloudsEnabled || goesTrueColorEnabled
+      : cloudsEnabled || goesTrueColorEnabled || globalTrueColorEnabled
         ? 'teal'
         : null;
 
@@ -2766,12 +3092,16 @@ export default function MapsScreen() {
       : null;
   const alertStatusLabel = warningsOverlayEnabled
     ? alertsData.loading
-      ? 'Loading NOAA alerts'
+      ? alertsData.sourceMode === 'official' ? 'Loading official alerts' : 'Loading global alert outlook'
       : alertsData.error
-        ? 'NOAA alerts unavailable'
+        ? alertsData.sourceMode === 'official' ? 'Official alerts unavailable' : 'Global alert outlook unavailable'
         : alertsData.geojson.features.length > 0
-          ? `${alertsData.geojson.features.length} active alerts nearby`
-          : 'No nearby active alerts'
+          ? alertsData.sourceMode === 'official'
+            ? `${alertsData.geojson.features.length} official alerts nearby`
+            : `${alertsData.geojson.features.length} model-derived outlooks nearby`
+          : alertsData.sourceMode === 'official'
+            ? 'No nearby official alerts'
+            : 'No model-derived outlooks nearby'
     : null;
   const overlayStatusText = aviationStatusLabel
     ? [overlaySummaryText, aviationStatusLabel].filter(Boolean).join(' / ')
@@ -3431,6 +3761,45 @@ export default function MapsScreen() {
 
           {marineConditionsEnabled ? (
             <>
+              <MapLibreGL.ShapeSource
+                id="marine-model-areas-source"
+                shape={marineModelAreasFc as any}
+                onPress={(e: any) => {
+                  const feature = e?.features?.[0];
+                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
+                  if (id) setSelectedMarineFeature({ kind: 'model-area', id });
+                }}
+              >
+                <MapLibreGL.FillLayer
+                  id="marine-model-areas-fill"
+                  style={{
+                    fillColor: 'rgba(20,184,166,1)',
+                    fillOpacity: 0.08 * marineConditionsOpacity,
+                  }}
+                />
+                <MapLibreGL.LineLayer
+                  id="marine-model-areas-line"
+                  style={{
+                    lineColor: 'rgba(45,212,191,0.9)',
+                    lineWidth: 1.4,
+                    lineOpacity: 0.72 * marineConditionsOpacity,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="marine-model-areas-label"
+                  minZoomLevel={3.2}
+                  style={{
+                    textField: ['get', 'name'] as any,
+                    textSize: 10,
+                    textColor: '#99f6e4',
+                    textHaloColor: 'rgba(2,6,23,0.95)',
+                    textHaloWidth: 1.2,
+                    textAllowOverlap: false,
+                    textOptional: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+
               <MapLibreGL.ShapeSource
                 id="marine-zones-source"
                 shape={marineZonesFc as any}
@@ -4912,16 +5281,16 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
-        {!animationRecordMode && marineConditionsEnabled && (selectedMarineBuoy || selectedMarineZone) ? (
+        {!animationRecordMode && marineConditionsEnabled && (selectedMarineBuoy || selectedMarineZone || selectedMarineModelArea) ? (
           <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
             <Glass style={styles.alertDetailCard}>
               <View style={styles.fireDetailHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.marineDetailEyebrow}>
-                    {selectedMarineBuoy ? 'MARINE BUOY' : 'MARINE ZONE'}
+                    {selectedMarineBuoy ? 'MARINE BUOY' : selectedMarineZone ? 'MARINE ZONE' : 'MODEL AREA'}
                   </Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
-                    {selectedMarineBuoy?.name ?? selectedMarineZone?.name ?? selectedMarineFeature?.id}
+                    {selectedMarineBuoy?.name ?? selectedMarineZone?.name ?? selectedMarineModelArea?.name ?? selectedMarineFeature?.id}
                   </Text>
                 </View>
                 <Pressable onPress={() => setSelectedMarineFeature(null)} style={styles.fireDetailClose}>
@@ -4933,6 +5302,7 @@ export default function MapsScreen() {
                 <>
                   <View style={styles.fireDetailPills}>
                     <HudBadge label={selectedMarineBuoy.id} strong />
+                    <HudBadge label="Observed buoy" />
                     {selectedMarineBuoy.waveHeightM != null ? (
                       <HudBadge label={`${Math.round(selectedMarineBuoy.waveHeightM * 3.28084)} ft waves`} />
                     ) : null}
@@ -4985,15 +5355,55 @@ export default function MapsScreen() {
                     </Pressable>
                   </View>
                 </>
+              ) : selectedMarineModelArea ? (
+                <>
+                  <View style={styles.fireDetailPills}>
+                    <HudBadge label={selectedMarineModelArea.id} strong />
+                    <HudBadge label="Model coverage" />
+                    <HudBadge label={selectedMarineModelArea.ocean} />
+                  </View>
+
+                  <Text style={styles.fireDetailMeta}>
+                    Open-Meteo Marine model area for waves, SST, currents, sea-level signal, and global wind fallback.
+                  </Text>
+
+                  <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Region</Text>
+                      <Text style={styles.fireDetailValue}>{selectedMarineModelArea.region}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Coverage</Text>
+                      <Text style={styles.fireDetailValue}>{selectedMarineModelArea.kind}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.marineDetailActionRow}>
+                    <Pressable
+                      style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/(tabs)/nautical',
+                          params: {
+                            areaId: selectedMarineModelArea.id,
+                          },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.fireDetailCloseText}>Open Nautical</Text>
+                    </Pressable>
+                  </View>
+                </>
               ) : selectedMarineZone ? (
                 <>
                   <View style={styles.fireDetailPills}>
                     <HudBadge label={selectedMarineZone.id} strong />
                     {selectedMarineZone.wfo ? <HudBadge label={`WFO ${selectedMarineZone.wfo}`} /> : null}
+                    <HudBadge label="Official zone" />
                   </View>
 
                   <Text style={styles.fireDetailMeta}>
-                    Tap Forecast to open the existing zone forecast detail for this marine polygon.
+                    Official NOAA marine zone polygon. Tap Forecast for the official bulletin where available.
                   </Text>
 
                   <View style={styles.fireDetailRows}>
@@ -5035,7 +5445,9 @@ export default function MapsScreen() {
             <Glass style={styles.alertDetailCard}>
               <View style={styles.fireDetailHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.alertDetailEyebrow}>WEATHER ALERT</Text>
+                  <Text style={styles.alertDetailEyebrow}>
+                    {selectedWeatherAlert.derived ? 'MODEL-DERIVED OUTLOOK' : 'WEATHER ALERT'}
+                  </Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
                     {selectedWeatherAlert.event}
                   </Text>
@@ -5055,6 +5467,7 @@ export default function MapsScreen() {
                 {selectedWeatherAlert.severity ? <HudBadge label={selectedWeatherAlert.severity} strong /> : null}
                 {selectedWeatherAlert.urgency ? <HudBadge label={selectedWeatherAlert.urgency} /> : null}
                 {selectedWeatherAlert.certainty ? <HudBadge label={selectedWeatherAlert.certainty} /> : null}
+                {selectedWeatherAlert.derived ? <HudBadge label="Model-derived" /> : <HudBadge label="Official" />}
               </View>
 
               {selectedWeatherAlert.headline ? (
@@ -5081,7 +5494,7 @@ export default function MapsScreen() {
                 <View style={styles.fireDetailRow}>
                   <Text style={styles.fireDetailLabel}>Source</Text>
                   <Text style={styles.fireDetailValue} numberOfLines={1}>
-                    {selectedWeatherAlert.senderName ?? 'National Weather Service'}
+                    {selectedWeatherAlert.sourceLabel}
                   </Text>
                 </View>
               </View>

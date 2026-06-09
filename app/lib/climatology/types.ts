@@ -31,10 +31,16 @@ export type LastYearSeries = {
 export type ClimatologyResult = {
   station: StationCandidate;
   normals: MonthlyNormalsF[];
-  source: 'noaa_cdo_normal_mly';
+  source: 'noaa_cdo_normal_mly' | 'open_meteo_archive_normals';
 
   // metadata
   fetchedAtIso: string;
+  diagnostics?: {
+    baselineStartYear?: number;
+    baselineEndYear?: number;
+    fallbackFrom?: string;
+    fallbackReason?: string | null;
+  };
 
   /**
    * Optional monthly precip normals (inches), 12 entries month=1..12.

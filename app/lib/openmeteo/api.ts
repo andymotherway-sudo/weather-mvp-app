@@ -4,10 +4,8 @@ import type {
   OpenMeteoForecast,
   OpenMeteoForecastResponse,
 } from './types';
-
-// Open-Meteo free forecast API (no key required)
-// Docs: https://open-meteo.com/en/docs
-const BASE_URL = 'https://api.open-meteo.com/v1/forecast';
+import { apiUrl } from '../net/apiBase';
+import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 function assertCoords(lat: number, lon: number) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -23,19 +21,20 @@ export async function fetchOpenMeteoForecast(
   assertCoords(lat, lon);
 
   const params = new URLSearchParams({
-    latitude: String(lat),
-    longitude: String(lon),
+    lat: String(lat),
+    lon: String(lon),
     daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
     timezone: 'auto',
-    temperature_unit: 'fahrenheit',
+    units: 'imperial',
   });
 
-  // Optional: Open-Meteo supports forecast_days as a limiter; keep it aligned with `days`
   params.set('forecast_days', String(Math.max(1, Math.min(16, days))));
 
-  const res = await fetch(`${BASE_URL}?${params.toString()}`);
+  const res = await fetchWithTimeout(apiUrl(`/api/openmeteo/hourly?${params.toString()}`), 12000, {
+    headers: { Accept: 'application/json' },
+  });
   if (!res.ok) {
-    throw new Error(`Open-Meteo error: ${res.status} ${res.statusText}`);
+    throw new Error(`Open-Meteo worker error: ${res.status} ${res.statusText}`);
   }
 
   const json = (await res.json()) as OpenMeteoForecastResponse;

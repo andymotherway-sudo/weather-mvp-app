@@ -22,7 +22,7 @@
 import { lookupBortle } from "./bortleLookup";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 
-const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-extreme-expansion-2026-05-07-cache-refresh-2` as const;
+const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
 
 export interface Env {
   NOAA_NCEI_TOKEN: string;
@@ -43,7 +43,7 @@ type LandPoint = {
   lat: number;
   lon: number;
   badge?: "US" | "Global";
-  group?: "airport" | "notable" | "capital" | "city";
+  group?: "airport" | "notable" | "capital" | "city" | "scan";
 };
 
 const EXTRA_LAND_EXTREME_POINTS: LandPoint[] = [
@@ -118,9 +118,81 @@ const EXTRA_LAND_EXTREME_POINTS: LandPoint[] = [
   { id: "gl-extreme-socotra", name: "Socotra, Yemen", lat: 12.4634, lon: 53.8237, badge: "Global", group: "notable" },
 ];
 
+type LandScanBox = {
+  id: string;
+  label: string;
+  latMin: number;
+  latMax: number;
+  lonMin: number;
+  lonMax: number;
+  latStep: number;
+  lonStep: number;
+};
+
+const GLOBAL_LAND_SCAN_BOXES: LandScanBox[] = [
+  { id: "sahara", label: "Sahara scan", latMin: 15, latMax: 32, lonMin: -16, lonMax: 35, latStep: 4, lonStep: 6 },
+  { id: "sahel-horn", label: "Sahel and Horn scan", latMin: 8, latMax: 18, lonMin: -15, lonMax: 50, latStep: 4, lonStep: 7 },
+  { id: "arabia", label: "Arabian Peninsula scan", latMin: 16, latMax: 30, lonMin: 36, lonMax: 58, latStep: 3.5, lonStep: 5 },
+  { id: "iran-pakistan", label: "Iran and Pakistan scan", latMin: 24, latMax: 36, lonMin: 52, lonMax: 72, latStep: 3, lonStep: 5 },
+  { id: "thar-india", label: "Thar and north India scan", latMin: 20, latMax: 31, lonMin: 68, lonMax: 84, latStep: 3, lonStep: 4 },
+  { id: "australia-interior", label: "Australia interior scan", latMin: -33, latMax: -16, lonMin: 116, lonMax: 144, latStep: 4, lonStep: 6 },
+  { id: "southwest-north-america", label: "Southwest North America scan", latMin: 25, latMax: 39, lonMin: -124, lonMax: -100, latStep: 3.5, lonStep: 5 },
+  { id: "mexico-central-america", label: "Mexico and Central America scan", latMin: 8, latMax: 25, lonMin: -116, lonMax: -84, latStep: 4, lonStep: 6 },
+  { id: "atacama-andes", label: "Atacama and Andes scan", latMin: -34, latMax: -15, lonMin: -76, lonMax: -64, latStep: 4, lonStep: 4 },
+  { id: "patagonia", label: "Patagonia scan", latMin: -55, latMax: -40, lonMin: -75, lonMax: -62, latStep: 3, lonStep: 4 },
+  { id: "southern-africa", label: "Southern Africa scan", latMin: -32, latMax: -16, lonMin: 12, lonMax: 34, latStep: 4, lonStep: 5 },
+  { id: "east-africa-highlands", label: "East Africa highlands scan", latMin: -8, latMax: 12, lonMin: 28, lonMax: 44, latStep: 4, lonStep: 4 },
+  { id: "europe-asia-midlat", label: "Eurasian mid-latitude scan", latMin: 35, latMax: 58, lonMin: -10, lonMax: 120, latStep: 7, lonStep: 12 },
+  { id: "siberia", label: "Siberia scan", latMin: 56, latMax: 74, lonMin: 45, lonMax: 160, latStep: 4, lonStep: 10 },
+  { id: "arctic-north-america", label: "Arctic North America scan", latMin: 58, latMax: 76, lonMin: -165, lonMax: -55, latStep: 4, lonStep: 10 },
+  { id: "greenland", label: "Greenland scan", latMin: 62, latMax: 78, lonMin: -55, lonMax: -20, latStep: 4, lonStep: 7 },
+  { id: "antarctica-interior", label: "Antarctica interior scan", latMin: -86, latMax: -70, lonMin: -180, lonMax: 180, latStep: 4, lonStep: 18 },
+  { id: "antarctic-coast", label: "Antarctic coast scan", latMin: -72, latMax: -62, lonMin: -180, lonMax: 180, latStep: 4, lonStep: 24 },
+  { id: "southern-ocean-islands", label: "Southern island wind scan", latMin: -55, latMax: -44, lonMin: -75, lonMax: 170, latStep: 4, lonStep: 18 },
+];
+
+function coordLabel(lat: number, lon: number) {
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(1)}° ${ns}, ${Math.abs(lon).toFixed(1)}° ${ew}`;
+}
+
+function roundScanCoord(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function makeGlobalLandScanPoints() {
+  const points: LandPoint[] = [];
+  const seen = new Set<string>();
+  for (const box of GLOBAL_LAND_SCAN_BOXES) {
+    for (let lat = box.latMin; lat <= box.latMax + 0.001; lat += box.latStep) {
+      for (let lon = box.lonMin; lon <= box.lonMax + 0.001; lon += box.lonStep) {
+        const la = roundScanCoord(lat);
+        const lo = roundScanCoord(lon);
+        const key = `${la.toFixed(1)},${lo.toFixed(1)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        points.push({
+          id: `global-scan-${box.id}-${la.toFixed(1)}-${lo.toFixed(1)}`.replace(/[^a-z0-9.-]+/gi, "-"),
+          name: `${box.label} (${coordLabel(la, lo)})`,
+          lat: la,
+          lon: lo,
+          badge: "Global",
+          group: "scan",
+        });
+      }
+    }
+  }
+  return points;
+}
+
 function landExtremePoints() {
   const byId = new Map<string, LandPoint>();
-  for (const point of [...((LAND_POINTS as unknown as LandPoint[]) ?? []), ...EXTRA_LAND_EXTREME_POINTS]) {
+  for (const point of [
+    ...((LAND_POINTS as unknown as LandPoint[]) ?? []),
+    ...EXTRA_LAND_EXTREME_POINTS,
+    ...makeGlobalLandScanPoints(),
+  ]) {
     byId.set(point.id, point);
   }
   return Array.from(byId.values());
@@ -150,6 +222,8 @@ type LandExtremesResponse = {
     pointsTotal: number;
     pointsUs: number;
     pointsGlobal: number;
+    pointsScan: number;
+    pointsCurated: number;
     fetchedAtIso: string;
     source: "open-meteo";
     ttlSeconds: number;
@@ -252,10 +326,56 @@ type MarineConditionsResponse = {
     seaSurfaceTempC: number | null;
     visibilityNm: number | null;
     pressureHpa: number | null;
+    oceanCurrentKts?: number | null;
+    oceanCurrentDirectionDeg?: number | null;
+    seaLevelHeightMslM?: number | null;
     observedAt: string | null;
     modelSource: string | null;
   } | null;
   generatedAt: string;
+};
+
+type MarineExtremeKind = "wave" | "wind" | "warm" | "cold" | "current" | "seaLevel";
+
+type MarineExtremePoint = {
+  id: string;
+  name: string;
+  region: string;
+  lat: number;
+  lon: number;
+};
+
+type MarineExtreme = MarineExtremePoint & {
+  kind: MarineExtremeKind;
+  value: number;
+  units: string;
+  updatedAt: string | null;
+  source: string;
+  waveHeightM: number | null;
+  windSpeedKts: number | null;
+  seaSurfaceTempC: number | null;
+  oceanCurrentKts: number | null;
+  seaLevelHeightMslM: number | null;
+};
+
+type MarineExtremeGroup = {
+  title: string;
+  subtitle: string;
+  items: MarineExtreme[];
+};
+
+type MarineExtremesResponse = {
+  ok: true;
+  updatedAt: string | null;
+  generatedAt: string;
+  source: "open-meteo-marine";
+  meta: {
+    pointsTotal: number;
+    fetchedAtIso: string;
+    ttlSeconds: number;
+  };
+  heroes: Partial<Record<MarineExtremeKind, MarineExtreme | null>>;
+  groups: MarineExtremeGroup[];
 };
 
 type FireHotspotsResponse = {
@@ -738,9 +858,8 @@ async function fetchDonkiUpstream(upstream: URL) {
  * ============================================================================= */
 
 const LAND_MAX_ROWS = 10;
-const LAND_GLOBAL_ROWS = 8;
 
-const LAND_TTL_SECONDS = 600;
+const LAND_TTL_SECONDS = 15 * 60;
 const LAND_STALE_SECONDS = 6 * 3600;
 
 const CURRENT_TTL_SECONDS = 60;
@@ -775,8 +894,11 @@ const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
 const FIRE_CONTEXT_TIMEOUT_MS = 9000;
 const OPEN_METEO_BATCH_SIZE = 75;
+const LAND_OPEN_METEO_CONCURRENCY = 4;
 const WEATHER_FALLBACK_USER_AGENT = "omniwx-worker/1.0 (weather fallback; contact: omniwx)";
 const MS_TO_KTS = 1.94384;
+const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
+const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -1309,15 +1431,50 @@ function toOpenMeteoMarineUrl(lat: number, lon: number) {
     "wind_speed_10m",
     "wind_gusts_10m",
     "wind_direction_10m",
+    "ocean_current_velocity",
+    "ocean_current_direction",
+    "sea_level_height_msl",
   ].join(",");
   return (
     `https://marine-api.open-meteo.com/v1/marine` +
     `?latitude=${encodeURIComponent(String(lat))}` +
     `&longitude=${encodeURIComponent(String(lon))}` +
     `&hourly=${encodeURIComponent(hourly)}` +
-    `&length=1` +
+    `&forecast_days=1` +
+    `&wind_speed_unit=ms` +
     `&timezone=auto`
   );
+}
+
+function toOpenMeteoMarineWindFallbackUrl(lat: number, lon: number) {
+  const hourly = ["wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"].join(",");
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&forecast_days=1` +
+    `&wind_speed_unit=ms` +
+    `&timezone=auto`
+  );
+}
+
+function pickClosestMarineHourlyIndex(times: unknown): number {
+  if (!Array.isArray(times) || !times.length) return -1;
+  const now = Date.now();
+  let bestIdx = -1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  times.forEach((time, idx) => {
+    if (typeof time !== "string") return;
+    const t = new Date(time).getTime();
+    if (!Number.isFinite(t)) return;
+    const delta = Math.abs(t - now);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestIdx = idx;
+    }
+  });
+  return bestIdx;
 }
 
 async function buildMarineConditionsPayload(lat: number, lon: number): Promise<MarineConditionsResponse> {
@@ -1326,19 +1483,45 @@ async function buildMarineConditionsPayload(lat: number, lon: number): Promise<M
   });
   const hourly = json?.hourly ?? {};
   const times = Array.isArray(hourly?.time) ? hourly.time : [];
-  const idx = times.length ? times.length - 1 : -1;
+  const idx = pickClosestMarineHourlyIndex(times);
   const get = (arr: unknown): number | null => {
     if (!Array.isArray(arr) || idx < 0 || idx >= arr.length) return null;
+    if (arr[idx] == null) return null;
     const n = Number(arr[idx]);
     return Number.isFinite(n) ? n : null;
   };
   const waveHeightM = get(hourly.wave_height);
   const wavePeriodS = get(hourly.wave_period);
   const waveDirectionDeg = get(hourly.wave_direction);
-  const windSpeedMs = get(hourly.wind_speed_10m);
-  const windGustMs = get(hourly.wind_gusts_10m);
-  const windDirectionDeg = get(hourly.wind_direction_10m);
+  let windSpeedMs = get(hourly.wind_speed_10m);
+  let windGustMs = get(hourly.wind_gusts_10m);
+  let windDirectionDeg = get(hourly.wind_direction_10m);
   const seaSurfaceTempC = get(hourly.sea_surface_temperature);
+  const oceanCurrentKph = get(hourly.ocean_current_velocity);
+  const oceanCurrentDirectionDeg = get(hourly.ocean_current_direction);
+  const seaLevelHeightMslM = get(hourly.sea_level_height_msl);
+
+  if (windSpeedMs == null) {
+    try {
+      const windJson = await fetchJsonWithTimeout(toOpenMeteoMarineWindFallbackUrl(lat, lon), OPEN_METEO_TIMEOUT_MS, {
+        "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+      });
+      const windHourly = windJson?.hourly ?? {};
+      const windTimes = Array.isArray(windHourly?.time) ? windHourly.time : [];
+      const windIdx = pickClosestMarineHourlyIndex(windTimes);
+      const getWind = (arr: unknown): number | null => {
+        if (!Array.isArray(arr) || windIdx < 0 || windIdx >= arr.length) return null;
+        if (arr[windIdx] == null) return null;
+        const n = Number(arr[windIdx]);
+        return Number.isFinite(n) ? n : null;
+      };
+      windSpeedMs = getWind(windHourly.wind_speed_10m);
+      windGustMs = getWind(windHourly.wind_gusts_10m);
+      windDirectionDeg = getWind(windHourly.wind_direction_10m);
+    } catch {
+      // Wave/SST/current data is still useful if the atmospheric fallback is unavailable.
+    }
+  }
   const observedAt = idx >= 0 && typeof times[idx] === "string" ? safeIsoString(times[idx]) : null;
   const hasAny =
     waveHeightM != null ||
@@ -1347,7 +1530,10 @@ async function buildMarineConditionsPayload(lat: number, lon: number): Promise<M
     windSpeedMs != null ||
     windGustMs != null ||
     windDirectionDeg != null ||
-    seaSurfaceTempC != null;
+    seaSurfaceTempC != null ||
+    oceanCurrentKph != null ||
+    oceanCurrentDirectionDeg != null ||
+    seaLevelHeightMslM != null;
 
   return {
     ok: true,
@@ -1365,11 +1551,133 @@ async function buildMarineConditionsPayload(lat: number, lon: number): Promise<M
           seaSurfaceTempC,
           visibilityNm: null,
           pressureHpa: null,
+          oceanCurrentKts: oceanCurrentKph != null ? oceanCurrentKph / 1.852 : null,
+          oceanCurrentDirectionDeg,
+          seaLevelHeightMslM,
           observedAt,
           modelSource: "Open-Meteo Marine",
         }
       : null,
     generatedAt: new Date().toISOString(),
+  };
+}
+
+const MARINE_EXTREME_POINTS: MarineExtremePoint[] = [
+  { id: "north-atlantic", name: "North Atlantic Open Waters", region: "North Atlantic", lat: 45, lon: -35 },
+  { id: "north-sea", name: "North Sea", region: "Northern Europe", lat: 56.8, lon: 2.5 },
+  { id: "mediterranean", name: "Mediterranean Sea", region: "Mediterranean", lat: 38, lon: 15 },
+  { id: "caribbean", name: "Caribbean Sea", region: "Caribbean", lat: 16.5, lon: -73 },
+  { id: "gulf-of-mexico", name: "Gulf of Mexico", region: "Gulf of Mexico", lat: 26.5, lon: -90 },
+  { id: "nw-pacific", name: "Northwest Pacific Open Waters", region: "North Pacific", lat: 35, lon: 160 },
+  { id: "ne-pacific", name: "Northeast Pacific Open Waters", region: "North Pacific", lat: 42, lon: -150 },
+  { id: "coral-tasman", name: "Coral and Tasman Seas", region: "Australia / New Zealand", lat: -28, lon: 160 },
+  { id: "south-pacific", name: "South Pacific Open Waters", region: "South Pacific", lat: -30, lon: -125 },
+  { id: "south-atlantic", name: "South Atlantic Open Waters", region: "South Atlantic", lat: -30, lon: -25 },
+  { id: "indian-ocean", name: "Indian Ocean Open Waters", region: "Indian Ocean", lat: -20, lon: 80 },
+  { id: "arabian-sea", name: "Arabian Sea", region: "Indian Ocean", lat: 15, lon: 64 },
+  { id: "bay-of-bengal", name: "Bay of Bengal", region: "Indian Ocean", lat: 13, lon: 88 },
+  { id: "southern-ocean-atlantic", name: "Southern Ocean Atlantic Sector", region: "Southern Ocean", lat: -58, lon: -20 },
+  { id: "southern-ocean-indian", name: "Southern Ocean Indian Sector", region: "Southern Ocean", lat: -58, lon: 80 },
+  { id: "southern-ocean-pacific", name: "Southern Ocean Pacific Sector", region: "Southern Ocean", lat: -58, lon: -140 },
+];
+
+function marineExtremeValue(kind: MarineExtremeKind, item: MarineExtreme) {
+  if (kind === "wave") return item.waveHeightM;
+  if (kind === "wind") return item.windSpeedKts;
+  if (kind === "warm" || kind === "cold") return item.seaSurfaceTempC;
+  if (kind === "current") return item.oceanCurrentKts;
+  return item.seaLevelHeightMslM != null ? Math.abs(item.seaLevelHeightMslM) : null;
+}
+
+function marineGroup(kind: MarineExtremeKind, title: string, subtitle: string, rows: MarineExtreme[]) {
+  const sorted = rows
+    .filter((item) => {
+      const value = marineExtremeValue(kind, item);
+      return value != null && Number.isFinite(value);
+    })
+    .sort((a, b) => {
+      const av = marineExtremeValue(kind, a) ?? 0;
+      const bv = marineExtremeValue(kind, b) ?? 0;
+      return kind === "cold" ? av - bv : bv - av;
+    })
+    .slice(0, LAND_MAX_ROWS)
+    .map((item) => ({
+      ...item,
+      kind,
+      value: marineExtremeValue(kind, item) ?? item.value,
+      units:
+        kind === "wave"
+          ? "m"
+          : kind === "wind" || kind === "current"
+            ? "kt"
+            : kind === "warm" || kind === "cold"
+              ? "C"
+              : "m",
+    }));
+  return { title, subtitle, items: sorted };
+}
+
+async function buildMarineExtremesPayload(): Promise<MarineExtremesResponse> {
+  const fetchedAtIso = new Date().toISOString();
+  const rows = (
+    await mapLimit(MARINE_EXTREME_POINTS, 4, async (point) => {
+      try {
+        const payload = await buildMarineConditionsPayload(point.lat, point.lon);
+        const c = payload.conditions;
+        if (!c) return null;
+        return {
+          ...point,
+          kind: "wave" as MarineExtremeKind,
+          value: c.significantWaveHeightM ?? 0,
+          units: "m",
+          updatedAt: c.observedAt,
+          source: c.modelSource ?? "Open-Meteo Marine",
+          waveHeightM: c.significantWaveHeightM,
+          windSpeedKts: c.windSpeedKts,
+          seaSurfaceTempC: c.seaSurfaceTempC,
+          oceanCurrentKts: c.oceanCurrentKts ?? null,
+          seaLevelHeightMslM: c.seaLevelHeightMslM ?? null,
+        } satisfies MarineExtreme;
+      } catch {
+        return null;
+      }
+    })
+  ).filter(Boolean) as MarineExtreme[];
+
+  const groups = [
+    marineGroup("wave", "Highest Model Waves", "Curated global ocean sample · significant wave height", rows),
+    marineGroup("wind", "Strongest Model Winds", "Global atmospheric fallback over ocean points", rows),
+    marineGroup("warm", "Warmest Model SST", "Sea surface temperature", rows),
+    marineGroup("cold", "Coldest Model SST", "Sea surface temperature", rows),
+    marineGroup("current", "Fastest Model Currents", "Ocean current velocity", rows),
+    marineGroup("seaLevel", "Largest Sea-Level Signal", "Absolute sea level height vs mean sea level", rows),
+  ];
+
+  const heroes: Partial<Record<MarineExtremeKind, MarineExtreme | null>> = {};
+  for (const group of groups) {
+    const first = group.items[0] ?? null;
+    if (group.title.includes("Waves")) heroes.wave = first;
+    else if (group.title.includes("Winds")) heroes.wind = first;
+    else if (group.title.includes("Warmest")) heroes.warm = first;
+    else if (group.title.includes("Coldest")) heroes.cold = first;
+    else if (group.title.includes("Currents")) heroes.current = first;
+    else heroes.seaLevel = first;
+  }
+
+  const updatedAt = rows.map((row) => row.updatedAt).filter(Boolean).sort().slice(-1)[0] ?? null;
+
+  return {
+    ok: true,
+    updatedAt,
+    generatedAt: fetchedAtIso,
+    source: "open-meteo-marine",
+    meta: {
+      pointsTotal: rows.length,
+      fetchedAtIso,
+      ttlSeconds: MARINE_EXTREMES_TTL_SECONDS,
+    },
+    heroes,
+    groups,
   };
 }
 
@@ -1529,11 +1837,6 @@ function fmtWind(v: number | null | undefined, unit: Unit) {
   return unit === "F" ? `${v.toFixed(0)} mph` : `${v.toFixed(0)} km/h`;
 }
 
-function fmtPrecip(v: number | null | undefined, unit: Unit) {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return unit === "F" ? `${v.toFixed(2)} in` : `${v.toFixed(1)} mm`;
-}
-
 function clampInt(v: number, min: number, max: number) {
   if (!Number.isFinite(v)) return min;
   return Math.max(min, Math.min(max, Math.floor(v)));
@@ -1548,6 +1851,19 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const s = Math.max(1, Math.floor(size));
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += s) out.push(arr.slice(i, i + s));
+  return out;
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>) {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      out[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
   return out;
 }
 
@@ -1851,42 +2167,23 @@ function buildLandExtremes(
     }
   >,
 ) {
-  const usRows = rows.filter((r) => r.badge !== "Global");
-  const globalRows = rows.filter((r) => r.badge === "Global");
-
   const sortDesc = <T>(arr: T[], get: (x: T) => number) => arr.slice().sort((a, b) => get(b) - get(a));
   const sortAsc = <T>(arr: T[], get: (x: T) => number) => arr.slice().sort((a, b) => get(a) - get(b));
 
   const hotSorted = dedupeByBaseName(
-    sortDesc(usRows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
+    sortDesc(rows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
   ).slice(0, LAND_MAX_ROWS);
 
   const coldSorted = dedupeByBaseName(
-    sortAsc(usRows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
+    sortAsc(rows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
   ).slice(0, LAND_MAX_ROWS);
 
   const windSorted = dedupeByBaseName(
     sortDesc(
-      usRows.filter((r) => (r.gust ?? r.wind) != null && Number.isFinite((r.gust ?? r.wind) as number)),
+      rows.filter((r) => (r.gust ?? r.wind) != null && Number.isFinite((r.gust ?? r.wind) as number)),
       (r) => (r.gust ?? r.wind) as number,
     ),
   ).slice(0, LAND_MAX_ROWS);
-
-  const rainSorted = dedupeByBaseName(
-    sortDesc(usRows.filter((r) => r.precip != null && Number.isFinite(r.precip)), (r) => r.precip as number),
-  ).slice(0, LAND_MAX_ROWS);
-
-  const globalHotSorted = dedupeByBaseName(
-    sortDesc(globalRows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
-  ).slice(0, LAND_GLOBAL_ROWS);
-
-  const globalColdSorted = dedupeByBaseName(
-    sortAsc(globalRows.filter((r) => r.t != null && Number.isFinite(r.t)), (r) => r.t as number),
-  ).slice(0, LAND_GLOBAL_ROWS);
-
-  const globalRainSorted = dedupeByBaseName(
-    sortDesc(globalRows.filter((r) => r.precip != null && Number.isFinite(r.precip)), (r) => r.precip as number),
-  ).slice(0, LAND_GLOBAL_ROWS);
 
   const toExtreme = (kind: LandExtremeKind, r: (typeof rows)[number], valueText: string, subtitle: string): LandExtreme => ({
     id: `${kind}:${r.id}`,
@@ -1901,64 +2198,39 @@ function buildLandExtremes(
   });
 
   const gHot: LandGroup = {
-    title: "Hottest (Current)",
-    subtitle: "US airports + notable locations",
-    items: hotSorted.map((r) => toExtreme("hot", r, fmtTemp(r.t, unit), "Hottest (current)")),
+    title: "Top 10 Hottest Places",
+    subtitle: "Curated global sample of current land temperatures",
+    items: hotSorted.map((r) => toExtreme("hot", r, fmtTemp(r.t, unit), "Curated global hot spot")),
   };
 
   const gCold: LandGroup = {
-    title: "Coldest (Current)",
-    subtitle: "US airports + notable locations",
-    items: coldSorted.map((r) => toExtreme("cold", r, fmtTemp(r.t, unit), "Coldest (current)")),
+    title: "Top 10 Coldest Places",
+    subtitle: "Curated global sample of current land temperatures",
+    items: coldSorted.map((r) => toExtreme("cold", r, fmtTemp(r.t, unit), "Curated global cold spot")),
   };
 
   const gWind: LandGroup = {
-    title: "Windiest (Current Gust)",
-    subtitle: "US airports + notable locations",
+    title: "Top 10 Windiest Places",
+    subtitle: "Curated global sample of current land winds and gusts",
     items: windSorted.map((r) =>
       toExtreme(
         "wind",
         r,
         fmtWind((r.gust ?? r.wind) ?? null, unit),
-        r.gust != null ? "Strongest gust (current)" : "Strongest wind (current)",
+        r.gust != null ? "Curated global gust spot" : "Curated global wind spot",
       ),
     ),
-  };
-
-  const gRain: LandGroup = {
-    title: "Wettest (Current)",
-    subtitle: "Timestep precip right now (not 24h total)",
-    items: rainSorted.map((r) => toExtreme("rain", r, fmtPrecip(r.precip, unit), "Wettest (current)")),
-  };
-
-  const gGlobalHot: LandGroup = {
-    title: "Global Hottest (Current)",
-    subtitle: "Curated iconic locations (deserts, tropics, etc.)",
-    items: globalHotSorted.map((r) => toExtreme("hot", r, fmtTemp(r.t, unit), "Global hottest (current)")),
-  };
-
-  const gGlobalCold: LandGroup = {
-    title: "Global Coldest (Current)",
-    subtitle: "Curated iconic locations (polar stations, high latitude, etc.)",
-    items: globalColdSorted.map((r) => toExtreme("cold", r, fmtTemp(r.t, unit), "Global coldest (current)")),
-  };
-
-  const gGlobalRain: LandGroup = {
-    title: "Global Wettest (Current)",
-    subtitle: "Curated iconic locations (monsoon / rainforest zones)",
-    items: globalRainSorted.map((r) => toExtreme("rain", r, fmtPrecip(r.precip, unit), "Global wettest (current)")),
   };
 
   const heroes: Partial<Record<LandExtremeKind, LandExtreme | null>> = {
     hot: gHot.items[0] ?? null,
     cold: gCold.items[0] ?? null,
     wind: gWind.items[0] ?? null,
-    rain: gRain.items[0] ?? null,
   };
 
   const updatedAt = rows.map((r) => r.time).filter(Boolean).sort().slice(-1)[0] ?? null;
 
-  return { heroes, groups: [gHot, gCold, gWind, gRain, gGlobalHot, gGlobalCold, gGlobalRain], updatedAt };
+  return { heroes, groups: [gHot, gCold, gWind], updatedAt };
 }
 
 function numOrNull(value: unknown) {
@@ -2153,7 +2425,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 function buildAlmanacCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
-  keyUrl.pathname = "/__cache__/almanac/climo/v13";
+  keyUrl.pathname = "/__cache__/almanac/climo/v14";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
   return new Request(keyUrl.toString(), { method: "GET" });
@@ -2385,6 +2657,109 @@ async function fetchMonthlyNormalsForWorker(env: Env, stationId: string) {
   }
 
   return { normals, precipMonthlyIn };
+}
+
+function hasUsableMonthlyNormalsForWorker(normals: Array<{ tminF: number | null; tmaxF: number | null }>) {
+  return normals.filter((m) => Number.isFinite(m.tminF) && Number.isFinite(m.tmaxF)).length >= 10;
+}
+
+function openMeteoArchiveValue(value: any) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function fetchMonthlyNormalsFromOpenMeteoArchive(lat: number, lon: number) {
+  const currentYear = new Date().getUTCFullYear();
+  const endYear = currentYear - 2;
+  const startYear = endYear - 9;
+
+  const upstream = new URL("https://archive-api.open-meteo.com/v1/archive");
+  upstream.searchParams.set("latitude", String(lat));
+  upstream.searchParams.set("longitude", String(lon));
+  upstream.searchParams.set("start_date", `${startYear}-01-01`);
+  upstream.searchParams.set("end_date", `${endYear}-12-31`);
+  upstream.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_sum");
+  upstream.searchParams.set("temperature_unit", "fahrenheit");
+  upstream.searchParams.set("precipitation_unit", "inch");
+  upstream.searchParams.set("timezone", "auto");
+
+  const res = await fetch(upstream.toString());
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Open-Meteo archive normals failed (${res.status})${txt ? ` ${txt.slice(0, 200)}` : ""}`);
+  }
+
+  const json = await res.json<any>();
+  const daily = json?.daily ?? {};
+  const time = Array.isArray(daily?.time) ? daily.time : [];
+  const tmax = Array.isArray(daily?.temperature_2m_max) ? daily.temperature_2m_max : [];
+  const tmin = Array.isArray(daily?.temperature_2m_min) ? daily.temperature_2m_min : [];
+  const prcp = Array.isArray(daily?.precipitation_sum) ? daily.precipitation_sum : [];
+
+  const minSum = new Array<number>(12).fill(0);
+  const maxSum = new Array<number>(12).fill(0);
+  const avgSum = new Array<number>(12).fill(0);
+  const tempCount = new Array<number>(12).fill(0);
+  const precipSum = new Array<number>(12).fill(0);
+  const precipYearMonths = Array.from({ length: 12 }, () => new Set<string>());
+
+  for (let i = 0; i < time.length; i++) {
+    const dateStr = String(time[i] ?? "").slice(0, 10);
+    if (!dateStr) continue;
+    const month = Number(dateStr.slice(5, 7));
+    if (!Number.isFinite(month) || month < 1 || month > 12) continue;
+    const monthIdx = month - 1;
+    const minVal = openMeteoArchiveValue(tmin[i]);
+    const maxVal = openMeteoArchiveValue(tmax[i]);
+    const precipVal = openMeteoArchiveValue(prcp[i]);
+
+    if (minVal != null && maxVal != null) {
+      minSum[monthIdx] += minVal;
+      maxSum[monthIdx] += maxVal;
+      avgSum[monthIdx] += (minVal + maxVal) / 2;
+      tempCount[monthIdx] += 1;
+    }
+
+    if (precipVal != null) {
+      precipSum[monthIdx] += precipVal;
+      precipYearMonths[monthIdx].add(dateStr.slice(0, 7));
+    }
+  }
+
+  const normals = Array.from({ length: 12 }, (_, idx) => {
+    const count = tempCount[idx];
+    return {
+      month: idx + 1,
+      tavgF: count ? avgSum[idx] / count : null,
+      tminF: count ? minSum[idx] / count : null,
+      tmaxF: count ? maxSum[idx] / count : null,
+    };
+  });
+  const precipMonthlyIn = precipSum.map((sum, idx) => {
+    const count = precipYearMonths[idx].size;
+    return count ? sum / count : null;
+  });
+
+  if (!hasUsableMonthlyNormalsForWorker(normals)) {
+    throw new Error("Open-Meteo archive normals did not return enough temperature coverage");
+  }
+
+  return {
+    station: {
+      id: `OPEN-METEO:${roundCoordKey(lat, 0.05)},${roundCoordKey(lon, 0.05)}`,
+      name: "Open-Meteo Archive Grid",
+      latitude: lat,
+      longitude: lon,
+      elevation: Number.isFinite(Number(json?.elevation)) ? Number(json.elevation) : undefined,
+    },
+    normals,
+    precipMonthlyIn,
+    diagnostics: {
+      baselineStartYear: startYear,
+      baselineEndYear: endYear,
+    },
+  };
 }
 
 async function resolveRecentGhcndStationForWorker(env: Env, lat: number, lon: number) {
@@ -5923,6 +6298,30 @@ export default {
       });
     }
 
+    if (
+      url.pathname === "/api/marine/extremes" ||
+      url.pathname === "/v1/marine/extremes" ||
+      url.pathname === "/marine-extremes"
+    ) {
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/marine/extremes/v1";
+      cacheKeyUrl.search = "";
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: MARINE_EXTREMES_TTL_SECONDS,
+        staleSeconds: MARINE_EXTREMES_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildMarineExtremesPayload();
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
     if (url.pathname === "/api/fire/hotspots" || url.pathname === "/v1/fire/hotspots") {
       const west = Number(url.searchParams.get("west"));
       const south = Number(url.searchParams.get("south"));
@@ -6158,8 +6557,13 @@ export default {
             }
           > = [];
 
-          for (const c of chunks) {
-            const results = await fetchOpenMeteoCurrentBatch(c, unit);
+          const batchResults = await mapLimit(chunks, LAND_OPEN_METEO_CONCURRENCY, (c) =>
+            fetchOpenMeteoCurrentBatch(c, unit),
+          );
+
+          for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const c = chunks[chunkIndex];
+            const results = batchResults[chunkIndex] ?? [];
             for (let i = 0; i < c.length; i++) {
               const r = results[i] ?? { current: null, updatedAtIso: null };
               rows.push({
@@ -6196,6 +6600,8 @@ export default {
           const { heroes, groups, updatedAt } = buildLandExtremes(unit, rows);
           const pointsUs = rows.filter((r) => r.badge !== "Global").length;
           const pointsGlobal = rows.filter((r) => r.badge === "Global").length;
+          const pointsScan = rows.filter((r) => r.group === "scan").length;
+          const pointsCurated = rows.length - pointsScan;
 
           const payload: LandExtremesResponse = {
             ok: true,
@@ -6207,6 +6613,8 @@ export default {
               pointsTotal: rows.length,
               pointsUs,
               pointsGlobal,
+              pointsScan,
+              pointsCurated,
               fetchedAtIso,
               source: "open-meteo",
               ttlSeconds: LAND_TTL_SECONDS,
@@ -6258,22 +6666,57 @@ export default {
         ttlSeconds: ALMANAC_TTL_SECONDS,
         staleSeconds: ALMANAC_STALE_SECONDS,
         fetchUpstream: async () => {
-          const normalsStation = await findNearestNormalsStationForWorker(env, lat, lon);
-          const { normals, precipMonthlyIn } = await fetchMonthlyNormalsForWorker(env, normalsStation.id);
+          let noaaFallbackReason: string | null = null;
 
+          try {
+            const normalsStation = await findNearestNormalsStationForWorker(env, lat, lon);
+            const { normals, precipMonthlyIn } = await fetchMonthlyNormalsForWorker(env, normalsStation.id);
+            if (!hasUsableMonthlyNormalsForWorker(normals)) {
+              throw new Error("NOAA normals did not return enough temperature coverage");
+            }
+
+            return new Response(
+              JSON.stringify({
+                station: {
+                  id: normalsStation.id,
+                  name: normalsStation.name ?? null,
+                  latitude: normalsStation.latitude ?? null,
+                  longitude: normalsStation.longitude ?? null,
+                  elevation: normalsStation.elevation ?? null,
+                },
+                normals,
+                precipMonthlyIn,
+                source: "noaa_cdo_normal_mly",
+                fetchedAtIso: new Date().toISOString(),
+              }),
+              {
+                status: 200,
+                headers: { "content-type": "application/json; charset=utf-8" },
+              },
+            );
+          } catch (err: any) {
+            noaaFallbackReason = err instanceof Error ? err.message : String(err ?? "unknown NOAA almanac failure");
+          }
+
+          const fallback = await fetchMonthlyNormalsFromOpenMeteoArchive(lat, lon);
           return new Response(
             JSON.stringify({
               station: {
-                id: normalsStation.id,
-                name: normalsStation.name ?? null,
-                latitude: normalsStation.latitude ?? null,
-                longitude: normalsStation.longitude ?? null,
-                elevation: normalsStation.elevation ?? null,
+                id: fallback.station.id,
+                name: fallback.station.name,
+                latitude: fallback.station.latitude,
+                longitude: fallback.station.longitude,
+                elevation: fallback.station.elevation ?? null,
               },
-              normals,
-              precipMonthlyIn,
-              source: "noaa_cdo_normal_mly",
+              normals: fallback.normals,
+              precipMonthlyIn: fallback.precipMonthlyIn,
+              source: "open_meteo_archive_normals",
               fetchedAtIso: new Date().toISOString(),
+              diagnostics: {
+                ...fallback.diagnostics,
+                fallbackFrom: "noaa_cdo_normal_mly",
+                fallbackReason: noaaFallbackReason,
+              },
             }),
             {
               status: 200,

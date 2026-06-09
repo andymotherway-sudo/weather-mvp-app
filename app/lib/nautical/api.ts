@@ -10,6 +10,7 @@ import type {
 import { apiUrl } from '../net/apiBase';
 
 const MS_TO_KTS = 1.94384;
+const KPH_TO_KTS = 0.539957;
 
 // --- 1. TIDES --------------------------------------------------------------
 
@@ -26,12 +27,22 @@ async function fetchTidePredictions(
 }> {
   // Real station id (NOAA tide station) – we keep station.id as that
   const stationId = station.id;
+  const hasNoaaTideStation = /^\d+$/.test(stationId);
 
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const today = `${yyyy}${mm}${dd}`;
+
+  if (!hasNoaaTideStation) {
+    return {
+      stationName: station.name,
+      latitude: station.latitude,
+      longitude: station.longitude,
+      predictions: [],
+    };
+  }
 
   try {
     const params = new URLSearchParams({
@@ -121,8 +132,12 @@ async function fetchMarineConditions(
         'wind_speed_10m',
         'wind_gusts_10m',
         'wind_direction_10m',
+        'ocean_current_velocity',
+        'ocean_current_direction',
+        'sea_level_height_msl',
       ].join(','),
-      length: '1',
+      forecast_days: '1',
+      wind_speed_unit: 'ms',
       timezone: 'auto',
     });
 
@@ -140,11 +155,24 @@ async function fetchMarineConditions(
       return null;
     }
 
-    const idx = hourly.time.length - 1;
+    const nowMs = Date.now();
+    let idx = 0;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    hourly.time.forEach((time: unknown, timeIdx: number) => {
+      if (typeof time !== 'string') return;
+      const t = new Date(time).getTime();
+      if (!Number.isFinite(t)) return;
+      const delta = Math.abs(t - nowMs);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        idx = timeIdx;
+      }
+    });
 
     const get = (arr: any[] | undefined): number | null => {
       if (!arr || arr.length === 0) return null;
       const value = arr[idx];
+      if (value == null) return null;
       return typeof value === 'number' ? value : null;
     };
 
@@ -157,6 +185,9 @@ async function fetchMarineConditions(
     const windDirDeg = get(hourly.wind_direction_10m);
 
     const seaTempC = get(hourly.sea_surface_temperature);
+    const oceanCurrentKph = get(hourly.ocean_current_velocity);
+    const oceanCurrentDirectionDeg = get(hourly.ocean_current_direction);
+    const seaLevelHeightMslM = get(hourly.sea_level_height_msl);
 
     const observedAt =
       typeof hourly.time[idx] === 'string' ? hourly.time[idx] : null;
@@ -176,6 +207,9 @@ async function fetchMarineConditions(
       seaSurfaceTempC: seaTempC,
       visibilityNm: null,
       pressureHpa: null,
+      oceanCurrentKts: oceanCurrentKph != null ? oceanCurrentKph * KPH_TO_KTS : null,
+      oceanCurrentDirectionDeg,
+      seaLevelHeightMslM,
 
       observedAt,
       modelSource: 'Open-Meteo Marine',
@@ -212,6 +246,7 @@ async function fetchFallbackWindConditions(
         'wind_direction_10m',
       ].join(','),
       length: '1',
+      wind_speed_unit: 'ms',
       timezone: 'auto',
     });
 
