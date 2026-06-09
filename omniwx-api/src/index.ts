@@ -768,6 +768,7 @@ const MARINE_CONDITIONS_TTL_SECONDS = 15 * 60;
 const MARINE_CONDITIONS_STALE_SECONDS = 12 * 3600;
 const FIRE_HOTSPOTS_TTL_SECONDS = 20 * 60;
 const FIRE_HOTSPOTS_STALE_SECONDS = 12 * 3600;
+const FIRE_HOTSPOTS_CACHE_VERSION = "firms-v2";
 
 const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
@@ -5937,6 +5938,7 @@ export default {
       cacheKeyUrl.searchParams.set("east", String(roundCoordKey(safeEast, 0.1)));
       cacheKeyUrl.searchParams.set("north", String(roundCoordKey(safeNorth, 0.1)));
       cacheKeyUrl.searchParams.set("days", String(dayRange));
+      cacheKeyUrl.searchParams.set("v", FIRE_HOTSPOTS_CACHE_VERSION);
       const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
 
       return swrFetchJson(request, ctx, {
