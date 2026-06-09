@@ -1462,11 +1462,14 @@ async function buildFireHotspotsPayload(args: {
   }
 
   const bbox = `${west},${south},${east},${north}`;
-  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/VIIRS_SNPP_NRT/${encodeURIComponent(bbox)}/${dayRange}`;
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/VIIRS_SNPP_NRT/${bbox}/${dayRange}`;
   const res = await fetch(url, {
     headers: { "User-Agent": WEATHER_FALLBACK_USER_AGENT, Accept: "text/csv" },
   });
-  if (!res.ok) throw new Error(`NASA FIRMS hotspots failed (${res.status})`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`NASA FIRMS hotspots failed (${res.status}): ${body.slice(0, 160)}`);
+  }
   const csv = await res.text();
   const rows = parseCsv(csv);
   const features = rows
