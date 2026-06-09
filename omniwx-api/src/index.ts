@@ -768,7 +768,8 @@ const MARINE_CONDITIONS_TTL_SECONDS = 15 * 60;
 const MARINE_CONDITIONS_STALE_SECONDS = 12 * 3600;
 const FIRE_HOTSPOTS_TTL_SECONDS = 20 * 60;
 const FIRE_HOTSPOTS_STALE_SECONDS = 12 * 3600;
-const FIRE_HOTSPOTS_CACHE_VERSION = "firms-v2";
+const FIRE_HOTSPOTS_CACHE_VERSION = "firms-v3";
+const FIRE_HOTSPOTS_MAX_FEATURES = 5000;
 
 const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
@@ -1483,7 +1484,7 @@ async function buildFireHotspotsPayload(args: {
       const brightTi5 = safeNum(row.bright_ti5);
       const acqDate = row.acq_date || null;
       const acqTime = row.acq_time || null;
-      const hhmm = acqTime && /^\d{3,4}$/.test(acqTime) ? acqTime.padStart(4, "0") : null;
+      const hhmm = acqTime && /^\d{1,4}$/.test(acqTime) ? acqTime.padStart(4, "0") : null;
       const updatedAt = acqDate && hhmm ? `${acqDate}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z` : null;
       return {
         type: "Feature",
@@ -1507,7 +1508,13 @@ async function buildFireHotspotsPayload(args: {
         },
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a: any, b: any) => {
+      const aFrp = safeNum(a?.properties?.frp) ?? 0;
+      const bFrp = safeNum(b?.properties?.frp) ?? 0;
+      return bFrp - aFrp;
+    })
+    .slice(0, FIRE_HOTSPOTS_MAX_FEATURES);
 
   return { ok: true, enabled: true, source, west, south, east, north, dayRange, features, generatedAt: new Date().toISOString() };
 }
