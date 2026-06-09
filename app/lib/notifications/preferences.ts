@@ -33,8 +33,8 @@ export const NOTIFICATION_PREFS_KEY = 'omniwx:notifications:preferences:v1';
 export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     id: 'nwsAlerts',
-    title: 'NWS alerts',
-    helper: 'Warnings, watches, advisories, and official alert updates near saved places.',
+    title: 'Official alerts',
+    helper: 'Warnings, watches, advisories, and official alert updates where supported.',
   },
   {
     id: 'newFires',

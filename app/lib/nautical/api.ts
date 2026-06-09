@@ -7,6 +7,7 @@ import type {
   NauticalSummary,
   TidePrediction,
 } from './types';
+import { apiUrl } from '../net/apiBase';
 
 const MS_TO_KTS = 1.94384;
 
@@ -98,6 +99,16 @@ async function fetchMarineConditions(
   latitude: number,
   longitude: number,
 ): Promise<MarineConditions | null> {
+  try {
+    const res = await fetch(apiUrl(`/api/marine/conditions?lat=${encodeURIComponent(String(latitude))}&lon=${encodeURIComponent(String(longitude))}`));
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.conditions) return json.conditions as MarineConditions;
+    }
+  } catch {
+    // Fall through to direct provider call when the worker is unavailable.
+  }
+
   try {
     const params = new URLSearchParams({
       latitude: String(latitude),

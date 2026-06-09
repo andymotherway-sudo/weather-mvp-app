@@ -30,6 +30,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
       'radar.reflectivity',
       'wildfire.smoke',
       'wildfire.perimeters',
+      'wildfire.hotspots',
       'wildfire.firewx',
     ],
     presetLayerOpacity: {
@@ -37,6 +38,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
       'radar.reflectivity': 0.85,
       'wildfire.smoke': 0.55,
       'wildfire.perimeters': 0.9,
+      'wildfire.hotspots': 0.9,
       'wildfire.firewx': 0.76,
     },
     timelineDriverLayer: 'radar.reflectivity',

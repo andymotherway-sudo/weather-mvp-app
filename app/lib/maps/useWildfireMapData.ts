@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type RegionLike = {
@@ -365,6 +366,16 @@ async function fetchArcGisFeatures(url: string, params: Record<string, string>, 
   return Array.isArray(json?.features) ? json.features : [];
 }
 
+async function fetchGlobalHotspots(envelope: { west: number; south: number; east: number; north: number }, signal: AbortSignal) {
+  const url = apiUrl(
+    `/api/fire/hotspots?west=${encodeURIComponent(String(envelope.west))}&south=${encodeURIComponent(String(envelope.south))}&east=${encodeURIComponent(String(envelope.east))}&north=${encodeURIComponent(String(envelope.north))}&days=1`,
+  );
+  const res = await fetchWithTimeout(url, 15000, { signal, headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Global hotspots failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  return asFeatureCollection(Array.isArray(json?.features) ? json.features : []);
+}
+
 export function useWildfireMapData(enabled: boolean, region: RegionLike | null) {
   const [smoke, setSmoke] = useState<GeoJsonFeatureCollection>(EMPTY_FC);
   const [perimeters, setPerimeters] = useState<GeoJsonFeatureCollection>(EMPTY_FC);
@@ -406,7 +417,7 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
       } satisfies Record<string, string>;
 
       try {
-        const [smokeRes, perimetersRes, incidentsRes] = await Promise.allSettled([
+        const [smokeRes, perimetersRes, incidentsRes, hotspotsRes] = await Promise.allSettled([
           fetchArcGisFeatures(
             NOAA_HMS_SMOKE_QUERY_URL,
             {
@@ -431,6 +442,7 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
             },
             controller.signal
           ),
+          fetchGlobalHotspots(envelope, controller.signal),
         ]);
 
         if (cancelled) return;
@@ -439,9 +451,9 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
         setPerimeters(
           perimetersRes.status === 'fulfilled' ? normalizeWildfirePerimeters(perimetersRes.value) : EMPTY_FC
         );
-        setIncidents(
-          incidentsRes.status === 'fulfilled' ? normalizeWildfireIncidents(incidentsRes.value) : EMPTY_FC
-        );
+        const incidentsFc = incidentsRes.status === 'fulfilled' ? normalizeWildfireIncidents(incidentsRes.value) : EMPTY_FC;
+        const hotspotsFc = hotspotsRes.status === 'fulfilled' ? hotspotsRes.value : EMPTY_FC;
+        setIncidents(asFeatureCollection([...incidentsFc.features, ...hotspotsFc.features]));
 
         const failures = [
           smokeRes.status === 'rejected' ? `Smoke: ${String(smokeRes.reason?.message ?? smokeRes.reason)}` : null,
@@ -450,6 +462,9 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
             : null,
           incidentsRes.status === 'rejected'
             ? `Incidents: ${String(incidentsRes.reason?.message ?? incidentsRes.reason)}`
+            : null,
+          hotspotsRes.status === 'rejected'
+            ? `Hotspots: ${String(hotspotsRes.reason?.message ?? hotspotsRes.reason)}`
             : null,
         ].filter(Boolean);
 

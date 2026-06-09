@@ -490,9 +490,9 @@ export const LEARN_TOPICS: LearnTopic[] = [
 
   {
     id: 'nws-alerts',
-    title: 'NWS Alerts (what they mean)',
+    title: 'Official Alerts (what they mean)',
     summary:
-      'NWS alerts are official hazard messages designed to communicate risk, timing, location, and action. The short headline is helpful, but the full text is where the important details usually live.',
+      'Official alerts are hazard messages designed to communicate risk, timing, location, and action. The short headline is helpful, but the full text is where the important details usually live.',
     bullets: [
       'Alerts are tied to areas and timing windows.',
       'They can be updated, expanded, replaced, or canceled as conditions evolve.',

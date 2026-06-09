@@ -113,7 +113,7 @@ function near(a: number, b: number, eps = 0.0005) {
 function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
   switch (model) {
     case 'gfs':
-      return 'NOAA U.S.';
+      return 'NOAA GFS';
     case 'ecmwf':
       return 'ECMWF';
     case 'dwd_icon':
@@ -3723,11 +3723,12 @@ function LandWeatherWithCoords({
   const isLandscape = width > height && width >= 640;
   const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
   const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
-  const { forecastModel } = useSettings();
+  const { forecastModel, tempUnit } = useSettings();
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
     lon: coords.lon,
     enabled: true,
+    units: tempUnit === 'C' ? 'metric' : 'imperial',
   });
 
   const {
@@ -4506,7 +4507,7 @@ export default function LandWeatherScreen() {
 
     setExplainPayload({
       title: primary?.event ?? 'Weather Alert',
-      summary: officialText || 'No detailed NWS alert text available.',
+      summary: officialText || 'No detailed alert text available.',
       whyItMatters: undefined,
       howComputed: undefined,
       confidence: undefined,

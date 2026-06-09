@@ -57,7 +57,7 @@ function safeStr(v: any): string | null {
 function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
   switch (model) {
     case 'gfs':
-      return 'NOAA U.S.';
+      return 'NOAA GFS';
     case 'ecmwf':
       return 'ECMWF';
     case 'dwd_icon':

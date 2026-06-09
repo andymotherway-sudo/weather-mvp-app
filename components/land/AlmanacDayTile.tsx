@@ -93,10 +93,10 @@ export default function AlmanacDayTile({ d }: { d: DayTileData }) {
 
       <Text style={styles.note}>
         {d.mode === 'observed'
-          ? 'Observed: NOAA station daily history'
+          ? 'Observed: station daily history'
           : d.mode === 'forecast'
           ? 'Forecast: Open-Meteo'
-          : 'Normals: NOAA 30-year averages'}
+          : 'Normals: 30-year climate averages'}
       </Text>
     </Card>
   );

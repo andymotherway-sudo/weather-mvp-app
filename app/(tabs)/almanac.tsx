@@ -67,7 +67,7 @@ function isoToDoy(iso: string) {
 function forecastModelLabel(model: 'best_match' | 'gfs' | 'ecmwf' | 'dwd_icon') {
   switch (model) {
     case 'gfs':
-      return 'NOAA U.S.';
+      return 'NOAA GFS';
     case 'ecmwf':
       return 'ECMWF';
     case 'dwd_icon':
@@ -545,7 +545,7 @@ const hasNormals = chartNormals.length > 0;
         cloudMin: safeFiniteNumber(dayCtx.data?.cloudMinPct),
         cloudMax: safeFiniteNumber(dayCtx.data?.cloudMaxPct),
         windMax: safeFiniteNumber(dayCtx.data?.windMaxMph),
-        footer: 'Observed: Open-Meteo Archive • Normals: NOAA',
+        footer: 'Observed: Open-Meteo Archive • Normals: climate station data',
       };
     }
 
@@ -563,7 +563,7 @@ const hasNormals = chartNormals.length > 0;
         cloudMin: safeFiniteNumber(f?.cloudCoverMinPct),
         cloudMax: safeFiniteNumber(f?.cloudCoverMaxPct),
         windMax: safeFiniteNumber(f?.windMaxMph),
-        footer: 'Forecast: Open-Meteo • Normals: NOAA',
+        footer: 'Forecast: Open-Meteo • Normals: climate station data',
       };
     }
 
@@ -578,7 +578,7 @@ const hasNormals = chartNormals.length > 0;
       cloudMin: null as number | null,
       cloudMax: null as number | null,
       windMax: null as number | null,
-      footer: 'Normals: NOAA (monthly)',
+      footer: 'Normals: climate station data',
     };
   }, [selectedIso, stationName, normalsForSelected.normalHiF, normalsForSelected.normalLoF, mode, dayCtx.data, forecastByDate]);
 

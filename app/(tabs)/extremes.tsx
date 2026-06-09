@@ -223,21 +223,32 @@ function stripWettest(groups: LandGroup[]) {
   return (groups ?? []).filter((g) => !isWettestGroup(g));
 }
 
-function normalizeLandGroupTitle(title: string, items: LandExtreme[]) {
+function landExtremeBucket(title: string, items: LandExtreme[]): Extract<LandExtremeKind, 'hot' | 'cold' | 'wind'> | null {
   const raw = String(title || '').toLowerCase();
   const sampleKind = items.find((item) => item?.kind)?.kind;
-  if (raw.includes('hot') || sampleKind === 'hot') return 'Hottest Land Temperatures';
-  if (raw.includes('cold') || sampleKind === 'cold') return 'Coldest Land Temperatures';
-  if (raw.includes('wind') || sampleKind === 'wind') return 'Windiest Land Stations';
-  return title.replace(/\b(us|u\.s\.|global)\b/gi, '').replace(/\s+/g, ' ').trim() || 'Land Extremes';
+  if (raw.includes('hot') || sampleKind === 'hot') return 'hot';
+  if (raw.includes('cold') || sampleKind === 'cold') return 'cold';
+  if (raw.includes('wind') || sampleKind === 'wind') return 'wind';
+  return null;
 }
 
-function normalizeLandGroupSubtitle(title: string) {
-  const raw = String(title || '').toLowerCase();
-  if (raw.includes('hot')) return 'Current land temperature ranking across available stations';
-  if (raw.includes('cold')) return 'Current cold spots across available stations';
-  if (raw.includes('wind')) return 'Strongest current winds across available stations';
-  return 'Ranked extremes regardless of country or source list';
+function landRankingMeta(kind: Extract<LandExtremeKind, 'hot' | 'cold' | 'wind'>) {
+  if (kind === 'hot') {
+    return {
+      title: 'Top 10 Hottest Places',
+      subtitle: 'Current land temperature ranking from available stations',
+    };
+  }
+  if (kind === 'cold') {
+    return {
+      title: 'Top 10 Coldest Places',
+      subtitle: 'Current cold spots from available stations',
+    };
+  }
+  return {
+    title: 'Top 10 Windiest Places',
+    subtitle: 'Strongest current land winds from available stations',
+  };
 }
 
 function landExtremeSortValue(item: LandExtreme) {
@@ -246,31 +257,35 @@ function landExtremeSortValue(item: LandExtreme) {
   return Number.isFinite(value) ? value : null;
 }
 
-function mergeLandGroups(groups: LandGroup[]) {
-  const buckets = new Map<string, { title: string; subtitle: string; items: LandExtreme[] }>();
+function mergeLandGroups(
+  groups: LandGroup[],
+  heroes: Partial<Record<LandExtremeKind, LandExtreme | null>> = {},
+) {
+  const buckets = new Map<Extract<LandExtremeKind, 'hot' | 'cold' | 'wind'>, LandExtreme[]>();
 
   for (const group of stripWettest(groups ?? [])) {
     const items = Array.isArray(group.items) ? group.items : [];
     if (!items.length) continue;
-    const title = normalizeLandGroupTitle(group.title, items);
-    const existing = buckets.get(title) ?? {
-      title,
-      subtitle: normalizeLandGroupSubtitle(title),
-      items: [],
-    };
-    existing.items.push(...items);
-    buckets.set(title, existing);
+    const bucket = landExtremeBucket(group.title, items);
+    if (!bucket) continue;
+    buckets.set(bucket, [...(buckets.get(bucket) ?? []), ...items]);
   }
 
-  return Array.from(buckets.values()).map((group) => {
+  (['hot', 'cold', 'wind'] as const).forEach((kind) => {
+    const hero = heroes[kind];
+    if (hero) buckets.set(kind, [hero, ...(buckets.get(kind) ?? [])]);
+  });
+
+  return (['hot', 'cold', 'wind'] as const).map((kind) => {
+    const meta = landRankingMeta(kind);
     const seen = new Set<string>();
-    const unique = group.items.filter((item) => {
+    const unique = (buckets.get(kind) ?? []).filter((item) => {
       const key = item.id || `${item.name}:${item.lat}:${item.lon}:${item.kind}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    const desc = group.title.toLowerCase().includes('coldest') ? -1 : 1;
+    const desc = kind === 'cold' ? -1 : 1;
     unique.sort((a, b) => {
       const av = landExtremeSortValue(a);
       const bv = landExtremeSortValue(b);
@@ -279,7 +294,7 @@ function mergeLandGroups(groups: LandGroup[]) {
       if (bv == null) return -1;
       return desc * (bv - av);
     });
-    return { ...group, items: unique.slice(0, MAX_ROWS) };
+    return { ...meta, items: unique.slice(0, MAX_ROWS) };
   });
 }
 
@@ -675,12 +690,6 @@ function LandSection({ title, subtitle, items }: { title: string; subtitle: stri
               <Text style={styles.buoyMetaSmall}>{x.subtitle}</Text>
             </View>
 
-            {x.badge ? (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{x.badge}</Text>
-              </View>
-            ) : null}
-
             <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.valueText}>
               {x.valueText}
             </Text>
@@ -852,8 +861,6 @@ export default function ExtremesScreen() {
         ? 'Hottest, coldest, windiest… across land weather'
         : 'Mars and beyond (because why not)';
 
-  const landHeroMeta = land.updatedAt ? formatUpdatedAt(land.updatedAt) : null;
-
   return (
     <ScrollView
       style={styles.container}
@@ -942,84 +949,21 @@ export default function ExtremesScreen() {
             </Card>
           ) : null}
 
-          {/* LAND hero cards (no Wettest) */}
-          {!land.loading && !land.error ? (
-            <>
-              <HeroExtreme
-                title="Hottest (Current)"
-                subtitle={land.heroes.hot ? land.heroes.hot.name : '—'}
-                primaryText={land.heroes.hot ? land.heroes.hot.valueText : '—'}
-                metaText={landHeroMeta}
-                onPress={land.heroes.hot ? () => pushLandExtremeToMap(router, land.heroes.hot!) : undefined}
-                rightPill={
-                  land.heroes.hot?.badge ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{land.heroes.hot.badge}</Text>
-                    </View>
-                  ) : null
-                }
-              />
-
-              <HeroExtreme
-                title="Coldest (Current)"
-                subtitle={land.heroes.cold ? land.heroes.cold.name : '—'}
-                primaryText={land.heroes.cold ? land.heroes.cold.valueText : '—'}
-                metaText={landHeroMeta}
-                onPress={land.heroes.cold ? () => pushLandExtremeToMap(router, land.heroes.cold!) : undefined}
-                rightPill={
-                  land.heroes.cold?.badge ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{land.heroes.cold.badge}</Text>
-                    </View>
-                  ) : null
-                }
-              />
-
-              <HeroExtreme
-                title="Windiest (Current)"
-                subtitle={land.heroes.wind ? land.heroes.wind.name : '—'}
-                primaryText={land.heroes.wind ? land.heroes.wind.valueText : '—'}
-                metaText={landHeroMeta}
-                onPress={land.heroes.wind ? () => pushLandExtremeToMap(router, land.heroes.wind!) : undefined}
-                rightPill={
-                  land.heroes.wind?.badge ? (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{land.heroes.wind.badge}</Text>
-                    </View>
-                  ) : null
-                }
-              />
-            </>
-          ) : null}
-
           {land.loading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
-              <Text style={typography.small}>Scanning land extremes…</Text>
+              <Text style={typography.small}>Scanning land extremes...</Text>
             </View>
           ) : null}
 
           {!land.loading && !land.error ? (
             (() => {
-              const mergedGroups = mergeLandGroups(land.groups);
+              const mergedGroups = mergeLandGroups(land.groups, land.heroes);
+              const hasLandRows = mergedGroups.some((group) => group.items.length > 0);
 
               return (
                 <>
-                  <SavedPlacesExtremeSection
-                    favorites={locations.favorites ?? []}
-                    items={savedLand.items}
-                    loading={savedLand.loading}
-                    tempUnit={tempUnit}
-                  />
-
-                  <Card style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>World Land Extremes</Text>
-                    <Text style={styles.sectionSubtitle}>
-                      Ranked together from every available land station list, regardless of country
-                    </Text>
-                  </Card>
-
-                  {mergedGroups.length ? (
+                  {hasLandRows ? (
                     mergedGroups.map((g) => (
                       <LandSection key={`land-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
                     ))
@@ -1031,9 +975,15 @@ export default function ExtremesScreen() {
                       </View>
                     </Card>
                   )}
+
+                  <SavedPlacesExtremeSection
+                    favorites={locations.favorites ?? []}
+                    items={savedLand.items}
+                    loading={savedLand.loading}
+                    tempUnit={tempUnit}
+                  />
                 </>
               );
-
             })()
           ) : null}
         </>

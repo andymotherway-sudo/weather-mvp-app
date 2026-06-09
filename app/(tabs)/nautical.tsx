@@ -218,7 +218,7 @@ function normalizeCountry(value?: string) {
   const raw = (value ?? '').trim().toLowerCase();
   if (!raw) return '';
   if (raw === 'us' || raw === 'usa' || raw === 'united states' || raw === 'united states of america') {
-    return 'US';
+    return 'United States';
   }
   if (raw === "int'l" || raw === 'intl' || raw === 'international') {
     return 'INTL';
@@ -712,7 +712,7 @@ export default function NauticalScreen() {
     matchingStations.forEach((s) => {
       addRow({
         key: `station-${s.id}`,
-        subtitle: `NOAA tide station ${s.id}`,
+        subtitle: `Tide station ${s.id}`,
         label: `${s.name} · tide station`,
         onPress: () => {
           const matchingArea =
@@ -750,7 +750,7 @@ export default function NauticalScreen() {
       addRow({
         key: `buoy-${b.id}`,
         label: `${display} · buoy ${b.id}`,
-        subtitle: `NOAA buoy ${b.id}`,
+        subtitle: `Buoy ${b.id}`,
         onPress: () => {
           const nearestArea = resolveAreaForPoint(b.lat, b.lon);
           const nearestStation = resolveStationForPoint(b.lat, b.lon, nearestArea);
@@ -799,7 +799,7 @@ export default function NauticalScreen() {
 
   const conditions = data?.conditions ?? null;
 
-  // Prefer live NOAA buoy obs; fall back to model
+  // Prefer live buoy observations; fall back to model
   const waveHeightM =
     buoyData?.waveHeightM ?? conditions?.significantWaveHeightM ?? null;
   const waveHeightFt = waveHeightM != null ? waveHeightM * 3.28084 : null;
@@ -830,8 +830,9 @@ export default function NauticalScreen() {
   const observedTs = buoyData?.updatedAt ?? conditions?.observedAt ?? null;
 
   const sourceLabel = buoyData
-    ? 'NOAA buoy (NDBC)'
+    ? 'Live buoy observation'
     : conditions?.modelSource ?? 'Marine model';
+  const forecastSourceLabel = forecast?.source?.includes('Open-Meteo') ? forecast.source : 'Official marine forecast';
 
   const riskStyle =
     seaRisk.level === 'Low'
@@ -1338,7 +1339,7 @@ export default function NauticalScreen() {
             <Text style={styles.updatedText}>
               Issued {new Date(forecast.issuedAt).toLocaleString()}
             </Text>
-            <Text style={styles.simpleMeta}>{forecast.source}</Text>
+            <Text style={styles.simpleMeta}>{forecastSourceLabel}</Text>
           </Card>
         )}
 

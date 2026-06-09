@@ -27,6 +27,7 @@ const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-extreme-expansion-2
 export interface Env {
   NOAA_NCEI_TOKEN: string;
   NASA_API_KEY: string;
+  NASA_FIRMS_MAP_KEY?: string;
   RADAR_IEM_WMS_BASE?: string;
 }
 
@@ -200,6 +201,74 @@ type OpenMeteoCurrentSingle = {
 
 type OpenMeteoCurrentSingleResponse = {
   current?: OpenMeteoCurrentSingle;
+};
+
+type GlobalAlert = {
+  id: string;
+  event: string;
+  headline?: string;
+  severity?: string;
+  urgency?: string;
+  certainty?: string;
+  effective?: string | null;
+  onset?: string | null;
+  ends?: string | null;
+  expires?: string | null;
+  areaDesc?: string;
+  description?: string;
+  instruction?: string;
+  note?: string;
+  fullText?: string;
+  sent?: string | null;
+  senderName?: string;
+  source?: "weather.gov" | "open-meteo";
+  derived?: boolean;
+};
+
+type GlobalAlertsResponse = {
+  ok: true;
+  lat: number;
+  lon: number;
+  alerts: GlobalAlert[];
+  primary: GlobalAlert | null;
+  officialCount: number;
+  derivedCount: number;
+  updatedAt: string;
+  source: "weather.gov" | "open-meteo" | "mixed";
+};
+
+type MarineConditionsResponse = {
+  ok: true;
+  lat: number;
+  lon: number;
+  conditions: {
+    significantWaveHeightM: number | null;
+    primarySwellHeightM: number | null;
+    primarySwellPeriodS: number | null;
+    primarySwellDirectionDeg: number | null;
+    windSpeedKts: number | null;
+    windGustKts: number | null;
+    windDirectionDeg: number | null;
+    seaSurfaceTempC: number | null;
+    visibilityNm: number | null;
+    pressureHpa: number | null;
+    observedAt: string | null;
+    modelSource: string | null;
+  } | null;
+  generatedAt: string;
+};
+
+type FireHotspotsResponse = {
+  ok: true;
+  enabled: boolean;
+  source: "NASA FIRMS VIIRS_SNPP_NRT";
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  dayRange: number;
+  features: any[];
+  generatedAt: string;
 };
 
 type CurrentResponse = {
@@ -693,12 +762,19 @@ const DONKI_TTL_SECONDS = 15 * 60;
 const DONKI_STALE_SECONDS = 24 * 3600;
 const FIRE_CONTEXT_TTL_SECONDS = 30 * 60;
 const FIRE_CONTEXT_STALE_SECONDS = 12 * 3600;
+const GLOBAL_ALERTS_TTL_SECONDS = 5 * 60;
+const GLOBAL_ALERTS_STALE_SECONDS = 6 * 3600;
+const MARINE_CONDITIONS_TTL_SECONDS = 15 * 60;
+const MARINE_CONDITIONS_STALE_SECONDS = 12 * 3600;
+const FIRE_HOTSPOTS_TTL_SECONDS = 20 * 60;
+const FIRE_HOTSPOTS_STALE_SECONDS = 12 * 3600;
 
 const OPEN_METEO_TIMEOUT_MS = 8500;
 const DONKI_TIMEOUT_MS = 9000;
 const FIRE_CONTEXT_TIMEOUT_MS = 9000;
 const OPEN_METEO_BATCH_SIZE = 75;
 const WEATHER_FALLBACK_USER_AGENT = "omniwx-worker/1.0 (weather fallback; contact: omniwx)";
+const MS_TO_KTS = 1.94384;
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -926,6 +1002,510 @@ async function fetchMetNorwayCurrentPayload(lat: number, lon: number, units: Uni
 
   if (!hasUsableCurrentPayload(payload)) throw new Error("MET Norway returned no usable current weather");
   return payload;
+}
+
+function isWeatherGovAlertLikelySupportedPoint(lat: number, lon: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  const inBox = (minLat: number, maxLat: number, minLon: number, maxLon: number) =>
+    lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+  return (
+    inBox(24, 50, -125, -66) ||
+    inBox(51, 72, -170, -129) ||
+    inBox(18, 23, -161, -154) ||
+    inBox(17, 19, -68, -64) ||
+    inBox(13, 21, 144, 146) ||
+    inBox(-15, -13, -171, -168)
+  );
+}
+
+function cleanAlertText(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return s || undefined;
+}
+
+function safeIsoString(v: unknown): string | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function buildAlertFullText(parts: Array<string | undefined>) {
+  const clean = parts.map(cleanAlertText).filter(Boolean) as string[];
+  return clean.length ? clean.join("\n\n") : undefined;
+}
+
+function alertSeverityScore(a: GlobalAlert) {
+  const sev = String(a.severity ?? "").toLowerCase();
+  const event = String(a.event ?? "").toLowerCase();
+  if (sev === "extreme" || event.includes("extreme")) return 5;
+  if (sev === "severe" || event.includes("warning")) return 4;
+  if (sev === "moderate" || event.includes("watch")) return 3;
+  if (sev === "minor" || event.includes("advisory")) return 2;
+  return 1;
+}
+
+function pickPrimaryGlobalAlert(alerts: GlobalAlert[]): GlobalAlert | null {
+  if (!alerts.length) return null;
+  return [...alerts].sort((a, b) => {
+    const s = alertSeverityScore(b) - alertSeverityScore(a);
+    if (s !== 0) return s;
+    const aEnd = new Date(a.ends ?? a.expires ?? "").getTime();
+    const bEnd = new Date(b.ends ?? b.expires ?? "").getTime();
+    return (Number.isFinite(aEnd) ? aEnd : Number.POSITIVE_INFINITY) - (Number.isFinite(bEnd) ? bEnd : Number.POSITIVE_INFINITY);
+  })[0] ?? null;
+}
+
+async function fetchWeatherGovPointAlerts(lat: number, lon: number): Promise<GlobalAlert[]> {
+  if (!isWeatherGovAlertLikelySupportedPoint(lat, lon)) return [];
+  const u = new URL("https://api.weather.gov/alerts/active");
+  u.searchParams.set("point", `${lat},${lon}`);
+  const json = await fetchJsonWithTimeout(u.toString(), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/geo+json",
+  });
+  const features = Array.isArray(json?.features) ? json.features : [];
+  return features
+    .map((f: any, idx: number): GlobalAlert | null => {
+      const p = f?.properties ?? {};
+      const event = cleanAlertText(p.event) ?? "Weather Alert";
+      const headline = cleanAlertText(p.headline);
+      const description = cleanAlertText(p.description);
+      const instruction = cleanAlertText(p.instruction);
+      const note = cleanAlertText(p.note);
+      return {
+        id: String(f?.id ?? p?.id ?? `weather-gov-${event}-${p?.sent ?? idx}`),
+        event,
+        headline,
+        severity: cleanAlertText(p.severity),
+        urgency: cleanAlertText(p.urgency),
+        certainty: cleanAlertText(p.certainty),
+        effective: safeIsoString(p.effective),
+        onset: safeIsoString(p.onset),
+        ends: safeIsoString(p.ends),
+        expires: safeIsoString(p.expires),
+        areaDesc: cleanAlertText(p.areaDesc),
+        description,
+        instruction,
+        note,
+        fullText: buildAlertFullText([headline, description, instruction ? `Instructions: ${instruction}` : undefined, note ? `Note: ${note}` : undefined]),
+        sent: safeIsoString(p.sent),
+        senderName: cleanAlertText(p.senderName) ?? "National Weather Service",
+        source: "weather.gov",
+        derived: false,
+      };
+    })
+    .filter(Boolean) as GlobalAlert[];
+}
+
+type OpenMeteoHazardHourlyResponse = {
+  hourly?: {
+    time?: string[];
+    temperature_2m?: Array<number | null>;
+    apparent_temperature?: Array<number | null>;
+    precipitation?: Array<number | null>;
+    rain?: Array<number | null>;
+    showers?: Array<number | null>;
+    snowfall?: Array<number | null>;
+    precipitation_probability?: Array<number | null>;
+    wind_speed_10m?: Array<number | null>;
+    wind_gusts_10m?: Array<number | null>;
+    weather_code?: Array<number | null>;
+  };
+};
+
+function toOpenMeteoHazardsUrl(lat: number, lon: number, units: Units) {
+  const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
+  const windUnit = units === "imperial" ? "mph" : "kmh";
+  const precipUnit = units === "imperial" ? "inch" : "mm";
+  const hourly = [
+    "temperature_2m",
+    "apparent_temperature",
+    "precipitation",
+    "rain",
+    "showers",
+    "snowfall",
+    "precipitation_probability",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "weather_code",
+  ].join(",");
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&forecast_days=2` +
+    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
+    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
+    `&precipitation_unit=${encodeURIComponent(precipUnit)}` +
+    `&timezone=auto`
+  );
+}
+
+function formatHazardValue(value: number, unitText: string, digits = 0) {
+  return `${value.toFixed(digits)} ${unitText}`;
+}
+
+function maxHourly(values: Array<number | null> | undefined) {
+  const nums = (values ?? []).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return nums.length ? Math.max(...nums) : null;
+}
+
+function minHourly(values: Array<number | null> | undefined) {
+  const nums = (values ?? []).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return nums.length ? Math.min(...nums) : null;
+}
+
+function sumHourly(values: Array<number | null> | undefined): number {
+  return (values ?? []).reduce<number>((sum, v) => sum + (typeof v === "number" && Number.isFinite(v) ? v : 0), 0);
+}
+
+function hasThunderCode(values: Array<number | null> | undefined) {
+  return (values ?? []).some((v) => typeof v === "number" && v >= 95 && v <= 99);
+}
+
+async function fetchOpenMeteoDerivedAlerts(lat: number, lon: number, units: Units): Promise<GlobalAlert[]> {
+  const json = (await fetchJsonWithTimeout(toOpenMeteoHazardsUrl(lat, lon, units), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  })) as OpenMeteoHazardHourlyResponse;
+  const h = json?.hourly ?? {};
+  const times = Array.isArray(h.time) ? h.time : [];
+  const starts = times[0] ? safeIsoString(times[0]) : new Date().toISOString();
+  const ends = times.length ? safeIsoString(times[times.length - 1]) : null;
+  const tempUnit = units === "imperial" ? "F" : "C";
+  const windUnit = units === "imperial" ? "mph" : "km/h";
+  const precipUnit = units === "imperial" ? "in" : "mm";
+  const alerts: GlobalAlert[] = [];
+  const push = (id: string, event: string, severity: string, headline: string, description: string) => {
+    alerts.push({
+      id: `open-meteo-${id}-${lat.toFixed(3)}-${lon.toFixed(3)}`,
+      event,
+      headline,
+      severity,
+      urgency: "Expected",
+      certainty: "Likely",
+      effective: starts,
+      onset: starts,
+      ends,
+      expires: ends,
+      areaDesc: "Selected location",
+      description,
+      fullText: description,
+      sent: new Date().toISOString(),
+      senderName: "OMNIwx global forecast outlook",
+      source: "open-meteo",
+      derived: true,
+    });
+  };
+
+  const maxFeels = maxHourly(h.apparent_temperature ?? h.temperature_2m);
+  const minTemp = minHourly(h.temperature_2m);
+  const maxGust = maxHourly(h.wind_gusts_10m ?? h.wind_speed_10m);
+  const precipTotal = sumHourly(h.precipitation);
+  const snowTotal = sumHourly(h.snowfall);
+  const maxPrecipProb = maxHourly(h.precipitation_probability);
+  const thunder = hasThunderCode(h.weather_code);
+
+  if (maxFeels != null && maxFeels >= (units === "imperial" ? 105 : 40.5)) {
+    push(
+      "heat",
+      "Extreme Heat Outlook",
+      maxFeels >= (units === "imperial" ? 115 : 46) ? "Severe" : "Moderate",
+      `Forecast heat index near ${formatHazardValue(maxFeels, `°${tempUnit}`)}.`,
+      "Global forecast guidance shows potentially dangerous heat near this location over the next 48 hours.",
+    );
+  }
+
+  if (minTemp != null && minTemp <= (units === "imperial" ? 0 : -18)) {
+    push(
+      "cold",
+      "Extreme Cold Outlook",
+      minTemp <= (units === "imperial" ? -20 : -29) ? "Severe" : "Moderate",
+      `Forecast temperature near ${formatHazardValue(minTemp, `°${tempUnit}`)}.`,
+      "Global forecast guidance shows potentially dangerous cold near this location over the next 48 hours.",
+    );
+  }
+
+  if (maxGust != null && maxGust >= (units === "imperial" ? 45 : 72)) {
+    push(
+      "wind",
+      "High Wind Outlook",
+      maxGust >= (units === "imperial" ? 58 : 93) ? "Severe" : "Moderate",
+      `Forecast gusts near ${formatHazardValue(maxGust, windUnit)}.`,
+      "Global forecast guidance shows strong wind gust potential near this location over the next 48 hours.",
+    );
+  }
+
+  if (precipTotal >= (units === "imperial" ? 2 : 50) || (maxPrecipProb ?? 0) >= 85 && precipTotal >= (units === "imperial" ? 1 : 25)) {
+    push(
+      "rain",
+      "Heavy Rain Outlook",
+      precipTotal >= (units === "imperial" ? 4 : 100) ? "Severe" : "Moderate",
+      `Forecast precipitation near ${formatHazardValue(precipTotal, precipUnit, units === "imperial" ? 2 : 0)}.`,
+      "Global forecast guidance shows heavy precipitation potential near this location over the next 48 hours.",
+    );
+  }
+
+  if (snowTotal >= (units === "imperial" ? 4 : 10)) {
+    push(
+      "snow",
+      "Heavy Snow Outlook",
+      snowTotal >= (units === "imperial" ? 10 : 25) ? "Severe" : "Moderate",
+      `Forecast snowfall near ${formatHazardValue(snowTotal, precipUnit, units === "imperial" ? 1 : 0)}.`,
+      "Global forecast guidance shows accumulating snow potential near this location over the next 48 hours.",
+    );
+  }
+
+  if (thunder) {
+    push(
+      "thunder",
+      "Thunderstorm Outlook",
+      "Minor",
+      "Thunderstorms appear in the global forecast.",
+      "Global forecast guidance shows thunderstorm potential near this location over the next 48 hours.",
+    );
+  }
+
+  return alerts;
+}
+
+async function buildGlobalAlertsPayload(lat: number, lon: number, units: Units): Promise<GlobalAlertsResponse> {
+  const [officialResult, derivedResult] = await Promise.allSettled([
+    fetchWeatherGovPointAlerts(lat, lon),
+    fetchOpenMeteoDerivedAlerts(lat, lon, units),
+  ]);
+  const official = officialResult.status === "fulfilled" ? officialResult.value : [];
+  const derived = derivedResult.status === "fulfilled" ? derivedResult.value : [];
+  const alerts = [...official, ...derived].sort((a, b) => alertSeverityScore(b) - alertSeverityScore(a));
+  const officialCount = official.length;
+  const derivedCount = derived.length;
+  return {
+    ok: true,
+    lat,
+    lon,
+    alerts,
+    primary: pickPrimaryGlobalAlert(alerts),
+    officialCount,
+    derivedCount,
+    updatedAt: new Date().toISOString(),
+    source: officialCount && derivedCount ? "mixed" : officialCount ? "weather.gov" : "open-meteo",
+  };
+}
+
+function toOpenMeteoMarineUrl(lat: number, lon: number) {
+  const hourly = [
+    "wave_height",
+    "wave_direction",
+    "wave_period",
+    "sea_surface_temperature",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+  ].join(",");
+  return (
+    `https://marine-api.open-meteo.com/v1/marine` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&length=1` +
+    `&timezone=auto`
+  );
+}
+
+async function buildMarineConditionsPayload(lat: number, lon: number): Promise<MarineConditionsResponse> {
+  const json = await fetchJsonWithTimeout(toOpenMeteoMarineUrl(lat, lon), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const hourly = json?.hourly ?? {};
+  const times = Array.isArray(hourly?.time) ? hourly.time : [];
+  const idx = times.length ? times.length - 1 : -1;
+  const get = (arr: unknown): number | null => {
+    if (!Array.isArray(arr) || idx < 0 || idx >= arr.length) return null;
+    const n = Number(arr[idx]);
+    return Number.isFinite(n) ? n : null;
+  };
+  const waveHeightM = get(hourly.wave_height);
+  const wavePeriodS = get(hourly.wave_period);
+  const waveDirectionDeg = get(hourly.wave_direction);
+  const windSpeedMs = get(hourly.wind_speed_10m);
+  const windGustMs = get(hourly.wind_gusts_10m);
+  const windDirectionDeg = get(hourly.wind_direction_10m);
+  const seaSurfaceTempC = get(hourly.sea_surface_temperature);
+  const observedAt = idx >= 0 && typeof times[idx] === "string" ? safeIsoString(times[idx]) : null;
+  const hasAny =
+    waveHeightM != null ||
+    wavePeriodS != null ||
+    waveDirectionDeg != null ||
+    windSpeedMs != null ||
+    windGustMs != null ||
+    windDirectionDeg != null ||
+    seaSurfaceTempC != null;
+
+  return {
+    ok: true,
+    lat,
+    lon,
+    conditions: hasAny
+      ? {
+          significantWaveHeightM: waveHeightM,
+          primarySwellHeightM: waveHeightM,
+          primarySwellPeriodS: wavePeriodS,
+          primarySwellDirectionDeg: waveDirectionDeg,
+          windSpeedKts: windSpeedMs != null ? windSpeedMs * MS_TO_KTS : null,
+          windGustKts: windGustMs != null ? windGustMs * MS_TO_KTS : null,
+          windDirectionDeg,
+          seaSurfaceTempC,
+          visibilityNm: null,
+          pressureHpa: null,
+          observedAt,
+          modelSource: "Open-Meteo Marine",
+        }
+      : null,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (ch === "," && !quoted) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseCsv(text: string): Array<Record<string, string>> {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((h) => h.trim());
+  return lines.slice(1).map((line) => {
+    const cols = parseCsvLine(line);
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => {
+      row[h] = cols[i] ?? "";
+    });
+    return row;
+  });
+}
+
+function hotspotMarkerMeta(confidence: number | null, frp: number | null) {
+  const high = (confidence != null && confidence >= 80) || (frp != null && frp >= 100);
+  const moderate = (confidence != null && confidence >= 50) || (frp != null && frp >= 25);
+  if (high) {
+    return {
+      markerRadius: 10,
+      markerHaloRadius: 18,
+      markerColor: "#ef4444",
+      markerHaloColor: "rgba(239,68,68,0.30)",
+      markerStrokeColor: "rgba(255,245,245,0.95)",
+      markerStrokeWidth: 1.8,
+      markerCenterRadius: 3.5,
+    };
+  }
+  if (moderate) {
+    return {
+      markerRadius: 8,
+      markerHaloRadius: 15,
+      markerColor: "#f97316",
+      markerHaloColor: "rgba(249,115,22,0.26)",
+      markerStrokeColor: "rgba(255,247,237,0.92)",
+      markerStrokeWidth: 1.6,
+      markerCenterRadius: 3,
+    };
+  }
+  return {
+    markerRadius: 6,
+    markerHaloRadius: 12,
+    markerColor: "#fbbf24",
+    markerHaloColor: "rgba(251,191,36,0.22)",
+    markerStrokeColor: "rgba(255,251,235,0.90)",
+    markerStrokeWidth: 1.4,
+    markerCenterRadius: 2.6,
+  };
+}
+
+async function buildFireHotspotsPayload(args: {
+  env: Env;
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  dayRange: number;
+}): Promise<FireHotspotsResponse> {
+  const { env, west, south, east, north, dayRange } = args;
+  const key = String(env.NASA_FIRMS_MAP_KEY ?? "").trim();
+  const source = "NASA FIRMS VIIRS_SNPP_NRT" as const;
+  if (!key) {
+    return { ok: true, enabled: false, source, west, south, east, north, dayRange, features: [], generatedAt: new Date().toISOString() };
+  }
+
+  const bbox = `${west},${south},${east},${north}`;
+  const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(key)}/VIIRS_SNPP_NRT/${encodeURIComponent(bbox)}/${dayRange}`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": WEATHER_FALLBACK_USER_AGENT, Accept: "text/csv" },
+  });
+  if (!res.ok) throw new Error(`NASA FIRMS hotspots failed (${res.status})`);
+  const csv = await res.text();
+  const rows = parseCsv(csv);
+  const features = rows
+    .map((row, idx) => {
+      const lat = safeNum(row.latitude);
+      const lon = safeNum(row.longitude);
+      if (lat == null || lon == null) return null;
+      const confidence = safeNum(row.confidence);
+      const frp = safeNum(row.frp);
+      const brightTi4 = safeNum(row.bright_ti4);
+      const brightTi5 = safeNum(row.bright_ti5);
+      const acqDate = row.acq_date || null;
+      const acqTime = row.acq_time || null;
+      const hhmm = acqTime && /^\d{3,4}$/.test(acqTime) ? acqTime.padStart(4, "0") : null;
+      const updatedAt = acqDate && hhmm ? `${acqDate}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z` : null;
+      return {
+        type: "Feature",
+        id: row.id || `firms-${row.latitude}-${row.longitude}-${row.acq_date}-${row.acq_time}-${idx}`,
+        geometry: { type: "Point", coordinates: [lon, lat] },
+        properties: {
+          incidentName: "Thermal hotspot",
+          source,
+          geometrySource: source,
+          confidence,
+          frp,
+          brightTi4,
+          brightTi5,
+          satellite: row.satellite || null,
+          instrument: row.instrument || "VIIRS",
+          updatedAt,
+          acres: null,
+          percentContained: null,
+          isHotspot: true,
+          ...hotspotMarkerMeta(confidence, frp),
+        },
+      };
+    })
+    .filter(Boolean);
+
+  return { ok: true, enabled: true, source, west, south, east, north, dayRange, features, generatedAt: new Date().toISOString() };
 }
 
 function fmtTemp(v: number | null | undefined, unit: Unit) {
@@ -5268,6 +5848,118 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/alerts/global" || url.pathname === "/v1/alerts/global") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      const units = parseUnits(url.searchParams.get("units"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/alerts/global";
+      cacheKeyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+      cacheKeyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+      cacheKeyUrl.searchParams.set("units", units);
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: GLOBAL_ALERTS_TTL_SECONDS,
+        staleSeconds: GLOBAL_ALERTS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildGlobalAlertsPayload(lat, lon, units);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/api/marine/conditions" || url.pathname === "/v1/marine/conditions") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/marine/conditions";
+      cacheKeyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+      cacheKeyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: MARINE_CONDITIONS_TTL_SECONDS,
+        staleSeconds: MARINE_CONDITIONS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildMarineConditionsPayload(lat, lon);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/api/fire/hotspots" || url.pathname === "/v1/fire/hotspots") {
+      const west = Number(url.searchParams.get("west"));
+      const south = Number(url.searchParams.get("south"));
+      const east = Number(url.searchParams.get("east"));
+      const north = Number(url.searchParams.get("north"));
+      const dayRange = clampInt(Number(url.searchParams.get("days") ?? "1"), 1, 5);
+
+      if (![west, south, east, north].every(Number.isFinite)) {
+        return new Response(JSON.stringify({ ok: false, error: "west, south, east, and north are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const safeWest = clampFloat(west, -180, 180, -180);
+      const safeSouth = clampFloat(south, -90, 90, -90);
+      const safeEast = clampFloat(east, -180, 180, 180);
+      const safeNorth = clampFloat(north, -90, 90, 90);
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/fire/hotspots";
+      cacheKeyUrl.searchParams.set("west", String(roundCoordKey(safeWest, 0.1)));
+      cacheKeyUrl.searchParams.set("south", String(roundCoordKey(safeSouth, 0.1)));
+      cacheKeyUrl.searchParams.set("east", String(roundCoordKey(safeEast, 0.1)));
+      cacheKeyUrl.searchParams.set("north", String(roundCoordKey(safeNorth, 0.1)));
+      cacheKeyUrl.searchParams.set("days", String(dayRange));
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: FIRE_HOTSPOTS_TTL_SECONDS,
+        staleSeconds: FIRE_HOTSPOTS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildFireHotspotsPayload({
+            env,
+            west: safeWest,
+            south: safeSouth,
+            east: safeEast,
+            north: safeNorth,
+            dayRange,
+          });
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
     if (url.pathname === "/api/current") {
   const lat = Number(url.searchParams.get("lat"));
   const lon = Number(url.searchParams.get("lon"));
@@ -6185,6 +6877,9 @@ export default {
         ok: true,
         routes: [
           "/land-extremes?unit=F|C",
+          "/api/alerts/global?lat=##&lon=##&units=imperial|metric",
+          "/api/marine/conditions?lat=##&lon=##",
+          "/api/fire/hotspots?west=##&south=##&east=##&north=##&days=1",
           "/api/current?lat=##&lon=##&units=imperial|metric",
           "/api/openmeteo/hourly?lat=..,..&lon=..,..&hourly=...&timezone=auto&units=imperial|metric",
           "/api/almanac/climo?lat=##&lon=##",

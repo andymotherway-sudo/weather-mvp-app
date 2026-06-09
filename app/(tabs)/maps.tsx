@@ -84,6 +84,9 @@ type WildfireIncidentDetails = {
   geometrySource: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  isHotspot?: boolean;
+  confidence?: number | null;
+  frp?: number | null;
 };
 
 type SelectedMarineFeature =
@@ -1385,14 +1388,6 @@ export default function MapsScreen() {
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
-  const autoNearestRadarMode =
-    radarEnabled &&
-    state.viewId === 'radar' &&
-    !stormMode &&
-    !manualStationRadarMode &&
-    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-  const stationRadarMode = stormMode || manualStationRadarMode || autoNearestRadarMode;
-  const showAdvancedRadarControls = stormMode || manualStationRadarMode;
   const radarAnchor = useMemo(
     () => {
       if (manualStationRadarMode && stationAnchor) return stationAnchor;
@@ -1406,9 +1401,20 @@ export default function MapsScreen() {
     () =>
       resolveNearestRadar(radarAnchor.lat, radarAnchor.lon, {
         filter: isNexradSite,
+        maxDistanceKm: 480,
       }),
     [radarAnchor.lat, radarAnchor.lon],
   );
+  const localRadarAvailable = !!autoNearestRadar?.site;
+  const autoNearestRadarMode =
+    radarEnabled &&
+    state.viewId === 'radar' &&
+    !stormMode &&
+    !manualStationRadarMode &&
+    localRadarAvailable &&
+    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
+  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1442,7 +1448,8 @@ export default function MapsScreen() {
 
   const handleMapPress = useCallback(
     async (e: any) => {
-      const wildfireInteractionEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
+      const wildfireInteractionEnabled =
+        !!state.layers?.['wildfire.perimeters']?.enabled || !!state.layers?.['wildfire.hotspots']?.enabled;
       if (!wildfireInteractionEnabled) {
         setSelectedWildfire(null);
         setSelectedRestrictionPoint(null);
@@ -3269,6 +3276,18 @@ export default function MapsScreen() {
                   lineWidth: ['match', ['get', 'rank'], 8, 3.3, 7, 2.9, 6, 2.6, 5, 2.4, 2] as any,
                 }}
               />
+              <MapLibreGL.CircleLayer
+                id="weather-alerts-point"
+                filter={['==', ['geometry-type'], 'Point'] as any}
+                style={{
+                  circleColor: ['coalesce', ['get', 'fillColor'], '#a78bfa'] as any,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 7, 6, 10, 10, 14] as any,
+                  circleOpacity: Math.max(0.55, Math.min(0.95, alertsOpacity)),
+                  circleStrokeColor: ['coalesce', ['get', 'lineColor'], '#ddd6fe'] as any,
+                  circleStrokeOpacity: Math.max(0.72, Math.min(1, alertsOpacity)),
+                  circleStrokeWidth: ['match', ['get', 'rank'], 8, 3, 7, 2.6, 6, 2.4, 5, 2.2, 2] as any,
+                }}
+              />
               <MapLibreGL.SymbolLayer
                 id="weather-alerts-label"
                 minZoomLevel={5}
@@ -4014,7 +4033,7 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
-          {wildfireEnabled ? (
+          {wildfireEnabled || wildfireHotspotsEnabled ? (
             <MapLibreGL.ShapeSource
               id="wildfire-incident-source"
               shape={wildfireSymbolData as any}
@@ -4273,7 +4292,7 @@ export default function MapsScreen() {
                   />
                   <Text style={styles.legendCardMeta}>
                     {autoNearestRadarMode && selectedRadarSite
-                      ? `Nearest NEXRAD ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
+                      ? `Nearest radar site ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
                       : effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
                       : 'RainViewer colors vary slightly by provider frame.'}
@@ -4750,11 +4769,14 @@ export default function MapsScreen() {
               ) : selectedWildfire ? (
                 <>
                   <View style={styles.fireDetailPills}>
-                    <HudBadge label="Active" strong />
+                    <HudBadge label={selectedWildfire.isHotspot ? 'Thermal detection' : 'Active'} strong />
                     {selectedWildfireSmokeBands.map((band) => (
                       <HudBadge key={band} label={band} />
                     ))}
-                    {wildfireRestrictionInEffect ? <HudBadge label="Restrictions in effect" /> : null}
+                    {!selectedWildfire.isHotspot && wildfireRestrictionInEffect ? <HudBadge label="Restrictions in effect" /> : null}
+                    {selectedWildfire.isHotspot && selectedWildfire.confidence != null ? (
+                      <HudBadge label={`${Math.round(selectedWildfire.confidence)}% confidence`} />
+                    ) : null}
                     {selectedWildfire.percentContained != null ? (
                       <HudBadge label={`${Math.round(selectedWildfire.percentContained)}% contained`} />
                     ) : null}
@@ -4775,28 +4797,42 @@ export default function MapsScreen() {
 
                   <View style={styles.fireDetailRows}>
                     <View style={styles.fireDetailRow}>
-                      <Text style={styles.fireDetailLabel}>Containment</Text>
+                      <Text style={styles.fireDetailLabel}>{selectedWildfire.isHotspot ? 'Confidence' : 'Containment'}</Text>
                       <Text style={styles.fireDetailValue}>
-                        {selectedWildfire.percentContained != null ? `${Math.round(selectedWildfire.percentContained)}%` : 'Pending'}
+                        {selectedWildfire.isHotspot
+                          ? selectedWildfire.confidence != null
+                            ? `${Math.round(selectedWildfire.confidence)}%`
+                            : 'Pending'
+                          : selectedWildfire.percentContained != null
+                            ? `${Math.round(selectedWildfire.percentContained)}%`
+                            : 'Pending'}
                       </Text>
                     </View>
                     <View style={styles.fireDetailRow}>
-                      <Text style={styles.fireDetailLabel}>Estimated size</Text>
+                      <Text style={styles.fireDetailLabel}>{selectedWildfire.isHotspot ? 'Fire radiative power' : 'Estimated size'}</Text>
                       <Text style={styles.fireDetailValue}>
-                        {selectedWildfire.acres != null ? `${Math.round(selectedWildfire.acres).toLocaleString()} acres` : 'Pending'}
+                        {selectedWildfire.isHotspot
+                          ? selectedWildfire.frp != null
+                            ? `${selectedWildfire.frp.toFixed(1)} MW`
+                            : 'Pending'
+                          : selectedWildfire.acres != null
+                            ? `${Math.round(selectedWildfire.acres).toLocaleString()} acres`
+                            : 'Pending'}
                       </Text>
                     </View>
                     <View style={styles.fireDetailRow}>
                       <Text style={styles.fireDetailLabel}>Reported by</Text>
-                      <Text style={styles.fireDetailValue}>NIFC / WFIGS</Text>
+                      <Text style={styles.fireDetailValue}>{selectedWildfire.source ?? (selectedWildfire.isHotspot ? 'NASA FIRMS' : 'NIFC / WFIGS')}</Text>
                     </View>
-                    <View style={styles.fireDetailRow}>
-                      <Text style={styles.fireDetailLabel}>Fire restrictions</Text>
-                      <Text style={styles.fireDetailValue}>
-                        {wildfireRestrictionSummary ??
-                          (wildfireRestrictionSupported ? 'No active restrictions listed' : 'Restrictions unavailable')}
-                      </Text>
-                    </View>
+                    {!selectedWildfire.isHotspot ? (
+                      <View style={styles.fireDetailRow}>
+                        <Text style={styles.fireDetailLabel}>Fire restrictions</Text>
+                        <Text style={styles.fireDetailValue}>
+                          {wildfireRestrictionSummary ??
+                            (wildfireRestrictionSupported ? 'No active restrictions listed' : 'Restrictions unavailable')}
+                        </Text>
+                      </View>
+                    ) : null}
                     {wildfireFireWeatherSummary ? (
                       <View style={styles.fireDetailRow}>
                         <Text style={styles.fireDetailLabel}>Fire weather</Text>
@@ -4817,7 +4853,7 @@ export default function MapsScreen() {
                 <>
                   <View style={styles.fireDetailPills}>
                     {wildfireRestrictionInEffect ? <HudBadge label="Restrictions in effect" strong /> : <HudBadge label="No active restrictions listed" strong />}
-                    {wildfireRestrictionSupported ? <HudBadge label="USFS source" /> : <HudBadge label="Status uncertain" />}
+                    {wildfireRestrictionSupported ? <HudBadge label="Agency source" /> : <HudBadge label="Status uncertain" />}
                   </View>
 
                   {wildfireForestLabel ? (
@@ -4967,7 +5003,7 @@ export default function MapsScreen() {
                     </View>
                     <View style={styles.fireDetailRow}>
                       <Text style={styles.fireDetailLabel}>Office</Text>
-                      <Text style={styles.fireDetailValue}>{selectedMarineZone.wfo ?? 'NWS marine'}</Text>
+                      <Text style={styles.fireDetailValue}>{selectedMarineZone.wfo ?? 'Marine office'}</Text>
                     </View>
                   </View>
 
@@ -4999,7 +5035,7 @@ export default function MapsScreen() {
             <Glass style={styles.alertDetailCard}>
               <View style={styles.fireDetailHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.alertDetailEyebrow}>NWS ALERT</Text>
+                  <Text style={styles.alertDetailEyebrow}>WEATHER ALERT</Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
                     {selectedWeatherAlert.event}
                   </Text>
@@ -5067,7 +5103,7 @@ export default function MapsScreen() {
                     onPress={openSelectedAlertForecast}
                   >
                     <Text style={styles.fireDetailCloseText}>
-                      {selectedWeatherAlertForecastTarget.kind === 'marine' ? 'NOAA marine forecast' : 'NWS forecast'}
+                      {selectedWeatherAlertForecastTarget.kind === 'marine' ? 'Marine forecast' : 'Forecast'}
                     </Text>
                   </Pressable>
                 </View>
@@ -5279,6 +5315,7 @@ function wildfireFeatureToIncidentDetails(
   );
 
   if (!incidentName) return null;
+  const isHotspot = props.isHotspot === true;
 
   const pointCoords = geometry?.type === 'Point' && Array.isArray(geometry.coordinates) ? geometry.coordinates : null;
   const pointLon = pointCoords ? safeNum(pointCoords[0]) : null;
@@ -5303,15 +5340,19 @@ function wildfireFeatureToIncidentDetails(
         props.ModifiedOnDateTime_dt ??
         props.poly_DateCurrent ??
         props.DateCurrent ??
-        props.FireDiscoveryDateTime
+        props.FireDiscoveryDateTime ??
+        props.updatedAt
     ),
-    source: firstString(props.attr_Source, props.Source, props.poly_Source) ?? 'NIFC / WFIGS',
+    source: firstString(props.attr_Source, props.Source, props.poly_Source, props.source) ?? (isHotspot ? 'NASA FIRMS' : 'NIFC / WFIGS'),
     county: firstString(props.attr_POOCounty, props.POOCounty, props.County),
     state: firstString(props.attr_POOState, props.POOState, props.State),
     city: firstString(props.attr_POOCity, props.POOCity, props.City),
-    geometrySource: firstString(props.poly_Source, props.GeometrySource, props.Source) ?? 'Current incident feed',
+    geometrySource: firstString(props.poly_Source, props.GeometrySource, props.Source, props.geometrySource) ?? (isHotspot ? 'Thermal detection feed' : 'Current incident feed'),
     latitude: attrLat ?? pointLat ?? fallbackLat ?? (bbox ? (bbox.minLat + bbox.maxLat) / 2 : null),
     longitude: attrLon ?? pointLon ?? fallbackLon ?? (bbox ? (bbox.minLon + bbox.maxLon) / 2 : null),
+    isHotspot,
+    confidence: firstNumber(props.confidence),
+    frp: firstNumber(props.frp),
   };
 }
 

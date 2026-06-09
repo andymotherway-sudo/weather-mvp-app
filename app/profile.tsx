@@ -31,7 +31,7 @@ function placeFromDefaultCity(c: DefaultCity): Place {
 
 const FORECAST_MODEL_OPTIONS = [
   { key: 'best_match', label: 'Best match' },
-  { key: 'gfs', label: 'NOAA U.S.' },
+  { key: 'gfs', label: 'NOAA GFS' },
   { key: 'ecmwf', label: 'ECMWF' },
   { key: 'dwd_icon', label: 'DWD ICON' },
 ] as const;
@@ -326,7 +326,7 @@ export default function ProfileScreen() {
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.toggleTitle}>Push notifications</Text>
               <Text style={styles.toggleHelp}>
-                NWS alerts, new fires, Kp spikes, aviation changes, sky score, and extremes.
+                Official alerts, new fires, Kp spikes, aviation changes, sky score, and extremes.
               </Text>
             </View>
             <View style={[styles.toggleTrack, notificationPrefs.enabled ? styles.toggleTrackOn : null]}>

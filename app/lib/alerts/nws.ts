@@ -17,9 +17,27 @@ export type NWSAlert = {
   fullText?: string;
   sent?: string | null; // ISO
   senderName?: string;
+  source?: string;
+  derived?: boolean;
 };
 
 const NWS_BASE = 'https://api.weather.gov';
+
+export function isWeatherGovAlertLikelySupportedPoint(lat: number, lon: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+
+  const inBox = (minLat: number, maxLat: number, minLon: number, maxLon: number) =>
+    lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon;
+
+  return (
+    inBox(24, 50, -125, -66) || // CONUS
+    inBox(51, 72, -170, -129) || // Alaska
+    inBox(18, 23, -161, -154) || // Hawaii
+    inBox(17, 19, -68, -64) || // Puerto Rico / USVI
+    inBox(13, 21, 144, 146) || // Guam / CNMI
+    inBox(-15, -13, -171, -168) // American Samoa
+  );
+}
 
 function safeIso(v: any): string | null {
   if (!v || typeof v !== 'string') return null;
@@ -118,6 +136,8 @@ export function pickPrimaryAlert(alerts: NWSAlert[]): NWSAlert | null {
 }
 
 export async function fetchNwsAlertsByPoint(lat: number, lon: number): Promise<NWSAlert[]> {
+  if (!isWeatherGovAlertLikelySupportedPoint(lat, lon)) return [];
+
   const url = `${NWS_BASE}/alerts/active?point=${lat},${lon}`;
 
   const res = await fetch(url, {
@@ -129,7 +149,7 @@ export async function fetchNwsAlertsByPoint(lat: number, lon: number): Promise<N
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`NWS alerts failed (${res.status}): ${text.slice(0, 120)}`);
+    throw new Error(`Official alerts failed (${res.status}): ${text.slice(0, 120)}`);
   }
 
   const json = await res.json();

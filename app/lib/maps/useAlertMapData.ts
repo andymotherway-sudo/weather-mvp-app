@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { isWeatherGovAlertLikelySupportedPoint } from '../alerts/nws';
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type RegionLike = {
@@ -216,10 +218,64 @@ function normalizeWwaFeature(feature: any, idx: number, layerId: number) {
   };
 }
 
+function normalizeGlobalAlertPoint(alert: any, idx: number, region: RegionLike) {
+  const event = cleanText(alert?.event) ?? 'Weather Alert';
+  const severity = cleanText(alert?.severity);
+  const palette = alertPalette(event, severity);
+  const id = String(alert?.id ?? `global-alert-${idx}`);
+
+  return {
+    type: 'Feature',
+    id,
+    geometry: {
+      type: 'Point',
+      coordinates: [region.longitude, region.latitude],
+    },
+    properties: {
+      id,
+      event,
+      headline: cleanText(alert?.headline) ?? event,
+      severity,
+      urgency: cleanText(alert?.urgency),
+      certainty: cleanText(alert?.certainty),
+      areaDesc: cleanText(alert?.areaDesc) ?? 'Selected map area',
+      effective: safeIso(alert?.effective),
+      expires: safeIso(alert?.expires),
+      ends: safeIso(alert?.ends),
+      sent: safeIso(alert?.sent),
+      senderName: cleanText(alert?.senderName) ?? 'OMNIwx global forecast outlook',
+      description: cleanText(alert?.description),
+      instruction: cleanText(alert?.instruction),
+      fillColor: palette.fill,
+      lineColor: palette.line,
+      rank: palette.rank,
+      derived: alert?.derived === true,
+      label: event.replace(/\s+(Outlook|Warning|Watch|Advisory|Statement)$/i, '\n$1'),
+    },
+  };
+}
+
 function filterToEnvelope(fc: GeoJsonFeatureCollection, envelope: { west: number; east: number; south: number; north: number }) {
   return {
     type: 'FeatureCollection' as const,
     features: fc.features.filter((feature) => intersects(geometryBbox(feature?.geometry), envelope)),
+  };
+}
+
+async function fetchGlobalAlertPoints(signal: AbortSignal, region: RegionLike) {
+  const url = apiUrl(
+    `/api/alerts/global?lat=${encodeURIComponent(String(region.latitude))}&lon=${encodeURIComponent(String(region.longitude))}`,
+  );
+  const res = await fetchWithTimeout(url, 18000, {
+    signal,
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Global alert outlook failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  const alerts = Array.isArray(json?.alerts) ? json.alerts : [];
+  return {
+    type: 'FeatureCollection' as const,
+    features: alerts.map((alert: any, idx: number) => normalizeGlobalAlertPoint(alert, idx, region)).filter(Boolean),
   };
 }
 
@@ -236,7 +292,7 @@ async function fetchActiveAlerts(signal: AbortSignal) {
         Accept: 'application/geo+json',
       },
     });
-    if (!res.ok) throw new Error(`NWS alerts failed (${res.status})`);
+    if (!res.ok) throw new Error(`Official alerts failed (${res.status})`);
     const json = await res.json().catch(() => null);
     if (Array.isArray(json?.features)) features.push(...json.features);
     url = typeof json?.pagination?.next === 'string' ? json.pagination.next : null;
@@ -327,6 +383,7 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
 
   const envelope = useMemo(() => (region ? buildViewportEnvelope(region) : null), [region]);
   const envelopeKey = envelope ? `${envelope.west},${envelope.south},${envelope.east},${envelope.north}` : null;
+  const supported = region ? isWeatherGovAlertLikelySupportedPoint(region.latitude, region.longitude) : true;
 
   useEffect(() => {
     if (!enabled) {
@@ -352,16 +409,21 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
       setLoading(true);
       setError(null);
       try {
-        const geojson = envelope
-          ? await fetchWwaPolygons(controller.signal, envelope)
-          : await fetchActiveAlerts(controller.signal);
+        const geojson =
+          supported && envelope
+            ? await fetchWwaPolygons(controller.signal, envelope)
+            : supported
+            ? await fetchActiveAlerts(controller.signal)
+            : region
+            ? await fetchGlobalAlertPoints(controller.signal, region)
+            : EMPTY_FC;
         if (cancelled) return;
         alertCache = { ts: Date.now(), key: envelopeKey ?? 'global', geojson };
         setAllAlerts(geojson);
         setUpdatedAt(new Date(alertCache.ts).toISOString());
       } catch (err: any) {
         if (controller.signal.aborted || cancelled) return;
-        setError(err?.message ?? 'NWS alerts unavailable');
+        setError(err?.message ?? 'Official alerts unavailable');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -373,7 +435,7 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
       cancelled = true;
       controller.abort();
     };
-  }, [enabled, envelopeKey]);
+  }, [enabled, envelopeKey, supported]);
 
   const geojson = useMemo(() => {
     if (!enabled || !envelope) return EMPTY_FC;
