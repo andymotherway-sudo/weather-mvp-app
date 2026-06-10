@@ -2569,14 +2569,18 @@ export default function MapsScreen() {
     [effectiveRegion, mapZoom, marineConditionsEnabled],
   );
   const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
-  const { data: buoyData } = useAllBuoyDetails();
+  const { data: buoyData } = useAllBuoyDetails(marineConditionsEnabled);
   const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
     marineZones,
     mapZoom,
   ]);
-  const marineBuoys = useMemo(() => (buoyData ?? []).filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon)), [
-    buoyData,
-  ]);
+  const marineBuoys = useMemo(
+    () =>
+      marineConditionsEnabled
+        ? (buoyData ?? []).filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon))
+        : [],
+    [buoyData, marineConditionsEnabled],
+  );
   const marineZonesById = useMemo(() => new Map(visibleMarineZones.map((zone) => [zone.id, zone])), [visibleMarineZones]);
   const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
   const visibleMarineModelAreas = useMemo(

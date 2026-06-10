@@ -54,28 +54,42 @@ export function useBuoyDetail(stationId: string | undefined) {
 }
 
 // 🔹 NEW: hook to get ALL NOAA buoys (bulk feed)
-export function useAllBuoyDetails() {
+export function useAllBuoyDetails(enabled = true) {
   const [data, setData] = useState<BuoyDetailData[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+
     async function load() {
       try {
         setError(null);
         setLoading(true);
         const all = await fetchAllLatestBuoys(); // from noaaApi.ts
+        if (cancelled) return;
         setData(all);
       } catch (e: any) {
+        if (cancelled) return;
         setError(e?.message ?? 'Failed to load buoy feed');
         setData(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     load();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
 
   return { data, loading, error };
 }
