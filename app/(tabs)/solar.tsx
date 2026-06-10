@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 
 import { AstroHeroCard } from '../../components/astro/AstroHeroCard';
 import { AstroHourlyStrip } from '../../components/astro/AstroHourlyStrip';
@@ -250,17 +251,18 @@ const SOLAR_VIEWS: SolarViewOption[] = [
 export default function SolarScreen() {
   const insets = useSafeAreaInsets();
   const { chrome } = useAppChrome();
+  const isFocused = useIsFocused();
   const { active } = usePlace();
 
-  const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary();
+  const { data, loading, error, refreshing, refresh } = useSpaceWeatherSummary(isFocused);
   const {
     data: mars,
     loading: marsLoading,
     error: marsError,
     refreshing: marsRefreshing,
     refresh: refreshMars,
-  } = useMarsInsightWeather();
-  const { events, loading: eventsLoading, error: eventsError } = useSpaceWeatherEvents(7);
+  } = useMarsInsightWeather(isFocused);
+  const { events, loading: eventsLoading, error: eventsError } = useSpaceWeatherEvents(7, isFocused);
 
   const {
     data: astro,
@@ -272,7 +274,7 @@ export default function SolarScreen() {
     lat: active?.lat,
     lon: active?.lon,
     placeName: active?.name,
-    enabled: !!active,
+    enabled: isFocused && !!active,
   });
 
   const [explainOpen, setExplainOpen] = useState(false);
@@ -290,9 +292,10 @@ export default function SolarScreen() {
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!isFocused) return;
     if (!astro) return;
     writeSkyScoreWidgetCache(astro).catch(() => {});
-  }, [astro]);
+  }, [astro, isFocused]);
 
   const solarCaptureEventSignature = useMemo(
     () => events.map((event) => event.id).join('|'),
@@ -300,12 +303,13 @@ export default function SolarScreen() {
   );
 
   useEffect(() => {
+    if (!isFocused) return;
     if (!data || eventsLoading) return;
     const key = `${data.updatedAt ?? 'space'}|${data.noaaScalesUpdatedAt ?? 'scale'}|${solarCaptureEventSignature}`;
     if (solarCaptureRunKeyRef.current === key) return;
     solarCaptureRunKeyRef.current = key;
     maybeCreateSolarEventCapture({ summary: data, events }).catch(() => {});
-  }, [data, events, eventsLoading, solarCaptureEventSignature]);
+  }, [data, events, eventsLoading, solarCaptureEventSignature, isFocused]);
 
   const openExplain = (p: ExplainPayload) => {
     setExplainPayload(p);
@@ -340,8 +344,9 @@ export default function SolarScreen() {
   };
 
   useEffect(() => {
+    if (!isFocused) return;
     refreshEarthDisk();
-  }, [refreshEarthDisk]);
+  }, [refreshEarthDisk, isFocused]);
 
   const isRefreshing = refreshing || astroRefreshing || marsRefreshing || earthDiskLoading;
   const chartHours = useMemo(() => {
@@ -721,6 +726,7 @@ export default function SolarScreen() {
   }, [activeSolarView.id]);
 
   useEffect(() => {
+    if (!isFocused) return;
     let cancelled = false;
 
     const warm = async () => {
@@ -742,7 +748,7 @@ export default function SolarScreen() {
     return () => {
       cancelled = true;
     };
-  }, [activeSolarView.id]);
+  }, [activeSolarView.id, isFocused]);
 
   return (
     <>

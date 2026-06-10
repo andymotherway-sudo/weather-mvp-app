@@ -7,6 +7,7 @@
 // This keeps the global scan off-device and lets the Worker cache the current top 10s.
 
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import {
@@ -352,7 +353,7 @@ function pushMarineExtremeToMap(
   });
 }
 
-function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
+function useLandExtremes(tempUnit: 'F' | 'C', enabled = true): LandHookResult {
   const cacheRef = useRef<{
     fetchedAt: number;
     updatedAt: string | null;
@@ -373,6 +374,7 @@ function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
   const [heroes, setHeroes] = useState<Partial<Record<LandExtremeKind, LandExtreme | null>>>({});
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     const TTL_MS = 1000 * 60 * 10; // 10 min (aligns to Worker cache)
     const now = Date.now();
 
@@ -430,14 +432,14 @@ function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
     } finally {
       setLoading(false);
     }
-  }, [tempUnit]);
+  }, [enabled, tempUnit]);
 
-  // Initial build
   const bootRef = useRef(false);
-  if (!bootRef.current) {
+  useEffect(() => {
+    if (!enabled || bootRef.current) return;
     bootRef.current = true;
     refresh();
-  }
+  }, [enabled, refresh]);
 
   return { loading, error, updatedAt, heroes, groups, refresh };
 }
@@ -466,7 +468,7 @@ async function fetchWorkerMarineExtremes(): Promise<{
   }
 }
 
-function useMarineModelExtremes(): MarineModelHookResult {
+function useMarineModelExtremes(enabled = true): MarineModelHookResult {
   const cacheRef = useRef<{
     fetchedAt: number;
     updatedAt: string | null;
@@ -481,6 +483,7 @@ function useMarineModelExtremes(): MarineModelHookResult {
   const [groups, setGroups] = useState<MarineModelGroup[]>([]);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     const TTL_MS = 1000 * 60 * 15;
     const now = Date.now();
     if (cacheRef.current && now - cacheRef.current.fetchedAt < TTL_MS) {
@@ -510,13 +513,14 @@ function useMarineModelExtremes(): MarineModelHookResult {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   const bootRef = useRef(false);
-  if (!bootRef.current) {
+  useEffect(() => {
+    if (!enabled || bootRef.current) return;
     bootRef.current = true;
     refresh();
-  }
+  }, [enabled, refresh]);
 
   return { loading, error, updatedAt, heroes, groups, refresh };
 }
@@ -576,13 +580,14 @@ async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'):
   }
 }
 
-function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
+function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C', enabled = true) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SavedPlaceExtreme[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const signature = useMemo(() => favorites.map((fav) => `${fav.id}:${fav.lat}:${fav.lon}`).join('|'), [favorites]);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     if (!favorites.length) {
       setItems([]);
       setUpdatedAt(null);
@@ -597,11 +602,12 @@ function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
     } finally {
       setLoading(false);
     }
-  }, [favorites, unit]);
+  }, [enabled, favorites, unit]);
 
   useEffect(() => {
+    if (!enabled) return;
     refresh();
-  }, [refresh, signature]);
+  }, [enabled, refresh, signature]);
 
   return { loading, items, updatedAt, refresh };
 }
@@ -991,14 +997,15 @@ function SavedPlacesExtremeSection({
 export default function ExtremesScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { tempUnit } = useSettings();
   const locations = useLocations();
   const [mode, setMode] = useState<Mode>('marine');
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data, loading, error } = useAllBuoyDetails();
+  const { data, loading, error } = useAllBuoyDetails(isFocused);
   const buoys: BuoyDetailData[] = data ?? [];
-  const marineModel = useMarineModelExtremes();
+  const marineModel = useMarineModelExtremes(isFocused);
 
   // Marine rankings
   const withWaves = useMemo(
@@ -1041,10 +1048,10 @@ export default function ExtremesScreen() {
   const topWind = withWind[0] ?? null;
 
   // Land + Space
-  const land = useLandExtremes(tempUnit);
-  const savedLand = useSavedPlaceExtremes(locations.favorites ?? [], tempUnit);
+  const land = useLandExtremes(tempUnit, isFocused);
+  const savedLand = useSavedPlaceExtremes(locations.favorites ?? [], tempUnit, isFocused);
   const refreshSavedLand = savedLand.refresh;
-  const mars = useMarsInsightWeather();
+  const mars = useMarsInsightWeather(isFocused);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

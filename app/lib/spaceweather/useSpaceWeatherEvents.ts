@@ -12,12 +12,18 @@ export type SpaceWeatherEvent = {
   source: 'DONKI';
 };
 
-export function useSpaceWeatherEvents(days = 7) {
+export function useSpaceWeatherEvents(days = 7, enabled = true) {
   const [events, setEvents] = useState<SpaceWeatherEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     let mounted = true;
 
     async function load() {
@@ -38,7 +44,7 @@ export function useSpaceWeatherEvents(days = 7) {
     return () => {
       mounted = false;
     };
-  }, [days]);
+  }, [days, enabled]);
 
   return { events, loading, error };
 }

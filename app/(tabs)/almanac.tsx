@@ -1,4 +1,5 @@
 // app/(tabs)/almanac.tsx
+import { useIsFocused } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -179,6 +180,7 @@ function safeString(v: unknown, fallback = '—') {
 export default function ClimoTab() {
   const insets = useSafeAreaInsets();
   const { chrome } = useAppChrome();
+  const isFocused = useIsFocused();
 
   const { active } = usePlace();
   const preload = useAlmanacPreload();
@@ -308,7 +310,7 @@ export default function ClimoTab() {
   const localClimo = useClimatologyNormals({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
-    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
+    enabled: isFocused && hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
     preferCache: true,
   } as any);
   const { forecastModel } = useSettings();
@@ -319,7 +321,7 @@ export default function ClimoTab() {
     lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
     model: forecastModel,
-    enabled: hasPlace && !!coords && !preloadMatches,
+    enabled: isFocused && hasPlace && !!coords && !preloadMatches,
   });
   const forecast = preloadMatches && preload?.forecast ? preload.forecast : localForecast;
   const forecastModelName = forecastModelLabel(forecastModel);
@@ -353,7 +355,7 @@ export default function ClimoTab() {
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
     date: selectedIso,
-    enabled: hasPlace && !!coords && mode === 'observed',
+    enabled: isFocused && hasPlace && !!coords && mode === 'observed',
     preferCache: true,
   } as any);
 
@@ -362,7 +364,7 @@ export default function ClimoTab() {
   const localRecords = useDailyRecords({
     lat: coords?.lat ?? 0,
     lon: coords?.lon ?? 0,
-    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
+    enabled: isFocused && hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
   });
   const records = preloadMatches && preload?.records ? preload.records : localRecords;
 
@@ -432,16 +434,16 @@ export default function ClimoTab() {
   }, [rLoading]);
 
   useEffect(() => {
-    if (!recordsStartedAt) return;
+    if (!isFocused || !recordsStartedAt) return;
     const id = setInterval(() => {
       setRecordsElapsedSec(Math.max(0, (Date.now() - recordsStartedAt) / 1000));
     }, 400);
     return () => clearInterval(id);
-  }, [recordsStartedAt]);
+  }, [isFocused, recordsStartedAt]);
 
   const progAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!shouldLoadAreaAlmanac || !(rLoading || (!recordsEverResolved && hasPlace))) {
+    if (!isFocused || !shouldLoadAreaAlmanac || !(rLoading || (!recordsEverResolved && hasPlace))) {
       progAnim.stopAnimation();
       progAnim.setValue(0);
       return;
@@ -456,7 +458,7 @@ export default function ClimoTab() {
     );
     loop.start();
     return () => loop.stop();
-  }, [progAnim, rLoading, recordsEverResolved, hasPlace, shouldLoadAreaAlmanac]);
+  }, [progAnim, rLoading, recordsEverResolved, hasPlace, shouldLoadAreaAlmanac, isFocused]);
 
   const recordsStatus = useMemo(() => {
     if (!shouldLoadAreaAlmanac) return '';

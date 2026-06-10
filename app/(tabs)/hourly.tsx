@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 
 import { useSettings } from '../context/SettingsContext';
 import { useWxLab } from '../context/WxLabContext';
@@ -734,6 +735,7 @@ function HourlyWithCoords({
   setRefreshFn,
   onOpenLearn,
   onVisualStateChange,
+  enabled,
 }: {
   coords: { lat: number; lon: number };
   wxLab: boolean;
@@ -741,6 +743,7 @@ function HourlyWithCoords({
   setRefreshFn: (fn: null | (() => void)) => void;
   onOpenLearn: (topicId?: string) => void;
   onVisualStateChange: (state: VisualState) => void;
+  enabled: boolean;
 }) {
   const units: UnitSystem = 'us';
   const { forecastModel } = useSettings();
@@ -750,6 +753,7 @@ function HourlyWithCoords({
     lon: coords.lon,
     days: 5,
     model: forecastModel,
+    enabled,
   });
 
   useEffect(() => {
@@ -923,6 +927,7 @@ function HourlyWithCoords({
 export default function HourlyTab() {
   const { appColorMode, chrome } = useAppChrome();
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
   const setWxLab =
@@ -959,6 +964,12 @@ export default function HourlyTab() {
   const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isFocused) {
+      glowAnim.stopAnimation();
+      glowAnim.setValue(0);
+      return;
+    }
+
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(glowAnim, { toValue: 1, duration: 6000, useNativeDriver: true }),
@@ -968,7 +979,7 @@ export default function HourlyTab() {
 
     loop.start();
     return () => loop.stop();
-  }, [glowAnim]);
+  }, [glowAnim, isFocused]);
 
   const setRefreshFn = useCallback((fn: null | (() => void)) => {
     refreshFnRef.current = fn;
@@ -1085,6 +1096,7 @@ export default function HourlyTab() {
                 setRefreshFn={setRefreshFn}
                 onOpenLearn={openLearn}
                 onVisualStateChange={setVisualState}
+                enabled={isFocused}
               />
             </>
           )}

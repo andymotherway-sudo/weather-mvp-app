@@ -298,13 +298,19 @@ async function fetchGreatLakesZoneText(zoneId: string) {
   };
 }
 
-export function useMarineForecast(zoneId?: string, wfo?: string): UseMarineForecastResult {
+export function useMarineForecast(zoneId?: string, wfo?: string, enabled = true): UseMarineForecastResult {
   const [forecast, setForecast] = useState<MarineForecast | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'ok' | 'not_available' | 'error'>('ok');
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     if (!zoneId) {
       setForecast(null);
       setLoading(false);
@@ -434,7 +440,7 @@ export function useMarineForecast(zoneId?: string, wfo?: string): UseMarineForec
     return () => {
       cancelled = true;
     };
-  }, [zoneId, wfo]);
+  }, [enabled, zoneId, wfo]);
 
   return { forecast, loading, error, status };
 }

@@ -4,13 +4,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchMarsInsightWeather, fetchSpaceWeatherSummary } from './api';
 import type { MarsInsightWeather, SpaceWeatherSummary } from './types';
 
-export function useSpaceWeatherSummary() {
+export function useSpaceWeatherSummary(enabled = true) {
   const [data, setData] = useState<SpaceWeatherSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setError(null);
       setLoading(true);
@@ -24,12 +30,13 @@ export function useSpaceWeatherSummary() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [enabled]);
 
   const refresh = useCallback(() => {
+    if (!enabled) return;
     setRefreshing(true);
     load();
-  }, [load]);
+  }, [enabled, load]);
 
   useEffect(() => {
     load();
@@ -44,13 +51,19 @@ export function useSpaceWeatherSummary() {
   };
 }
 
-export function useMarsInsightWeather() {
+export function useMarsInsightWeather(enabled = true) {
   const [data, setData] = useState<MarsInsightWeather | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setError(null);
       setLoading(true);
@@ -62,12 +75,13 @@ export function useMarsInsightWeather() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [enabled]);
 
   const refresh = useCallback(() => {
+    if (!enabled) return;
     setRefreshing(true);
     load();
-  }, [load]);
+  }, [enabled, load]);
 
   useEffect(() => {
     load();

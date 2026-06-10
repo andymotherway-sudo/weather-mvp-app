@@ -3,13 +3,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchAllLatestBuoys, fetchBuoyDetail } from './noaaApi';
 import type { BuoyDetailData } from './noaaTypes';
 
-export function useBuoyDetail(stationId: string | undefined) {
+export function useBuoyDetail(stationId: string | undefined, enabled = true) {
   const [data, setData] = useState<BuoyDetailData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     if (!stationId) {
       setData(null);
       setLoading(false);
@@ -31,10 +37,10 @@ export function useBuoyDetail(stationId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [stationId]);
+  }, [enabled, stationId]);
 
   const refresh = useCallback(async () => {
-    if (!stationId) return;
+    if (!enabled || !stationId) return;
     try {
       setRefreshing(true);
       const result = await fetchBuoyDetail(stationId);
@@ -44,7 +50,7 @@ export function useBuoyDetail(stationId: string | undefined) {
     } finally {
       setRefreshing(false);
     }
-  }, [stationId]);
+  }, [enabled, stationId]);
 
   useEffect(() => {
     load();

@@ -4,6 +4,7 @@
 // Also supports "zone mode" when launched from polygon world map.
 
 import { useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -442,6 +443,7 @@ function explainFor(key: ExplainKey) {
 // -------------------------------------------------------------------
 
 export default function NauticalScreen() {
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{
     areaId?: string;
     zoneId?: string;
@@ -496,22 +498,22 @@ export default function NauticalScreen() {
 
   // Data hooks
   const { data, loading, error, refreshing, refresh } =
-    useNauticalSummary(station);
+    useNauticalSummary(station, isFocused);
 
-  const { data: allBuoyData } = useAllBuoyDetails();
+  const { data: allBuoyData } = useAllBuoyDetails(isFocused);
   const allBuoys: BuoyDetailData[] = allBuoyData ?? [];
 
   // station.id is a tide station id, not a buoy id.
   const stationBuoyId = station.buoyId ?? null;
   const activeBuoyId = selectedBuoyId ?? stationBuoyId;
 
-  const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined);
+  const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined, isFocused);
 
   // Forecast source:
   const forecastZoneId = isZoneMode ? zoneId : area.forecastZoneId;
 
   const { forecast, loading: forecastLoading, error: forecastError } =
-    useMarineForecast(forecastZoneId, isZoneMode ? wfo : undefined);
+    useMarineForecast(forecastZoneId, isZoneMode ? wfo : undefined, isFocused);
 
   const activeBuoy =
     allBuoys.find(
@@ -526,6 +528,7 @@ export default function NauticalScreen() {
   };
 
   useEffect(() => {
+    if (!isFocused) return;
     const q = search.trim();
     if (q.length < 3) {
       setPlaceResults([]);
@@ -553,7 +556,7 @@ export default function NauticalScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search]);
+  }, [search, isFocused]);
 
   // --- SEARCH: stations + buoys -----------------------------------
 

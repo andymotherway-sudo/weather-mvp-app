@@ -21,13 +21,20 @@ type UseNauticalSummaryResult = {
  */
 export function useNauticalSummary(
   station: NauticalStation = DEFAULT_NAUTICAL_STATION,
+  enabled = true,
 ): UseNauticalSummaryResult {
   const [data, setData] = useState<NauticalSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setError(null);
       setLoading(true);
@@ -43,12 +50,13 @@ export function useNauticalSummary(
       setLoading(false);
       setRefreshing(false);
     }
-  }, [station]);
+  }, [enabled, station]);
 
   const refresh = useCallback(() => {
+    if (!enabled) return;
     setRefreshing(true);
     void load();
-  }, [load]);
+  }, [enabled, load]);
 
   useEffect(() => {
     void load();
