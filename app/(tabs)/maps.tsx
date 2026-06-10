@@ -1360,7 +1360,7 @@ export default function MapsScreen() {
     () => dedupeFavoriteLocations([...(loc.state.favorites ?? []), ...(placeFavorites ?? [])]),
     [loc.state.favorites, placeFavorites],
   );
-  const favoriteTemperatures = useFavoriteTemperatures(mapFavoriteLocations, tempUnit);
+  const favoriteTemperatures = useFavoriteTemperatures(isFocused ? mapFavoriteLocations : [], tempUnit);
 
   const [layersSheetOpen, setLayersSheetOpen] = useState(false);
   const [learnOpen, setLearnOpen] = useState(false);
@@ -1494,7 +1494,7 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
+  const radarEnabled = isFocused && !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
@@ -1603,37 +1603,37 @@ export default function MapsScreen() {
     [state.viewId, state.layers]
   );
 
-  const fireRestrictionsEnabled = !!state.layers?.['fire.restrictions']?.enabled;
-  const wildfireSmokeEnabled = !!state.layers?.['wildfire.smoke']?.enabled;
-  const wildfireEnabled = !!state.layers?.['wildfire.perimeters']?.enabled;
-  const wildfireHotspotsEnabled = !!state.layers?.['wildfire.hotspots']?.enabled;
-  const wildfireFireWxEnabled = !!state.layers?.['wildfire.firewx']?.enabled;
+  const fireRestrictionsEnabled = isFocused && !!state.layers?.['fire.restrictions']?.enabled;
+  const wildfireSmokeEnabled = isFocused && !!state.layers?.['wildfire.smoke']?.enabled;
+  const wildfireEnabled = isFocused && !!state.layers?.['wildfire.perimeters']?.enabled;
+  const wildfireHotspotsEnabled = isFocused && !!state.layers?.['wildfire.hotspots']?.enabled;
+  const wildfireFireWxEnabled = isFocused && !!state.layers?.['wildfire.firewx']?.enabled;
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
-  const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
-  const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
-  const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
-  const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
-  const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
-  const aviationModeActive = state.viewId === 'aviation';
-  const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
-  const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
-  const aviationSigmetEnabled = !aviationModeActive && !!state.layers?.['aviation.sigmet']?.enabled;
-  const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
-  const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
-  const marineConditionsEnabled = state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled;
-  const skyScoreEnabled = !!state.layers?.['astro.skyScore']?.enabled;
-  const auroraProbEnabled = !!state.layers?.['space.aurora.prob']?.enabled;
-  const auroraOvalEnabled = !!state.layers?.['space.aurora.oval']?.enabled;
+  const alertsEnabled = isFocused && !!state.layers?.['alerts.polygons']?.enabled;
+  const cloudsEnabled = isFocused && !!state.layers?.['sat.clouds']?.enabled;
+  const frontsDay1Enabled = isFocused && !!state.layers?.['wx.fronts.day1']?.enabled;
+  const frontsDay2Enabled = isFocused && !!state.layers?.['wx.fronts.day2']?.enabled;
+  const frontsDay3Enabled = isFocused && !!state.layers?.['wx.fronts.day3']?.enabled;
+  const aviationModeActive = isFocused && state.viewId === 'aviation';
+  const aviationTurbEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
+  const aviationIceEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
+  const aviationSigmetEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.sigmet']?.enabled;
+  const aviationCwaEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
+  const aviationPirepEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
+  const marineConditionsEnabled = isFocused && (state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled);
+  const skyScoreEnabled = isFocused && !!state.layers?.['astro.skyScore']?.enabled;
+  const auroraProbEnabled = isFocused && !!state.layers?.['space.aurora.prob']?.enabled;
+  const auroraOvalEnabled = isFocused && !!state.layers?.['space.aurora.oval']?.enabled;
 
-  const goesTrueColorEnabled = !!state.layers?.['sat.goes.truecolor']?.enabled;
-  const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
-  const goesEastWvEnabled = !!state.layers?.['sat.goesEast.wv']?.enabled;
-  const goesWestWvEnabled = !!state.layers?.['sat.goesWest.wv']?.enabled;
-  const globalTrueColorEnabled = !!state.layers?.['sat.global.truecolor']?.enabled;
-  const globalCloudTopsEnabled = !!state.layers?.['sat.global.cloudtops']?.enabled;
-  const globalInfraredEnabled = !!state.layers?.['sat.global.infrared']?.enabled;
-  const globalPrecipEnabled = !!state.layers?.['sat.global.precip']?.enabled;
+  const goesTrueColorEnabled = isFocused && !!state.layers?.['sat.goes.truecolor']?.enabled;
+  const goesEastIrEnabled = isFocused && !!state.layers?.['sat.goesEast.ir']?.enabled;
+  const goesEastWvEnabled = isFocused && !!state.layers?.['sat.goesEast.wv']?.enabled;
+  const goesWestWvEnabled = isFocused && !!state.layers?.['sat.goesWest.wv']?.enabled;
+  const globalTrueColorEnabled = isFocused && !!state.layers?.['sat.global.truecolor']?.enabled;
+  const globalCloudTopsEnabled = isFocused && !!state.layers?.['sat.global.cloudtops']?.enabled;
+  const globalInfraredEnabled = isFocused && !!state.layers?.['sat.global.infrared']?.enabled;
+  const globalPrecipEnabled = isFocused && !!state.layers?.['sat.global.precip']?.enabled;
   const animatedSatelliteEnabled =
     cloudsEnabled ||
     goesTrueColorEnabled ||
@@ -2020,6 +2020,7 @@ export default function MapsScreen() {
   }, [region, selectedRadarSite, stationRadarMode]);
 
   const radarCtl = useRadarController({
+    enabled: isFocused,
     state,
     dispatch,
     sheetValue: { radarProvider: effectiveRadarProvider },
@@ -3390,6 +3391,7 @@ export default function MapsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
         <View style={styles.screen}>
+          {isFocused ? (
           <MapRenderer
             key={`map-${mapResetKey}`}
             engine="maplibre"
@@ -4542,6 +4544,9 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
         </MapRenderer>
+          ) : (
+            <View style={{ flex: 1, backgroundColor: '#020617' }} />
+          )}
 
         {animationRecordMode ? (
           <View pointerEvents="box-none" style={[styles.recordExitWrap, { top: 12 + insets.top }]}>
