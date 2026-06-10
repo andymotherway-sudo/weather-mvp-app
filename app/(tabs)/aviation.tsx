@@ -1,5 +1,6 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -642,7 +643,8 @@ async function saveAviationFavorites(airports: SavedAirport[], routes: SavedRout
 export default function AviationScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const aviation = useAviationMapData(true);
+  const isFocused = useIsFocused();
+  const aviation = useAviationMapData(isFocused);
   const [mode, setMode] = useState<Mode>('station');
   const [reportView, setReportView] = useState<ReportView>('decoded');
   const [stationInput, setStationInput] = useState('KPHX');

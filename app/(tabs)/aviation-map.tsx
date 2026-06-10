@@ -1,4 +1,5 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -183,11 +184,12 @@ function pickFeature(event: any) {
 
 export default function AviationMapScreen() {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const cameraRef = useRef<any>(null);
   const { lat, lon, label } = useLocalSearchParams<{ lat?: string; lon?: string; label?: string }>();
   const initialRegion = useMemo(() => regionFromParams(lat, lon), [lat, lon]);
 
-  const aviation = useAviationMapData(true);
+  const aviation = useAviationMapData(isFocused);
   const [region, setRegion] = useState<Region>(initialRegion);
   const [product, setProduct] = useState<AviationProductFilter>('all');
   const [hazard, setHazard] = useState<AviationHazardFilter>('all');
@@ -238,6 +240,7 @@ export default function AviationMapScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.mapWrap}>
+        {isFocused ? (
         <MapRenderer
           cameraRef={cameraRef}
           engine="maplibre"
@@ -414,6 +417,9 @@ export default function AviationMapScreen() {
             />
           </MapLibreGL.ShapeSource>
         </MapRenderer>
+        ) : (
+          <View style={{ flex: 1, backgroundColor: '#020617' }} />
+        )}
       </View>
 
       <View pointerEvents="box-none" style={[styles.topPanel, { paddingTop: Math.max(12, insets.top + 4) }]}>

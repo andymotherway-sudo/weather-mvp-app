@@ -4,6 +4,7 @@ import { AlphaType, ColorType, Skia } from '@shopify/react-native-skia';
 import { Buffer } from 'buffer';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
+import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
@@ -1356,6 +1357,7 @@ function pickAstroHourIndex(payload: AstroLocationPayload | null, hourOffset: nu
 export default function AstroMapScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { active } = usePlace();
 
   const params = useLocalSearchParams<{
@@ -1636,7 +1638,7 @@ export default function AstroMapScreen() {
   const scheduleRetryAfterCooldown = useCallback(
     (retryFn: () => void) => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      if (!showSkyScore) return;
+      if (!isFocused || !showSkyScore) return;
 
       const now = Date.now();
       const waitMs = Math.max(0, OM_BACKOFF.until - now) + 300;
@@ -1644,11 +1646,12 @@ export default function AstroMapScreen() {
 
       retryTimerRef.current = setTimeout(() => {
         retryTimerRef.current = null;
+        if (!isFocused || !showSkyScore) return;
         lastSkyGridKeyRef.current = '';
         retryFn();
       }, waitMs);
     },
-    [showSkyScore]
+    [isFocused, showSkyScore]
   );
 
   const applyGridToMap = useCallback(
@@ -1658,11 +1661,19 @@ export default function AstroMapScreen() {
     regionForInspect?: Region | null,
     opts?: { fetchId?: number; source?: 'hero' | 'regional' | 'cache' }
   ) => {
+    if (!isFocused) {
+      return false;
+    }
+
     if (opts?.fetchId != null && opts.fetchId !== fetchSerialRef.current) {
       return false;
     }
 
     const localUri = await makeSkyRasterFromGrid(grid, key);
+
+    if (!isFocused) {
+      return false;
+    }
 
     if (opts?.fetchId != null && opts.fetchId !== fetchSerialRef.current) {
       return false;
@@ -1686,11 +1697,12 @@ export default function AstroMapScreen() {
 
     return true;
   },
-  [computeInspectAt, initialRegion]
+  [computeInspectAt, initialRegion, isFocused]
 );
 
   const refreshInspectForRegion = useCallback(
     (region: Region) => {
+      if (!isFocused) return;
       cancelPendingInspect();
 
       inspectDebounceRef.current = setTimeout(async () => {
@@ -1730,11 +1742,12 @@ export default function AstroMapScreen() {
         }
       }, 280);
     },
-    [hourOffset, cancelPendingInspect, computeInspectAt, skyGrid]
+    [hourOffset, cancelPendingInspect, computeInspectAt, skyGrid, isFocused]
   );
 
   const refreshForRegion = useCallback(
     (region: Region) => {
+      if (!isFocused) return;
       if (preloadInFlightRef.current && !didFinishInitialPreloadRef.current) return;
 
       if (!showSkyScore) {
@@ -1924,8 +1937,20 @@ export default function AstroMapScreen() {
   }
 }, 320); 
     },
-    [hourOffset, applyGridToMap, scheduleRetryAfterCooldown, showSkyScore, clearSkyState, skyGrid, activeAstro, refreshInspectForRegion, hasUsableSkyOverlay]
+    [hourOffset, applyGridToMap, scheduleRetryAfterCooldown, showSkyScore, clearSkyState, skyGrid, activeAstro, refreshInspectForRegion, hasUsableSkyOverlay, isFocused]
   );
+
+  useEffect(() => {
+    if (isFocused) return;
+    cancelPendingInspect();
+    cancelPendingSkyFetch();
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    lastSkyGridKeyRef.current = '';
+    setIsSkyLoading(false);
+  }, [cancelPendingInspect, cancelPendingSkyFetch, isFocused]);
 
   useEffect(() => {
     return () => {
@@ -1940,6 +1965,7 @@ export default function AstroMapScreen() {
   }, [cancelPendingInspect, cancelPendingSkyFetch]);
 
   useEffect(() => {
+    if (!isFocused) return;
     let cancelled = false;
 
     async function run() {
@@ -1963,9 +1989,10 @@ export default function AstroMapScreen() {
       cancelled = true;
       clearInterval(t);
     };
-  }, []);
+  }, [isFocused]);
 
   useEffect(() => {
+    if (!isFocused) return;
     let cancelled = false;
 
   async function syncActivePlaceToAstro() {
@@ -2103,11 +2130,13 @@ export default function AstroMapScreen() {
   cancelPendingSkyFetch,
   clearSkyState,
   initialRegion,
+  isFocused,
   refreshInspectForRegion,
   refreshForRegion,
 ]);
 
 useEffect(() => {
+  if (!isFocused) return;
   const r = lastRegionRef.current ?? initialRegion;
   if (!r) return;
   if (hasEverLoadedSky) return;
@@ -2115,15 +2144,16 @@ useEffect(() => {
 
   lastSkyGridKeyRef.current = '';
   refreshForRegion(r);
-}, [initialRegion, hasEverLoadedSky, isSkyLoading, refreshForRegion]);
+}, [initialRegion, hasEverLoadedSky, isSkyLoading, refreshForRegion, isFocused]);
 
   useEffect(() => {
+    if (!isFocused) return;
     const r = lastRegionRef.current;
     if (r) {
       lastSkyGridKeyRef.current = '';
       refreshForRegion(r);
     }
-  }, [hourOffset, refreshForRegion]);
+  }, [hourOffset, refreshForRegion, isFocused]);
 
   const auroraContoursGeojson = useMemo(() => {
     if (!showAuroraOval || !ovationPoints.length) {
@@ -2232,99 +2262,103 @@ useEffect(() => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#020617' }}>
       <View style={{ flex: 1 }}>
-        <MapRenderer
-          key={`astro-map-${screenKey}`}
-          engine="maplibre"
-          initialRegion={initialRegionRef.current ?? initialRegion}
-          mapStyle={baseMapStyle}
-          regionEventMode="settled"
-          cameraRef={cameraRef}
-          onRegionChangeComplete={(r: Region) => {
-            if (
-              !isFiniteNum(r.latitude) ||
-              !isFiniteNum(r.longitude) ||
-              !isFiniteNum(r.longitudeDelta) ||
-              !isFiniteNum(r.latitudeDelta)
-            ) {
-              return;
-            }
+        {isFocused ? (
+          <MapRenderer
+            key={`astro-map-${screenKey}`}
+            engine="maplibre"
+            initialRegion={initialRegionRef.current ?? initialRegion}
+            mapStyle={baseMapStyle}
+            regionEventMode="settled"
+            cameraRef={cameraRef}
+            onRegionChangeComplete={(r: Region) => {
+              if (
+                !isFiniteNum(r.latitude) ||
+                !isFiniteNum(r.longitude) ||
+                !isFiniteNum(r.longitudeDelta) ||
+                !isFiniteNum(r.latitudeDelta)
+              ) {
+                return;
+              }
 
-            const prev = lastRegionRef.current;
-            lastRegionRef.current = r;
-            setViewRegion(r);
+              const prev = lastRegionRef.current;
+              lastRegionRef.current = r;
+              setViewRegion(r);
 
-            setInspect(computeInspectAt(r.latitude, r.longitude));
-            refreshInspectForRegion(r);
+              setInspect(computeInspectAt(r.latitude, r.longitude));
+              refreshInspectForRegion(r);
 
-            if (regionChangeIsSignificant(prev, r)) {
-              refreshForRegion(r);
-            }
-          }}
-          radar={{ enabled: false, templates: [null, null, null], opacities: [0, 0, 0], tileMaxZ: 0, localImage: null }}
-          overlays={[]}
-        >
-          {coverageGeojson ? (
-            <MapLibreGL.ShapeSource id={`skyCoverage-src-${screenKey}`} shape={coverageGeojson as any}>
-              <MapLibreGL.FillLayer
-                id={`skyCoverage-fill-${screenKey}`}
-                style={{
-                  fillOpacity: 0.02,
-                  fillColor: 'rgba(90,230,190,1)',
-                }}
-              />
-              <MapLibreGL.LineLayer
-                id={`skyCoverage-line-${screenKey}`}
-                style={{
-                  lineColor: 'rgba(90,230,190,0.50)',
-                  lineWidth: 1.0,
-                  lineOpacity: 0.45,
-                  lineDasharray: [2, 2],
-                }}
-              />
-            </MapLibreGL.ShapeSource>
-          ) : null}
-          {showSkyLoadingHud && loadingCoverageGeojson ? (
-          <MapLibreGL.ShapeSource id={`skyLoading-src-${screenKey}`} shape={loadingCoverageGeojson as any}>
-            <MapLibreGL.FillLayer
-              id={`skyLoading-fill-${screenKey}`}
-              style={{
-                fillOpacity: 0.12,
-                fillColor: 'rgba(90,230,190,1)',
-              }}
-            />
-            <MapLibreGL.LineLayer
-              id={`skyLoading-line-${screenKey}`}
-              style={{
-                lineColor: 'rgba(120,255,210,0.55)',
-                lineWidth: 1.2,
-                lineOpacity: 0.65,
-                lineDasharray: [2, 2],
-              }}
-            />
-          </MapLibreGL.ShapeSource>
-        ) : null}
+              if (regionChangeIsSignificant(prev, r)) {
+                refreshForRegion(r);
+              }
+            }}
+            radar={{ enabled: false, templates: [null, null, null], opacities: [0, 0, 0], tileMaxZ: 0, localImage: null }}
+            overlays={[]}
+          >
+            {coverageGeojson ? (
+              <MapLibreGL.ShapeSource id={`skyCoverage-src-${screenKey}`} shape={coverageGeojson as any}>
+                <MapLibreGL.FillLayer
+                  id={`skyCoverage-fill-${screenKey}`}
+                  style={{
+                    fillOpacity: 0.02,
+                    fillColor: 'rgba(90,230,190,1)',
+                  }}
+                />
+                <MapLibreGL.LineLayer
+                  id={`skyCoverage-line-${screenKey}`}
+                  style={{
+                    lineColor: 'rgba(90,230,190,0.50)',
+                    lineWidth: 1.0,
+                    lineOpacity: 0.45,
+                    lineDasharray: [2, 2],
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+            ) : null}
+            {showSkyLoadingHud && loadingCoverageGeojson ? (
+              <MapLibreGL.ShapeSource id={`skyLoading-src-${screenKey}`} shape={loadingCoverageGeojson as any}>
+                <MapLibreGL.FillLayer
+                  id={`skyLoading-fill-${screenKey}`}
+                  style={{
+                    fillOpacity: 0.12,
+                    fillColor: 'rgba(90,230,190,1)',
+                  }}
+                />
+                <MapLibreGL.LineLayer
+                  id={`skyLoading-line-${screenKey}`}
+                  style={{
+                    lineColor: 'rgba(120,255,210,0.55)',
+                    lineWidth: 1.2,
+                    lineOpacity: 0.65,
+                    lineDasharray: [2, 2],
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+            ) : null}
 
-          {canShowSky ? (
-            <MapLibreGL.ImageSource id={`skyRaster-src-${screenKey}`} url={skyRasterUri} coordinates={skyRasterBounds as any}>
-              <MapLibreGL.RasterLayer
-                id={`skyRaster-${screenKey}`}
-                style={{
-                  rasterOpacity: 0.8,
-                  rasterResampling: 'linear',
-                  rasterFadeDuration: 220,
-                }}
-              />
-            </MapLibreGL.ImageSource>
-          ) : null}
+            {canShowSky ? (
+              <MapLibreGL.ImageSource id={`skyRaster-src-${screenKey}`} url={skyRasterUri} coordinates={skyRasterBounds as any}>
+                <MapLibreGL.RasterLayer
+                  id={`skyRaster-${screenKey}`}
+                  style={{
+                    rasterOpacity: 0.8,
+                    rasterResampling: 'linear',
+                    rasterFadeDuration: 220,
+                  }}
+                />
+              </MapLibreGL.ImageSource>
+            ) : null}
 
-          {showAuroraOval ? (
-            <MapLibreGL.ShapeSource id={`auroraOval-src-${screenKey}`} shape={auroraContoursGeojson as any}>
-              <MapLibreGL.FillLayer id={`auroraOval-fill-${screenKey}`} style={auroraFillStyle as any} />
-              <MapLibreGL.LineLayer id={`auroraOval-glow-${screenKey}`} style={auroraGlowStyle as any} />
-              <MapLibreGL.LineLayer id={`auroraOval-line-${screenKey}`} style={auroraContourStyle as any} />
-            </MapLibreGL.ShapeSource>
-          ) : null}
-        </MapRenderer>
+            {showAuroraOval ? (
+              <MapLibreGL.ShapeSource id={`auroraOval-src-${screenKey}`} shape={auroraContoursGeojson as any}>
+                <MapLibreGL.FillLayer id={`auroraOval-fill-${screenKey}`} style={auroraFillStyle as any} />
+                <MapLibreGL.LineLayer id={`auroraOval-glow-${screenKey}`} style={auroraGlowStyle as any} />
+                <MapLibreGL.LineLayer id={`auroraOval-line-${screenKey}`} style={auroraContourStyle as any} />
+              </MapLibreGL.ShapeSource>
+            ) : null}
+          </MapRenderer>
+        ) : (
+          <View style={{ flex: 1, backgroundColor: '#020617' }} />
+        )}
 
         <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0 }}>
           <View
