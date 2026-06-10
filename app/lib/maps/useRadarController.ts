@@ -322,8 +322,9 @@ export function useRadarController(args: {
     createRainViewerProvider({
       ttlMs: 60_000,
       includeNowcast: false,
-      maxFrames: 24,
+      maxFrames: 8,
       maxZoom: 7,
+      tileSize: 256,
     }),
   );
 

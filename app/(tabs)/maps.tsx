@@ -1445,10 +1445,6 @@ export default function MapsScreen() {
   }, [params?.lat, params?.lon, params?.view, router]);
 
   useEffect(() => {
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
 
     async function hydrateRadarPrefs() {
