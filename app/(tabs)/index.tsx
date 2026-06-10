@@ -8,6 +8,7 @@
 // Nerdy education taps now go straight to LearnMoreModal
 
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -3705,6 +3706,7 @@ function LandWeatherWithCoords({
   setExplainPayload,
   setExplainOpen,
   onWeatherCode,
+  enabled = true,
 }: {
   coords: { lat: number; lon: number };
   activeLabel: string;
@@ -3717,6 +3719,7 @@ function LandWeatherWithCoords({
   setExplainPayload: (p: ExplainPayload | null) => void;
   setExplainOpen: (v: boolean) => void;
   onWeatherCode: (code: number | null, condition?: string | null) => void;
+  enabled?: boolean;
 }) {
   const units: UnitSystem = 'us';
   const { width, height } = useWindowDimensions();
@@ -3727,7 +3730,7 @@ function LandWeatherWithCoords({
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
     lon: coords.lon,
-    enabled: true,
+    enabled,
     units: tempUnit === 'C' ? 'metric' : 'imperial',
   });
 
@@ -3741,7 +3744,8 @@ function LandWeatherWithCoords({
     lat: coords.lat,
     lon: coords.lon,
     units: 'imperial',
-  } as any);
+    enabled,
+  });
 
   const {
     data: forecastData,
@@ -3754,6 +3758,7 @@ function LandWeatherWithCoords({
     lon: coords.lon,
     days: 15,
     model: forecastModel,
+    enabled,
   });
 
   const {
@@ -3764,7 +3769,7 @@ function LandWeatherWithCoords({
     lat: coords.lat,
     lon: coords.lon,
     placeName: activeLabel ?? undefined,
-    enabled: true,
+    enabled,
   });
 
   const {
@@ -3774,13 +3779,14 @@ function LandWeatherWithCoords({
   } = useFireContext({
     lat: coords.lat,
     lon: coords.lon,
-    enabled: true,
+    enabled,
   });
 
   const loading = currentLoading || (wxLab && forecastLoading);
   const refreshing = currentRefreshing || forecastRefreshing || astroRefreshing || fireContextRefreshing;
 
   const onRefresh = () => {
+    if (!enabled) return;
     currentRefresh?.();
     forecastRefresh?.();
     astroRefresh?.();
@@ -4355,6 +4361,7 @@ function LandWeatherWithCoords({
 
 export default function LandWeatherScreen() {
   const { appColorMode, chrome } = useAppChrome();
+  const isFocused = useIsFocused();
   const wxLabCtx = useWxLab() as any;
   const wxLab = !!wxLabCtx?.wxLab;
 
@@ -4427,6 +4434,7 @@ export default function LandWeatherScreen() {
   const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!isFocused) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(glowAnim, { toValue: 1, duration: 6000, useNativeDriver: true }),
@@ -4435,7 +4443,7 @@ export default function LandWeatherScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [glowAnim]);
+  }, [glowAnim, isFocused]);
 
   const hour = new Date().getHours();
   const isNight = hour < 6 || hour >= 19;
@@ -4666,6 +4674,7 @@ export default function LandWeatherScreen() {
                   setBgWeatherCode(code);
                   setBgConditionText(conditionText ?? null);
                 }}
+                enabled={isFocused}
               />
             </>
           )}

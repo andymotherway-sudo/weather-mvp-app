@@ -7,6 +7,7 @@ type CurrentWeatherOptions = {
   lat: number;
   lon: number;
   units?: 'imperial' | 'metric';
+  enabled?: boolean;
 };
 
 type CurrentWeatherState<T = any> = {
@@ -175,6 +176,7 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
   const lat = opts?.lat;
   const lon = opts?.lon;
   const units = opts?.units ?? 'imperial';
+  const enabled = opts?.enabled ?? true;
 
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -190,6 +192,14 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
         setRefreshing(false);
         setError('No location selected (lat/lon missing).');
         setData(null);
+        return;
+      }
+
+      if (!enabled) {
+        abortRef.current?.abort();
+        setLoading(false);
+        setRefreshing(false);
+        setError(null);
         return;
       }
 
@@ -232,7 +242,7 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
         setRefreshing(false);
       }
     },
-    [lat, lon, units]
+    [lat, lon, units, enabled]
   );
 
   useEffect(() => {
