@@ -233,11 +233,12 @@ export default function TabsLayout() {
         name="maps"
         options={{
           title: 'Maps',
-          tabBarLabel: ({ color }) => <TabLabel color={color} label="Maps" />,
-          tabBarIcon: ({ color, focused }) => (
+          unmountOnBlur: true,
+          tabBarLabel: ({ color }: { color: string }) => <TabLabel color={color} label="Maps" />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <TabBarIcon name={focused ? 'map' : 'map-outline'} color={color} />
           ),
-        }}
+        } as any}
       />
 
       <Tabs.Screen

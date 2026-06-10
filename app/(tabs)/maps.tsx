@@ -43,17 +43,34 @@ import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from 
 import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
 import { aviationFillColorExpression, aviationLineColorExpression } from '../lib/aviation/colors';
-import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
 import { createInitialMapState, mapReducer } from '../lib/maps/state';
 import type { LayerId } from '../lib/maps/types';
 import type { RadarProductId } from '../lib/maps/radarIem';
-import { NEXRAD_SITES, type NexradSite } from '../lib/maps/nexradSites';
-import { normalizeRadarSiteId } from '../lib/maps/radarIem';
-import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
+import { getStationDisplayId, haversineMiles } from '../lib/maps/radarLayer';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '../lib/maps/useAlertMapData';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
-import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
+import { useMapLayerState } from '../lib/maps/useMapLayerState';
+import { useRadarLayer } from '../lib/maps/useRadarLayer';
+import type { AnimationQuality } from '../lib/maps/useRadarController';
+import {
+  SATELLITE_FRAME_STEP_MINUTES,
+  SATELLITE_LOOP_HOUR_OPTIONS,
+  SATELLITE_LOOP_MINUTES_BACK,
+  SATELLITE_PLAY_INTERVAL_MS,
+  SATELLITE_WARM_OPACITY,
+  GIBS_DAILY_FRAME_COUNT,
+  GIBS_IMERG_FRAME_STEP_MINUTES,
+  NESDIS_ABI13_ARCHIVE_EXPORT_URL,
+  NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL,
+  arcGisLockedRasterParam,
+  arcGisImageServerTileTemplate,
+  gibsDailyTime,
+  gibsHalfHourTime,
+  gibsWmtsTileTemplate,
+  type SatelliteFrame,
+} from '../lib/maps/satelliteLayers';
+import { useSatelliteLayers } from '../lib/maps/useSatelliteLayers';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
 import { apiUrl } from '../lib/net/apiBase';
@@ -67,7 +84,6 @@ const WPC_FRONTS_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -253,7 +269,6 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
 ];
 
-const STATION_RANGE_RINGS_MI = [25, 50, 100, 150];
 const SKY_LEGEND_SWATCHES = [
   'rgba(255,92,92,0.88)',
   'rgba(255,146,82,0.84)',
@@ -319,64 +334,13 @@ function skyScoreSentence(score: number, auroraVisibility: number) {
   return `Estimated ${quality} observing conditions for this map area; ${aurora}.`;
 }
 
-type SatelliteFrame = {
-  index: number;
-  iso: string;
-  sourceName?: string;
-  rasterId?: number;
-};
-
-const SATELLITE_LOOP_MINUTES_BACK = 120;
-const SATELLITE_FRAME_STEP_MINUTES = 5;
-const SATELLITE_PLAY_INTERVAL_MS = 950;
-const SATELLITE_WARM_OPACITY = 0.01;
-const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
-const GIBS_DAILY_FRAME_COUNT = 5;
-const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
-const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
-type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const LIVE_MAP_ANIMATION_QUALITY: AnimationQuality = 'smooth';
 
-const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
-  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
-const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
-  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE = 'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
-const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
-
-function arcGisLockedRasterParam(rasterId?: number | null) {
-  if (rasterId == null || !Number.isFinite(rasterId)) return '';
-  return `&mosaicRule=${encodeURIComponent(
-    JSON.stringify({ mosaicMethod: 'esriMosaicLockRaster', lockRasterIds: [Math.round(rasterId)] }),
-  )}`;
-}
-
-function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512, rasterId?: number | null) {
-  const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
-  const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
-  const mosaicParam = arcGisLockedRasterParam(rasterId);
-  const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
-}
-
-function isoDateDaysAgo(daysAgo: number, now = new Date()) {
-  const d = new Date(now.getTime() - Math.max(0, daysAgo) * 86_400_000);
-  return d.toISOString().slice(0, 10);
-}
-
-function gibsWmtsTileTemplate(args: {
-  layer: string;
-  matrixSet: string;
-  extension: 'jpeg' | 'png';
-  time?: string | null;
-}) {
-  const timePath = args.time?.trim() ? `/${encodeURIComponent(args.time.trim())}` : '';
-  return `${GIBS_WMTS_BASE}/${args.layer}/default${timePath}/${args.matrixSet}/{z}/{y}/{x}.${args.extension}`;
-}
 
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
@@ -570,195 +534,8 @@ function buildRadarCompositorUrl(args: {
   return u.toString();
 }
 
-function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: number; now?: Date }): SatelliteFrame[] {
-  const minutesBack = opts?.minutesBack ?? SATELLITE_LOOP_MINUTES_BACK;
-  const stepMinutes = opts?.stepMinutes ?? SATELLITE_FRAME_STEP_MINUTES;
-  const now = opts?.now ?? new Date();
-  if (minutesBack <= 0 || stepMinutes <= 0) return [];
-
-  const alignedMs = Math.floor(now.getTime() / (stepMinutes * 60_000)) * stepMinutes * 60_000;
-  const latestMs = alignedMs - stepMinutes * 60_000;
-  const frameCount = Math.floor(minutesBack / stepMinutes) + 1;
-
-  return Array.from({ length: frameCount }, (_, index) => {
-    const minutesAgo = (frameCount - 1 - index) * stepMinutes;
-    return { index, iso: new Date(latestMs - minutesAgo * 60_000).toISOString() };
-  });
-}
-
-function buildGibsDailyFrames(opts?: { days?: number; now?: Date }): SatelliteFrame[] {
-  const count = Math.max(2, Math.round(opts?.days ?? GIBS_DAILY_FRAME_COUNT));
-  const now = opts?.now ?? new Date();
-  return Array.from({ length: count }, (_, index) => {
-    const daysAgo = count - index;
-    const date = isoDateDaysAgo(daysAgo, now);
-    return { index, iso: `${date}T12:00:00.000Z` };
-  });
-}
-
-function buildGibsImergFrames(opts?: { minutesBack?: number; now?: Date }): SatelliteFrame[] {
-  const minutesBack = Math.max(GIBS_IMERG_FRAME_STEP_MINUTES, opts?.minutesBack ?? SATELLITE_LOOP_MINUTES_BACK);
-  const now = opts?.now ?? new Date();
-  const stepMs = GIBS_IMERG_FRAME_STEP_MINUTES * 60_000;
-  const sourceLagMs = GIBS_IMERG_SOURCE_LAG_MINUTES * 60_000;
-  const alignedMs = Math.floor((now.getTime() - sourceLagMs) / stepMs) * stepMs;
-  const frameCount = Math.floor(minutesBack / GIBS_IMERG_FRAME_STEP_MINUTES) + 1;
-
-  return Array.from({ length: frameCount }, (_, index) => {
-    const minutesAgo = (frameCount - 1 - index) * GIBS_IMERG_FRAME_STEP_MINUTES;
-    return { index, iso: new Date(alignedMs - minutesAgo * 60_000).toISOString() };
-  });
-}
-
-function gibsDailyTime(frame?: { iso?: string | null } | null) {
-  const iso = frame?.iso;
-  if (!iso) return isoDateDaysAgo(1);
-  const ms = new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return isoDateDaysAgo(1);
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-function gibsHalfHourTime(frame?: { iso?: string | null } | null) {
-  const iso = frame?.iso;
-  const ms = iso ? new Date(iso).getTime() : Number.NaN;
-  if (!Number.isFinite(ms)) return null;
-  const stepMs = GIBS_IMERG_FRAME_STEP_MINUTES * 60_000;
-  return new Date(Math.floor(ms / stepMs) * stepMs).toISOString().replace('.000Z', 'Z');
-}
-
-async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
-  const query = new URL(`${exportUrl.replace(/\/exportImage$/, '')}/query`);
-  query.searchParams.set('f', 'json');
-  query.searchParams.set('where', 'end_time is not null');
-  query.searchParams.set('outFields', 'objectid,name,start_time,end_time');
-  query.searchParams.set('returnGeometry', 'false');
-  query.searchParams.set('orderByFields', 'end_time desc');
-  query.searchParams.set('resultRecordCount', '240');
-
-  const res = await fetchWithTimeout(query.toString(), 14000);
-  if (!res.ok) throw new Error(`NESDIS catalog returned ${res.status}.`);
-  const json = await res.json();
-  const features = Array.isArray(json?.features) ? json.features : [];
-  const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
-  const seen = new Set<string>();
-
-  const frames = features
-    .map((feature: any) => {
-      const attrs = feature?.attributes ?? {};
-      const objectId = Number(attrs.objectid ?? attrs.OBJECTID ?? attrs.ObjectID);
-      const start = Number(attrs.start_time ?? attrs.Start_Time);
-      const end = Number(attrs.end_time ?? attrs.End_Time);
-      const name = String(attrs.name ?? attrs.Name ?? '');
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end < cutoff) return null;
-
-      // Ask ArcGIS for a time inside the raster's valid window instead of a synthetic boundary.
-      const midpoint = start + Math.max(0, Math.min(end - start, 4 * 60_000));
-      const key = name || String(end);
-      if (seen.has(key)) return null;
-      seen.add(key);
-      return {
-        index: 0,
-        iso: new Date(midpoint).toISOString(),
-        sourceName: name || undefined,
-        rasterId: Number.isFinite(objectId) ? objectId : undefined,
-      } satisfies SatelliteFrame;
-    })
-    .filter(Boolean) as SatelliteFrame[];
-
-  return frames
-    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
-    .map((frame: SatelliteFrame, index: number) => ({ ...frame, index }));
-}
-
-async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {
-  return fetchNesdisImageServerFrames(NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL, minutesBack);
-}
-
-async function fetchNesdisAbi13Frames(minutesBack: number): Promise<SatelliteFrame[]> {
-  return fetchNesdisImageServerFrames(NESDIS_ABI13_ARCHIVE_EXPORT_URL, minutesBack);
-}
-
 function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
-}
-
-function isNexradSite(site: NexradSite) {
-  return String(site.ownerType ?? '').toUpperCase() === 'NEXRAD';
-}
-
-function getStationDisplayId(site?: NexradSite | null) {
-  if (!site?.id) return '---';
-  const id3 = normalizeRadarSiteId(site.id);
-  return id3.length === 3 ? `K${id3}` : site.id;
-}
-
-function getRadarAnchor(activePlace: any, currentCoords: { lat: number; lon: number } | null | undefined) {
-  if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
-    return { lat: Number(activePlace.lat), lon: Number(activePlace.lon) };
-  }
-  if (currentCoords && Number.isFinite(currentCoords.lat) && Number.isFinite(currentCoords.lon)) {
-    return { lat: currentCoords.lat, lon: currentCoords.lon };
-  }
-  return { lat: 39.5, lon: -98.35 };
-}
-
-function nearestRadarSites(lat: number, lon: number, limit = 8) {
-  return NEXRAD_SITES
-    .filter(isNexradSite)
-    .map((site) => {
-      const dMi = haversineMiles(lat, lon, site.lat, site.lon);
-      return { site, distanceMi: dMi };
-    })
-    .filter((item) => Number.isFinite(item.distanceMi))
-    .sort((a, b) => a.distanceMi - b.distanceMi)
-    .slice(0, limit);
-}
-
-function destinationPoint(lat: number, lon: number, bearingDegValue: number, distanceMi: number) {
-  const radiusMi = 3958.7613;
-  const delta = distanceMi / radiusMi;
-  const theta = (bearingDegValue * Math.PI) / 180;
-  const phi1 = (lat * Math.PI) / 180;
-  const lambda1 = (lon * Math.PI) / 180;
-
-  const sinPhi2 =
-    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
-  const phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
-  const y = Math.sin(theta) * Math.sin(delta) * Math.cos(phi1);
-  const x = Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2);
-  const lambda2 = lambda1 + Math.atan2(y, x);
-
-  return [(lambda2 * 180) / Math.PI, (phi2 * 180) / Math.PI];
-}
-
-function buildRadarStationGeoJson(site: NexradSite | null) {
-  if (!site) return { type: 'FeatureCollection', features: [] };
-
-  const features: any[] = [
-    {
-      type: 'Feature',
-      properties: { kind: 'station', label: getStationDisplayId(site) },
-      geometry: { type: 'Point', coordinates: [site.lon, site.lat] },
-    },
-  ];
-
-  for (const radiusMi of STATION_RANGE_RINGS_MI) {
-    const coords = Array.from({ length: 145 }, (_, index) =>
-      destinationPoint(site.lat, site.lon, (index / 144) * 360, radiusMi),
-    );
-    features.push({
-      type: 'Feature',
-      properties: { kind: 'ring', radiusMi, label: `${radiusMi} mi` },
-      geometry: { type: 'LineString', coordinates: coords },
-    });
-    features.push({
-      type: 'Feature',
-      properties: { kind: 'ring-label', radiusMi, label: `${radiusMi} mi` },
-      geometry: { type: 'Point', coordinates: destinationPoint(site.lat, site.lon, 80, radiusMi) },
-    });
-  }
-
-  return { type: 'FeatureCollection', features };
 }
 
 function regionToBbox(region: Region | null | undefined) {
@@ -882,6 +659,23 @@ function buoysToFeatureCollection(buoys: BuoyDetailData[]) {
         geometry: { type: 'Point' as const, coordinates: [buoy.lon, buoy.lat] as [number, number] },
       })),
   };
+}
+
+function destinationPoint(lat: number, lon: number, bearingDegValue: number, distanceMi: number) {
+  const radiusMi = 3958.7613;
+  const delta = distanceMi / radiusMi;
+  const theta = (bearingDegValue * Math.PI) / 180;
+  const phi1 = (lat * Math.PI) / 180;
+  const lambda1 = (lon * Math.PI) / 180;
+
+  const sinPhi2 =
+    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
+  const phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
+  const y = Math.sin(theta) * Math.sin(delta) * Math.cos(phi1);
+  const x = Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2);
+  const lambda2 = lambda1 + Math.atan2(y, x);
+
+  return [(lambda2 * 180) / Math.PI, (phi2 * 180) / Math.PI];
 }
 
 function circlePolygonFeature(args: {
@@ -1057,36 +851,6 @@ function getSimpleStatus(args: {
   }
 
   return radarEnabled ? `${playing ? 'Animating' : 'Paused'} / ${frameCount} frames` : 'No active weather layer';
-}
-
-function getActiveLayerSummary(state: any) {
-  const enabledIds = Object.entries(state.layers ?? {})
-    .filter(([, runtime]: any) => runtime?.enabled)
-    .map(([id]) => id as LayerId);
-
-  if (!enabledIds.length) {
-    return {
-      title: 'Layers',
-      subtitle: 'No overlays enabled',
-      hasActiveLayers: false,
-      count: 0,
-    };
-  }
-
-  const ordered = enabledIds
-    .map((id) => LAYER_CATALOG_BY_ID[id])
-    .filter(Boolean)
-    .sort((a, b) => b.zIndex - a.zIndex);
-
-  const primary = ordered[0];
-  const extraCount = Math.max(0, ordered.length - 1);
-
-  return {
-    title: primary.title,
-    subtitle: extraCount > 0 ? `${primary.subtitle ?? 'Overlay'} / +${extraCount} more` : primary.subtitle,
-    hasActiveLayers: true,
-    count: enabledIds.length,
-  };
 }
 
 function getViewAccent(viewId: string) {
@@ -1494,60 +1258,38 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const radarEnabled = isFocused && !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
-  const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
-  const radarAnchor = useMemo(
-    () => {
-      if (manualStationRadarMode && stationAnchor) return stationAnchor;
-      if (region) return { lat: region.latitude, lon: region.longitude };
-      return getRadarAnchor(activePlace, loc.state.currentCoords);
-    },
-    [activePlace, loc.state.currentCoords, manualStationRadarMode, region, stationAnchor],
-  );
-  const radarAnchorKey = `${radarAnchor.lat.toFixed(4)},${radarAnchor.lon.toFixed(4)}`;
-  const autoNearestRadar = useMemo(
-    () =>
-      resolveNearestRadar(radarAnchor.lat, radarAnchor.lon, {
-        filter: isNexradSite,
-        maxDistanceKm: 480,
-      }),
-    [radarAnchor.lat, radarAnchor.lon],
-  );
-  const localRadarAvailable = !!autoNearestRadar?.site;
-  const autoNearestRadarMode =
-    radarEnabled &&
-    state.viewId === 'radar' &&
-    !stormMode &&
-    !manualStationRadarMode &&
-    localRadarAvailable &&
-    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
-  const nearbyRadarSites = useMemo(
-    () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
-    [radarAnchor.lat, radarAnchor.lon],
-  );
-  const selectedRadarSite = useMemo(() => {
-    const id3 = manualRadarSiteId3 ?? (autoNearestRadar?.site ? normalizeRadarSiteId(autoNearestRadar.site.id) : null);
-    if (!id3) return autoNearestRadar?.site ?? null;
-    return NEXRAD_SITES.find((site) => isNexradSite(site) && normalizeRadarSiteId(site.id) === id3) ?? autoNearestRadar?.site ?? null;
-  }, [autoNearestRadar, manualRadarSiteId3]);
-  const selectedRadarDistanceMi = useMemo(() => {
-    if (!selectedRadarSite) return null;
-    return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
-  }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
-  const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(stationRadarMode ? selectedRadarSite : null), [
+  const radarLayer = useRadarLayer({
+    enabled: isFocused,
+    state,
+    dispatch,
+    radarMode,
+    stationAnchor,
+    region,
+    activePlace,
+    currentCoords: loc.state.currentCoords,
+    mapZoom,
+    manualRadarSiteId3,
+    stationProduct,
+    rawMode,
+    animationQuality: LIVE_MAP_ANIMATION_QUALITY,
+  });
+  const {
+    radarEnabled,
+    stormMode,
+    manualStationRadarMode,
+    radarAnchorKey,
+    autoNearestRadarMode,
     stationRadarMode,
+    showAdvancedRadarControls,
+    nearbyRadarSites,
     selectedRadarSite,
-  ]);
-  const product: RadarProductId = showAdvancedRadarControls
-    ? stationProduct
-    : stationRadarMode
-      ? 'N0B'
-      : 'N0Q';
-  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+    selectedRadarDistanceMi,
+    selectedRadarId3,
+    stationRangeRings,
+    product,
+    effectiveRadarProvider,
+    controller: radarCtl,
+  } = radarLayer;
 
   useEffect(() => {
     setManualRadarSiteId3(null);
@@ -1603,328 +1345,96 @@ export default function MapsScreen() {
     [state.viewId, state.layers]
   );
 
-  const fireRestrictionsEnabled = isFocused && !!state.layers?.['fire.restrictions']?.enabled;
-  const wildfireSmokeEnabled = isFocused && !!state.layers?.['wildfire.smoke']?.enabled;
-  const wildfireEnabled = isFocused && !!state.layers?.['wildfire.perimeters']?.enabled;
-  const wildfireHotspotsEnabled = isFocused && !!state.layers?.['wildfire.hotspots']?.enabled;
-  const wildfireFireWxEnabled = isFocused && !!state.layers?.['wildfire.firewx']?.enabled;
-  const showWildfireLegend =
-    wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
-  const alertsEnabled = isFocused && !!state.layers?.['alerts.polygons']?.enabled;
-  const cloudsEnabled = isFocused && !!state.layers?.['sat.clouds']?.enabled;
-  const frontsDay1Enabled = isFocused && !!state.layers?.['wx.fronts.day1']?.enabled;
-  const frontsDay2Enabled = isFocused && !!state.layers?.['wx.fronts.day2']?.enabled;
-  const frontsDay3Enabled = isFocused && !!state.layers?.['wx.fronts.day3']?.enabled;
-  const aviationModeActive = isFocused && state.viewId === 'aviation';
-  const aviationTurbEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
-  const aviationIceEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
-  const aviationSigmetEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.sigmet']?.enabled;
-  const aviationCwaEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
-  const aviationPirepEnabled = isFocused && !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
-  const marineConditionsEnabled = isFocused && (state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled);
-  const skyScoreEnabled = isFocused && !!state.layers?.['astro.skyScore']?.enabled;
-  const auroraProbEnabled = isFocused && !!state.layers?.['space.aurora.prob']?.enabled;
-  const auroraOvalEnabled = isFocused && !!state.layers?.['space.aurora.oval']?.enabled;
-
-  const goesTrueColorEnabled = isFocused && !!state.layers?.['sat.goes.truecolor']?.enabled;
-  const goesEastIrEnabled = isFocused && !!state.layers?.['sat.goesEast.ir']?.enabled;
-  const goesEastWvEnabled = isFocused && !!state.layers?.['sat.goesEast.wv']?.enabled;
-  const goesWestWvEnabled = isFocused && !!state.layers?.['sat.goesWest.wv']?.enabled;
-  const globalTrueColorEnabled = isFocused && !!state.layers?.['sat.global.truecolor']?.enabled;
-  const globalCloudTopsEnabled = isFocused && !!state.layers?.['sat.global.cloudtops']?.enabled;
-  const globalInfraredEnabled = isFocused && !!state.layers?.['sat.global.infrared']?.enabled;
-  const globalPrecipEnabled = isFocused && !!state.layers?.['sat.global.precip']?.enabled;
-  const animatedSatelliteEnabled =
-    cloudsEnabled ||
-    goesTrueColorEnabled ||
-    goesEastIrEnabled ||
-    goesEastWvEnabled ||
-    goesWestWvEnabled ||
-    globalTrueColorEnabled ||
-    globalCloudTopsEnabled ||
-    globalInfraredEnabled ||
-    globalPrecipEnabled;
-  const anySatelliteEnabled =
-    animatedSatelliteEnabled ||
-    goesTrueColorEnabled ||
-    globalTrueColorEnabled ||
-    globalCloudTopsEnabled ||
-    globalInfraredEnabled ||
-    globalPrecipEnabled;
-  const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
-  const satelliteLoopMinutes = satelliteLoopHours * 60;
-  const satelliteFrameStepMinutes = SATELLITE_FRAME_STEP_MINUTES;
-  const satellitePlayIntervalMs = SATELLITE_PLAY_INTERVAL_MS;
-  const [satelliteFrames, setSatelliteFrames] = useState<SatelliteFrame[]>(() =>
-    buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
-  );
-  const [trueColorFrames, setTrueColorFrames] = useState<SatelliteFrame[]>([]);
-  const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
-  const [infraredFrames, setInfraredFrames] = useState<SatelliteFrame[]>([]);
-  const [infraredFrameStatus, setInfraredFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
-  const [satelliteFrameIndex, setSatelliteFrameIndex] = useState(() =>
-    Math.max(0, buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }).length - 1),
-  );
-  const [satellitePlaying, setSatellitePlaying] = useState(false);
-  const [satelliteBlend, setSatelliteBlend] = useState<{ from: number; to: number; t: number }>({
-    from: satelliteFrameIndex,
-    to: satelliteFrameIndex,
-    t: 1,
+  const layerState = useMapLayerState(state, isFocused);
+  const {
+    activeLayerSummary,
+    fireRestrictionsEnabled,
+    wildfireSmokeEnabled,
+    wildfireEnabled,
+    wildfireHotspotsEnabled,
+    wildfireFireWxEnabled,
+    showWildfireLegend,
+    alertsEnabled,
+    cloudsEnabled,
+    frontsDay1Enabled,
+    frontsDay2Enabled,
+    frontsDay3Enabled,
+    aviationModeActive,
+    aviationTurbEnabled,
+    aviationIceEnabled,
+    aviationSigmetEnabled,
+    aviationCwaEnabled,
+    aviationPirepEnabled,
+    marineConditionsEnabled,
+    skyScoreEnabled,
+    auroraProbEnabled,
+    auroraOvalEnabled,
+    goesTrueColorEnabled,
+    goesEastIrEnabled,
+    goesEastWvEnabled,
+    goesWestWvEnabled,
+    globalTrueColorEnabled,
+    globalCloudTopsEnabled,
+    globalInfraredEnabled,
+    globalPrecipEnabled,
+    animatedSatelliteEnabled,
+    anySatelliteEnabled,
+  } = layerState;
+  const satellite = useSatelliteLayers({
+    radarEnabled,
+    animatedSatelliteEnabled,
+    goesTrueColorEnabled,
+    goesEastIrEnabled,
+    globalPrecipEnabled,
+    globalTrueColorEnabled,
+    globalCloudTopsEnabled,
+    globalInfraredEnabled,
   });
-  const satelliteWasActiveRef = useRef(false);
-  const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
-  const gibsImergFrames = useMemo(
-    () => buildGibsImergFrames({ minutesBack: satelliteLoopMinutes }),
-    [satelliteLoopMinutes],
-  );
-  const gibsDailyFrames = useMemo(() => buildGibsDailyFrames(), []);
-  const satellitePlaybackFrames =
-    goesTrueColorEnabled && trueColorFrames.length > 1
-      ? trueColorFrames
-      : goesEastIrEnabled && infraredFrames.length > 1
-        ? infraredFrames
-        : globalPrecipEnabled
-          ? gibsImergFrames
-          : globalTrueColorEnabled || globalCloudTopsEnabled || globalInfraredEnabled
-            ? gibsDailyFrames
-            : satelliteFrames;
-  const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
-  const trueColorUsingCatalog = goesTrueColorEnabled && trueColorFrames.length > 1;
-  const infraredUsingCatalog = goesEastIrEnabled && infraredFrames.length > 1;
+  const {
+    satelliteLoopHours,
+    setSatelliteLoopHours,
+    satelliteLoopMinutes,
+    satelliteFrameIndex,
+    setSatelliteFrameIndex,
+    satellitePlaying,
+    setSatellitePlaying,
+    satelliteBlend,
+    satellitePlaybackFrames,
+    satellitePlaybackFrameCount,
+    trueColorFrameStatus,
+    infraredFrameStatus,
+    trueColorUsingCatalog,
+    infraredUsingCatalog,
+  } = satellite;
 
-  useEffect(() => {
-    if (!goesTrueColorEnabled) {
-      setTrueColorFrames([]);
-      setTrueColorFrameStatus('idle');
-      return;
-    }
-
-    let cancelled = false;
-    setTrueColorFrameStatus('loading');
-    fetchNesdisGeoColorFrames(satelliteLoopMinutes)
-      .then((frames) => {
-        if (cancelled) return;
-        if (frames.length > 1) {
-          setTrueColorFrames(frames);
-          setSatelliteFrameIndex(frames.length - 1);
-          setTrueColorFrameStatus('ready');
-        } else {
-          setTrueColorFrames([]);
-          setTrueColorFrameStatus('fallback');
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setTrueColorFrames([]);
-        setTrueColorFrameStatus('fallback');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [goesTrueColorEnabled, satelliteLoopMinutes]);
-
-  useEffect(() => {
-    if (!goesEastIrEnabled) {
-      setInfraredFrames([]);
-      setInfraredFrameStatus('idle');
-      return;
-    }
-
-    let cancelled = false;
-    setInfraredFrameStatus('loading');
-    fetchNesdisAbi13Frames(satelliteLoopMinutes)
-      .then((frames) => {
-        if (cancelled) return;
-        if (frames.length > 1) {
-          setInfraredFrames(frames);
-          setSatelliteFrameIndex(frames.length - 1);
-          setInfraredFrameStatus('ready');
-        } else {
-          setInfraredFrames([]);
-          setInfraredFrameStatus('fallback');
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setInfraredFrames([]);
-        setInfraredFrameStatus('fallback');
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [goesEastIrEnabled, satelliteLoopMinutes]);
-
-  useEffect(() => {
-    if (!animatedSatelliteEnabled) {
-      satelliteWasActiveRef.current = false;
-      setSatellitePlaying(false);
-      return;
-    }
-
-    if (!satelliteWasActiveRef.current) {
-      satelliteWasActiveRef.current = true;
-      setSatelliteFrames(buildSatelliteFrames({ minutesBack: satelliteLoopMinutes, stepMinutes: satelliteFrameStepMinutes }));
-      setSatelliteFrameIndex((current) => {
-        const frames = buildSatelliteFrames({ minutesBack: satelliteLoopMinutes, stepMinutes: satelliteFrameStepMinutes });
-        return clampIndex(current > 0 ? current : frames.length - 1, frames.length);
-      });
-      setSatellitePlaying(true);
-    }
-  }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
-
-  useEffect(() => {
-    if (!animatedSatelliteEnabled) return;
-
-    const refresh = setInterval(() => {
-      setSatelliteFrames((current) => {
-        const next = buildSatelliteFrames({ minutesBack: satelliteLoopMinutes, stepMinutes: satelliteFrameStepMinutes });
-        if (current.length && current[current.length - 1]?.iso === next[next.length - 1]?.iso) return current;
-        setSatelliteFrameIndex((index) => clampIndex(index + (next.length - current.length), next.length));
-        return next;
-      });
-    }, 5 * 60_000);
-
-    return () => clearInterval(refresh);
-  }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
-
-  useEffect(() => {
-    if (!animatedSatelliteEnabled) return;
-
-    const next = buildSatelliteFrames({ minutesBack: satelliteLoopMinutes, stepMinutes: satelliteFrameStepMinutes });
-    setSatelliteFrames((currentFrames) => {
-      setSatelliteFrameIndex((current) => clampIndex(current + (next.length - currentFrames.length), next.length));
-      return next;
-    });
-  }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
-
-  useEffect(() => {
-    if (radarEnabled || !animatedSatelliteEnabled || !satellitePlaying || satellitePlaybackFrameCount < 2) return;
-
-    const timer = setInterval(() => {
-      setSatelliteFrameIndex((current) => (clampIndex(current, satellitePlaybackFrameCount) + 1) % satellitePlaybackFrameCount);
-    }, satellitePlayIntervalMs);
-
-    return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, radarEnabled, satellitePlaybackFrameCount, satellitePlaying, satellitePlayIntervalMs]);
-
-  useEffect(() => {
-    if (!animatedSatelliteEnabled || satellitePlaybackFrameCount < 2) {
-      setSatelliteBlend({ from: satelliteFrameIndex, to: satelliteFrameIndex, t: 1 });
-      satelliteFrameIndexRef.current = satelliteFrameIndex;
-      return;
-    }
-
-    const previous = clampIndex(satelliteFrameIndexRef.current, satellitePlaybackFrameCount);
-    const next = clampIndex(satelliteFrameIndex, satellitePlaybackFrameCount);
-    if (previous === next) {
-      setSatelliteBlend({ from: next, to: next, t: 1 });
-      satelliteFrameIndexRef.current = next;
-      return;
-    }
-
-    const startedAt = Date.now();
-    const blendMs = 650;
-    setSatelliteBlend({ from: previous, to: next, t: 0 });
-    satelliteFrameIndexRef.current = next;
-
-    const timer = setInterval(() => {
-      const raw = (Date.now() - startedAt) / blendMs;
-      const t = Math.max(0, Math.min(1, raw));
-      setSatelliteBlend({ from: previous, to: next, t });
-      if (t >= 1) clearInterval(timer);
-    }, 40);
-
-    return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, satelliteFrameIndex, satellitePlaybackFrameCount]);
-
-  const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
-    ? state.layers['sat.clouds'].opacity
-    : 0.85;
-  const frontsDay1Opacity = Number.isFinite(state.layers?.['wx.fronts.day1']?.opacity)
-    ? state.layers['wx.fronts.day1'].opacity
-    : 0.96;
-  const frontsDay2Opacity = Number.isFinite(state.layers?.['wx.fronts.day2']?.opacity)
-    ? state.layers['wx.fronts.day2'].opacity
-    : 0.92;
-  const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
-    ? state.layers['wx.fronts.day3'].opacity
-    : 0.88;
-  const fireRestrictionsOpacity = Number.isFinite(state.layers?.['fire.restrictions']?.opacity)
-    ? state.layers['fire.restrictions'].opacity
-    : 0.48;
-  const wildfireSmokeOpacity = Number.isFinite(state.layers?.['wildfire.smoke']?.opacity)
-    ? state.layers['wildfire.smoke'].opacity
-    : 0.55;
-  const wildfireFireWxOpacity = Number.isFinite(state.layers?.['wildfire.firewx']?.opacity)
-    ? state.layers['wildfire.firewx'].opacity
-    : 0.76;
-  const alertsOpacity = Number.isFinite(state.layers?.['alerts.polygons']?.opacity)
-    ? state.layers['alerts.polygons'].opacity
-    : 0.95;
-
-  const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
-    ? state.layers['sat.goes.truecolor'].opacity
-    : 0.96;
-
-  const goesEastIrOpacity = Number.isFinite(state.layers?.['sat.goesEast.ir']?.opacity)
-    ? state.layers['sat.goesEast.ir'].opacity
-    : 0.94;
-
-  const goesEastWvOpacity = Number.isFinite(state.layers?.['sat.goesEast.wv']?.opacity)
-    ? state.layers['sat.goesEast.wv'].opacity
-    : 0.94;
-
-  const goesWestWvOpacity = Number.isFinite(state.layers?.['sat.goesWest.wv']?.opacity)
-    ? state.layers['sat.goesWest.wv'].opacity
-    : 0.94;
-
-  const globalTrueColorOpacity = Number.isFinite(state.layers?.['sat.global.truecolor']?.opacity)
-    ? state.layers['sat.global.truecolor'].opacity
-    : 0.82;
-
-  const globalCloudTopsOpacity = Number.isFinite(state.layers?.['sat.global.cloudtops']?.opacity)
-    ? state.layers['sat.global.cloudtops'].opacity
-    : 0.72;
-
-  const globalInfraredOpacity = Number.isFinite(state.layers?.['sat.global.infrared']?.opacity)
-    ? state.layers['sat.global.infrared'].opacity
-    : 0.72;
-
-  const globalPrecipOpacity = Number.isFinite(state.layers?.['sat.global.precip']?.opacity)
-    ? state.layers['sat.global.precip'].opacity
-    : 0.78;
-  const aviationTurbOpacity = Number.isFinite(state.layers?.['aviation.gairmet.turb']?.opacity)
-    ? state.layers['aviation.gairmet.turb'].opacity
-    : 0.72;
-  const aviationIceOpacity = Number.isFinite(state.layers?.['aviation.gairmet.ice']?.opacity)
-    ? state.layers['aviation.gairmet.ice'].opacity
-    : 0.72;
-  const aviationSigmetOpacity = Number.isFinite(state.layers?.['aviation.sigmet']?.opacity)
-    ? state.layers['aviation.sigmet'].opacity
-    : 0.82;
-  const aviationCwaOpacity = Number.isFinite(state.layers?.['aviation.cwa']?.opacity)
-    ? state.layers['aviation.cwa'].opacity
-    : 0.76;
-  const aviationPirepOpacity = Number.isFinite(state.layers?.['aviation.pirep']?.opacity)
-    ? state.layers['aviation.pirep'].opacity
-    : 0.9;
-  const marineConditionsOpacity = Number.isFinite(state.layers?.['marine.conditions']?.opacity)
-    ? state.layers['marine.conditions'].opacity
-    : 0.9;
-  const skyScoreOpacity = Number.isFinite(state.layers?.['astro.skyScore']?.opacity)
-    ? state.layers['astro.skyScore'].opacity
-    : 0.85;
-  const auroraProbOpacity = Number.isFinite(state.layers?.['space.aurora.prob']?.opacity)
-    ? state.layers['space.aurora.prob'].opacity
-    : 0.75;
-  const auroraOvalOpacity = Number.isFinite(state.layers?.['space.aurora.oval']?.opacity)
-    ? state.layers['space.aurora.oval'].opacity
-    : 0.9;
-
-  const aviationOverlayEnabled =
-    aviationTurbEnabled || aviationIceEnabled || aviationSigmetEnabled || aviationCwaEnabled || aviationPirepEnabled;
+  const {
+    cloudsOpacity,
+    frontsDay1Opacity,
+    frontsDay2Opacity,
+    frontsDay3Opacity,
+    fireRestrictionsOpacity,
+    wildfireSmokeOpacity,
+    wildfireFireWxOpacity,
+    alertsOpacity,
+    goesTrueColorOpacity,
+    goesEastIrOpacity,
+    goesEastWvOpacity,
+    goesWestWvOpacity,
+    globalTrueColorOpacity,
+    globalCloudTopsOpacity,
+    globalInfraredOpacity,
+    globalPrecipOpacity,
+    aviationTurbOpacity,
+    aviationIceOpacity,
+    aviationSigmetOpacity,
+    aviationCwaOpacity,
+    aviationPirepOpacity,
+    marineConditionsOpacity,
+    skyScoreOpacity,
+    auroraProbOpacity,
+    auroraOvalOpacity,
+    aviationOverlayEnabled,
+  } = layerState;
   const aviationData = useAviationMapData(aviationOverlayEnabled || aviationModeActive);
   const aviationAvailableTimes = aviationData.validTimes ?? [];
 
@@ -2010,31 +1520,6 @@ export default function MapsScreen() {
     }),
     [aviationData.advisories, aviationData.centerWeather, aviationData.icing, aviationData.turbulence],
   );
-
-  const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
-
-  const centerForRadar = useMemo(() => {
-    if (stationRadarMode && selectedRadarSite) return { lat: selectedRadarSite.lat, lon: selectedRadarSite.lon };
-    if (region) return { lat: region.latitude, lon: region.longitude };
-    return { lat: 39.5, lon: -98.35 };
-  }, [region, selectedRadarSite, stationRadarMode]);
-
-  const radarCtl = useRadarController({
-    enabled: isFocused,
-    state,
-    dispatch,
-    sheetValue: { radarProvider: effectiveRadarProvider },
-    centerForRadar,
-    mapZoom,
-    product,
-    rawMode,
-    region,
-    stationMode: stationRadarMode,
-    radarSiteId3: selectedRadarId3,
-    localMinZoom: stormMode ? 10.5 : 12,
-    ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
-    animationQuality: LIVE_MAP_ANIMATION_QUALITY,
-  });
 
   const uiFrames = radarCtl.uiFrames;
   const uiTemplates = radarCtl.uiTemplates ?? [];
@@ -2814,7 +2299,7 @@ export default function MapsScreen() {
     });
   }, [router, selectedWeatherAlertForecastTarget]);
   const wildfireVectorEnabled =
-    state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled;
+    isFocused && (state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled);
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
   const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
   const visibleWildfirePerimeters = useMemo(
@@ -5643,17 +5128,6 @@ function getGeometryCenter(geometry: any): { lat: number; lon: number } | null {
     lat: (bbox.minLat + bbox.maxLat) / 2,
     lon: (bbox.minLon + bbox.maxLon) / 2,
   };
-}
-
-function haversineMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const R = 3958.7613;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
 function geometryBbox(geometry: any) {

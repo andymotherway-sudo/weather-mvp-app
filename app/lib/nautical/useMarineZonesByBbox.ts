@@ -16,26 +16,29 @@ export function useMarineZonesByBbox(bbox: {
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep a stable key so tiny float jitter doesn't refetch constantly.
-  // (At zoom ~4, 0.05° is still fine; tweak if needed.)
-  const key =
-    bbox
-      ? `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
-      : null;
+  const key = bbox
+    ? `${bbox.west.toFixed(2)},${bbox.south.toFixed(2)},${bbox.east.toFixed(2)},${bbox.north.toFixed(2)}`
+    : null;
 
   useEffect(() => {
     if (!bbox) {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
       setZones([]);
       setLoading(false);
       setError(null);
       return;
     }
 
-    // debounce
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      // cancel previous in-flight
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -45,9 +48,7 @@ export function useMarineZonesByBbox(bbox: {
           setLoading(true);
           setError(null);
 
-          // If your fetchMarineZonesByBbox supports passing signal, do it.
-          // If it doesn't, this still works to avoid updating state after abort.
-          const data = await fetchMarineZonesByBbox(bbox /*, { signal: ac.signal } */);
+          const data = await fetchMarineZonesByBbox(bbox, { signal: ac.signal });
 
           if (ac.signal.aborted) return;
           setZones(data);
@@ -61,11 +62,15 @@ export function useMarineZonesByBbox(bbox: {
     }, 220);
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      // don’t abort here—let next run abort; but safe to abort on unmount:
-      // (if this effect is tearing down due to bbox change, next run aborts anyway)
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
     };
-    // key changes are what matter
   }, [key]);
 
   return { zones, loading, error };

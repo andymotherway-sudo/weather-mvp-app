@@ -189,7 +189,7 @@ export async function fetchMarineZonesByBbox(bbox: {
   south: number;
   east: number;
   north: number;
-}): Promise<NauticalZone[]> {
+}, opts?: { signal?: AbortSignal }): Promise<NauticalZone[]> {
   const service =
     'https://mapservices.weather.noaa.gov/static/rest/services/nws_reference_maps/nws_reference_map/MapServer/5/query';
 
@@ -210,7 +210,7 @@ export async function fetchMarineZonesByBbox(bbox: {
     '&maxAllowableOffset=0.02' +
     '&resultRecordCount=200';
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: opts?.signal });
   const text = await res.text();
 
   if (!text.trim().startsWith('{')) {

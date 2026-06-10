@@ -17,6 +17,40 @@ const ASTRONOMY_LAYER_IDS: LayerId[] = [
   'space.aurora.oval',
 ];
 
+const FIRE_LAYER_IDS: LayerId[] = [
+  'fire.restrictions',
+  'wildfire.smoke',
+  'wildfire.perimeters',
+  'wildfire.hotspots',
+  'wildfire.hazard',
+  'wildfire.firewx',
+];
+
+const MARINE_LAYER_IDS: LayerId[] = ['marine.conditions'];
+
+const WEATHER_RASTER_LAYER_IDS: LayerId[] = [
+  'radar.reflectivity',
+  'sat.clouds',
+  'sat.goesEast.geocolor',
+  'sat.goesWest.geocolor',
+  'sat.goes.truecolor',
+  'sat.goesEast.ir',
+  'sat.goesWest.ir',
+  'sat.goesEast.wv',
+  'sat.goesWest.wv',
+  'sat.global.truecolor',
+  'sat.global.cloudtops',
+  'sat.global.infrared',
+  'sat.global.precip',
+];
+
+const EXCLUSIVE_DOMAIN_GROUPS: LayerId[][] = [
+  FIRE_LAYER_IDS,
+  AVIATION_LAYER_IDS,
+  ASTRONOMY_LAYER_IDS,
+  MARINE_LAYER_IDS,
+];
+
 export type MapAction =
   | { type: 'SET_VIEW'; viewId: MapRuntimeState['viewId'] }
   | { type: 'SET_NERDY'; nerdy: boolean }
@@ -169,37 +203,65 @@ function enforceExclusiveControlSurfaces(
   state: MapRuntimeState,
   changedLayerId?: LayerId,
 ): MapRuntimeState {
-  const changedAviationOn =
-    changedLayerId != null &&
-    AVIATION_LAYER_IDS.includes(changedLayerId) &&
-    state.layers?.[changedLayerId]?.enabled;
-  const changedAstronomyOn =
-    changedLayerId != null &&
-    ASTRONOMY_LAYER_IDS.includes(changedLayerId) &&
-    state.layers?.[changedLayerId]?.enabled;
-
-  const viewWantsAviation = state.viewId === 'aviation';
-  const viewWantsAstronomy = state.viewId === 'astronomer';
-
-  if (!changedAviationOn && !changedAstronomyOn && !viewWantsAviation && !viewWantsAstronomy) {
-    return state;
-  }
-
   const nextLayers = { ...state.layers };
 
-  if (changedAviationOn || viewWantsAviation) {
-    for (const id of ASTRONOMY_LAYER_IDS) {
-      if (nextLayers[id]) nextLayers[id] = { ...nextLayers[id], enabled: false };
+  const changedLayerIsOn =
+    changedLayerId != null && nextLayers[changedLayerId] && nextLayers[changedLayerId].enabled;
+
+  if (changedLayerIsOn && WEATHER_RASTER_LAYER_IDS.includes(changedLayerId)) {
+    disableLayers(nextLayers, WEATHER_RASTER_LAYER_IDS.filter((id) => id !== changedLayerId));
+  }
+
+  const activeDomainGroup = pickActiveDomainGroup(state.viewId, changedLayerId, changedLayerIsOn);
+  if (activeDomainGroup) {
+    for (const group of EXCLUSIVE_DOMAIN_GROUPS) {
+      if (group === activeDomainGroup) continue;
+      disableLayers(nextLayers, group);
     }
   }
 
-  if (changedAstronomyOn || viewWantsAstronomy) {
-    for (const id of AVIATION_LAYER_IDS) {
-      if (nextLayers[id]) nextLayers[id] = { ...nextLayers[id], enabled: false };
-    }
+  const radarEnabled = !!nextLayers?.['radar.reflectivity']?.enabled;
+  const radarTime =
+    !radarEnabled && state.radarTime.playing
+      ? { ...state.radarTime, playing: false }
+      : state.radarTime;
+
+  return { ...state, layers: nextLayers, radarTime };
+}
+
+function pickActiveDomainGroup(
+  viewId: MapRuntimeState['viewId'],
+  changedLayerId?: LayerId,
+  changedLayerIsOn?: boolean,
+) {
+  if (changedLayerId && changedLayerIsOn) {
+    const changedGroup = EXCLUSIVE_DOMAIN_GROUPS.find((group) => group.includes(changedLayerId));
+    if (changedGroup) return changedGroup;
   }
 
-  return { ...state, layers: nextLayers };
+  switch (viewId) {
+    case 'wildfire':
+      return FIRE_LAYER_IDS;
+    case 'aviation':
+      return AVIATION_LAYER_IDS;
+    case 'astronomer':
+      return ASTRONOMY_LAYER_IDS;
+    case 'mariner':
+      return MARINE_LAYER_IDS;
+    default:
+      return null;
+  }
+}
+
+function disableLayers(
+  layers: Record<LayerId, LayerRuntimeState>,
+  ids: LayerId[],
+) {
+  for (const id of ids) {
+    if (layers[id]?.enabled) {
+      layers[id] = { ...layers[id], enabled: false };
+    }
+  }
 }
 
 function clamp01(n: number) {
