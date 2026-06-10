@@ -336,7 +336,7 @@ const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
-const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
+const LIVE_MAP_ANIMATION_QUALITY: AnimationQuality = 'smooth';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
@@ -2036,7 +2036,7 @@ export default function MapsScreen() {
     radarSiteId3: selectedRadarId3,
     localMinZoom: stormMode ? 10.5 : 12,
     ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
-    animationQuality: BEST_ANIMATION_QUALITY,
+    animationQuality: LIVE_MAP_ANIMATION_QUALITY,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -3405,6 +3405,7 @@ export default function MapsScreen() {
             }
             mapStyle={baseMapStyle}
               boundaryReliefTone={boundaryReliefTone}
+            regionEventMode="settled"
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
             onPanDrag={() => {
