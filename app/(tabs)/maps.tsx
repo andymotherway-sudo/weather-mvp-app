@@ -69,7 +69,7 @@ const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
 const AUTO_NEXRAD_MIN_ZOOM = 8.6;
-const WATER_STATIONS_LAYER_ENABLED = false;
+const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -1161,6 +1161,70 @@ function formatMarineWaterTemp(valueC: number | undefined, unit: 'F' | 'C') {
   const c = Number(valueC);
   if (unit === 'C') return `${Math.round(c)} C`;
   return `${Math.round((c * 9) / 5 + 32)} F`;
+}
+
+function waterTempCFromReading(value: number | null, sourceUnit?: string | null) {
+  if (value == null || !Number.isFinite(value)) return null;
+  const unit = String(sourceUnit ?? '').toLowerCase();
+  if (unit.includes('degf') || unit.includes('fahrenheit') || unit.includes(' f')) return ((value - 32) * 5) / 9;
+  return value;
+}
+
+function convertWaterTemp(value: number | null, sourceUnit: string | null | undefined, targetUnit: 'F' | 'C') {
+  const c = waterTempCFromReading(value, sourceUnit);
+  if (c == null) return null;
+  return targetUnit === 'C' ? Math.round(c * 10) / 10 : Math.round(((c * 9) / 5 + 32) * 10) / 10;
+}
+
+function formatWaterStationTemp(value: number | null, sourceUnit: string | null | undefined, targetUnit: 'F' | 'C') {
+  const converted = convertWaterTemp(value, sourceUnit, targetUnit);
+  if (converted == null) return null;
+  const rounded = Math.round(converted * 10) / 10;
+  const display = Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
+  return `${display} ${targetUnit}`;
+}
+
+function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
+  const features = Array.isArray(geojson?.features) ? geojson.features : [];
+  return {
+    type: 'FeatureCollection',
+    features: features
+      .map((feature: any) => {
+        const props = feature?.properties ?? {};
+        const readings = Array.isArray(props.readings) ? props.readings : [];
+        const tempReading =
+          readings.find((reading: any) => String(reading?.parameterCode ?? '') === '00010') ??
+          (String(props.primaryParameter ?? '') === '00010'
+            ? { value: props.primaryValue, unit: props.primaryUnit, time: props.observedAt, label: props.primaryLabel }
+            : null);
+        if (!tempReading) return null;
+        const tempValue = convertWaterTemp(safeNum(tempReading.value), tempReading.unit, targetUnit);
+        const tempLabel = formatWaterStationTemp(safeNum(tempReading.value), tempReading.unit, targetUnit);
+        if (tempValue == null || !tempLabel) return null;
+        return {
+          ...feature,
+          properties: {
+            ...props,
+            label: tempLabel,
+            primaryParameter: '00010',
+            primaryLabel: 'Water temperature',
+            primaryValue: tempValue,
+            primaryUnit: targetUnit,
+            observedAt: tempReading.time ?? props.observedAt ?? null,
+            readings: [
+              {
+                ...tempReading,
+                parameterCode: '00010',
+                label: 'Water temperature',
+                value: tempValue,
+                unit: targetUnit,
+              },
+            ],
+          },
+        };
+      })
+      .filter(Boolean),
+  };
 }
 
 function formatMarineUpdated(value?: string | null) {
@@ -2501,14 +2565,14 @@ export default function MapsScreen() {
           south: String(Number(bbox.south.toFixed(4))),
           east: String(Number(bbox.east.toFixed(4))),
           north: String(Number(bbox.north.toFixed(4))),
-          parameters: '00010,00060,00065,00045,00300,00400,63680',
+          parameters: '00010',
           limit: mapZoom < 7 ? '80' : '160',
         });
         const res = await fetchWithTimeout(apiUrl(`/api/usgs/water-stations?${params.toString()}`), 12000);
         if (!res.ok) throw new Error(`USGS ${res.status}`);
         const json = await res.json();
         if (cancelled) return;
-        setWaterStationsGeojson(json?.geojson ?? { type: 'FeatureCollection', features: [] });
+        setWaterStationsGeojson(waterStationsGeojsonForTempUnit(json?.geojson, tempUnit));
       } catch (err: any) {
         if (cancelled) return;
         setWaterStationsError(err?.message ?? 'Unable to load USGS water stations');
@@ -2522,7 +2586,7 @@ export default function MapsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [mapZoom, waterStationsBbox, waterStationsDataEnabled]);
+  }, [mapZoom, tempUnit, waterStationsBbox, waterStationsDataEnabled]);
   const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
     marineZones,
     mapZoom,
@@ -3962,25 +4026,7 @@ export default function MapsScreen() {
                 id="usgs-water-station-points"
                 filter={['!', ['has', 'point_count']] as any}
                 style={{
-                  circleColor: [
-                    'match',
-                    ['get', 'primaryParameter'],
-                    '00010',
-                    '#38bdf8',
-                    '00060',
-                    '#22c55e',
-                    '00065',
-                    '#facc15',
-                    '00045',
-                    '#60a5fa',
-                    '00300',
-                    '#a78bfa',
-                    '00400',
-                    '#f472b6',
-                    '63680',
-                    '#fb923c',
-                    '#67e8f9',
-                  ] as any,
+                  circleColor: '#38bdf8',
                   circleOpacity: 0.92 * waterStationsOpacity,
                   circleRadius: ['interpolate', ['linear'], ['zoom'], 5, 4, 8, 6.5, 11, 8.5] as any,
                   circleStrokeColor: 'rgba(2,6,23,0.96)',

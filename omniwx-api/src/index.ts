@@ -2680,14 +2680,14 @@ function buildUsgsWaterStationsCacheKey(url: URL, bbox: { west: number; south: n
   const keyUrl = new URL(url.toString());
   keyUrl.pathname = "/__cache__/usgs/water-stations";
   keyUrl.searchParams.set("bbox", [bbox.west, bbox.south, bbox.east, bbox.north].map((v) => v.toFixed(3)).join(","));
-  keyUrl.searchParams.set("parameters", url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010,00060,00065");
+  keyUrl.searchParams.set("parameters", url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010");
   keyUrl.searchParams.set("limit", url.searchParams.get("limit") || "250");
   keyUrl.searchParams.set("v", USGS_WATER_STATIONS_CACHE_VERSION);
   return new Request(keyUrl.toString(), { method: "GET" });
 }
 
 function parseUsgsParameterList(url: URL) {
-  const raw = url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010,00060,00065";
+  const raw = url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010";
   const codes = raw
     .split(",")
     .map((x) => x.trim())

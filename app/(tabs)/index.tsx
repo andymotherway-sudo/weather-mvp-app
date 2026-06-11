@@ -2508,6 +2508,10 @@ function SimpleDailyOverview({
     todayHi != null && todayLo != null && tempF != null && todayHi !== todayLo
       ? Math.max(0, Math.min(100, ((tempF - todayLo) / (todayHi - todayLo)) * 100))
       : 50;
+  const feelsMarkerPct =
+    todayHi != null && todayLo != null && feelsLikeF != null && todayHi !== todayLo
+      ? Math.max(0, Math.min(100, ((feelsLikeF - todayLo) / (todayHi - todayLo)) * 100))
+      : null;
   const todayNarrative = [
     todayCondition,
     todayHi != null && todayHi >= 85 ? 'Warm' : todayHi != null && todayHi <= 55 ? 'Cool' : 'Mild',
@@ -2516,7 +2520,7 @@ function SimpleDailyOverview({
     .filter(Boolean)
     .join(' • ');
   const currentAqiValue = airQualityIndex != null ? `${Math.round(airQualityIndex)}` : '—';
-  const currentAqiSub = airQualityLabel ?? 'AQI';
+  const currentAqiSub = airQualityLabel?.replace(/^AQI\s*:?\s*/i, '').trim() || undefined;
   const todayWindSub = gustMph != null ? `Gust ${Math.round(gustMph)} mph` : '—';
   const tonightWindSub = todaySplit.night.gust != null ? `Gust ${Math.round(todaySplit.night.gust)} mph` : '—';
   const currentMetrics = [
@@ -2528,7 +2532,7 @@ function SimpleDailyOverview({
     { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'Dew point' },
   ];
   const dailyCurrentSummaryText =
-    [todayNarrative, feelsLikeF != null ? `Feels like ${Math.round(feelsLikeF)}°` : null, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
+    [todayNarrative, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
       .filter(Boolean)
       .join(' • ') || heroSummary;
 
@@ -2571,7 +2575,18 @@ function SimpleDailyOverview({
         <View style={styles.dailyTempRangeBlock}>
           <View style={styles.dailyTempRangeLabels}>
             <Text style={styles.dailyTempRangeEndpoint}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
-            <Text style={styles.dailyTempRangeNow}>Current</Text>
+            <View style={styles.dailyTempRangeLegend}>
+              <View style={styles.dailyTempRangeLegendItem}>
+                <View style={styles.dailyTempRangeActualSwatch} />
+                <Text style={styles.dailyTempRangeNow}>Actual</Text>
+              </View>
+              {feelsLikeF != null ? (
+                <View style={styles.dailyTempRangeLegendItem}>
+                  <View style={styles.dailyTempRangeFeelsSwatch} />
+                  <Text style={styles.dailyTempRangeNow}>Feels {Math.round(feelsLikeF)}°</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={styles.dailyTempRangeEndpoint}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
           </View>
           <View style={styles.dailyTempRangeTrack}>
@@ -2584,6 +2599,11 @@ function SimpleDailyOverview({
             <View style={[styles.dailyTempRangeMarker, { left: `${currentMarkerPct}%` }]}>
               <View style={styles.dailyTempRangeMarkerDot} />
             </View>
+            {feelsMarkerPct != null ? (
+              <View style={[styles.dailyTempRangeFeelsMarker, { left: `${feelsMarkerPct}%` }]}>
+                <View style={styles.dailyTempRangeFeelsDot} />
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -5070,6 +5090,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.48)',
   },
+  dailyTempRangeLegend: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  dailyTempRangeLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dailyTempRangeActualSwatch: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: 'rgba(64, 156, 255, 0.9)',
+  },
+  dailyTempRangeFeelsSwatch: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#fbbf24',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.78)',
+  },
   dailyTempRangeTrack: {
     height: 12,
     borderRadius: 999,
@@ -5098,6 +5146,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderWidth: 3,
     borderColor: 'rgba(64, 156, 255, 0.9)',
+  },
+  dailyTempRangeFeelsMarker: {
+    position: 'absolute',
+    top: -2,
+    width: 16,
+    height: 16,
+    marginLeft: -8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyTempRangeFeelsDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#fbbf24',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.88)',
   },
   dayArcCard: {
     borderRadius: 18,
