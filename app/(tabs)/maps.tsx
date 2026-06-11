@@ -69,6 +69,7 @@ const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
 const AUTO_NEXRAD_MIN_ZOOM = 8.6;
+const WATER_STATIONS_LAYER_ENABLED = false;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
@@ -1636,7 +1637,7 @@ export default function MapsScreen() {
   const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
   const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
   const marineConditionsEnabled = state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled;
-  const waterStationsEnabled = !!state.layers?.['water.stations']?.enabled;
+  const waterStationsEnabled = WATER_STATIONS_LAYER_ENABLED && !!state.layers?.['water.stations']?.enabled;
   const skyScoreEnabled = !!state.layers?.['astro.skyScore']?.enabled;
   const auroraProbEnabled = !!state.layers?.['space.aurora.prob']?.enabled;
   const auroraOvalEnabled = !!state.layers?.['space.aurora.oval']?.enabled;

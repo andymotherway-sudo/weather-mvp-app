@@ -478,25 +478,6 @@ export const LAYER_CATALOG = [
     },
   },
 
-  {
-    id: 'water.stations',
-    group: 'marine',
-    title: 'Water Stations',
-    subtitle: 'USGS rivers and lakes',
-    visibility: 'both',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.9,
-    zIndex: 119,
-    supportsLegend: false,
-    supportsOpacity: true,
-    supportsSourceInfo: true,
-    source: {
-      name: 'USGS Water Data',
-      details: 'Latest continuous USGS river and lake observations.',
-      url: 'https://api.waterdata.usgs.gov/',
-    },
-  },
-
 ] as const satisfies readonly LayerCatalogItem[];
 
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(
