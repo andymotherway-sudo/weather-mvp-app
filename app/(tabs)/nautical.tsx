@@ -4,7 +4,6 @@
 // Also supports "zone mode" when launched from polygon world map.
 
 import { useLocalSearchParams } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -189,17 +188,6 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 function stationForArea(area: MarineArea): NauticalStation {
-  if (area.supportsTides === false || !area.tideStationId) {
-    const center = areaCenter(area);
-    return {
-      id: `model-${area.id}`,
-      name: area.name,
-      buoyId: area.primaryBuoyId,
-      latitude: center.lat,
-      longitude: center.lon,
-    };
-  }
-
   return (
     NAUTICAL_STATIONS.find((s) => s.id === area.tideStationId) ??
     DEFAULT_NAUTICAL_STATION
@@ -443,7 +431,6 @@ function explainFor(key: ExplainKey) {
 // -------------------------------------------------------------------
 
 export default function NauticalScreen() {
-  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{
     areaId?: string;
     zoneId?: string;
@@ -498,22 +485,22 @@ export default function NauticalScreen() {
 
   // Data hooks
   const { data, loading, error, refreshing, refresh } =
-    useNauticalSummary(station, isFocused);
+    useNauticalSummary(station);
 
-  const { data: allBuoyData } = useAllBuoyDetails(isFocused);
+  const { data: allBuoyData } = useAllBuoyDetails();
   const allBuoys: BuoyDetailData[] = allBuoyData ?? [];
 
   // station.id is a tide station id, not a buoy id.
   const stationBuoyId = station.buoyId ?? null;
   const activeBuoyId = selectedBuoyId ?? stationBuoyId;
 
-  const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined, isFocused);
+  const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined);
 
   // Forecast source:
   const forecastZoneId = isZoneMode ? zoneId : area.forecastZoneId;
 
   const { forecast, loading: forecastLoading, error: forecastError } =
-    useMarineForecast(forecastZoneId, isZoneMode ? wfo : undefined, isFocused);
+    useMarineForecast(forecastZoneId, isZoneMode ? wfo : undefined);
 
   const activeBuoy =
     allBuoys.find(
@@ -528,7 +515,6 @@ export default function NauticalScreen() {
   };
 
   useEffect(() => {
-    if (!isFocused) return;
     const q = search.trim();
     if (q.length < 3) {
       setPlaceResults([]);
@@ -556,7 +542,7 @@ export default function NauticalScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, isFocused]);
+  }, [search]);
 
   // --- SEARCH: stations + buoys -----------------------------------
 
@@ -608,17 +594,12 @@ export default function NauticalScreen() {
       const placeCountry = normalizeCountry(place.country);
 
       const areaCandidates = MARINE_AREAS
+        .filter((candidate) => candidate.kind !== 'high-seas')
         .map((candidate) => {
           const distanceKm = distanceToAreaBoundsKm(candidate, place.lat, place.lon);
           const contains = areaContains(candidate, place.lat, place.lon);
           const kindBoost =
-            candidate.kind === 'coastal'
-              ? 220
-              : candidate.kind === 'lake'
-                ? 200
-                : candidate.kind === 'offshore'
-                  ? 170
-                  : 80;
+            candidate.kind === 'coastal' ? 220 : candidate.kind === 'lake' ? 200 : 120;
           const sameCountryBoost =
             placeCountry && normalizeCountry(candidate.country) === placeCountry ? 420 : 0;
           const score =
@@ -657,13 +638,7 @@ export default function NauticalScreen() {
         distanceToStationKm(stationForArea(bestArea), place.lat, place.lon);
 
       const maxAllowedDistanceKm =
-        bestArea.kind === 'lake'
-          ? 220
-          : bestArea.kind === 'coastal'
-            ? 300
-            : bestArea.kind === 'offshore'
-              ? 650
-              : 2400;
+        bestArea.kind === 'lake' ? 220 : bestArea.kind === 'coastal' ? 300 : 420;
       const supported =
         bestAreaDistanceKm <= maxAllowedDistanceKm || bestStationDistanceKm <= maxAllowedDistanceKm;
 
@@ -847,10 +822,6 @@ export default function NauticalScreen() {
 
   const visibilityNm = buoyData?.visibilityNm ?? null;
   const pressureHpa = buoyData?.pressureHpa ?? null;
-  const oceanCurrentKts = conditions?.oceanCurrentKts ?? null;
-  const oceanCurrentDirectionDeg = conditions?.oceanCurrentDirectionDeg ?? null;
-  const oceanCurrentDir = degToCompass(oceanCurrentDirectionDeg ?? null);
-  const seaLevelHeightMslM = conditions?.seaLevelHeightMslM ?? null;
 
   const seaLabel = seaStateLabel(waveHeightM);
   const beaufort = getBeaufort(windSpeedKts);
@@ -1145,21 +1116,6 @@ export default function NauticalScreen() {
             {pressureHpa != null && (
               <Text style={styles.simpleMeta}>
                 Pressure {pressureHpa.toFixed(1)} hPa
-              </Text>
-            )}
-
-            {oceanCurrentKts != null && (
-              <Text style={styles.simpleMeta}>
-                Current {oceanCurrentKts.toFixed(1)} kt
-                {oceanCurrentDirectionDeg != null
-                  ? ` toward ${oceanCurrentDir} (${Math.round(oceanCurrentDirectionDeg)}°)`
-                  : ''}
-              </Text>
-            )}
-
-            {seaLevelHeightMslM != null && (
-              <Text style={styles.simpleMeta}>
-                Sea level {seaLevelHeightMslM.toFixed(2)} m vs MSL
               </Text>
             )}
 

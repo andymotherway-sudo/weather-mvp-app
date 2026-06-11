@@ -24,7 +24,6 @@ type Props = {
   title?: string;
   normals: MonthlyNormalsF[];
   stationName?: string;
-  normalsLabel?: string;
 
   selectedDoy?: number; // 1..365
   markerLabel?: string;
@@ -141,13 +140,6 @@ function fmtTempPair(low: number | null | undefined, high: number | null | undef
   return `${lo} / ${hi}`;
 }
 
-function fmtSignedTempDelta(v: number | null | undefined) {
-  if (v == null || !Number.isFinite(v)) return '--';
-  const rounded = Math.round(v);
-  if (rounded === 0) return '0°';
-  return `${rounded > 0 ? '+' : ''}${rounded}°`;
-}
-
 function smoothSeries(valsIn?: Array<number | null>, radius = 3) {
   if (!Array.isArray(valsIn) || !valsIn.length) return [];
   const vals = valsIn.map(numOrNull);
@@ -182,7 +174,6 @@ export function ClimatologyChart({
   title = 'Almanac',
   normals,
   stationName,
-  normalsLabel,
   selectedDoy,
   markerLabel,
   onSelectDoy,
@@ -269,45 +260,32 @@ export function ClimatologyChart({
   }, [monthly.tmin12, monthly.tavg12, monthly.tmax12]);
 
   const values = useMemo(() => {
-  const normalArr: number[] = [];
-  const priorArr: number[] = [];
+  const arr: number[] = [];
 
   for (let i = 0; i < 365; i++) {
     const a = daily.tmin[i];
     const b = daily.tavg[i];
     const c = daily.tmax[i];
 
-    if (Number.isFinite(a)) normalArr.push(a);
-    if (Number.isFinite(b)) normalArr.push(b);
-    if (Number.isFinite(c)) normalArr.push(c);
+    if (Number.isFinite(a)) arr.push(a);
+    if (Number.isFinite(b)) arr.push(b);
+    if (Number.isFinite(c)) arr.push(c);
   }
 
   if (lastYear?.tminF?.length && lastYear?.tmaxF?.length) {
     const a = lastYear.tminF.slice(0, 365).map(numOrNull);
     const b = lastYear.tmaxF.slice(0, 365).map(numOrNull);
 
-    for (const v of a) if (v != null && Number.isFinite(v)) priorArr.push(v);
-    for (const v of b) if (v != null && Number.isFinite(v)) priorArr.push(v);
+    for (const v of a) if (v != null && Number.isFinite(v)) arr.push(v);
+    for (const v of b) if (v != null && Number.isFinite(v)) arr.push(v);
   }
 
-  if (normalArr.length < 2) {
+  if (arr.length < 2) {
     return { min: 0, max: 100 };
   }
 
-  let min = Math.min(...normalArr);
-  let max = Math.max(...normalArr);
-
-  // Keep the preview anchored to climatology so small prior-year departures do not look enormous,
-  // while still allowing truly out-of-range values to fit without crushing the normal band.
-  if (expanded && priorArr.length) {
-    min = Math.min(min, ...priorArr);
-    max = Math.max(max, ...priorArr);
-  } else if (priorArr.length) {
-    const normalRange = Math.max(1, max - min);
-    const softPad = Math.max(8, normalRange * 0.28);
-    min = Math.min(min, Math.max(Math.min(...priorArr), min - softPad));
-    max = Math.max(max, Math.min(Math.max(...priorArr), max + softPad));
-  }
+  let min = Math.min(...arr);
+  let max = Math.max(...arr);
 
   if (!Number.isFinite(min) || !Number.isFinite(max)) {
     return { min: 0, max: 100 };
@@ -318,9 +296,9 @@ export function ClimatologyChart({
     max += 1;
   }
 
-  const pad = Math.max(8, (max - min) * 0.16);
+  const pad = Math.max(6, (max - min) * 0.12);
   return { min: min - pad, max: max + pad };
-}, [daily.tmin, daily.tavg, daily.tmax, lastYear?.tminF, lastYear?.tmaxF, expanded]);
+}, [daily.tmin, daily.tavg, daily.tmax, lastYear?.tminF, lastYear?.tmaxF]);
 
   const yForVal = (v: number) => PAD_T + (1 - norm(v, values.min, values.max)) * innerH;
 
@@ -482,8 +460,6 @@ export function ClimatologyChart({
       lastYearPrecip: typeof lastYearPrecip === 'number' ? lastYearPrecip : null,
       lastYearHigh,
       lastYearLow,
-      highDelta: lastYearHigh == null || tmax == null ? null : lastYearHigh - tmax,
-      lowDelta: lastYearLow == null || tmin == null ? null : lastYearLow - tmin,
       month: m,
     };
   }, [activeDoy, daily.tmin, daily.tavg, daily.tmax, precipMonthlyIn, lastYear?.precipMonthlyIn, lastYear?.precipDailyIn, lastYear?.tmaxF, lastYear?.tminF]);
@@ -571,8 +547,8 @@ export function ClimatologyChart({
     month: 'rgba(255,255,255,0.55)',
     min: 'rgba(170,190,210,0.42)',
     max: 'rgba(210,225,240,0.50)',
-    lastYearHigh: 'rgba(255,126,136,0.82)',
-    lastYearLow: 'rgba(126,184,255,0.82)',
+    lastYearHigh: 'rgba(255,110,120,0.95)',
+    lastYearLow: 'rgba(110,170,255,0.95)',
     precipFill: 'rgba(34, 197, 94, 0.20)',
     precipStroke: 'rgba(45, 212, 129, 0.72)',
     precipLastYearFill: 'rgba(250, 204, 21, 0.10)',
@@ -593,16 +569,13 @@ export function ClimatologyChart({
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.subTitle} numberOfLines={1}>
-            {stationName ? `${normalsLabel ?? '30-yr normals'} | ${stationName}` : `${normalsLabel ?? '30-yr monthly normals'} (interpolated daily)`}
+            {stationName ? `30-yr normals | ${stationName}` : '30-yr monthly normals (interpolated daily)'}
           </Text>
 
           {detail && !expanded ? (
             <View style={styles.detailBlock}>
               <Text style={styles.detailLine}>
                 Normal {fmtTempPair(detail.tmin, detail.tmax)} | Prior year {fmtTempPair(detail.lastYearLow, detail.lastYearHigh)}
-              </Text>
-              <Text style={styles.detailLineSecondary}>
-                High {fmtSignedTempDelta(detail.highDelta)} vs normal | Low {fmtSignedTempDelta(detail.lowDelta)} vs normal
               </Text>
               <Text style={styles.detailLineSecondary}>
                 Avg precip {fmtInches(detail.precip)} | Prior year precip {fmtInches(detail.lastYearPrecip)}
@@ -647,9 +620,9 @@ export function ClimatologyChart({
 
             {/* normals band (temperature range — smoky grey glass) */}
             <LinearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="rgba(255,255,255,0.055)" />
-              <Stop offset="0.55" stopColor="rgba(255,255,255,0.026)" />
-              <Stop offset="1" stopColor="rgba(255,255,255,0.008)" />
+              <Stop offset="0" stopColor="rgba(255,255,255,0.08)" />
+              <Stop offset="0.55" stopColor="rgba(255,255,255,0.035)" />
+              <Stop offset="1" stopColor="rgba(255,255,255,0.010)" />
             </LinearGradient>
           </Defs>
 
@@ -677,7 +650,7 @@ export function ClimatologyChart({
             </>
           ) : null}
 
-          <Path d={bandPath} fill="url(#bandGrad)" opacity={0.42} />
+          <Path d={bandPath} fill="url(#bandGrad)" opacity={0.62} />
 
           {ticks.map((t, idx) => {
             const y = yForVal(t);
@@ -714,8 +687,8 @@ export function ClimatologyChart({
 
           <Path d={pathFor('tminF')} stroke={C.min} strokeWidth={1.35} opacity={0.72} fill="none" />
           <Path d={pathFor('tmaxF')} stroke={C.max} strokeWidth={1.35} opacity={0.72} fill="none" />
-          {lastYearHighPath ? <Path d={lastYearHighPath} stroke={C.lastYearHigh} strokeWidth={1.9} opacity={0.86} fill="none" /> : null}
-          {lastYearLowPath ? <Path d={lastYearLowPath} stroke={C.lastYearLow} strokeWidth={1.9} opacity={0.86} fill="none" /> : null}
+          {lastYearHighPath ? <Path d={lastYearHighPath} stroke={C.lastYearHigh} strokeWidth={2.2} opacity={0.96} fill="none" /> : null}
+          {lastYearLowPath ? <Path d={lastYearLowPath} stroke={C.lastYearLow} strokeWidth={2.2} opacity={0.96} fill="none" /> : null}
         </Svg>
 
         {expanded && detail ? (
@@ -728,10 +701,7 @@ export function ClimatologyChart({
               Prior {fmtShortTemp(detail.lastYearLow)} / {fmtShortTemp(detail.lastYearHigh)}
             </Text>
             <Text style={styles.floatingDetailLine}>
-              High {fmtSignedTempDelta(detail.highDelta)} | Low {fmtSignedTempDelta(detail.lowDelta)}
-            </Text>
-            <Text style={styles.floatingDetailLine}>
-              Avg precip {fmtInches(detail.precip)} | Prior precip {fmtInches(detail.lastYearPrecip)}
+              Avg precip {fmtInches(detail.precip)} • Prior precip {fmtInches(detail.lastYearPrecip)}
             </Text>
           </View>
         ) : null}
@@ -823,7 +793,6 @@ export function ClimatologyChart({
               title={title}
               normals={normals}
               stationName={stationName}
-              normalsLabel={normalsLabel}
               selectedDoy={selectedDoy}
               markerLabel={markerLabel}
               onSelectDoy={onSelectDoy}

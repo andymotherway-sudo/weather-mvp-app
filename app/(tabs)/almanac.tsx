@@ -1,5 +1,4 @@
 // app/(tabs)/almanac.tsx
-import { useIsFocused } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -180,7 +179,6 @@ function safeString(v: unknown, fallback = '—') {
 export default function ClimoTab() {
   const insets = useSafeAreaInsets();
   const { chrome } = useAppChrome();
-  const isFocused = useIsFocused();
 
   const { active } = usePlace();
   const preload = useAlmanacPreload();
@@ -310,7 +308,7 @@ export default function ClimoTab() {
   const localClimo = useClimatologyNormals({
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
-    enabled: isFocused && hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
+    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
     preferCache: true,
   } as any);
   const { forecastModel } = useSettings();
@@ -321,7 +319,7 @@ export default function ClimoTab() {
     lon: coords?.lon ?? null,
     days: FORECAST_DAYS,
     model: forecastModel,
-    enabled: isFocused && hasPlace && !!coords && !preloadMatches,
+    enabled: hasPlace && !!coords && !preloadMatches,
   });
   const forecast = preloadMatches && preload?.forecast ? preload.forecast : localForecast;
   const forecastModelName = forecastModelLabel(forecastModel);
@@ -355,7 +353,7 @@ export default function ClimoTab() {
     lat: coords?.lat ?? null,
     lon: coords?.lon ?? null,
     date: selectedIso,
-    enabled: isFocused && hasPlace && !!coords && mode === 'observed',
+    enabled: hasPlace && !!coords && mode === 'observed',
     preferCache: true,
   } as any);
 
@@ -364,7 +362,7 @@ export default function ClimoTab() {
   const localRecords = useDailyRecords({
     lat: coords?.lat ?? 0,
     lon: coords?.lon ?? 0,
-    enabled: isFocused && hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
+    enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
   });
   const records = preloadMatches && preload?.records ? preload.records : localRecords;
 
@@ -434,16 +432,16 @@ export default function ClimoTab() {
   }, [rLoading]);
 
   useEffect(() => {
-    if (!isFocused || !recordsStartedAt) return;
+    if (!recordsStartedAt) return;
     const id = setInterval(() => {
       setRecordsElapsedSec(Math.max(0, (Date.now() - recordsStartedAt) / 1000));
     }, 400);
     return () => clearInterval(id);
-  }, [isFocused, recordsStartedAt]);
+  }, [recordsStartedAt]);
 
   const progAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!isFocused || !shouldLoadAreaAlmanac || !(rLoading || (!recordsEverResolved && hasPlace))) {
+    if (!shouldLoadAreaAlmanac || !(rLoading || (!recordsEverResolved && hasPlace))) {
       progAnim.stopAnimation();
       progAnim.setValue(0);
       return;
@@ -458,7 +456,7 @@ export default function ClimoTab() {
     );
     loop.start();
     return () => loop.stop();
-  }, [progAnim, rLoading, recordsEverResolved, hasPlace, shouldLoadAreaAlmanac, isFocused]);
+  }, [progAnim, rLoading, recordsEverResolved, hasPlace, shouldLoadAreaAlmanac]);
 
   const recordsStatus = useMemo(() => {
     if (!shouldLoadAreaAlmanac) return '';
@@ -514,19 +512,6 @@ const hasNormals = chartNormals.length > 0;
   const stationName = useMemo(() => {
     return typeof climo.data?.station?.name === 'string' ? climo.data.station.name : undefined;
   }, [climo.data?.station?.name]);
-  const normalsLabel = useMemo(() => {
-    if (climo.data?.source === 'open_meteo_archive_normals') {
-      const start = climo.data.diagnostics?.baselineStartYear;
-      const end = climo.data.diagnostics?.baselineEndYear;
-      return Number.isFinite(start) && Number.isFinite(end)
-        ? `${start}-${end} archive normals`
-        : 'Archive normals';
-    }
-    return '30-yr normals';
-  }, [climo.data?.diagnostics?.baselineEndYear, climo.data?.diagnostics?.baselineStartYear, climo.data?.source]);
-  const normalsSourceFooter = climo.data?.source === 'open_meteo_archive_normals'
-    ? 'archive normals'
-    : 'climate station normals';
 
   const normalsCount = chartNormals.length;
   const updatedLabel = useMemo(() => fmtUpdatedFromIso(climo.data?.fetchedAtIso), [climo.data?.fetchedAtIso]);
@@ -560,7 +545,7 @@ const hasNormals = chartNormals.length > 0;
         cloudMin: safeFiniteNumber(dayCtx.data?.cloudMinPct),
         cloudMax: safeFiniteNumber(dayCtx.data?.cloudMaxPct),
         windMax: safeFiniteNumber(dayCtx.data?.windMaxMph),
-        footer: `Observed: Open-Meteo Archive | Normals: ${normalsSourceFooter}`,
+        footer: 'Observed: Open-Meteo Archive • Normals: climate station data',
       };
     }
 
@@ -578,7 +563,7 @@ const hasNormals = chartNormals.length > 0;
         cloudMin: safeFiniteNumber(f?.cloudCoverMinPct),
         cloudMax: safeFiniteNumber(f?.cloudCoverMaxPct),
         windMax: safeFiniteNumber(f?.windMaxMph),
-        footer: `Forecast: Open-Meteo | Normals: ${normalsSourceFooter}`,
+        footer: 'Forecast: Open-Meteo • Normals: climate station data',
       };
     }
 
@@ -593,9 +578,9 @@ const hasNormals = chartNormals.length > 0;
       cloudMin: null as number | null,
       cloudMax: null as number | null,
       windMax: null as number | null,
-      footer: `Normals: ${normalsSourceFooter}`,
+      footer: 'Normals: climate station data',
     };
-  }, [selectedIso, stationName, normalsForSelected.normalHiF, normalsForSelected.normalLoF, mode, dayCtx.data, forecastByDate, normalsSourceFooter]);
+  }, [selectedIso, stationName, normalsForSelected.normalHiF, normalsForSelected.normalLoF, mode, dayCtx.data, forecastByDate]);
 
   /* ---------- refresh ---------- */
 
@@ -974,7 +959,6 @@ const hasNormals = chartNormals.length > 0;
               title="ALMANAC"
               normals={chartNormals}
               stationName={stationName ? `${stationName}` : undefined}
-              normalsLabel={normalsLabel}
               selectedDoy={safeSelectedDoy}
               markerLabel={markerLabel}
               onSelectDoy={(doy: number) => {

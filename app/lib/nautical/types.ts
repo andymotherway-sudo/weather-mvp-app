@@ -38,12 +38,6 @@ export interface MarineConditions {
   visibilityNm: number | null;
   /** Sea-level pressure in hPa / mb */
   pressureHpa: number | null;
-  /** Ocean current speed in knots, when the marine provider exposes it */
-  oceanCurrentKts?: number | null;
-  /** Ocean current direction in degrees, where the current is heading */
-  oceanCurrentDirectionDeg?: number | null;
-  /** Sea level height relative to mean sea level in meters, model-derived */
-  seaLevelHeightMslM?: number | null;
 
   /** When these conditions were observed/valid (ISO timestamp) */
   observedAt: string | null;

@@ -38,10 +38,6 @@ const WEATHER_RASTER_LAYER_IDS: LayerId[] = [
   'sat.goesWest.ir',
   'sat.goesEast.wv',
   'sat.goesWest.wv',
-  'sat.global.truecolor',
-  'sat.global.cloudtops',
-  'sat.global.infrared',
-  'sat.global.precip',
 ];
 
 const EXCLUSIVE_DOMAIN_GROUPS: LayerId[][] = [
@@ -204,7 +200,6 @@ function enforceExclusiveControlSurfaces(
   changedLayerId?: LayerId,
 ): MapRuntimeState {
   const nextLayers = { ...state.layers };
-
   const changedLayerIsOn =
     changedLayerId != null && nextLayers[changedLayerId] && nextLayers[changedLayerId].enabled;
 
@@ -258,9 +253,7 @@ function disableLayers(
   ids: LayerId[],
 ) {
   for (const id of ids) {
-    if (layers[id]?.enabled) {
-      layers[id] = { ...layers[id], enabled: false };
-    }
+    if (layers[id]?.enabled) layers[id] = { ...layers[id], enabled: false };
   }
 }
 

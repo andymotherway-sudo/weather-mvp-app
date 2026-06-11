@@ -401,13 +401,15 @@ export function MapRenderer(props: MapRendererProps) {
       const opacity = radar.opacities?.[idx] ?? 0;
       return !!tpl && opacity > 0.001;
     }).length;
-    if (activeRadarSlots >= 2 && liveZoom < 5) return 2;
-    return 1;
+    if (activeRadarSlots >= 2) return 2;
+    if (liveZoom >= 8.5) return 1;
+    return 2;
   }, [isDegraded, liveZoom, radar.opacities, radar.templates]);
 
   const warmRadarTemplates = useMemo(() => {
-    return [] as string[];
-  }, []);
+    if (useLocalImage || isDegraded) return [] as string[];
+    return (radar.warmTemplates ?? []).filter((tpl): tpl is string => !!tpl).slice(0, liveZoom >= 8.5 ? 1 : 2);
+  }, [isDegraded, liveZoom, radar.warmTemplates, useLocalImage]);
 
   const radarTemplates = useMemo(() => {
     const base = radar.templates ?? [];

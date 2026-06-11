@@ -1,13 +1,12 @@
 // app/(tabs)/extremes.tsx
-// OMNIwx Extremes: Marine (global buoys) + Land (global rankings) + Space (fun / Mars)
+// OMNIwx Extremes: Marine (global buoys) + Land (local/global) + Space (fun / Mars)
 // Keeps ranked rows you liked, but adds mode toggle, hero cards, and refresh.
 //
 // DROP-IN REPLACEMENT: Land now pulls from your Cloudflare Worker route:
 //   https://omniwx-api.omniwx.workers.dev/land-extremes?unit=F|C
-// This keeps the global scan off-device and lets the Worker cache the current top 10s.
+// This enables scaling to 250–500+ US sites without device fan-out.
 
 import { useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import {
@@ -37,7 +36,6 @@ const MAX_ROWS = 10;
 // Worker endpoint (land extremes)
 const API_BASE = ((process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? 'https://omniwx-api.omniwx.workers.dev').replace(/\/+$/, '');
 const LAND_EXTREMES_WORKER_URL = `${API_BASE}/land-extremes`;
-const MARINE_EXTREMES_WORKER_URL = `${API_BASE}/api/marine/extremes`;
 
 type Severity = 'calm' | 'moderate' | 'rough' | 'extreme';
 type Mode = 'marine' | 'land' | 'space';
@@ -183,41 +181,6 @@ type LandHookResult = {
   refresh: () => Promise<void>;
 };
 
-type MarineExtremeKind = 'wave' | 'wind' | 'warm' | 'cold' | 'current' | 'seaLevel';
-
-type MarineModelExtreme = {
-  id: string;
-  name: string;
-  region: string;
-  lat: number;
-  lon: number;
-  kind: MarineExtremeKind;
-  value: number;
-  units: string;
-  updatedAt: string | null;
-  source: string;
-  waveHeightM: number | null;
-  windSpeedKts: number | null;
-  seaSurfaceTempC: number | null;
-  oceanCurrentKts: number | null;
-  seaLevelHeightMslM: number | null;
-};
-
-type MarineModelGroup = {
-  title: string;
-  subtitle: string;
-  items: MarineModelExtreme[];
-};
-
-type MarineModelHookResult = {
-  loading: boolean;
-  error: string | null;
-  updatedAt: string | null;
-  heroes: Partial<Record<MarineExtremeKind, MarineModelExtreme | null>>;
-  groups: MarineModelGroup[];
-  refresh: () => Promise<void>;
-};
-
 async function fetchWorkerLandExtremes(unit: 'F' | 'C'): Promise<{
   ok: boolean;
   unit: 'F' | 'C';
@@ -273,18 +236,18 @@ function landRankingMeta(kind: Extract<LandExtremeKind, 'hot' | 'cold' | 'wind'>
   if (kind === 'hot') {
     return {
       title: 'Top 10 Hottest Places',
-      subtitle: 'Curated global sample of current land temperatures',
+      subtitle: 'Current land temperature ranking from available stations',
     };
   }
   if (kind === 'cold') {
     return {
       title: 'Top 10 Coldest Places',
-      subtitle: 'Curated global sample of current land temperatures',
+      subtitle: 'Current cold spots from available stations',
     };
   }
   return {
     title: 'Top 10 Windiest Places',
-    subtitle: 'Curated global sample of current land winds and gusts',
+    subtitle: 'Strongest current land winds from available stations',
   };
 }
 
@@ -335,25 +298,7 @@ function mergeLandGroups(
   });
 }
 
-function pushMarineExtremeToMap(
-  router: ReturnType<typeof useRouter>,
-  x: { lat: number; lon: number; name: string },
-) {
-  router.push({
-    pathname: '/maps',
-    params: {
-      view: 'mariner',
-      focus: 'once',
-      lat: String(x.lat),
-      lon: String(x.lon),
-      label: x.name,
-      source: 'extremes',
-      targetType: 'marine-model-extreme',
-    },
-  });
-}
-
-function useLandExtremes(tempUnit: 'F' | 'C', enabled = true): LandHookResult {
+function useLandExtremes(tempUnit: 'F' | 'C'): LandHookResult {
   const cacheRef = useRef<{
     fetchedAt: number;
     updatedAt: string | null;
@@ -374,7 +319,6 @@ function useLandExtremes(tempUnit: 'F' | 'C', enabled = true): LandHookResult {
   const [heroes, setHeroes] = useState<Partial<Record<LandExtremeKind, LandExtreme | null>>>({});
 
   const refresh = useCallback(async () => {
-    if (!enabled) return;
     const TTL_MS = 1000 * 60 * 10; // 10 min (aligns to Worker cache)
     const now = Date.now();
 
@@ -432,95 +376,14 @@ function useLandExtremes(tempUnit: 'F' | 'C', enabled = true): LandHookResult {
     } finally {
       setLoading(false);
     }
-  }, [enabled, tempUnit]);
+  }, [tempUnit]);
 
+  // Initial build
   const bootRef = useRef(false);
-  useEffect(() => {
-    if (!enabled || bootRef.current) return;
+  if (!bootRef.current) {
     bootRef.current = true;
     refresh();
-  }, [enabled, refresh]);
-
-  return { loading, error, updatedAt, heroes, groups, refresh };
-}
-
-async function fetchWorkerMarineExtremes(): Promise<{
-  ok: boolean;
-  updatedAt: string | null;
-  heroes: Partial<Record<MarineExtremeKind, MarineModelExtreme | null>>;
-  groups: MarineModelGroup[];
-}> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12000);
-
-  try {
-    const res = await fetch(MARINE_EXTREMES_WORKER_URL, { signal: ctrl.signal });
-    if (!res.ok) throw new Error(`marine-extremes worker failed (${res.status})`);
-    const json = (await res.json()) as any;
-    return {
-      ok: !!json?.ok,
-      updatedAt: typeof json?.updatedAt === 'string' ? json.updatedAt : null,
-      heroes: (json?.heroes && typeof json.heroes === 'object' ? json.heroes : {}) as any,
-      groups: (Array.isArray(json?.groups) ? json.groups : []) as any,
-    };
-  } finally {
-    clearTimeout(t);
   }
-}
-
-function useMarineModelExtremes(enabled = true): MarineModelHookResult {
-  const cacheRef = useRef<{
-    fetchedAt: number;
-    updatedAt: string | null;
-    heroes: Partial<Record<MarineExtremeKind, MarineModelExtreme | null>>;
-    groups: MarineModelGroup[];
-  } | null>(null);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [heroes, setHeroes] = useState<Partial<Record<MarineExtremeKind, MarineModelExtreme | null>>>({});
-  const [groups, setGroups] = useState<MarineModelGroup[]>([]);
-
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
-    const TTL_MS = 1000 * 60 * 15;
-    const now = Date.now();
-    if (cacheRef.current && now - cacheRef.current.fetchedAt < TTL_MS) {
-      setGroups(cacheRef.current.groups);
-      setHeroes(cacheRef.current.heroes);
-      setUpdatedAt(cacheRef.current.updatedAt);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const json = await fetchWorkerMarineExtremes();
-      const nextGroups = Array.isArray(json.groups) ? json.groups : [];
-      const nextHeroes = json.heroes ?? {};
-      setGroups(nextGroups);
-      setHeroes(nextHeroes);
-      setUpdatedAt(json.updatedAt);
-      cacheRef.current = {
-        fetchedAt: now,
-        updatedAt: json.updatedAt,
-        heroes: nextHeroes,
-        groups: nextGroups,
-      };
-    } catch (e: any) {
-      setError(e?.message ? String(e.message) : 'Failed to load global marine extremes.');
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled]);
-
-  const bootRef = useRef(false);
-  useEffect(() => {
-    if (!enabled || bootRef.current) return;
-    bootRef.current = true;
-    refresh();
-  }, [enabled, refresh]);
 
   return { loading, error, updatedAt, heroes, groups, refresh };
 }
@@ -580,14 +443,13 @@ async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'):
   }
 }
 
-function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C', enabled = true) {
+function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SavedPlaceExtreme[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const signature = useMemo(() => favorites.map((fav) => `${fav.id}:${fav.lat}:${fav.lon}`).join('|'), [favorites]);
 
   const refresh = useCallback(async () => {
-    if (!enabled) return;
     if (!favorites.length) {
       setItems([]);
       setUpdatedAt(null);
@@ -602,12 +464,11 @@ function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C', e
     } finally {
       setLoading(false);
     }
-  }, [enabled, favorites, unit]);
+  }, [favorites, unit]);
 
   useEffect(() => {
-    if (!enabled) return;
     refresh();
-  }, [enabled, refresh, signature]);
+  }, [refresh, signature]);
 
   return { loading, items, updatedAt, refresh };
 }
@@ -793,74 +654,6 @@ function MarineSection({
   );
 }
 
-function formatMarineModelValue(item: MarineModelExtreme, tempUnit: 'F' | 'C') {
-  if (item.kind === 'wave') {
-    return item.waveHeightM != null ? `${(item.waveHeightM * 3.28084).toFixed(1)} ft` : '—';
-  }
-  if (item.kind === 'wind') {
-    return item.windSpeedKts != null ? `${item.windSpeedKts.toFixed(0)} kt` : '—';
-  }
-  if (item.kind === 'warm' || item.kind === 'cold') {
-    return formatTemp(item.seaSurfaceTempC, tempUnit);
-  }
-  if (item.kind === 'current') {
-    return item.oceanCurrentKts != null ? `${item.oceanCurrentKts.toFixed(1)} kt` : '—';
-  }
-  return item.seaLevelHeightMslM != null ? `${item.seaLevelHeightMslM.toFixed(2)} m` : '—';
-}
-
-function MarineModelSection({
-  title,
-  subtitle,
-  items,
-  tempUnit,
-}: {
-  title: string;
-  subtitle: string;
-  items: MarineModelExtreme[];
-  tempUnit: 'F' | 'C';
-}) {
-  const router = useRouter();
-  if (!items.length) return null;
-
-  return (
-    <Card style={styles.sectionCard}>
-      <View style={styles.sectionHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
-        </View>
-        <Text style={styles.sectionCount}>Top {items.length}</Text>
-      </View>
-
-      {items.map((item, idx) => (
-        <Pressable
-          key={`${item.kind}-${item.id}`}
-          onPress={() => pushMarineExtremeToMap(router, item)}
-          style={({ pressed }) => [styles.row, pressed && { backgroundColor: '#020617' }]}
-        >
-          <View style={styles.rankCircle}>
-            <Text style={styles.rankText}>{idx + 1}</Text>
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.buoyName}>{item.name}</Text>
-            <Text style={styles.buoyMeta}>{item.region} · {formatLatLon(item.lat, item.lon)}</Text>
-            {item.updatedAt ? <Text style={styles.buoyMetaSmall}>{new Date(item.updatedAt).toLocaleString()}</Text> : null}
-            <Text style={styles.buoyMetaSmall}>{item.source}</Text>
-          </View>
-
-          <SeverityPill severity={getSeverity(item.waveHeightM, item.windSpeedKts)} />
-
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.valueText}>
-            {formatMarineModelValue(item, tempUnit)}
-          </Text>
-        </Pressable>
-      ))}
-    </Card>
-  );
-}
-
 function LandSection({ title, subtitle, items }: { title: string; subtitle: string; items: LandExtreme[] }) {
   const router = useRouter();
 
@@ -997,15 +790,13 @@ function SavedPlacesExtremeSection({
 export default function ExtremesScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const router = useRouter();
-  const isFocused = useIsFocused();
   const { tempUnit } = useSettings();
   const locations = useLocations();
   const [mode, setMode] = useState<Mode>('marine');
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data, loading, error } = useAllBuoyDetails(isFocused);
+  const { data, loading, error } = useAllBuoyDetails();
   const buoys: BuoyDetailData[] = data ?? [];
-  const marineModel = useMarineModelExtremes(isFocused);
 
   // Marine rankings
   const withWaves = useMemo(
@@ -1048,27 +839,26 @@ export default function ExtremesScreen() {
   const topWind = withWind[0] ?? null;
 
   // Land + Space
-  const land = useLandExtremes(tempUnit, isFocused);
-  const savedLand = useSavedPlaceExtremes(locations.favorites ?? [], tempUnit, isFocused);
+  const land = useLandExtremes(tempUnit);
+  const savedLand = useSavedPlaceExtremes(locations.favorites ?? [], tempUnit);
   const refreshSavedLand = savedLand.refresh;
-  const mars = useMarsInsightWeather(isFocused);
+  const mars = useMarsInsightWeather();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (mode === 'marine') await marineModel.refresh();
       if (mode === 'land') await Promise.all([land.refresh(), refreshSavedLand()]);
       if (mode === 'space') await mars.refresh();
     } finally {
       setRefreshing(false);
     }
-  }, [land, marineModel, mars, mode, refreshSavedLand]);
+  }, [land, mars, mode, refreshSavedLand]);
 
   const headerSubtitle =
     mode === 'marine'
       ? 'Biggest seas, strongest winds, and most extreme water temps'
       : mode === 'land'
-        ? 'Curated global hot, cold, and wind spots'
+        ? 'Hottest, coldest, windiest… across land weather'
         : 'Mars and beyond (because why not)';
 
   return (
@@ -1111,13 +901,6 @@ export default function ExtremesScreen() {
         </Card>
       ) : null}
 
-      {mode === 'marine' && marineModel.error ? (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Global ocean model</Text>
-          <Text style={styles.errorText}>{marineModel.error}</Text>
-        </Card>
-      ) : null}
-
       {/* MARINE */}
       {mode === 'marine' && !loading && !error ? (
         <>
@@ -1142,34 +925,6 @@ export default function ExtremesScreen() {
               topWind ? <SeverityPill severity={getSeverity(topWind.waveHeightM ?? null, topWind.windSpeedKts ?? null)} /> : null
             }
           />
-
-          {marineModel.loading && !marineModel.groups.length ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={typography.small}>Scanning global ocean model points...</Text>
-            </View>
-          ) : null}
-
-          {marineModel.groups.length ? (
-            <>
-              <Card style={styles.infoCard}>
-                <Text style={styles.infoTitle}>Global Ocean Model Board</Text>
-                <Text style={styles.infoText}>
-                  Curated global ocean points from Open-Meteo Marine: waves, wind, SST, currents, and sea-level signal.
-                </Text>
-              </Card>
-
-              {marineModel.groups.map((group) => (
-                <MarineModelSection
-                  key={`marine-model-${group.title}`}
-                  title={group.title}
-                  subtitle={group.subtitle}
-                  items={group.items}
-                  tempUnit={tempUnit}
-                />
-              ))}
-            </>
-          ) : null}
 
           <MarineSection title="Highest Waves" subtitle="Significant wave height (Hs)" items={withWaves} renderValue={(b) => (b.waveHeightM != null ? `${(b.waveHeightM * 3.28084).toFixed(1)} ft` : '—')} />
           <MarineSection title="Strongest Winds" subtitle="Sustained wind speed" items={withWind} renderValue={(b) => (b.windSpeedKts != null ? `${b.windSpeedKts.toFixed(0)} kt` : '—')} />
@@ -1208,13 +963,6 @@ export default function ExtremesScreen() {
 
               return (
                 <>
-                  <Card style={styles.infoCard}>
-                    <Text style={styles.infoTitle}>Curated Global Board</Text>
-                    <Text style={styles.infoText}>
-                      A fun live sample from notable places and broad scan points. Add saved places to compare your own spots.
-                    </Text>
-                  </Card>
-
                   {hasLandRows ? (
                     mergedGroups.map((g) => (
                       <LandSection key={`land-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
@@ -1436,24 +1184,6 @@ const styles = StyleSheet.create({
 
   sectionCard: {
     marginBottom: theme.spacing.lg,
-  },
-  infoCard: {
-    marginBottom: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-  },
-  infoTitle: {
-    fontSize: 12,
-    color: '#93c5fd',
-    fontWeight: '900',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: theme.colors.textSecondary,
-    fontWeight: '700',
   },
   sectionHeader: {
     flexDirection: 'row',

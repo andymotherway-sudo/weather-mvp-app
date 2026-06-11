@@ -269,15 +269,13 @@ export function useRadarController(args: {
   localMinZoom?: number;
   ridgeMinZoom?: number;
   animationQuality?: AnimationQuality;
-  enabled?: boolean;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
-  const controllerEnabled = args.enabled !== false;
   const animationQuality = args.animationQuality ?? 'cinematic';
   const stationMode = args.stationMode === true;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
-  const radarEnabled = controllerEnabled && !!state.layers?.['radar.reflectivity']?.enabled;
+  const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = getStormMode(state);
 
   const profile = useMemo(
@@ -324,9 +322,8 @@ export function useRadarController(args: {
     createRainViewerProvider({
       ttlMs: 60_000,
       includeNowcast: false,
-      maxFrames: 8,
+      maxFrames: 24,
       maxZoom: 7,
-      tileSize: 256,
     }),
   );
 

@@ -31,8 +31,6 @@ export type WeatherAlertDetail = {
   senderName: string | null;
   description: string | null;
   instruction: string | null;
-  derived: boolean;
-  sourceLabel: string;
 };
 
 type AlertMapData = {
@@ -40,7 +38,6 @@ type AlertMapData = {
   loading: boolean;
   error: string | null;
   updatedAt: string | null;
-  sourceMode: 'official' | 'derived';
 };
 
 const EMPTY_FC: GeoJsonFeatureCollection = {
@@ -175,7 +172,6 @@ function normalizeAlertFeature(feature: any, idx: number) {
       senderName: cleanText(p.senderName),
       description: cleanText(p.description),
       instruction: cleanText(p.instruction),
-      sourceLabel: 'Official NWS alert',
       fillColor: palette.fill,
       lineColor: palette.line,
       rank: palette.rank,
@@ -214,7 +210,6 @@ function normalizeWwaFeature(feature: any, idx: number, layerId: number) {
       instruction: null,
       url: cleanText(p.url),
       sourceLayer: layerId === 0 ? 'CurrentWarnings' : 'WatchesWarnings',
-      sourceLabel: 'Official NWS alert polygon',
       fillColor: palette.fill,
       lineColor: palette.line,
       rank: palette.rank,
@@ -251,7 +246,6 @@ function normalizeGlobalAlertPoint(alert: any, idx: number, region: RegionLike) 
       senderName: cleanText(alert?.senderName) ?? 'OMNIwx global forecast outlook',
       description: cleanText(alert?.description),
       instruction: cleanText(alert?.instruction),
-      sourceLabel: 'Model-derived global outlook',
       fillColor: palette.fill,
       lineColor: palette.line,
       rank: palette.rank,
@@ -378,8 +372,6 @@ export function alertFeatureToDetail(feature: any): WeatherAlertDetail | null {
     senderName: cleanText(p.senderName),
     description: cleanText(p.description),
     instruction: cleanText(p.instruction),
-    derived: p.derived === true,
-    sourceLabel: cleanText(p.sourceLabel) ?? (p.derived === true ? 'Model-derived global outlook' : 'Official NWS alert'),
   };
 }
 
@@ -392,7 +384,6 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
   const envelope = useMemo(() => (region ? buildViewportEnvelope(region) : null), [region]);
   const envelopeKey = envelope ? `${envelope.west},${envelope.south},${envelope.east},${envelope.north}` : null;
   const supported = region ? isWeatherGovAlertLikelySupportedPoint(region.latitude, region.longitude) : true;
-  const sourceMode: AlertMapData['sourceMode'] = supported ? 'official' : 'derived';
 
   useEffect(() => {
     if (!enabled) {
@@ -444,12 +435,12 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
       cancelled = true;
       controller.abort();
     };
-  }, [enabled, envelopeKey, supported, region?.latitude, region?.longitude]);
+  }, [enabled, envelopeKey, supported]);
 
   const geojson = useMemo(() => {
     if (!enabled || !envelope) return EMPTY_FC;
     return filterToEnvelope(allAlerts, envelope);
   }, [allAlerts, enabled, envelopeKey]);
 
-  return { geojson, loading, error, updatedAt, sourceMode };
+  return { geojson, loading, error, updatedAt };
 }
