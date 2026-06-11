@@ -94,7 +94,23 @@ type WildfireIncidentDetails = {
 type SelectedMarineFeature =
   | { kind: 'buoy'; id: string }
   | { kind: 'zone'; id: string }
+  | { kind: 'globalArea'; id: string }
   | null;
+
+type MarinePointConditions = {
+  significantWaveHeightM: number | null;
+  primarySwellPeriodS: number | null;
+  primarySwellDirectionDeg: number | null;
+  windSpeedKts: number | null;
+  windGustKts: number | null;
+  windDirectionDeg: number | null;
+  seaSurfaceTempC: number | null;
+  oceanCurrentKts?: number | null;
+  oceanCurrentDirectionDeg?: number | null;
+  seaLevelHeightMslM?: number | null;
+  observedAt: string | null;
+  modelSource: string | null;
+};
 
 type WeatherAlertForecastTarget =
   | { kind: 'marine'; zoneId: string; name?: string | null; wfo?: string | null }
@@ -781,28 +797,46 @@ function marineZoneMarkersToFeatureCollection(zones: NauticalZone[]) {
   };
 }
 
+function boundsToPolygonCoordinates(bounds: { west: number; south: number; east: number; north: number }) {
+  const ringFor = (west: number, east: number) =>
+    closeRingIfNeeded([
+      [west, bounds.south],
+      [east, bounds.south],
+      [east, bounds.north],
+      [west, bounds.north],
+    ] as Array<[number, number]>);
+
+  if (bounds.west <= bounds.east) {
+    return { type: 'Polygon' as const, coordinates: [ringFor(bounds.west, bounds.east)] };
+  }
+
+  return {
+    type: 'MultiPolygon' as const,
+    coordinates: [
+      [ringFor(bounds.west, 180)],
+      [ringFor(-180, bounds.east)],
+    ],
+  };
+}
+
 function globalMarineAreasToFeatureCollection(areas: GlobalMarineAreaSummary[]) {
   return {
     type: 'FeatureCollection' as const,
     features: areas
-      .map((area) => {
-        const lat = Number(area.center?.lat);
-        const lon = Number(area.center?.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-        return {
-          type: 'Feature' as const,
+      .filter((area) => area.geometry || area.bounds)
+      .map((area) => ({
+        type: 'Feature' as const,
+        id: area.id,
+        properties: {
           id: area.id,
-          properties: {
-            id: area.id,
-            name: area.name,
-            region: area.region,
-            kind: area.kind,
-            sourceLabel: area.sourceLabel,
-          },
-          geometry: { type: 'Point' as const, coordinates: [lon, lat] },
-        };
-      })
-      .filter(Boolean),
+          name: area.name,
+          region: area.region,
+          kind: area.kind,
+          sourceLabel: area.sourceLabel,
+          sourceUrl: area.sourceUrl,
+        },
+        geometry: area.geometry ?? boundsToPolygonCoordinates(area.bounds!),
+      })),
   };
 }
 
@@ -1145,6 +1179,17 @@ async function fetchFavoriteTemperature(
   return safeNum(json?.temp ?? json?.current?.temperature_2m);
 }
 
+async function fetchMarinePointConditions(lat: number, lon: number, signal: AbortSignal): Promise<MarinePointConditions | null> {
+  const res = await fetchWithTimeout(
+    apiUrl(`/api/marine/conditions?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`),
+    9000,
+    { headers: { Accept: 'application/json' }, signal },
+  );
+  if (!res.ok) throw new Error(`Marine conditions failed (${res.status})`);
+  const json = await res.json();
+  return json?.conditions ?? null;
+}
+
 function useFavoriteTemperatures(favorites: FavoriteLocation[], unit: 'F' | 'C') {
   const [lookup, setLookup] = useState<Record<string, FavoriteTemperatureState>>({});
   const favoriteSignature = useMemo(
@@ -1329,6 +1374,9 @@ export default function MapsScreen() {
   const [selectedWeatherAlertForecastTarget, setSelectedWeatherAlertForecastTarget] =
     useState<WeatherAlertForecastTarget>(null);
   const [selectedMarineFeature, setSelectedMarineFeature] = useState<SelectedMarineFeature>(null);
+  const [selectedGlobalMarineConditions, setSelectedGlobalMarineConditions] = useState<MarinePointConditions | null>(null);
+  const [selectedGlobalMarineLoading, setSelectedGlobalMarineLoading] = useState(false);
+  const [selectedGlobalMarineError, setSelectedGlobalMarineError] = useState<string | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
@@ -2368,11 +2416,11 @@ export default function MapsScreen() {
   const effectiveRegion = region ?? stableInitialRegion;
   const marineDataEnabled = isFocused && marineConditionsEnabled;
   const marineBbox = useMemo(
-    () => (marineDataEnabled && mapZoom >= 4 ? regionToBbox(effectiveRegion) : null),
+    () => (marineDataEnabled && mapZoom >= 3.6 ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, mapZoom, marineDataEnabled],
   );
   const globalMarineViewport = useMemo(() => {
-    if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.2) return null;
+    if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.6) return null;
     const bbox = regionToBbox(effectiveRegion);
     if (
       !bbox ||
@@ -2406,21 +2454,31 @@ export default function MapsScreen() {
     [buoyData, marineDataEnabled],
   );
   const marineZonesById = useMemo(() => new Map(visibleMarineZones.map((zone) => [zone.id, zone])), [visibleMarineZones]);
+  const globalMarineAreasById = useMemo(
+    () => new Map(globalMarineAreas.map((area) => [area.id, area])),
+    [globalMarineAreas],
+  );
   const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
-  const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
-  const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const globalMarineAreasFc = useMemo(
     () => globalMarineAreasToFeatureCollection(globalMarineAreas),
     [globalMarineAreas],
   );
+  const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
+  const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
   const selectedMarineBuoy =
     selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
   const selectedMarineZone =
     selectedMarineFeature?.kind === 'zone' ? marineZonesById.get(selectedMarineFeature.id) ?? null : null;
+  const selectedGlobalMarineArea =
+    selectedMarineFeature?.kind === 'globalArea' ? globalMarineAreasById.get(selectedMarineFeature.id) ?? null : null;
   const selectedMarineZoneFc = useMemo(
     () => marineZonesToFeatureCollection(selectedMarineZone ? [selectedMarineZone] : []),
     [selectedMarineZone],
+  );
+  const selectedGlobalMarineAreaFc = useMemo(
+    () => globalMarineAreasToFeatureCollection(selectedGlobalMarineArea ? [selectedGlobalMarineArea] : []),
+    [selectedGlobalMarineArea],
   );
   const resolveMarineFeatureAtPoint = useCallback(
     (lat: number, lon: number): SelectedMarineFeature => {
@@ -2452,6 +2510,35 @@ export default function MapsScreen() {
   useEffect(() => {
     if (!marineConditionsEnabled) setSelectedMarineFeature(null);
   }, [marineConditionsEnabled]);
+
+  useEffect(() => {
+    if (!selectedGlobalMarineArea) {
+      setSelectedGlobalMarineConditions(null);
+      setSelectedGlobalMarineLoading(false);
+      setSelectedGlobalMarineError(null);
+      return;
+    }
+
+    const ac = new AbortController();
+    setSelectedGlobalMarineLoading(true);
+    setSelectedGlobalMarineError(null);
+
+    fetchMarinePointConditions(selectedGlobalMarineArea.center.lat, selectedGlobalMarineArea.center.lon, ac.signal)
+      .then((conditions) => {
+        if (ac.signal.aborted) return;
+        setSelectedGlobalMarineConditions(conditions);
+      })
+      .catch((e: any) => {
+        if (ac.signal.aborted) return;
+        setSelectedGlobalMarineConditions(null);
+        setSelectedGlobalMarineError(e?.message ?? 'Marine model conditions unavailable');
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setSelectedGlobalMarineLoading(false);
+      });
+
+    return () => ac.abort();
+  }, [selectedGlobalMarineArea]);
 
   useEffect(() => {
     const targetBuoyId = params?.buoyId ? String(params.buoyId).toUpperCase() : '';
@@ -3518,35 +3605,55 @@ export default function MapsScreen() {
 
           {marineConditionsEnabled ? (
             <>
-              <MapLibreGL.ShapeSource id="global-marine-areas-source" shape={globalMarineAreasFc as any}>
-                <MapLibreGL.CircleLayer
-                  id="global-marine-areas"
+              <MapLibreGL.ShapeSource
+                id="global-marine-areas-source"
+                shape={globalMarineAreasFc as any}
+                onPress={(e: any) => {
+                  const feature = e?.features?.[0];
+                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
+                  if (id) setSelectedMarineFeature({ kind: 'globalArea', id });
+                }}
+              >
+                <MapLibreGL.FillLayer
+                  id="global-marine-areas-fill"
                   minZoomLevel={2}
-                  maxZoomLevel={7.2}
+                  maxZoomLevel={7.6}
                   style={{
-                    circleColor: 'rgba(13,148,136,0.48)',
-                    circleStrokeColor: 'rgba(153,246,228,0.92)',
-                    circleStrokeWidth: 1.1,
-                    circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 3.5, 5, 5.5, 7, 7] as any,
-                    circleOpacity: 0.82 * marineConditionsOpacity,
+                    fillColor: 'rgba(20,184,166,1)',
+                    fillOpacity: ['interpolate', ['linear'], ['zoom'], 2, 0.035, 6.5, 0.055] as any,
                   }}
                 />
-                <MapLibreGL.SymbolLayer
-                  id="global-marine-area-labels"
-                  minZoomLevel={3.2}
-                  maxZoomLevel={7.2}
+                <MapLibreGL.LineLayer
+                  id="global-marine-areas-line"
+                  minZoomLevel={2}
+                  maxZoomLevel={7.6}
                   style={{
-                    textField: ['coalesce', ['get', 'name'], ['get', 'region']] as any,
-                    textSize: ['interpolate', ['linear'], ['zoom'], 3.2, 8.5, 7, 10] as any,
-                    textColor: '#a7f3d0',
-                    textHaloColor: 'rgba(2,6,23,0.96)',
-                    textHaloWidth: 1.25,
-                    textOffset: [0, 1.2],
-                    textAllowOverlap: false,
-                    textOptional: true,
+                    lineColor: 'rgba(94,234,212,0.82)',
+                    lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.45, 5, 0.75, 7.6, 1] as any,
+                    lineOpacity: 0.42 * marineConditionsOpacity,
                   }}
                 />
               </MapLibreGL.ShapeSource>
+
+              {selectedGlobalMarineArea ? (
+                <MapLibreGL.ShapeSource id="selected-global-marine-area-source" shape={selectedGlobalMarineAreaFc as any}>
+                  <MapLibreGL.FillLayer
+                    id="selected-global-marine-area-fill"
+                    style={{
+                      fillColor: 'rgba(20,184,166,1)',
+                      fillOpacity: 0.08 * marineConditionsOpacity,
+                    }}
+                  />
+                  <MapLibreGL.LineLayer
+                    id="selected-global-marine-area-line"
+                    style={{
+                      lineColor: 'rgba(153,246,228,0.95)',
+                      lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.2, 7, 2.2] as any,
+                      lineOpacity: 0.9 * marineConditionsOpacity,
+                    }}
+                  />
+                </MapLibreGL.ShapeSource>
+              ) : null}
 
               <MapLibreGL.ShapeSource
                 id="marine-zone-markers-source"
@@ -3568,21 +3675,6 @@ export default function MapsScreen() {
                     circleOpacity: 0.9 * marineConditionsOpacity,
                   }}
                 />
-                <MapLibreGL.SymbolLayer
-                  id="marine-zone-marker-labels"
-                  minZoomLevel={4.8}
-                  maxZoomLevel={7.2}
-                  style={{
-                    textField: ['coalesce', ['get', 'name'], ['get', 'id']] as any,
-                    textSize: ['interpolate', ['linear'], ['zoom'], 4.8, 9, 7, 10.5] as any,
-                    textColor: '#ccfbf1',
-                    textHaloColor: 'rgba(2,6,23,0.96)',
-                    textHaloWidth: 1.2,
-                    textOffset: [0, 1.25],
-                    textAllowOverlap: false,
-                    textOptional: true,
-                  }}
-                />
               </MapLibreGL.ShapeSource>
 
               <MapLibreGL.ShapeSource
@@ -3596,24 +3688,11 @@ export default function MapsScreen() {
               >
                 <MapLibreGL.LineLayer
                   id="marine-zones-line"
-                  minZoomLevel={7.2}
+                  minZoomLevel={3.8}
                   style={{
                     lineColor: 'rgba(45,212,191,0.78)',
-                    lineWidth: ['interpolate', ['linear'], ['zoom'], 7.2, 0.8, 10, 1.35] as any,
-                    lineOpacity: 0.42 * marineConditionsOpacity,
-                  }}
-                />
-                <MapLibreGL.SymbolLayer
-                  id="marine-zones-label"
-                  minZoomLevel={8.4}
-                  style={{
-                    textField: ['coalesce', ['get', 'name'], ['get', 'id']] as any,
-                    textSize: 10,
-                    textColor: '#e0f2fe',
-                    textHaloColor: 'rgba(2,6,23,0.95)',
-                    textHaloWidth: 1.2,
-                    textAllowOverlap: false,
-                    textOptional: true,
+                    lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.45, 7.2, 0.9, 10, 1.35] as any,
+                    lineOpacity: 0.52 * marineConditionsOpacity,
                   }}
                 />
               </MapLibreGL.ShapeSource>
@@ -5080,16 +5159,16 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
-        {!animationRecordMode && marineConditionsEnabled && (selectedMarineBuoy || selectedMarineZone) ? (
+        {!animationRecordMode && marineConditionsEnabled && (selectedMarineBuoy || selectedMarineZone || selectedGlobalMarineArea) ? (
           <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
             <Glass style={styles.alertDetailCard}>
               <View style={styles.fireDetailHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.marineDetailEyebrow}>
-                    {selectedMarineBuoy ? 'MARINE BUOY' : 'MARINE ZONE'}
+                    {selectedMarineBuoy ? 'MARINE BUOY' : selectedMarineZone ? 'MARINE ZONE' : 'HIGH SEAS AREA'}
                   </Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
-                    {selectedMarineBuoy?.name ?? selectedMarineZone?.name ?? selectedMarineFeature?.id}
+                    {selectedMarineBuoy?.name ?? selectedMarineZone?.name ?? selectedGlobalMarineArea?.name ?? selectedMarineFeature?.id}
                   </Text>
                 </View>
                 <Pressable onPress={() => setSelectedMarineFeature(null)} style={styles.fireDetailClose}>
@@ -5192,6 +5271,74 @@ export default function MapsScreen() {
                       <Text style={styles.fireDetailCloseText}>Forecast</Text>
                     </Pressable>
                   </View>
+                </>
+              ) : selectedGlobalMarineArea ? (
+                <>
+                  <View style={styles.fireDetailPills}>
+                    <HudBadge label={selectedGlobalMarineArea.id.toUpperCase()} strong />
+                    <HudBadge label="Official area" />
+                    <HudBadge label="Model point data" />
+                  </View>
+
+                  <Text style={styles.fireDetailMeta}>
+                    {selectedGlobalMarineArea.sourceLabel}. Conditions below are sampled from Open-Meteo Marine near the area center.
+                  </Text>
+
+                  <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Region</Text>
+                      <Text style={styles.fireDetailValue}>{selectedGlobalMarineArea.region}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Wave height</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedGlobalMarineLoading
+                          ? 'Loading...'
+                          : selectedGlobalMarineConditions?.significantWaveHeightM != null
+                            ? `${Math.round(selectedGlobalMarineConditions.significantWaveHeightM * 3.28084)} ft`
+                            : 'Unavailable'}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Wind / gust</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedGlobalMarineLoading
+                          ? 'Loading...'
+                          : selectedGlobalMarineConditions?.windSpeedKts != null
+                            ? `${Math.round(selectedGlobalMarineConditions.windSpeedKts)} kt${
+                                selectedGlobalMarineConditions.windGustKts != null
+                                  ? ` / ${Math.round(selectedGlobalMarineConditions.windGustKts)} kt`
+                                  : ''
+                              }`
+                            : 'Unavailable'}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Sea temp</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedGlobalMarineLoading
+                          ? 'Loading...'
+                          : formatMarineWaterTemp(selectedGlobalMarineConditions?.seaSurfaceTempC ?? undefined, tempUnit)}
+                      </Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Updated</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedGlobalMarineError ?? formatMarineUpdated(selectedGlobalMarineConditions?.observedAt)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {selectedGlobalMarineArea.sourceUrl ? (
+                    <View style={styles.marineDetailActionRow}>
+                      <Pressable
+                        style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                        onPress={() => Linking.openURL(selectedGlobalMarineArea.sourceUrl!)}
+                      >
+                        <Text style={styles.fireDetailCloseText}>Official source</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </>
               ) : null}
             </Glass>

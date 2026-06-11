@@ -8,7 +8,12 @@ export type GlobalMarineAreaSummary = {
   kind: 'coastal' | 'offshore' | 'high-seas' | 'lake' | 'model';
   center: { lat: number; lon: number };
   bounds?: { west: number; south: number; east: number; north: number };
+  geometry?: {
+    type: 'Polygon' | 'MultiPolygon';
+    coordinates: any;
+  };
   sourceLabel: string;
+  sourceUrl?: string;
 };
 
 export type GlobalMarineManifest = {
