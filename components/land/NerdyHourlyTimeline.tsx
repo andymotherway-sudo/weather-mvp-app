@@ -319,6 +319,13 @@ export function NerdyHourlyTimeline({
       const wind = safeNum(h.windMph ?? h.windspeedMph ?? h.windspeed_10m ?? h.wind_speed_10m);
       const gust = safeNum(h.windGustMph ?? h.windgusts_10m ?? h.wind_gusts_10m ?? h.windGustsMph);
       const wdir = safeNum(h.windDirDeg ?? h.winddirection_10m ?? h.wind_direction_10m ?? h.windDir);
+      const aqi = safeNum(h.airQualityUsAqi ?? h.usAqi ?? h.us_aqi ?? h.airQualityIndex ?? h.aqi);
+      const aqiLabel =
+        typeof h.airQualityLabel === 'string'
+          ? h.airQualityLabel
+          : typeof h.aqiLabel === 'string'
+            ? h.aqiLabel
+            : null;
       const pressureHpa = safeNum(
         h.pressureHpa ?? h.pressure_msl ?? h.pressureMslHpa ?? h.surface_pressure
       );
@@ -358,6 +365,8 @@ export function NerdyHourlyTimeline({
         wind: wind != null ? Math.round(wind) : null,
         gust: gust != null ? Math.round(gust) : null,
         wdir,
+        aqi: aqi != null ? Math.round(aqi) : null,
+        aqiLabel,
         pressureHpa: pressureHpa != null ? Math.round(pressureHpa) : null,
         spread,
         gustFactor,
@@ -440,6 +449,12 @@ export function NerdyHourlyTimeline({
                 </View>
                 <View style={styles.metricStripDivider} />
                 <View style={styles.metricStripItem}>
+                  <Text style={styles.metricStripValue}>{chip(item.aqi)}</Text>
+                  <Text style={styles.metricStripLabel}>AQI</Text>
+                  <Text style={styles.metricStripSub}>{item.aqiLabel ?? 'Air quality'}</Text>
+                </View>
+                <View style={styles.metricStripDivider} />
+                <View style={styles.metricStripItem}>
                   <PremiumMetricIcon kind="wind" size={18} variant="inline" />
                   <Text style={styles.metricStripValue}>{item.wind == null ? '—' : `${item.wind} mph`}</Text>
                   <Text style={styles.metricStripLabel}>Wind</Text>
@@ -460,6 +475,12 @@ export function NerdyHourlyTimeline({
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Humidity</Text>
                     <Text style={styles.simpleStatValue}>{formatHumidityBucket(item.rh)}</Text>
+                  </View>
+                  <View style={styles.simpleStatRow}>
+                    <Text style={styles.simpleStatLabel}>AQI</Text>
+                    <Text style={styles.simpleStatValue}>
+                      {item.aqi == null ? '—' : `${item.aqi}${item.aqiLabel ? ` · ${item.aqiLabel}` : ''}`}
+                    </Text>
                   </View>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Sky</Text>

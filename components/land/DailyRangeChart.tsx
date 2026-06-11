@@ -17,6 +17,8 @@ type DailyDatum = {
   date: string; // ISO yyyy-mm-dd
   tempMaxF: number | null;
   tempMinF: number | null;
+  apparentTempMaxF?: number | null;
+  apparentTempMinF?: number | null;
 
   precipProbMaxPct: number | null; // 0-100
   dewPointMaxF: number | null;
@@ -357,6 +359,7 @@ export function DailyRangeChart({
   const tableRows = [
     { label: 'High', shortLabel: 'HIGH', values: data.map((d) => fmtInt(d.tempMaxF, unitsLabel)) },
     { label: 'Low', shortLabel: 'LOW', values: data.map((d) => fmtInt(d.tempMinF, unitsLabel)) },
+    { label: 'Feels', shortLabel: 'FEELS', values: data.map((d) => fmtInt(d.apparentTempMaxF ?? null, unitsLabel)) },
     { label: 'Dew pt', shortLabel: 'DEW', values: data.map((d) => fmtInt(d.dewPointMaxF, unitsLabel)) },
     { label: 'RH', shortLabel: 'RH', values: data.map((d) => fmtInt(d.humidityMaxPct, '%')) },
     { label: 'Wind', shortLabel: 'WIND', values: data.map((d) => fmtInt(d.windMaxMph, ' mph')) },
@@ -438,6 +441,7 @@ export function DailyRangeChart({
                       <Text style={{ opacity: 0.65 }}> | </Text>
                       {fmtInt(d.tempMinF)}
                     </Text>
+                    <Text style={[s.feelsLike, T.metric]}>Feels {fmtInt(d.apparentTempMaxF ?? null)}</Text>
 
                     <Text style={[s.sub, T.metric]}>Wind {fmtInt(d.windMaxMph, ' mph')}</Text>
                     <Text style={[s.sub, T.metric]}>Gust {fmtInt(d.windGustMaxMph, ' mph')}</Text>
@@ -966,6 +970,7 @@ const s = StyleSheet.create({
   icon: { marginTop: 10, fontSize: 26, opacity: 0.9 },
   iconBadge: { marginTop: 10 },
   hilo: { marginTop: 10, color: 'white', fontWeight: '900', fontSize: 18 },
+  feelsLike: { marginTop: 4, color: 'rgba(255,255,255,0.82)', fontWeight: '900', fontSize: 13 },
 
   sub: { marginTop: 6, color: 'rgba(255,255,255,0.55)', fontWeight: '800', fontSize: 12 },
   subRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },

@@ -2795,6 +2795,14 @@ function DailyForecastList({
           safeNum(day?.cloudCoverAvgPct ?? day?.cloudCoverPct ?? day?.cloudcover ?? day?.cloudCover) ?? null;
         const feelsLike =
           safeNum(day?.apparentTempMaxF ?? day?.feelsLikeMaxF ?? day?.apparentTemperatureMaxF ?? day?.feelsLikeF) ?? hi;
+        const dailyAqi =
+          safeNum(day?.airQualityUsAqiMax ?? day?.airQualityIndexMax ?? day?.airQualityUsAqi ?? day?.aqiMax) ?? null;
+        const dailyAqiLabel =
+          typeof day?.airQualityLabel === 'string'
+            ? day.airQualityLabel
+            : typeof day?.aqiLabel === 'string'
+              ? day.aqiLabel
+              : null;
         const sunrise = typeof day?.sunrise === 'string' ? day.sunrise : null;
         const sunset = typeof day?.sunset === 'string' ? day.sunset : null;
         const emoji = weatherCodeToEmoji(code);
@@ -2835,6 +2843,7 @@ function DailyForecastList({
           .filter(Boolean)
           .join(' • ');
         const barRows = [
+          { label: 'AQI', value: dailyAqi != null ? `${Math.round(dailyAqi)}` : '—', ratio: dailyAqi != null ? Math.max(0, Math.min(1, dailyAqi / 150)) : 0 },
           { label: 'Feels like', value: feelsLike != null ? `${Math.round(feelsLike)}°` : '—', ratio: feelsLike != null ? Math.max(0, Math.min(1, (feelsLike - 20) / 90)) : 0 },
           { label: 'Dew point', value: dewPoint != null ? `${Math.round(dewPoint)}°` : '—', ratio: dewPoint != null ? Math.max(0, Math.min(1, dewPoint / 80)) : 0 },
           { label: 'RH', value: humidity != null ? `${Math.round(humidity)}%` : '—', ratio: humidity != null ? Math.max(0, Math.min(1, humidity / 100)) : 0 },
@@ -2862,6 +2871,10 @@ function DailyForecastList({
                   <Text style={styles.dailyHi}>{hi != null ? `${Math.round(hi)}°` : '—'}</Text>
                   <Text style={styles.dailySlash}> / </Text>
                   <Text style={styles.dailyLo}>{lo != null ? `${Math.round(lo)}°` : '—'}</Text>
+                </Text>
+                <Text style={styles.dailyFeelsProminent}>
+                  Feels {feelsLike != null ? `${Math.round(feelsLike)}°` : '—'}
+                  {dailyAqi != null ? `  AQI ${Math.round(dailyAqi)}${dailyAqiLabel ? ` ${dailyAqiLabel}` : ''}` : ''}
                 </Text>
                 <View style={styles.dailyForecastConditionRow}>
                   <PremiumWeatherIcon code={code} size={26} variant="inline" style={styles.dailyForecastIconBadge} />
@@ -5634,6 +5647,14 @@ const styles = StyleSheet.create({
 
   dailyLo: {
     color: 'rgba(255,255,255,0.62)',
+  },
+
+  dailyFeelsProminent: {
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 18,
   },
 
   dailyPop: {

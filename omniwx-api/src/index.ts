@@ -900,6 +900,15 @@ const CURRENT_STALE_SECONDS = 30 * 60;
 
 const OM_HOURLY_TTL_SECONDS = 600;
 const OM_HOURLY_STALE_SECONDS = 6 * 3600;
+const AIR_QUALITY_TTL_SECONDS = 15 * 60;
+const AIR_QUALITY_STALE_SECONDS = 6 * 3600;
+const AIR_QUALITY_CACHE_VERSION = "aqi-hourly-v1";
+const USGS_IV_TTL_SECONDS = 15 * 60;
+const USGS_IV_STALE_SECONDS = 6 * 3600;
+const USGS_IV_CACHE_VERSION = "usgs-ogc-iv-v1";
+const USGS_WATER_STATIONS_TTL_SECONDS = 15 * 60;
+const USGS_WATER_STATIONS_STALE_SECONDS = 6 * 3600;
+const USGS_WATER_STATIONS_CACHE_VERSION = "usgs-water-stations-v4";
 
 const ASTRO_TTL_SECONDS = 600;
 const ASTRO_STALE_SECONDS = 6 * 3600;
@@ -2425,6 +2434,456 @@ async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string):
   } catch {
     return { index: null, label: null, source: "Open-Meteo air quality", airQualityIndex: null, airQualityLabel: null };
   }
+}
+
+function buildAirQualityHourlyCacheKey(url: URL, lat: number, lon: number) {
+  const keyUrl = new URL(url.toString());
+  keyUrl.pathname = "/__cache__/air-quality/hourly";
+  keyUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
+  keyUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
+  keyUrl.searchParams.set("timezone", url.searchParams.get("timezone") || "auto");
+  keyUrl.searchParams.set("forecast_hours", url.searchParams.get("forecast_hours") || "96");
+  keyUrl.searchParams.set("past_hours", url.searchParams.get("past_hours") || "0");
+  keyUrl.searchParams.set("v", AIR_QUALITY_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildAirQualityHourlyUpstream(url: URL) {
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return { ok: false as const, error: "lat and lon are required numbers" };
+  }
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return { ok: false as const, error: "lat/lon out of range" };
+  }
+
+  const timezone = url.searchParams.get("timezone") || "auto";
+  const forecastHoursRaw = Number(url.searchParams.get("forecast_hours") || "96");
+  const pastHoursRaw = Number(url.searchParams.get("past_hours") || "0");
+  const forecastHours = Math.max(1, Math.min(168, Number.isFinite(forecastHoursRaw) ? Math.round(forecastHoursRaw) : 96));
+  const pastHours = Math.max(0, Math.min(24, Number.isFinite(pastHoursRaw) ? Math.round(pastHoursRaw) : 0));
+  const hourly = [
+    "us_aqi",
+    "pm2_5",
+    "pm10",
+    "ozone",
+    "nitrogen_dioxide",
+    "carbon_monoxide",
+    "sulphur_dioxide",
+  ].join(",");
+
+  const upstreamUrl =
+    `https://air-quality-api.open-meteo.com/v1/air-quality` +
+    `?latitude=${encodeURIComponent(String(lat))}` +
+    `&longitude=${encodeURIComponent(String(lon))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&forecast_hours=${forecastHours}` +
+    `&past_hours=${pastHours}` +
+    `&timezone=${encodeURIComponent(timezone)}`;
+
+  return { ok: true as const, lat, lon, timezone, forecastHours, pastHours, upstreamUrl };
+}
+
+async function fetchAirQualityHourlyResponse(built: ReturnType<typeof buildAirQualityHourlyUpstream> & { ok: true }) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+  try {
+    const res = await fetch(built.upstreamUrl, {
+      signal: ctrl.signal,
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return new Response(
+        JSON.stringify({ ok: false, error: "Air quality upstream error", status: res.status, detail: txt.slice(0, 240) }),
+        { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+      );
+    }
+
+    const json: any = await res.json();
+    const hourly = json?.hourly ?? {};
+    const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
+    const pick = (name: string, idx: number) => {
+      const arr = hourly?.[name];
+      return Array.isArray(arr) ? safeNum(arr[idx]) : null;
+    };
+
+    const rows = times.map((time, idx) => {
+      const usAqi = pick("us_aqi", idx);
+      return {
+        time,
+        usAqi,
+        airQualityIndex: usAqi,
+        airQualityLabel: airQualityLabelForUsAqi(usAqi),
+        pm25: pick("pm2_5", idx),
+        pm10: pick("pm10", idx),
+        ozone: pick("ozone", idx),
+        nitrogenDioxide: pick("nitrogen_dioxide", idx),
+        carbonMonoxide: pick("carbon_monoxide", idx),
+        sulphurDioxide: pick("sulphur_dioxide", idx),
+      };
+    });
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        source: "Open-Meteo air quality",
+        updatedAt: new Date().toISOString(),
+        timezone: json?.timezone ?? built.timezone,
+        timezoneAbbreviation: json?.timezone_abbreviation ?? null,
+        utcOffsetSeconds: safeNum(json?.utc_offset_seconds),
+        hourly: rows,
+      }),
+      { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+    );
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function buildUsgsInstantaneousCacheKey(url: URL) {
+  const keyUrl = new URL(url.toString());
+  keyUrl.pathname = "/__cache__/usgs/instantaneous";
+  keyUrl.searchParams.set("site", url.searchParams.get("site") || url.searchParams.get("sites") || "");
+  keyUrl.searchParams.set("parameterCd", url.searchParams.get("parameterCd") || "00010");
+  keyUrl.searchParams.set("period", url.searchParams.get("period") || "PT24H");
+  keyUrl.searchParams.set("v", USGS_IV_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function usgsParameterLabel(code: any) {
+  switch (String(code ?? "")) {
+    case "00010":
+      return "Water temperature";
+    case "00060":
+      return "Discharge";
+    case "00065":
+      return "Gage height";
+    case "00045":
+      return "Precipitation";
+    case "00300":
+      return "Dissolved oxygen";
+    case "00400":
+      return "pH";
+    case "63680":
+      return "Turbidity";
+    default:
+      return String(code ?? "") || null;
+  }
+}
+
+function normalizeUsgsSiteId(site: string) {
+  const trimmed = site.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("USGS-") ? trimmed : `USGS-${trimmed}`;
+}
+
+function buildUsgsInstantaneousUpstream(url: URL) {
+  const site = (url.searchParams.get("site") || url.searchParams.get("sites") || "").trim();
+  const parameterCd = (url.searchParams.get("parameterCd") || "00010").trim();
+  const period = (url.searchParams.get("period") || "PT24H").trim();
+
+  if (!/^[A-Za-z0-9:,\-]+$/.test(site)) {
+    return { ok: false as const, error: "site is required and must be a USGS site id" };
+  }
+  if (!/^\d{5}(,\d{5})*$/.test(parameterCd)) {
+    return { ok: false as const, error: "parameterCd must be one or more USGS five-digit parameter codes" };
+  }
+  if (!/^P(T\d+[HMS]|\d+D)$/.test(period)) {
+    return { ok: false as const, error: "period must be an ISO-8601 duration such as PT24H or P7D" };
+  }
+
+  const siteId = normalizeUsgsSiteId(site);
+  const upstreamUrl =
+    `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items` +
+    `?f=json` +
+    `&monitoring_location_id=${encodeURIComponent(siteId)}` +
+    `&parameter_code=${encodeURIComponent(parameterCd)}` +
+    `&limit=100`;
+
+  return { ok: true as const, site, siteId, parameterCd, period, upstreamUrl };
+}
+
+async function fetchUsgsInstantaneousResponse(built: ReturnType<typeof buildUsgsInstantaneousUpstream> & { ok: true }) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+  try {
+    const res = await fetch(built.upstreamUrl, {
+      signal: ctrl.signal,
+      headers: { accept: "application/json", "user-agent": WEATHER_FALLBACK_USER_AGENT },
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      return new Response(
+        JSON.stringify({ ok: false, error: "USGS upstream error", status: res.status, detail: txt.slice(0, 240) }),
+        { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+      );
+    }
+
+    const json: any = await res.json();
+    const features = Array.isArray(json?.features) ? json.features : [];
+    const observations = features.map((feature: any) => {
+      const props = feature?.properties ?? {};
+      const coords = feature?.geometry?.coordinates;
+      const value = safeNum(props?.value);
+      return {
+        siteCode: String(props?.monitoring_location_id ?? built.siteId).replace(/^USGS-/, ""),
+        siteId: props?.monitoring_location_id ?? built.siteId,
+        siteName: null,
+        latitude: Array.isArray(coords) ? safeNum(coords[1]) : null,
+        longitude: Array.isArray(coords) ? safeNum(coords[0]) : null,
+        parameterCode: props?.parameter_code ?? null,
+        parameterName: usgsParameterLabel(props?.parameter_code),
+        unit: props?.unit_of_measure ?? null,
+        latest: {
+          value,
+          rawValue: props?.value ?? null,
+          dateTime: props?.time ?? null,
+          qualifiers: props?.qualifier ? [props.qualifier] : [],
+          approvalStatus: props?.approval_status ?? null,
+        },
+        values: [],
+      };
+    });
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        source: "USGS OGC latest-continuous",
+        updatedAt: new Date().toISOString(),
+        site: built.site,
+        parameterCd: built.parameterCd,
+        period: built.period,
+        observations,
+      }),
+      { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+    );
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function parseBboxFromUrl(url: URL) {
+  const west = Number(url.searchParams.get("west"));
+  const south = Number(url.searchParams.get("south"));
+  const east = Number(url.searchParams.get("east"));
+  const north = Number(url.searchParams.get("north"));
+  if (![west, south, east, north].every(Number.isFinite)) return null;
+  if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
+  const area = Math.abs(east - west) * Math.abs(north - south);
+  if (area > 2500) return null;
+  return { west, south, east, north };
+}
+
+function buildUsgsWaterStationsCacheKey(url: URL, bbox: { west: number; south: number; east: number; north: number }) {
+  const keyUrl = new URL(url.toString());
+  keyUrl.pathname = "/__cache__/usgs/water-stations";
+  keyUrl.searchParams.set("bbox", [bbox.west, bbox.south, bbox.east, bbox.north].map((v) => v.toFixed(3)).join(","));
+  keyUrl.searchParams.set("parameters", url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010,00060,00065");
+  keyUrl.searchParams.set("limit", url.searchParams.get("limit") || "250");
+  keyUrl.searchParams.set("cameras", url.searchParams.get("cameras") === "0" ? "0" : "1");
+  keyUrl.searchParams.set("v", USGS_WATER_STATIONS_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function parseUsgsParameterList(url: URL) {
+  const raw = url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010,00060,00065";
+  const codes = raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => /^\d{5}$/.test(x));
+  return Array.from(new Set(codes)).slice(0, 8);
+}
+
+async function fetchJsonMaybe(url: string) {
+  try {
+    return await fetchJsonWithHeaders(url);
+  } catch {
+    return null;
+  }
+}
+
+function latestImageUrlFromCamera(camera: any, file: any, size: "thumb" | "small" = "thumb") {
+  const filename = typeof file === "string" ? file : file?.filename;
+  if (!filename) return null;
+  const base = size === "small" ? camera?.smallDir : camera?.thumbDir;
+  if (typeof base !== "string" || !base) return null;
+  return `${base.replace(/\/?$/, "/")}${filename}`;
+}
+
+async function fetchUsgsCameraForSite(siteId: string) {
+  const siteNumber = siteId.replace(/^USGS-/, "");
+  const cameras: any = await fetchJsonMaybe(
+    `https://api.waterdata.usgs.gov/nims/v0/cameras?siteId=${encodeURIComponent(siteNumber)}`,
+  );
+  const cameraRows = Array.isArray(cameras) ? cameras : Array.isArray(cameras?.value) ? cameras.value : [];
+  const camera = cameraRows[0] ?? null;
+  if (!camera?.camId) return null;
+
+  const files: any = await fetchJsonMaybe(
+    `https://api.waterdata.usgs.gov/nims/v0/listFiles?camId=${encodeURIComponent(camera.camId)}&limit=1&rawItem=true`,
+  );
+  const fileRows = Array.isArray(files) ? files : Array.isArray(files?.value) ? files.value : [];
+  const file = fileRows[0] ?? null;
+  return {
+    camId: camera.camId,
+    name: camera.camName ?? null,
+    newestImageAt: camera.newestImageDT ?? file?.timestamp ?? null,
+    thumbUrl: latestImageUrlFromCamera(camera, file, "thumb"),
+    imageUrl: latestImageUrlFromCamera(camera, file, "small"),
+    timelapseUrl: typeof camera?.tlDir === "string" && camera?.camId ? `${camera.tlDir.replace(/\/?$/, "/")}${camera.camId}.mp4` : null,
+  };
+}
+
+async function fetchUsgsCameraIndex() {
+  const cameras: any = await fetchJsonMaybe(
+    `https://api.waterdata.usgs.gov/nims/v0/cameras?returnFields=camId,camName,nwisId,newestImageDT,smallDir,thumbDir,tlDir`,
+  );
+  const rows = Array.isArray(cameras) ? cameras : Array.isArray(cameras?.value) ? cameras.value : [];
+  const bySite = new Map<string, any>();
+  for (const camera of rows) {
+    const nwisId = typeof camera?.nwisId === "string" ? camera.nwisId.trim() : "";
+    if (!nwisId || bySite.has(nwisId)) continue;
+    bySite.set(nwisId, camera);
+  }
+  return bySite;
+}
+
+async function resolveUsgsCameraFromIndex(camera: any) {
+  if (!camera?.camId) return null;
+  const files: any = await fetchJsonMaybe(
+    `https://api.waterdata.usgs.gov/nims/v0/listFiles?camId=${encodeURIComponent(camera.camId)}&limit=1&rawItem=true`,
+  );
+  const fileRows = Array.isArray(files) ? files : Array.isArray(files?.value) ? files.value : [];
+  const file = fileRows[0] ?? null;
+  return {
+    camId: camera.camId,
+    name: camera.camName ?? null,
+    newestImageAt: camera.newestImageDT ?? file?.timestamp ?? null,
+    thumbUrl: latestImageUrlFromCamera(camera, file, "thumb"),
+    imageUrl: latestImageUrlFromCamera(camera, file, "small"),
+    timelapseUrl: typeof camera?.tlDir === "string" && camera?.camId ? `${camera.tlDir.replace(/\/?$/, "/")}${camera.camId}.mp4` : null,
+  };
+}
+
+async function fetchUsgsWaterStationsResponse(
+  url: URL,
+  bbox: { west: number; south: number; east: number; north: number },
+) {
+  const parameters = parseUsgsParameterList(url);
+  const limitRaw = Number(url.searchParams.get("limit") || "250");
+  const limit = Math.max(10, Math.min(500, Number.isFinite(limitRaw) ? Math.round(limitRaw) : 250));
+  const includeCameras = url.searchParams.get("cameras") !== "0";
+
+  const latestUrl =
+    `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items` +
+    `?f=json` +
+    `&bbox=${encodeURIComponent([bbox.west, bbox.south, bbox.east, bbox.north].join(","))}` +
+    `&parameter_code=${encodeURIComponent(parameters.join(","))}` +
+    `&limit=${limit}`;
+
+  const latestJson: any = await fetchJsonWithHeaders(latestUrl);
+  const features = Array.isArray(latestJson?.features) ? latestJson.features : [];
+  const bySite = new Map<string, any>();
+
+  for (const feature of features) {
+    const props = feature?.properties ?? {};
+    const siteId = String(props?.monitoring_location_id ?? "");
+    const coords = feature?.geometry?.coordinates;
+    if (!siteId || !Array.isArray(coords)) continue;
+    const lon = safeNum(coords[0]);
+    const lat = safeNum(coords[1]);
+    if (lat == null || lon == null) continue;
+
+    const reading = {
+      parameterCode: props?.parameter_code ?? null,
+      label: usgsParameterLabel(props?.parameter_code),
+      value: safeNum(props?.value),
+      rawValue: props?.value ?? null,
+      unit: props?.unit_of_measure ?? null,
+      time: props?.time ?? null,
+      approvalStatus: props?.approval_status ?? null,
+      qualifier: props?.qualifier ?? null,
+    };
+
+    const existing =
+      bySite.get(siteId) ??
+      {
+        siteId,
+        siteNumber: siteId.replace(/^USGS-/, ""),
+        name: siteId,
+        lat,
+        lon,
+        readings: [] as any[],
+      };
+    existing.readings.push(reading);
+    bySite.set(siteId, existing);
+  }
+
+  const stations = Array.from(bySite.values()).slice(0, limit);
+  let cameraCatalogCount = 0;
+  let cameraMatchCount = 0;
+  if (includeCameras) {
+    const cameraIndex = await fetchUsgsCameraIndex();
+    cameraCatalogCount = cameraIndex.size;
+    const cameraSites = stations.filter((station) => cameraIndex.has(station.siteNumber)).slice(0, 40);
+    cameraMatchCount = cameraSites.length;
+    await Promise.all(
+      cameraSites.map(async (station) => {
+        station.camera = await resolveUsgsCameraFromIndex(cameraIndex.get(station.siteNumber));
+      }),
+    );
+  }
+
+  const geojson = {
+    type: "FeatureCollection" as const,
+    features: stations.map((station) => {
+      const primary = station.readings.find((r: any) => r.parameterCode === "00010") ?? station.readings[0] ?? null;
+      const valueText =
+        primary?.value == null
+          ? null
+          : `${Math.round(primary.value * 10) / 10}${primary.unit ? ` ${primary.unit}` : ""}`;
+      return {
+        type: "Feature" as const,
+        id: station.siteId,
+        geometry: { type: "Point" as const, coordinates: [station.lon, station.lat] },
+        properties: {
+          id: station.siteId,
+          siteId: station.siteId,
+          siteNumber: station.siteNumber,
+          name: station.name,
+          label: valueText ?? station.siteNumber,
+          primaryParameter: primary?.parameterCode ?? null,
+          primaryLabel: primary?.label ?? null,
+          primaryValue: primary?.value ?? null,
+          primaryUnit: primary?.unit ?? null,
+          observedAt: primary?.time ?? null,
+          hasCamera: !!station.camera?.thumbUrl,
+          cameraThumbUrl: station.camera?.thumbUrl ?? null,
+          cameraImageUrl: station.camera?.imageUrl ?? null,
+          cameraName: station.camera?.name ?? null,
+          cameraUpdatedAt: station.camera?.newestImageAt ?? null,
+          readings: station.readings,
+        },
+      };
+    }),
+  };
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      source: "USGS OGC latest-continuous + NIMS",
+      updatedAt: new Date().toISOString(),
+      parameters,
+      bbox,
+      count: stations.length,
+      cameraCatalogCount,
+      cameraMatchCount,
+      geojson,
+    }),
+    { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+  );
 }
 
 function midpoint(a: number, b: number) {
@@ -6074,6 +6533,57 @@ export default {
             clearTimeout(t);
           }
         },
+      });
+    }
+
+    if (url.pathname === "/api/air-quality/hourly" || url.pathname === "/v1/air-quality/hourly") {
+      const built = buildAirQualityHourlyUpstream(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildAirQualityHourlyCacheKey(url, built.lat, built.lon),
+        ttlSeconds: AIR_QUALITY_TTL_SECONDS,
+        staleSeconds: AIR_QUALITY_STALE_SECONDS,
+        fetchUpstream: () => fetchAirQualityHourlyResponse(built),
+      });
+    }
+
+    if (url.pathname === "/api/usgs/instantaneous" || url.pathname === "/v1/usgs/instantaneous") {
+      const built = buildUsgsInstantaneousUpstream(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildUsgsInstantaneousCacheKey(url),
+        ttlSeconds: USGS_IV_TTL_SECONDS,
+        staleSeconds: USGS_IV_STALE_SECONDS,
+        fetchUpstream: () => fetchUsgsInstantaneousResponse(built),
+      });
+    }
+
+    if (url.pathname === "/api/usgs/water-stations" || url.pathname === "/v1/usgs/water-stations") {
+      const bbox = parseBboxFromUrl(url);
+      if (!bbox) {
+        return new Response(JSON.stringify({ ok: false, error: "valid west/south/east/north bbox is required; max area 2500 square degrees" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildUsgsWaterStationsCacheKey(url, bbox),
+        ttlSeconds: USGS_WATER_STATIONS_TTL_SECONDS,
+        staleSeconds: USGS_WATER_STATIONS_STALE_SECONDS,
+        fetchUpstream: () => fetchUsgsWaterStationsResponse(url, bbox),
       });
     }
 

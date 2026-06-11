@@ -191,6 +191,14 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       safeNum(h.cloudCover) ??
       null;
 
+    const airQualityUsAqi =
+      safeNum(h.airQualityUsAqi) ??
+      safeNum(h.usAqi) ??
+      safeNum(h.us_aqi) ??
+      safeNum(h.airQualityIndex) ??
+      safeNum(h.aqi) ??
+      null;
+
     return {
       ...h,
       pressureHpa,
@@ -205,6 +213,8 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       dewpointF,
       humidityPct,
       cloudCoverPct,
+      airQualityUsAqi,
+      airQualityLabel: safeStr(h.airQualityLabel) ?? safeStr(h.aqiLabel) ?? undefined,
       timeZone: safeStr(h.timeZone) ?? timeZone ?? undefined,
       timezone: safeStr(h.timezone) ?? timeZone ?? undefined,
     };
@@ -454,6 +464,11 @@ function buildHourlyDetailRows(hour: any) {
       percent: metricBarPercent(safeNum(hour?.precipChancePct), 100),
     },
     {
+      label: 'AQI',
+      value: safeNum(hour?.airQualityUsAqi) != null ? `${Math.round(safeNum(hour?.airQualityUsAqi) ?? 0)}` : '—',
+      percent: metricBarPercent(safeNum(hour?.airQualityUsAqi), 150),
+    },
+    {
       label: 'Wind',
       value: formatHeroMetricValue(safeNum(hour?.windMph), ' mph'),
       percent: metricBarPercent(safeNum(hour?.windMph), 40),
@@ -513,6 +528,11 @@ function HourlySimpleTimeline({
       label: 'Precip chance',
       value: formatHeroMetricValue(safeNum(featured.precipChancePct), '%'),
       percent: metricBarPercent(safeNum(featured.precipChancePct), 100),
+    },
+    {
+      label: 'AQI',
+      value: safeNum(featured.airQualityUsAqi) != null ? `${Math.round(safeNum(featured.airQualityUsAqi) ?? 0)}` : '—',
+      percent: metricBarPercent(safeNum(featured.airQualityUsAqi), 150),
     },
     {
       label: 'Wind',

@@ -26,7 +26,7 @@ const FIRE_LAYER_IDS: LayerId[] = [
   'wildfire.firewx',
 ];
 
-const MARINE_LAYER_IDS: LayerId[] = ['marine.conditions'];
+const MARINE_LAYER_IDS: LayerId[] = ['marine.conditions', 'water.stations'];
 
 const WEATHER_RASTER_LAYER_IDS: LayerId[] = [
   'radar.reflectivity',

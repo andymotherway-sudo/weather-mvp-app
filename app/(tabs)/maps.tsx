@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -96,6 +97,29 @@ type SelectedMarineFeature =
   | { kind: 'zone'; id: string }
   | { kind: 'globalArea'; id: string }
   | null;
+
+type SelectedWaterStation = {
+  id: string;
+  siteId: string;
+  siteNumber: string;
+  name?: string | null;
+  label?: string | null;
+  primaryLabel?: string | null;
+  primaryValue?: number | null;
+  primaryUnit?: string | null;
+  observedAt?: string | null;
+  cameraThumbUrl?: string | null;
+  cameraImageUrl?: string | null;
+  cameraName?: string | null;
+  cameraUpdatedAt?: string | null;
+  readings?: Array<{
+    parameterCode?: string | null;
+    label?: string | null;
+    value?: number | null;
+    unit?: string | null;
+    time?: string | null;
+  }>;
+};
 
 type MarinePointConditions = {
   significantWaveHeightM: number | null;
@@ -1374,6 +1398,10 @@ export default function MapsScreen() {
   const [selectedWeatherAlertForecastTarget, setSelectedWeatherAlertForecastTarget] =
     useState<WeatherAlertForecastTarget>(null);
   const [selectedMarineFeature, setSelectedMarineFeature] = useState<SelectedMarineFeature>(null);
+  const [selectedWaterStationId, setSelectedWaterStationId] = useState<string | null>(null);
+  const [waterStationsGeojson, setWaterStationsGeojson] = useState<any>({ type: 'FeatureCollection', features: [] });
+  const [waterStationsLoading, setWaterStationsLoading] = useState(false);
+  const [waterStationsError, setWaterStationsError] = useState<string | null>(null);
   const [selectedGlobalMarineConditions, setSelectedGlobalMarineConditions] = useState<MarinePointConditions | null>(null);
   const [selectedGlobalMarineLoading, setSelectedGlobalMarineLoading] = useState(false);
   const [selectedGlobalMarineError, setSelectedGlobalMarineError] = useState<string | null>(null);
@@ -1613,6 +1641,7 @@ export default function MapsScreen() {
   const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
   const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
   const marineConditionsEnabled = state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled;
+  const waterStationsEnabled = state.viewId === 'mariner' || !!state.layers?.['water.stations']?.enabled;
   const skyScoreEnabled = !!state.layers?.['astro.skyScore']?.enabled;
   const auroraProbEnabled = !!state.layers?.['space.aurora.prob']?.enabled;
   const auroraOvalEnabled = !!state.layers?.['space.aurora.oval']?.enabled;
@@ -1860,6 +1889,9 @@ export default function MapsScreen() {
     : 0.9;
   const marineConditionsOpacity = Number.isFinite(state.layers?.['marine.conditions']?.opacity)
     ? state.layers['marine.conditions'].opacity
+    : 0.9;
+  const waterStationsOpacity = Number.isFinite(state.layers?.['water.stations']?.opacity)
+    ? state.layers['water.stations'].opacity
     : 0.9;
   const skyScoreOpacity = Number.isFinite(state.layers?.['astro.skyScore']?.opacity)
     ? state.layers['astro.skyScore'].opacity
@@ -2415,9 +2447,14 @@ export default function MapsScreen() {
 
   const effectiveRegion = region ?? stableInitialRegion;
   const marineDataEnabled = isFocused && marineConditionsEnabled;
+  const waterStationsDataEnabled = isFocused && waterStationsEnabled && mapZoom >= 5.2;
   const marineBbox = useMemo(
     () => (marineDataEnabled && mapZoom >= 3.6 ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, mapZoom, marineDataEnabled],
+  );
+  const waterStationsBbox = useMemo(
+    () => (waterStationsDataEnabled ? regionToBbox(effectiveRegion) : null),
+    [effectiveRegion, waterStationsDataEnabled],
   );
   const globalMarineViewport = useMemo(() => {
     if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.6) return null;
@@ -2442,6 +2479,55 @@ export default function MapsScreen() {
   const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
   const { areas: globalMarineAreas } = useGlobalMarineManifest(globalMarineViewport);
   const { data: buoyData } = useAllBuoyDetails(marineDataEnabled);
+  useEffect(() => {
+    if (!waterStationsDataEnabled || !waterStationsBbox) {
+      setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
+      setWaterStationsError(null);
+      setWaterStationsLoading(false);
+      setSelectedWaterStationId(null);
+      return;
+    }
+
+    const bbox = waterStationsBbox;
+    const bboxArea = Math.abs((bbox.east ?? 0) - (bbox.west ?? 0)) * Math.abs((bbox.north ?? 0) - (bbox.south ?? 0));
+    if (!Number.isFinite(bboxArea) || bboxArea > 2500) {
+      setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setWaterStationsLoading(true);
+        setWaterStationsError(null);
+        const params = new URLSearchParams({
+          west: String(Number(bbox.west.toFixed(4))),
+          south: String(Number(bbox.south.toFixed(4))),
+          east: String(Number(bbox.east.toFixed(4))),
+          north: String(Number(bbox.north.toFixed(4))),
+          parameters: '00010,00060,00065,00045,00300,00400,63680',
+          limit: mapZoom < 7 ? '120' : '260',
+          cameras: '1',
+        });
+        const res = await fetchWithTimeout(apiUrl(`/api/usgs/water-stations?${params.toString()}`), 12000);
+        if (!res.ok) throw new Error(`USGS ${res.status}`);
+        const json = await res.json();
+        if (cancelled) return;
+        setWaterStationsGeojson(json?.geojson ?? { type: 'FeatureCollection', features: [] });
+      } catch (err: any) {
+        if (cancelled) return;
+        setWaterStationsError(err?.message ?? 'Unable to load USGS water stations');
+        setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
+      } finally {
+        if (!cancelled) setWaterStationsLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [mapZoom, waterStationsBbox, waterStationsDataEnabled]);
   const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
     marineZones,
     mapZoom,
@@ -2466,6 +2552,33 @@ export default function MapsScreen() {
   const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
+  const waterStationsById = useMemo(() => {
+    const out = new Map<string, SelectedWaterStation>();
+    const features = Array.isArray(waterStationsGeojson?.features) ? waterStationsGeojson.features : [];
+    for (const feature of features) {
+      const props = feature?.properties ?? {};
+      const id = String(props.siteId ?? props.id ?? feature?.id ?? '');
+      if (!id) continue;
+      out.set(id, {
+        id,
+        siteId: id,
+        siteNumber: String(props.siteNumber ?? id.replace(/^USGS-/, '')),
+        name: typeof props.name === 'string' ? props.name : null,
+        label: typeof props.label === 'string' ? props.label : null,
+        primaryLabel: typeof props.primaryLabel === 'string' ? props.primaryLabel : null,
+        primaryValue: safeNum(props.primaryValue),
+        primaryUnit: typeof props.primaryUnit === 'string' ? props.primaryUnit : null,
+        observedAt: typeof props.observedAt === 'string' ? props.observedAt : null,
+        cameraThumbUrl: typeof props.cameraThumbUrl === 'string' ? props.cameraThumbUrl : null,
+        cameraImageUrl: typeof props.cameraImageUrl === 'string' ? props.cameraImageUrl : null,
+        cameraName: typeof props.cameraName === 'string' ? props.cameraName : null,
+        cameraUpdatedAt: typeof props.cameraUpdatedAt === 'string' ? props.cameraUpdatedAt : null,
+        readings: Array.isArray(props.readings) ? props.readings : [],
+      });
+    }
+    return out;
+  }, [waterStationsGeojson]);
+  const selectedWaterStation = selectedWaterStationId ? waterStationsById.get(selectedWaterStationId) ?? null : null;
   const selectedMarineBuoy =
     selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
   const selectedMarineZone =
@@ -3803,6 +3916,107 @@ export default function MapsScreen() {
                 />
               </MapLibreGL.ShapeSource>
             </>
+          ) : null}
+
+          {waterStationsEnabled ? (
+            <MapLibreGL.ShapeSource
+              id="usgs-water-stations-source"
+              shape={waterStationsGeojson as any}
+              cluster
+              clusterRadius={42}
+              clusterMaxZoomLevel={8}
+              onPress={(e: any) => {
+                const feature = e?.features?.[0];
+                const props = feature?.properties ?? {};
+                const id = String(props.siteId ?? props.id ?? feature?.id ?? '');
+
+                if (props?.cluster) {
+                  const coords = feature?.geometry?.coordinates;
+                  if (Array.isArray(coords) && coords.length >= 2) {
+                    mapCameraRef.current?.setCamera?.({
+                      centerCoordinate: [Number(coords[0]), Number(coords[1])],
+                      zoomLevel: clampNumber((mapZoom ?? 5) + 2, 1, 20),
+                      animationDuration: 450,
+                    });
+                  }
+                  return;
+                }
+
+                if (id) setSelectedWaterStationId(id);
+              }}
+            >
+              <MapLibreGL.CircleLayer
+                id="usgs-water-station-clusters"
+                filter={['has', 'point_count'] as any}
+                style={{
+                  circleColor: 'rgba(56,189,248,0.36)',
+                  circleStrokeColor: 'rgba(186,230,253,0.94)',
+                  circleStrokeWidth: 1.2,
+                  circleOpacity: waterStationsOpacity,
+                  circleRadius: ['step', ['get', 'point_count'], 13, 20, 17, 60, 21, 160, 25] as any,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="usgs-water-station-cluster-count"
+                filter={['has', 'point_count'] as any}
+                style={{
+                  textField: ['to-string', ['get', 'point_count']] as any,
+                  textSize: 11,
+                  textColor: '#e0f2fe',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1,
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="usgs-water-station-points"
+                filter={['!', ['has', 'point_count']] as any}
+                style={{
+                  circleColor: [
+                    'case',
+                    ['==', ['get', 'hasCamera'], true],
+                    '#a78bfa',
+                    ['==', ['get', 'primaryParameter'], '00010'],
+                    '#38bdf8',
+                    ['==', ['get', 'primaryParameter'], '00060'],
+                    '#22c55e',
+                    ['==', ['get', 'primaryParameter'], '00065'],
+                    '#facc15',
+                    '#67e8f9',
+                  ] as any,
+                  circleOpacity: 0.92 * waterStationsOpacity,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 5, 4, 8, 6.5, 11, 8.5] as any,
+                  circleStrokeColor: 'rgba(2,6,23,0.96)',
+                  circleStrokeWidth: 1.25,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="usgs-water-station-camera-icons"
+                filter={['all', ['!', ['has', 'point_count']], ['==', ['get', 'hasCamera'], true], ['>=', ['zoom'], 7]] as any}
+                style={{
+                  textField: '+',
+                  textSize: 10,
+                  textOffset: [0.78, -0.78],
+                  textColor: '#f5d0fe',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1,
+                  textOptional: true,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="usgs-water-station-labels"
+                filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 8]] as any}
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: 10,
+                  textOffset: [0, 1.15],
+                  textAnchor: 'top',
+                  textColor: '#e0f2fe',
+                  textHaloColor: 'rgba(2,6,23,0.95)',
+                  textHaloWidth: 1,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
           ) : null}
 
           {aviationTurbEnabled ? (
@@ -5341,6 +5555,75 @@ export default function MapsScreen() {
                   ) : null}
                 </>
               ) : null}
+            </Glass>
+          </View>
+        ) : null}
+
+        {!animationRecordMode && waterStationsEnabled && selectedWaterStation ? (
+          <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
+            <Glass style={styles.alertDetailCard}>
+              <View style={styles.fireDetailHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.marineDetailEyebrow}>USGS WATER STATION</Text>
+                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
+                    {selectedWaterStation.cameraName ?? selectedWaterStation.name ?? selectedWaterStation.siteNumber}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelectedWaterStationId(null)} style={styles.fireDetailClose}>
+                  <Text style={styles.fireDetailCloseText}>Close</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.fireDetailPills}>
+                <HudBadge label={selectedWaterStation.siteNumber} strong />
+                {selectedWaterStation.primaryLabel ? <HudBadge label={selectedWaterStation.primaryLabel} /> : null}
+                {selectedWaterStation.cameraThumbUrl ? <HudBadge label="Camera" /> : null}
+              </View>
+
+              {selectedWaterStation.cameraThumbUrl ? (
+                <Image
+                  source={{ uri: selectedWaterStation.cameraImageUrl ?? selectedWaterStation.cameraThumbUrl }}
+                  style={styles.waterStationImage}
+                  resizeMode="cover"
+                />
+              ) : null}
+
+              <Text style={styles.fireDetailMeta}>
+                {selectedWaterStation.observedAt ? `Observed ${new Date(selectedWaterStation.observedAt).toLocaleString()}` : 'Latest USGS reading'}
+                {selectedWaterStation.cameraUpdatedAt ? ` · image ${new Date(selectedWaterStation.cameraUpdatedAt).toLocaleString()}` : ''}
+              </Text>
+
+              <View style={styles.fireDetailRows}>
+                {(selectedWaterStation.readings ?? []).slice(0, 5).map((reading, idx) => (
+                  <View key={`${reading.parameterCode ?? idx}`} style={styles.fireDetailRow}>
+                    <Text style={styles.fireDetailLabel}>{reading.label ?? reading.parameterCode ?? 'Reading'}</Text>
+                    <Text style={styles.fireDetailValue}>
+                      {reading.value != null
+                        ? `${Math.round(reading.value * 10) / 10}${reading.unit ? ` ${reading.unit}` : ''}`
+                        : 'Unavailable'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.marineDetailActionRow}>
+                <Pressable
+                  style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                  onPress={() =>
+                    Linking.openURL(`https://waterdata.usgs.gov/monitoring-location/${selectedWaterStation.siteNumber}/`).catch(() => undefined)
+                  }
+                >
+                  <Text style={styles.fireDetailCloseText}>Open USGS</Text>
+                </Pressable>
+                {selectedWaterStation.cameraImageUrl ? (
+                  <Pressable
+                    style={styles.fireDetailClose}
+                    onPress={() => Linking.openURL(selectedWaterStation.cameraImageUrl!).catch(() => undefined)}
+                  >
+                    <Text style={styles.fireDetailCloseText}>Image</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </Glass>
           </View>
         ) : null}
@@ -7275,6 +7558,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
     marginTop: 8,
+  },
+  waterStationImage: {
+    width: '100%',
+    height: 150,
+    marginTop: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15,23,42,0.82)',
   },
   fireDetailRows: {
     marginTop: 12,

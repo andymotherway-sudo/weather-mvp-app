@@ -7,6 +7,11 @@ export type ForecastHour = {
   time: string; // ISO / local wall-clock time for requested timezone
   tempF: number | null;
   apparentTempF?: number | null;
+  airQualityUsAqi?: number | null;
+  airQualityLabel?: string | null;
+  pm25?: number | null;
+  pm10?: number | null;
+  ozone?: number | null;
   dewPointF: number | null;
   humidityPct: number | null;
   cloudCoverPct: number | null;
@@ -24,6 +29,11 @@ export type ForecastDay = {
   date: string; // YYYY-MM-DD
   tempMaxF: number | null;
   tempMinF: number | null;
+  apparentTempMaxF?: number | null;
+  apparentTempMinF?: number | null;
+  airQualityUsAqiMax?: number | null;
+  airQualityLabel?: string | null;
+  pm25Max?: number | null;
   dewPointMaxF: number | null;
   humidityMaxPct: number | null;
   precipProbMaxPct: number | null;
@@ -88,6 +98,16 @@ function toKey3(x: number) {
   return Number(x.toFixed(3));
 }
 
+function airQualityLabelForUsAqi(aqi: number | null) {
+  if (aqi == null || !Number.isFinite(aqi)) return null;
+  if (aqi <= 50) return 'Good';
+  if (aqi <= 100) return 'Moderate';
+  if (aqi <= 150) return 'Unhealthy for sensitive groups';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very unhealthy';
+  return 'Hazardous';
+}
+
 export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastState {
   const opts = useMemo<OpenMeteoForecastOpts>(() => {
     if (isOpts(arg)) {
@@ -149,6 +169,8 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const dailyVars = [
           'temperature_2m_max',
           'temperature_2m_min',
+          'apparent_temperature_max',
+          'apparent_temperature_min',
           'precipitation_probability_max',
           'wind_gusts_10m_max',
           'wind_speed_10m_max',
@@ -202,6 +224,29 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const timezoneAbbreviation = safeStr(json?.timezone_abbreviation);
         const utcOffsetSeconds = safeNum(json?.utc_offset_seconds);
 
+        const aqByTime = new Map<string, any>();
+        const aqForecastHours = Math.min(168, Math.max(24, (days + pastDays) * 24));
+        try {
+          const aqParams = new URLSearchParams({
+            lat: String(latKey),
+            lon: String(lonKey),
+            timezone: timezone ?? 'auto',
+            forecast_hours: String(aqForecastHours),
+          });
+          if (pastDays > 0) aqParams.set('past_hours', String(Math.min(24, pastDays * 24)));
+          const aqUrl = apiUrl(`/api/air-quality/hourly?${aqParams.toString()}`);
+          const aqRes = await fetchWithTimeout(aqUrl, 10000);
+          if (aqRes.ok) {
+            const aqJson = await aqRes.json();
+            const aqRows = Array.isArray(aqJson?.hourly) ? aqJson.hourly : [];
+            for (const row of aqRows) {
+              if (typeof row?.time === 'string') aqByTime.set(row.time, row);
+            }
+          }
+        } catch (aqErr) {
+          console.warn('AQI hourly unavailable', aqErr);
+        }
+
         // ---- Hourly parse ----
         const h = json.hourly ?? {};
         const hTimes: string[] = h.time ?? [];
@@ -219,27 +264,38 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const hPressure: any[] = h.pressure_msl ?? [];
         const hUv: any[] = h.uv_index ?? [];
 
-        const hourly: ForecastHour[] = hTimes.map((time, idx) => ({
-          time,
-          tempF: safeNum(hTemp[idx]),
-          apparentTempF: safeNum(hApp[idx]),
-          dewPointF: safeNum(hDp[idx]),
-          humidityPct: safeNum(hRh[idx]),
-          cloudCoverPct: safeNum(hCloud[idx]),
-          precipProbPct: safeNum(hPop[idx]),
-          visibility: safeNum(hVis[idx]),
-          windMph: safeNum(hWind[idx]),
-          windGustMph: safeNum(hGust[idx]),
-          windDirDeg: safeNum(hWindDir[idx]),
-          weatherCode: safeNum(hWmo[idx]),
-          pressureHpa: safeNum(hPressure[idx]),
-          uvIndex: safeNum(hUv[idx]),
-        }));
+        const hourly: ForecastHour[] = hTimes.map((time, idx) => {
+          const aq = aqByTime.get(time);
+          const usAqi = safeNum(aq?.usAqi ?? aq?.airQualityIndex);
+          return {
+            time,
+            tempF: safeNum(hTemp[idx]),
+            apparentTempF: safeNum(hApp[idx]),
+            airQualityUsAqi: usAqi,
+            airQualityLabel: typeof aq?.airQualityLabel === 'string' ? aq.airQualityLabel : airQualityLabelForUsAqi(usAqi),
+            pm25: safeNum(aq?.pm25),
+            pm10: safeNum(aq?.pm10),
+            ozone: safeNum(aq?.ozone),
+            dewPointF: safeNum(hDp[idx]),
+            humidityPct: safeNum(hRh[idx]),
+            cloudCoverPct: safeNum(hCloud[idx]),
+            precipProbPct: safeNum(hPop[idx]),
+            visibility: safeNum(hVis[idx]),
+            windMph: safeNum(hWind[idx]),
+            windGustMph: safeNum(hGust[idx]),
+            windDirDeg: safeNum(hWindDir[idx]),
+            weatherCode: safeNum(hWmo[idx]),
+            pressureHpa: safeNum(hPressure[idx]),
+            uvIndex: safeNum(hUv[idx]),
+          };
+        });
 
         // ---- Compute DAILY derived fields from HOURLY ----
         const rhMaxByDate: Record<string, number> = {};
         const cloudMinByDate: Record<string, number> = {};
         const cloudMaxByDate: Record<string, number> = {};
+        const aqiMaxByDate: Record<string, number> = {};
+        const pm25MaxByDate: Record<string, number> = {};
 
         for (let i = 0; i < hTimes.length; i++) {
           const dt = hTimes[i];
@@ -259,6 +315,18 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
             if (prevMin == null || cc < prevMin) cloudMinByDate[dateKey] = cc;
             if (prevMax == null || cc > prevMax) cloudMaxByDate[dateKey] = cc;
           }
+
+          const aq = aqByTime.get(dt);
+          const usAqi = safeNum(aq?.usAqi ?? aq?.airQualityIndex);
+          if (usAqi != null) {
+            const prev = aqiMaxByDate[dateKey];
+            if (prev == null || usAqi > prev) aqiMaxByDate[dateKey] = usAqi;
+          }
+          const pm25 = safeNum(aq?.pm25);
+          if (pm25 != null) {
+            const prev = pm25MaxByDate[dateKey];
+            if (prev == null || pm25 > prev) pm25MaxByDate[dateKey] = pm25;
+          }
         }
 
         // ---- Daily parse ----
@@ -266,6 +334,8 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const dTimes: string[] = d.time ?? [];
         const tMax: any[] = d.temperature_2m_max ?? [];
         const tMin: any[] = d.temperature_2m_min ?? [];
+        const appMax: any[] = d.apparent_temperature_max ?? [];
+        const appMin: any[] = d.apparent_temperature_min ?? [];
         const popMax: any[] = d.precipitation_probability_max ?? [];
         const gustMax: any[] = d.wind_gusts_10m_max ?? [];
         const cloudMean: any[] = d.cloud_cover_mean ?? d.cloudcover_mean ?? [];
@@ -284,6 +354,11 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           date,
           tempMaxF: safeNum(tMax[idx]),
           tempMinF: safeNum(tMin[idx]),
+          apparentTempMaxF: safeNum(appMax[idx]),
+          apparentTempMinF: safeNum(appMin[idx]),
+          airQualityUsAqiMax: typeof aqiMaxByDate[date] === 'number' ? aqiMaxByDate[date] : null,
+          airQualityLabel: typeof aqiMaxByDate[date] === 'number' ? airQualityLabelForUsAqi(aqiMaxByDate[date]) : null,
+          pm25Max: typeof pm25MaxByDate[date] === 'number' ? pm25MaxByDate[date] : null,
           precipProbMaxPct: safeNum(popMax[idx]),
           windMaxMph: safeNum(windMax[idx]),
           windDirDominantDeg: safeNum(windDirDom[idx]),

@@ -40,6 +40,7 @@ export type LayerId =
   | 'space.aurora.prob'
   | 'space.aurora.oval'
   | 'marine.conditions'
+  | 'water.stations'
   | 'aviation.gairmet.turb'
   | 'aviation.gairmet.ice'
   | 'aviation.sigmet'
