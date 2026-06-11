@@ -335,6 +335,33 @@ type MarineConditionsResponse = {
   generatedAt: string;
 };
 
+type MarineAreaKind = "coastal" | "offshore" | "high-seas" | "lake" | "model";
+
+type MarineAreaSummary = {
+  id: string;
+  name: string;
+  region: string;
+  kind: MarineAreaKind;
+  center: { lat: number; lon: number };
+  bounds: { west: number; south: number; east: number; north: number };
+  sourceLabel: string;
+  priority: number;
+};
+
+type MarineAreasResponse = {
+  ok: true;
+  updatedAt: string;
+  source: "curated-worker-manifest";
+  meta: {
+    count: number;
+    limit: number;
+    zoom: number;
+    viewport: { west: number; south: number; east: number; north: number };
+    ttlSeconds: number;
+  };
+  areas: Omit<MarineAreaSummary, "priority">[];
+};
+
 type MarineExtremeKind = "wave" | "wind" | "warm" | "cold" | "current" | "seaLevel";
 
 type MarineExtremePoint = {
@@ -899,6 +926,9 @@ const WEATHER_FALLBACK_USER_AGENT = "omniwx-worker/1.0 (weather fallback; contac
 const MS_TO_KTS = 1.94384;
 const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
 const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
+const MARINE_AREAS_TTL_SECONDS = 15 * 60;
+const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
+const MARINE_AREAS_VERSION = "global-curated-v1";
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -1580,6 +1610,259 @@ const MARINE_EXTREME_POINTS: MarineExtremePoint[] = [
   { id: "southern-ocean-indian", name: "Southern Ocean Indian Sector", region: "Southern Ocean", lat: -58, lon: 80 },
   { id: "southern-ocean-pacific", name: "Southern Ocean Pacific Sector", region: "Southern Ocean", lat: -58, lon: -140 },
 ];
+
+const GLOBAL_MARINE_AREAS: MarineAreaSummary[] = [
+  {
+    id: "north-atlantic",
+    name: "North Atlantic Open Waters",
+    region: "North Atlantic",
+    kind: "high-seas",
+    center: { lat: 45, lon: -35 },
+    bounds: { west: -75, south: 25, east: 10, north: 65 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 20,
+  },
+  {
+    id: "north-sea",
+    name: "North Sea",
+    region: "Northern Europe",
+    kind: "offshore",
+    center: { lat: 56.8, lon: 2.5 },
+    bounds: { west: -5, south: 50, east: 10, north: 62 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 80,
+  },
+  {
+    id: "mediterranean",
+    name: "Mediterranean Sea",
+    region: "Mediterranean",
+    kind: "offshore",
+    center: { lat: 38, lon: 15 },
+    bounds: { west: -6, south: 30, east: 36, north: 46 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 70,
+  },
+  {
+    id: "caribbean",
+    name: "Caribbean Sea",
+    region: "Caribbean",
+    kind: "offshore",
+    center: { lat: 16.5, lon: -73 },
+    bounds: { west: -90, south: 9, east: -58, north: 24 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 65,
+  },
+  {
+    id: "gulf-of-mexico",
+    name: "Gulf of Mexico",
+    region: "Gulf of Mexico",
+    kind: "offshore",
+    center: { lat: 26.5, lon: -90 },
+    bounds: { west: -98, south: 18, east: -80, north: 31 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 75,
+  },
+  {
+    id: "nw-pacific",
+    name: "Northwest Pacific Open Waters",
+    region: "North Pacific",
+    kind: "high-seas",
+    center: { lat: 35, lon: 160 },
+    bounds: { west: 120, south: 15, east: -170, north: 55 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 35,
+  },
+  {
+    id: "ne-pacific",
+    name: "Northeast Pacific Open Waters",
+    region: "North Pacific",
+    kind: "high-seas",
+    center: { lat: 42, lon: -150 },
+    bounds: { west: 170, south: 20, east: -115, north: 62 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 35,
+  },
+  {
+    id: "coral-tasman",
+    name: "Coral and Tasman Seas",
+    region: "Australia / New Zealand",
+    kind: "offshore",
+    center: { lat: -28, lon: 160 },
+    bounds: { west: 145, south: -48, east: 180, north: -8 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 55,
+  },
+  {
+    id: "south-pacific",
+    name: "South Pacific Open Waters",
+    region: "South Pacific",
+    kind: "high-seas",
+    center: { lat: -30, lon: -125 },
+    bounds: { west: -175, south: -55, east: -75, north: -5 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 25,
+  },
+  {
+    id: "south-atlantic",
+    name: "South Atlantic Open Waters",
+    region: "South Atlantic",
+    kind: "high-seas",
+    center: { lat: -30, lon: -25 },
+    bounds: { west: -65, south: -55, east: 20, north: -5 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 25,
+  },
+  {
+    id: "indian-ocean",
+    name: "Indian Ocean Open Waters",
+    region: "Indian Ocean",
+    kind: "high-seas",
+    center: { lat: -20, lon: 80 },
+    bounds: { west: 35, south: -50, east: 120, north: 5 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 30,
+  },
+  {
+    id: "arabian-sea",
+    name: "Arabian Sea",
+    region: "Indian Ocean",
+    kind: "offshore",
+    center: { lat: 15, lon: 64 },
+    bounds: { west: 50, south: 5, east: 78, north: 26 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 60,
+  },
+  {
+    id: "bay-of-bengal",
+    name: "Bay of Bengal",
+    region: "Indian Ocean",
+    kind: "offshore",
+    center: { lat: 13, lon: 88 },
+    bounds: { west: 78, south: 5, east: 100, north: 23 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 60,
+  },
+  {
+    id: "southern-ocean-atlantic",
+    name: "Southern Ocean Atlantic Sector",
+    region: "Southern Ocean",
+    kind: "high-seas",
+    center: { lat: -58, lon: -20 },
+    bounds: { west: -70, south: -70, east: 20, north: -45 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 15,
+  },
+  {
+    id: "southern-ocean-indian",
+    name: "Southern Ocean Indian Sector",
+    region: "Southern Ocean",
+    kind: "high-seas",
+    center: { lat: -58, lon: 80 },
+    bounds: { west: 20, south: -70, east: 140, north: -45 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 15,
+  },
+  {
+    id: "southern-ocean-pacific",
+    name: "Southern Ocean Pacific Sector",
+    region: "Southern Ocean",
+    kind: "high-seas",
+    center: { lat: -58, lon: -140 },
+    bounds: { west: 140, south: -70, east: -70, north: -45 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 15,
+  },
+  {
+    id: "great-lakes",
+    name: "Great Lakes",
+    region: "North America",
+    kind: "lake",
+    center: { lat: 45, lon: -84 },
+    bounds: { west: -93, south: 41, east: -75, north: 49 },
+    sourceLabel: "Regional lake weather coverage",
+    priority: 50,
+  },
+  {
+    id: "east-china-sea",
+    name: "East China Sea",
+    region: "East Asia",
+    kind: "offshore",
+    center: { lat: 29, lon: 126 },
+    bounds: { west: 119, south: 23, east: 132, north: 34 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 65,
+  },
+  {
+    id: "south-china-sea",
+    name: "South China Sea",
+    region: "Southeast Asia",
+    kind: "offshore",
+    center: { lat: 12, lon: 114 },
+    bounds: { west: 103, south: -1, east: 122, north: 24 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 65,
+  },
+  {
+    id: "bering-sea",
+    name: "Bering Sea",
+    region: "North Pacific",
+    kind: "offshore",
+    center: { lat: 58, lon: -175 },
+    bounds: { west: 160, south: 50, east: -158, north: 66 },
+    sourceLabel: "Open-Meteo Marine model area",
+    priority: 45,
+  },
+];
+
+function longitudeRanges(west: number, east: number): Array<[number, number]> {
+  if (west <= east) return [[west, east]];
+  return [
+    [west, 180],
+    [-180, east],
+  ];
+}
+
+function marineAreaIntersects(area: MarineAreaSummary, viewport: { west: number; south: number; east: number; north: number }) {
+  if (area.bounds.north < viewport.south || area.bounds.south > viewport.north) return false;
+  const areaRanges = longitudeRanges(area.bounds.west, area.bounds.east);
+  const viewportRanges = longitudeRanges(viewport.west, viewport.east);
+  return areaRanges.some(([aw, ae]) => viewportRanges.some(([vw, ve]) => aw <= ve && ae >= vw));
+}
+
+function marineAreaDistanceScore(area: MarineAreaSummary, viewport: { west: number; south: number; east: number; north: number }) {
+  const centerLat = (viewport.south + viewport.north) / 2;
+  const rawCenterLon = viewport.west <= viewport.east ? (viewport.west + viewport.east) / 2 : (viewport.west + viewport.east + 360) / 2;
+  const centerLon = rawCenterLon > 180 ? rawCenterLon - 360 : rawCenterLon;
+  const dLat = Math.abs(area.center.lat - centerLat);
+  const dLon = Math.min(Math.abs(area.center.lon - centerLon), 360 - Math.abs(area.center.lon - centerLon));
+  return dLat + dLon * 0.6;
+}
+
+function buildMarineAreasPayload(viewport: { west: number; south: number; east: number; north: number }, zoom: number): MarineAreasResponse {
+  const limit = zoom < 3 ? 8 : zoom < 5 ? 14 : 24;
+  const areas = GLOBAL_MARINE_AREAS.filter((area) => marineAreaIntersects(area, viewport))
+    .sort((a, b) => {
+      const priorityDelta = b.priority - a.priority;
+      if (Math.abs(priorityDelta) > 20) return priorityDelta;
+      return marineAreaDistanceScore(a, viewport) - marineAreaDistanceScore(b, viewport);
+    })
+    .slice(0, limit)
+    .map(({ priority: _priority, ...area }) => area);
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+    source: "curated-worker-manifest",
+    meta: {
+      count: areas.length,
+      limit,
+      zoom,
+      viewport,
+      ttlSeconds: MARINE_AREAS_TTL_SECONDS,
+    },
+    areas,
+  };
+}
 
 function marineExtremeValue(kind: MarineExtremeKind, item: MarineExtreme) {
   if (kind === "wave") return item.waveHeightM;
@@ -6290,6 +6573,50 @@ export default {
         staleSeconds: MARINE_CONDITIONS_STALE_SECONDS,
         fetchUpstream: async () => {
           const payload = await buildMarineConditionsPayload(lat, lon);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/api/marine/areas" || url.pathname === "/v1/marine/areas") {
+      const west = Number(url.searchParams.get("west"));
+      const south = Number(url.searchParams.get("south"));
+      const east = Number(url.searchParams.get("east"));
+      const north = Number(url.searchParams.get("north"));
+      const zoom = clampFloat(Number(url.searchParams.get("zoom") ?? "3"), 0, 18, 3);
+
+      if (![west, south, east, north].every(Number.isFinite)) {
+        return new Response(JSON.stringify({ ok: false, error: "west, south, east, and north are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const viewport = {
+        west: clampFloat(west, -180, 180, -180),
+        south: clampFloat(south, -90, 90, -90),
+        east: clampFloat(east, -180, 180, 180),
+        north: clampFloat(north, -90, 90, 90),
+      };
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/marine/areas";
+      cacheKeyUrl.searchParams.set("west", String(roundCoordKey(viewport.west, 2)));
+      cacheKeyUrl.searchParams.set("south", String(roundCoordKey(viewport.south, 2)));
+      cacheKeyUrl.searchParams.set("east", String(roundCoordKey(viewport.east, 2)));
+      cacheKeyUrl.searchParams.set("north", String(roundCoordKey(viewport.north, 2)));
+      cacheKeyUrl.searchParams.set("zoom", String(Math.floor(zoom)));
+      cacheKeyUrl.searchParams.set("v", MARINE_AREAS_VERSION);
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: MARINE_AREAS_TTL_SECONDS,
+        staleSeconds: MARINE_AREAS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = buildMarineAreasPayload(viewport, zoom);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },

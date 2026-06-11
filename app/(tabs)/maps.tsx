@@ -36,6 +36,8 @@ import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapDa
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
+import type { GlobalMarineAreaSummary } from '../lib/nautical/globalMarineManifest';
+import { useGlobalMarineManifest } from '../lib/nautical/useGlobalMarineManifest';
 import { useMarineZonesByBbox } from '../lib/nautical/useMarineZonesByBbox';
 import type { NauticalZone } from '../lib/nautical/zones';
 import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
@@ -773,6 +775,31 @@ function marineZoneMarkersToFeatureCollection(zones: NauticalZone[]) {
             type: zone.type,
           },
           geometry: { type: 'Point' as const, coordinates: [center.lon, center.lat] },
+        };
+      })
+      .filter(Boolean),
+  };
+}
+
+function globalMarineAreasToFeatureCollection(areas: GlobalMarineAreaSummary[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: areas
+      .map((area) => {
+        const lat = Number(area.center?.lat);
+        const lon = Number(area.center?.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        return {
+          type: 'Feature' as const,
+          id: area.id,
+          properties: {
+            id: area.id,
+            name: area.name,
+            region: area.region,
+            kind: area.kind,
+            sourceLabel: area.sourceLabel,
+          },
+          geometry: { type: 'Point' as const, coordinates: [lon, lat] },
         };
       })
       .filter(Boolean),
@@ -2344,7 +2371,28 @@ export default function MapsScreen() {
     () => (marineDataEnabled && mapZoom >= 4 ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, mapZoom, marineDataEnabled],
   );
+  const globalMarineViewport = useMemo(() => {
+    if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.2) return null;
+    const bbox = regionToBbox(effectiveRegion);
+    if (
+      !bbox ||
+      !Number.isFinite(bbox.west) ||
+      !Number.isFinite(bbox.south) ||
+      !Number.isFinite(bbox.east) ||
+      !Number.isFinite(bbox.north)
+    ) {
+      return null;
+    }
+    return {
+      west: bbox.west,
+      south: bbox.south,
+      east: bbox.east,
+      north: bbox.north,
+      zoom: mapZoom,
+    };
+  }, [effectiveRegion, mapZoom, marineDataEnabled]);
   const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
+  const { areas: globalMarineAreas } = useGlobalMarineManifest(globalMarineViewport);
   const { data: buoyData } = useAllBuoyDetails(marineDataEnabled);
   const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
     marineZones,
@@ -2361,6 +2409,10 @@ export default function MapsScreen() {
   const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
   const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
+  const globalMarineAreasFc = useMemo(
+    () => globalMarineAreasToFeatureCollection(globalMarineAreas),
+    [globalMarineAreas],
+  );
   const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
   const selectedMarineBuoy =
     selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
@@ -3466,6 +3518,36 @@ export default function MapsScreen() {
 
           {marineConditionsEnabled ? (
             <>
+              <MapLibreGL.ShapeSource id="global-marine-areas-source" shape={globalMarineAreasFc as any}>
+                <MapLibreGL.CircleLayer
+                  id="global-marine-areas"
+                  minZoomLevel={2}
+                  maxZoomLevel={7.2}
+                  style={{
+                    circleColor: 'rgba(13,148,136,0.48)',
+                    circleStrokeColor: 'rgba(153,246,228,0.92)',
+                    circleStrokeWidth: 1.1,
+                    circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 3.5, 5, 5.5, 7, 7] as any,
+                    circleOpacity: 0.82 * marineConditionsOpacity,
+                  }}
+                />
+                <MapLibreGL.SymbolLayer
+                  id="global-marine-area-labels"
+                  minZoomLevel={3.2}
+                  maxZoomLevel={7.2}
+                  style={{
+                    textField: ['coalesce', ['get', 'name'], ['get', 'region']] as any,
+                    textSize: ['interpolate', ['linear'], ['zoom'], 3.2, 8.5, 7, 10] as any,
+                    textColor: '#a7f3d0',
+                    textHaloColor: 'rgba(2,6,23,0.96)',
+                    textHaloWidth: 1.25,
+                    textOffset: [0, 1.2],
+                    textAllowOverlap: false,
+                    textOptional: true,
+                  }}
+                />
+              </MapLibreGL.ShapeSource>
+
               <MapLibreGL.ShapeSource
                 id="marine-zone-markers-source"
                 shape={marineZoneMarkersFc as any}
