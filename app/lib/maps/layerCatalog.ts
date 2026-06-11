@@ -491,8 +491,8 @@ export const LAYER_CATALOG = [
     supportsOpacity: true,
     supportsSourceInfo: true,
     source: {
-      name: 'USGS Water Data / NIMS',
-      details: 'Latest continuous USGS water observations with station camera imagery where available.',
+      name: 'USGS Water Data',
+      details: 'Latest continuous USGS river and lake observations.',
       url: 'https://api.waterdata.usgs.gov/',
     },
   },

@@ -908,7 +908,7 @@ const USGS_IV_STALE_SECONDS = 6 * 3600;
 const USGS_IV_CACHE_VERSION = "usgs-ogc-iv-v1";
 const USGS_WATER_STATIONS_TTL_SECONDS = 15 * 60;
 const USGS_WATER_STATIONS_STALE_SECONDS = 6 * 3600;
-const USGS_WATER_STATIONS_CACHE_VERSION = "usgs-water-stations-v4";
+const USGS_WATER_STATIONS_CACHE_VERSION = "usgs-water-stations-v5";
 
 const ASTRO_TTL_SECONDS = 600;
 const ASTRO_STALE_SECONDS = 6 * 3600;
@@ -2682,7 +2682,6 @@ function buildUsgsWaterStationsCacheKey(url: URL, bbox: { west: number; south: n
   keyUrl.searchParams.set("bbox", [bbox.west, bbox.south, bbox.east, bbox.north].map((v) => v.toFixed(3)).join(","));
   keyUrl.searchParams.set("parameters", url.searchParams.get("parameters") || url.searchParams.get("parameterCd") || "00010,00060,00065");
   keyUrl.searchParams.set("limit", url.searchParams.get("limit") || "250");
-  keyUrl.searchParams.set("cameras", url.searchParams.get("cameras") === "0" ? "0" : "1");
   keyUrl.searchParams.set("v", USGS_WATER_STATIONS_CACHE_VERSION);
   return new Request(keyUrl.toString(), { method: "GET" });
 }
@@ -2696,77 +2695,6 @@ function parseUsgsParameterList(url: URL) {
   return Array.from(new Set(codes)).slice(0, 8);
 }
 
-async function fetchJsonMaybe(url: string) {
-  try {
-    return await fetchJsonWithHeaders(url);
-  } catch {
-    return null;
-  }
-}
-
-function latestImageUrlFromCamera(camera: any, file: any, size: "thumb" | "small" = "thumb") {
-  const filename = typeof file === "string" ? file : file?.filename;
-  if (!filename) return null;
-  const base = size === "small" ? camera?.smallDir : camera?.thumbDir;
-  if (typeof base !== "string" || !base) return null;
-  return `${base.replace(/\/?$/, "/")}${filename}`;
-}
-
-async function fetchUsgsCameraForSite(siteId: string) {
-  const siteNumber = siteId.replace(/^USGS-/, "");
-  const cameras: any = await fetchJsonMaybe(
-    `https://api.waterdata.usgs.gov/nims/v0/cameras?siteId=${encodeURIComponent(siteNumber)}`,
-  );
-  const cameraRows = Array.isArray(cameras) ? cameras : Array.isArray(cameras?.value) ? cameras.value : [];
-  const camera = cameraRows[0] ?? null;
-  if (!camera?.camId) return null;
-
-  const files: any = await fetchJsonMaybe(
-    `https://api.waterdata.usgs.gov/nims/v0/listFiles?camId=${encodeURIComponent(camera.camId)}&limit=1&rawItem=true`,
-  );
-  const fileRows = Array.isArray(files) ? files : Array.isArray(files?.value) ? files.value : [];
-  const file = fileRows[0] ?? null;
-  return {
-    camId: camera.camId,
-    name: camera.camName ?? null,
-    newestImageAt: camera.newestImageDT ?? file?.timestamp ?? null,
-    thumbUrl: latestImageUrlFromCamera(camera, file, "thumb"),
-    imageUrl: latestImageUrlFromCamera(camera, file, "small"),
-    timelapseUrl: typeof camera?.tlDir === "string" && camera?.camId ? `${camera.tlDir.replace(/\/?$/, "/")}${camera.camId}.mp4` : null,
-  };
-}
-
-async function fetchUsgsCameraIndex() {
-  const cameras: any = await fetchJsonMaybe(
-    `https://api.waterdata.usgs.gov/nims/v0/cameras?returnFields=camId,camName,nwisId,newestImageDT,smallDir,thumbDir,tlDir`,
-  );
-  const rows = Array.isArray(cameras) ? cameras : Array.isArray(cameras?.value) ? cameras.value : [];
-  const bySite = new Map<string, any>();
-  for (const camera of rows) {
-    const nwisId = typeof camera?.nwisId === "string" ? camera.nwisId.trim() : "";
-    if (!nwisId || bySite.has(nwisId)) continue;
-    bySite.set(nwisId, camera);
-  }
-  return bySite;
-}
-
-async function resolveUsgsCameraFromIndex(camera: any) {
-  if (!camera?.camId) return null;
-  const files: any = await fetchJsonMaybe(
-    `https://api.waterdata.usgs.gov/nims/v0/listFiles?camId=${encodeURIComponent(camera.camId)}&limit=1&rawItem=true`,
-  );
-  const fileRows = Array.isArray(files) ? files : Array.isArray(files?.value) ? files.value : [];
-  const file = fileRows[0] ?? null;
-  return {
-    camId: camera.camId,
-    name: camera.camName ?? null,
-    newestImageAt: camera.newestImageDT ?? file?.timestamp ?? null,
-    thumbUrl: latestImageUrlFromCamera(camera, file, "thumb"),
-    imageUrl: latestImageUrlFromCamera(camera, file, "small"),
-    timelapseUrl: typeof camera?.tlDir === "string" && camera?.camId ? `${camera.tlDir.replace(/\/?$/, "/")}${camera.camId}.mp4` : null,
-  };
-}
-
 async function fetchUsgsWaterStationsResponse(
   url: URL,
   bbox: { west: number; south: number; east: number; north: number },
@@ -2774,7 +2702,6 @@ async function fetchUsgsWaterStationsResponse(
   const parameters = parseUsgsParameterList(url);
   const limitRaw = Number(url.searchParams.get("limit") || "250");
   const limit = Math.max(10, Math.min(500, Number.isFinite(limitRaw) ? Math.round(limitRaw) : 250));
-  const includeCameras = url.searchParams.get("cameras") !== "0";
 
   const latestUrl =
     `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items` +
@@ -2822,20 +2749,6 @@ async function fetchUsgsWaterStationsResponse(
   }
 
   const stations = Array.from(bySite.values()).slice(0, limit);
-  let cameraCatalogCount = 0;
-  let cameraMatchCount = 0;
-  if (includeCameras) {
-    const cameraIndex = await fetchUsgsCameraIndex();
-    cameraCatalogCount = cameraIndex.size;
-    const cameraSites = stations.filter((station) => cameraIndex.has(station.siteNumber)).slice(0, 40);
-    cameraMatchCount = cameraSites.length;
-    await Promise.all(
-      cameraSites.map(async (station) => {
-        station.camera = await resolveUsgsCameraFromIndex(cameraIndex.get(station.siteNumber));
-      }),
-    );
-  }
-
   const geojson = {
     type: "FeatureCollection" as const,
     features: stations.map((station) => {
@@ -2859,11 +2772,6 @@ async function fetchUsgsWaterStationsResponse(
           primaryValue: primary?.value ?? null,
           primaryUnit: primary?.unit ?? null,
           observedAt: primary?.time ?? null,
-          hasCamera: !!station.camera?.thumbUrl,
-          cameraThumbUrl: station.camera?.thumbUrl ?? null,
-          cameraImageUrl: station.camera?.imageUrl ?? null,
-          cameraName: station.camera?.name ?? null,
-          cameraUpdatedAt: station.camera?.newestImageAt ?? null,
           readings: station.readings,
         },
       };
@@ -2873,13 +2781,11 @@ async function fetchUsgsWaterStationsResponse(
   return new Response(
     JSON.stringify({
       ok: true,
-      source: "USGS OGC latest-continuous + NIMS",
+      source: "USGS OGC latest-continuous",
       updatedAt: new Date().toISOString(),
       parameters,
       bbox,
       count: stations.length,
-      cameraCatalogCount,
-      cameraMatchCount,
       geojson,
     }),
     { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },

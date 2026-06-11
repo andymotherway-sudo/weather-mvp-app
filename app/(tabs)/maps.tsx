@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -108,10 +107,6 @@ type SelectedWaterStation = {
   primaryValue?: number | null;
   primaryUnit?: string | null;
   observedAt?: string | null;
-  cameraThumbUrl?: string | null;
-  cameraImageUrl?: string | null;
-  cameraName?: string | null;
-  cameraUpdatedAt?: string | null;
   readings?: Array<{
     parameterCode?: string | null;
     label?: string | null;
@@ -1641,7 +1636,7 @@ export default function MapsScreen() {
   const aviationCwaEnabled = !aviationModeActive && !!state.layers?.['aviation.cwa']?.enabled;
   const aviationPirepEnabled = !aviationModeActive && !!state.layers?.['aviation.pirep']?.enabled;
   const marineConditionsEnabled = state.viewId === 'mariner' || !!state.layers?.['marine.conditions']?.enabled;
-  const waterStationsEnabled = state.viewId === 'mariner' || !!state.layers?.['water.stations']?.enabled;
+  const waterStationsEnabled = !!state.layers?.['water.stations']?.enabled;
   const skyScoreEnabled = !!state.layers?.['astro.skyScore']?.enabled;
   const auroraProbEnabled = !!state.layers?.['space.aurora.prob']?.enabled;
   const auroraOvalEnabled = !!state.layers?.['space.aurora.oval']?.enabled;
@@ -2506,8 +2501,7 @@ export default function MapsScreen() {
           east: String(Number(bbox.east.toFixed(4))),
           north: String(Number(bbox.north.toFixed(4))),
           parameters: '00010,00060,00065,00045,00300,00400,63680',
-          limit: mapZoom < 7 ? '120' : '260',
-          cameras: '1',
+          limit: mapZoom < 7 ? '80' : '160',
         });
         const res = await fetchWithTimeout(apiUrl(`/api/usgs/water-stations?${params.toString()}`), 12000);
         if (!res.ok) throw new Error(`USGS ${res.status}`);
@@ -2569,10 +2563,6 @@ export default function MapsScreen() {
         primaryValue: safeNum(props.primaryValue),
         primaryUnit: typeof props.primaryUnit === 'string' ? props.primaryUnit : null,
         observedAt: typeof props.observedAt === 'string' ? props.observedAt : null,
-        cameraThumbUrl: typeof props.cameraThumbUrl === 'string' ? props.cameraThumbUrl : null,
-        cameraImageUrl: typeof props.cameraImageUrl === 'string' ? props.cameraImageUrl : null,
-        cameraName: typeof props.cameraName === 'string' ? props.cameraName : null,
-        cameraUpdatedAt: typeof props.cameraUpdatedAt === 'string' ? props.cameraUpdatedAt : null,
         readings: Array.isArray(props.readings) ? props.readings : [],
       });
     }
@@ -3972,34 +3962,28 @@ export default function MapsScreen() {
                 filter={['!', ['has', 'point_count']] as any}
                 style={{
                   circleColor: [
-                    'case',
-                    ['==', ['get', 'hasCamera'], true],
-                    '#a78bfa',
-                    ['==', ['get', 'primaryParameter'], '00010'],
+                    'match',
+                    ['get', 'primaryParameter'],
+                    '00010',
                     '#38bdf8',
-                    ['==', ['get', 'primaryParameter'], '00060'],
+                    '00060',
                     '#22c55e',
-                    ['==', ['get', 'primaryParameter'], '00065'],
+                    '00065',
                     '#facc15',
+                    '00045',
+                    '#60a5fa',
+                    '00300',
+                    '#a78bfa',
+                    '00400',
+                    '#f472b6',
+                    '63680',
+                    '#fb923c',
                     '#67e8f9',
                   ] as any,
                   circleOpacity: 0.92 * waterStationsOpacity,
                   circleRadius: ['interpolate', ['linear'], ['zoom'], 5, 4, 8, 6.5, 11, 8.5] as any,
                   circleStrokeColor: 'rgba(2,6,23,0.96)',
                   circleStrokeWidth: 1.25,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="usgs-water-station-camera-icons"
-                filter={['all', ['!', ['has', 'point_count']], ['==', ['get', 'hasCamera'], true], ['>=', ['zoom'], 7]] as any}
-                style={{
-                  textField: '+',
-                  textSize: 10,
-                  textOffset: [0.78, -0.78],
-                  textColor: '#f5d0fe',
-                  textHaloColor: 'rgba(2,6,23,0.95)',
-                  textHaloWidth: 1,
-                  textOptional: true,
                 }}
               />
               <MapLibreGL.SymbolLayer
@@ -5566,7 +5550,7 @@ export default function MapsScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.marineDetailEyebrow}>USGS WATER STATION</Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
-                    {selectedWaterStation.cameraName ?? selectedWaterStation.name ?? selectedWaterStation.siteNumber}
+                    {selectedWaterStation.name ?? selectedWaterStation.siteNumber}
                   </Text>
                 </View>
                 <Pressable onPress={() => setSelectedWaterStationId(null)} style={styles.fireDetailClose}>
@@ -5577,21 +5561,11 @@ export default function MapsScreen() {
               <View style={styles.fireDetailPills}>
                 <HudBadge label={selectedWaterStation.siteNumber} strong />
                 {selectedWaterStation.primaryLabel ? <HudBadge label={selectedWaterStation.primaryLabel} /> : null}
-                {selectedWaterStation.cameraThumbUrl ? <HudBadge label="Camera" /> : null}
               </View>
-
-              {selectedWaterStation.cameraThumbUrl ? (
-                <Image
-                  source={{ uri: selectedWaterStation.cameraImageUrl ?? selectedWaterStation.cameraThumbUrl }}
-                  style={styles.waterStationImage}
-                  resizeMode="cover"
-                />
-              ) : null}
 
               <Text style={styles.fireDetailMeta}>
                 {selectedWaterStation.observedAt ? `Observed ${new Date(selectedWaterStation.observedAt).toLocaleString()}` : 'Latest USGS reading'}
-                {selectedWaterStation.cameraUpdatedAt ? ` · image ${new Date(selectedWaterStation.cameraUpdatedAt).toLocaleString()}` : ''}
-              </Text>
+</Text>
 
               <View style={styles.fireDetailRows}>
                 {(selectedWaterStation.readings ?? []).slice(0, 5).map((reading, idx) => (
@@ -5615,15 +5589,7 @@ export default function MapsScreen() {
                 >
                   <Text style={styles.fireDetailCloseText}>Open USGS</Text>
                 </Pressable>
-                {selectedWaterStation.cameraImageUrl ? (
-                  <Pressable
-                    style={styles.fireDetailClose}
-                    onPress={() => Linking.openURL(selectedWaterStation.cameraImageUrl!).catch(() => undefined)}
-                  >
-                    <Text style={styles.fireDetailCloseText}>Image</Text>
-                  </Pressable>
-                ) : null}
-              </View>
+</View>
             </Glass>
           </View>
         ) : null}
@@ -7558,13 +7524,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
     marginTop: 8,
-  },
-  waterStationImage: {
-    width: '100%',
-    height: 150,
-    marginTop: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(15,23,42,0.82)',
   },
   fireDetailRows: {
     marginTop: 12,
