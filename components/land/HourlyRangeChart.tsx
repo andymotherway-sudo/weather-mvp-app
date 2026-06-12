@@ -77,6 +77,14 @@ function pick(h: ForecastHour, key: string): number | null {
           (h as any).windDirection ??
           (h as any).windDirDominantDeg
       );
+    case 'airQualityUsAqi':
+      return safeNum(
+        (h as any).airQualityUsAqi ??
+          (h as any).usAqi ??
+          (h as any).us_aqi ??
+          (h as any).airQualityIndex ??
+          (h as any).aqi
+      );
     default:
       return safeNum((h as any)[key]);
   }
@@ -271,6 +279,7 @@ export function HourlyRangeChart({
   const [showPrecip, setShowPrecip] = useState(true);
   const [showWind, setShowWind] = useState(true);
   const [showClouds, setShowClouds] = useState(true);
+  const [showAqi, setShowAqi] = useState(true);
 
   const [nowTick, setNowTick] = useState(0);
   useEffect(() => {
@@ -339,6 +348,7 @@ export function HourlyRangeChart({
     tickPct: 'rgba(255,255,255,0.28)',
     cloudFill: 'rgba(255,255,255,0.10)',
     cloudOn: 'rgba(255,255,255,0.55)',
+    aqi: 'rgba(250,204,21,0.92)',
 
     ringStroke: 'rgba(255,255,255,0.22)',
     ringFill: 'rgba(255,255,255,0.02)',
@@ -408,6 +418,11 @@ export function HourlyRangeChart({
     return padT + (1 - p) * plotH;
   };
 
+  const yForAqi = (aqi: number) => {
+    const p = clamp(aqi, 0, 150) / 150;
+    return padT + (1 - p) * plotH;
+  };
+
   const ptsT = data
     .map((h, i) => {
       const v = pick(h, tempKey);
@@ -429,9 +444,17 @@ export function HourlyRangeChart({
     })
     .filter(Boolean) as Array<{ x: number; y: number; v: number }>;
 
+  const ptsAqi = data
+    .map((h, i) => {
+      const v = pick(h, 'airQualityUsAqi');
+      return typeof v === 'number' ? { x: xForIdx(i), y: yForAqi(v), v } : null;
+    })
+    .filter(Boolean) as Array<{ x: number; y: number; v: number }>;
+
   const pathT = buildPath(ptsT);
   const pathD = buildPath(ptsD);
   const pathRh = buildPath(ptsRh);
+  const pathAqi = buildPath(ptsAqi);
 
   const precipPts = useMemo(() => {
     return data.map((h, i) => {
@@ -521,6 +544,7 @@ export function HourlyRangeChart({
     { label: 'Gusts', shortLabel: 'GUST', values: data.map((h: any) => fmtInt(pick(h, 'gustMph'), ` ${windLabel}`)) },
     { label: 'Clouds', shortLabel: 'CLD', values: data.map((h: any) => fmtInt(pick(h, 'cloudCoverPct'), '%')) },
     { label: 'Precip', shortLabel: 'PCP', values: data.map((h: any) => fmtInt(pick(h, 'popPct'), '%')) },
+    { label: 'AQI', shortLabel: 'AQI', values: data.map((h: any) => fmtInt(pick(h, 'airQualityUsAqi'))) },
   ];
 
   return (
@@ -652,7 +676,7 @@ export function HourlyRangeChart({
                 {unitsLabel}
               </SvgText>
               <SvgText x={pctAxisX} y={padT - 6} fontSize="12" fill="rgba(215,180,255,0.88)" fontWeight="900" textAnchor="start">
-                %
+                % / AQI
               </SvgText>
 
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
@@ -689,6 +713,7 @@ export function HourlyRangeChart({
               {showTemp && pathT ? <Path d={pathT} stroke={C.temp} strokeWidth={3.2} fill="none" /> : null}
               {showDew && pathD ? <Path d={pathD} stroke={C.dew} strokeWidth={2.4} strokeDasharray="4 6" fill="none" /> : null}
               {showRh && pathRh ? <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" /> : null}
+              {showAqi && pathAqi ? <Path d={pathAqi} stroke={C.aqi} strokeWidth={2.4} strokeDasharray="7 5" fill="none" /> : null}
 
               {data.map((h: any, i) => {
                 const x = xForIdx(i);
@@ -701,10 +726,12 @@ export function HourlyRangeChart({
                 const tV = pick(h, tempKey);
                 const dV = pick(h, dewKey);
                 const rhV = pick(h, 'humidityPct');
+                const aqiV = pick(h, 'airQualityUsAqi');
 
                 const yT = typeof tV === 'number' ? yForTemp(tV) : null;
                 const yD = typeof dV === 'number' ? yForTemp(dV) : null;
                 const yRh = typeof rhV === 'number' ? yForPct(rhV) : null;
+                const yAqi = typeof aqiV === 'number' ? yForAqi(aqiV) : null;
 
                 return (
                   <G key={`pt-${h.time}-${i}`}>
@@ -722,9 +749,11 @@ export function HourlyRangeChart({
                     {showTemp && yT != null ? <Circle cx={x} cy={yT} r={9} fill={C.temp} opacity={0.14} /> : null}
                     {showDew && yD != null ? <Circle cx={x} cy={yD} r={7} fill={C.dew} opacity={0.16} /> : null}
                     {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={6.2} fill={C.rh} opacity={0.16} /> : null}
+                    {showAqi && yAqi != null ? <Circle cx={x} cy={yAqi} r={6.2} fill={C.aqi} opacity={0.16} /> : null}
                     {showTemp && yT != null ? <Circle cx={x} cy={yT} r={6.2} fill="white" stroke={C.temp} strokeWidth={2.5} /> : null}
                     {showDew && yD != null ? <Circle cx={x} cy={yD} r={4.8} fill="white" stroke={C.dew} strokeWidth={2.1} /> : null}
                     {showRh && yRh != null ? <Circle cx={x} cy={yRh} r={4.4} fill="white" stroke={C.rh} strokeWidth={2.1} /> : null}
+                    {showAqi && yAqi != null ? <Circle cx={x} cy={yAqi} r={4.4} fill="white" stroke={C.aqi} strokeWidth={2.1} /> : null}
                   </G>
                 );
               })}
@@ -938,6 +967,13 @@ export function HourlyRangeChart({
             color="rgba(190,120,255,0.80)"
             on={showRh}
             onPress={() => setShowRh((v) => !v)}
+          />
+          <ToggleLegendPill
+            label="AQI"
+            kind="dashed"
+            color="rgba(250,204,21,0.92)"
+            on={showAqi}
+            onPress={() => setShowAqi((v) => !v)}
           />
           <ToggleLegendPill
             label="Precip"

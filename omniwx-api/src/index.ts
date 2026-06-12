@@ -908,7 +908,8 @@ const USGS_IV_STALE_SECONDS = 6 * 3600;
 const USGS_IV_CACHE_VERSION = "usgs-ogc-iv-v1";
 const USGS_WATER_STATIONS_TTL_SECONDS = 15 * 60;
 const USGS_WATER_STATIONS_STALE_SECONDS = 6 * 3600;
-const USGS_WATER_STATIONS_CACHE_VERSION = "usgs-water-stations-v5";
+const USGS_WATER_STATIONS_CACHE_VERSION = "usgs-water-stations-v6";
+const USGS_WATER_STATION_MAX_OBS_AGE_MS = 72 * 3600 * 1000;
 
 const ASTRO_TTL_SECONDS = 600;
 const ASTRO_STALE_SECONDS = 6 * 3600;
@@ -2722,6 +2723,8 @@ async function fetchUsgsWaterStationsResponse(
     const lon = safeNum(coords[0]);
     const lat = safeNum(coords[1]);
     if (lat == null || lon == null) continue;
+    const observedMs = Date.parse(String(props?.time ?? ""));
+    if (!Number.isFinite(observedMs) || Date.now() - observedMs > USGS_WATER_STATION_MAX_OBS_AGE_MS) continue;
 
     const reading = {
       parameterCode: props?.parameter_code ?? null,
@@ -2790,6 +2793,7 @@ async function fetchUsgsWaterStationsResponse(
       updatedAt: new Date().toISOString(),
       parameters,
       bbox,
+      maxObservationAgeHours: Math.round(USGS_WATER_STATION_MAX_OBS_AGE_MS / 3600000),
       count: stations.length,
       geojson,
     }),

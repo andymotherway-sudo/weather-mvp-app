@@ -261,6 +261,14 @@ function formatWaterStationTemp(value: number | null, sourceUnit: string | null 
   return `${display} ${targetUnit}`;
 }
 
+const WATER_STATION_MAX_OBS_AGE_MS = 72 * 3600 * 1000;
+
+function isRecentWaterStationReading(time?: string | null) {
+  if (!time) return false;
+  const observedMs = Date.parse(time);
+  return Number.isFinite(observedMs) && Date.now() - observedMs <= WATER_STATION_MAX_OBS_AGE_MS;
+}
+
 function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
   const features = Array.isArray(geojson?.features) ? geojson.features : [];
   return {
@@ -271,6 +279,7 @@ function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
         const readings = Array.isArray(props.readings) ? props.readings : [];
         const newestTempReading = readings
           .filter((reading: any) => String(reading?.parameterCode ?? '') === '00010')
+          .filter((reading: any) => isRecentWaterStationReading(typeof reading?.time === 'string' ? reading.time : null))
           .sort((a: any, b: any) => {
             const at = Date.parse(String(a?.time ?? ''));
             const bt = Date.parse(String(b?.time ?? ''));
@@ -278,7 +287,7 @@ function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
           })[0];
         const tempReading =
           newestTempReading ??
-          (String(props.primaryParameter ?? '') === '00010'
+          (String(props.primaryParameter ?? '') === '00010' && isRecentWaterStationReading(typeof props.observedAt === 'string' ? props.observedAt : null)
             ? { value: props.primaryValue, unit: props.primaryUnit, time: props.observedAt, label: props.primaryLabel }
             : null);
         if (!tempReading) return null;

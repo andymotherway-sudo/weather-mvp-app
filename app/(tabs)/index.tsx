@@ -3073,6 +3073,7 @@ function NerdyDeepDive({
   dayLengthSec,
   feelsDriverLabel,
   feelsDriverValue,
+  feelsDriverTopicId,
   onOpenLearnTopic,
 }: {
   condition: string;
@@ -3121,6 +3122,7 @@ function NerdyDeepDive({
   pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
+  feelsDriverTopicId: string;
   onOpenLearnTopic: (topicId?: string) => void;
 }) {
   const dir = dirToCompass(windDirDeg);
@@ -3180,9 +3182,17 @@ function NerdyDeepDive({
       <View style={nd.panelGrid}>
         <View style={nd.panelRow}>
           <View style={nd.panelHalf}>
-            <Text style={nd.panelTitle}>Atmosphere</Text>
+            <View style={nd.panelHeader}>
+              <Ionicons name="water-outline" size={18} color="rgba(255,255,255,0.62)" />
+              <Text style={nd.panelTitle}>Air & Comfort</Text>
+            </View>
+            <Pressable style={nd.panelHeroBlock} onPress={() => onOpenLearnTopic('dewpoint')}>
+              <Text style={nd.panelHeroValue}>{dpBand ?? 'â€”'}</Text>
+              <Text style={nd.panelHeroLabel}>Dew Band</Text>
+            </Pressable>
+            <View style={nd.panelRule} />
             <View style={nd.metricGrid2}>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+              <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('dewpoint')}>
                 <Text style={nd.metricLabel}>Dew Pt</Text>
                 <Text style={nd.metricValue}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
               </Pressable>
@@ -3192,25 +3202,35 @@ function NerdyDeepDive({
               </Pressable>
             </View>
             <View style={nd.metricGrid2}>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('apparent-temp')}>
-                <Text style={nd.metricLabel}>Feels</Text>
-                <Text style={nd.metricValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+              <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic(feelsDriverTopicId)}>
+                <Text style={nd.metricLabel}>{feelsDriverLabel}</Text>
+                <Text style={nd.metricValue}>{feelsDriverValue}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('spread_temp_dew')}>
                 <Text style={nd.metricLabel}>Spread</Text>
                 <Text style={nd.metricValue}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
               </Pressable>
             </View>
-            <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('dewpoint')}>
+            <Pressable style={nd.metricHiddenCard} onPress={() => onOpenLearnTopic('dewpoint')}>
               <Text style={nd.metricLabel}>Dew Band</Text>
               <Text style={[nd.metricWideValue, nd.metricStackedValue]}>{dpBand ?? '—'}</Text>
             </Pressable>
           </View>
 
           <View style={nd.panelHalf}>
-            <Text style={nd.panelTitle}>Wind Profile</Text>
+            <View style={nd.panelHeader}>
+              <Ionicons name="reorder-three-outline" size={20} color="rgba(255,255,255,0.62)" />
+              <Text style={nd.panelTitle}>Wind</Text>
+            </View>
+            <Pressable style={[nd.panelHeroBlock, nd.panelHeroCentered]} onPress={() => onOpenLearnTopic('wind-direction')}>
+              <Text style={nd.windHeroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.66}>
+                {dirHeading}
+              </Text>
+              <Text style={nd.panelHeroLabel}>{dirDegrees}</Text>
+            </Pressable>
+            <View style={nd.panelRule} />
             <View style={nd.metricGrid2}>
-              <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('wind')}>
+              <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('wind')}>
                 <Text style={nd.metricLabel}>Speed</Text>
                 <Text style={nd.metricValue}>{windMph != null ? `${Math.round(windMph)} mph` : '—'}</Text>
               </Pressable>
@@ -3220,17 +3240,13 @@ function NerdyDeepDive({
               </Pressable>
             </View>
             <View style={nd.metricGrid2Tall}>
-              <Pressable style={[nd.metricCard, nd.metricDialCard]} onPress={() => onOpenLearnTopic('wind-direction')}>
-                <Text style={nd.metricLabel}>Dir</Text>
-                <Text style={nd.directionMain} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.74}>
-                  {dirHeading}
-                </Text>
-                <Text style={nd.directionSub}>{dirDegrees}</Text>
-              </Pressable>
-              <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('gust_factor')}>
+              <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('gust_factor')}>
                 <Text style={nd.metricLabel}>Gust Fx</Text>
                 <Text style={nd.metricValue}>{gf != null ? gf.toFixed(2) : '—'}</Text>
-                <Text style={nd.metricHint}>{windState}</Text>
+              </Pressable>
+              <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
+                <Text style={nd.metricLabel}>{windState}</Text>
+                <Text style={nd.metricValueSmall}>{windState}</Text>
               </Pressable>
             </View>
           </View>
@@ -3238,7 +3254,10 @@ function NerdyDeepDive({
 
         <View style={nd.panelRow}>
           <View style={nd.panelHalf}>
-            <Text style={nd.panelTitle}>Sky & Radiation</Text>
+            <View style={nd.panelHeader}>
+              <Ionicons name="cloud-outline" size={19} color="rgba(255,255,255,0.62)" />
+              <Text style={nd.panelTitle}>Sky, Sun & Air</Text>
+            </View>
             <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('clouds')}>
               <Text style={nd.metricLabel}>Cloud Cover</Text>
               <View style={nd.cloudRow}>
@@ -3254,7 +3273,7 @@ function NerdyDeepDive({
                 <Text style={nd.metricValueSmall}>{uvIndex != null ? fmt(uvIndex, 1) : '—'}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('air-quality')}>
-                <Text style={nd.metricLabel}>Air Quality</Text>
+                <Text style={nd.metricLabel}>Air</Text>
                 <Text style={nd.metricValueSmall}>{airQualityIndex != null ? `${Math.round(airQualityIndex)} AQI` : '—'}</Text>
                 {airQualityLabel ? <Text style={nd.metricHint}>{airQualityLabel}</Text> : null}
               </Pressable>
@@ -3266,7 +3285,10 @@ function NerdyDeepDive({
           </View>
 
           <View style={nd.panelHalf}>
-            <Text style={nd.panelTitle}>Pressure & Visibility</Text>
+            <View style={nd.panelHeader}>
+              <Ionicons name="speedometer-outline" size={18} color="rgba(255,255,255,0.62)" />
+              <Text style={nd.panelTitle}>Pressure, Visibility & Precip</Text>
+            </View>
             <Pressable style={nd.pressureHeroCard} onPress={() => onOpenLearnTopic('pressure')}>
               <Text style={nd.metricLabel}>Pressure</Text>
               <Text style={nd.pressureHeroValue}>{pressurePrimary}</Text>
@@ -3419,12 +3441,13 @@ const nd = StyleSheet.create({
   },
   panelHalf: {
     flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    backgroundColor: GLASS_PANEL_BG,
-    borderWidth: 0,
-    gap: 10,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    backgroundColor: 'rgba(15,23,42,0.34)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    gap: 14,
   },
   panelFull: {
     paddingVertical: 14,
@@ -3435,19 +3458,66 @@ const nd = StyleSheet.create({
     gap: 10,
   },
   panelTitle: {
-    fontSize: 11,
-    letterSpacing: 1.4,
+    flexShrink: 1,
+    fontSize: 12,
+    letterSpacing: 1.6,
     textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.64)',
+    color: 'rgba(255,255,255,0.68)',
     fontWeight: '900',
+  },
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    minHeight: 20,
+  },
+  panelHeroBlock: {
+    gap: 4,
+  },
+  panelHeroCentered: {
+    alignItems: 'center',
+  },
+  panelHeroValue: {
+    color: 'white',
+    fontSize: 44,
+    lineHeight: 50,
+    fontWeight: '900',
+    letterSpacing: 0,
+    includeFontPadding: false,
+  },
+  windHeroValue: {
+    color: 'white',
+    fontSize: 44,
+    lineHeight: 50,
+    fontWeight: '900',
+    letterSpacing: 0,
+    includeFontPadding: false,
+    textAlign: 'center',
+    width: '100%',
+  },
+  panelHeroLabel: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  panelRule: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   metricGrid2: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    paddingTop: 14,
   },
   metricGrid2Tall: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    paddingTop: 14,
   },
   metricGrid3: {
     flexDirection: 'row',
@@ -3459,7 +3529,7 @@ const nd = StyleSheet.create({
     gap: 10,
   },
   metricStack: {
-    gap: 10,
+    gap: 0,
   },
   metricGrid4: {
     flexDirection: 'row',
@@ -3469,33 +3539,44 @@ const nd = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: 0,
-    minHeight: 76,
-    paddingVertical: 11,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: GLASS_INSET_BG,
+    minHeight: 58,
+    paddingVertical: 0,
+    paddingHorizontal: 12,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
     borderWidth: 0,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'flex-start',
-    gap: 6,
+    gap: 8,
+  },
+  metricCellDivider: {
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.12)',
   },
   metricTallCard: {
-    minHeight: 116,
+    minHeight: 62,
   },
   metricDialCard: {
-    minHeight: 116,
+    minHeight: 62,
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255,255,255,0.12)',
   },
   metricWideCard: {
-    minHeight: 82,
-    paddingVertical: 11,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: GLASS_INSET_BG,
+    minHeight: 72,
+    paddingVertical: 14,
+    paddingHorizontal: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
     borderWidth: 0,
-    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    justifyContent: 'center',
     gap: 8,
+  },
+  metricHiddenCard: {
+    display: 'none',
   },
   metricCardHalf: {
     flexBasis: '48%',
@@ -3504,7 +3585,10 @@ const nd = StyleSheet.create({
   metricCardFull: {
     width: '100%',
     flexBasis: '100%',
-    minHeight: 70,
+    minHeight: 68,
+    paddingHorizontal: 0,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
   },
   metricWideHead: {
     flexDirection: 'row',
@@ -3513,29 +3597,29 @@ const nd = StyleSheet.create({
     gap: 8,
   },
   metricLabel: {
-    fontSize: 9,
-    letterSpacing: 0.45,
+    fontSize: 10,
+    letterSpacing: 0.55,
     textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.48)',
+    color: 'rgba(255,255,255,0.52)',
     fontWeight: '900',
-    lineHeight: 11,
+    lineHeight: 12,
     includeFontPadding: false,
   },
   metricValue: {
-    fontSize: 14,
-    lineHeight: 17,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: '900',
     color: 'white',
     includeFontPadding: false,
   },
   metricValueSmall: {
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 18,
+    lineHeight: 23,
     fontWeight: '900',
     color: 'white',
   },
   metricWideValue: {
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: '900',
     color: 'white',
   },
@@ -3566,7 +3650,7 @@ const nd = StyleSheet.create({
   cloudRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 14,
   },
   cloudTrack: {
     flex: 1,
@@ -3582,17 +3666,18 @@ const nd = StyleSheet.create({
   },
   pressureHeroCard: {
     minHeight: 136,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: GLASS_INSET_BG,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
     borderWidth: 0,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 10,
   },
   pressureHeroValue: {
-    marginTop: 8,
-    fontSize: 21,
-    lineHeight: 24,
+    marginTop: 4,
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: '900',
     color: 'white',
   },
@@ -4011,10 +4096,10 @@ function LandWeatherWithCoords({
   const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
 
   const feelsDriver = useMemo(() => {
-    if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, conf: 'high' as const };
-    if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, conf: 'high' as const };
-    if (feelsLikeF != null) return { label: 'Feels Like', value: `${Math.round(feelsLikeF)}°F`, conf: 'medium' as const };
-    return { label: 'Feels', value: '—', conf: undefined };
+    if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, topicId: 'heat-index', conf: 'high' as const };
+    if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, topicId: 'wind-chill', conf: 'high' as const };
+    if (feelsLikeF != null) return { label: 'Apparent', value: `${Math.round(feelsLikeF)}°F`, topicId: 'apparent-temp', conf: 'medium' as const };
+    return { label: 'Apparent', value: '—', topicId: 'apparent-temp', conf: undefined };
   }, [hi, wc, feelsLikeF]);
 
   const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime, forecastTimeZone) : null;
@@ -4224,6 +4309,7 @@ function LandWeatherWithCoords({
           dayLengthSec={todayDayLengthSec}
           feelsDriverLabel={feelsDriver.label}
           feelsDriverValue={feelsDriver.value}
+          feelsDriverTopicId={feelsDriver.topicId}
           onOpenLearnTopic={openLearnTopic}
         />
       )}

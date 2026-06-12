@@ -19,6 +19,8 @@ type DailyDatum = {
   tempMinF: number | null;
   apparentTempMaxF?: number | null;
   apparentTempMinF?: number | null;
+  airQualityUsAqiMax?: number | null;
+  airQualityLabel?: string | null;
 
   precipProbMaxPct: number | null; // 0-100
   dewPointMaxF: number | null;
@@ -164,6 +166,7 @@ export function DailyRangeChart({
   const showDew = showDewPoint ?? wxLab;
   const showRh = showHumidity ?? wxLab;
   const showCloud = showCloudBand ?? wxLab;
+  const showAqi = wxLab;
 
   // Bump animation (only on tap)
   const bump = useRef(new Animated.Value(0)).current;
@@ -181,6 +184,7 @@ export function DailyRangeChart({
     low: 'rgba(90,170,255,0.95)',
     dew: 'rgba(80,220,140,0.90)',
     rh: 'rgba(190,120,255,0.80)',
+    aqi: 'rgba(250,204,21,0.92)',
 
     precipFill: 'rgba(90,200,250,0.18)',
     precipStroke: 'rgba(90,200,250,0.45)',
@@ -261,6 +265,11 @@ export function DailyRangeChart({
     return padT + (1 - p) * plotH;
   };
 
+  const yForAqi = (aqi: number) => {
+    const p = clamp(aqi, 0, 150) / 150;
+    return padT + (1 - p) * plotH;
+  };
+
   // Series points
   const ptsMax = data
     .map((d, i) => (typeof d.tempMaxF === 'number' ? { x: xForIdx(i), y: yForTemp(d.tempMaxF) } : null))
@@ -278,10 +287,19 @@ export function DailyRangeChart({
     .map((d, i) => (typeof d.humidityMaxPct === 'number' ? { x: xForIdx(i), y: yForPct(d.humidityMaxPct) } : null))
     .filter(Boolean) as Array<{ x: number; y: number }>;
 
+  const ptsAqi = data
+    .map((d, i) =>
+      typeof d.airQualityUsAqiMax === 'number'
+        ? { x: xForIdx(i), y: yForAqi(d.airQualityUsAqiMax) }
+        : null,
+    )
+    .filter(Boolean) as Array<{ x: number; y: number }>;
+
   const pathMax = buildPath(ptsMax);
   const pathMin = buildPath(ptsMin);
   const pathDp = buildPath(ptsDp);
   const pathRh = buildPath(ptsRh);
+  const pathAqi = buildPath(ptsAqi);
 
   // Precip area (POP) uses percent axis but reduced amplitude
   const precipPts = useMemo(() => {
@@ -362,6 +380,7 @@ export function DailyRangeChart({
     { label: 'Feels', shortLabel: 'FEELS', values: data.map((d) => fmtInt(d.apparentTempMaxF ?? null, unitsLabel)) },
     { label: 'Dew pt', shortLabel: 'DEW', values: data.map((d) => fmtInt(d.dewPointMaxF, unitsLabel)) },
     { label: 'RH', shortLabel: 'RH', values: data.map((d) => fmtInt(d.humidityMaxPct, '%')) },
+    { label: 'AQI', shortLabel: 'AQI', values: data.map((d) => fmtInt(d.airQualityUsAqiMax ?? null)) },
     { label: 'Wind', shortLabel: 'WIND', values: data.map((d) => fmtInt(d.windMaxMph, ' mph')) },
     { label: 'Gusts', shortLabel: 'GUST', values: data.map((d) => fmtInt(d.windGustMaxMph, ' mph')) },
     { label: 'Clouds', shortLabel: 'CLD', values: data.map((d) => fmtInt(d.cloudCoverAvgPct, '%')) },
@@ -527,7 +546,7 @@ export function DailyRangeChart({
                 fontWeight="900"
                 textAnchor="start"
               >
-                %
+                % / AQI
               </SvgText>
 
               {/* Cursor */}
@@ -585,6 +604,10 @@ export function DailyRangeChart({
                 <Path d={pathRh} stroke={C.rh} strokeWidth={2.2} strokeDasharray="1 6" fill="none" />
               ) : null}
 
+              {showAqi && pathAqi ? (
+                <Path d={pathAqi} stroke={C.aqi} strokeWidth={2.4} strokeDasharray="7 5" fill="none" />
+              ) : null}
+
               {/* points */}
               {data.map((d, i) => {
                 const x = xForIdx(i);
@@ -592,6 +615,7 @@ export function DailyRangeChart({
                 const yMin = typeof d.tempMinF === 'number' ? yForTemp(d.tempMinF) : null;
                 const yDp = showDew && typeof d.dewPointMaxF === 'number' ? yForTemp(d.dewPointMaxF) : null;
                 const yRh = showRh && typeof d.humidityMaxPct === 'number' ? yForPct(d.humidityMaxPct) : null;
+                const yAqi = showAqi && typeof d.airQualityUsAqiMax === 'number' ? yForAqi(d.airQualityUsAqiMax) : null;
 
                 return (
                   <G key={`pt-${d.date}`}>
@@ -599,10 +623,12 @@ export function DailyRangeChart({
                     {yMin != null ? <Circle cx={x} cy={yMin} r={9} fill={C.low} opacity={0.14} /> : null}
                     {yDp != null ? <Circle cx={x} cy={yDp} r={8} fill={C.dew} opacity={0.16} /> : null}
                     {yRh != null ? <Circle cx={x} cy={yRh} r={7} fill={C.rh} opacity={0.16} /> : null}
+                    {yAqi != null ? <Circle cx={x} cy={yAqi} r={7} fill={C.aqi} opacity={0.16} /> : null}
                     {yMax != null ? <Circle cx={x} cy={yMax} r={6.8} fill="white" stroke={C.high} strokeWidth={2.6} /> : null}
                     {yMin != null ? <Circle cx={x} cy={yMin} r={6.2} fill="white" stroke={C.low} strokeWidth={2.4} /> : null}
                     {yDp != null ? <Circle cx={x} cy={yDp} r={4.8} fill="white" stroke={C.dew} strokeWidth={2.1} /> : null}
                     {yRh != null ? <Circle cx={x} cy={yRh} r={4.4} fill="white" stroke={C.rh} strokeWidth={2.1} /> : null}
+                    {yAqi != null ? <Circle cx={x} cy={yAqi} r={4.4} fill="white" stroke={C.aqi} strokeWidth={2.1} /> : null}
                   </G>
                 );
               })}
@@ -834,6 +860,7 @@ export function DailyRangeChart({
           <LegendPill label="Low" kind="line" color={C.low} />
           <LegendPill label="Dew pt" kind="dashed" color={C.dew} />
           <LegendPill label="RH" kind="dot" color={C.rh} />
+          {showAqi ? <LegendPill label="AQI" kind="dashed" color={C.aqi} /> : null}
           <LegendPill label="Wind/Gust" kind="bars2" color={C.gust} />
           <LegendPill label="Clouds" kind="area" color={C.cloudOn} />
         </View>
