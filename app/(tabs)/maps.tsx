@@ -27,6 +27,7 @@ import { AviationMapControls } from '../../components/maps/aviation/AviationMapC
 import { AviationStatusStrip } from '../../components/maps/aviation/AviationStatusStrip';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
+import { MarineMapLayers } from '../../components/maps/MarineMapLayers';
 import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
 import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEngine';
@@ -34,12 +35,6 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
-import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
-import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
-import type { GlobalMarineAreaSummary } from '../lib/nautical/globalMarineManifest';
-import { useGlobalMarineManifest } from '../lib/nautical/useGlobalMarineManifest';
-import { useMarineZonesByBbox } from '../lib/nautical/useMarineZonesByBbox';
-import type { NauticalZone } from '../lib/nautical/zones';
 import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
 import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
@@ -53,6 +48,7 @@ import { normalizeRadarSiteId } from '../lib/maps/radarIem';
 import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '../lib/maps/useAlertMapData';
+import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
@@ -90,46 +86,6 @@ type WildfireIncidentDetails = {
   isHotspot?: boolean;
   confidence?: number | null;
   frp?: number | null;
-};
-
-type SelectedMarineFeature =
-  | { kind: 'buoy'; id: string }
-  | { kind: 'zone'; id: string }
-  | { kind: 'globalArea'; id: string }
-  | null;
-
-type SelectedWaterStation = {
-  id: string;
-  siteId: string;
-  siteNumber: string;
-  name?: string | null;
-  label?: string | null;
-  primaryLabel?: string | null;
-  primaryValue?: number | null;
-  primaryUnit?: string | null;
-  observedAt?: string | null;
-  readings?: Array<{
-    parameterCode?: string | null;
-    label?: string | null;
-    value?: number | null;
-    unit?: string | null;
-    time?: string | null;
-  }>;
-};
-
-type MarinePointConditions = {
-  significantWaveHeightM: number | null;
-  primarySwellPeriodS: number | null;
-  primarySwellDirectionDeg: number | null;
-  windSpeedKts: number | null;
-  windGustKts: number | null;
-  windDirectionDeg: number | null;
-  seaSurfaceTempC: number | null;
-  oceanCurrentKts?: number | null;
-  oceanCurrentDirectionDeg?: number | null;
-  seaLevelHeightMslM?: number | null;
-  observedAt: string | null;
-  modelSource: string | null;
 };
 
 type WeatherAlertForecastTarget =
@@ -738,157 +694,6 @@ function buildRadarStationGeoJson(site: NexradSite | null) {
   return { type: 'FeatureCollection', features };
 }
 
-function regionToBbox(region: Region | null | undefined) {
-  if (!region) return null;
-  const latDelta = Number(region.latitudeDelta);
-  const lonDelta = Number(region.longitudeDelta);
-  const lat = Number(region.latitude);
-  const lon = Number(region.longitude);
-  if (![latDelta, lonDelta, lat, lon].every(Number.isFinite)) return null;
-
-  return {
-    west: lon - lonDelta / 2,
-    south: lat - latDelta / 2,
-    east: lon + lonDelta / 2,
-    north: lat + latDelta / 2,
-  };
-}
-
-function closeRingIfNeeded(coords: Array<[number, number]>) {
-  if (coords.length < 3) return coords;
-  const first = coords[0];
-  const last = coords[coords.length - 1];
-  if (first?.[0] === last?.[0] && first?.[1] === last?.[1]) return coords;
-  return [...coords, first];
-}
-
-function marineZonesToFeatureCollection(zones: NauticalZone[]) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: zones.map((zone) => {
-      let geometry: any = zone.geometry ?? null;
-
-      if (!geometry && Array.isArray(zone.polygon) && zone.polygon.length) {
-        geometry = {
-          type: 'Polygon' as const,
-          coordinates: [
-            closeRingIfNeeded(zone.polygon.map((point) => [point.longitude, point.latitude] as [number, number])),
-          ],
-        };
-      }
-
-      return {
-        type: 'Feature' as const,
-        id: zone.id,
-        properties: {
-          id: zone.id,
-          name: zone.name,
-          wfo: zone.wfo,
-          type: zone.type,
-        },
-        geometry: geometry ?? { type: 'Point' as const, coordinates: [zone.centroid.longitude, zone.centroid.latitude] },
-      };
-    }),
-  };
-}
-
-function marineZoneMarkersToFeatureCollection(zones: NauticalZone[]) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: zones
-      .map((zone) => {
-        const lat = Number(zone.centroid?.latitude);
-        const lon = Number(zone.centroid?.longitude);
-        const center = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : getGeometryCenter(zone.geometry);
-        if (!center) return null;
-        return {
-          type: 'Feature' as const,
-          id: zone.id,
-          properties: {
-            id: zone.id,
-            name: zone.name,
-            wfo: zone.wfo,
-            type: zone.type,
-          },
-          geometry: { type: 'Point' as const, coordinates: [center.lon, center.lat] },
-        };
-      })
-      .filter(Boolean),
-  };
-}
-
-function boundsToPolygonCoordinates(bounds: { west: number; south: number; east: number; north: number }) {
-  const ringFor = (west: number, east: number) =>
-    closeRingIfNeeded([
-      [west, bounds.south],
-      [east, bounds.south],
-      [east, bounds.north],
-      [west, bounds.north],
-    ] as Array<[number, number]>);
-
-  if (bounds.west <= bounds.east) {
-    return { type: 'Polygon' as const, coordinates: [ringFor(bounds.west, bounds.east)] };
-  }
-
-  return {
-    type: 'MultiPolygon' as const,
-    coordinates: [
-      [ringFor(bounds.west, 180)],
-      [ringFor(-180, bounds.east)],
-    ],
-  };
-}
-
-function globalMarineAreasToFeatureCollection(areas: GlobalMarineAreaSummary[]) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: areas
-      .filter((area) => area.geometry || area.bounds)
-      .map((area) => ({
-        type: 'Feature' as const,
-        id: area.id,
-        properties: {
-          id: area.id,
-          name: area.name,
-          region: area.region,
-          kind: area.kind,
-          sourceLabel: area.sourceLabel,
-          sourceUrl: area.sourceUrl,
-        },
-        geometry: area.geometry ?? boundsToPolygonCoordinates(area.bounds!),
-      })),
-  };
-}
-
-function marineBuoySeverity(waveM?: number | null, windKts?: number | null) {
-  const waveFt = waveM != null ? waveM * 3.28084 : null;
-  const wind = windKts ?? 0;
-  if ((waveFt == null || waveFt < 3) && wind < 15) return 'calm';
-  if (waveFt != null && waveFt < 6 && wind < 25) return 'moderate';
-  if ((waveFt != null && waveFt < 10) || wind < 35) return 'rough';
-  return 'extreme';
-}
-
-function buoysToFeatureCollection(buoys: BuoyDetailData[]) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: buoys
-      .filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon))
-      .map((buoy) => ({
-        type: 'Feature' as const,
-        id: buoy.id,
-        properties: {
-          id: buoy.id,
-          name: buoy.name ?? buoy.id,
-          severity: marineBuoySeverity(buoy.waveHeightM ?? null, buoy.windSpeedKts ?? null),
-          wind: buoy.windSpeedKts != null ? `${Math.round(buoy.windSpeedKts)} kt` : '--',
-          waves: buoy.waveHeightM != null ? `${Math.round(buoy.waveHeightM * 3.28084)} ft` : '--',
-        },
-        geometry: { type: 'Point' as const, coordinates: [buoy.lon, buoy.lat] as [number, number] },
-      })),
-  };
-}
-
 function circlePolygonFeature(args: {
   id: string;
   lat: number;
@@ -1156,96 +961,6 @@ function formatMapTemp(temp: number | null) {
   return temp == null ? '--' : `${Math.round(temp)}°`;
 }
 
-function formatMarineWaterTemp(valueC: number | undefined, unit: 'F' | 'C') {
-  if (!Number.isFinite(valueC)) return '--';
-  const c = Number(valueC);
-  if (unit === 'C') return `${Math.round(c)} C`;
-  return `${Math.round((c * 9) / 5 + 32)} F`;
-}
-
-function waterTempCFromReading(value: number | null, sourceUnit?: string | null) {
-  if (value == null || !Number.isFinite(value)) return null;
-  const unit = String(sourceUnit ?? '').toLowerCase();
-  if (unit.includes('degf') || unit.includes('fahrenheit') || unit.includes(' f')) return ((value - 32) * 5) / 9;
-  return value;
-}
-
-function convertWaterTemp(value: number | null, sourceUnit: string | null | undefined, targetUnit: 'F' | 'C') {
-  const c = waterTempCFromReading(value, sourceUnit);
-  if (c == null) return null;
-  return targetUnit === 'C' ? Math.round(c * 10) / 10 : Math.round(((c * 9) / 5 + 32) * 10) / 10;
-}
-
-function formatWaterStationTemp(value: number | null, sourceUnit: string | null | undefined, targetUnit: 'F' | 'C') {
-  const converted = convertWaterTemp(value, sourceUnit, targetUnit);
-  if (converted == null) return null;
-  const rounded = Math.round(converted * 10) / 10;
-  const display = Number.isInteger(rounded) ? String(Math.round(rounded)) : rounded.toFixed(1);
-  return `${display} ${targetUnit}`;
-}
-
-function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
-  const features = Array.isArray(geojson?.features) ? geojson.features : [];
-  return {
-    type: 'FeatureCollection',
-    features: features
-      .map((feature: any) => {
-        const props = feature?.properties ?? {};
-        const readings = Array.isArray(props.readings) ? props.readings : [];
-        const newestTempReading = readings
-          .filter((reading: any) => String(reading?.parameterCode ?? '') === '00010')
-          .sort((a: any, b: any) => {
-            const at = Date.parse(String(a?.time ?? ''));
-            const bt = Date.parse(String(b?.time ?? ''));
-            return (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
-          })[0];
-        const tempReading =
-          newestTempReading ??
-          (String(props.primaryParameter ?? '') === '00010'
-            ? { value: props.primaryValue, unit: props.primaryUnit, time: props.observedAt, label: props.primaryLabel }
-            : null);
-        if (!tempReading) return null;
-        const tempValue = convertWaterTemp(safeNum(tempReading.value), tempReading.unit, targetUnit);
-        const tempLabel = formatWaterStationTemp(safeNum(tempReading.value), tempReading.unit, targetUnit);
-        if (tempValue == null || !tempLabel) return null;
-        return {
-          ...feature,
-          properties: {
-            ...props,
-            label: tempLabel,
-            primaryParameter: '00010',
-            primaryLabel: 'Water temperature',
-            primaryValue: tempValue,
-            primaryUnit: targetUnit,
-            observedAt: tempReading.time ?? props.observedAt ?? null,
-            readings: [
-              {
-                ...tempReading,
-                parameterCode: '00010',
-                label: 'Water temperature',
-                value: tempValue,
-                unit: targetUnit,
-              },
-            ],
-          },
-        };
-      })
-      .filter(Boolean),
-  };
-}
-
-function formatMarineUpdated(value?: string | null) {
-  if (!value) return 'Latest report';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return 'Latest report';
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 async function fetchFavoriteTemperature(
   place: FavoriteLocation,
   unit: 'F' | 'C',
@@ -1268,17 +983,6 @@ async function fetchFavoriteTemperature(
   if (!res.ok) throw new Error(`Favorite temperature failed (${res.status})`);
   const json = await res.json();
   return safeNum(json?.temp ?? json?.current?.temperature_2m);
-}
-
-async function fetchMarinePointConditions(lat: number, lon: number, signal: AbortSignal): Promise<MarinePointConditions | null> {
-  const res = await fetchWithTimeout(
-    apiUrl(`/api/marine/conditions?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`),
-    9000,
-    { headers: { Accept: 'application/json' }, signal },
-  );
-  if (!res.ok) throw new Error(`Marine conditions failed (${res.status})`);
-  const json = await res.json();
-  return json?.conditions ?? null;
 }
 
 function useFavoriteTemperatures(favorites: FavoriteLocation[], unit: 'F' | 'C') {
@@ -1464,14 +1168,6 @@ export default function MapsScreen() {
   const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
   const [selectedWeatherAlertForecastTarget, setSelectedWeatherAlertForecastTarget] =
     useState<WeatherAlertForecastTarget>(null);
-  const [selectedMarineFeature, setSelectedMarineFeature] = useState<SelectedMarineFeature>(null);
-  const [selectedWaterStationId, setSelectedWaterStationId] = useState<string | null>(null);
-  const [waterStationsGeojson, setWaterStationsGeojson] = useState<any>({ type: 'FeatureCollection', features: [] });
-  const [waterStationsLoading, setWaterStationsLoading] = useState(false);
-  const [waterStationsError, setWaterStationsError] = useState<string | null>(null);
-  const [selectedGlobalMarineConditions, setSelectedGlobalMarineConditions] = useState<MarinePointConditions | null>(null);
-  const [selectedGlobalMarineLoading, setSelectedGlobalMarineLoading] = useState(false);
-  const [selectedGlobalMarineError, setSelectedGlobalMarineError] = useState<string | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
@@ -2468,174 +2164,37 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
-  const marineDataEnabled = isFocused && marineConditionsEnabled;
-  const waterStationsDataEnabled = isFocused && waterStationsEnabled && mapZoom >= 5.2;
-  const marineBbox = useMemo(
-    () => (marineDataEnabled && mapZoom >= 3.6 ? regionToBbox(effectiveRegion) : null),
-    [effectiveRegion, mapZoom, marineDataEnabled],
-  );
-  const waterStationsBbox = useMemo(
-    () => (waterStationsDataEnabled ? regionToBbox(effectiveRegion) : null),
-    [effectiveRegion, waterStationsDataEnabled],
-  );
-  const globalMarineViewport = useMemo(() => {
-    if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.6) return null;
-    const bbox = regionToBbox(effectiveRegion);
-    if (
-      !bbox ||
-      !Number.isFinite(bbox.west) ||
-      !Number.isFinite(bbox.south) ||
-      !Number.isFinite(bbox.east) ||
-      !Number.isFinite(bbox.north)
-    ) {
-      return null;
-    }
-    return {
-      west: bbox.west,
-      south: bbox.south,
-      east: bbox.east,
-      north: bbox.north,
-      zoom: mapZoom,
-    };
-  }, [effectiveRegion, mapZoom, marineDataEnabled]);
-  const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
-  const { areas: globalMarineAreas } = useGlobalMarineManifest(globalMarineViewport);
-  const { data: buoyData } = useAllBuoyDetails(marineDataEnabled);
-  useEffect(() => {
-    if (!waterStationsDataEnabled || !waterStationsBbox) {
-      setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
-      setWaterStationsError(null);
-      setWaterStationsLoading(false);
-      setSelectedWaterStationId(null);
-      return;
-    }
-
-    const bbox = waterStationsBbox;
-    const bboxArea = Math.abs((bbox.east ?? 0) - (bbox.west ?? 0)) * Math.abs((bbox.north ?? 0) - (bbox.south ?? 0));
-    if (!Number.isFinite(bboxArea) || bboxArea > 2500) {
-      setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
-      return;
-    }
-
-    let cancelled = false;
-    const run = async () => {
-      try {
-        setWaterStationsLoading(true);
-        setWaterStationsError(null);
-        const params = new URLSearchParams({
-          west: String(Number(bbox.west.toFixed(4))),
-          south: String(Number(bbox.south.toFixed(4))),
-          east: String(Number(bbox.east.toFixed(4))),
-          north: String(Number(bbox.north.toFixed(4))),
-          parameters: '00010',
-          limit: mapZoom < 7 ? '80' : '160',
-        });
-        const res = await fetchWithTimeout(apiUrl(`/api/usgs/water-stations?${params.toString()}`), 12000);
-        if (!res.ok) throw new Error(`USGS ${res.status}`);
-        const json = await res.json();
-        if (cancelled) return;
-        setWaterStationsGeojson(waterStationsGeojsonForTempUnit(json?.geojson, tempUnit));
-      } catch (err: any) {
-        if (cancelled) return;
-        setWaterStationsError(err?.message ?? 'Unable to load USGS water stations');
-        setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
-      } finally {
-        if (!cancelled) setWaterStationsLoading(false);
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [mapZoom, tempUnit, waterStationsBbox, waterStationsDataEnabled]);
-  const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
-    marineZones,
+  const {
+    globalMarineAreasFc,
+    marineBuoys,
+    marineBuoysFc,
+    marineZonesFc,
+    marineZoneMarkersFc,
+    resolveMarineFeatureAtPoint,
+    resolveMarineZoneAtPoint,
+    selectedGlobalMarineArea,
+    selectedGlobalMarineAreaFc,
+    selectedGlobalMarineConditions,
+    selectedGlobalMarineError,
+    selectedGlobalMarineLoading,
+    selectedMarineBuoy,
+    selectedMarineFeature,
+    selectedMarineZone,
+    selectedMarineZoneFc,
+    selectedWaterStation,
+    setSelectedMarineFeature,
+    setSelectedWaterStationId,
+    waterStationsError,
+    waterStationsGeojson,
+    waterStationsLoading,
+  } = useMarineMapLayer({
+    effectiveRegion,
+    isFocused,
+    marineConditionsEnabled,
+    waterStationsEnabled,
     mapZoom,
-  ]);
-  const marineBuoys = useMemo(
-    () =>
-      marineDataEnabled
-        ? (buoyData ?? []).filter((buoy) => Number.isFinite(buoy.lat) && Number.isFinite(buoy.lon))
-        : [],
-    [buoyData, marineDataEnabled],
-  );
-  const marineZonesById = useMemo(() => new Map(visibleMarineZones.map((zone) => [zone.id, zone])), [visibleMarineZones]);
-  const globalMarineAreasById = useMemo(
-    () => new Map(globalMarineAreas.map((area) => [area.id, area])),
-    [globalMarineAreas],
-  );
-  const marineBuoysById = useMemo(() => new Map(marineBuoys.map((buoy) => [buoy.id, buoy])), [marineBuoys]);
-  const globalMarineAreasFc = useMemo(
-    () => globalMarineAreasToFeatureCollection(globalMarineAreas),
-    [globalMarineAreas],
-  );
-  const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
-  const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
-  const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
-  const waterStationsById = useMemo(() => {
-    const out = new Map<string, SelectedWaterStation>();
-    const features = Array.isArray(waterStationsGeojson?.features) ? waterStationsGeojson.features : [];
-    for (const feature of features) {
-      const props = feature?.properties ?? {};
-      const id = String(props.siteId ?? props.id ?? feature?.id ?? '');
-      if (!id) continue;
-      out.set(id, {
-        id,
-        siteId: id,
-        siteNumber: String(props.siteNumber ?? id.replace(/^USGS-/, '')),
-        name: typeof props.name === 'string' ? props.name : null,
-        label: typeof props.label === 'string' ? props.label : null,
-        primaryLabel: typeof props.primaryLabel === 'string' ? props.primaryLabel : null,
-        primaryValue: safeNum(props.primaryValue),
-        primaryUnit: typeof props.primaryUnit === 'string' ? props.primaryUnit : null,
-        observedAt: typeof props.observedAt === 'string' ? props.observedAt : null,
-        readings: Array.isArray(props.readings) ? props.readings : [],
-      });
-    }
-    return out;
-  }, [waterStationsGeojson]);
-  const selectedWaterStation = selectedWaterStationId ? waterStationsById.get(selectedWaterStationId) ?? null : null;
-  const selectedMarineBuoy =
-    selectedMarineFeature?.kind === 'buoy' ? marineBuoysById.get(selectedMarineFeature.id) ?? null : null;
-  const selectedMarineZone =
-    selectedMarineFeature?.kind === 'zone' ? marineZonesById.get(selectedMarineFeature.id) ?? null : null;
-  const selectedGlobalMarineArea =
-    selectedMarineFeature?.kind === 'globalArea' ? globalMarineAreasById.get(selectedMarineFeature.id) ?? null : null;
-  const selectedMarineZoneFc = useMemo(
-    () => marineZonesToFeatureCollection(selectedMarineZone ? [selectedMarineZone] : []),
-    [selectedMarineZone],
-  );
-  const selectedGlobalMarineAreaFc = useMemo(
-    () => globalMarineAreasToFeatureCollection(selectedGlobalMarineArea ? [selectedGlobalMarineArea] : []),
-    [selectedGlobalMarineArea],
-  );
-  const resolveMarineFeatureAtPoint = useCallback(
-    (lat: number, lon: number): SelectedMarineFeature => {
-      if (!marineConditionsEnabled) return null;
-
-      const nearestBuoy = marineBuoys
-        .map((buoy) => ({
-          buoy,
-          distanceMi: haversineMiles(lat, lon, buoy.lat, buoy.lon),
-        }))
-        .filter((item) => item.distanceMi <= marineBuoyHitRadiusMiles(mapZoom))
-        .sort((a, b) => a.distanceMi - b.distanceMi)[0]?.buoy;
-
-      if (nearestBuoy) return { kind: 'buoy', id: nearestBuoy.id };
-
-      const zone = visibleMarineZones.find((item) => geometryContainsPoint(item.geometry, lat, lon));
-      return zone ? { kind: 'zone', id: zone.id } : null;
-    },
-    [mapZoom, marineBuoys, marineConditionsEnabled, visibleMarineZones],
-  );
-  const resolveMarineZoneAtPoint = useCallback(
-    (lat: number, lon: number) => {
-      if (!marineConditionsEnabled) return null;
-      return visibleMarineZones.find((item) => geometryContainsPoint(item.geometry, lat, lon)) ?? null;
-    },
-    [marineConditionsEnabled, visibleMarineZones],
-  );
+    tempUnit,
+  });
 
   mapPressHandlerRef.current = async (e: any) => {
     const pressCoords = getMapPressLonLat(e);
@@ -2694,39 +2253,6 @@ export default function MapsScreen() {
       setWildfireDetailLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!marineConditionsEnabled) setSelectedMarineFeature(null);
-  }, [marineConditionsEnabled]);
-
-  useEffect(() => {
-    if (!selectedGlobalMarineArea) {
-      setSelectedGlobalMarineConditions(null);
-      setSelectedGlobalMarineLoading(false);
-      setSelectedGlobalMarineError(null);
-      return;
-    }
-
-    const ac = new AbortController();
-    setSelectedGlobalMarineLoading(true);
-    setSelectedGlobalMarineError(null);
-
-    fetchMarinePointConditions(selectedGlobalMarineArea.center.lat, selectedGlobalMarineArea.center.lon, ac.signal)
-      .then((conditions) => {
-        if (ac.signal.aborted) return;
-        setSelectedGlobalMarineConditions(conditions);
-      })
-      .catch((e: any) => {
-        if (ac.signal.aborted) return;
-        setSelectedGlobalMarineConditions(null);
-        setSelectedGlobalMarineError(e?.message ?? 'Marine model conditions unavailable');
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setSelectedGlobalMarineLoading(false);
-      });
-
-    return () => ac.abort();
-  }, [selectedGlobalMarineArea]);
 
   useEffect(() => {
     const targetBuoyId = params?.buoyId ? String(params.buoyId).toUpperCase() : '';
@@ -3791,293 +3317,25 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
-          {marineConditionsEnabled ? (
-            <>
-              <MapLibreGL.ShapeSource
-                id="global-marine-areas-source"
-                shape={globalMarineAreasFc as any}
-                onPress={(e: any) => {
-                  const feature = e?.features?.[0];
-                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'globalArea', id }); }
-                }}
-              >
-                <MapLibreGL.FillLayer
-                  id="global-marine-areas-fill"
-                  minZoomLevel={2}
-                  maxZoomLevel={7.6}
-                  style={{
-                    fillColor: 'rgba(20,184,166,1)',
-                    fillOpacity: ['interpolate', ['linear'], ['zoom'], 2, 0.035, 6.5, 0.055] as any,
-                  }}
-                />
-                <MapLibreGL.LineLayer
-                  id="global-marine-areas-line"
-                  minZoomLevel={2}
-                  maxZoomLevel={7.6}
-                  style={{
-                    lineColor: 'rgba(94,234,212,0.82)',
-                    lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.45, 5, 0.75, 7.6, 1] as any,
-                    lineOpacity: 0.42 * marineConditionsOpacity,
-                  }}
-                />
-              </MapLibreGL.ShapeSource>
-
-              {selectedGlobalMarineArea ? (
-                <MapLibreGL.ShapeSource id="selected-global-marine-area-source" shape={selectedGlobalMarineAreaFc as any}>
-                  <MapLibreGL.FillLayer
-                    id="selected-global-marine-area-fill"
-                    style={{
-                      fillColor: 'rgba(20,184,166,1)',
-                      fillOpacity: 0.08 * marineConditionsOpacity,
-                    }}
-                  />
-                  <MapLibreGL.LineLayer
-                    id="selected-global-marine-area-line"
-                    style={{
-                      lineColor: 'rgba(153,246,228,0.95)',
-                      lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.2, 7, 2.2] as any,
-                      lineOpacity: 0.9 * marineConditionsOpacity,
-                    }}
-                  />
-                </MapLibreGL.ShapeSource>
-              ) : null}
-
-              <MapLibreGL.ShapeSource
-                id="marine-zone-markers-source"
-                shape={marineZoneMarkersFc as any}
-                onPress={(e: any) => {
-                  const feature = e?.features?.[0];
-                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'zone', id }); }
-                }}
-              >
-                <MapLibreGL.CircleLayer
-                  id="marine-zone-markers"
-                  maxZoomLevel={7.2}
-                  style={{
-                    circleColor: 'rgba(20,184,166,0.78)',
-                    circleStrokeColor: 'rgba(204,251,241,0.95)',
-                    circleStrokeWidth: 1.2,
-                    circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 4.5, 5, 6.5, 7, 8] as any,
-                    circleOpacity: 0.9 * marineConditionsOpacity,
-                  }}
-                />
-              </MapLibreGL.ShapeSource>
-
-              <MapLibreGL.ShapeSource
-                id="marine-zones-source"
-                shape={marineZonesFc as any}
-                onPress={(e: any) => {
-                  const feature = e?.features?.[0];
-                  const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'zone', id }); }
-                }}
-              >
-                <MapLibreGL.FillLayer
-                  id="marine-zones-hit-fill"
-                  minZoomLevel={3.8}
-                  style={{
-                    fillColor: 'rgba(20,184,166,1)',
-                    fillOpacity: 0.01,
-                  }}
-                />
-                <MapLibreGL.LineLayer
-                  id="marine-zones-line"
-                  minZoomLevel={3.8}
-                  style={{
-                    lineColor: 'rgba(45,212,191,0.78)',
-                    lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.45, 7.2, 0.9, 10, 1.35] as any,
-                    lineOpacity: 0.52 * marineConditionsOpacity,
-                  }}
-                />
-              </MapLibreGL.ShapeSource>
-
-              {selectedMarineZone ? (
-                <MapLibreGL.ShapeSource id="selected-marine-zone-source" shape={selectedMarineZoneFc as any}>
-                  <MapLibreGL.FillLayer
-                    id="selected-marine-zone-fill"
-                    style={{
-                      fillColor: 'rgba(20,184,166,1)',
-                      fillOpacity: 0.08 * marineConditionsOpacity,
-                    }}
-                  />
-                  <MapLibreGL.LineLayer
-                    id="selected-marine-zone-line"
-                    style={{
-                      lineColor: 'rgba(153,246,228,0.98)',
-                      lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.6, 7, 2.4, 10, 3.2] as any,
-                      lineOpacity: 0.94 * marineConditionsOpacity,
-                    }}
-                  />
-                </MapLibreGL.ShapeSource>
-              ) : null}
-
-              <MapLibreGL.ShapeSource
-                id="marine-buoys-source"
-                shape={marineBuoysFc as any}
-                cluster
-                clusterRadius={44}
-                clusterMaxZoomLevel={8}
-                onPress={(e: any) => {
-                  const feature = e?.features?.[0];
-                  const props = feature?.properties ?? {};
-                  const id = String(props.id ?? feature?.id ?? '');
-
-                  if (props?.cluster) {
-                    const coords = feature?.geometry?.coordinates;
-                    if (Array.isArray(coords) && coords.length >= 2) {
-                      mapCameraRef.current?.setCamera?.({
-                        centerCoordinate: [Number(coords[0]), Number(coords[1])],
-                        zoomLevel: clampNumber((mapZoom ?? 5) + 2, 1, 20),
-                        animationDuration: 450,
-                      });
-                    }
-                    return;
-                  }
-
-                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'buoy', id }); }
-                }}
-              >
-                <MapLibreGL.CircleLayer
-                  id="marine-buoy-clusters"
-                  filter={['has', 'point_count'] as any}
-                  style={{
-                    circleColor: 'rgba(14,165,233,0.38)',
-                    circleStrokeColor: 'rgba(186,230,253,0.92)',
-                    circleStrokeWidth: 1.2,
-                    circleRadius: ['step', ['get', 'point_count'], 14, 25, 18, 75, 22, 200, 26] as any,
-                  }}
-                />
-                <MapLibreGL.SymbolLayer
-                  id="marine-buoy-cluster-count"
-                  filter={['has', 'point_count'] as any}
-                  style={{
-                    textField: ['to-string', ['get', 'point_count']] as any,
-                    textSize: 12,
-                    textColor: '#e0f2fe',
-                    textHaloColor: 'rgba(2,6,23,0.95)',
-                    textHaloWidth: 1,
-                  }}
-                />
-                <MapLibreGL.CircleLayer
-                  id="marine-buoy-points"
-                  filter={['!', ['has', 'point_count']] as any}
-                  style={{
-                    circleColor: [
-                      'match',
-                      ['get', 'severity'],
-                      'calm',
-                      '#22c55e',
-                      'moderate',
-                      '#eab308',
-                      'rough',
-                      '#f97316',
-                      'extreme',
-                      '#ef4444',
-                      '#38bdf8',
-                    ] as any,
-                    circleOpacity: 0.94 * marineConditionsOpacity,
-                    circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 3.5, 7, 5.5, 10, 7.5] as any,
-                    circleStrokeColor: 'rgba(2,6,23,0.96)',
-                    circleStrokeWidth: 1.3,
-                  }}
-                />
-                <MapLibreGL.SymbolLayer
-                  id="marine-buoy-labels"
-                  filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 6]] as any}
-                  style={{
-                    textField: ['get', 'id'] as any,
-                    textSize: 10,
-                    textOffset: [0, 1.2],
-                    textAnchor: 'top',
-                    textColor: '#e0f2fe',
-                    textHaloColor: 'rgba(2,6,23,0.95)',
-                    textHaloWidth: 1,
-                    textOptional: true,
-                  }}
-                />
-              </MapLibreGL.ShapeSource>
-            </>
-          ) : null}
-
-          {waterStationsEnabled ? (
-            <MapLibreGL.ShapeSource
-              id="usgs-water-stations-source"
-              shape={waterStationsGeojson as any}
-              cluster
-              clusterRadius={42}
-              clusterMaxZoomLevel={8}
-              onPress={(e: any) => {
-                const feature = e?.features?.[0];
-                const props = feature?.properties ?? {};
-                const id = String(props.siteId ?? props.id ?? feature?.id ?? '');
-
-                if (props?.cluster) {
-                  const coords = feature?.geometry?.coordinates;
-                  if (Array.isArray(coords) && coords.length >= 2) {
-                    mapCameraRef.current?.setCamera?.({
-                      centerCoordinate: [Number(coords[0]), Number(coords[1])],
-                      zoomLevel: clampNumber((mapZoom ?? 5) + 2, 1, 20),
-                      animationDuration: 450,
-                    });
-                  }
-                  return;
-                }
-
-                if (id) setSelectedWaterStationId(id);
-              }}
-            >
-              <MapLibreGL.CircleLayer
-                id="usgs-water-station-clusters"
-                filter={['has', 'point_count'] as any}
-                style={{
-                  circleColor: 'rgba(56,189,248,0.36)',
-                  circleStrokeColor: 'rgba(186,230,253,0.94)',
-                  circleStrokeWidth: 1.2,
-                  circleOpacity: waterStationsOpacity,
-                  circleRadius: ['step', ['get', 'point_count'], 13, 20, 17, 60, 21, 160, 25] as any,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="usgs-water-station-cluster-count"
-                filter={['has', 'point_count'] as any}
-                style={{
-                  textField: ['to-string', ['get', 'point_count']] as any,
-                  textSize: 11,
-                  textColor: '#e0f2fe',
-                  textHaloColor: 'rgba(2,6,23,0.95)',
-                  textHaloWidth: 1,
-                }}
-              />
-              <MapLibreGL.CircleLayer
-                id="usgs-water-station-points"
-                filter={['!', ['has', 'point_count']] as any}
-                style={{
-                  circleColor: '#38bdf8',
-                  circleOpacity: 0.92 * waterStationsOpacity,
-                  circleRadius: ['interpolate', ['linear'], ['zoom'], 5, 4, 8, 6.5, 11, 8.5] as any,
-                  circleStrokeColor: 'rgba(2,6,23,0.96)',
-                  circleStrokeWidth: 1.25,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="usgs-water-station-labels"
-                filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 8]] as any}
-                style={{
-                  textField: ['get', 'label'] as any,
-                  textSize: 10,
-                  textOffset: [0, 1.15],
-                  textAnchor: 'top',
-                  textColor: '#e0f2fe',
-                  textHaloColor: 'rgba(2,6,23,0.95)',
-                  textHaloWidth: 1,
-                  textOptional: true,
-                }}
-              />
-            </MapLibreGL.ShapeSource>
-          ) : null}
-
+          <MarineMapLayers
+            globalMarineAreasFc={globalMarineAreasFc}
+            marineBuoysFc={marineBuoysFc}
+            marineConditionsEnabled={marineConditionsEnabled}
+            marineConditionsOpacity={marineConditionsOpacity}
+            marineZoneMarkersFc={marineZoneMarkersFc}
+            marineZonesFc={marineZonesFc}
+            mapCameraRef={mapCameraRef}
+            mapZoom={mapZoom}
+            selectedGlobalMarineArea={selectedGlobalMarineArea}
+            selectedGlobalMarineAreaFc={selectedGlobalMarineAreaFc}
+            selectedMarineZone={selectedMarineZone}
+            selectedMarineZoneFc={selectedMarineZoneFc}
+            setSelectedMarineFeature={setSelectedMarineFeature}
+            setSelectedWaterStationId={setSelectedWaterStationId}
+            waterStationsEnabled={waterStationsEnabled}
+            waterStationsGeojson={waterStationsGeojson}
+            waterStationsOpacity={waterStationsOpacity}
+          />
           {aviationTurbEnabled ? (
             <MapLibreGL.ShapeSource
               id="aviation-turbulence-source"

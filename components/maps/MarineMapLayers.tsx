@@ -1,0 +1,350 @@
+import React from 'react';
+
+import MapLibreGL from '@maplibre/maplibre-react-native';
+
+import type { SelectedMarineFeature } from '../../app/lib/maps/useMarineMapLayer';
+
+type MapCameraRef = React.RefObject<{
+  setCamera?: (config: { centerCoordinate: [number, number]; zoomLevel: number; animationDuration: number }) => void;
+} | null>;
+
+function clampNumber(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+type Props = {
+  globalMarineAreasFc: any;
+  marineBuoysFc: any;
+  marineConditionsEnabled: boolean;
+  marineConditionsOpacity: number;
+  marineZoneMarkersFc: any;
+  marineZonesFc: any;
+  mapCameraRef: MapCameraRef;
+  mapZoom: number;
+  selectedGlobalMarineArea: any;
+  selectedGlobalMarineAreaFc: any;
+  selectedMarineZone: any;
+  selectedMarineZoneFc: any;
+  setSelectedMarineFeature: (feature: SelectedMarineFeature) => void;
+  setSelectedWaterStationId: (id: string | null) => void;
+  waterStationsEnabled: boolean;
+  waterStationsGeojson: any;
+  waterStationsOpacity: number;
+};
+
+export function MarineMapLayers({
+  globalMarineAreasFc,
+  marineBuoysFc,
+  marineConditionsEnabled,
+  marineConditionsOpacity,
+  marineZoneMarkersFc,
+  marineZonesFc,
+  mapCameraRef,
+  mapZoom,
+  selectedGlobalMarineArea,
+  selectedGlobalMarineAreaFc,
+  selectedMarineZone,
+  selectedMarineZoneFc,
+  setSelectedMarineFeature,
+  setSelectedWaterStationId,
+  waterStationsEnabled,
+  waterStationsGeojson,
+  waterStationsOpacity,
+}: Props) {
+  const zoomIntoCluster = (feature: any) => {
+    const coords = feature?.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [Number(coords[0]), Number(coords[1])],
+      zoomLevel: clampNumber((mapZoom ?? 5) + 2, 1, 20),
+      animationDuration: 450,
+    });
+  };
+
+  return (
+    <>
+      {marineConditionsEnabled ? (
+        <>
+          <MapLibreGL.ShapeSource
+            id="global-marine-areas-source"
+            shape={globalMarineAreasFc as any}
+            onPress={(e: any) => {
+              const feature = e?.features?.[0];
+              const id = String(feature?.properties?.id ?? feature?.id ?? '');
+              if (!id) return;
+              setSelectedWaterStationId(null);
+              setSelectedMarineFeature({ kind: 'globalArea', id });
+            }}
+          >
+            <MapLibreGL.FillLayer
+              id="global-marine-areas-fill"
+              minZoomLevel={2}
+              maxZoomLevel={7.6}
+              style={{
+                fillColor: 'rgba(20,184,166,1)',
+                fillOpacity: ['interpolate', ['linear'], ['zoom'], 2, 0.035, 6.5, 0.055] as any,
+              }}
+            />
+            <MapLibreGL.LineLayer
+              id="global-marine-areas-line"
+              minZoomLevel={2}
+              maxZoomLevel={7.6}
+              style={{
+                lineColor: 'rgba(94,234,212,0.82)',
+                lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.45, 5, 0.75, 7.6, 1] as any,
+                lineOpacity: 0.42 * marineConditionsOpacity,
+              }}
+            />
+          </MapLibreGL.ShapeSource>
+
+          {selectedGlobalMarineArea ? (
+            <MapLibreGL.ShapeSource id="selected-global-marine-area-source" shape={selectedGlobalMarineAreaFc as any}>
+              <MapLibreGL.FillLayer
+                id="selected-global-marine-area-fill"
+                style={{
+                  fillColor: 'rgba(20,184,166,1)',
+                  fillOpacity: 0.08 * marineConditionsOpacity,
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="selected-global-marine-area-line"
+                style={{
+                  lineColor: 'rgba(153,246,228,0.95)',
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.2, 7, 2.2] as any,
+                  lineOpacity: 0.9 * marineConditionsOpacity,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          <MapLibreGL.ShapeSource
+            id="marine-zone-markers-source"
+            shape={marineZoneMarkersFc as any}
+            onPress={(e: any) => {
+              const feature = e?.features?.[0];
+              const id = String(feature?.properties?.id ?? feature?.id ?? '');
+              if (!id) return;
+              setSelectedWaterStationId(null);
+              setSelectedMarineFeature({ kind: 'zone', id });
+            }}
+          >
+            <MapLibreGL.CircleLayer
+              id="marine-zone-markers"
+              maxZoomLevel={7.2}
+              style={{
+                circleColor: 'rgba(20,184,166,0.78)',
+                circleStrokeColor: 'rgba(204,251,241,0.95)',
+                circleStrokeWidth: 1.2,
+                circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 4.5, 5, 6.5, 7, 8] as any,
+                circleOpacity: 0.9 * marineConditionsOpacity,
+              }}
+            />
+          </MapLibreGL.ShapeSource>
+
+          <MapLibreGL.ShapeSource
+            id="marine-zones-source"
+            shape={marineZonesFc as any}
+            onPress={(e: any) => {
+              const feature = e?.features?.[0];
+              const id = String(feature?.properties?.id ?? feature?.id ?? '');
+              if (!id) return;
+              setSelectedWaterStationId(null);
+              setSelectedMarineFeature({ kind: 'zone', id });
+            }}
+          >
+            <MapLibreGL.FillLayer
+              id="marine-zones-hit-fill"
+              minZoomLevel={3.8}
+              style={{
+                fillColor: 'rgba(20,184,166,1)',
+                fillOpacity: 0.01,
+              }}
+            />
+            <MapLibreGL.LineLayer
+              id="marine-zones-line"
+              minZoomLevel={3.8}
+              style={{
+                lineColor: 'rgba(45,212,191,0.78)',
+                lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.45, 7.2, 0.9, 10, 1.35] as any,
+                lineOpacity: 0.52 * marineConditionsOpacity,
+              }}
+            />
+          </MapLibreGL.ShapeSource>
+
+          {selectedMarineZone ? (
+            <MapLibreGL.ShapeSource id="selected-marine-zone-source" shape={selectedMarineZoneFc as any}>
+              <MapLibreGL.FillLayer
+                id="selected-marine-zone-fill"
+                style={{
+                  fillColor: 'rgba(20,184,166,1)',
+                  fillOpacity: 0.08 * marineConditionsOpacity,
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="selected-marine-zone-line"
+                style={{
+                  lineColor: 'rgba(153,246,228,0.98)',
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.6, 7, 2.4, 10, 3.2] as any,
+                  lineOpacity: 0.94 * marineConditionsOpacity,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          <MapLibreGL.ShapeSource
+            id="marine-buoys-source"
+            shape={marineBuoysFc as any}
+            cluster
+            clusterRadius={44}
+            clusterMaxZoomLevel={8}
+            onPress={(e: any) => {
+              const feature = e?.features?.[0];
+              const props = feature?.properties ?? {};
+              const id = String(props.id ?? feature?.id ?? '');
+
+              if (props?.cluster) {
+                zoomIntoCluster(feature);
+                return;
+              }
+
+              if (!id) return;
+              setSelectedWaterStationId(null);
+              setSelectedMarineFeature({ kind: 'buoy', id });
+            }}
+          >
+            <MapLibreGL.CircleLayer
+              id="marine-buoy-clusters"
+              filter={['has', 'point_count'] as any}
+              style={{
+                circleColor: 'rgba(14,165,233,0.38)',
+                circleStrokeColor: 'rgba(186,230,253,0.92)',
+                circleStrokeWidth: 1.2,
+                circleRadius: ['step', ['get', 'point_count'], 14, 25, 18, 75, 22, 200, 26] as any,
+              }}
+            />
+            <MapLibreGL.SymbolLayer
+              id="marine-buoy-cluster-count"
+              filter={['has', 'point_count'] as any}
+              style={{
+                textField: ['to-string', ['get', 'point_count']] as any,
+                textSize: 12,
+                textColor: '#e0f2fe',
+                textHaloColor: 'rgba(2,6,23,0.95)',
+                textHaloWidth: 1,
+              }}
+            />
+            <MapLibreGL.CircleLayer
+              id="marine-buoy-points"
+              filter={['!', ['has', 'point_count']] as any}
+              style={{
+                circleColor: [
+                  'match',
+                  ['get', 'severity'],
+                  'calm',
+                  '#22c55e',
+                  'moderate',
+                  '#eab308',
+                  'rough',
+                  '#f97316',
+                  'extreme',
+                  '#ef4444',
+                  '#38bdf8',
+                ] as any,
+                circleOpacity: 0.94 * marineConditionsOpacity,
+                circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 3.5, 7, 5.5, 10, 7.5] as any,
+                circleStrokeColor: 'rgba(2,6,23,0.96)',
+                circleStrokeWidth: 1.3,
+              }}
+            />
+            <MapLibreGL.SymbolLayer
+              id="marine-buoy-labels"
+              filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 6]] as any}
+              style={{
+                textField: ['get', 'id'] as any,
+                textSize: 10,
+                textOffset: [0, 1.2],
+                textAnchor: 'top',
+                textColor: '#e0f2fe',
+                textHaloColor: 'rgba(2,6,23,0.95)',
+                textHaloWidth: 1,
+                textOptional: true,
+              }}
+            />
+          </MapLibreGL.ShapeSource>
+        </>
+      ) : null}
+
+      {waterStationsEnabled ? (
+        <MapLibreGL.ShapeSource
+          id="usgs-water-stations-source"
+          shape={waterStationsGeojson as any}
+          cluster
+          clusterRadius={42}
+          clusterMaxZoomLevel={8}
+          onPress={(e: any) => {
+            const feature = e?.features?.[0];
+            const props = feature?.properties ?? {};
+            const id = String(props.siteId ?? props.id ?? feature?.id ?? '');
+
+            if (props?.cluster) {
+              zoomIntoCluster(feature);
+              return;
+            }
+
+            if (!id) return;
+            setSelectedMarineFeature(null);
+            setSelectedWaterStationId(id);
+          }}
+        >
+          <MapLibreGL.CircleLayer
+            id="usgs-water-station-clusters"
+            filter={['has', 'point_count'] as any}
+            style={{
+              circleColor: 'rgba(56,189,248,0.36)',
+              circleStrokeColor: 'rgba(186,230,253,0.94)',
+              circleStrokeWidth: 1.2,
+              circleOpacity: waterStationsOpacity,
+              circleRadius: ['step', ['get', 'point_count'], 13, 20, 17, 60, 21, 160, 25] as any,
+            }}
+          />
+          <MapLibreGL.SymbolLayer
+            id="usgs-water-station-cluster-count"
+            filter={['has', 'point_count'] as any}
+            style={{
+              textField: ['to-string', ['get', 'point_count']] as any,
+              textSize: 11,
+              textColor: '#e0f2fe',
+              textHaloColor: 'rgba(2,6,23,0.95)',
+              textHaloWidth: 1,
+            }}
+          />
+          <MapLibreGL.CircleLayer
+            id="usgs-water-station-points"
+            filter={['!', ['has', 'point_count']] as any}
+            style={{
+              circleColor: '#38bdf8',
+              circleOpacity: 0.92 * waterStationsOpacity,
+              circleRadius: ['interpolate', ['linear'], ['zoom'], 5, 4, 8, 6.5, 11, 8.5] as any,
+              circleStrokeColor: 'rgba(2,6,23,0.96)',
+              circleStrokeWidth: 1.25,
+            }}
+          />
+          <MapLibreGL.SymbolLayer
+            id="usgs-water-station-labels"
+            filter={['all', ['!', ['has', 'point_count']], ['>=', ['zoom'], 8]] as any}
+            style={{
+              textField: ['get', 'label'] as any,
+              textSize: 10,
+              textOffset: [0, 1.15],
+              textAnchor: 'top',
+              textColor: '#e0f2fe',
+              textHaloColor: 'rgba(2,6,23,0.95)',
+              textHaloWidth: 1,
+              textOptional: true,
+            }}
+          />
+        </MapLibreGL.ShapeSource>
+      ) : null}
+    </>
+  );
+}
