@@ -316,6 +316,7 @@ type SatelliteFrame = {
 
 const SATELLITE_LOOP_MINUTES_BACK = 120;
 const SATELLITE_FRAME_STEP_MINUTES = 5;
+const GOES_WMS_FRAME_STEP_MINUTES = 15;
 const SATELLITE_PLAY_INTERVAL_MS = 950;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
@@ -470,6 +471,14 @@ function satelliteQualityForZoom(zoom: number) {
     exportLongEdge: 1280,
     maxZoomLevel: 16,
     label: 'wide',
+  };
+}
+
+function goesWmsQualityForZoom(zoom: number) {
+  const z = Number.isFinite(zoom) ? zoom : 5;
+  return {
+    tileSize: 512,
+    maxZoomLevel: z >= 7.5 ? 12 : 10,
   };
 }
 
@@ -1401,9 +1410,11 @@ export default function MapsScreen() {
   const animatedSatelliteEnabled =
     cloudsEnabled || goesTrueColorEnabled || goesEastIrEnabled || goesEastWvEnabled || goesWestWvEnabled;
   const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled || globalTrueColorEnabled || globalPrecipEnabled;
+  const goesWmsSatelliteOnly =
+    (cloudsEnabled || goesEastWvEnabled || goesWestWvEnabled) && !goesTrueColorEnabled && !goesEastIrEnabled;
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
-  const satelliteFrameStepMinutes = SATELLITE_FRAME_STEP_MINUTES;
+  const satelliteFrameStepMinutes = goesWmsSatelliteOnly ? GOES_WMS_FRAME_STEP_MINUTES : SATELLITE_FRAME_STEP_MINUTES;
   const satellitePlayIntervalMs = SATELLITE_PLAY_INTERVAL_MS;
   const [satelliteFrames, setSatelliteFrames] = useState<SatelliteFrame[]>(() =>
     buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
@@ -1851,6 +1862,7 @@ export default function MapsScreen() {
         : null;
     const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
     const satelliteQuality = satelliteQualityForZoom(mapZoom);
+    const goesWmsQuality = goesWmsQualityForZoom(mapZoom);
     const gibsDailyDate = latestGibsDailyDate();
     const gibsPrecipTime = latestGibsImergTime();
 
@@ -1866,6 +1878,14 @@ export default function MapsScreen() {
       resampling: 'linear' as const,
     };
 
+    const goesWmsShared = {
+      ...shared,
+      tileSize: goesWmsQuality.tileSize,
+      maxZoomLevel: goesWmsQuality.maxZoomLevel,
+      fadeDurationMs: 0,
+      resampling: 'nearest' as const,
+    };
+
     const addAnimatedSatelliteWms = (args: {
       id: string;
       url: string;
@@ -1875,11 +1895,13 @@ export default function MapsScreen() {
       crossfade?: boolean;
       fadeDurationMs?: number;
       warmNextFrame?: boolean;
+      lightweight?: boolean;
     }) => {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
       const fromIso = satelliteFromFrame?.iso ?? null;
       const toIso = satelliteToFrame?.iso ?? fromIso;
       const fadeDurationMs = args.fadeDurationMs ?? 0;
+      const sourceShared = args.lightweight === true ? goesWmsShared : shared;
 
       if (args.crossfade !== true) {
         if (
@@ -1894,7 +1916,7 @@ export default function MapsScreen() {
             time: satelliteWarmFrame.iso,
             opacity: Math.min(opacity, SATELLITE_WARM_OPACITY),
             zIndex: args.zIndex - 0.01,
-            ...shared,
+            ...sourceShared,
             fadeDurationMs: 0,
           });
         }
@@ -1906,7 +1928,7 @@ export default function MapsScreen() {
           time: satelliteCurrentFrame?.iso ?? toIso,
           opacity,
           zIndex: args.zIndex,
-          ...shared,
+          ...sourceShared,
           fadeDurationMs,
         });
         return;
@@ -1922,7 +1944,7 @@ export default function MapsScreen() {
           time: fromIso,
           opacity: opacity * (1 - satelliteFade),
           zIndex: args.zIndex,
-          ...shared,
+          ...sourceShared,
           fadeDurationMs,
         });
       }
@@ -1934,7 +1956,7 @@ export default function MapsScreen() {
         time: toIso,
         opacity: opacity * (sameFrame ? 1 : satelliteFade),
         zIndex: args.zIndex + 0.01,
-        ...shared,
+        ...sourceShared,
         fadeDurationMs,
       });
     };
@@ -2020,8 +2042,9 @@ export default function MapsScreen() {
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 60,
-        crossfade: true,
-        fadeDurationMs: 240,
+        fadeDurationMs: 0,
+        warmNextFrame: false,
+        lightweight: true,
       });
       addAnimatedSatelliteWms({
         id: 'goes-west-visible',
@@ -2029,8 +2052,9 @@ export default function MapsScreen() {
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 61,
-        crossfade: true,
-        fadeDurationMs: 240,
+        fadeDurationMs: 0,
+        warmNextFrame: false,
+        lightweight: true,
       });
     }
 
@@ -2106,6 +2130,9 @@ export default function MapsScreen() {
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesEastWvOpacity))),
         zIndex: 64,
+        fadeDurationMs: 0,
+        warmNextFrame: false,
+        lightweight: true,
       });
     }
 
@@ -2116,6 +2143,9 @@ export default function MapsScreen() {
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesWestWvOpacity))),
         zIndex: 64,
+        fadeDurationMs: 0,
+        warmNextFrame: false,
+        lightweight: true,
       });
     }
 
@@ -2629,7 +2659,7 @@ export default function MapsScreen() {
       ? Math.max(2, Math.floor(satelliteLoopMinutes / 30))
       : goesEastIrEnabled
         ? Math.max(2, Math.floor(satelliteLoopMinutes / 10))
-        : Math.max(2, Math.floor(satelliteLoopMinutes / SATELLITE_FRAME_STEP_MINUTES));
+        : Math.max(2, Math.floor(satelliteLoopMinutes / satelliteFrameStepMinutes));
     const coverage = Math.max(0, Math.min(1, satelliteFrameCount / expectedFrames));
     const percent = status === 'loading' ? 0.18 : coverage;
     const sparse = status === 'ready' && coverage < 0.7;
@@ -2661,6 +2691,7 @@ export default function MapsScreen() {
     goesWestWvEnabled,
     infraredFrameStatus,
     satelliteFrameCount,
+    satelliteFrameStepMinutes,
     satelliteLoopHours,
     satelliteLoopMinutes,
     satelliteTimelineActive,

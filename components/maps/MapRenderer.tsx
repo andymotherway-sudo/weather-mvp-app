@@ -29,6 +29,8 @@ export type RadarOverlay = {
   localImage?: RadarLocalImage | null;
 };
 
+const RADAR_CRISP_MIN_ZOOM = 10.5;
+
 export type MapRendererProps = {
   engine?: 'maplibre';
   initialRegion: Region;
@@ -429,7 +431,7 @@ export function MapRenderer(props: MapRendererProps) {
   }, [radar.tileMaxZ]);
 
   const layerMaxZ = 24;
-  const rasterResampling: 'linear' | 'nearest' = 'linear';
+  const radarResampling: 'linear' | 'nearest' = liveZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
 
   // Temporarily 0 while diagnosing jumps. If this fixes the feel,
   // you can later try 60-90 instead of 120.
@@ -448,7 +450,7 @@ export function MapRenderer(props: MapRendererProps) {
 
     return {
       rasterOpacity: safeOpacity * zoomSoftener,
-      rasterResampling,
+      rasterResampling: radarResampling,
       rasterFadeDuration,
       rasterSaturation: productTuning.saturation,
       rasterContrast: productTuning.contrast,
