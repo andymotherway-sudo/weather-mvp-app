@@ -356,8 +356,8 @@ export function HourlyRangeChart({
     dirText: 'rgba(255,255,255,0.70)',
   };
 
-  const TILE_W = landscape ? 86 : 92;
-  const GAP = landscape ? 8 : 10;
+  const TILE_W = landscape ? 94 : 92;
+  const GAP = landscape ? 10 : 10;
   const padX = landscape ? 12 : 14;
   const step = TILE_W + GAP;
 
@@ -371,8 +371,8 @@ export function HourlyRangeChart({
   const padL = padX + axisL;
   const padR = padX;
 
-  const padT = landscape ? 20 : 18;
-  const padB = landscape ? 88 : 114;
+  const padT = landscape ? 28 : 18;
+  const padB = landscape ? 82 : 114;
 
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -672,10 +672,17 @@ export function HourlyRangeChart({
 
               <Line x1={padL + 2} x2={padL + 2} y1={padT} y2={padT + plotH} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
 
-              <SvgText x={padL - 10} y={padT - 6} fontSize="12" fill="rgba(255,255,255,0.78)" fontWeight="900" textAnchor="end">
+              <SvgText x={padL - 10} y={padT - 8} fontSize={landscape ? '10' : '12'} fill="rgba(255,255,255,0.78)" fontWeight="900" textAnchor="end">
                 {unitsLabel}
               </SvgText>
-              <SvgText x={pctAxisX} y={padT - 6} fontSize="12" fill="rgba(215,180,255,0.88)" fontWeight="900" textAnchor="start">
+              <SvgText
+                x={pctAxisX}
+                y={padT - 8}
+                fontSize={landscape ? '9' : '12'}
+                fill={landscape ? 'rgba(215,180,255,0.68)' : 'rgba(215,180,255,0.88)'}
+                fontWeight={landscape ? '800' : '900'}
+                textAnchor="start"
+              >
                 % / AQI
               </SvgText>
 
@@ -691,7 +698,7 @@ export function HourlyRangeChart({
                   <G key={`chart-top-${t}-${i}`}>
                     <SvgText
                       x={x}
-                      y={18}
+                      y={landscape ? 16 : 18}
                       fontSize="10"
                       fill="rgba(255,255,255,0.92)"
                       fontWeight="800"

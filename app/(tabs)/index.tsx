@@ -2612,9 +2612,20 @@ function SimpleDailyOverview({
         <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
           {currentMetrics.map((item) => (
             <View key={item.label} style={styles.dailyCurrentMetricCell}>
-              <Text style={styles.dailyCurrentMetricValue}>{item.value}</Text>
-              <Text style={styles.dailyCurrentMetricLabel}>{item.label}</Text>
-              {item.sub ? <Text style={styles.dailyCurrentMetricSub}>{item.sub}</Text> : null}
+              <Text style={styles.dailyCurrentMetricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+                {item.label}
+              </Text>
+              <Text style={styles.dailyCurrentMetricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
+                {item.value}
+              </Text>
+              <Text
+                style={[styles.dailyCurrentMetricSub, !item.sub && styles.dailyCurrentMetricSubEmpty]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.76}
+              >
+                {item.sub || '—'}
+              </Text>
             </View>
           ))}
         </View>
@@ -5359,28 +5370,36 @@ const styles = StyleSheet.create({
   dailyCurrentMetricCell: {
     width: '31%',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    minHeight: 72,
+    justifyContent: 'flex-start',
+    gap: 4,
+    minHeight: 76,
     paddingHorizontal: 4,
   },
   dailyCurrentMetricValue: {
-    fontSize: 15,
+    minHeight: 21,
+    fontSize: 16,
+    lineHeight: 20,
     fontWeight: '900',
     color: 'white',
     textAlign: 'center',
   },
   dailyCurrentMetricLabel: {
     fontSize: 10,
-    fontWeight: '700',
+    lineHeight: 12,
+    fontWeight: '800',
     color: 'rgba(255,255,255,0.72)',
     textAlign: 'center',
+    textTransform: 'uppercase',
   },
   dailyCurrentMetricSub: {
     fontSize: 10,
+    lineHeight: 12,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.58)',
     textAlign: 'center',
+  },
+  dailyCurrentMetricSubEmpty: {
+    opacity: 0,
   },
   dailyCurrentMetricDivider: {
     display: 'none',
@@ -6455,19 +6474,19 @@ saveInlineText: {
     borderColor: 'rgba(255,255,255,0.12)',
   },
   landscapeGraphHeader: {
-    minHeight: 54,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
+    minHeight: 46,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
   landscapeGraphSubtitle: {
-    marginTop: -6,
+    marginTop: -1,
     color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
   landscapeGraphBody: {
@@ -6491,9 +6510,9 @@ saveInlineText: {
     borderColor: 'rgba(255,255,255,0.10)',
   },
   landscapeGraphToggleButton: {
-    minWidth: 82,
-    minHeight: 34,
-    paddingHorizontal: 14,
+    minWidth: 68,
+    minHeight: 28,
+    paddingHorizontal: 10,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
@@ -6509,7 +6528,7 @@ saveInlineText: {
   },
   landscapeGraphToggleText: {
     color: 'rgba(255,255,255,0.64)',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
   },
   landscapeGraphToggleTextActive: {

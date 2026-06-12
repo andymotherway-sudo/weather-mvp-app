@@ -216,7 +216,7 @@ export function DailyRangeChart({
 
   // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
-  const H = chartHeight ?? (isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 332);
+  const H = chartHeight ?? (isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 382);
 
   const axisL = 28; // left margin for °F ticks
   const padL = padX + axisL;
@@ -541,9 +541,9 @@ export function DailyRangeChart({
               <SvgText
                 x={pctAxisX}
                 y={padT - 6}
-                fontSize="12"
-                fill="rgba(215,180,255,0.88)"
-                fontWeight="900"
+                fontSize="10"
+                fill="rgba(215,180,255,0.72)"
+                fontWeight="800"
                 textAnchor="start"
               >
                 % / AQI

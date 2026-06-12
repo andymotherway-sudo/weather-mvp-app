@@ -5,24 +5,27 @@
 // ✅ Adds: safer ISO wall-clock parsing for padding
 // ❌ Removes: Expand button + expanded state + expanded prop spread
 
-import React, { useMemo } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import type { ForecastHour } from '../../app/lib/openmeteo/hooks';
 import { theme } from '../../styles/theme';
 import { Card } from '../layout/Card';
+import { DailyRangeChart } from './DailyRangeChart';
 import { HourlyRangeChart } from './HourlyRangeChart';
 
 type UnitSystem = 'us' | 'metric';
 
 type Props = {
   hours: ForecastHour[];
+  daily?: any[];
   maxHours?: number; // default 72
   units?: UnitSystem;
   initialPanel?: any;
   timeZone?: string;
   landscapePresentation?: 'inline' | 'modal' | 'content';
   chartHeight?: number;
+  initialLandscapeMode?: 'daily' | 'hourly';
 };
 
 function extractIsoWallClockParts(value: unknown): {
@@ -125,42 +128,95 @@ function padSliceToMidnight(base: ForecastHour[]) {
 
 export function HourlyCharts72h({
   hours,
+  daily,
   maxHours = 72,
   units = 'us',
   timeZone,
   landscapePresentation = 'inline',
   chartHeight,
+  initialLandscapeMode = 'hourly',
 }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height && width >= 640;
   const landscapeChartHeight = chartHeight ?? Math.max(250, Math.min(height - 118, 360));
+  const dailySlice = useMemo(() => (daily ?? []).slice(0, 15), [daily]);
+  const [landscapeMode, setLandscapeMode] = useState<'daily' | 'hourly'>(initialLandscapeMode);
   const slice = useMemo(() => {
     const base = hours.slice(0, Math.min(hours.length, maxHours));
     const { padded } = padSliceToMidnight(base);
     return padded;
   }, [hours, maxHours]);
 
+  useEffect(() => {
+    if (!isLandscape || landscapePresentation !== 'modal') return;
+    if (landscapeMode === 'daily' && !dailySlice.length) setLandscapeMode('hourly');
+    if (landscapeMode === 'hourly' && !slice.length && dailySlice.length) setLandscapeMode('daily');
+  }, [dailySlice.length, isLandscape, landscapeMode, landscapePresentation, slice.length]);
+
   if (isLandscape && landscapePresentation === 'modal') {
+    const canToggle = dailySlice.length > 0 && slice.length > 0;
     return (
       <>
         <Card style={[styles.card, styles.landscapePlaceholder]}>
-          <Text style={styles.landscapePlaceholderText}>Hourly wxLab graph is open full screen</Text>
+          <Text style={styles.landscapePlaceholderText}>wxLab graph is open full screen</Text>
         </Card>
         <Modal visible transparent animationType="fade" supportedOrientations={['landscape-left', 'landscape-right']}>
           <SafeAreaView style={styles.landscapeOverlay}>
             <View style={styles.landscapeShell}>
               <View style={styles.landscapeHeader}>
-                <Text style={styles.landscapeTitle}>Next 72 hours</Text>
-                <Text style={styles.landscapeHint}>Scroll sideways for the full forecast</Text>
+                <View style={styles.landscapeTitleBlock}>
+                  <Text style={styles.landscapeTitle}>{landscapeMode === 'daily' ? 'Daily Forecast' : 'Next 72 hours'}</Text>
+                  <Text style={styles.landscapeHint}>Scroll sideways for the full forecast</Text>
+                </View>
+                {canToggle ? (
+                  <View style={styles.landscapeToggle}>
+                    <Pressable
+                      onPress={() => setLandscapeMode('daily')}
+                      style={[
+                        styles.landscapeToggleButton,
+                        landscapeMode === 'daily' ? styles.landscapeToggleButtonActive : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.landscapeToggleText,
+                          landscapeMode === 'daily' ? styles.landscapeToggleTextActive : null,
+                        ]}
+                      >
+                        Daily
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setLandscapeMode('hourly')}
+                      style={[
+                        styles.landscapeToggleButton,
+                        landscapeMode === 'hourly' ? styles.landscapeToggleButtonActive : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.landscapeToggleText,
+                          landscapeMode === 'hourly' ? styles.landscapeToggleTextActive : null,
+                        ]}
+                      >
+                        Hourly
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
-              <HourlyRangeChart
-                hours={slice}
-                maxHours={maxHours}
-                units={units}
-                timeZone={timeZone}
-                landscape
-                chartHeight={landscapeChartHeight}
-              />
+              {landscapeMode === 'daily' && dailySlice.length ? (
+                <DailyRangeChart daily={dailySlice} landscape chartHeight={landscapeChartHeight} />
+              ) : (
+                <HourlyRangeChart
+                  hours={slice}
+                  maxHours={maxHours}
+                  units={units}
+                  timeZone={timeZone}
+                  landscape
+                  chartHeight={landscapeChartHeight}
+                />
+              )}
             </View>
           </SafeAreaView>
         </Modal>
@@ -235,24 +291,60 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
   },
   landscapeHeader: {
-    minHeight: 44,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
+    minHeight: 46,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 5,
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
+  landscapeTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   landscapeTitle: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
   },
   landscapeHint: {
+    marginTop: -1,
     color: 'rgba(255,255,255,0.58)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
+  },
+  landscapeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  landscapeToggleButton: {
+    minWidth: 68,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  landscapeToggleButtonActive: {
+    backgroundColor: 'rgba(80, 155, 245, 0.32)',
+    borderWidth: 1,
+    borderColor: 'rgba(145,205,255,0.35)',
+  },
+  landscapeToggleText: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  landscapeToggleTextActive: {
+    color: 'white',
   },
 
 });

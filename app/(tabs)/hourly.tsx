@@ -924,6 +924,7 @@ function HourlyWithCoords({
         <View style={styles.chartBlock}>
           <HourlyCharts72h
             hours={visibleHourly}
+            daily={data?.daily ?? []}
             maxHours={72}
             units={units}
             initialPanel="range"
