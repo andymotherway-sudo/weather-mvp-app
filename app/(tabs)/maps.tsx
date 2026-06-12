@@ -1192,8 +1192,15 @@ function waterStationsGeojsonForTempUnit(geojson: any, targetUnit: 'F' | 'C') {
       .map((feature: any) => {
         const props = feature?.properties ?? {};
         const readings = Array.isArray(props.readings) ? props.readings : [];
+        const newestTempReading = readings
+          .filter((reading: any) => String(reading?.parameterCode ?? '') === '00010')
+          .sort((a: any, b: any) => {
+            const at = Date.parse(String(a?.time ?? ''));
+            const bt = Date.parse(String(b?.time ?? ''));
+            return (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
+          })[0];
         const tempReading =
-          readings.find((reading: any) => String(reading?.parameterCode ?? '') === '00010') ??
+          newestTempReading ??
           (String(props.primaryParameter ?? '') === '00010'
             ? { value: props.primaryValue, unit: props.primaryUnit, time: props.observedAt, label: props.primaryLabel }
             : null);
@@ -1493,6 +1500,7 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
+  const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
 
@@ -1634,53 +1642,7 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
   }, [radarAnchorKey]);
 
-  const handleMapPress = useCallback(
-    async (e: any) => {
-      const wildfireInteractionEnabled =
-        !!state.layers?.['wildfire.perimeters']?.enabled || !!state.layers?.['wildfire.hotspots']?.enabled;
-      if (!wildfireInteractionEnabled) {
-        setSelectedWildfire(null);
-        setSelectedRestrictionPoint(null);
-        if (state.viewId !== 'aviation') setSelectedAviationFeature(null);
-        return;
-      }
-
-      const pressCoords = getMapPressLonLat(e);
-      if (!pressCoords) return;
-      const { lat, lon } = pressCoords;
-
-      setSelectedRestrictionPoint({ lat, lon });
-
-      try {
-        setWildfireDetailLoading(true);
-        const localDetail = findNearestLoadedWildfireDetail(lat, lon, wildfireLookupRef.current);
-        if (localDetail) {
-          setSelectedWildfire({
-            ...localDetail,
-            latitude: localDetail.latitude ?? lat,
-            longitude: localDetail.longitude ?? lon,
-          });
-          return;
-        }
-
-        const detail = await queryWildfireIncidentAtPoint(lat, lon);
-        setSelectedWildfire(
-          detail
-            ? {
-                ...detail,
-                latitude: detail.latitude ?? lat,
-                longitude: detail.longitude ?? lon,
-              }
-            : null
-        );
-      } catch {
-        setSelectedWildfire(null);
-      } finally {
-        setWildfireDetailLoading(false);
-      }
-    },
-    [state.viewId, state.layers]
-  );
+  const handleMapPress = useCallback((e: any) => mapPressHandlerRef.current(e), []);
 
   const fireRestrictionsEnabled = !!state.layers?.['fire.restrictions']?.enabled;
   const wildfireSmokeEnabled = !!state.layers?.['wildfire.smoke']?.enabled;
@@ -2674,6 +2636,64 @@ export default function MapsScreen() {
     },
     [marineConditionsEnabled, visibleMarineZones],
   );
+
+  mapPressHandlerRef.current = async (e: any) => {
+    const pressCoords = getMapPressLonLat(e);
+    const wildfireInteractionEnabled =
+      !!state.layers?.['wildfire.perimeters']?.enabled || !!state.layers?.['wildfire.hotspots']?.enabled;
+
+    if (pressCoords) {
+      const marineFeature = resolveMarineFeatureAtPoint(pressCoords.lat, pressCoords.lon);
+      if (marineFeature) {
+        setSelectedMarineFeature(marineFeature);
+        setSelectedWaterStationId(null);
+        setSelectedWildfire(null);
+        setSelectedRestrictionPoint(null);
+        if (state.viewId !== 'aviation') setSelectedAviationFeature(null);
+        return;
+      }
+    }
+
+    if (!wildfireInteractionEnabled) {
+      setSelectedWildfire(null);
+      setSelectedRestrictionPoint(null);
+      if (state.viewId !== 'aviation') setSelectedAviationFeature(null);
+      return;
+    }
+
+    if (!pressCoords) return;
+    const { lat, lon } = pressCoords;
+
+    setSelectedRestrictionPoint({ lat, lon });
+
+    try {
+      setWildfireDetailLoading(true);
+      const localDetail = findNearestLoadedWildfireDetail(lat, lon, wildfireLookupRef.current);
+      if (localDetail) {
+        setSelectedWildfire({
+          ...localDetail,
+          latitude: localDetail.latitude ?? lat,
+          longitude: localDetail.longitude ?? lon,
+        });
+        return;
+      }
+
+      const detail = await queryWildfireIncidentAtPoint(lat, lon);
+      setSelectedWildfire(
+        detail
+          ? {
+              ...detail,
+              latitude: detail.latitude ?? lat,
+              longitude: detail.longitude ?? lon,
+            }
+          : null
+      );
+    } catch {
+      setSelectedWildfire(null);
+    } finally {
+      setWildfireDetailLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!marineConditionsEnabled) setSelectedMarineFeature(null);
@@ -3779,7 +3799,7 @@ export default function MapsScreen() {
                 onPress={(e: any) => {
                   const feature = e?.features?.[0];
                   const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) setSelectedMarineFeature({ kind: 'globalArea', id });
+                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'globalArea', id }); }
                 }}
               >
                 <MapLibreGL.FillLayer
@@ -3829,7 +3849,7 @@ export default function MapsScreen() {
                 onPress={(e: any) => {
                   const feature = e?.features?.[0];
                   const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) setSelectedMarineFeature({ kind: 'zone', id });
+                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'zone', id }); }
                 }}
               >
                 <MapLibreGL.CircleLayer
@@ -3851,9 +3871,17 @@ export default function MapsScreen() {
                 onPress={(e: any) => {
                   const feature = e?.features?.[0];
                   const id = String(feature?.properties?.id ?? feature?.id ?? '');
-                  if (id) setSelectedMarineFeature({ kind: 'zone', id });
+                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'zone', id }); }
                 }}
               >
+                <MapLibreGL.FillLayer
+                  id="marine-zones-hit-fill"
+                  minZoomLevel={3.8}
+                  style={{
+                    fillColor: 'rgba(20,184,166,1)',
+                    fillOpacity: 0.01,
+                  }}
+                />
                 <MapLibreGL.LineLayer
                   id="marine-zones-line"
                   minZoomLevel={3.8}
@@ -3908,7 +3936,7 @@ export default function MapsScreen() {
                     return;
                   }
 
-                  if (id) setSelectedMarineFeature({ kind: 'buoy', id });
+                  if (id) { setSelectedWaterStationId(null); setSelectedMarineFeature({ kind: 'buoy', id }); }
                 }}
               >
                 <MapLibreGL.CircleLayer

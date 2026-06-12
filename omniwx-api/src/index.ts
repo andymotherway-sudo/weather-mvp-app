@@ -2752,6 +2752,11 @@ async function fetchUsgsWaterStationsResponse(
   const geojson = {
     type: "FeatureCollection" as const,
     features: stations.map((station) => {
+      station.readings.sort((a: any, b: any) => {
+        const at = Date.parse(String(a?.time ?? ""));
+        const bt = Date.parse(String(b?.time ?? ""));
+        return (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
+      });
       const primary = station.readings.find((r: any) => r.parameterCode === "00010") ?? station.readings[0] ?? null;
       const valueText =
         primary?.value == null
