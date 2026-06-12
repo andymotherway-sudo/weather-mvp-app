@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { isWeatherGovAlertLikelySupportedPoint } from '../alerts/nws';
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
+import { getAlertLayerBudget, type AlertLayerBudget } from './layerBudgets';
 
 type RegionLike = {
   latitude: number;
@@ -31,6 +32,9 @@ export type WeatherAlertDetail = {
   senderName: string | null;
   description: string | null;
   instruction: string | null;
+  note?: string | null;
+  sourceUrl?: string | null;
+  derived?: boolean;
 };
 
 type AlertMapData = {
@@ -172,6 +176,9 @@ function normalizeAlertFeature(feature: any, idx: number) {
       senderName: cleanText(p.senderName),
       description: cleanText(p.description),
       instruction: cleanText(p.instruction),
+      note: cleanText(p.note),
+      sourceUrl: cleanText(p.url) ?? cleanText(feature?.id),
+      derived: p.derived === true,
       fillColor: palette.fill,
       lineColor: palette.line,
       rank: palette.rank,
@@ -208,7 +215,9 @@ function normalizeWwaFeature(feature: any, idx: number, layerId: number) {
       senderName: cleanText(p.wfo) ? `National Weather Service ${cleanText(p.wfo)}` : 'National Weather Service',
       description: cleanText(p.url) ? `Alert bulletin: ${cleanText(p.url)}` : null,
       instruction: null,
+      note: null,
       url: cleanText(p.url),
+      sourceUrl: cleanText(p.url),
       sourceLayer: layerId === 0 ? 'CurrentWarnings' : 'WatchesWarnings',
       fillColor: palette.fill,
       lineColor: palette.line,
@@ -246,6 +255,8 @@ function normalizeGlobalAlertPoint(alert: any, idx: number, region: RegionLike) 
       senderName: cleanText(alert?.senderName) ?? 'OMNIwx global forecast outlook',
       description: cleanText(alert?.description),
       instruction: cleanText(alert?.instruction),
+      note: cleanText(alert?.note),
+      sourceUrl: cleanText(alert?.sourceUrl) ?? cleanText(alert?.url),
       fillColor: palette.fill,
       lineColor: palette.line,
       rank: palette.rank,
@@ -305,7 +316,11 @@ async function fetchActiveAlerts(signal: AbortSignal) {
   };
 }
 
-function buildWwaQueryUrl(layerId: number, envelope: { west: number; east: number; south: number; north: number }) {
+function buildWwaQueryUrl(
+  layerId: number,
+  envelope: { west: number; east: number; south: number; north: number },
+  budget: AlertLayerBudget,
+) {
   const params = new URLSearchParams({
     f: 'geojson',
     where: '1=1',
@@ -316,17 +331,21 @@ function buildWwaQueryUrl(layerId: number, envelope: { west: number; east: numbe
     inSR: '4326',
     outSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    resultRecordCount: '4000',
+    resultRecordCount: String(budget.wwaResultRecordCount),
   });
   return `${WWA_FEATURE_URL}/${layerId}/query?${params.toString()}`;
 }
 
-async function fetchWwaPolygons(signal: AbortSignal, envelope: { west: number; east: number; south: number; north: number }) {
+async function fetchWwaPolygons(
+  signal: AbortSignal,
+  envelope: { west: number; east: number; south: number; north: number },
+  budget: AlertLayerBudget,
+) {
   const features: any[] = [];
   const seen = new Set<string>();
 
   for (const layerId of [0, 1]) {
-    const url = buildWwaQueryUrl(layerId, envelope);
+    const url = buildWwaQueryUrl(layerId, envelope, budget);
     const res = await fetchWithTimeout(url, 18000, {
       signal,
       headers: {
@@ -344,7 +363,9 @@ async function fetchWwaPolygons(signal: AbortSignal, envelope: { west: number; e
       if (seen.has(id)) continue;
       seen.add(id);
       features.push(normalized);
+      if (features.length >= budget.maxWwaPolygons) break;
     }
+    if (features.length >= budget.maxWwaPolygons) break;
   }
 
   return {
@@ -372,17 +393,66 @@ export function alertFeatureToDetail(feature: any): WeatherAlertDetail | null {
     senderName: cleanText(p.senderName),
     description: cleanText(p.description),
     instruction: cleanText(p.instruction),
+    note: cleanText(p.note),
+    sourceUrl: cleanText(p.sourceUrl) ?? cleanText(p.url) ?? cleanText(feature?.id),
+    derived: p.derived === true,
   };
 }
 
-export function useAlertMapData(enabled: boolean, region: RegionLike | null): AlertMapData {
+export async function fetchWeatherAlertDetail(detail: WeatherAlertDetail, signal?: AbortSignal): Promise<WeatherAlertDetail> {
+  const sourceUrl =
+    detail.sourceUrl?.startsWith('https://api.weather.gov/alerts/')
+      ? detail.sourceUrl
+      : detail.id.startsWith('http')
+        ? detail.id
+        : detail.id.startsWith('urn:')
+          ? `${ALERTS_URL}/${encodeURIComponent(detail.id)}`
+          : null;
+  if (!sourceUrl) return detail;
+
+  const res = await fetchWithTimeout(sourceUrl, 12000, {
+    signal,
+    headers: {
+      'User-Agent': USER_AGENT,
+      Accept: 'application/geo+json, application/ld+json, application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Official alert text failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  const p = json?.properties ?? json ?? {};
+  return {
+    ...detail,
+    id: String(json?.id ?? p?.id ?? detail.id),
+    event: cleanText(p.event) ?? detail.event,
+    headline: cleanText(p.headline) ?? detail.headline,
+    severity: cleanText(p.severity) ?? detail.severity,
+    urgency: cleanText(p.urgency) ?? detail.urgency,
+    certainty: cleanText(p.certainty) ?? detail.certainty,
+    areaDesc: cleanText(p.areaDesc) ?? detail.areaDesc,
+    effective: safeIso(p.effective) ?? detail.effective,
+    expires: safeIso(p.expires) ?? detail.expires,
+    ends: safeIso(p.ends) ?? detail.ends,
+    sent: safeIso(p.sent) ?? detail.sent,
+    senderName: cleanText(p.senderName) ?? detail.senderName,
+    description: cleanText(p.description) ?? detail.description,
+    instruction: cleanText(p.instruction) ?? detail.instruction,
+    note: cleanText(p.note) ?? detail.note,
+    sourceUrl,
+  };
+}
+
+export function useAlertMapData(enabled: boolean, region: RegionLike | null, zoom = 4): AlertMapData {
   const [allAlerts, setAllAlerts] = useState<GeoJsonFeatureCollection>(alertCache?.geojson ?? EMPTY_FC);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(alertCache ? new Date(alertCache.ts).toISOString() : null);
 
   const envelope = useMemo(() => (region ? buildViewportEnvelope(region) : null), [region]);
-  const envelopeKey = envelope ? `${envelope.west},${envelope.south},${envelope.east},${envelope.north}` : null;
+  const budgetBand = zoom < 5 ? 'wide' : zoom < 7 ? 'regional' : 'local';
+  const budget = useMemo(() => getAlertLayerBudget(zoom), [budgetBand]);
+  const envelopeKey = envelope
+    ? `${envelope.west},${envelope.south},${envelope.east},${envelope.north}:${budget.maxWwaPolygons}`
+    : null;
   const supported = region ? isWeatherGovAlertLikelySupportedPoint(region.latitude, region.longitude) : true;
 
   useEffect(() => {
@@ -411,7 +481,7 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
       try {
         const geojson =
           supported && envelope
-            ? await fetchWwaPolygons(controller.signal, envelope)
+            ? await fetchWwaPolygons(controller.signal, envelope, budget)
             : supported
             ? await fetchActiveAlerts(controller.signal)
             : region
@@ -435,7 +505,7 @@ export function useAlertMapData(enabled: boolean, region: RegionLike | null): Al
       cancelled = true;
       controller.abort();
     };
-  }, [enabled, envelopeKey, supported]);
+  }, [enabled, envelopeKey, supported, budget]);
 
   const geojson = useMemo(() => {
     if (!enabled || !envelope) return EMPTY_FC;

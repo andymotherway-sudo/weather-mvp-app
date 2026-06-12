@@ -228,6 +228,46 @@ export const LAYER_CATALOG = [
   },
 
   {
+    id: 'sat.global.truecolor',
+    group: 'weather',
+    title: 'Global True Color',
+    subtitle: 'Daily VIIRS world mosaic',
+    visibility: 'both',
+    timestampMode: 'daily_snapshot',
+    defaultOpacity: 0.82,
+    zIndex: 58,
+    source: {
+      name: 'NASA GIBS',
+      details:
+        'Global daily VIIRS Suomi NPP corrected-reflectance true-color imagery. Useful outside GOES coverage, but not a minute-by-minute live loop.',
+      url: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'sat.global.precip',
+    group: 'weather',
+    title: 'Global Precip',
+    subtitle: 'IMERG satellite estimate',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.72,
+    zIndex: 102,
+    source: {
+      name: 'NASA GIBS / GPM IMERG',
+      details:
+        'Global satellite precipitation-rate estimate. Use this for broad world coverage where ground radar networks are sparse or unavailable.',
+      url: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
     id: 'alerts.polygons',
     group: 'weather',
     title: 'Alerts',

@@ -4,7 +4,6 @@ import {
   Alert,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -20,6 +19,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { AnimationCompositor, type AnimationBufferStatus } from '../../components/maps/AnimationCompositor';
+import { AlertDetailCard } from '../../components/maps/AlertDetailCard';
+import { AlertMapLayers } from '../../components/maps/AlertMapLayers';
 import { LayerSheetModal } from '../../components/maps/LayerSheetModal';
 import { AviationAltitudeSelector } from '../../components/maps/aviation/AviationAltitudeSelector';
 import { AviationFeatureInspector } from '../../components/maps/aviation/AviationFeatureInspector';
@@ -47,7 +48,7 @@ import { NEXRAD_SITES, type NexradSite } from '../lib/maps/nexradSites';
 import { normalizeRadarSiteId } from '../lib/maps/radarIem';
 import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
-import { alertFeatureToDetail, type WeatherAlertDetail, useAlertMapData } from '../lib/maps/useAlertMapData';
+import { useAlertMapLayer } from '../lib/maps/useAlertMapLayer';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
@@ -87,11 +88,6 @@ type WildfireIncidentDetails = {
   confidence?: number | null;
   frp?: number | null;
 };
-
-type WeatherAlertForecastTarget =
-  | { kind: 'marine'; zoneId: string; name?: string | null; wfo?: string | null }
-  | { kind: 'land'; lat: number; lon: number }
-  | null;
 
 const RADAR_PRODUCT_META: Record<
   RadarProductId,
@@ -332,6 +328,9 @@ const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
+const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
+const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
+const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE = 'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
@@ -349,6 +348,32 @@ function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, til
   const mosaicParam = arcGisLockedRasterParam(rasterId);
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
   return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
+}
+
+function isoDateDaysAgo(daysAgo: number, now = new Date()) {
+  const d = new Date(now.getTime() - Math.max(0, daysAgo) * 86_400_000);
+  return d.toISOString().slice(0, 10);
+}
+
+function gibsWmtsTileTemplate(args: {
+  layer: string;
+  matrixSet: string;
+  extension: 'jpeg' | 'png';
+  time?: string | null;
+}) {
+  const timePath = args.time?.trim() ? `/${encodeURIComponent(args.time.trim())}` : '';
+  return `${GIBS_WMTS_BASE}/${args.layer}/default${timePath}/${args.matrixSet}/{z}/{y}/{x}.${args.extension}`;
+}
+
+function latestGibsDailyDate() {
+  return isoDateDaysAgo(1);
+}
+
+function latestGibsImergTime() {
+  const stepMs = GIBS_IMERG_FRAME_STEP_MINUTES * 60_000;
+  const sourceLagMs = GIBS_IMERG_SOURCE_LAG_MINUTES * 60_000;
+  const alignedMs = Math.floor((Date.now() - sourceLagMs) / stepMs) * stepMs;
+  return new Date(alignedMs).toISOString().replace('.000Z', 'Z');
 }
 
 function lonLatToMercatorMeters(lon: number, lat: number) {
@@ -799,6 +824,8 @@ function getSimpleStatus(args: {
   goesEastIrEnabled: boolean;
   goesEastWvEnabled: boolean;
   goesWestWvEnabled: boolean;
+  globalTrueColorEnabled: boolean;
+  globalPrecipEnabled: boolean;
   playing: boolean;
   frameCount: number;
 }) {
@@ -818,10 +845,14 @@ function getSimpleStatus(args: {
     goesEastIrEnabled,
     goesEastWvEnabled,
     goesWestWvEnabled,
+    globalTrueColorEnabled,
+    globalPrecipEnabled,
     playing,
     frameCount,
   } = args;
 
+  if (globalPrecipEnabled) return 'Global satellite precip active';
+  if (globalTrueColorEnabled) return 'Global true color active';
   if (goesTrueColorEnabled) return 'GOES true color active';
   if (cloudsEnabled) return 'GOES visible active';
   if (goesEastIrEnabled) return 'GOES infrared active';
@@ -1165,9 +1196,6 @@ export default function MapsScreen() {
     setAnimationExportStatus(null);
   }, [animationRecordMode]);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
-  const [selectedWeatherAlert, setSelectedWeatherAlert] = useState<WeatherAlertDetail | null>(null);
-  const [selectedWeatherAlertForecastTarget, setSelectedWeatherAlertForecastTarget] =
-    useState<WeatherAlertForecastTarget>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
@@ -1368,9 +1396,11 @@ export default function MapsScreen() {
   const goesEastIrEnabled = !!state.layers?.['sat.goesEast.ir']?.enabled;
   const goesEastWvEnabled = !!state.layers?.['sat.goesEast.wv']?.enabled;
   const goesWestWvEnabled = !!state.layers?.['sat.goesWest.wv']?.enabled;
+  const globalTrueColorEnabled = !!state.layers?.['sat.global.truecolor']?.enabled;
+  const globalPrecipEnabled = !!state.layers?.['sat.global.precip']?.enabled;
   const animatedSatelliteEnabled =
     cloudsEnabled || goesTrueColorEnabled || goesEastIrEnabled || goesEastWvEnabled || goesWestWvEnabled;
-  const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled;
+  const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled || globalTrueColorEnabled || globalPrecipEnabled;
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
   const satelliteFrameStepMinutes = SATELLITE_FRAME_STEP_MINUTES;
@@ -1590,6 +1620,12 @@ export default function MapsScreen() {
   const goesWestWvOpacity = Number.isFinite(state.layers?.['sat.goesWest.wv']?.opacity)
     ? state.layers['sat.goesWest.wv'].opacity
     : 0.94;
+  const globalTrueColorOpacity = Number.isFinite(state.layers?.['sat.global.truecolor']?.opacity)
+    ? state.layers['sat.global.truecolor'].opacity
+    : 0.82;
+  const globalPrecipOpacity = Number.isFinite(state.layers?.['sat.global.precip']?.opacity)
+    ? state.layers['sat.global.precip'].opacity
+    : 0.72;
   const aviationTurbOpacity = Number.isFinite(state.layers?.['aviation.gairmet.turb']?.opacity)
     ? state.layers['aviation.gairmet.turb'].opacity
     : 0.72;
@@ -1815,6 +1851,8 @@ export default function MapsScreen() {
         : null;
     const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
     const satelliteQuality = satelliteQualityForZoom(mapZoom);
+    const gibsDailyDate = latestGibsDailyDate();
+    const gibsPrecipTime = latestGibsImergTime();
 
     const shared = {
       enabled: true,
@@ -1923,6 +1961,48 @@ export default function MapsScreen() {
         resampling: 'linear',
       });
     };
+
+    if (isFocused && globalTrueColorEnabled) {
+      list.push({
+        id: 'gibs-global-truecolor',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+            time: gibsDailyDate,
+            matrixSet: 'GoogleMapsCompatible_Level9',
+            extension: 'jpeg',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalTrueColorOpacity))),
+        zIndex: 58,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (isFocused && globalPrecipEnabled) {
+      list.push({
+        id: 'gibs-global-precip',
+        tileUrlTemplates: [
+          gibsWmtsTileTemplate({
+            layer: 'IMERG_Precipitation_Rate_30min',
+            time: gibsPrecipTime,
+            matrixSet: 'GoogleMapsCompatible_Level6',
+            extension: 'png',
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(globalPrecipOpacity))),
+        zIndex: 102,
+        enabled: true,
+        tileSize: 256,
+        maxZoomLevel: 6,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
 
     if (goesTrueColorEnabled) {
       addAnimatedArcGisImageServer({
@@ -2059,6 +2139,11 @@ export default function MapsScreen() {
     goesEastWvOpacity,
     goesWestWvEnabled,
     goesWestWvOpacity,
+    globalPrecipEnabled,
+    globalPrecipOpacity,
+    globalTrueColorEnabled,
+    globalTrueColorOpacity,
+    isFocused,
     mapZoom,
     satelliteBlend.from,
     satelliteBlend.t,
@@ -2169,7 +2254,6 @@ export default function MapsScreen() {
     marineBuoys,
     marineBuoysFc,
     marineZonesFc,
-    marineZoneMarkersFc,
     resolveMarineFeatureAtPoint,
     resolveMarineZoneAtPoint,
     selectedGlobalMarineArea,
@@ -2187,6 +2271,7 @@ export default function MapsScreen() {
     waterStationsError,
     waterStationsGeojson,
     waterStationsLoading,
+    layerBudget: marineLayerBudget,
   } = useMarineMapLayer({
     effectiveRegion,
     isFocused,
@@ -2345,39 +2430,22 @@ export default function MapsScreen() {
   }, [manualStationRadarMode]);
 
   const warningsOverlayEnabled = alertsEnabled;
-  const alertsData = useAlertMapData(warningsOverlayEnabled, effectiveRegion);
-  useEffect(() => {
-    if (!warningsOverlayEnabled) {
-      setSelectedWeatherAlert(null);
-      setSelectedWeatherAlertForecastTarget(null);
-    }
-  }, [warningsOverlayEnabled]);
-  const handleWeatherAlertPress = useCallback(
-    (e: any) => {
-      const feature = e?.features?.[0] ?? e?.feature ?? null;
-      const detail = alertFeatureToDetail(feature);
-      const pressCoords = getMapPressLonLat(e) ?? getGeometryCenter(feature?.geometry);
-
-      if (!detail) return;
-
-      const marineZone = pressCoords ? resolveMarineZoneAtPoint(pressCoords.lat, pressCoords.lon) : null;
-      setSelectedWeatherAlertForecastTarget(
-        marineZone
-          ? {
-              kind: 'marine',
-              zoneId: marineZone.id,
-              name: marineZone.name,
-              wfo: marineZone.wfo ?? '',
-            }
-          : pressCoords
-            ? { kind: 'land', lat: pressCoords.lat, lon: pressCoords.lon }
-            : null,
-      );
-      setSelectedMarineFeature(null);
-      setSelectedWeatherAlert(detail);
-    },
-    [resolveMarineZoneAtPoint],
-  );
+  const {
+    alertsData,
+    closeWeatherAlert,
+    handleWeatherAlertPress,
+    selectedWeatherAlert,
+    selectedWeatherAlertError,
+    selectedWeatherAlertForecastTarget,
+    selectedWeatherAlertLoading,
+    selectedWeatherAlertOfficialText,
+  } = useAlertMapLayer({
+    enabled: warningsOverlayEnabled,
+    region: effectiveRegion,
+    mapZoom,
+    resolveMarineZoneAtPoint,
+    clearMarineSelection: () => setSelectedMarineFeature(null),
+  });
   const openSelectedAlertForecast = useCallback(() => {
     const target = selectedWeatherAlertForecastTarget;
     if (!target) return;
@@ -2533,6 +2601,8 @@ export default function MapsScreen() {
     goesEastIrEnabled,
     goesEastWvEnabled,
     goesWestWvEnabled,
+    globalTrueColorEnabled,
+    globalPrecipEnabled,
     playing: state.radarTime.playing,
     frameCount,
   });
@@ -3142,57 +3212,12 @@ export default function MapsScreen() {
             </>
           ) : null}
 
-          {warningsOverlayEnabled ? (
-            <MapLibreGL.ShapeSource
-              id="weather-alerts-source"
-              shape={alertsData.geojson as any}
-              onPress={handleWeatherAlertPress}
-              hitbox={{ width: 44, height: 44 }}
-            >
-              <MapLibreGL.FillLayer
-                id="weather-alerts-fill"
-                style={{
-                  fillColor: ['coalesce', ['get', 'fillColor'], '#a78bfa'] as any,
-                  fillOpacity: Math.max(0.08, Math.min(0.42, alertsOpacity * 0.28)),
-                }}
-              />
-              <MapLibreGL.LineLayer
-                id="weather-alerts-line"
-                style={{
-                  lineColor: ['coalesce', ['get', 'lineColor'], '#ddd6fe'] as any,
-                  lineOpacity: Math.max(0.38, Math.min(0.96, alertsOpacity)),
-                  lineWidth: ['match', ['get', 'rank'], 8, 3.3, 7, 2.9, 6, 2.6, 5, 2.4, 2] as any,
-                }}
-              />
-              <MapLibreGL.CircleLayer
-                id="weather-alerts-point"
-                filter={['==', ['geometry-type'], 'Point'] as any}
-                style={{
-                  circleColor: ['coalesce', ['get', 'fillColor'], '#a78bfa'] as any,
-                  circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 7, 6, 10, 10, 14] as any,
-                  circleOpacity: Math.max(0.55, Math.min(0.95, alertsOpacity)),
-                  circleStrokeColor: ['coalesce', ['get', 'lineColor'], '#ddd6fe'] as any,
-                  circleStrokeOpacity: Math.max(0.72, Math.min(1, alertsOpacity)),
-                  circleStrokeWidth: ['match', ['get', 'rank'], 8, 3, 7, 2.6, 6, 2.4, 5, 2.2, 2] as any,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="weather-alerts-label"
-                minZoomLevel={5}
-                style={{
-                  textField: ['get', 'label'],
-                  textSize: ['interpolate', ['linear'], ['zoom'], 5, 9, 8, 11, 11, 13] as any,
-                  textFont: ['Open Sans Bold'],
-                  textColor: '#fff7ed',
-                  textHaloColor: 'rgba(2,6,23,0.96)',
-                  textHaloWidth: 1.35,
-                  textMaxWidth: 12,
-                  textAllowOverlap: false,
-                  textOptional: true,
-                }}
-              />
-            </MapLibreGL.ShapeSource>
-          ) : null}
+          <AlertMapLayers
+            alertsGeojson={alertsData.geojson}
+            alertsOpacity={alertsOpacity}
+            enabled={warningsOverlayEnabled}
+            onPress={handleWeatherAlertPress}
+          />
 
           {stationRadarMode && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
@@ -3322,7 +3347,6 @@ export default function MapsScreen() {
             marineBuoysFc={marineBuoysFc}
             marineConditionsEnabled={marineConditionsEnabled}
             marineConditionsOpacity={marineConditionsOpacity}
-            marineZoneMarkersFc={marineZoneMarkersFc}
             marineZonesFc={marineZonesFc}
             mapCameraRef={mapCameraRef}
             mapZoom={mapZoom}
@@ -3335,6 +3359,7 @@ export default function MapsScreen() {
             waterStationsEnabled={waterStationsEnabled}
             waterStationsGeojson={waterStationsGeojson}
             waterStationsOpacity={waterStationsOpacity}
+            layerBudget={marineLayerBudget}
           />
           {aviationTurbEnabled ? (
             <MapLibreGL.ShapeSource
@@ -4928,85 +4953,16 @@ export default function MapsScreen() {
         ) : null}
 
         {!animationRecordMode && selectedWeatherAlert ? (
-          <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
-            <Glass style={styles.alertDetailCard}>
-              <View style={styles.fireDetailHeader}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.alertDetailEyebrow}>WEATHER ALERT</Text>
-                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
-                    {selectedWeatherAlert.event}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => {
-                    setSelectedWeatherAlert(null);
-                    setSelectedWeatherAlertForecastTarget(null);
-                  }}
-                  style={styles.fireDetailClose}
-                >
-                  <Text style={styles.fireDetailCloseText}>Close</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.fireDetailPills}>
-                {selectedWeatherAlert.severity ? <HudBadge label={selectedWeatherAlert.severity} strong /> : null}
-                {selectedWeatherAlert.urgency ? <HudBadge label={selectedWeatherAlert.urgency} /> : null}
-                {selectedWeatherAlert.certainty ? <HudBadge label={selectedWeatherAlert.certainty} /> : null}
-              </View>
-
-              {selectedWeatherAlert.headline ? (
-                <Text style={styles.fireDetailMeta}>{selectedWeatherAlert.headline}</Text>
-              ) : null}
-
-              <View style={styles.fireDetailRows}>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Area</Text>
-                  <Text style={styles.fireDetailValue} numberOfLines={2}>
-                    {selectedWeatherAlert.areaDesc ?? 'Area pending'}
-                  </Text>
-                </View>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Effective</Text>
-                  <Text style={styles.fireDetailValue}>{formatAlertDate(selectedWeatherAlert.effective)}</Text>
-                </View>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Ends</Text>
-                  <Text style={styles.fireDetailValue}>
-                    {formatAlertDate(selectedWeatherAlert.ends ?? selectedWeatherAlert.expires)}
-                  </Text>
-                </View>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Source</Text>
-                  <Text style={styles.fireDetailValue} numberOfLines={1}>
-                    {selectedWeatherAlert.senderName ?? 'National Weather Service'}
-                  </Text>
-                </View>
-              </View>
-
-              {selectedWeatherAlert.instruction ? (
-                <Text style={styles.alertInstruction} numberOfLines={4}>
-                  {selectedWeatherAlert.instruction}
-                </Text>
-              ) : selectedWeatherAlert.description ? (
-                <Text style={styles.alertInstruction} numberOfLines={4}>
-                  {selectedWeatherAlert.description}
-                </Text>
-              ) : null}
-
-              {selectedWeatherAlertForecastTarget ? (
-                <View style={styles.marineDetailActionRow}>
-                  <Pressable
-                    style={[styles.fireDetailClose, styles.marineDetailPrimary]}
-                    onPress={openSelectedAlertForecast}
-                  >
-                    <Text style={styles.fireDetailCloseText}>
-                      {selectedWeatherAlertForecastTarget.kind === 'marine' ? 'Marine forecast' : 'Forecast'}
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </Glass>
-          </View>
+          <AlertDetailCard
+            alert={selectedWeatherAlert}
+            bottom={24 + insets.bottom}
+            error={selectedWeatherAlertError}
+            forecastTarget={selectedWeatherAlertForecastTarget}
+            loading={selectedWeatherAlertLoading}
+            officialText={selectedWeatherAlertOfficialText}
+            onClose={closeWeatherAlert}
+            onOpenForecast={openSelectedAlertForecast}
+          />
         ) : null}
 
         {!animationRecordMode ? (
@@ -5465,13 +5421,6 @@ function formatWildfireUpdated(value?: string | null) {
   if (diffHr < 24) return `Updated ${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
   const diffDay = Math.round(diffHr / 24);
   return `Updated ${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
-}
-
-function formatAlertDate(value?: string | null) {
-  if (!value) return 'Pending';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return 'Pending';
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 function formatFrameAge(value?: string | null) {
@@ -6814,12 +6763,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.8,
   },
-  alertDetailEyebrow: {
-    color: 'rgba(251,191,36,0.92)',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
   marineDetailEyebrow: {
     color: 'rgba(125,211,252,0.92)',
     fontSize: 10,
@@ -6888,13 +6831,6 @@ const styles = StyleSheet.create({
   marineDetailPrimary: {
     backgroundColor: 'rgba(14,165,233,0.22)',
     borderColor: 'rgba(125,211,252,0.36)',
-  },
-  alertInstruction: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
-    marginTop: 12,
   },
   settingsBackdrop: {
     ...StyleSheet.absoluteFillObject,

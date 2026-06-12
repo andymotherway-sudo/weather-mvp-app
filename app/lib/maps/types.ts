@@ -29,6 +29,8 @@ export type LayerId =
   | 'sat.goesWest.ir'
   | 'sat.goesEast.wv'
   | 'sat.goesWest.wv'
+  | 'sat.global.truecolor'
+  | 'sat.global.precip'
   | 'wildfire.smoke'
   | 'wildfire.perimeters'
   | 'wildfire.hotspots'

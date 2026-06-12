@@ -9,6 +9,7 @@ import { useMarineZonesByBbox } from '../nautical/useMarineZonesByBbox';
 import type { NauticalZone } from '../nautical/zones';
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
+import { getMarineLayerBudget } from './layerBudgets';
 
 export type SelectedMarineFeature =
   | { kind: 'buoy'; id: string }
@@ -77,45 +78,6 @@ function closeRingIfNeeded(coords: Array<[number, number]>) {
   const last = coords[coords.length - 1];
   if (first?.[0] === last?.[0] && first?.[1] === last?.[1]) return coords;
   return [...coords, first];
-}
-
-function geometryBbox(geometry: any) {
-  const coords: number[][] = [];
-
-  const walk = (node: any) => {
-    if (!Array.isArray(node)) return;
-    if (typeof node[0] === 'number' && typeof node[1] === 'number') {
-      coords.push([node[0], node[1]]);
-      return;
-    }
-    node.forEach(walk);
-  };
-
-  walk(geometry?.coordinates);
-  if (!coords.length) return null;
-
-  let minLon = Number.POSITIVE_INFINITY;
-  let maxLon = Number.NEGATIVE_INFINITY;
-  let minLat = Number.POSITIVE_INFINITY;
-  let maxLat = Number.NEGATIVE_INFINITY;
-
-  coords.forEach(([lon, lat]) => {
-    minLon = Math.min(minLon, lon);
-    maxLon = Math.max(maxLon, lon);
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-  });
-
-  return { minLon, maxLon, minLat, maxLat };
-}
-
-function getGeometryCenter(geometry: any): { lat: number; lon: number } | null {
-  const bbox = geometryBbox(geometry);
-  if (!bbox) return null;
-  return {
-    lat: (bbox.minLat + bbox.maxLat) / 2,
-    lon: (bbox.minLon + bbox.maxLon) / 2,
-  };
 }
 
 function pointInRing(lon: number, lat: number, ring: any[]) {
@@ -196,31 +158,6 @@ function marineZonesToFeatureCollection(zones: NauticalZone[]) {
         geometry: geometry ?? { type: 'Point' as const, coordinates: [zone.centroid.longitude, zone.centroid.latitude] },
       };
     }),
-  };
-}
-
-function marineZoneMarkersToFeatureCollection(zones: NauticalZone[]) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: zones
-      .map((zone) => {
-        const lat = Number(zone.centroid?.latitude);
-        const lon = Number(zone.centroid?.longitude);
-        const center = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : getGeometryCenter(zone.geometry);
-        if (!center) return null;
-        return {
-          type: 'Feature' as const,
-          id: zone.id,
-          properties: {
-            id: zone.id,
-            name: zone.name,
-            wfo: zone.wfo,
-            type: zone.type,
-          },
-          geometry: { type: 'Point' as const, coordinates: [center.lon, center.lat] },
-        };
-      })
-      .filter(Boolean),
   };
 }
 
@@ -415,18 +352,19 @@ export function useMarineMapLayer(args: {
   const [selectedGlobalMarineLoading, setSelectedGlobalMarineLoading] = useState(false);
   const [selectedGlobalMarineError, setSelectedGlobalMarineError] = useState<string | null>(null);
 
+  const budget = useMemo(() => getMarineLayerBudget(mapZoom), [mapZoom]);
   const marineDataEnabled = isFocused && marineConditionsEnabled;
-  const waterStationsDataEnabled = isFocused && waterStationsEnabled && mapZoom >= 5.2;
+  const waterStationsDataEnabled = isFocused && waterStationsEnabled && mapZoom >= budget.waterStationMinZoom;
   const marineBbox = useMemo(
-    () => (marineDataEnabled && mapZoom >= 3.6 ? regionToBbox(effectiveRegion) : null),
-    [effectiveRegion, mapZoom, marineDataEnabled],
+    () => (marineDataEnabled && mapZoom >= budget.marineZoneMinZoom ? regionToBbox(effectiveRegion) : null),
+    [effectiveRegion, mapZoom, budget.marineZoneMinZoom, marineDataEnabled],
   );
   const waterStationsBbox = useMemo(
     () => (waterStationsDataEnabled ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, waterStationsDataEnabled],
   );
   const globalMarineViewport = useMemo(() => {
-    if (!marineDataEnabled || mapZoom < 2 || mapZoom >= 7.6) return null;
+    if (!marineDataEnabled || mapZoom < budget.globalAreaMinZoom || mapZoom >= budget.globalAreaMaxZoom) return null;
     const bbox = regionToBbox(effectiveRegion);
     if (
       !bbox ||
@@ -444,7 +382,7 @@ export function useMarineMapLayer(args: {
       north: bbox.north,
       zoom: mapZoom,
     };
-  }, [effectiveRegion, mapZoom, marineDataEnabled]);
+  }, [effectiveRegion, mapZoom, budget.globalAreaMaxZoom, budget.globalAreaMinZoom, marineDataEnabled]);
 
   const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
   const { areas: globalMarineAreas } = useGlobalMarineManifest(globalMarineViewport);
@@ -461,7 +399,7 @@ export function useMarineMapLayer(args: {
 
     const bbox = waterStationsBbox;
     const bboxArea = Math.abs((bbox.east ?? 0) - (bbox.west ?? 0)) * Math.abs((bbox.north ?? 0) - (bbox.south ?? 0));
-    if (!Number.isFinite(bboxArea) || bboxArea > 2500) {
+    if (!Number.isFinite(bboxArea) || bboxArea > budget.waterStationMaxBboxArea) {
       setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
       return;
     }
@@ -477,7 +415,7 @@ export function useMarineMapLayer(args: {
           east: String(Number(bbox.east.toFixed(4))),
           north: String(Number(bbox.north.toFixed(4))),
           parameters: '00010',
-          limit: mapZoom < 7 ? '80' : '160',
+          limit: String(budget.waterStationFetchLimit),
         });
         const res = await fetchWithTimeout(apiUrl(`/api/usgs/water-stations?${params.toString()}`), 12000);
         if (!res.ok) throw new Error(`USGS ${res.status}`);
@@ -497,11 +435,11 @@ export function useMarineMapLayer(args: {
     return () => {
       cancelled = true;
     };
-  }, [mapZoom, tempUnit, waterStationsBbox, waterStationsDataEnabled]);
+  }, [budget.waterStationFetchLimit, budget.waterStationMaxBboxArea, tempUnit, waterStationsBbox, waterStationsDataEnabled]);
 
-  const visibleMarineZones = useMemo(() => marineZones.slice(0, mapZoom < 6 ? 600 : mapZoom < 8 ? 1200 : 2500), [
+  const visibleMarineZones = useMemo(() => marineZones.slice(0, budget.maxMarineZones), [
     marineZones,
-    mapZoom,
+    budget.maxMarineZones,
   ]);
   const marineBuoys = useMemo(
     () =>
@@ -521,7 +459,6 @@ export function useMarineMapLayer(args: {
     [globalMarineAreas],
   );
   const marineZonesFc = useMemo(() => marineZonesToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
-  const marineZoneMarkersFc = useMemo(() => marineZoneMarkersToFeatureCollection(visibleMarineZones), [visibleMarineZones]);
   const marineBuoysFc = useMemo(() => buoysToFeatureCollection(marineBuoys), [marineBuoys]);
   const waterStationsById = useMemo(() => {
     const out = new Map<string, SelectedWaterStation>();
@@ -628,7 +565,6 @@ export function useMarineMapLayer(args: {
     marineBuoys,
     marineBuoysFc,
     marineZonesFc,
-    marineZoneMarkersFc,
     resolveMarineFeatureAtPoint,
     resolveMarineZoneAtPoint,
     selectedGlobalMarineArea,
@@ -646,5 +582,6 @@ export function useMarineMapLayer(args: {
     waterStationsError,
     waterStationsGeojson,
     waterStationsLoading,
+    layerBudget: budget,
   };
 }

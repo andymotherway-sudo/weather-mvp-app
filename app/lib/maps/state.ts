@@ -38,6 +38,8 @@ const WEATHER_RASTER_LAYER_IDS: LayerId[] = [
   'sat.goesWest.ir',
   'sat.goesEast.wv',
   'sat.goesWest.wv',
+  'sat.global.truecolor',
+  'sat.global.precip',
 ];
 
 const EXCLUSIVE_DOMAIN_GROUPS: LayerId[][] = [

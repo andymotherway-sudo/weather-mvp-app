@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import MapLibreGL from '@maplibre/maplibre-react-native';
 
+import type { MarineLayerBudget } from '../../app/lib/maps/layerBudgets';
 import type { SelectedMarineFeature } from '../../app/lib/maps/useMarineMapLayer';
 
 type MapCameraRef = React.RefObject<{
@@ -17,7 +18,6 @@ type Props = {
   marineBuoysFc: any;
   marineConditionsEnabled: boolean;
   marineConditionsOpacity: number;
-  marineZoneMarkersFc: any;
   marineZonesFc: any;
   mapCameraRef: MapCameraRef;
   mapZoom: number;
@@ -30,6 +30,7 @@ type Props = {
   waterStationsEnabled: boolean;
   waterStationsGeojson: any;
   waterStationsOpacity: number;
+  layerBudget: MarineLayerBudget;
 };
 
 export function MarineMapLayers({
@@ -37,7 +38,6 @@ export function MarineMapLayers({
   marineBuoysFc,
   marineConditionsEnabled,
   marineConditionsOpacity,
-  marineZoneMarkersFc,
   marineZonesFc,
   mapCameraRef,
   mapZoom,
@@ -50,7 +50,19 @@ export function MarineMapLayers({
   waterStationsEnabled,
   waterStationsGeojson,
   waterStationsOpacity,
+  layerBudget,
 }: Props) {
+  const [extremePulseOn, setExtremePulseOn] = useState(false);
+
+  useEffect(() => {
+    if (!marineConditionsEnabled) {
+      setExtremePulseOn(false);
+      return;
+    }
+    const timer = setInterval(() => setExtremePulseOn((value) => !value), 650);
+    return () => clearInterval(timer);
+  }, [marineConditionsEnabled]);
+
   const zoomIntoCluster = (feature: any) => {
     const coords = feature?.geometry?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) return;
@@ -118,30 +130,6 @@ export function MarineMapLayers({
           ) : null}
 
           <MapLibreGL.ShapeSource
-            id="marine-zone-markers-source"
-            shape={marineZoneMarkersFc as any}
-            onPress={(e: any) => {
-              const feature = e?.features?.[0];
-              const id = String(feature?.properties?.id ?? feature?.id ?? '');
-              if (!id) return;
-              setSelectedWaterStationId(null);
-              setSelectedMarineFeature({ kind: 'zone', id });
-            }}
-          >
-            <MapLibreGL.CircleLayer
-              id="marine-zone-markers"
-              maxZoomLevel={7.2}
-              style={{
-                circleColor: 'rgba(20,184,166,0.78)',
-                circleStrokeColor: 'rgba(204,251,241,0.95)',
-                circleStrokeWidth: 1.2,
-                circleRadius: ['interpolate', ['linear'], ['zoom'], 2, 4.5, 5, 6.5, 7, 8] as any,
-                circleOpacity: 0.9 * marineConditionsOpacity,
-              }}
-            />
-          </MapLibreGL.ShapeSource>
-
-          <MapLibreGL.ShapeSource
             id="marine-zones-source"
             shape={marineZonesFc as any}
             onPress={(e: any) => {
@@ -196,7 +184,7 @@ export function MarineMapLayers({
             shape={marineBuoysFc as any}
             cluster
             clusterRadius={44}
-            clusterMaxZoomLevel={8}
+            clusterMaxZoomLevel={layerBudget.buoyClusterMaxZoom}
             onPress={(e: any) => {
               const feature = e?.features?.[0];
               const props = feature?.properties ?? {};
@@ -231,6 +219,28 @@ export function MarineMapLayers({
                 textColor: '#e0f2fe',
                 textHaloColor: 'rgba(2,6,23,0.95)',
                 textHaloWidth: 1,
+              }}
+            />
+            <MapLibreGL.CircleLayer
+              id="marine-buoy-extreme-pulse"
+              filter={['all', ['!', ['has', 'point_count']], ['==', ['get', 'severity'], 'extreme']] as any}
+              style={{
+                circleColor: '#ef4444',
+                circleOpacity: (extremePulseOn ? 0.42 : 0.14) * marineConditionsOpacity,
+                circleRadius: [
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  3,
+                  extremePulseOn ? 12 : 7,
+                  7,
+                  extremePulseOn ? 18 : 10,
+                  10,
+                  extremePulseOn ? 25 : 14,
+                ] as any,
+                circleStrokeColor: 'rgba(254,202,202,0.92)',
+                circleStrokeOpacity: (extremePulseOn ? 0.95 : 0.32) * marineConditionsOpacity,
+                circleStrokeWidth: extremePulseOn ? 2 : 1,
               }}
             />
             <MapLibreGL.CircleLayer
@@ -280,7 +290,7 @@ export function MarineMapLayers({
           shape={waterStationsGeojson as any}
           cluster
           clusterRadius={42}
-          clusterMaxZoomLevel={8}
+          clusterMaxZoomLevel={layerBudget.waterStationClusterMaxZoom}
           onPress={(e: any) => {
             const feature = e?.features?.[0];
             const props = feature?.properties ?? {};
