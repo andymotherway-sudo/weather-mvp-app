@@ -553,7 +553,7 @@ export async function fetchSpaceWeatherExtremes(): Promise<SpaceWeatherExtremes>
 
 // ---------- Public summary API (Solar tab) ----------
 
-export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
+async function fetchSpaceWeatherSummaryDirect(): Promise<SpaceWeatherSummary> {
   const [plasma, kp] = await Promise.all([loadPlasmaWithFallbacks(), loadKpWithFallbacks()]);
 
   const [noaaScales, goesXray, imf, protons] = await Promise.all([
@@ -591,7 +591,27 @@ export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
     goesXray: goesXray ?? undefined,
     imf: imf ?? undefined,
     protons: protons ?? undefined,
+    source: 'NOAA SWPC direct public products',
   };
+}
+
+async function fetchSpaceWeatherSummaryFromWorker(): Promise<SpaceWeatherSummary> {
+  const json = await fetchJson<any>(apiUrl('/api/space-weather/summary'), 'Worker space weather');
+  if (!json || json.ok === false) {
+    throw new Error(json?.error ?? 'Worker space weather response was unavailable');
+  }
+  return json as SpaceWeatherSummary;
+}
+
+export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
+  if (API_BASE) {
+    try {
+      return await fetchSpaceWeatherSummaryFromWorker();
+    } catch (err) {
+      console.warn('[spaceweather] worker summary failed; falling back to direct SWPC', err);
+    }
+  }
+  return fetchSpaceWeatherSummaryDirect();
 }
 
 // =============================

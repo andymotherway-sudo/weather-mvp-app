@@ -694,6 +694,84 @@ export default function SolarScreen() {
   );
 };
 
+  const renderStormSignal = () => {
+    if (!data?.incomingStorm) return null;
+    const signal = data.incomingStorm;
+    const tone =
+      signal.level === 'storm-underway'
+        ? styles.stormSevere
+        : signal.level === 'storm-likely'
+          ? styles.stormElevated
+          : signal.level === 'watch'
+            ? styles.stormWatch
+            : styles.stormQuiet;
+    return (
+      <View style={[themedCard, tone]}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Incoming Storm Signal</Text>
+          <Text style={styles.stormScore}>{signal.score}</Text>
+        </View>
+        <Text style={styles.stormLabel}>{signal.label}</Text>
+        <Text style={styles.cardBody}>{signal.summary}</Text>
+      </View>
+    );
+  };
+
+  const renderSwpcAlerts = () => {
+    const alerts = data?.swpcAlerts ?? [];
+    if (!alerts.length) return null;
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>SWPC Watches & Alerts</Text>
+          <Text style={styles.alertCount}>{alerts.length}</Text>
+        </View>
+        {alerts.slice(0, 3).map((alert) => (
+          <View key={alert.id} style={styles.swpcAlertItem}>
+            <View style={styles.swpcAlertHeader}>
+              <Text style={styles.swpcAlertSeverity}>{alert.severity.toUpperCase()}</Text>
+              <Text style={styles.smallText}>{alert.issuedAt ? fmtUpdated(alert.issuedAt) : 'Issued time unavailable'}</Text>
+            </View>
+            <Text style={styles.swpcAlertTitle}>{alert.title}</Text>
+            <Text style={styles.smallText} numberOfLines={4}>{alert.message}</Text>
+          </View>
+        ))}
+        <Text style={styles.smallText}>Source: NOAA SWPC alerts</Text>
+      </View>
+    );
+  };
+
+  const freshnessToneStyle = (freshness: string) => {
+    if (freshness === 'fresh') return styles.freshnessFresh;
+    if (freshness === 'lagging') return styles.freshnessLagging;
+    if (freshness === 'stale') return styles.freshnessStale;
+    return styles.freshnessUnknown;
+  };
+
+  const renderSourceFreshness = () => {
+    const sources = data?.sources ?? [];
+    if (!sources.length) return null;
+    return (
+      <View style={themedCard}>
+        <Text style={styles.cardTitle}>Source Freshness</Text>
+        {sources.map((source) => (
+          <View key={source.id} style={styles.sourceRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.sourceLabel}>{source.label}</Text>
+              <Text style={styles.smallText}>{source.provider}</Text>
+            </View>
+            <View style={[styles.freshnessPill, freshnessToneStyle(source.freshness)]}>
+              <Text style={styles.freshnessPillText}>
+                {source.freshness}
+                {typeof source.ageMinutes === 'number' ? ` · ${source.ageMinutes}m` : ''}
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   const contentPad = useMemo(
     () => ({
       paddingTop: Math.max(12, insets.top * 0.25),
@@ -851,6 +929,8 @@ export default function SolarScreen() {
             </View>
           ) : data ? (
             <>
+              {renderStormSignal()}
+              {renderSwpcAlerts()}
               {'noaaScales' in data && (data as any).noaaScales ? (
                 <View style={themedCard}>
                   <View style={styles.cardHeaderRow}>
@@ -926,7 +1006,7 @@ export default function SolarScreen() {
                 </View>
               ) : null}
 
-              {'xrayFlux' in data && (data as any).xrayFlux ? (
+              {data.goesXray ? (
                 <View style={themedCard}>
                   <View style={styles.cardHeaderRow}>
                     <Text style={styles.cardTitle}>GOES X-ray Flux</Text>
@@ -950,16 +1030,16 @@ export default function SolarScreen() {
                     <View style={styles.col}>
                       <Text style={styles.label}>Current Flux</Text>
                       <Text style={styles.cardValue}>
-                        {renderable((data as any).xrayFlux.value)}
+                        {data.goesXray.fluxWm2 != null ? data.goesXray.fluxWm2.toExponential(2) : '—'}
                       </Text>
                       <Text style={styles.smallText}>
-                        Time: {renderable((data as any).xrayFlux.time)}
+                        Time: {data.goesXray.timeTag ? fmtUpdated(data.goesXray.timeTag) : 'Unavailable'}
                       </Text>
                     </View>
                     <View style={styles.col}>
                       <Text style={styles.label}>Flare Class</Text>
                       <Text style={styles.flareClassText}>
-                        {(data as any).xrayFlux.classLabel}
+                        {data.goesXray.classLabel}
                       </Text>
                     </View>
                   </View>
@@ -1044,13 +1124,14 @@ export default function SolarScreen() {
 
               {renderRecentEvents()}
               {renderWindHistory()}
+              {renderSourceFreshness()}
 
               <View style={styles.footer}>
                 <Text style={styles.smallText}>
                   Last updated: {fmtUpdated(data.updatedAt)}
                 </Text>
                 <Text style={styles.smallText}>
-                  Data sources: NOAA SWPC (measurements) • NASA DONKI (events)
+                  Data sources: {data.source ?? 'NOAA SWPC'} • NASA DONKI (events)
                 </Text>
               </View>
             </>
@@ -1582,6 +1663,112 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
     fontWeight: '800',
     fontSize: 12,
+  },
+
+  stormQuiet: {
+    borderColor: 'rgba(34,197,94,0.24)',
+  },
+  stormWatch: {
+    borderColor: 'rgba(250,204,21,0.34)',
+    backgroundColor: 'rgba(113,63,18,0.22)',
+  },
+  stormElevated: {
+    borderColor: 'rgba(249,115,22,0.38)',
+    backgroundColor: 'rgba(124,45,18,0.26)',
+  },
+  stormSevere: {
+    borderColor: 'rgba(239,68,68,0.42)',
+    backgroundColor: 'rgba(127,29,29,0.28)',
+  },
+  stormScore: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  stormLabel: {
+    color: 'white',
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 0,
+  },
+  alertCount: {
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+    textAlign: 'center',
+    color: '#E0F2FE',
+    backgroundColor: 'rgba(14,165,233,0.18)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  swpcAlertItem: {
+    paddingTop: 10,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    gap: 4,
+  },
+  swpcAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  swpcAlertSeverity: {
+    color: '#FBBF24',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  swpcAlertTitle: {
+    color: '#F9FAFB',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900',
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 10,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  sourceLabel: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  freshnessPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  freshnessPillText: {
+    color: '#F9FAFB',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'capitalize',
+  },
+  freshnessFresh: {
+    backgroundColor: 'rgba(34,197,94,0.14)',
+    borderColor: 'rgba(34,197,94,0.34)',
+  },
+  freshnessLagging: {
+    backgroundColor: 'rgba(250,204,21,0.14)',
+    borderColor: 'rgba(250,204,21,0.34)',
+  },
+  freshnessStale: {
+    backgroundColor: 'rgba(239,68,68,0.14)',
+    borderColor: 'rgba(239,68,68,0.34)',
+  },
+  freshnessUnknown: {
+    backgroundColor: 'rgba(148,163,184,0.14)',
+    borderColor: 'rgba(148,163,184,0.28)',
   },
 
   marsMetricRow: {

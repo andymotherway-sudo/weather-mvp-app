@@ -922,6 +922,10 @@ const ALMANAC_TTL_SECONDS = 24 * 3600;
 const ALMANAC_STALE_SECONDS = 7 * 24 * 3600;
 const DONKI_TTL_SECONDS = 15 * 60;
 const DONKI_STALE_SECONDS = 24 * 3600;
+const SPACE_WEATHER_TTL_SECONDS = 5 * 60;
+const SPACE_WEATHER_STALE_SECONDS = 6 * 3600;
+const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v1";
+const SPACE_WEATHER_TIMEOUT_MS = 9000;
 const FIRE_CONTEXT_TTL_SECONDS = 30 * 60;
 const FIRE_CONTEXT_STALE_SECONDS = 12 * 3600;
 const GLOBAL_ALERTS_TTL_SECONDS = 5 * 60;
@@ -2541,6 +2545,349 @@ async function fetchAirQualityHourlyResponse(built: ReturnType<typeof buildAirQu
   } finally {
     clearTimeout(t);
   }
+}
+
+const SWPC_PLASMA_PRIMARY = "https://services.swpc.noaa.gov/products/solar-wind/plasma-5-minute.json";
+const SWPC_PLASMA_FALLBACKS = [
+  "https://services.swpc.noaa.gov/products/solar-wind/plasma-2-hour.json",
+  "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json",
+];
+const SWPC_MAG_PRIMARY = "https://services.swpc.noaa.gov/products/solar-wind/mag-5-minute.json";
+const SWPC_MAG_FALLBACKS = [
+  "https://services.swpc.noaa.gov/products/solar-wind/mag-2-hour.json",
+  "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json",
+];
+const SWPC_KP_PRIMARY = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json";
+const SWPC_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json";
+const SWPC_NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json";
+const SWPC_XRAY_6H = "https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json";
+const SWPC_PROTONS_6H = "https://services.swpc.noaa.gov/json/goes/primary/integral-protons-6-hour.json";
+const SWPC_ALERTS = "https://services.swpc.noaa.gov/products/alerts.json";
+
+function buildSpaceWeatherCacheKey(url: URL) {
+  const keyUrl = new URL(url.toString());
+  keyUrl.pathname = "/__cache__/space-weather/summary";
+  keyUrl.searchParams.set("v", SPACE_WEATHER_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function noaaTableTimeToIso(timeRaw: any) {
+  const value = String(timeRaw ?? "").trim();
+  if (!value) return null;
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const d = new Date(normalized);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+function ageMinutes(iso?: string | null) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.round((Date.now() - t) / 60000));
+}
+
+function freshnessForAge(minutes: number | null, freshMax: number, staleMax: number) {
+  if (minutes == null) return "unknown";
+  if (minutes <= freshMax) return "fresh";
+  if (minutes <= staleMax) return "lagging";
+  return "stale";
+}
+
+function swpcSource(id: string, label: string, observedAt?: string | null, productUrl?: string) {
+  const ageMin = ageMinutes(observedAt);
+  return {
+    id,
+    label,
+    provider: "NOAA SWPC",
+    observedAt: observedAt ?? null,
+    ageMinutes: ageMin,
+    freshness: freshnessForAge(ageMin, 20, 120),
+    productUrl,
+  };
+}
+
+async function fetchSwpcJson<T>(url: string, label: string): Promise<T> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SPACE_WEATHER_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`${label} ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function fetchSwpcTable(url: string, label: string): Promise<any[]> {
+  const json = await fetchSwpcJson<any>(url, label);
+  if (!Array.isArray(json) || json.length < 2) throw new Error(`${label} malformed`);
+  return json;
+}
+
+async function loadSwpcPlasma() {
+  let lastErr: unknown = null;
+  for (const url of [SWPC_PLASMA_PRIMARY, ...SWPC_PLASMA_FALLBACKS]) {
+    try {
+      const table = await fetchSwpcTable(url, "SWPC plasma");
+      const rows = table.slice(1);
+      const last = rows[rows.length - 1] as any[];
+      const observedAt = noaaTableTimeToIso(last?.[0]);
+      const density = safeNum(last?.[1]);
+      const speed = safeNum(last?.[2]);
+      const temperature = safeNum(last?.[3]);
+      if (!observedAt || density == null || speed == null || temperature == null) throw new Error("bad plasma row");
+      const history = rows.slice(Math.max(0, rows.length - 12)).map((row: any[]) => {
+        const t = noaaTableTimeToIso(row?.[0]);
+        const s = safeNum(row?.[2]);
+        return t && s != null ? { time: t, speed: s } : null;
+      }).filter(Boolean);
+      return {
+        speed,
+        density,
+        temperature,
+        observedAt,
+        history: history.length ? history : [{ time: observedAt, speed }],
+        source: swpcSource("solar-wind-plasma", "L1 solar wind plasma", observedAt, url),
+      };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr ?? new Error("SWPC plasma unavailable");
+}
+
+async function loadSwpcMag() {
+  let lastErr: unknown = null;
+  for (const url of [SWPC_MAG_PRIMARY, ...SWPC_MAG_FALLBACKS]) {
+    try {
+      const table = await fetchSwpcTable(url, "SWPC magnetic field");
+      const rows = table.slice(1);
+      const last = rows[rows.length - 1] as any[];
+      const observedAt = noaaTableTimeToIso(last?.[0]);
+      const bz = safeNum(last?.[3]);
+      const bt = safeNum(last?.[6]);
+      if (!observedAt || bz == null || bt == null) throw new Error("bad magnetic field row");
+      return {
+        observedAt,
+        bzGsmNt: bz,
+        btNt: bt,
+        source: swpcSource("solar-wind-mag", "L1 magnetic field", observedAt, url),
+      };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr ?? new Error("SWPC magnetic field unavailable");
+}
+
+function parseSwpcKpRows(rows: any[]) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      const observedAt = noaaTableTimeToIso(row.time_tag ?? row.time);
+      const kp = safeNum(row.Kp ?? row.kp ?? row.planetary_k_index);
+      if (observedAt && kp != null) return { observedAt, kp };
+    }
+    if (Array.isArray(row)) {
+      const observedAt = noaaTableTimeToIso(row[0]);
+      let kp = safeNum(row[1]);
+      if (kp == null) {
+        for (let j = 2; j < row.length; j++) {
+          kp = safeNum(row[j]);
+          if (kp != null) break;
+        }
+      }
+      if (observedAt && kp != null) return { observedAt, kp };
+    }
+  }
+  return null;
+}
+
+async function loadSwpcKp() {
+  try {
+    const rows = await fetchSwpcJson<any[]>(SWPC_KP_PRIMARY, "SWPC Kp");
+    const parsed = parseSwpcKpRows(rows);
+    if (parsed) return { ...parsed, source: swpcSource("kp", "Planetary Kp index", parsed.observedAt, SWPC_KP_PRIMARY) };
+  } catch {
+    // fall through to forecast
+  }
+  const rows = await fetchSwpcTable(SWPC_KP_FORECAST, "SWPC Kp forecast");
+  const parsed = parseSwpcKpRows(rows);
+  if (!parsed) throw new Error("SWPC Kp unavailable");
+  return { ...parsed, source: swpcSource("kp", "Planetary Kp forecast", parsed.observedAt, SWPC_KP_FORECAST) };
+}
+
+function parseNoaaScaleItem(x: any) {
+  if (!x || typeof x !== "object") return null;
+  const scale = safeNum(x.Scale);
+  const text = typeof x.Text === "string" && x.Text.trim() ? x.Text.trim() : undefined;
+  if (scale == null && !text) return null;
+  return { scale, text };
+}
+
+async function loadSwpcScales() {
+  const raw: any = await fetchSwpcJson(SWPC_NOAA_SCALES, "SWPC NOAA scales");
+  const row = raw?.["0"];
+  if (!row) return null;
+  const observedAt = row.DateStamp && row.TimeStamp ? noaaTableTimeToIso(`${row.DateStamp} ${row.TimeStamp}`) : null;
+  return {
+    dateStamp: row.DateStamp ?? undefined,
+    timeStamp: row.TimeStamp ?? undefined,
+    G: parseNoaaScaleItem(row.G),
+    R: parseNoaaScaleItem(row.R),
+    S: parseNoaaScaleItem(row.S),
+    observedAt,
+    source: swpcSource("noaa-scales", "NOAA space weather scales", observedAt, SWPC_NOAA_SCALES),
+  };
+}
+
+function xrayClassLabelWorker(flux: number | null) {
+  if (flux == null || !Number.isFinite(flux) || flux <= 0) return "—";
+  const bands = [
+    { letter: "X", base: 1e-4 },
+    { letter: "M", base: 1e-5 },
+    { letter: "C", base: 1e-6 },
+    { letter: "B", base: 1e-7 },
+    { letter: "A", base: 1e-8 },
+  ];
+  const band = bands.find((b) => flux >= b.base) ?? bands[bands.length - 1];
+  return `${band.letter}${Math.max(0.1, Math.round((flux / band.base) * 10) / 10).toFixed(1)}`;
+}
+
+async function loadSwpcXray() {
+  const rows: any[] = await fetchSwpcJson(SWPC_XRAY_6H, "SWPC GOES X-ray");
+  const channel = rows
+    .filter((r) => r?.energy === "0.1-0.8nm" && safeNum(r?.observed_flux) != null)
+    .sort((a, b) => String(a.time_tag ?? "").localeCompare(String(b.time_tag ?? "")));
+  const last = channel[channel.length - 1];
+  const flux = safeNum(last?.observed_flux);
+  const observedAt = noaaTableTimeToIso(last?.time_tag);
+  return {
+    timeTag: observedAt ?? undefined,
+    fluxWm2: flux,
+    classLabel: xrayClassLabelWorker(flux),
+    source: swpcSource("goes-xray", "GOES X-ray flux", observedAt, SWPC_XRAY_6H),
+  };
+}
+
+function pfuToSScaleWorker(pfu: number | null) {
+  if (pfu == null || !Number.isFinite(pfu) || pfu < 10) return undefined;
+  if (pfu < 100) return "S1";
+  if (pfu < 1000) return "S2";
+  if (pfu < 10000) return "S3";
+  if (pfu < 100000) return "S4";
+  return "S5";
+}
+
+async function loadSwpcProtons() {
+  const rows: any[] = await fetchSwpcJson(SWPC_PROTONS_6H, "SWPC GOES protons");
+  const channel = rows
+    .filter((r) => r?.energy === ">=10 MeV" && safeNum(r?.flux) != null)
+    .sort((a, b) => String(a.time_tag ?? "").localeCompare(String(b.time_tag ?? "")));
+  const last = channel[channel.length - 1];
+  const pfu = safeNum(last?.flux);
+  const observedAt = noaaTableTimeToIso(last?.time_tag);
+  return {
+    timeTag: observedAt ?? undefined,
+    pfu10MeV: pfu,
+    sScale: pfuToSScaleWorker(pfu),
+    source: swpcSource("goes-protons", "GOES proton flux", observedAt, SWPC_PROTONS_6H),
+  };
+}
+
+function swpcAlertSeverity(message: string) {
+  const upper = message.toUpperCase();
+  if (upper.includes("ALERT:")) return "alert";
+  if (upper.includes("WARNING:")) return "warning";
+  if (upper.includes("WATCH:")) return "watch";
+  return "statement";
+}
+
+async function loadSwpcAlerts() {
+  const rows: any[] = await fetchSwpcJson(SWPC_ALERTS, "SWPC alerts");
+  return rows.slice(0, 8).map((row) => {
+    const message = String(row?.message ?? "");
+    const firstMeaningful = message.split(/\r?\n/).map((x) => x.trim()).find((x) => /^(ALERT|WARNING|WATCH|SUMMARY|EXTENDED)/i.test(x));
+    const observedAt = noaaTableTimeToIso(row?.issue_datetime);
+    return {
+      id: String(row?.product_id ?? `${observedAt ?? "swpc"}-${message.slice(0, 24)}`),
+      productId: row?.product_id ?? null,
+      issuedAt: observedAt,
+      severity: swpcAlertSeverity(message),
+      title: firstMeaningful ?? String(row?.product_id ?? "SWPC alert"),
+      message,
+      source: "NOAA SWPC alerts",
+    };
+  });
+}
+
+function classifyIncomingStorm(args: { kp?: number | null; speed?: number | null; bz?: number | null; alerts?: any[] }) {
+  const kp = args.kp ?? 0;
+  const speed = args.speed ?? 0;
+  const bz = args.bz ?? 0;
+  const hasWatch = (args.alerts ?? []).some((a) => a.severity === "watch" || a.severity === "warning" || a.severity === "alert");
+  let score = 0;
+  if (kp >= 5) score += 3;
+  else if (kp >= 4) score += 2;
+  else if (kp >= 3) score += 1;
+  if (speed >= 650) score += 2;
+  else if (speed >= 500) score += 1;
+  if (bz <= -8) score += 2;
+  else if (bz <= -4) score += 1;
+  if (hasWatch) score += 2;
+  const level = score >= 6 ? "storm-underway" : score >= 4 ? "storm-likely" : score >= 2 ? "watch" : "quiet";
+  const label =
+    level === "storm-underway" ? "Storm underway" :
+    level === "storm-likely" ? "Storm likely" :
+    level === "watch" ? "Watch" :
+    "Quiet";
+  return {
+    level,
+    label,
+    score,
+    summary:
+      level === "quiet"
+        ? "No strong near-term space-weather signal in the current SWPC feeds."
+        : `Elevated signal from Kp ${kp.toFixed(1)}, solar wind ${Math.round(speed)} km/s, and Bz ${bz.toFixed(1)} nT.`,
+  };
+}
+
+async function fetchSpaceWeatherSummaryResponse() {
+  const [plasma, kp] = await Promise.all([loadSwpcPlasma(), loadSwpcKp()]);
+  const [scales, xray, mag, protons, alerts] = await Promise.all([
+    loadSwpcScales().catch(() => null),
+    loadSwpcXray().catch(() => null),
+    loadSwpcMag().catch(() => null),
+    loadSwpcProtons().catch(() => null),
+    loadSwpcAlerts().catch(() => []),
+  ]);
+  const observedCandidates = [plasma.observedAt, kp.observedAt, mag?.observedAt, xray?.timeTag, protons?.timeTag].filter(Boolean) as string[];
+  const newest = observedCandidates.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? new Date().toISOString();
+  const sources = [plasma.source, kp.source, scales?.source, xray?.source, mag?.source, protons?.source].filter(Boolean);
+  const incomingStorm = classifyIncomingStorm({ kp: kp.kp, speed: plasma.speed, bz: mag?.bzGsmNt, alerts });
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      source: "NOAA SWPC public products",
+      updatedAt: newest,
+      generatedAt: new Date().toISOString(),
+      solarWindSpeed: plasma.speed,
+      solarWindDensity: plasma.density,
+      solarWindTemp: plasma.temperature,
+      windHistory: plasma.history,
+      kp: kp.kp,
+      noaaScales: scales ? { dateStamp: scales.dateStamp, timeStamp: scales.timeStamp, G: scales.G, R: scales.R, S: scales.S } : undefined,
+      noaaScalesUpdatedAt: scales?.observedAt ?? undefined,
+      goesXray: xray ? { timeTag: xray.timeTag, fluxWm2: xray.fluxWm2, classLabel: xray.classLabel } : undefined,
+      imf: mag ? { timeTag: mag.observedAt, bzGsmNt: mag.bzGsmNt, btNt: mag.btNt } : undefined,
+      protons: protons ? { timeTag: protons.timeTag, pfu10MeV: protons.pfu10MeV, sScale: protons.sScale } : undefined,
+      sources,
+      swpcAlerts: alerts,
+      incomingStorm,
+    }),
+    { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+  );
 }
 
 function buildUsgsInstantaneousCacheKey(url: URL) {
@@ -6499,6 +6846,15 @@ export default {
         ttlSeconds: USGS_WATER_STATIONS_TTL_SECONDS,
         staleSeconds: USGS_WATER_STATIONS_STALE_SECONDS,
         fetchUpstream: () => fetchUsgsWaterStationsResponse(url, bbox),
+      });
+    }
+
+    if (url.pathname === "/api/space-weather/summary" || url.pathname === "/v1/space-weather/summary") {
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildSpaceWeatherCacheKey(url),
+        ttlSeconds: SPACE_WEATHER_TTL_SECONDS,
+        staleSeconds: SPACE_WEATHER_STALE_SECONDS,
+        fetchUpstream: () => fetchSpaceWeatherSummaryResponse(),
       });
     }
 

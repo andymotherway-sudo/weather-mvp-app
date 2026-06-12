@@ -36,6 +36,33 @@ export type ProtonNow = {
   sScale?: 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 };
 
+export type SpaceWeatherSourceStatus = {
+  id: string;
+  label: string;
+  provider: string;
+  observedAt?: string | null;
+  ageMinutes?: number | null;
+  freshness: 'fresh' | 'lagging' | 'stale' | 'unknown';
+  productUrl?: string;
+};
+
+export type SwpcAlert = {
+  id: string;
+  productId?: string | null;
+  issuedAt?: string | null;
+  severity: 'alert' | 'warning' | 'watch' | 'statement';
+  title: string;
+  message: string;
+  source: string;
+};
+
+export type IncomingStormSignal = {
+  level: 'quiet' | 'watch' | 'storm-likely' | 'storm-underway';
+  label: string;
+  score: number;
+  summary: string;
+};
+
 export type SpaceWeatherExtremes = {
   computedAt: string; // ISO
 
@@ -56,6 +83,8 @@ export type SpaceWeatherExtremes = {
 };
 
 export type SpaceWeatherSummary = {
+  source?: string;
+  generatedAt?: string;
   solarWindSpeed: number;
   solarWindDensity: number;
   solarWindTemp: number;
@@ -68,6 +97,9 @@ export type SpaceWeatherSummary = {
   goesXray?: GoesXrayNow;
   imf?: ImfNow;
   protons?: ProtonNow;
+  sources?: SpaceWeatherSourceStatus[];
+  swpcAlerts?: SwpcAlert[];
+  incomingStorm?: IncomingStormSignal;
 };
 
 export type MarsInsightWeather = {
