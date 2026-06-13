@@ -368,6 +368,28 @@ type MarineAreasResponse = {
   areas: Omit<MarineAreaSummary, "priority">[];
 };
 
+type MarineOfficialForecastHazard = {
+  key: string;
+  label: string;
+  severity: "info" | "watch" | "warning" | "storm";
+};
+
+type MarineOfficialForecastResponse = {
+  ok: true;
+  id: string;
+  name: string;
+  region: string;
+  sourceLabel: string;
+  sourceUrl: string | null;
+  issuedAt: string | null;
+  fetchedAt: string;
+  headline: string;
+  summary: string | null;
+  text: string | null;
+  hazards: MarineOfficialForecastHazard[];
+  status: "ok" | "not_available";
+};
+
 type MarineExtremeKind = "wave" | "wind" | "warm" | "cold" | "current" | "seaLevel";
 
 type MarineExtremePoint = {
@@ -949,6 +971,9 @@ const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 const MARINE_AREAS_TTL_SECONDS = 15 * 60;
 const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
 const MARINE_AREAS_VERSION = "official-metareas-geojson-v4";
+const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
+const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
+const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v1";
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -1980,6 +2005,182 @@ function buildMarineAreasPayload(viewport: { west: number; south: number; east: 
       ttlSeconds: MARINE_AREAS_TTL_SECONDS,
     },
     areas,
+  };
+}
+
+const DIRECT_MARINE_BULLETIN_SOURCES: Record<string, { url: string; sourceLabel: string; headline: string }> = {
+  "metarea-iv": {
+    url: "https://tgftp.nws.noaa.gov/data/forecasts/marine/high_seas/north_atlantic.txt",
+    sourceLabel: "NOAA / NWS High Seas Forecast",
+    headline: "North Atlantic High Seas Forecast",
+  },
+  "metarea-xii": {
+    url: "https://tgftp.nws.noaa.gov/data/forecasts/marine/high_seas/north_pacific.txt",
+    sourceLabel: "NOAA / NWS High Seas Forecast",
+    headline: "North Pacific High Seas Forecast",
+  },
+};
+
+const METAREA_NUMBERS: Record<string, string> = {
+  "metarea-i": "1",
+  "metarea-ii": "2",
+  "metarea-iii": "3",
+  "metarea-iv": "4",
+  "metarea-v": "5",
+  "metarea-vi": "6",
+  "metarea-vii": "7",
+  "metarea-viii-n": "8",
+  "metarea-viii-s": "8",
+  "metarea-ix": "9",
+  "metarea-x": "10",
+  "metarea-xi": "11",
+  "metarea-xii": "12",
+  "metarea-xiii": "13",
+  "metarea-xiv": "14",
+  "metarea-xv": "15",
+  "metarea-xvi": "16",
+  "metarea-xvii": "17",
+  "metarea-xviii": "18",
+  "metarea-xix": "19",
+  "metarea-xx": "20",
+  "metarea-xxi": "21",
+};
+
+function findGlobalMarineArea(id: string): MarineAreaSummary | null {
+  const normalized = id.trim().toLowerCase();
+  return GLOBAL_MARINE_AREAS.find((area) => area.id.toLowerCase() === normalized) ?? null;
+}
+
+function officialMarineSourceForArea(area: MarineAreaSummary) {
+  const direct = DIRECT_MARINE_BULLETIN_SOURCES[area.id];
+  if (direct) return direct;
+
+  const sourceUrl = area.sourceUrl?.trim();
+  if (sourceUrl && sourceUrl !== "https://wwmiws.wmo.int/") {
+    return {
+      url: sourceUrl,
+      sourceLabel: area.sourceLabel,
+      headline: `${area.name} official forecast`,
+    };
+  }
+
+  const metareaNumber = METAREA_NUMBERS[area.id];
+  if (metareaNumber) {
+    return {
+      url: `https://wwmiws.wmo.int/index.php/metareas/display/${metareaNumber}`,
+      sourceLabel: area.sourceLabel || "WMO / IMO WWMIWS",
+      headline: `${area.name} official forecast`,
+    };
+  }
+
+  return null;
+}
+
+function cleanMarineBulletinText(value: string) {
+  const base = value.includes("<") ? stripHtmlWithLineBreaks(value) : value;
+  const lines = base
+    .replace(/\r/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .filter((line) => !/^(skip to|home|search|menu|language|copyright|privacy|terms)$/i.test(line));
+
+  const start = lines.findIndex((line) =>
+    /\b(HIGH SEAS FORECAST|METAREA|MARINE WEATHER BULLETIN|GALE WARNING|STORM WARNING|HURRICANE FORCE|NAVAREA)\b/i.test(line),
+  );
+  const selected = (start >= 0 ? lines.slice(start) : lines).join("\n");
+  return selected.replace(/\n{3,}/g, "\n\n").trim().slice(0, 8000);
+}
+
+function extractMarineIssuedAt(text: string): string | null {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const line =
+    lines.find((candidate) => /\b(UTC|GMT|PDT|PST|EDT|EST|CDT|CST|MDT|MST|AKDT|AKST|HST|Z)\b/i.test(candidate) && /\d/.test(candidate)) ??
+    lines.find((candidate) => /\b\d{4}\s*UTC\b/i.test(candidate)) ??
+    null;
+  if (!line) return null;
+
+  const parsed = safeIsoString(line);
+  return parsed ?? line.slice(0, 96);
+}
+
+function summarizeMarineBulletin(text: string): string | null {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 12)
+    .filter((line) => !/^(FORECASTER|WARNINGS\.|SYNOPSIS AND FORECAST\.|$)/i.test(line));
+
+  const priority =
+    lines.find((line) => /\b(HURRICANE FORCE|STORM WARNING|GALE WARNING|TROPICAL CYCLONE|DENSE FOG|HEAVY FREEZING SPRAY)\b/i.test(line)) ??
+    lines.find((line) => /\b(SEAS|WINDS|GALE|STORM|WARNING)\b/i.test(line)) ??
+    lines[0] ??
+    null;
+  if (!priority) return null;
+  return priority.replace(/\s+/g, " ").slice(0, 420);
+}
+
+function extractMarineHazards(text: string): MarineOfficialForecastHazard[] {
+  const checks: Array<{ key: string; label: string; severity: MarineOfficialForecastHazard["severity"]; rx: RegExp }> = [
+    { key: "hurricane-force", label: "Hurricane-force winds", severity: "storm", rx: /\bHURRICANE FORCE\b/i },
+    { key: "storm", label: "Storm conditions", severity: "storm", rx: /\b(STORM WARNING|STORM FORCE|VIOLENT STORM)\b/i },
+    { key: "gale", label: "Gale conditions", severity: "warning", rx: /\b(GALE WARNING|GALE FORCE|GALE)\b/i },
+    { key: "tropical-cyclone", label: "Tropical cyclone", severity: "storm", rx: /\b(TROPICAL CYCLONE|HURRICANE|TYPHOON)\b/i },
+    { key: "freezing-spray", label: "Freezing spray", severity: "warning", rx: /\b(FREEZING SPRAY|ICE ACCRETION)\b/i },
+    { key: "dense-fog", label: "Dense fog", severity: "watch", rx: /\bDENSE FOG\b/i },
+    { key: "rough-seas", label: "Rough seas", severity: "watch", rx: /\b(VERY ROUGH|HIGH SEAS|SEAS (?:TO|UP TO|BUILDING TO) \d{2,})\b/i },
+  ];
+
+  return checks
+    .filter((check) => check.rx.test(text))
+    .map(({ key, label, severity }) => ({ key, label, severity }));
+}
+
+async function buildMarineOfficialForecastPayload(id: string): Promise<MarineOfficialForecastResponse> {
+  const area = findGlobalMarineArea(id);
+  if (!area) throw new Error("Unknown marine area");
+
+  const source = officialMarineSourceForArea(area);
+  if (!source) {
+    return {
+      ok: true,
+      id: area.id,
+      name: area.name,
+      region: area.region,
+      sourceLabel: area.sourceLabel,
+      sourceUrl: area.sourceUrl ?? null,
+      issuedAt: null,
+      fetchedAt: new Date().toISOString(),
+      headline: `${area.name} official forecast`,
+      summary: null,
+      text: null,
+      hazards: [],
+      status: "not_available",
+    };
+  }
+
+  const raw = await fetchTextWithTimeout(source.url, 9000, {
+    Accept: "text/plain,text/html;q=0.9,*/*;q=0.5",
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const text = cleanMarineBulletinText(raw);
+  const useful = text.length >= 80 && !/^404\b|not found/i.test(text);
+
+  return {
+    ok: true,
+    id: area.id,
+    name: area.name,
+    region: area.region,
+    sourceLabel: source.sourceLabel,
+    sourceUrl: source.url,
+    issuedAt: useful ? extractMarineIssuedAt(text) : null,
+    fetchedAt: new Date().toISOString(),
+    headline: source.headline,
+    summary: useful ? summarizeMarineBulletin(text) : null,
+    text: useful ? text : null,
+    hazards: useful ? extractMarineHazards(text) : [],
+    status: useful ? "ok" : "not_available",
   };
 }
 
@@ -7503,6 +7704,42 @@ export default {
         staleSeconds: MARINE_AREAS_STALE_SECONDS,
         fetchUpstream: async () => {
           const payload = buildMarineAreasPayload(viewport, zoom);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/api/marine/official-forecast" || url.pathname === "/v1/marine/official-forecast") {
+      const id = String(url.searchParams.get("id") ?? "").trim().toLowerCase();
+      if (!id) {
+        return new Response(JSON.stringify({ ok: false, error: "id is required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (!findGlobalMarineArea(id)) {
+        return new Response(JSON.stringify({ ok: false, error: "Unknown marine area" }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/marine/official-forecast";
+      cacheKeyUrl.search = "";
+      cacheKeyUrl.searchParams.set("id", id);
+      cacheKeyUrl.searchParams.set("v", MARINE_OFFICIAL_FORECAST_VERSION);
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: MARINE_OFFICIAL_FORECAST_TTL_SECONDS,
+        staleSeconds: MARINE_OFFICIAL_FORECAST_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildMarineOfficialForecastPayload(id);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },

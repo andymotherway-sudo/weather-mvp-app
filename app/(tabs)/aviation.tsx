@@ -2,7 +2,7 @@ import MapLibreGL from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { typography } from '../../styles/typography';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import { normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature } from '../lib/aviation/types';
+import { usePlace } from '../context/PlaceContext';
 import { geocodePlaces } from '../lib/locations/geocode';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
@@ -353,6 +354,65 @@ async function fetchProduct(kind: 'metar' | 'taf', code: string) {
   return rows(await r.json().catch(() => null))[0] ?? null;
 }
 
+function stopFromMetarFeature(feature: any): Stop | null {
+  const coords = feature?.geometry?.coordinates;
+  const lon = num(coords?.[0]);
+  const lat = num(coords?.[1]);
+  if (lat == null || lon == null) return null;
+
+  const props = feature?.properties ?? {};
+  const code = String(props?.stationLabel ?? props?.icaoId ?? props?.icao ?? props?.id ?? props?.station ?? '').toUpperCase();
+  if (!/^[A-Z0-9]{3,4}$/.test(code)) return null;
+
+  const label = String(props?.site ?? props?.name ?? props?.stationName ?? code).trim() || code;
+  return { raw: code, code, label, lat, lon };
+}
+
+function nearestStopFromMetarFeatures(features: any[], lat: number, lon: number): Stop | null {
+  const byCode = new Map<string, Stop>();
+  for (const feature of features) {
+    const stop = stopFromMetarFeature(feature);
+    if (!stop?.code || byCode.has(stop.code)) continue;
+    byCode.set(stop.code, stop);
+  }
+
+  let best: { stop: Stop; distanceMi: number } | null = null;
+  for (const stop of byCode.values()) {
+    const distanceMi = mi(lat, lon, stop.lat, stop.lon);
+    if (!best || distanceMi < best.distanceMi) best = { stop, distanceMi };
+  }
+  return best?.stop ?? null;
+}
+
+async function fetchNearestMetarStation(lat: number, lon: number): Promise<Stop | null> {
+  const radii = [1.5, 3.5, 7];
+
+  for (const radius of radii) {
+    const south = Math.max(-90, lat - radius);
+    const north = Math.min(90, lat + radius);
+    const west = Math.max(-180, lon - radius);
+    const east = Math.min(180, lon + radius);
+    const url =
+      `https://aviationweather.gov/api/data/metar?format=geojson&hours=6` +
+      `&bbox=${encodeURIComponent(`${south},${west},${north},${east}`)}`;
+
+    try {
+      const r = await fetchWithTimeout(url, 10000, {
+        headers: { Accept: 'application/geo+json, application/json' },
+      });
+      if (!r.ok) continue;
+      const json = await r.json().catch(() => null);
+      const features = Array.isArray(json?.features) ? json.features : [];
+      const nearest = nearestStopFromMetarFeatures(features, lat, lon);
+      if (nearest) return nearest;
+    } catch {
+      // Try the next wider box.
+    }
+  }
+
+  return null;
+}
+
 const metarRaw = (row: any) => str(row?.rawOb, row?.raw_text, row?.raw, row?.metar, row?.observation);
 const tafRaw = (row: any) => str(row?.rawTAF, row?.raw_text, row?.raw, row?.taf);
 const visibilityMiles = (row: any) => {
@@ -644,6 +704,7 @@ export default function AviationScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const isFocused = useIsFocused();
+  const { active } = usePlace();
   const aviation = useAviationMapData(isFocused);
   const [mode, setMode] = useState<Mode>('station');
   const [reportView, setReportView] = useState<ReportView>('decoded');
@@ -661,6 +722,7 @@ export default function AviationScreen() {
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
   const [savedAirports, setSavedAirports] = useState<SavedAirport[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([]);
+  const lastNearestFieldSyncRef = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -748,6 +810,69 @@ export default function AviationScreen() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isFocused) return;
+    if (mode !== 'station') return;
+    if (!active || !Number.isFinite(active.lat) || !Number.isFinite(active.lon)) return;
+
+    const lat = Number(active.lat);
+    const lon = Number(active.lon);
+    const key = [active.source ?? 'place', active.id ?? active.name ?? 'active', lat.toFixed(4), lon.toFixed(4)].join('|');
+    if (lastNearestFieldSyncRef.current === key) return;
+
+    let cancelled = false;
+    lastNearestFieldSyncRef.current = key;
+
+    async function syncNearestField() {
+      const nearest =
+        nearestStopFromMetarFeatures(aviation.metars.features ?? [], lat, lon) ??
+        (await fetchNearestMetarStation(lat, lon));
+
+      if (cancelled) return;
+      if (!nearest?.code) {
+        lastNearestFieldSyncRef.current = null;
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setStationInput(nearest.code);
+
+      try {
+        const [metar, taf] = await Promise.all([
+          fetchProduct('metar', nearest.code),
+          fetchProduct('taf', nearest.code),
+        ]);
+        if (cancelled) return;
+        setStation({ station: nearest, metar, taf });
+        setFlight(null);
+        setMapRegion({ latitude: nearest.lat, longitude: nearest.lon, latitudeDelta: 3, longitudeDelta: 3, zoom: 6 });
+      } catch (err: any) {
+        if (cancelled) return;
+        lastNearestFieldSyncRef.current = null;
+        setStation(null);
+        setError(err?.message ?? 'Unable to load the nearest field.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    syncNearestField();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    active?.id,
+    active?.lat,
+    active?.lon,
+    active?.name,
+    active?.source,
+    aviation.metars.features,
+    isFocused,
+    mode,
+  ]);
 
   const analyzeFlight = async () => {
     if (!fromInput.trim() || !toInput.trim()) {

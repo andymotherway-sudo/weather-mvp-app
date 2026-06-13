@@ -51,6 +51,25 @@ export type MarinePointConditions = {
   modelSource: string | null;
 };
 
+export type GlobalMarineOfficialForecast = {
+  id: string;
+  name: string;
+  region: string;
+  sourceLabel: string;
+  sourceUrl: string | null;
+  issuedAt: string | null;
+  fetchedAt: string;
+  headline: string;
+  summary: string | null;
+  text: string | null;
+  hazards: Array<{
+    key: string;
+    label: string;
+    severity: 'info' | 'watch' | 'warning' | 'storm';
+  }>;
+  status: 'ok' | 'not_available';
+};
+
 function safeNum(value: any) {
   const n = typeof value === 'string' ? Number(value) : value;
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
@@ -343,6 +362,17 @@ async function fetchMarinePointConditions(lat: number, lon: number, signal: Abor
   return json?.conditions ?? null;
 }
 
+async function fetchGlobalMarineOfficialForecast(id: string, signal: AbortSignal): Promise<GlobalMarineOfficialForecast | null> {
+  const res = await fetchWithTimeout(
+    apiUrl(`/api/marine/official-forecast?id=${encodeURIComponent(id)}`),
+    12000,
+    { headers: { Accept: 'application/json' }, signal },
+  );
+  if (!res.ok) throw new Error(`Official marine forecast failed (${res.status})`);
+  const json = await res.json();
+  return json?.ok ? (json as GlobalMarineOfficialForecast) : null;
+}
+
 export function useMarineMapLayer(args: {
   effectiveRegion: Region;
   isFocused: boolean;
@@ -360,6 +390,10 @@ export function useMarineMapLayer(args: {
   const [selectedGlobalMarineConditions, setSelectedGlobalMarineConditions] = useState<MarinePointConditions | null>(null);
   const [selectedGlobalMarineLoading, setSelectedGlobalMarineLoading] = useState(false);
   const [selectedGlobalMarineError, setSelectedGlobalMarineError] = useState<string | null>(null);
+  const [selectedGlobalMarineOfficialForecast, setSelectedGlobalMarineOfficialForecast] =
+    useState<GlobalMarineOfficialForecast | null>(null);
+  const [selectedGlobalMarineOfficialLoading, setSelectedGlobalMarineOfficialLoading] = useState(false);
+  const [selectedGlobalMarineOfficialError, setSelectedGlobalMarineOfficialError] = useState<string | null>(null);
 
   const budget = useMemo(() => getMarineLayerBudget(mapZoom), [mapZoom]);
   const marineDataEnabled = isFocused && marineConditionsEnabled;
@@ -545,12 +579,17 @@ export function useMarineMapLayer(args: {
       setSelectedGlobalMarineConditions(null);
       setSelectedGlobalMarineLoading(false);
       setSelectedGlobalMarineError(null);
+      setSelectedGlobalMarineOfficialForecast(null);
+      setSelectedGlobalMarineOfficialLoading(false);
+      setSelectedGlobalMarineOfficialError(null);
       return;
     }
 
     const ac = new AbortController();
     setSelectedGlobalMarineLoading(true);
     setSelectedGlobalMarineError(null);
+    setSelectedGlobalMarineOfficialLoading(true);
+    setSelectedGlobalMarineOfficialError(null);
 
     fetchMarinePointConditions(selectedGlobalMarineArea.center.lat, selectedGlobalMarineArea.center.lon, ac.signal)
       .then((conditions) => {
@@ -564,6 +603,20 @@ export function useMarineMapLayer(args: {
       })
       .finally(() => {
         if (!ac.signal.aborted) setSelectedGlobalMarineLoading(false);
+      });
+
+    fetchGlobalMarineOfficialForecast(selectedGlobalMarineArea.id, ac.signal)
+      .then((forecast) => {
+        if (ac.signal.aborted) return;
+        setSelectedGlobalMarineOfficialForecast(forecast);
+      })
+      .catch((e: any) => {
+        if (ac.signal.aborted) return;
+        setSelectedGlobalMarineOfficialForecast(null);
+        setSelectedGlobalMarineOfficialError(e?.message ?? 'Official marine forecast unavailable');
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setSelectedGlobalMarineOfficialLoading(false);
       });
 
     return () => ac.abort();
@@ -581,6 +634,9 @@ export function useMarineMapLayer(args: {
     selectedGlobalMarineConditions,
     selectedGlobalMarineError,
     selectedGlobalMarineLoading,
+    selectedGlobalMarineOfficialError,
+    selectedGlobalMarineOfficialForecast,
+    selectedGlobalMarineOfficialLoading,
     selectedMarineBuoy,
     selectedMarineFeature,
     selectedMarineZone,

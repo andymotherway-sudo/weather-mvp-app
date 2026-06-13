@@ -5,7 +5,10 @@ import android.app.job.JobService
 
 class OmniwxWidgetRefreshJobService : JobService() {
   override fun onStartJob(params: JobParameters): Boolean {
-    OmniwxWidgetRefreshReceiver.refreshAll(applicationContext)
+    val hasWidgets = OmniwxWidgetRefreshReceiver.refreshAll(applicationContext)
+    if (hasWidgets) {
+      OmniwxWidgetScheduler.schedule(applicationContext)
+    }
     jobFinished(params, false)
     return false
   }

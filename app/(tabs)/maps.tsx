@@ -1232,6 +1232,7 @@ export default function MapsScreen() {
   const locateSeedRegionRef = useRef<Region | null>(null);
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
+  const lastSyncedActivePlaceRef = useRef<string | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
@@ -2278,6 +2279,72 @@ export default function MapsScreen() {
     });
   }, [routeFocusTarget, router]);
 
+  useEffect(() => {
+    if (!isFocused) return;
+    if (routeFocusTarget) return;
+    if (!activePlace || !Number.isFinite(activePlace.lat) || !Number.isFinite(activePlace.lon)) return;
+
+    const lat = Number(activePlace.lat);
+    const lon = Number(activePlace.lon);
+    const key = [
+      activePlace.source ?? 'place',
+      activePlace.id ?? activePlace.name ?? 'active',
+      lat.toFixed(4),
+      lon.toFixed(4),
+    ].join('|');
+
+    if (lastSyncedActivePlaceRef.current === key) return;
+    lastSyncedActivePlaceRef.current = key;
+
+    const latitudeDelta = clampNumber(
+      region?.latitudeDelta && Number.isFinite(region.latitudeDelta)
+        ? region.latitudeDelta
+        : stableInitialRegion.latitudeDelta,
+      0.05,
+      80,
+    );
+    const longitudeDelta = clampNumber(
+      region?.longitudeDelta && Number.isFinite(region.longitudeDelta)
+        ? region.longitudeDelta
+        : stableInitialRegion.longitudeDelta,
+      0.05,
+      80,
+    );
+    const nextRegion: Region = {
+      latitude: lat,
+      longitude: lon,
+      latitudeDelta,
+      longitudeDelta,
+      zoom: approxZoomFromLongitudeDelta(longitudeDelta),
+    };
+
+    setCameraDebugLabel(`active-place:${lat.toFixed(2)},${lon.toFixed(2)}`);
+    setRegion(nextRegion);
+    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+
+    try {
+      mapCameraRef.current?.setCamera?.({
+        centerCoordinate: [lon, lat],
+        zoomLevel: clampNumber(approxZoomFromLongitudeDelta(longitudeDelta), 2, 14),
+        animationDuration: 500,
+      });
+    } catch {
+      // Map camera may not be mounted on the first focus pass.
+    }
+  }, [
+    activePlace?.id,
+    activePlace?.lat,
+    activePlace?.lon,
+    activePlace?.name,
+    activePlace?.source,
+    isFocused,
+    region?.latitudeDelta,
+    region?.longitudeDelta,
+    routeFocusTarget,
+    stableInitialRegion.latitudeDelta,
+    stableInitialRegion.longitudeDelta,
+  ]);
+
   const effectiveRegion = region ?? stableInitialRegion;
   const {
     globalMarineAreasFc,
@@ -2291,6 +2358,9 @@ export default function MapsScreen() {
     selectedGlobalMarineConditions,
     selectedGlobalMarineError,
     selectedGlobalMarineLoading,
+    selectedGlobalMarineOfficialError,
+    selectedGlobalMarineOfficialForecast,
+    selectedGlobalMarineOfficialLoading,
     selectedMarineBuoy,
     selectedMarineFeature,
     selectedMarineZone,
@@ -2412,6 +2482,28 @@ export default function MapsScreen() {
       }),
     [activeFavoriteId, activePlace, favoriteTemperatures, mapFavoriteLocations, tempUnit],
   );
+  const currentGpsGeoJson = useMemo(() => {
+    const coords = loc.state.currentCoords;
+    if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lon)) {
+      return { type: 'FeatureCollection' as const, features: [] };
+    }
+
+    return {
+      type: 'FeatureCollection' as const,
+      features: [
+        {
+          type: 'Feature' as const,
+          properties: {
+            id: 'current-gps-location',
+          },
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [coords.lon, coords.lat],
+          },
+        },
+      ],
+    };
+  }, [loc.state.currentCoords]);
   const handleFavoriteTemperaturePress = useCallback(
     (e: any) => {
       const id = String(e?.features?.[0]?.properties?.id ?? e?.feature?.properties?.id ?? '');
@@ -4005,6 +4097,43 @@ export default function MapsScreen() {
               />
             </MapLibreGL.ShapeSource>
           ) : null}
+
+          {currentGpsGeoJson.features.length ? (
+            <MapLibreGL.ShapeSource id="current-gps-location-source" shape={currentGpsGeoJson as any}>
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-glow"
+                style={{
+                  circleColor: '#38bdf8',
+                  circleOpacity: ['interpolate', ['linear'], ['zoom'], 3, 0.18, 8, 0.24, 12, 0.28] as any,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 16, 7, 22, 12, 28] as any,
+                  circleBlur: 0.62,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-ring"
+                style={{
+                  circleColor: 'rgba(14,165,233,0.30)',
+                  circleOpacity: 0.9,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 9, 7, 12, 12, 15] as any,
+                  circleStrokeColor: 'rgba(224,242,254,0.92)',
+                  circleStrokeWidth: ['interpolate', ['linear'], ['zoom'], 3, 1.2, 8, 1.8, 12, 2.4] as any,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-dot"
+                style={{
+                  circleColor: '#7dd3fc',
+                  circleOpacity: 1,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 4.5, 7, 5.5, 12, 7] as any,
+                  circleStrokeColor: '#eff6ff',
+                  circleStrokeWidth: 1.4,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
         </MapRenderer>
 
         {animationRecordMode ? (
@@ -4864,12 +4993,41 @@ export default function MapsScreen() {
                   <View style={styles.fireDetailPills}>
                     <HudBadge label={selectedGlobalMarineArea.id.toUpperCase()} strong />
                     <HudBadge label="Official area" />
+                    {selectedGlobalMarineOfficialForecast?.status === 'ok' ? <HudBadge label="Official bulletin" /> : null}
+                    {selectedGlobalMarineOfficialForecast?.hazards.slice(0, 2).map((hazard) => (
+                      <HudBadge key={hazard.key} label={hazard.label} />
+                    ))}
                     <HudBadge label="Model point data" />
                   </View>
 
                   <Text style={styles.fireDetailMeta}>
-                    {selectedGlobalMarineArea.sourceLabel}. Conditions below are sampled from Open-Meteo Marine near the area center.
+                    {selectedGlobalMarineOfficialForecast?.status === 'ok'
+                      ? selectedGlobalMarineOfficialForecast.sourceLabel
+                      : selectedGlobalMarineArea.sourceLabel}
+                    . Model conditions are sampled from Open-Meteo Marine near the area center.
                   </Text>
+
+                  {selectedGlobalMarineOfficialLoading ? (
+                    <Text style={styles.fireDetailMeta}>Loading official high-seas bulletin...</Text>
+                  ) : selectedGlobalMarineOfficialForecast?.status === 'ok' ? (
+                    <>
+                      <Text style={styles.fireDetailMeta} numberOfLines={1}>
+                        {selectedGlobalMarineOfficialForecast.headline}
+                        {selectedGlobalMarineOfficialForecast.issuedAt
+                          ? ` - ${formatMarineUpdated(selectedGlobalMarineOfficialForecast.issuedAt)}`
+                          : ''}
+                      </Text>
+                      {selectedGlobalMarineOfficialForecast.summary ? (
+                        <Text style={styles.fireDetailMeta} numberOfLines={4}>
+                          {selectedGlobalMarineOfficialForecast.summary}
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text style={styles.fireDetailMeta} numberOfLines={2}>
+                      {selectedGlobalMarineOfficialError ?? 'Official bulletin is unavailable here right now; showing model sample.'}
+                    </Text>
+                  )}
 
                   <View style={styles.fireDetailRows}>
                     <View style={styles.fireDetailRow}>
@@ -4916,13 +5074,15 @@ export default function MapsScreen() {
                     </View>
                   </View>
 
-                  {selectedGlobalMarineArea.sourceUrl ? (
+                  {selectedGlobalMarineOfficialForecast?.sourceUrl ?? selectedGlobalMarineArea.sourceUrl ? (
                     <View style={styles.marineDetailActionRow}>
                       <Pressable
                         style={[styles.fireDetailClose, styles.marineDetailPrimary]}
-                        onPress={() => Linking.openURL(selectedGlobalMarineArea.sourceUrl!)}
+                        onPress={() =>
+                          Linking.openURL(selectedGlobalMarineOfficialForecast?.sourceUrl ?? selectedGlobalMarineArea.sourceUrl!)
+                        }
                       >
-                        <Text style={styles.fireDetailCloseText}>Official source</Text>
+                        <Text style={styles.fireDetailCloseText}>Official bulletin</Text>
                       </Pressable>
                     </View>
                   ) : null}
