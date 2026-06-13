@@ -128,4 +128,26 @@ describe('worker module', () => {
     expect(json.areas.some((area: any) => String(area.id).startsWith('metarea-'))).toBe(false);
     expect(json.areas.some((area: any) => area.boundarySource === 'official-metoffice')).toBe(true);
   });
+
+  it('returns a focused Met Office shipping forecast for UK sea areas', async () => {
+    const res = await worker.fetch(
+      new Request('https://omniwx.test/api/marine/official-forecast?id=metoffice-shipping-irish-sea'),
+      {} as any,
+      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.id).toBe('metoffice-shipping-irish-sea');
+    expect(json.name).toBe('Irish Sea');
+    expect(json.sourceLabel).toBe('Met Office Shipping Forecast');
+    expect(json.status).toBe('ok');
+    expect(json.headline).toBe('Irish Sea Shipping Forecast');
+    expect(json.text).toContain('Irish Sea');
+    expect(json.text).not.toContain('Wight\nWind');
+    expect(json.sections.map((section: any) => section.title)).toEqual(
+      expect.arrayContaining(['Wind', 'Sea state', 'Weather', 'Visibility']),
+    );
+  }, 15000);
 });

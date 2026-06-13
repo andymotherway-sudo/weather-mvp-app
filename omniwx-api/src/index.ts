@@ -1054,11 +1054,11 @@ const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
 const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 const MARINE_AREAS_TTL_SECONDS = 15 * 60;
 const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
-const MARINE_AREAS_VERSION = "official-curated-marine-areas-v4";
+const MARINE_AREAS_VERSION = "official-curated-marine-areas-v5";
 const MARINE_SOURCES_VERSION = "marine-sources-v1";
 const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
 const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
-const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v2";
+const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v3";
 const AVIATION_OVERLAYS_TTL_SECONDS = 5 * 60;
 const AVIATION_OVERLAYS_STALE_SECONDS = 30 * 60;
 const AVIATION_OVERLAYS_VERSION = "aviation-overlays-na-v1";
@@ -2571,6 +2571,10 @@ function fetchOfficialBomMarineAreas(
   }).filter((area) => marineAreaIntersects(area, viewport));
 }
 
+function formatMetOfficeShippingAreaName(name: string) {
+  return name.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
 function fetchOfficialMetOfficeMarineAreas(
   viewport: { west: number; south: number; east: number; north: number },
   zoom: number,
@@ -2579,7 +2583,7 @@ function fetchOfficialMetOfficeMarineAreas(
 
   return UK_SHIPPING_FORECAST_ZONES.map((zone) => ({
     id: zone.id,
-    name: zone.name,
+    name: formatMetOfficeShippingAreaName(zone.name),
     region: "UK Shipping Forecast sea area",
     kind: "offshore" as MarineAreaKind,
     center: zone.center,
@@ -2589,7 +2593,7 @@ function fetchOfficialMetOfficeMarineAreas(
     sourceUrl: "https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/research/library-and-archive/library/publications/factsheets/factsheet_8_shipping_forecast_2025.pdf",
     boundarySource: "official-metoffice" as const,
     precision: "official" as const,
-    officialForecastId: "metarea-i",
+    officialForecastId: zone.id,
     parentId: "metarea-i",
     priority: 133,
   })).filter((area) => marineAreaIntersects(area, viewport));
@@ -2688,7 +2692,53 @@ const METAREA_NUMBERS: Record<string, string> = {
 
 function findGlobalMarineArea(id: string): MarineAreaSummary | null {
   const normalized = id.trim().toLowerCase();
-  return GLOBAL_MARINE_AREAS.find((area) => area.id.toLowerCase() === normalized) ?? null;
+  const globalArea = GLOBAL_MARINE_AREAS.find((area) => area.id.toLowerCase() === normalized);
+  if (globalArea) return globalArea;
+
+  const curatedArea = CURATED_MARINE_FORECAST_AREAS.find((area) => area.id.toLowerCase() === normalized);
+  if (curatedArea) return curatedArea;
+
+  const bomZone = BOM_MARINE_ZONES.find((zone) => zone.id.toLowerCase() === normalized);
+  if (bomZone) {
+    return {
+      id: bomZone.id,
+      name: bomZone.name,
+      region: [bomZone.state, bomZone.zoneType].filter(Boolean).join(" - ") || "Australian marine forecast zone",
+      kind: String(bomZone.zoneType ?? "").toLowerCase().includes("offshore") ? "offshore" : "coastal",
+      center: bomZone.center,
+      bounds: bomZone.bounds,
+      geometry: bomZone.geometry as unknown as MarineAreaGeometry,
+      sourceLabel: "Official Bureau of Meteorology marine forecast zone",
+      sourceUrl: "ftp://ftp.bom.gov.au/anon/home/adfd/spatial/IDM00003.*",
+      boundarySource: "official-bom",
+      precision: "official",
+      officialForecastId: "metarea-x",
+      parentId: "metarea-x",
+      priority: 134,
+    };
+  }
+
+  const ukZone = UK_SHIPPING_FORECAST_ZONES.find((zone) => zone.id.toLowerCase() === normalized);
+  if (ukZone) {
+    return {
+      id: ukZone.id,
+      name: formatMetOfficeShippingAreaName(ukZone.name),
+      region: "UK Shipping Forecast sea area",
+      kind: "offshore",
+      center: ukZone.center,
+      bounds: ukZone.bounds,
+      geometry: ukZone.geometry as unknown as MarineAreaGeometry,
+      sourceLabel: "Met Office Shipping Forecast sea area (Fact Sheet 8 coordinates)",
+      sourceUrl: "https://weather.metoffice.gov.uk/specialist-forecasts/coast-and-sea/shipping-forecast",
+      boundarySource: "official-metoffice",
+      precision: "official",
+      officialForecastId: ukZone.id,
+      parentId: "metarea-i",
+      priority: 133,
+    };
+  }
+
+  return null;
 }
 
 function officialMarineSourceForArea(area: MarineAreaSummary) {
@@ -2714,6 +2764,95 @@ function officialMarineSourceForArea(area: MarineAreaSummary) {
   }
 
   return null;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeMarineHeading(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function extractMetOfficeShippingCard(html: string, areaName: string) {
+  const h2Pattern = /<h2[^>]*class="[^"]*\bcard-name\b[^"]*"[^>]*>([\s\S]*?)<\/h2>/gi;
+  const headings: Array<{ name: string; start: number; end: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = h2Pattern.exec(html))) {
+    headings.push({
+      name: stripHtml(match[1]),
+      start: match.index,
+      end: h2Pattern.lastIndex,
+    });
+  }
+
+  const requested = normalizeMarineHeading(areaName);
+  const idx = headings.findIndex((heading) => normalizeMarineHeading(heading.name) === requested);
+  if (idx < 0) return null;
+
+  const start = headings[idx].start;
+  const end = idx + 1 < headings.length ? headings[idx + 1].start : html.length;
+  return html.slice(start, end);
+}
+
+function metOfficeForecastLine(text: string, label: string) {
+  const rx = new RegExp(`(?:^|\\n)${escapeRegExp(label)}\\n([^\\n]+(?:\\n(?!Wind\\n|Sea state\\n|Weather\\n|Visibility\\n|Gale warning\\n|Forecast issue time\\n)[^\\n]+)*)`, "i");
+  const raw = text.match(rx)?.[1]?.trim();
+  return raw ? raw.replace(/\n+/g, " ").replace(/\s+/g, " ").slice(0, 500) : null;
+}
+
+function buildMetOfficeShippingSections(areaName: string, text: string): MarineOfficialForecastSection[] {
+  const fields = [
+    ["wind", "Wind"],
+    ["sea-state", "Sea state"],
+    ["weather", "Weather"],
+    ["visibility", "Visibility"],
+    ["gale-warning", "Gale warning"],
+  ] as const;
+
+  const sections: MarineOfficialForecastSection[] = [];
+  for (const [key, label] of fields) {
+    const value = metOfficeForecastLine(text, label);
+    if (!value || /^no gale warning$/i.test(value)) continue;
+    sections.push({
+      key: `${key}-1`,
+      title: label,
+      kind: key === "gale-warning" ? "warning" : "forecast",
+      summary: value.slice(0, 240),
+      text: value,
+      areaHint: areaName,
+    });
+  }
+  return sections;
+}
+
+async function buildMetOfficeShippingForecastPayload(area: MarineAreaSummary): Promise<MarineOfficialForecastResponse> {
+  const url = "https://weather.metoffice.gov.uk/specialist-forecasts/coast-and-sea/shipping-forecast";
+  const raw = await fetchTextWithTimeout(url, 9000, {
+    Accept: "text/html,text/plain;q=0.9,*/*;q=0.5",
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const card = extractMetOfficeShippingCard(raw, area.name);
+  const text = card ? cleanMarineBulletinText(card) : "";
+  const useful = text.length >= 40;
+  const sections = useful ? buildMetOfficeShippingSections(area.name, text) : [];
+
+  return {
+    ok: true,
+    id: area.id,
+    name: area.name,
+    region: area.region,
+    sourceLabel: "Met Office Shipping Forecast",
+    sourceUrl: url,
+    issuedAt: useful ? extractMarineIssuedAt(text) : null,
+    fetchedAt: new Date().toISOString(),
+    headline: `${area.name} Shipping Forecast`,
+    summary: useful ? summarizeMarineBulletin(text) : null,
+    text: useful ? text : null,
+    hazards: useful ? extractMarineHazards(text) : [],
+    sections,
+    status: useful ? "ok" : "not_available",
+  };
 }
 
 function cleanMarineBulletinText(value: string) {
@@ -2873,6 +3012,10 @@ function extractMarineBulletinSections(text: string): MarineOfficialForecastSect
 async function buildMarineOfficialForecastPayload(id: string): Promise<MarineOfficialForecastResponse> {
   const area = findGlobalMarineArea(id);
   if (!area) throw new Error("Unknown marine area");
+
+  if (area.boundarySource === "official-metoffice") {
+    return buildMetOfficeShippingForecastPayload(area);
+  }
 
   const source = officialMarineSourceForArea(area);
   if (!source) {
