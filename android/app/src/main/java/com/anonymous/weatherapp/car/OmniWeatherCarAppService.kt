@@ -63,6 +63,7 @@ private const val PLACE_STORAGE_KEY = "omniwx.place.v2"
 private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
 private const val OMNIWX_RADAR_WORKER_BASE = "https://omniwx-api.omniwx.workers.dev"
+private const val CAR_RADAR_RETRY_MS = 2 * 60 * 1000L
 
 /*
  * Android Auto entry point for OMNIwx.
@@ -444,16 +445,14 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
-  @Volatile private var radarLoading = false
-  @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
-  @Volatile private var radarTimestamp: String? = null
-  @Volatile private var radarError: String? = null
-  private val radarLock = Any()
+  private val radarSurfaceRenderer = CarRadarSurfaceRenderer(repository)
 
   init {
+    carContext.getCarService(AppManager::class.java).setSurfaceCallback(radarSurfaceRenderer)
     lifecycle.addObserver(object : DefaultLifecycleObserver {
       override fun onDestroy(owner: LifecycleOwner) {
-        releaseRadarTiles()
+        carContext.getCarService(AppManager::class.java).setSurfaceCallback(EmptyCarSurfaceCallback)
+        radarSurfaceRenderer.release()
       }
     })
   }
@@ -463,18 +462,13 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       ensureLoaded()
       loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
-      fetchRadarIfNeeded(force = false)
-
-      val snapshot = synchronized(radarLock) {
-        carRadarSnapshotIcon(current, radarTiles, radarLoading, radarError)
-      }
+      radarSurfaceRenderer.ensureLoaded()
       val pane = Pane.Builder()
-        .setImage(snapshot)
         .addRow(
           Row.Builder()
             .setTitle("Radar near ${current.placeName}")
             .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
-            .addText(radarTimestamp ?: if (radarLoading) "Loading latest radar" else "Static radar snapshot")
+            .addText(radarSurfaceRenderer.statusText())
             .build()
         )
         .addRow(
@@ -485,10 +479,14 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
         )
         .build()
 
-      PaneTemplate.Builder(pane)
-        .setTitle("Radar Snapshot")
-        .setHeaderAction(Action.BACK)
-        .setActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
+      MapTemplate.Builder()
+        .setHeader(Header.Builder().setTitle("Radar Snapshot").setStartHeaderAction(Action.BACK).build())
+        .setPane(pane)
+        .setMapController(
+          MapController.Builder()
+            .setMapActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
+            .build()
+        )
         .build()
     }
   }
@@ -498,57 +496,13 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .setTitle("Refresh")
       .setOnClickListener {
         repository.load(force = true) {
-          fetchRadarIfNeeded(force = true)
+          radarSurfaceRenderer.requestRefresh()
           invalidate()
         }
-        fetchRadarIfNeeded(force = true)
+        radarSurfaceRenderer.requestRefresh()
         invalidate()
       }
       .build()
-  }
-
-  private fun fetchRadarIfNeeded(force: Boolean) {
-    val report = repository.report ?: return
-    if (radarLoading) return
-    if (!force && synchronized(radarLock) { radarTiles.isNotEmpty() }) return
-
-    radarLoading = true
-    radarError = null
-    invalidate()
-
-    thread(name = "omniwx-car-radar-snapshot") {
-      try {
-        val ts = latestRainViewerTimestamp()
-        val tiles = fetchRadarTileMosaic(report.latitude, report.longitude, ts)
-        val oldTiles = synchronized(radarLock) {
-          val old = radarTiles
-          radarTiles = tiles
-          radarTimestamp = radarAgeLabel(ts)
-          radarError = if (tiles.isEmpty()) "Radar unavailable" else null
-          old
-        }
-        oldTiles.forEach { runCatching { it.bitmap.recycle() } }
-      } catch (_: Exception) {
-        synchronized(radarLock) {
-          radarError = "Radar unavailable"
-          radarTimestamp = null
-        }
-      } finally {
-        radarLoading = false
-        Handler(Looper.getMainLooper()).post { invalidate() }
-      }
-    }
-  }
-
-  private fun releaseRadarTiles() {
-    val oldTiles = synchronized(radarLock) {
-      val old = radarTiles
-      radarTiles = emptyList()
-      radarTimestamp = null
-      radarError = null
-      old
-    }
-    oldTiles.forEach { runCatching { it.bitmap.recycle() } }
   }
 }
 
@@ -579,6 +533,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
   @Volatile private var radarTimestamp: String? = null
   @Volatile private var radarError: String? = null
+  @Volatile private var radarLastAttemptMs: Long = 0L
   private val tileLock = Any()
 
   override fun onSurfaceAvailable(surfaceContainer: SurfaceContainer) {
@@ -607,6 +562,16 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
     fetchRadarIfNeeded(force = true)
   }
 
+  fun ensureLoaded() {
+    fetchRadarIfNeeded(force = false)
+  }
+
+  fun statusText(): String {
+    return synchronized(tileLock) {
+      radarTimestamp ?: radarError ?: if (fetchInFlight) "Loading latest radar" else "Static radar snapshot"
+    }
+  }
+
   fun release() {
     // Bitmaps are native memory. Recycle them when the screen goes away so the
     // car app does not keep stale radar tile memory alive.
@@ -615,6 +580,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
       radarTiles = emptyList()
       radarTimestamp = null
       radarError = null
+      radarLastAttemptMs = 0L
       old
     }
     oldTiles.forEach { runCatching { it.bitmap.recycle() } }
@@ -625,6 +591,12 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
     // without this guard a refresh could start several tile mosaics at once.
     if (fetchInFlight || repository.report == null) return
     if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
+    val now = System.currentTimeMillis()
+    if (!force && radarLastAttemptMs > 0L && now - radarLastAttemptMs < CAR_RADAR_RETRY_MS) {
+      draw()
+      return
+    }
+    radarLastAttemptMs = now
     fetchInFlight = true
     thread(name = "omniwx-car-radar") {
       try {
@@ -637,7 +609,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
           val old = radarTiles
           radarTiles = tiles
           radarTimestamp = radarAgeLabel(ts)
-          radarError = null
+          radarError = if (tiles.isEmpty()) "Radar unavailable. Tap Refresh to try again." else null
           old
         }
         oldTiles.forEach { runCatching { it.bitmap.recycle() } }

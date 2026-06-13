@@ -12,6 +12,7 @@ export type GlobalCapabilityProduct =
   | 'marine-extremes'
   | 'maps-radar'
   | 'maps-satellite'
+  | 'aviation'
   | 'alerts'
   | 'space-weather'
   | 'water-stations';

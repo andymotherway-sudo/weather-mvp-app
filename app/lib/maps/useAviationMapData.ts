@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type GeoJsonFeatureCollection = {
@@ -457,6 +458,24 @@ async function fetchGeoJson(path: string) {
   return asFeatureCollection(json);
 }
 
+async function fetchWorkerAviationOverlays() {
+  const res = await fetchWithTimeout(apiUrl('/api/aviation/overlays?region=north-america'), 15000, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!res.ok) throw new Error(`Worker aviation overlays failed (${res.status})`);
+
+  const json = await res.json().catch(() => null);
+  if (!json?.ok || !json?.products) throw new Error('Worker aviation overlays response was malformed');
+
+  return {
+    products: json.products as Record<string, any>,
+    errors: Array.isArray(json.errors) ? json.errors.map(String) : [],
+  };
+}
+
 export function useAviationMapData(enabled: boolean) {
   const [gairmet, setGairmet] = useState<GeoJsonFeatureCollection>(EMPTY_FC);
   const [airsigmet, setAirsigmet] = useState<GeoJsonFeatureCollection>(EMPTY_FC);
@@ -480,12 +499,27 @@ export function useAviationMapData(enabled: boolean) {
       setError(null);
 
       try {
+        try {
+          const worker = await fetchWorkerAviationOverlays();
+          if (cancelled) return;
+
+          setGairmet(normalizeFeatureCollection(worker.products.gairmet, 'gairmet'));
+          setAirsigmet(normalizeFeatureCollection(worker.products.airsigmet, 'airsigmet'));
+          setCwa(normalizeFeatureCollection(worker.products.cwa, 'cwa'));
+          setPirep(normalizeFeatureCollection(worker.products.pirep, 'pirep'));
+          setMetar(normalizeFeatureCollection(worker.products.metar, 'metar'));
+          setError(worker.errors.length ? `Partial aviation data: ${worker.errors.join(' / ')}` : null);
+          return;
+        } catch {
+          // Fall back to direct AWC calls for older worker deployments or transient worker failures.
+        }
+
         const results = await Promise.allSettled([
           fetchGeoJson('/gairmet?format=geojson'),
           fetchGeoJson('/airsigmet?format=geojson'),
           fetchGeoJson('/cwa?format=geojson'),
-          fetchGeoJson('/pirep?format=geojson&bbox=20,-130,55,-60'),
-          fetchGeoJson('/metar?format=geojson&hours=2'),
+          fetchGeoJson('/pirep?format=geojson&bbox=7,-170,84,-50'),
+          fetchGeoJson('/metar?format=geojson&hours=2&bbox=7,-170,84,-50'),
         ]);
 
         if (cancelled) return;

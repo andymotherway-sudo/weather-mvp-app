@@ -20,6 +20,7 @@
 // - Retains unrelated routes and logic
 
 import { lookupBortle } from "./bortleLookup";
+import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 
 const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
@@ -351,7 +352,7 @@ type MarineAreaSummary = {
   geometry?: MarineAreaGeometry;
   sourceLabel: string;
   sourceUrl?: string;
-  boundarySource?: "official-nws" | "curated" | "metarea-context";
+  boundarySource?: "official-nws" | "official-eccc" | "official-bom" | "curated" | "metarea-context";
   precision?: "official" | "curated" | "context";
   officialForecastId?: string;
   parentId?: string;
@@ -368,6 +369,7 @@ type MarineAreasResponse = {
     zoom: number;
     viewport: { west: number; south: number; east: number; north: number };
     ttlSeconds: number;
+    includeContext?: boolean;
   };
   areas: Omit<MarineAreaSummary, "priority">[];
 };
@@ -447,6 +449,24 @@ type MarineExtremesResponse = {
   groups: MarineExtremeGroup[];
 };
 
+type MarineBoundarySource = {
+  id: string;
+  label: string;
+  countryOrRegion: string;
+  agency: string;
+  status: "active" | "candidate" | "model-only" | "context-only";
+  boundarySource?: NonNullable<MarineAreaSummary["boundarySource"]>;
+  endpoint?: string;
+  notes: string[];
+};
+
+type MarineSourcesResponse = {
+  ok: true;
+  version: string;
+  generatedAt: string;
+  sources: MarineBoundarySource[];
+};
+
 type GlobalCapabilityCoverage = "global" | "regional" | "us-only" | "curated-global" | "mixed";
 
 type GlobalCapability = {
@@ -459,6 +479,7 @@ type GlobalCapability = {
     | "marine-extremes"
     | "maps-radar"
     | "maps-satellite"
+    | "aviation"
     | "alerts"
     | "space-weather"
     | "water-stations";
@@ -476,6 +497,23 @@ type GlobalCapabilitiesResponse = {
   version: string;
   generatedAt: string;
   products: GlobalCapability[];
+};
+
+type AviationOverlayRegion = "north-america";
+
+type AviationOverlaysResponse = {
+  ok: true;
+  version: string;
+  region: AviationOverlayRegion;
+  source: "aviationweather.gov";
+  updatedAt: string;
+  bbox: { south: number; west: number; north: number; east: number };
+  products: Record<"gairmet" | "airsigmet" | "cwa" | "pirep" | "metar", any>;
+  errors: string[];
+  meta: {
+    ttlSeconds: number;
+    staleSeconds: number;
+  };
 };
 
 type FireHotspotsResponse = {
@@ -1015,11 +1053,15 @@ const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
 const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 const MARINE_AREAS_TTL_SECONDS = 15 * 60;
 const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
-const MARINE_AREAS_VERSION = "official-curated-marine-areas-v1";
+const MARINE_AREAS_VERSION = "official-curated-marine-areas-v3";
+const MARINE_SOURCES_VERSION = "marine-sources-v1";
 const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
 const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
 const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v2";
-const GLOBAL_CAPABILITIES_VERSION = "global-capabilities-v1";
+const AVIATION_OVERLAYS_TTL_SECONDS = 5 * 60;
+const AVIATION_OVERLAYS_STALE_SECONDS = 30 * 60;
+const AVIATION_OVERLAYS_VERSION = "aviation-overlays-na-v1";
+const GLOBAL_CAPABILITIES_VERSION = "global-capabilities-v2";
 
 function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
   return {
@@ -1104,6 +1146,16 @@ function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
         staleSeconds: ASTRO_STALE_SECONDS,
       },
       {
+        id: "aviation",
+        label: "Aviation weather",
+        coverage: "regional",
+        source: "NOAA Aviation Weather Center",
+        endpoint: "/api/aviation/overlays",
+        ttlSeconds: AVIATION_OVERLAYS_TTL_SECONDS,
+        staleSeconds: AVIATION_OVERLAYS_STALE_SECONDS,
+        notes: ["North America is prioritized first: US, Canada, Mexico, and nearby oceanic routes."],
+      },
+      {
         id: "alerts",
         label: "Weather alerts",
         coverage: "mixed",
@@ -1129,6 +1181,79 @@ function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
         endpoint: "/api/usgs/water-stations",
         ttlSeconds: USGS_WATER_STATIONS_TTL_SECONDS,
         staleSeconds: USGS_WATER_STATIONS_STALE_SECONDS,
+      },
+    ],
+  };
+}
+
+function buildMarineSourcesPayload(): MarineSourcesResponse {
+  return {
+    ok: true,
+    version: MARINE_SOURCES_VERSION,
+    generatedAt: new Date().toISOString(),
+    sources: [
+      {
+        id: "official-nws",
+        label: "NOAA/NWS marine forecast zones",
+        countryOrRegion: "United States and adjacent waters",
+        agency: "NOAA / National Weather Service",
+        status: "active",
+        boundarySource: "official-nws",
+        endpoint: "/api/marine/areas",
+        notes: ["Coastal, offshore, and high-seas GIS polygons are preferred where the NWS reference service returns geometry."],
+      },
+      {
+        id: "official-eccc",
+        label: "ECCC/MSC marine forecast zones",
+        countryOrRegion: "Canada",
+        agency: "Environment and Climate Change Canada / Meteorological Service of Canada",
+        status: "active",
+        boundarySource: "official-eccc",
+        endpoint: "/api/marine/areas",
+        notes: ["Marine Standard Forecast Zones are queried from the official GeoMet OGC API."],
+      },
+      {
+        id: "official-bom",
+        label: "BoM marine forecast zones",
+        countryOrRegion: "Australia",
+        agency: "Australian Bureau of Meteorology",
+        status: "active",
+        boundarySource: "official-bom",
+        endpoint: "/api/marine/areas",
+        notes: ["Generated from BoM public spatial dataset IDM00003 and served as official map geometry."],
+      },
+      {
+        id: "candidate-metoffice",
+        label: "UK shipping and inshore waters",
+        countryOrRegion: "United Kingdom and nearby waters",
+        agency: "Met Office",
+        status: "candidate",
+        notes: ["Official text products exist; do not draw polygons until an authoritative Met Office or UK government boundary dataset is verified."],
+      },
+      {
+        id: "candidate-smn-semar",
+        label: "Mexico marine forecast areas",
+        countryOrRegion: "Mexico",
+        agency: "SMN / SEMAR",
+        status: "candidate",
+        notes: ["Prioritize official coastal/offshore geometry if available; otherwise use model points and official bulletin links without drawn forecast zones."],
+      },
+      {
+        id: "open-meteo-marine",
+        label: "Open-Meteo Marine model grid",
+        countryOrRegion: "Global ocean",
+        agency: "Open-Meteo",
+        status: "model-only",
+        notes: ["Use for sampled wave, wind, sea temperature, current, and sea-level conditions. Do not present model points as official forecast zones."],
+      },
+      {
+        id: "wmo-metarea",
+        label: "WMO/IMO METAREA bulletins",
+        countryOrRegion: "Global high seas",
+        agency: "WMO / IMO national issuing services",
+        status: "context-only",
+        boundarySource: "metarea-context",
+        notes: ["Use for high-seas bulletin context only. METAREA polygons are intentionally excluded from the default marine map."],
       },
     ],
   };
@@ -2246,6 +2371,14 @@ function officialForecastIdForNwsMarineZone(kind: MarineAreaKind, center: { lat:
   return undefined;
 }
 
+function officialForecastIdForCanadianMarineZone(center: { lat: number; lon: number }) {
+  if (center.lat >= 60 && center.lon <= -100) return "metarea-xvii";
+  if (center.lat >= 60) return "metarea-xviii";
+  if (center.lon <= -123) return "metarea-xii";
+  if (center.lon >= -72) return "metarea-iv";
+  return undefined;
+}
+
 async function fetchOfficialNwsMarineAreas(
   viewport: { west: number; south: number; east: number; north: number },
   zoom: number,
@@ -2328,10 +2461,128 @@ async function fetchOfficialNwsMarineAreas(
   return [...new Map(results.map((area) => [area.id, area] as const)).values()];
 }
 
-async function buildMarineAreasPayload(viewport: { west: number; south: number; east: number; north: number }, zoom: number): Promise<MarineAreasResponse> {
-  const limit = zoom < 3 ? 10 : zoom < 5 ? 22 : 42;
-  const officialAreas = await fetchOfficialNwsMarineAreas(viewport, zoom);
-  const areas = [...officialAreas, ...CURATED_MARINE_FORECAST_AREAS, ...GLOBAL_MARINE_AREAS]
+async function fetchOfficialEcccMarineAreas(
+  viewport: { west: number; south: number; east: number; north: number },
+  zoom: number,
+): Promise<MarineAreaSummary[]> {
+  if (zoom < 3.2 || viewport.north < 39 || viewport.south > 84) return [];
+
+  const ranges = longitudeRanges(viewport.west, viewport.east);
+  const limitPerRange = zoom < 5 ? 35 : zoom < 7 ? 80 : 140;
+  const results: MarineAreaSummary[] = [];
+
+  for (const [west, east] of ranges) {
+    if (east < -142 || west > -40) continue;
+
+    const params = new URLSearchParams({
+      f: "json",
+      lang: "en",
+      limit: String(limitPerRange),
+      bbox: `${west},${viewport.south},${east},${viewport.north}`,
+    });
+    const requestUrl = `https://api.weather.gc.ca/collections/marine-standard-forecast-zones/items?${params.toString()}`;
+
+    try {
+      const json = await fetchJsonWithTimeout(requestUrl, 8500, {
+        accept: "application/geo+json, application/json",
+        "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+      });
+      const features = Array.isArray(json?.features) ? json.features : [];
+
+      for (const feature of features) {
+        const props = (feature?.properties ?? {}) as Record<string, any>;
+        const geometry = feature?.geometry as MarineAreaGeometry | undefined;
+        if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) continue;
+
+        const bounds = geometryBounds(geometry);
+        if (!bounds) continue;
+
+        const featureId = marineAttrString(props, ["FEATURE_ID", "feature_id", "id"]) ?? marineAttrString(props, ["CLC"]);
+        const clc = marineAttrString(props, ["CLC"]);
+        const name = marineAttrString(props, ["NAME", "name"]) ?? "ECCC marine forecast zone";
+        const waterKind = marineAttrString(props, ["KIND"]);
+        if (waterKind && waterKind.toLowerCase() !== "water") continue;
+
+        const lat = Number(props.LAT_DD ?? props.lat);
+        const lon = Number(props.LON_DD ?? props.lon);
+        const center = {
+          lat: Number.isFinite(lat) ? lat : (bounds.south + bounds.north) / 2,
+          lon: Number.isFinite(lon) ? lon : (bounds.west + bounds.east) / 2,
+        };
+        const officialForecastId = officialForecastIdForCanadianMarineZone(center);
+        const stableId = String(featureId ?? clc ?? name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+        if (!stableId) continue;
+
+        results.push({
+          id: `eccc-marine-${stableId}`,
+          name,
+          region: clc ? `ECCC ${clc}` : "ECCC marine forecast zone",
+          kind: center.lat >= 60 ? "offshore" : "coastal",
+          center,
+          bounds,
+          geometry,
+          sourceLabel: "Official ECCC / MSC marine forecast zone",
+          sourceUrl: "https://api.weather.gc.ca/collections/marine-standard-forecast-zones",
+          boundarySource: "official-eccc",
+          precision: "official",
+          officialForecastId,
+          parentId: officialForecastId,
+          priority: 134,
+        });
+      }
+    } catch {
+      // Keep the global METAREA layer available if the Canadian OGC API is slow.
+    }
+  }
+
+  return [...new Map(results.map((area) => [area.id, area] as const)).values()];
+}
+
+function fetchOfficialBomMarineAreas(
+  viewport: { west: number; south: number; east: number; north: number },
+  zoom: number,
+): MarineAreaSummary[] {
+  if (zoom < 3.2 || viewport.north < -45 || viewport.south > -5) return [];
+
+  return BOM_MARINE_ZONES.map((zone) => {
+    const zoneType = String(zone.zoneType ?? "").toLowerCase();
+    const kind: MarineAreaKind = zoneType.includes("offshore") ? "offshore" : "coastal";
+    const regionParts = [zone.state, zone.zoneType, zone.pointA && zone.pointB ? `${zone.pointA} to ${zone.pointB}` : null].filter(Boolean);
+    return {
+      id: zone.id,
+      name: zone.name,
+      region: regionParts.join(" - ") || "Australian marine forecast zone",
+      kind,
+      center: zone.center,
+      bounds: zone.bounds,
+      geometry: zone.geometry as unknown as MarineAreaGeometry,
+      sourceLabel: "Official Bureau of Meteorology marine forecast zone",
+      sourceUrl: "ftp://ftp.bom.gov.au/anon/home/adfd/spatial/IDM00003.*",
+      boundarySource: "official-bom",
+      precision: "official",
+      officialForecastId: "metarea-x",
+      parentId: "metarea-x",
+      priority: 134,
+    } satisfies MarineAreaSummary;
+  }).filter((area) => marineAreaIntersects(area, viewport));
+}
+
+async function buildMarineAreasPayload(
+  viewport: { west: number; south: number; east: number; north: number },
+  zoom: number,
+  includeContext = false,
+): Promise<MarineAreasResponse> {
+  const limit = zoom < 3 ? 10 : zoom < 5 ? 28 : zoom < 7 ? 64 : 96;
+  const [officialNwsAreas, officialEcccAreas] = await Promise.all([
+    fetchOfficialNwsMarineAreas(viewport, zoom),
+    fetchOfficialEcccMarineAreas(viewport, zoom),
+  ]);
+  const officialBomAreas = fetchOfficialBomMarineAreas(viewport, zoom);
+  const candidateAreas = includeContext
+    ? [...officialNwsAreas, ...officialEcccAreas, ...officialBomAreas, ...CURATED_MARINE_FORECAST_AREAS, ...GLOBAL_MARINE_AREAS]
+    : [...officialNwsAreas, ...officialEcccAreas, ...officialBomAreas];
+  const areas = candidateAreas
     .map((area) => ({
       ...area,
       boundarySource: area.boundarySource ?? "metarea-context",
@@ -2356,6 +2607,7 @@ async function buildMarineAreasPayload(viewport: { west: number; south: number; 
       zoom,
       viewport,
       ttlSeconds: MARINE_AREAS_TTL_SECONDS,
+      includeContext,
     },
     areas,
   };
@@ -4787,6 +5039,74 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number, headers?: Re
   } finally {
     clearTimeout(t);
   }
+}
+
+const AVIATION_NORTH_AMERICA_BBOX = { south: 7, west: -170, north: 84, east: -50 } as const;
+
+function emptyFeatureCollection() {
+  return { type: "FeatureCollection", features: [] as any[] };
+}
+
+function asWorkerFeatureCollection(value: any) {
+  if (value?.type === "FeatureCollection" && Array.isArray(value.features)) {
+    return { type: "FeatureCollection", features: value.features.filter(Boolean) };
+  }
+  return emptyFeatureCollection();
+}
+
+async function fetchAwcFeatureCollection(path: string) {
+  const url = `https://aviationweather.gov/api/data${path}`;
+  const json = await fetchJsonWithTimeout(url, 12000, {
+    accept: "application/geo+json, application/json",
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  return asWorkerFeatureCollection(json);
+}
+
+async function buildAviationOverlaysPayload(region: AviationOverlayRegion): Promise<AviationOverlaysResponse> {
+  const bbox = AVIATION_NORTH_AMERICA_BBOX;
+  const bboxParam = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+  const requests: Array<[keyof AviationOverlaysResponse["products"], string]> = [
+    ["gairmet", "/gairmet?format=geojson"],
+    ["airsigmet", "/airsigmet?format=geojson"],
+    ["cwa", "/cwa?format=geojson"],
+    ["pirep", `/pirep?format=geojson&bbox=${encodeURIComponent(bboxParam)}`],
+    ["metar", `/metar?format=geojson&hours=2&bbox=${encodeURIComponent(bboxParam)}`],
+  ];
+
+  const settled = await Promise.allSettled(requests.map(([, path]) => fetchAwcFeatureCollection(path)));
+  const products = {
+    gairmet: emptyFeatureCollection(),
+    airsigmet: emptyFeatureCollection(),
+    cwa: emptyFeatureCollection(),
+    pirep: emptyFeatureCollection(),
+    metar: emptyFeatureCollection(),
+  };
+  const errors: string[] = [];
+
+  settled.forEach((result, index) => {
+    const [key] = requests[index];
+    if (result.status === "fulfilled") {
+      products[key] = result.value;
+    } else {
+      errors.push(`${key}: ${String(result.reason?.message ?? result.reason ?? "failed")}`);
+    }
+  });
+
+  return {
+    ok: true,
+    version: AVIATION_OVERLAYS_VERSION,
+    region,
+    source: "aviationweather.gov",
+    updatedAt: new Date().toISOString(),
+    bbox,
+    products,
+    errors,
+    meta: {
+      ttlSeconds: AVIATION_OVERLAYS_TTL_SECONDS,
+      staleSeconds: AVIATION_OVERLAYS_STALE_SECONDS,
+    },
+  };
 }
 
 async function swrFetchObject<T>(
@@ -8063,6 +8383,41 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/marine/sources" || url.pathname === "/v1/marine/sources") {
+      const payload = buildMarineSourcesPayload();
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=900, stale-while-revalidate=3600",
+        }),
+      });
+    }
+
+    if (url.pathname === "/api/aviation/overlays" || url.pathname === "/v1/aviation/overlays") {
+      const regionParam = String(url.searchParams.get("region") ?? "north-america").toLowerCase();
+      const region: AviationOverlayRegion = regionParam === "north-america" ? "north-america" : "north-america";
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/aviation/overlays";
+      cacheKeyUrl.search = "";
+      cacheKeyUrl.searchParams.set("region", region);
+      cacheKeyUrl.searchParams.set("v", AVIATION_OVERLAYS_VERSION);
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: AVIATION_OVERLAYS_TTL_SECONDS,
+        staleSeconds: AVIATION_OVERLAYS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildAviationOverlaysPayload(region);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
     if (url.pathname === "/api/alerts/global" || url.pathname === "/v1/alerts/global") {
       const lat = Number(url.searchParams.get("lat"));
       const lon = Number(url.searchParams.get("lon"));
@@ -8133,6 +8488,10 @@ export default {
       const east = Number(url.searchParams.get("east"));
       const north = Number(url.searchParams.get("north"));
       const zoom = clampFloat(Number(url.searchParams.get("zoom") ?? "3"), 0, 18, 3);
+      const includeContext =
+        url.searchParams.get("includeContext") === "1" ||
+        url.searchParams.get("includeMetareas") === "1" ||
+        url.searchParams.get("context") === "1";
 
       if (![west, south, east, north].every(Number.isFinite)) {
         return new Response(JSON.stringify({ ok: false, error: "west, south, east, and north are required numbers" }), {
@@ -8154,6 +8513,7 @@ export default {
       cacheKeyUrl.searchParams.set("east", String(roundCoordKey(viewport.east, 2)));
       cacheKeyUrl.searchParams.set("north", String(roundCoordKey(viewport.north, 2)));
       cacheKeyUrl.searchParams.set("zoom", String(Math.floor(zoom)));
+      cacheKeyUrl.searchParams.set("context", includeContext ? "1" : "0");
       cacheKeyUrl.searchParams.set("v", MARINE_AREAS_VERSION);
       const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
 
@@ -8162,7 +8522,7 @@ export default {
         ttlSeconds: MARINE_AREAS_TTL_SECONDS,
         staleSeconds: MARINE_AREAS_STALE_SECONDS,
         fetchUpstream: async () => {
-          const payload = await buildMarineAreasPayload(viewport, zoom);
+          const payload = await buildMarineAreasPayload(viewport, zoom, includeContext);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },
@@ -9242,6 +9602,8 @@ export default {
         routes: [
           "/land-extremes?unit=F|C",
           "/api/global/capabilities",
+          "/api/aviation/overlays?region=north-america",
+          "/api/marine/sources",
           "/api/alerts/global?lat=##&lon=##&units=imperial|metric",
           "/api/marine/conditions?lat=##&lon=##",
           "/api/fire/hotspots?west=##&south=##&east=##&north=##&days=1",
