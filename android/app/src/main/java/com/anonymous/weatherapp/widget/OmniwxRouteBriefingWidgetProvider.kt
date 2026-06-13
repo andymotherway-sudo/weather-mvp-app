@@ -12,9 +12,6 @@ import kotlin.concurrent.thread
 class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
-    appWidgetIds.forEach { id ->
-      appWidgetManager.updateAppWidget(id, buildViews(context, null, loading = true))
-    }
 
     thread(name = "omniwx-route-briefing-widget") {
       val route = runCatching { OmniwxWidgetData.fetchRouteBriefing(context) }.getOrNull()

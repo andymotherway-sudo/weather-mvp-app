@@ -322,6 +322,33 @@ function weatherCodeToLabel(code: number | null): string {
   return 'Cloudy';
 }
 
+function isPrecipWeatherCode(code: number | null): boolean {
+  return code != null && (
+    [51, 53, 55, 56, 57].includes(code) ||
+    [61, 63, 65, 66, 67].includes(code) ||
+    [71, 73, 75, 77, 85, 86].includes(code) ||
+    [80, 81, 82].includes(code) ||
+    [95, 96, 99].includes(code)
+  );
+}
+
+function dryWeatherCodeFromCondition(condition: string): number | null {
+  const text = condition.toLowerCase();
+  if (text.includes('clear') || text.includes('sun')) return 0;
+  if (text.includes('mostly')) return 1;
+  if (text.includes('partly')) return 2;
+  if (text.includes('overcast') || text.includes('cloud')) return 3;
+  if (text.includes('fog')) return 45;
+  return null;
+}
+
+function reconcileDailyWeatherCode(code: number | null, precipChancePct: number | null, currentCondition: string): number | null {
+  if (isPrecipWeatherCode(code) && precipChancePct != null && precipChancePct <= 10) {
+    return dryWeatherCodeFromCondition(currentCondition) ?? null;
+  }
+  return code;
+}
+
 function formatDailyLabel(dateValue: any) {
   const raw = typeof dateValue === 'string' ? dateValue : '';
   if (!raw) return 'Day';
@@ -2502,7 +2529,8 @@ function SimpleDailyOverview({
   const todayPop =
     safeNum(today?.precipProbMaxPct ?? today?.precipitationProbabilityMax ?? today?.pop ?? today?.precipChancePct) ?? null;
   const todayCode = safeNum(today?.weatherCode ?? today?.weather_code ?? today?.weathercode ?? today?.code) ?? null;
-  const todayCondition = weatherCodeToLabel(todayCode);
+  const displayTodayCode = reconcileDailyWeatherCode(todayCode, todayPop, condition);
+  const todayCondition = weatherCodeToLabel(displayTodayCode);
   const todayEmoji = weatherCodeToEmoji(todayCode);
   const currentMarkerPct =
     todayHi != null && todayLo != null && tempF != null && todayHi !== todayLo
@@ -2543,7 +2571,7 @@ function SimpleDailyOverview({
           <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
         </View>
         <View style={styles.dailyCurrentTop}>
-          <PremiumWeatherIcon code={todayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
+          <PremiumWeatherIcon code={displayTodayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
           <View style={styles.dailyCurrentText}>
             <Text

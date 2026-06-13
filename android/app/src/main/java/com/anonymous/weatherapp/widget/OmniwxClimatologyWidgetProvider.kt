@@ -17,19 +17,6 @@ import kotlin.math.roundToInt
 class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
-    appWidgetIds.forEach { id ->
-      val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_climatology).apply {
-        setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/almanac"))
-        setTextViewText(R.id.widget_title, "Climatology")
-        setTextViewText(R.id.widget_month, monthLabel())
-        setTextViewText(R.id.widget_high, "--")
-        setTextViewText(R.id.widget_low, "--")
-        setTextViewText(R.id.widget_precip, "Updating")
-        setTextViewText(R.id.widget_footer, "Loading climate normals")
-        setImageViewBitmap(R.id.widget_arch, OmniwxWidgetData.climateArchBitmap(null))
-      }
-      appWidgetManager.updateAppWidget(id, loading)
-    }
 
     thread(name = "omniwx-climatology-widget") {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()

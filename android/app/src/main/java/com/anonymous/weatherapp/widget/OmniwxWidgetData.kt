@@ -811,11 +811,9 @@ object OmniwxWidgetData {
   }
 
   fun radarSnapshotBitmap(place: WidgetPlace?, weather: WidgetWeather?): Bitmap {
-    // Best case: draw a real RainViewer/base-map composite for the user's place.
-    // Fallback: draw the OMNIwx radar board so the widget remains useful even
-    // when network imagery fails or the user has no saved place.
-    place?.let { fetchRadarTileComposite(it, weather) }?.let { return it }
-
+    // Keep launcher updates cheap. Live tile composites can require dozens of
+    // network bitmap decodes during a widget refresh, which can make the
+    // foreground app feel sluggish on some devices.
     val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {

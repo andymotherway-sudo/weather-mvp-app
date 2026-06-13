@@ -16,9 +16,6 @@ import kotlin.math.roundToInt
 class OmniwxClimateArchWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
-    appWidgetIds.forEach { id ->
-      appWidgetManager.updateAppWidget(id, buildViews(context, null, loading = true))
-    }
 
     thread(name = "omniwx-climate-arch-widget") {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()

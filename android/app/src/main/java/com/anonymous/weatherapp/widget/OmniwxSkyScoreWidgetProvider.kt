@@ -13,23 +13,6 @@ import kotlin.concurrent.thread
 class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
-    appWidgetIds.forEach { id ->
-      val loading = RemoteViews(context.packageName, R.layout.omniwx_widget_sky_score).apply {
-        setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))
-        setTextViewText(R.id.widget_title, "SkyScore")
-        setTextViewText(R.id.widget_chip, "Space")
-        setTextViewText(R.id.widget_primary, "--")
-        setTextViewText(R.id.widget_secondary, "Updating sky conditions")
-        setTextViewText(R.id.widget_best_window, "Best window --")
-        setTextViewText(R.id.widget_tertiary, "Bortle --")
-        setTextViewText(R.id.widget_cloud_low, "LOW CLOUDS\n--")
-        setTextViewText(R.id.widget_cloud_mid, "MID CLOUDS\n--")
-        setTextViewText(R.id.widget_cloud_high, "HIGH CLOUDS\n--")
-        setTextViewText(R.id.widget_footer, "Updated --")
-        setImageViewBitmap(R.id.widget_score_ring, OmniwxWidgetData.skyScoreRingBitmap(null))
-      }
-      appWidgetManager.updateAppWidget(id, loading)
-    }
 
     thread(name = "omniwx-sky-widget") {
       val place = OmniwxWidgetData.readPlace(context)

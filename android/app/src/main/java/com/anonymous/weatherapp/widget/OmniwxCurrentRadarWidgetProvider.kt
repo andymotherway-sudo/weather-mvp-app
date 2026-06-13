@@ -13,9 +13,6 @@ import kotlin.concurrent.thread
 class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
-    appWidgetIds.forEach { id ->
-      appWidgetManager.updateAppWidget(id, buildViews(context, null, loading = true))
-    }
 
     thread(name = "omniwx-current-radar-widget") {
       val place = OmniwxWidgetData.readPlace(context)
