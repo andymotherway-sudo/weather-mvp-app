@@ -12,6 +12,30 @@ describe('worker module', () => {
     expect(typeof worker.fetch).toBe('function');
   });
 
+  it('returns global capabilities contract', async () => {
+    const res = await worker.fetch(
+      new Request('https://omniwx.test/api/global/capabilities'),
+      {} as any,
+      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.version).toBe('global-capabilities-v1');
+    expect(Array.isArray(json.products)).toBe(true);
+    expect(json.products.length).toBeGreaterThan(5);
+    expect(json.products.map((product: any) => product.id)).toEqual(
+      expect.arrayContaining(['land-forecast', 'nautical', 'maps-radar', 'maps-satellite', 'water-stations']),
+    );
+    for (const product of json.products) {
+      expect(typeof product.endpoint).toBe('string');
+      expect(product.endpoint.startsWith('/')).toBe(true);
+      expect(product.ttlSeconds).toBeGreaterThan(0);
+      expect(product.staleSeconds).toBeGreaterThanOrEqual(product.ttlSeconds);
+    }
+  });
+
   it('returns viewport-scoped global marine areas', async () => {
     const res = await worker.fetch(
       new Request('https://omniwx.test/api/marine/areas?west=30&south=-45&east=120&north=25&zoom=4'),

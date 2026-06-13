@@ -3205,8 +3205,8 @@ function NerdyDeepDive({
           </View>
 
           <View style={nd.heroFeelsBlock}>
-            <Text style={nd.heroFeelsLabel}>Feels</Text>
-            <Text style={nd.heroFeelsValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+            <Text style={nd.heroFeelsLabel}>{feelsDriverLabel}</Text>
+            <Text style={nd.heroFeelsValue}>{feelsDriverValue.replace(/F$/, '')}</Text>
           </View>
         </View>
 
@@ -4146,9 +4146,14 @@ function LandWeatherWithCoords({
   const feelsDriver = useMemo(() => {
     if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, topicId: 'heat-index', conf: 'high' as const };
     if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, topicId: 'wind-chill', conf: 'high' as const };
-    if (feelsLikeF != null) return { label: 'Apparent', value: `${Math.round(feelsLikeF)}°F`, topicId: 'apparent-temp', conf: 'medium' as const };
-    return { label: 'Apparent', value: '—', topicId: 'apparent-temp', conf: undefined };
-  }, [hi, wc, feelsLikeF]);
+    const useHeatIndex = tempF == null ? true : tempF >= 60;
+    return {
+      label: useHeatIndex ? 'Heat Index' : 'Wind Chill',
+      value: '—',
+      topicId: useHeatIndex ? 'heat-index' : 'wind-chill',
+      conf: undefined,
+    };
+  }, [hi, wc, tempF]);
 
   const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime, forecastTimeZone) : null;
   const updatedText = updatedTimeLabel ? `Updated ${updatedTimeLabel}` : null;

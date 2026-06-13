@@ -9,6 +9,7 @@ import { useMarineZonesByBbox } from '../nautical/useMarineZonesByBbox';
 import type { NauticalZone } from '../nautical/zones';
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
+import { bboxWithinAreaBudget, mapProductEnabled, marineViewportForRegion, regionToBbox } from './dataGate';
 import { getMarineLayerBudget } from './layerBudgets';
 
 export type SelectedMarineFeature =
@@ -81,22 +82,6 @@ export type GlobalMarineOfficialForecast = {
 function safeNum(value: any) {
   const n = typeof value === 'string' ? Number(value) : value;
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
-}
-
-function regionToBbox(region: Region | null | undefined) {
-  if (!region) return null;
-  const latDelta = Number(region.latitudeDelta);
-  const lonDelta = Number(region.longitudeDelta);
-  const lat = Number(region.latitude);
-  const lon = Number(region.longitude);
-  if (![latDelta, lonDelta, lat, lon].every(Number.isFinite)) return null;
-
-  return {
-    west: lon - lonDelta / 2,
-    south: lat - latDelta / 2,
-    east: lon + lonDelta / 2,
-    north: lat + latDelta / 2,
-  };
 }
 
 function closeRingIfNeeded(coords: Array<[number, number]>) {
@@ -408,8 +393,13 @@ export function useMarineMapLayer(args: {
   const [selectedGlobalMarineOfficialError, setSelectedGlobalMarineOfficialError] = useState<string | null>(null);
 
   const budget = useMemo(() => getMarineLayerBudget(mapZoom), [mapZoom]);
-  const marineDataEnabled = isFocused && marineConditionsEnabled;
-  const waterStationsDataEnabled = isFocused && waterStationsEnabled && mapZoom >= budget.waterStationMinZoom;
+  const marineDataEnabled = mapProductEnabled({ isFocused, layerEnabled: marineConditionsEnabled, zoom: mapZoom });
+  const waterStationsDataEnabled = mapProductEnabled({
+    isFocused,
+    layerEnabled: waterStationsEnabled,
+    zoom: mapZoom,
+    minZoom: budget.waterStationMinZoom,
+  });
   const marineBbox = useMemo(
     () => (marineDataEnabled && mapZoom >= budget.marineZoneMinZoom ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, mapZoom, budget.marineZoneMinZoom, marineDataEnabled],
@@ -418,26 +408,17 @@ export function useMarineMapLayer(args: {
     () => (waterStationsDataEnabled ? regionToBbox(effectiveRegion) : null),
     [effectiveRegion, waterStationsDataEnabled],
   );
-  const globalMarineViewport = useMemo(() => {
-    if (!marineDataEnabled || mapZoom < budget.globalAreaMinZoom || mapZoom >= budget.globalAreaMaxZoom) return null;
-    const bbox = regionToBbox(effectiveRegion);
-    if (
-      !bbox ||
-      !Number.isFinite(bbox.west) ||
-      !Number.isFinite(bbox.south) ||
-      !Number.isFinite(bbox.east) ||
-      !Number.isFinite(bbox.north)
-    ) {
-      return null;
-    }
-    return {
-      west: bbox.west,
-      south: bbox.south,
-      east: bbox.east,
-      north: bbox.north,
-      zoom: mapZoom,
-    };
-  }, [effectiveRegion, mapZoom, budget.globalAreaMaxZoom, budget.globalAreaMinZoom, marineDataEnabled]);
+  const globalMarineViewport = useMemo(
+    () =>
+      marineViewportForRegion({
+        region: effectiveRegion,
+        enabled: marineDataEnabled,
+        zoom: mapZoom,
+        minZoom: budget.globalAreaMinZoom,
+        maxZoom: budget.globalAreaMaxZoom,
+      }),
+    [effectiveRegion, mapZoom, budget.globalAreaMaxZoom, budget.globalAreaMinZoom, marineDataEnabled],
+  );
 
   const { zones: marineZones } = useMarineZonesByBbox(marineBbox);
   const { areas: globalMarineAreas } = useGlobalMarineManifest(globalMarineViewport);
@@ -453,8 +434,7 @@ export function useMarineMapLayer(args: {
     }
 
     const bbox = waterStationsBbox;
-    const bboxArea = Math.abs((bbox.east ?? 0) - (bbox.west ?? 0)) * Math.abs((bbox.north ?? 0) - (bbox.south ?? 0));
-    if (!Number.isFinite(bboxArea) || bboxArea > budget.waterStationMaxBboxArea) {
+    if (!bboxWithinAreaBudget(bbox, budget.waterStationMaxBboxArea)) {
       setWaterStationsGeojson({ type: 'FeatureCollection', features: [] });
       return;
     }

@@ -447,6 +447,37 @@ type MarineExtremesResponse = {
   groups: MarineExtremeGroup[];
 };
 
+type GlobalCapabilityCoverage = "global" | "regional" | "us-only" | "curated-global" | "mixed";
+
+type GlobalCapability = {
+  id:
+    | "land-forecast"
+    | "current-weather"
+    | "air-quality"
+    | "almanac"
+    | "nautical"
+    | "marine-extremes"
+    | "maps-radar"
+    | "maps-satellite"
+    | "alerts"
+    | "space-weather"
+    | "water-stations";
+  label: string;
+  coverage: GlobalCapabilityCoverage;
+  source: string;
+  endpoint: string;
+  ttlSeconds: number;
+  staleSeconds: number;
+  notes?: string[];
+};
+
+type GlobalCapabilitiesResponse = {
+  ok: true;
+  version: string;
+  generatedAt: string;
+  products: GlobalCapability[];
+};
+
 type FireHotspotsResponse = {
   ok: true;
   enabled: boolean;
@@ -988,6 +1019,120 @@ const MARINE_AREAS_VERSION = "official-curated-marine-areas-v1";
 const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
 const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
 const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v2";
+const GLOBAL_CAPABILITIES_VERSION = "global-capabilities-v1";
+
+function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
+  return {
+    ok: true,
+    version: GLOBAL_CAPABILITIES_VERSION,
+    generatedAt: new Date().toISOString(),
+    products: [
+      {
+        id: "land-forecast",
+        label: "Land forecast",
+        coverage: "global",
+        source: "Open-Meteo",
+        endpoint: "/api/openmeteo/hourly",
+        ttlSeconds: OM_HOURLY_TTL_SECONDS,
+        staleSeconds: OM_HOURLY_STALE_SECONDS,
+      },
+      {
+        id: "current-weather",
+        label: "Current weather",
+        coverage: "global",
+        source: "Open-Meteo, NWS, MET Norway",
+        endpoint: "/api/current",
+        ttlSeconds: CURRENT_TTL_SECONDS,
+        staleSeconds: CURRENT_STALE_SECONDS,
+        notes: ["Provider fallback is selected by location and upstream health."],
+      },
+      {
+        id: "air-quality",
+        label: "Air quality",
+        coverage: "global",
+        source: "Open-Meteo Air Quality",
+        endpoint: "/api/air-quality/hourly",
+        ttlSeconds: AIR_QUALITY_TTL_SECONDS,
+        staleSeconds: AIR_QUALITY_STALE_SECONDS,
+      },
+      {
+        id: "almanac",
+        label: "Almanac",
+        coverage: "mixed",
+        source: "NOAA normals with model/nearest-station fallbacks",
+        endpoint: "/api/almanac/climo",
+        ttlSeconds: ALMANAC_TTL_SECONDS,
+        staleSeconds: ALMANAC_STALE_SECONDS,
+        notes: ["US station normals are strongest; global normalization remains incremental."],
+      },
+      {
+        id: "nautical",
+        label: "Nautical forecast areas",
+        coverage: "mixed",
+        source: "NOAA/NWS, WMO/IMO, curated OMNIwx marine context, Open-Meteo Marine",
+        endpoint: "/api/marine/areas",
+        ttlSeconds: MARINE_AREAS_TTL_SECONDS,
+        staleSeconds: MARINE_AREAS_STALE_SECONDS,
+        notes: ["Official boundaries are preferred where available; curated/context areas fill global gaps."],
+      },
+      {
+        id: "marine-extremes",
+        label: "Marine extremes",
+        coverage: "curated-global",
+        source: "Open-Meteo Marine",
+        endpoint: "/api/marine/extremes",
+        ttlSeconds: MARINE_EXTREMES_TTL_SECONDS,
+        staleSeconds: MARINE_EXTREMES_STALE_SECONDS,
+      },
+      {
+        id: "maps-radar",
+        label: "Radar maps",
+        coverage: "mixed",
+        source: "IEM/NEXRAD and RainViewer",
+        endpoint: "/v1/radar/info",
+        ttlSeconds: RADAR_TILE_TTL_SECONDS,
+        staleSeconds: RADAR_TILE_STALE_SECONDS,
+        notes: ["NEXRAD is regional; RainViewer provides broader precipitation context."],
+      },
+      {
+        id: "maps-satellite",
+        label: "Satellite maps",
+        coverage: "global",
+        source: "NOAA/NASA satellite products",
+        endpoint: "/api/astro/location",
+        ttlSeconds: ASTRO_TTL_SECONDS,
+        staleSeconds: ASTRO_STALE_SECONDS,
+      },
+      {
+        id: "alerts",
+        label: "Weather alerts",
+        coverage: "mixed",
+        source: "NWS and OMNIwx global forecast outlooks",
+        endpoint: "/api/alerts/global",
+        ttlSeconds: GLOBAL_ALERTS_TTL_SECONDS,
+        staleSeconds: GLOBAL_ALERTS_STALE_SECONDS,
+      },
+      {
+        id: "space-weather",
+        label: "Space weather",
+        coverage: "global",
+        source: "NOAA SWPC and NASA DONKI",
+        endpoint: "/api/space-weather/summary",
+        ttlSeconds: SPACE_WEATHER_TTL_SECONDS,
+        staleSeconds: SPACE_WEATHER_STALE_SECONDS,
+      },
+      {
+        id: "water-stations",
+        label: "Water stations",
+        coverage: "us-only",
+        source: "USGS OGC/IV",
+        endpoint: "/api/usgs/water-stations",
+        ttlSeconds: USGS_WATER_STATIONS_TTL_SECONDS,
+        staleSeconds: USGS_WATER_STATIONS_STALE_SECONDS,
+      },
+    ],
+  };
+}
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -7907,6 +8052,17 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/global/capabilities" || url.pathname === "/v1/global/capabilities") {
+      const payload = buildGlobalCapabilitiesPayload();
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=900, stale-while-revalidate=3600",
+        }),
+      });
+    }
+
     if (url.pathname === "/api/alerts/global" || url.pathname === "/v1/alerts/global") {
       const lat = Number(url.searchParams.get("lat"));
       const lon = Number(url.searchParams.get("lon"));
@@ -9085,6 +9241,7 @@ export default {
         ok: true,
         routes: [
           "/land-extremes?unit=F|C",
+          "/api/global/capabilities",
           "/api/alerts/global?lat=##&lon=##&units=imperial|metric",
           "/api/marine/conditions?lat=##&lon=##",
           "/api/fire/hotspots?west=##&south=##&east=##&north=##&days=1",

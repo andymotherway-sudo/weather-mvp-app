@@ -5,6 +5,30 @@ import {
   type MarineViewport,
 } from './globalMarineManifest';
 
+const MANIFEST_MEMORY_TTL_MS = 15 * 60 * 1000;
+const MANIFEST_MEMORY_MAX_KEYS = 32;
+
+const manifestMemoryCache = new Map<string, { ts: number; areas: GlobalMarineAreaSummary[] }>();
+
+function rememberManifest(key: string, areas: GlobalMarineAreaSummary[]) {
+  manifestMemoryCache.set(key, { ts: Date.now(), areas });
+  while (manifestMemoryCache.size > MANIFEST_MEMORY_MAX_KEYS) {
+    const oldestKey = manifestMemoryCache.keys().next().value;
+    if (!oldestKey) break;
+    manifestMemoryCache.delete(oldestKey);
+  }
+}
+
+function getRememberedManifest(key: string) {
+  const cached = manifestMemoryCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.ts > MANIFEST_MEMORY_TTL_MS) {
+    manifestMemoryCache.delete(key);
+    return null;
+  }
+  return cached.areas;
+}
+
 export function useGlobalMarineManifest(viewport: MarineViewport | null) {
   const [areas, setAreas] = useState<GlobalMarineAreaSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +61,14 @@ export function useGlobalMarineManifest(viewport: MarineViewport | null) {
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
+    const cachedAreas = key ? getRememberedManifest(key) : null;
+    if (cachedAreas) {
+      setAreas(cachedAreas);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     debounceRef.current = setTimeout(() => {
       if (abortRef.current) abortRef.current.abort();
       const ac = new AbortController();
@@ -48,6 +80,7 @@ export function useGlobalMarineManifest(viewport: MarineViewport | null) {
           setError(null);
           const manifest = await fetchGlobalMarineManifest(viewport, { signal: ac.signal });
           if (ac.signal.aborted) return;
+          if (key) rememberManifest(key, manifest.areas);
           setAreas(manifest.areas);
         } catch (e: any) {
           if (ac.signal.aborted) return;

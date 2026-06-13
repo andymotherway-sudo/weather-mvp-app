@@ -35,6 +35,8 @@ import { maybeCreateSolarEventCapture } from '../lib/spaceweather/solarCapture';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 
+const EARTH_DISK_REFRESH_MS = 60 * 60 * 1000;
+
 function fmtUpdated(iso?: string) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -289,6 +291,7 @@ export default function SolarScreen() {
   const [earthDiskLoading, setEarthDiskLoading] = useState(true);
   const [earthDiskError, setEarthDiskError] = useState<string | null>(null);
   const [earthDiskImageState, setEarthDiskImageState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -317,6 +320,8 @@ export default function SolarScreen() {
   };
 
   const refreshEarthDisk = useCallback(async () => {
+    if (earthDiskRefreshInFlightRef.current) return;
+    earthDiskRefreshInFlightRef.current = true;
     setEarthDiskLoading(true);
     setEarthDiskError(null);
     setEarthDiskImageState('loading');
@@ -326,6 +331,7 @@ export default function SolarScreen() {
     } catch (err: any) {
       setEarthDiskError(err?.message ? String(err.message) : 'Earth disk unavailable right now.');
     } finally {
+      earthDiskRefreshInFlightRef.current = false;
       setEarthDiskLoading(false);
     }
   }, []);
@@ -346,6 +352,14 @@ export default function SolarScreen() {
   useEffect(() => {
     if (!isFocused) return;
     refreshEarthDisk();
+  }, [refreshEarthDisk, isFocused]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const timer = setInterval(() => {
+      refreshEarthDisk();
+    }, EARTH_DISK_REFRESH_MS);
+    return () => clearInterval(timer);
   }, [refreshEarthDisk, isFocused]);
 
   const isRefreshing = refreshing || astroRefreshing || marsRefreshing || earthDiskLoading;

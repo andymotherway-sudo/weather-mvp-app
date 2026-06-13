@@ -365,7 +365,7 @@ export function HourlyRangeChart({
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
 
   const W = contentW;
-  const H = chartHeight ?? (landscape ? 320 : 270);
+  const H = chartHeight ?? (landscape ? 360 : 382);
 
   const axisL = 28;
   const padL = padX + axisL;

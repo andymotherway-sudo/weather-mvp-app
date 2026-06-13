@@ -29,7 +29,12 @@ function imageUrlForEpicItem(item: EpicNaturalImage) {
 }
 
 export async function fetchLatestEarthDisk(): Promise<EarthDiskImage> {
-  const response = await fetch(EPIC_NATURAL_URL);
+  const response = await fetch(`${EPIC_NATURAL_URL}?_=${Date.now()}`, {
+    headers: {
+      Accept: 'application/json',
+      'Cache-Control': 'no-cache',
+    },
+  });
   if (!response.ok) {
     throw new Error(`NASA EPIC returned ${response.status}`);
   }
@@ -43,7 +48,9 @@ export async function fetchLatestEarthDisk(): Promise<EarthDiskImage> {
     throw new Error('NASA EPIC did not return a usable Earth disk image.');
   }
 
-  const imageUrl = imageUrlForEpicItem(latest);
+  const baseImageUrl = imageUrlForEpicItem(latest);
+  const imageVersion = encodeURIComponent(String(latest.date ?? latest.image ?? Date.now()));
+  const imageUrl = baseImageUrl ? `${baseImageUrl}?v=${imageVersion}` : null;
   if (!imageUrl) {
     throw new Error('NASA EPIC image metadata was incomplete.');
   }
