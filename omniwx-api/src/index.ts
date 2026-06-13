@@ -351,6 +351,10 @@ type MarineAreaSummary = {
   geometry?: MarineAreaGeometry;
   sourceLabel: string;
   sourceUrl?: string;
+  boundarySource?: "official-nws" | "curated" | "metarea-context";
+  precision?: "official" | "curated" | "context";
+  officialForecastId?: string;
+  parentId?: string;
   priority: number;
 };
 
@@ -374,6 +378,15 @@ type MarineOfficialForecastHazard = {
   severity: "info" | "watch" | "warning" | "storm";
 };
 
+type MarineOfficialForecastSection = {
+  key: string;
+  title: string;
+  kind: "warning" | "synopsis" | "forecast" | "notice";
+  summary: string;
+  text: string;
+  areaHint: string | null;
+};
+
 type MarineOfficialForecastResponse = {
   ok: true;
   id: string;
@@ -387,6 +400,7 @@ type MarineOfficialForecastResponse = {
   summary: string | null;
   text: string | null;
   hazards: MarineOfficialForecastHazard[];
+  sections: MarineOfficialForecastSection[];
   status: "ok" | "not_available";
 };
 
@@ -970,10 +984,10 @@ const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
 const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 const MARINE_AREAS_TTL_SECONDS = 15 * 60;
 const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
-const MARINE_AREAS_VERSION = "official-metareas-geojson-v4";
+const MARINE_AREAS_VERSION = "official-curated-marine-areas-v1";
 const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
 const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
-const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v1";
+const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v2";
 
 // Sky grid specific knobs
 const OPEN_METEO_SKYGRID_TIMEOUT_MS = 6500;
@@ -1958,6 +1972,73 @@ const GLOBAL_MARINE_AREAS: MarineAreaSummary[] = [
   },
 ];
 
+const CURATED_MARINE_FORECAST_AREAS: MarineAreaSummary[] = [
+  {
+    id: "curated-metarea-xii-us-canada-border-pt-st-george",
+    name: "US/Canada Border to Pt St George",
+    region: "METAREA XII NAVTEX coastal forecast area",
+    kind: "offshore",
+    center: { lat: 44.5, lon: -125.2 },
+    bounds: { west: -127.8, south: 41.6, east: -123.5, north: 49.1 },
+    geometry: metareaPolygon([[-127.8, 49.1], [-124.2, 49.1], [-123.5, 41.8], [-125.7, 41.6], [-127.8, 49.1]]),
+    sourceLabel: "Curated from official WWMIWS / USCG NAVTEX area description",
+    sourceUrl: "https://wwmiws.wmo.int/index.php/metareas/display/12",
+    boundarySource: "curated",
+    precision: "curated",
+    officialForecastId: "metarea-xii",
+    parentId: "metarea-xii",
+    priority: 118,
+  },
+  {
+    id: "curated-metarea-xii-pt-st-george-pt-piedras",
+    name: "Pt St George to Pt Piedras Blancas",
+    region: "METAREA XII NAVTEX coastal forecast area",
+    kind: "offshore",
+    center: { lat: 37.5, lon: -124.0 },
+    bounds: { west: -126.6, south: 35.5, east: -121.6, north: 42.1 },
+    geometry: metareaPolygon([[-126.6, 42.1], [-123.6, 41.8], [-121.6, 35.7], [-123.8, 35.5], [-126.6, 42.1]]),
+    sourceLabel: "Curated from official WWMIWS / USCG NAVTEX area description",
+    sourceUrl: "https://wwmiws.wmo.int/index.php/metareas/display/12",
+    boundarySource: "curated",
+    precision: "curated",
+    officialForecastId: "metarea-xii",
+    parentId: "metarea-xii",
+    priority: 118,
+  },
+  {
+    id: "curated-metarea-xii-pt-piedras-mexican-border",
+    name: "Pt Piedras Blancas to Mexican Border",
+    region: "METAREA XII NAVTEX coastal forecast area",
+    kind: "offshore",
+    center: { lat: 33.2, lon: -120.2 },
+    bounds: { west: -122.9, south: 32.4, east: -117.0, north: 35.8 },
+    geometry: metareaPolygon([[-122.9, 35.8], [-120.6, 35.8], [-117.0, 32.4], [-119.2, 32.4], [-122.9, 35.8]]),
+    sourceLabel: "Curated from official WWMIWS / USCG NAVTEX area description",
+    sourceUrl: "https://wwmiws.wmo.int/index.php/metareas/display/12",
+    boundarySource: "curated",
+    precision: "curated",
+    officialForecastId: "metarea-xii",
+    parentId: "metarea-xii",
+    priority: 118,
+  },
+  {
+    id: "curated-metarea-xii-socal-outer-waters",
+    name: "Southern California Outer Waters",
+    region: "METAREA XII curated offshore forecast area",
+    kind: "offshore",
+    center: { lat: 33.2, lon: -122.2 },
+    bounds: { west: -125.2, south: 30.0, east: -118.4, north: 35.8 },
+    geometry: metareaPolygon([[-125.2, 35.8], [-122.9, 35.8], [-119.2, 32.4], [-118.4, 30.0], [-124.2, 30.0], [-125.2, 35.8]]),
+    sourceLabel: "Curated from official NOAA high-seas coordinate language",
+    sourceUrl: "https://tgftp.nws.noaa.gov/data/forecasts/marine/high_seas/north_pacific.txt",
+    boundarySource: "curated",
+    precision: "curated",
+    officialForecastId: "metarea-xii",
+    parentId: "metarea-xii",
+    priority: 114,
+  },
+];
+
 function longitudeRanges(west: number, east: number): Array<[number, number]> {
   if (west <= east) return [[west, east]];
   return [
@@ -1982,9 +2063,136 @@ function marineAreaDistanceScore(area: MarineAreaSummary, viewport: { west: numb
   return dLat + dLon * 0.6;
 }
 
-function buildMarineAreasPayload(viewport: { west: number; south: number; east: number; north: number }, zoom: number): MarineAreasResponse {
-  const limit = zoom < 3 ? 8 : zoom < 5 ? 14 : 24;
-  const areas = GLOBAL_MARINE_AREAS.filter((area) => marineAreaIntersects(area, viewport))
+function geometryBounds(geometry: MarineAreaGeometry): { west: number; south: number; east: number; north: number } | null {
+  const points: Array<[number, number]> = [];
+  if (geometry.type === "Polygon") {
+    for (const ring of geometry.coordinates) points.push(...(ring as Array<[number, number]>));
+  } else {
+    for (const polygon of geometry.coordinates) {
+      for (const ring of polygon) points.push(...(ring as Array<[number, number]>));
+    }
+  }
+  const usable = points.filter((point) => Number.isFinite(point?.[0]) && Number.isFinite(point?.[1]));
+  if (!usable.length) return null;
+  const lons = usable.map((point) => point[0]);
+  const lats = usable.map((point) => point[1]);
+  return {
+    west: Math.min(...lons),
+    south: Math.min(...lats),
+    east: Math.max(...lons),
+    north: Math.max(...lats),
+  };
+}
+
+function marineAttrString(attrs: Record<string, any>, keys: string[]) {
+  for (const key of keys) {
+    const value = attrs[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function officialForecastIdForNwsMarineZone(kind: MarineAreaKind, center: { lat: number; lon: number }) {
+  if (kind !== "high-seas") return undefined;
+  if (center.lon <= -95 && center.lon >= -180 && center.lat >= -3.5 && center.lat <= 67.5) return "metarea-xii";
+  if (center.lon <= -35 && center.lon > -98 && center.lat >= 7 && center.lat <= 67.5) return "metarea-iv";
+  if (center.lon <= -70 && center.lon >= -120 && center.lat >= -30 && center.lat <= 7) return "metarea-xvi";
+  return undefined;
+}
+
+async function fetchOfficialNwsMarineAreas(
+  viewport: { west: number; south: number; east: number; north: number },
+  zoom: number,
+): Promise<MarineAreaSummary[]> {
+  if (zoom < 2.6 || viewport.north < -5 || viewport.south > 75) return [];
+
+  const layerConfigs: Array<{ id: number; kind: MarineAreaKind; label: string; priority: number; minZoom: number }> = [
+    { id: 10, kind: "high-seas", label: "Official NOAA / NWS high seas polygon", priority: 132, minZoom: 2.6 },
+    { id: 6, kind: "offshore", label: "Official NOAA / NWS offshore polygon", priority: 136, minZoom: 4.2 },
+  ];
+  const ranges = longitudeRanges(viewport.west, viewport.east);
+  const offset = zoom < 4 ? 0.22 : zoom < 6 ? 0.08 : 0.035;
+  const limitPerLayer = zoom < 4 ? 12 : zoom < 6 ? 28 : 48;
+
+  const results: MarineAreaSummary[] = [];
+  for (const layer of layerConfigs) {
+    if (zoom < layer.minZoom) continue;
+    for (const [west, east] of ranges) {
+      const service = `https://mapservices.weather.noaa.gov/static/rest/services/nws_reference_maps/nws_reference_map/MapServer/${layer.id}/query`;
+      const params = new URLSearchParams({
+        f: "pjson",
+        where: "1=1",
+        geometry: `${west},${viewport.south},${east},${viewport.north}`,
+        geometryType: "esriGeometryEnvelope",
+        inSR: "4326",
+        outSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        outFields: "objectid,id,wfo,name,location,lat,lon,url",
+        returnGeometry: "true",
+        maxAllowableOffset: String(offset),
+        resultRecordCount: String(limitPerLayer),
+      });
+
+      try {
+        const json = await fetchJsonWithTimeout(`${service}?${params.toString()}`, 8500, {
+          "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+        });
+        const features = Array.isArray(json?.features) ? json.features : [];
+        for (const feature of features) {
+          const attrs = (feature?.attributes ?? {}) as Record<string, any>;
+          const geometry = arcGisGeometryToSimpleGeoJson(feature?.geometry) as MarineAreaGeometry | null;
+          if (!geometry) continue;
+
+          const id = marineAttrString(attrs, ["id", "ID", "zone", "ZONE"]);
+          const name = marineAttrString(attrs, ["name", "NAME", "location", "LOCATION"]) ?? "NWS marine forecast zone";
+          const lon = Number(attrs.lon ?? attrs.LON);
+          const lat = Number(attrs.lat ?? attrs.LAT);
+          const bounds = geometryBounds(geometry);
+          if (!id || !bounds) continue;
+          const center = {
+            lat: Number.isFinite(lat) ? lat : (bounds.south + bounds.north) / 2,
+            lon: Number.isFinite(lon) ? lon : (bounds.west + bounds.east) / 2,
+          };
+          const sourceUrl = marineAttrString(attrs, ["zoneurl", "url", "URL"]) ?? undefined;
+          const officialForecastId = officialForecastIdForNwsMarineZone(layer.kind, center);
+
+          results.push({
+            id: `nws-${layer.kind}-${id}`.toLowerCase(),
+            name,
+            region: id,
+            kind: layer.kind,
+            center,
+            bounds,
+            geometry,
+            sourceLabel: layer.label,
+            sourceUrl,
+            boundarySource: "official-nws",
+            precision: "official",
+            officialForecastId,
+            parentId: officialForecastId,
+            priority: layer.priority,
+          });
+        }
+      } catch {
+        // Keep curated METAREA context available if the NOAA reference service is slow.
+      }
+    }
+  }
+
+  return [...new Map(results.map((area) => [area.id, area] as const)).values()];
+}
+
+async function buildMarineAreasPayload(viewport: { west: number; south: number; east: number; north: number }, zoom: number): Promise<MarineAreasResponse> {
+  const limit = zoom < 3 ? 10 : zoom < 5 ? 22 : 42;
+  const officialAreas = await fetchOfficialNwsMarineAreas(viewport, zoom);
+  const areas = [...officialAreas, ...CURATED_MARINE_FORECAST_AREAS, ...GLOBAL_MARINE_AREAS]
+    .map((area) => ({
+      ...area,
+      boundarySource: area.boundarySource ?? "metarea-context",
+      precision: area.precision ?? "context",
+    }))
+    .filter((area) => marineAreaIntersects(area, viewport))
     .sort((a, b) => {
       const priorityDelta = b.priority - a.priority;
       if (Math.abs(priorityDelta) > 20) return priorityDelta;
@@ -2137,6 +2345,99 @@ function extractMarineHazards(text: string): MarineOfficialForecastHazard[] {
     .map(({ key, label, severity }) => ({ key, label, severity }));
 }
 
+function marineSectionKey(title: string, index: number) {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `${slug || "section"}-${index + 1}`;
+}
+
+function marineSectionKind(title: string): MarineOfficialForecastSection["kind"] {
+  if (/\b(WARNING|GALE|STORM|HURRICANE|TROPICAL CYCLONE|FREEZING SPRAY|DENSE FOG)\b/i.test(title)) return "warning";
+  if (/\bSYNOPSIS\b/i.test(title)) return "synopsis";
+  if (/\bFORECAST\b/i.test(title)) return "forecast";
+  return "notice";
+}
+
+function marineSectionSummary(lines: string[]) {
+  const joined = lines
+    .map((line) => line.replace(/^\.+/, "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ");
+  return joined.slice(0, 240);
+}
+
+function marineSectionAreaHint(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const patterns = [
+    /\bFROM\s+\d{1,2}[NS]\s+TO\s+\d{1,2}[NS]\s+BETWEEN\s+\d{1,3}[EW]\s+AND\s+\d{1,3}[EW]\b/i,
+    /\b(?:N|S|E|W)\s+OF\s+\d{1,2}[NS]\s+BETWEEN\s+\d{1,3}[EW]\s+AND\s+\d{1,3}[EW]\b/i,
+    /\bWITHIN\s+\d+\s+NM\s+[^.]{0,120}\b/i,
+    /\b(?:N|S|E|W)\s+OF\s+[^.]{0,80}\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern)?.[0]?.trim();
+    if (match) return match.replace(/\s+/g, " ").slice(0, 160);
+  }
+  return null;
+}
+
+function pushMarineSection(
+  sections: MarineOfficialForecastSection[],
+  title: string | null,
+  bodyLines: string[],
+  maxSections: number,
+) {
+  const cleanTitle = title?.replace(/^\.+|\.+$/g, "").trim() || null;
+  const cleanLines = bodyLines.map((line) => line.trim()).filter(Boolean);
+  if (!cleanTitle || cleanLines.length === 0 || sections.length >= maxSections) return;
+  const text = cleanLines.join("\n").slice(0, 1600);
+  sections.push({
+    key: marineSectionKey(cleanTitle, sections.length),
+    title: cleanTitle,
+    kind: marineSectionKind(cleanTitle),
+    summary: marineSectionSummary(cleanLines),
+    text,
+    areaHint: marineSectionAreaHint(text),
+  });
+}
+
+function extractMarineBulletinSections(text: string): MarineOfficialForecastSection[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const sections: MarineOfficialForecastSection[] = [];
+  let currentTitle: string | null = null;
+  let currentLines: string[] = [];
+  let inForecastBlocks = false;
+  const maxSections = 8;
+
+  for (const line of lines) {
+    if (/^\.(WARNINGS|SYNOPSIS AND FORECAST)\.$/i.test(line)) {
+      pushMarineSection(sections, currentTitle, currentLines, maxSections);
+      currentTitle = line.replace(/^\.+|\.+$/g, "");
+      currentLines = [];
+      inForecastBlocks = /SYNOPSIS AND FORECAST/i.test(line);
+      continue;
+    }
+
+    const warningHeading = line.match(/^\.\.\.(.+?)\.\.\.$/);
+    const forecastHeading = inForecastBlocks ? line.match(/^\.(?!24 HOUR|48 HOUR|06 HOUR|12 HOUR|18 HOUR|30 HOUR)([^.].*?)(?:\.)?$/i) : null;
+    if (warningHeading || forecastHeading) {
+      pushMarineSection(sections, currentTitle, currentLines, maxSections);
+      currentTitle = warningHeading?.[1] ?? forecastHeading?.[1] ?? null;
+      currentLines = [];
+      continue;
+    }
+
+    if (currentTitle) currentLines.push(line);
+  }
+
+  pushMarineSection(sections, currentTitle, currentLines, maxSections);
+  return sections.filter((section) => section.summary.length >= 16 || section.text.length >= 32);
+}
+
 async function buildMarineOfficialForecastPayload(id: string): Promise<MarineOfficialForecastResponse> {
   const area = findGlobalMarineArea(id);
   if (!area) throw new Error("Unknown marine area");
@@ -2156,6 +2457,7 @@ async function buildMarineOfficialForecastPayload(id: string): Promise<MarineOff
       summary: null,
       text: null,
       hazards: [],
+      sections: [],
       status: "not_available",
     };
   }
@@ -2180,6 +2482,7 @@ async function buildMarineOfficialForecastPayload(id: string): Promise<MarineOff
     summary: useful ? summarizeMarineBulletin(text) : null,
     text: useful ? text : null,
     hazards: useful ? extractMarineHazards(text) : [],
+    sections: useful ? extractMarineBulletinSections(text) : [],
     status: useful ? "ok" : "not_available",
   };
 }
@@ -7703,7 +8006,7 @@ export default {
         ttlSeconds: MARINE_AREAS_TTL_SECONDS,
         staleSeconds: MARINE_AREAS_STALE_SECONDS,
         fetchUpstream: async () => {
-          const payload = buildMarineAreasPayload(viewport, zoom);
+          const payload = await buildMarineAreasPayload(viewport, zoom);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },

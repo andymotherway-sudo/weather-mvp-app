@@ -4992,7 +4992,15 @@ export default function MapsScreen() {
                 <>
                   <View style={styles.fireDetailPills}>
                     <HudBadge label={selectedGlobalMarineArea.id.toUpperCase()} strong />
-                    <HudBadge label="Official area" />
+                    <HudBadge
+                      label={
+                        selectedGlobalMarineArea.precision === 'official'
+                          ? 'Official NWS boundary'
+                          : selectedGlobalMarineArea.precision === 'curated'
+                            ? 'Curated boundary'
+                            : 'METAREA context'
+                      }
+                    />
                     {selectedGlobalMarineOfficialForecast?.status === 'ok' ? <HudBadge label="Official bulletin" /> : null}
                     {selectedGlobalMarineOfficialForecast?.hazards.slice(0, 2).map((hazard) => (
                       <HudBadge key={hazard.key} label={hazard.label} />
@@ -5021,6 +5029,29 @@ export default function MapsScreen() {
                         <Text style={styles.fireDetailMeta} numberOfLines={4}>
                           {selectedGlobalMarineOfficialForecast.summary}
                         </Text>
+                      ) : null}
+                      {selectedGlobalMarineOfficialForecast.sections?.length ? (
+                        <View style={styles.marineBulletinSections}>
+                          <Text style={styles.marineBulletinSectionEyebrow}>Called-out bulletin areas</Text>
+                          {selectedGlobalMarineOfficialForecast.sections.slice(0, 3).map((section) => (
+                            <View key={section.key} style={styles.marineBulletinSection}>
+                              <View style={styles.marineBulletinSectionHeader}>
+                                <Text style={styles.marineBulletinSectionTitle} numberOfLines={1}>
+                                  {section.title}
+                                </Text>
+                                <Text style={styles.marineBulletinSectionKind}>{section.kind}</Text>
+                              </View>
+                              {section.areaHint ? (
+                                <Text style={styles.marineBulletinAreaHint} numberOfLines={2}>
+                                  {section.areaHint}
+                                </Text>
+                              ) : null}
+                              <Text style={styles.marineBulletinSectionText} numberOfLines={4}>
+                                {section.summary || section.text}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
                       ) : null}
                     </>
                   ) : (
@@ -6991,6 +7022,58 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 17,
     marginTop: 8,
+  },
+  marineBulletinSections: {
+    marginTop: 10,
+    gap: 8,
+  },
+  marineBulletinSectionEyebrow: {
+    color: 'rgba(125,211,252,0.86)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  marineBulletinSection: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.16)',
+    backgroundColor: 'rgba(15,23,42,0.58)',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  marineBulletinSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  marineBulletinSectionTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: 'rgba(248,250,252,0.95)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  marineBulletinSectionKind: {
+    color: 'rgba(186,230,253,0.82)',
+    fontSize: 9,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  marineBulletinAreaHint: {
+    marginTop: 5,
+    color: 'rgba(94,234,212,0.88)',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 15,
+  },
+  marineBulletinSectionText: {
+    marginTop: 5,
+    color: 'rgba(226,232,240,0.78)',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
   },
   fireDetailRows: {
     marginTop: 12,

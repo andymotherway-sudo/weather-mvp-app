@@ -14,6 +14,10 @@ export type GlobalMarineAreaSummary = {
   };
   sourceLabel: string;
   sourceUrl?: string;
+  boundarySource?: 'official-nws' | 'curated' | 'metarea-context';
+  precision?: 'official' | 'curated' | 'context';
+  officialForecastId?: string;
+  parentId?: string;
 };
 
 export type GlobalMarineManifest = {

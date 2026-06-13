@@ -67,6 +67,14 @@ export type GlobalMarineOfficialForecast = {
     label: string;
     severity: 'info' | 'watch' | 'warning' | 'storm';
   }>;
+  sections?: Array<{
+    key: string;
+    title: string;
+    kind: 'warning' | 'synopsis' | 'forecast' | 'notice';
+    summary: string;
+    text: string;
+    areaHint?: string | null;
+  }>;
   status: 'ok' | 'not_available';
 };
 
@@ -217,6 +225,10 @@ function globalMarineAreasToFeatureCollection(areas: GlobalMarineAreaSummary[]) 
           kind: area.kind,
           sourceLabel: area.sourceLabel,
           sourceUrl: area.sourceUrl,
+          boundarySource: area.boundarySource,
+          precision: area.precision,
+          officialForecastId: area.officialForecastId,
+          parentId: area.parentId,
         },
         geometry: area.geometry ?? boundsToPolygonCoordinates(area.bounds!),
       })),
@@ -605,19 +617,29 @@ export function useMarineMapLayer(args: {
         if (!ac.signal.aborted) setSelectedGlobalMarineLoading(false);
       });
 
-    fetchGlobalMarineOfficialForecast(selectedGlobalMarineArea.id, ac.signal)
-      .then((forecast) => {
-        if (ac.signal.aborted) return;
-        setSelectedGlobalMarineOfficialForecast(forecast);
-      })
-      .catch((e: any) => {
-        if (ac.signal.aborted) return;
-        setSelectedGlobalMarineOfficialForecast(null);
-        setSelectedGlobalMarineOfficialError(e?.message ?? 'Official marine forecast unavailable');
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setSelectedGlobalMarineOfficialLoading(false);
-      });
+    const officialForecastId =
+      selectedGlobalMarineArea.officialForecastId ??
+      (selectedGlobalMarineArea.id.startsWith('metarea-') ? selectedGlobalMarineArea.id : null);
+
+    if (officialForecastId) {
+      fetchGlobalMarineOfficialForecast(officialForecastId, ac.signal)
+        .then((forecast) => {
+          if (ac.signal.aborted) return;
+          setSelectedGlobalMarineOfficialForecast(forecast);
+        })
+        .catch((e: any) => {
+          if (ac.signal.aborted) return;
+          setSelectedGlobalMarineOfficialForecast(null);
+          setSelectedGlobalMarineOfficialError(e?.message ?? 'Official marine forecast unavailable');
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setSelectedGlobalMarineOfficialLoading(false);
+        });
+    } else {
+      setSelectedGlobalMarineOfficialForecast(null);
+      setSelectedGlobalMarineOfficialError(null);
+      setSelectedGlobalMarineOfficialLoading(false);
+    }
 
     return () => ac.abort();
   }, [selectedGlobalMarineArea]);
