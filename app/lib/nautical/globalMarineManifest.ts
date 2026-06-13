@@ -14,7 +14,7 @@ export type GlobalMarineAreaSummary = {
   };
   sourceLabel: string;
   sourceUrl?: string;
-  boundarySource?: 'official-nws' | 'official-eccc' | 'official-bom' | 'curated' | 'metarea-context';
+  boundarySource?: 'official-nws' | 'official-eccc' | 'official-bom' | 'official-metoffice' | 'curated' | 'metarea-context';
   precision?: 'official' | 'curated' | 'context';
   officialForecastId?: string;
   parentId?: string;

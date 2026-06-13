@@ -22,6 +22,7 @@
 import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
+import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
 
 const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
 
@@ -352,7 +353,7 @@ type MarineAreaSummary = {
   geometry?: MarineAreaGeometry;
   sourceLabel: string;
   sourceUrl?: string;
-  boundarySource?: "official-nws" | "official-eccc" | "official-bom" | "curated" | "metarea-context";
+  boundarySource?: "official-nws" | "official-eccc" | "official-bom" | "official-metoffice" | "curated" | "metarea-context";
   precision?: "official" | "curated" | "context";
   officialForecastId?: string;
   parentId?: string;
@@ -1053,7 +1054,7 @@ const MARINE_EXTREMES_TTL_SECONDS = 15 * 60;
 const MARINE_EXTREMES_STALE_SECONDS = 6 * 3600;
 const MARINE_AREAS_TTL_SECONDS = 15 * 60;
 const MARINE_AREAS_STALE_SECONDS = 24 * 3600;
-const MARINE_AREAS_VERSION = "official-curated-marine-areas-v3";
+const MARINE_AREAS_VERSION = "official-curated-marine-areas-v4";
 const MARINE_SOURCES_VERSION = "marine-sources-v1";
 const MARINE_OFFICIAL_FORECAST_TTL_SECONDS = 30 * 60;
 const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
@@ -1223,12 +1224,14 @@ function buildMarineSourcesPayload(): MarineSourcesResponse {
         notes: ["Generated from BoM public spatial dataset IDM00003 and served as official map geometry."],
       },
       {
-        id: "candidate-metoffice",
-        label: "UK shipping and inshore waters",
+        id: "official-metoffice",
+        label: "UK shipping forecast sea areas",
         countryOrRegion: "United Kingdom and nearby waters",
         agency: "Met Office",
-        status: "candidate",
-        notes: ["Official text products exist; do not draw polygons until an authoritative Met Office or UK government boundary dataset is verified."],
+        status: "active",
+        boundarySource: "official-metoffice",
+        endpoint: "/api/marine/areas",
+        notes: ["Shipping forecast polygons are derived from the official Met Office Fact Sheet 8 coordinate table and simplified for mobile map display."],
       },
       {
         id: "candidate-smn-semar",
@@ -2568,6 +2571,30 @@ function fetchOfficialBomMarineAreas(
   }).filter((area) => marineAreaIntersects(area, viewport));
 }
 
+function fetchOfficialMetOfficeMarineAreas(
+  viewport: { west: number; south: number; east: number; north: number },
+  zoom: number,
+): MarineAreaSummary[] {
+  if (zoom < 3.2 || viewport.north < 42 || viewport.south > 66) return [];
+
+  return UK_SHIPPING_FORECAST_ZONES.map((zone) => ({
+    id: zone.id,
+    name: zone.name,
+    region: "UK Shipping Forecast sea area",
+    kind: "offshore" as MarineAreaKind,
+    center: zone.center,
+    bounds: zone.bounds,
+    geometry: zone.geometry as unknown as MarineAreaGeometry,
+    sourceLabel: "Met Office Shipping Forecast sea area (Fact Sheet 8 coordinates)",
+    sourceUrl: "https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/research/library-and-archive/library/publications/factsheets/factsheet_8_shipping_forecast_2025.pdf",
+    boundarySource: "official-metoffice" as const,
+    precision: "official" as const,
+    officialForecastId: "metarea-i",
+    parentId: "metarea-i",
+    priority: 133,
+  })).filter((area) => marineAreaIntersects(area, viewport));
+}
+
 async function buildMarineAreasPayload(
   viewport: { west: number; south: number; east: number; north: number },
   zoom: number,
@@ -2579,9 +2606,17 @@ async function buildMarineAreasPayload(
     fetchOfficialEcccMarineAreas(viewport, zoom),
   ]);
   const officialBomAreas = fetchOfficialBomMarineAreas(viewport, zoom);
+  const officialMetOfficeAreas = fetchOfficialMetOfficeMarineAreas(viewport, zoom);
   const candidateAreas = includeContext
-    ? [...officialNwsAreas, ...officialEcccAreas, ...officialBomAreas, ...CURATED_MARINE_FORECAST_AREAS, ...GLOBAL_MARINE_AREAS]
-    : [...officialNwsAreas, ...officialEcccAreas, ...officialBomAreas];
+    ? [
+        ...officialNwsAreas,
+        ...officialEcccAreas,
+        ...officialBomAreas,
+        ...officialMetOfficeAreas,
+        ...CURATED_MARINE_FORECAST_AREAS,
+        ...GLOBAL_MARINE_AREAS,
+      ]
+    : [...officialNwsAreas, ...officialEcccAreas, ...officialBomAreas, ...officialMetOfficeAreas];
   const areas = candidateAreas
     .map((area) => ({
       ...area,

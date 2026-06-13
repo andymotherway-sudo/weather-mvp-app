@@ -48,9 +48,10 @@ describe('worker module', () => {
     expect(json.ok).toBe(true);
     expect(json.version).toBe('marine-sources-v1');
     expect(json.sources.map((source: any) => source.id)).toEqual(
-      expect.arrayContaining(['official-nws', 'official-eccc', 'official-bom', 'open-meteo-marine', 'wmo-metarea']),
+      expect.arrayContaining(['official-nws', 'official-eccc', 'official-bom', 'official-metoffice', 'open-meteo-marine', 'wmo-metarea']),
     );
     expect(json.sources.find((source: any) => source.id === 'wmo-metarea')?.status).toBe('context-only');
+    expect(json.sources.find((source: any) => source.id === 'official-metoffice')?.status).toBe('active');
   });
 
   it('returns official marine zones by default', async () => {
@@ -111,5 +112,20 @@ describe('worker module', () => {
     expect(json.areas.length).toBeGreaterThan(0);
     expect(json.areas.some((area: any) => String(area.id).startsWith('metarea-'))).toBe(false);
     expect(json.areas.some((area: any) => area.boundarySource === 'official-bom')).toBe(true);
+  });
+
+  it('returns official-derived UK shipping forecast zones by default', async () => {
+    const res = await worker.fetch(
+      new Request('https://omniwx.test/api/marine/areas?west=-16&south=47&east=8&north=62&zoom=4'),
+      {} as any,
+      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.areas.length).toBeGreaterThan(0);
+    expect(json.areas.some((area: any) => String(area.id).startsWith('metarea-'))).toBe(false);
+    expect(json.areas.some((area: any) => area.boundarySource === 'official-metoffice')).toBe(true);
   });
 });
