@@ -15,12 +15,11 @@ type Typography = {
   primaryNumber?: TextStyle; 
 };
 
-function systemFontFamily(): string | undefined {
-  // RN: leaving undefined also uses the system font, but being explicit is fine.
+function terminalFontFamily(): string | undefined {
   return Platform.select({
-    ios: 'System',
-    android: 'Roboto',
-    default: undefined,
+    ios: 'Menlo',
+    android: 'monospace',
+    default: 'monospace',
   });
 }
 
@@ -29,7 +28,7 @@ function withWxLabBase(s: TextStyle, wxLab: boolean): TextStyle {
 
   return {
     ...s,
-    fontFamily: systemFontFamily(),
+    fontFamily: terminalFontFamily(),
     // Makes numbers align vertically in lists/charts
     fontVariant: (s.fontVariant ?? []).includes('tabular-nums')
       ? s.fontVariant
@@ -86,8 +85,8 @@ function makeWxLabVariant(base: Typography): Typography {
     ...base,
     title: {
       ...base.title,
-      fontWeight: '600', // less “marketing bold”
-      letterSpacing: 0.2,
+      fontWeight: '700',
+      letterSpacing: 0,
     },
     subtitle: {
       ...base.subtitle,
@@ -101,8 +100,8 @@ function makeWxLabVariant(base: Typography): Typography {
     label: {
       ...base.label,
       // more “panel label”
-      letterSpacing: 1.2,
-      opacity: 0.8,
+      letterSpacing: 0,
+      opacity: 0.86,
     },
     small: {
       ...base.small,
@@ -123,8 +122,8 @@ function makeWxLabVariant(base: Typography): Typography {
     },
     primaryNumber: {
       ...(base.primaryNumber ?? {}),
-      fontWeight: '500',
-      letterSpacing: 0.1,
+      fontWeight: '600',
+      letterSpacing: 0,
     },
   };
 }

@@ -122,22 +122,22 @@ export function MarineMapLayers({
                   'match',
                   ['get', 'precision'],
                   'official',
-                  'rgba(125,211,252,0.86)',
+                  'rgba(125,211,252,0.46)',
                   'curated',
-                  'rgba(94,234,212,0.78)',
-                  'rgba(94,234,212,0.50)',
+                  'rgba(94,234,212,0.40)',
+                  'rgba(94,234,212,0.28)',
                 ] as any,
                 lineJoin: 'round',
                 lineWidth: [
                   'match',
                   ['get', 'precision'],
                   'official',
-                  ['interpolate', ['linear'], ['zoom'], 2, 0.72, 7.6, 1.4],
+                  ['interpolate', ['linear'], ['zoom'], 2, 0.45, 7.6, 0.92],
                   'curated',
-                  ['interpolate', ['linear'], ['zoom'], 2, 0.62, 7.6, 1.2],
-                  ['interpolate', ['linear'], ['zoom'], 2, 0.45, 5, 0.72, 7.6, 1],
+                  ['interpolate', ['linear'], ['zoom'], 2, 0.4, 7.6, 0.82],
+                  ['interpolate', ['linear'], ['zoom'], 2, 0.3, 5, 0.5, 7.6, 0.7],
                 ] as any,
-                lineOpacity: 0.42 * marineConditionsOpacity,
+                lineOpacity: 0.26 * marineConditionsOpacity,
               }}
             />
           </MapLibreGL.ShapeSource>
@@ -148,16 +148,16 @@ export function MarineMapLayers({
                 id="selected-global-marine-area-fill"
                 style={{
                   fillColor: 'rgba(20,184,166,1)',
-                  fillOpacity: 0.018 * marineConditionsOpacity,
+                  fillOpacity: 0.012 * marineConditionsOpacity,
                 }}
               />
               <MapLibreGL.LineLayer
                 id="selected-global-marine-area-line"
                 style={{
-                  lineColor: 'rgba(153,246,228,0.88)',
+                  lineColor: 'rgba(186,230,253,0.72)',
                   lineJoin: 'round',
-                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1, 7, 1.8] as any,
-                  lineOpacity: 0.86 * marineConditionsOpacity,
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.8, 7, 1.35] as any,
+                  lineOpacity: 0.62 * marineConditionsOpacity,
                 }}
               />
             </MapLibreGL.ShapeSource>
@@ -186,10 +186,10 @@ export function MarineMapLayers({
               id="marine-zones-line"
               minZoomLevel={3.8}
               style={{
-                lineColor: 'rgba(45,212,191,0.72)',
+                lineColor: 'rgba(94,234,212,0.42)',
                 lineJoin: 'round',
-                lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.34, 7.2, 0.68, 10, 1.05] as any,
-                lineOpacity: 0.44 * marineConditionsOpacity,
+                lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.28, 7.2, 0.48, 10, 0.82] as any,
+                lineOpacity: 0.3 * marineConditionsOpacity,
               }}
             />
           </MapLibreGL.ShapeSource>
@@ -200,16 +200,16 @@ export function MarineMapLayers({
                 id="selected-marine-zone-fill"
                 style={{
                   fillColor: 'rgba(20,184,166,1)',
-                  fillOpacity: 0.06 * marineConditionsOpacity,
+                  fillOpacity: 0.035 * marineConditionsOpacity,
                 }}
               />
               <MapLibreGL.LineLayer
                 id="selected-marine-zone-line"
                 style={{
-                  lineColor: 'rgba(153,246,228,0.92)',
+                  lineColor: 'rgba(186,230,253,0.76)',
                   lineJoin: 'round',
-                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 1.05, 7, 1.75, 10, 2.4] as any,
-                  lineOpacity: 0.78 * marineConditionsOpacity,
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.85, 7, 1.35, 10, 1.9] as any,
+                  lineOpacity: 0.64 * marineConditionsOpacity,
                 }}
               />
             </MapLibreGL.ShapeSource>

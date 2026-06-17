@@ -29,7 +29,12 @@ import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
-import { fetchLatestEarthDisk, type EarthDiskImage } from '../lib/spaceweather/earthDisk';
+import {
+  fetchLatestEarthDisk,
+  fetchLatestTerminatorEarthDisk,
+  type EarthDiskImage,
+  type EarthDiskView,
+} from '../lib/spaceweather/earthDisk';
 import { useMarsInsightWeather, useSpaceWeatherSummary } from '../lib/spaceweather/hooks';
 import { maybeCreateSolarEventCapture } from '../lib/spaceweather/solarCapture';
 import { useSpaceWeatherEvents } from '../lib/spaceweather/useSpaceWeatherEvents';
@@ -287,10 +292,12 @@ export default function SolarScreen() {
   const [solarImageState, setSolarImageState] = useState<Record<string, 'idle' | 'loading' | 'loaded' | 'error'>>(
     {}
   );
+  const [earthDiskView, setEarthDiskView] = useState<EarthDiskView>('goes-east');
   const [earthDisk, setEarthDisk] = useState<EarthDiskImage | null>(null);
   const [earthDiskLoading, setEarthDiskLoading] = useState(true);
   const [earthDiskError, setEarthDiskError] = useState<string | null>(null);
   const [earthDiskImageState, setEarthDiskImageState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -326,7 +333,10 @@ export default function SolarScreen() {
     setEarthDiskError(null);
     setEarthDiskImageState('loading');
     try {
-      const next = await fetchLatestEarthDisk();
+      const next =
+        earthDiskView === 'epic'
+          ? await fetchLatestEarthDisk()
+          : await fetchLatestTerminatorEarthDisk(earthDiskView === 'goes-west' ? 'west' : 'east');
       setEarthDisk(next);
     } catch (err: any) {
       setEarthDiskError(err?.message ? String(err.message) : 'Earth disk unavailable right now.');
@@ -334,7 +344,7 @@ export default function SolarScreen() {
       earthDiskRefreshInFlightRef.current = false;
       setEarthDiskLoading(false);
     }
-  }, []);
+  }, [earthDiskView]);
 
   const onRefreshAll = async () => {
     try {
@@ -525,7 +535,7 @@ export default function SolarScreen() {
     return String(v);
   }
 
-  const renderWindHistory = () => {
+  const renderWindHistory = (embedded = false) => {
     if (!data?.windHistory?.length) return null;
 
     const history = data.windHistory;
@@ -569,7 +579,7 @@ export default function SolarScreen() {
         : 'Bz unavailable';
 
     return (
-      <View style={themedCard}>
+      <View style={embedded ? styles.embeddedPanel : themedCard}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardTitle}>Solar Wind Speed – last few hours</Text>
           <LearnRow
@@ -811,6 +821,451 @@ export default function SolarScreen() {
   );
   const activeSolarImageState = solarImageState[activeSolarView.id] ?? 'idle';
 
+  const toggleDetailSection = useCallback((key: string) => {
+    setOpenDetailSections((current) => ({ ...current, [key]: !current[key] }));
+  }, []);
+
+  const renderNoaaScaleTile = (k: 'G' | 'R' | 'S') => {
+    const raw = (data as any)?.noaaScales?.[k];
+    const scale = getNoaaScaleLevel(raw);
+    const text =
+      raw &&
+      typeof raw === 'object' &&
+      typeof raw.text === 'string'
+        ? raw.text
+        : undefined;
+    const title =
+      k === 'G'
+        ? 'Geomagnetic Storms'
+        : k === 'R'
+          ? 'Radio Blackouts'
+          : 'Solar Radiation Storms';
+
+    return (
+      <Pressable
+        key={k}
+        onPress={() =>
+          openExplain({
+            title: `NOAA ${k}-scale`,
+            summary:
+              scale == null
+                ? `Current ${k}-scale status is unavailable.`
+                : `Current ${k}-scale status is ${k}${scale}.`,
+            whyItMatters: 'These are impact-focused summary scales.',
+            howComputed: 'From NOAA SWPC scales feed.',
+            confidence: 'high',
+            learnTopicId: 'noaa-scales',
+          })
+        }
+        style={styles.noaaStatusTile}
+      >
+        <Text style={styles.statusTileTitle}>{title}</Text>
+        <Text style={styles.statusTileLabel}>{k} Scale</Text>
+        <Text style={styles.noaaStatusValue}>{scale == null ? `${k}—` : `${k}${scale}`}</Text>
+        {text ? <Text style={styles.statusTileBody} numberOfLines={2}>{text}</Text> : null}
+      </Pressable>
+    );
+  };
+
+  const renderSpaceWeatherNowCard = () => {
+    if (!data) return null;
+    const chance = auroraChancePct(data.kp);
+    const gScale = getNoaaScaleLevel((data as any).noaaScales?.G);
+    const rScale = getNoaaScaleLevel((data as any).noaaScales?.R);
+    const sScale = getNoaaScaleLevel((data as any).noaaScales?.S);
+    const status = data.incomingStorm?.label ?? kpNarrative(data.kp);
+
+    return (
+      <View style={[themedCard, styles.nowHeroCard]}>
+        <View style={styles.nowHeroHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eyebrow}>SPACE WEATHER NOW</Text>
+            <Text style={styles.nowStatus} numberOfLines={2}>{status}</Text>
+          </View>
+          <Text style={styles.nowUpdated}>
+            Last updated: {fmtUpdated(data.updatedAt)}
+          </Text>
+        </View>
+
+        <View style={styles.nowHeroGrid}>
+          <View style={styles.kpHeroBlock}>
+            <Text style={styles.statusTileLabel}>Kp</Text>
+            <Text style={styles.kpHeroValue}>{data.kp.toFixed(1)}</Text>
+            <Text style={styles.statusTileBody}>{kpNarrative(data.kp)}</Text>
+          </View>
+          <View style={styles.auroraHeroBlock}>
+            <Text style={styles.statusTileLabel}>Aurora</Text>
+            <Text style={styles.auroraHeroValue}>{chance.toFixed(0)}%</Text>
+            <Text style={styles.statusTileBody}>Simple aurora likelihood estimate</Text>
+          </View>
+        </View>
+
+        <View style={styles.scaleMiniRow}>
+          <View style={styles.scaleMiniTile}>
+            <Text style={styles.statusTileLabel}>G</Text>
+            <Text style={styles.scaleMiniValue}>{gScale == null ? 'G—' : `G${gScale}`}</Text>
+          </View>
+          <View style={styles.scaleMiniTile}>
+            <Text style={styles.statusTileLabel}>R</Text>
+            <Text style={styles.scaleMiniValue}>{rScale == null ? 'R—' : `R${rScale}`}</Text>
+          </View>
+          <View style={styles.scaleMiniTile}>
+            <Text style={styles.statusTileLabel}>S</Text>
+            <Text style={styles.scaleMiniValue}>{sScale == null ? 'S—' : `S${sScale}`}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderNoaaScaleGrid = () => {
+    if (!data || !('noaaScales' in data) || !(data as any).noaaScales) return null;
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>NOAA Space Weather Scales</Text>
+          <LearnRow
+            onPress={() =>
+              openExplain({
+                title: 'NOAA Scales (G / R / S)',
+                summary:
+                  'NOAA impact scales for geomagnetic, radio, and radiation storms.',
+                whyItMatters: 'Quick readout of operational impacts.',
+                howComputed: 'From NOAA SWPC “noaa_scales” feed.',
+                confidence: 'high',
+                learnTopicId: 'noaa-scales',
+              })
+            }
+          />
+        </View>
+        <View style={styles.noaaScaleGrid}>
+          {(['G', 'R', 'S'] as const).map(renderNoaaScaleTile)}
+        </View>
+        <Text style={styles.smallText}>
+          Updated:{' '}
+          {(data as any).noaaScalesUpdatedAt
+            ? fmtUpdated((data as any).noaaScalesUpdatedAt)
+            : 'Unavailable'}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderKpAuroraOutlook = () => {
+    if (!data) return null;
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Kp & Aurora Outlook</Text>
+          <LearnRow
+            onPress={() =>
+              openExplain({
+                title: 'Kp index',
+                summary:
+                  'Kp is a 0â€“9 global score for geomagnetic disturbance.',
+                whyItMatters:
+                  'Higher Kp often means better aurora odds (latitude + sky conditions still matter).',
+                howComputed:
+                  'From NOAA SWPC Kp feeds (observed with forecast fallback).',
+                confidence: 'high',
+                learnTopicId: 'kp',
+              })
+            }
+          />
+        </View>
+
+        <View style={styles.kpOutlookHeader}>
+          <View>
+            <Text style={styles.label}>Kp Index</Text>
+            <Text style={styles.kpValue}>{data.kp.toFixed(1)}</Text>
+          </View>
+          <View style={styles.auroraBadge}>
+            <Text style={styles.statusTileLabel}>Aurora</Text>
+            <Text style={styles.auroraBadgeValue}>{auroraChancePct(data.kp).toFixed(0)}%</Text>
+          </View>
+        </View>
+        {renderKpGauge(data.kp)}
+        <Text style={styles.kpDescription}>{kpNarrative(data.kp)}</Text>
+        {renderAuroraBar(data.kp)}
+      </View>
+    );
+  };
+
+  const renderSolarWindPanel = () => {
+    if (!data) return null;
+    const bz = data.imf?.bzGsmNt;
+    const bt = data.imf?.btNt;
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Solar Wind at L1</Text>
+          <LearnRow
+            onPress={() =>
+              openExplain({
+                title: 'Solar wind (L1)',
+                summary:
+                  'Upstream plasma readings: speed, density, temperature.',
+                whyItMatters:
+                  'Speed/density help estimate energy input, but Bz often controls coupling.',
+                howComputed:
+                  'NOAA SWPC plasma feed with fallbacks + a small recent history.',
+                confidence: 'high',
+                learnTopicId: 'solar-wind',
+              })
+            }
+          />
+        </View>
+
+        <View style={styles.windTopGrid}>
+          <View style={styles.instrumentTile}>
+            <Text style={styles.label}>Speed</Text>
+            <Text style={styles.cardValue}>{data.solarWindSpeed.toFixed(1)} km/s</Text>
+          </View>
+          <View style={styles.instrumentTile}>
+            <Text style={styles.label}>Density</Text>
+            <Text style={styles.cardValue}>{data.solarWindDensity.toFixed(2)} /cmÂ³</Text>
+          </View>
+          <View style={styles.instrumentTile}>
+            <Text style={styles.label}>Bz</Text>
+            <Text style={styles.cardValue}>{typeof bz === 'number' ? `${bz.toFixed(1)} nT` : 'â€”'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.secondaryMetricGrid}>
+          <View style={styles.secondaryMetricTile}>
+            <Text style={styles.label}>Temperature</Text>
+            <Text style={styles.secondaryMetricValue}>
+              {Math.round(data.solarWindTemp).toLocaleString()} K
+            </Text>
+          </View>
+          <View style={styles.secondaryMetricTile}>
+            <Text style={styles.label}>Bt</Text>
+            <Text style={styles.secondaryMetricValue}>{typeof bt === 'number' ? `${bt.toFixed(1)} nT` : 'â€”'}</Text>
+          </View>
+          {data.protons ? (
+            <View style={styles.secondaryMetricTile}>
+              <Text style={styles.label}>Protons</Text>
+              <Text style={styles.secondaryMetricValue}>
+                {data.protons.pfu10MeV != null ? data.protons.pfu10MeV.toFixed(2) : 'â€”'}
+              </Text>
+            </View>
+          ) : null}
+          {data.protons?.sScale ? (
+            <View style={styles.secondaryMetricTile}>
+              <Text style={styles.label}>S scale</Text>
+              <Text style={styles.secondaryMetricValue}>{data.protons.sScale}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {renderSpeedDial(data.solarWindSpeed)}
+        {renderWindHistory(true)}
+      </View>
+    );
+  };
+
+  const renderSolarActivityPanel = () => {
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Solar Disk</Text>
+          <LearnRow
+            onPress={() => {
+              setLearnTopicId(activeSolarView.topicId);
+              setLearnOpen(true);
+            }}
+          />
+        </View>
+
+        <View style={styles.solarChipRow}>
+          {SOLAR_VIEWS.map((view) => (
+            <Pressable
+              key={view.id}
+              onPress={() => setSolarViewId(view.id)}
+              style={[
+                styles.solarChip,
+                view.id === activeSolarView.id ? styles.solarChipActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.solarChipText,
+                  view.id === activeSolarView.id ? styles.solarChipTextActive : null,
+                ]}
+              >
+                {view.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.solarImageFrame}>
+          <Image
+            source={{ uri: activeSolarView.imageUrl }}
+            style={styles.solarImage}
+            resizeMode="cover"
+            onLoadStart={() =>
+              setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loading' }))
+            }
+            onLoad={() =>
+              setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loaded' }))
+            }
+            onError={() =>
+              setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'error' }))
+            }
+          />
+
+          {activeSolarImageState !== 'loaded' ? (
+            <View style={styles.solarImageOverlay}>
+              <ActivityIndicator color="#E0F2FE" />
+              <Text style={styles.solarImageOverlayText}>
+                {activeSolarImageState === 'error'
+                  ? 'Solar image unavailable right now'
+                  : 'Loading live solar image...'}
+              </Text>
+              <Text style={styles.solarImageOverlaySubtext}>
+                Using a smaller mobile-friendly image and warming the rest in the background
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.solarMetaRow}>
+          <View style={styles.solarSourcePill}>
+            <Text style={styles.solarSourcePillText}>{activeSolarView.source}</Text>
+          </View>
+          <Text style={styles.smallText}>Live image feed</Text>
+        </View>
+
+        <Text style={styles.cardBody}>{activeSolarView.description}</Text>
+
+        {data?.goesXray ? (
+          <View style={styles.xrayInlinePanel}>
+            <View style={styles.row}>
+              <View style={styles.col}>
+                <Text style={styles.label}>Current Flux</Text>
+                <Text style={styles.cardValue}>
+                  {data.goesXray.fluxWm2 != null ? data.goesXray.fluxWm2.toExponential(2) : 'â€”'}
+                </Text>
+                <Text style={styles.smallText}>
+                  Time: {data.goesXray.timeTag ? fmtUpdated(data.goesXray.timeTag) : 'Unavailable'}
+                </Text>
+              </View>
+              <View style={styles.col}>
+                <Text style={styles.label}>Flare Class</Text>
+                <Text style={styles.flareClassText}>{data.goesXray.classLabel}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderEarthDiskPanel = () => {
+    const earthViewOptions: Array<{ id: EarthDiskView; label: string }> = [
+      { id: 'goes-east', label: 'Terminator E' },
+      { id: 'goes-west', label: 'Terminator W' },
+      { id: 'epic', label: 'L1 Earth' },
+    ];
+
+    return (
+      <View style={themedCard}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Earth View</Text>
+          <Pressable
+            style={styles.solarSourcePill}
+            onPress={refreshEarthDisk}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh Earth view"
+          >
+            <Text style={styles.solarSourcePillText}>Refresh</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.solarChipRow}>
+          {earthViewOptions.map((view) => (
+            <Pressable
+              key={view.id}
+              onPress={() => setEarthDiskView(view.id)}
+              style={[
+                styles.solarChip,
+                earthDiskView === view.id ? styles.solarChipActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.solarChipText,
+                  earthDiskView === view.id ? styles.solarChipTextActive : null,
+                ]}
+              >
+                {view.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.earthDiskFrame}>
+          {earthDisk?.imageUrl ? (
+            <Image
+              source={{ uri: earthDisk.imageUrl }}
+              style={styles.earthDiskImage}
+              resizeMode="contain"
+              onLoadStart={() => setEarthDiskImageState('loading')}
+              onLoad={() => setEarthDiskImageState('loaded')}
+              onError={() => setEarthDiskImageState('error')}
+            />
+          ) : null}
+
+          {earthDiskLoading || earthDiskError || earthDiskImageState === 'error' || earthDiskImageState !== 'loaded' ? (
+            <View style={styles.solarImageOverlay}>
+              {earthDiskLoading ? <ActivityIndicator color="#E0F2FE" /> : null}
+              <Text style={styles.solarImageOverlayText}>
+                {earthDiskError || earthDiskImageState === 'error'
+                  ? 'Earth disk unavailable right now'
+                  : 'Loading latest Earth disk...'}
+              </Text>
+              <Text style={styles.solarImageOverlaySubtext}>
+                GOES GeoColor is the terminator view; EPIC is the L1 Earth view
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.solarMetaRow}>
+          <View style={styles.solarSourcePill}>
+            <Text style={styles.solarSourcePillText}>{earthDisk?.source ?? 'NOAA GOES GeoColor'}</Text>
+          </View>
+          <Text style={styles.smallText}>
+            {earthDisk?.date ? fmtUpdated(earthDisk.date) : 'Latest available'}
+          </Text>
+        </View>
+        <Text style={styles.cardBody}>
+          {earthDisk?.caption ??
+            'GOES GeoColor full-disk view shows the day-night terminator. EPIC remains available as the L1 Earth view.'}
+        </Text>
+        {earthDisk?.centroid ? (
+          <Text style={styles.smallText}>
+            Disk center near {earthDisk.centroid.lat.toFixed(1)} deg, {earthDisk.centroid.lon.toFixed(1)} deg
+          </Text>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderDetailAccordion = (key: string, title: string, children: React.ReactNode) => {
+    const open = !!openDetailSections[key];
+    return (
+      <View style={styles.accordionItem}>
+        <Pressable style={styles.accordionHeader} onPress={() => toggleDetailSection(key)}>
+          <Text style={styles.accordionTitle}>{title}</Text>
+          <Text style={styles.accordionChevron}>{open ? '−' : '+'}</Text>
+        </Pressable>
+        {open ? <View style={styles.accordionBody}>{children}</View> : null}
+      </View>
+    );
+  };
+
   useEffect(() => {
     setSolarImageState((current) =>
       current[activeSolarView.id] ? current : { ...current, [activeSolarView.id]: 'loading' }
@@ -859,7 +1314,7 @@ export default function SolarScreen() {
                 <View style={styles.domainPill}>
                   <Text style={styles.domainPillText}>Space</Text>
                 </View>
-                <Text style={styles.headerTitle}>Space</Text>
+                <Text style={styles.headerTitle}>Solar Wx</Text>
                 <Text style={styles.headerSubline} numberOfLines={2}>
                   {active?.name ? `${active.name} · night sky forecast and solar activity` : 'Night sky forecast, moonlight, observing conditions, aurora context, and space weather'}
                 </Text>
@@ -876,6 +1331,93 @@ export default function SolarScreen() {
               </Text>
             </View>
           ) : null}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Solar Wx</Text>
+            <Text style={styles.sectionSubtitle}>
+              Current space weather, aurora context, upstream solar wind, and solar activity
+            </Text>
+          </View>
+
+          {showSpaceWeatherLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="large" />
+              <Text style={styles.smallText}>Loading space weatherâ€¦</Text>
+            </View>
+          ) : error ? (
+            <View style={themedErrorCard}>
+              <Text style={styles.cardTitle}>Error</Text>
+              <Text style={styles.cardValue}>{renderable(error)}</Text>
+            </View>
+          ) : data ? (
+            <>
+              {renderSpaceWeatherNowCard()}
+              {renderStormSignal()}
+              {renderSwpcAlerts()}
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>NOAA SPACE WEATHER SCALES</Text>
+                {renderNoaaScaleGrid()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>KP & AURORA OUTLOOK</Text>
+                {renderKpAuroraOutlook()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>SOLAR WIND AT L1</Text>
+                {renderSolarWindPanel()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>SOLAR ACTIVITY</Text>
+                {renderSolarActivityPanel()}
+                {renderEarthDiskPanel()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>SOLAR EVENTS</Text>
+                {renderRecentEvents()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>DETAILS & LEARN</Text>
+                <View style={themedCard}>
+                  {renderDetailAccordion('source-freshness', 'Data Sources', renderSourceFreshness())}
+                  {renderDetailAccordion(
+                    'wxlearn',
+                    'WxLearn',
+                    <Text style={styles.cardBody}>
+                      Use the wxLearn buttons on each panel for NOAA scales, Kp, solar wind, solar imagery, and DONKI event context.
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.footer}>
+                <Text style={styles.smallText}>
+                  Last updated: {fmtUpdated(data.updatedAt)}
+                </Text>
+                <Text style={styles.smallText}>
+                  Data sources: {data.source ?? 'NOAA SWPC'} â€¢ NASA DONKI (events)
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.center}>
+              <Text style={{ color: '#E5E7EB' }}>
+                No space weather data available.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Night Sky Context</Text>
+            <Text style={styles.sectionSubtitle}>
+              Location-based observing conditions and astronomy context
+            </Text>
+          </View>
 
           {showAstroLoading ? (
             <View style={styles.center}>
@@ -922,388 +1464,6 @@ export default function SolarScreen() {
               />
             </>
           ) : null}
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Solar Weather</Text>
-            <Text style={styles.sectionSubtitle}>
-              Solar and geomagnetic conditions that can influence aurora and observing context
-            </Text>
-          </View>
-
-
-          {showSpaceWeatherLoading ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={styles.smallText}>Loading space weather…</Text>
-            </View>
-          ) : error ? (
-            <View style={themedErrorCard}>
-              <Text style={styles.cardTitle}>Error</Text>
-              <Text style={styles.cardValue}>{renderable(error)}</Text>
-            </View>
-          ) : data ? (
-            <>
-              {renderStormSignal()}
-              {renderSwpcAlerts()}
-              {'noaaScales' in data && (data as any).noaaScales ? (
-                <View style={themedCard}>
-                  <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardTitle}>NOAA Scale Status</Text>
-                    <LearnRow
-                      onPress={() =>
-                        openExplain({
-                          title: 'NOAA Scales (G / R / S)',
-                          summary:
-                            'NOAA impact scales for geomagnetic, radio, and radiation storms.',
-                          whyItMatters: 'Quick readout of operational impacts.',
-                          howComputed: 'From NOAA SWPC “noaa_scales” feed.',
-                          confidence: 'high',
-                          learnTopicId: 'noaa-scales',
-                        })
-                      }
-                    />
-                  </View>
-
-                  <View style={styles.noaaRow}>
-                    {(['G', 'R', 'S'] as const).map((k) => {
-                      const raw = (data as any).noaaScales?.[k];
-                      const scale = getNoaaScaleLevel(raw);
-
-                      const text =
-                        raw &&
-                        typeof raw === 'object' &&
-                        typeof raw.text === 'string'
-                          ? raw.text
-                          : undefined;
-
-                      return (
-                        <Pressable
-                          key={k}
-                          onPress={() =>
-                            openExplain({
-                              title: `NOAA ${k}-scale`,
-                              summary:
-                                scale == null
-                                  ? `Current ${k}-scale status is unavailable.`
-                                  : `Current ${k}-scale status is ${k}${scale}.`,
-                              whyItMatters: 'These are impact-focused summary scales.',
-                              howComputed: 'From NOAA SWPC scales feed.',
-                              confidence: 'high',
-                              learnTopicId: 'noaa-scales',
-                            })
-                          }
-                          style={styles.noaaTile}
-                        >
-                          <Text style={styles.noaaVal}>
-                            {scale == null ? `${k}—` : `${k}${scale}`}
-                          </Text>
-
-                          <Text style={styles.noaaLbl}>
-                            {k === 'G'
-                              ? 'Geomagnetic'
-                              : k === 'R'
-                                ? 'Radio'
-                                : 'Radiation'}
-                            {text ? ` • ${text}` : ''}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <Text style={styles.smallText}>
-                    Updated:{' '}
-                    {(data as any).noaaScalesUpdatedAt
-                      ? fmtUpdated((data as any).noaaScalesUpdatedAt)
-                      : 'Unavailable'}
-                  </Text>
-                </View>
-              ) : null}
-
-              {data.goesXray ? (
-                <View style={themedCard}>
-                  <View style={styles.cardHeaderRow}>
-                    <Text style={styles.cardTitle}>GOES X-ray Flux</Text>
-                    <LearnRow
-                      onPress={() =>
-                        openExplain({
-                          title: 'X-ray flux & flare class',
-                          summary:
-                            'GOES satellites measure solar X-ray brightness; spikes indicate flares.',
-                          whyItMatters:
-                            'Flares can cause radio blackouts and may precede eruptions.',
-                          howComputed: 'From NOAA SWPC GOES X-ray flux feed.',
-                          confidence: 'high',
-                          learnTopicId: 'xray-flux',
-                        })
-                      }
-                    />
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={styles.col}>
-                      <Text style={styles.label}>Current Flux</Text>
-                      <Text style={styles.cardValue}>
-                        {data.goesXray.fluxWm2 != null ? data.goesXray.fluxWm2.toExponential(2) : '—'}
-                      </Text>
-                      <Text style={styles.smallText}>
-                        Time: {data.goesXray.timeTag ? fmtUpdated(data.goesXray.timeTag) : 'Unavailable'}
-                      </Text>
-                    </View>
-                    <View style={styles.col}>
-                      <Text style={styles.label}>Flare Class</Text>
-                      <Text style={styles.flareClassText}>
-                        {data.goesXray.classLabel}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={themedCard}>
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Solar Wind (L1)</Text>
-                  <LearnRow
-                    onPress={() =>
-                      openExplain({
-                        title: 'Solar wind (L1)',
-                        summary:
-                          'Upstream plasma readings: speed, density, temperature.',
-                        whyItMatters:
-                          'Speed/density help estimate energy input, but Bz often controls coupling.',
-                        howComputed:
-                          'NOAA SWPC plasma feed with fallbacks + a small recent history.',
-                        confidence: 'high',
-                        learnTopicId: 'solar-wind',
-                      })
-                    }
-                  />
-                </View>
-
-                <View style={styles.row}>
-                  <View style={styles.col}>
-                    <Text style={styles.label}>Speed</Text>
-                    <Text style={styles.cardValue}>
-                      {data.solarWindSpeed.toFixed(1)} km/s
-                    </Text>
-                  </View>
-                  <View style={styles.col}>
-                    <Text style={styles.label}>Density</Text>
-                    <Text style={styles.cardValue}>
-                      {data.solarWindDensity.toFixed(2)} /cm³
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.row}>
-                  <View style={styles.col}>
-                    <Text style={styles.label}>Temperature</Text>
-                    <Text style={styles.cardValue}>
-                      {Math.round(data.solarWindTemp).toLocaleString()} K
-                    </Text>
-                  </View>
-                </View>
-
-                {renderSpeedDial(data.solarWindSpeed)}
-              </View>
-
-              <View style={themedCard}>
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.cardTitle}>Geomagnetic Activity</Text>
-                  <LearnRow
-                    onPress={() =>
-                      openExplain({
-                        title: 'Kp index',
-                        summary:
-                          'Kp is a 0–9 global score for geomagnetic disturbance.',
-                        whyItMatters:
-                          'Higher Kp often means better aurora odds (latitude + sky conditions still matter).',
-                        howComputed:
-                          'From NOAA SWPC Kp feeds (observed with forecast fallback).',
-                        confidence: 'high',
-                        learnTopicId: 'kp',
-                      })
-                    }
-                  />
-                </View>
-
-                <Text style={styles.label}>Planetary Kp Index</Text>
-                <Text style={styles.kpValue}>{data.kp.toFixed(1)}</Text>
-
-                {renderKpGauge(data.kp)}
-
-                <Text style={styles.kpDescription}>{kpNarrative(data.kp)}</Text>
-                {renderAuroraBar(data.kp)}
-              </View>
-
-              {renderRecentEvents()}
-              {renderWindHistory()}
-              {renderSourceFreshness()}
-
-              <View style={styles.footer}>
-                <Text style={styles.smallText}>
-                  Last updated: {fmtUpdated(data.updatedAt)}
-                </Text>
-                <Text style={styles.smallText}>
-                  Data sources: {data.source ?? 'NOAA SWPC'} • NASA DONKI (events)
-                </Text>
-              </View>
-            </>
-          ) : (
-            <View style={styles.center}>
-              <Text style={{ color: '#E5E7EB' }}>
-                No space weather data available.
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Live Solar Views</Text>
-            <Text style={styles.sectionSubtitle}>
-              Toggle between current solar imagery products without leaving the Space page
-            </Text>
-          </View>
-
-          <View style={themedCard}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Solar imagery</Text>
-              <LearnRow
-                onPress={() => {
-                  setLearnTopicId(activeSolarView.topicId);
-                  setLearnOpen(true);
-                }}
-              />
-            </View>
-
-            <View style={styles.solarChipRow}>
-              {SOLAR_VIEWS.map((view) => (
-                <Pressable
-                  key={view.id}
-                  onPress={() => setSolarViewId(view.id)}
-                  style={[
-                    styles.solarChip,
-                    view.id === activeSolarView.id ? styles.solarChipActive : null,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.solarChipText,
-                      view.id === activeSolarView.id ? styles.solarChipTextActive : null,
-                    ]}
-                  >
-                    {view.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <View style={styles.solarImageFrame}>
-              <Image
-                source={{ uri: activeSolarView.imageUrl }}
-                style={styles.solarImage}
-                resizeMode="cover"
-                onLoadStart={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loading' }))
-                }
-                onLoad={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'loaded' }))
-                }
-                onError={() =>
-                  setSolarImageState((current) => ({ ...current, [activeSolarView.id]: 'error' }))
-                }
-              />
-
-              {activeSolarImageState !== 'loaded' ? (
-                <View style={styles.solarImageOverlay}>
-                  <ActivityIndicator color="#E0F2FE" />
-                  <Text style={styles.solarImageOverlayText}>
-                    {activeSolarImageState === 'error'
-                      ? 'Solar image unavailable right now'
-                      : 'Loading live solar image...'}
-                  </Text>
-                  <Text style={styles.solarImageOverlaySubtext}>
-                    Using a smaller mobile-friendly image and warming the rest in the background
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.solarMetaRow}>
-              <View style={styles.solarSourcePill}>
-                <Text style={styles.solarSourcePillText}>{activeSolarView.source}</Text>
-              </View>
-              <Text style={styles.smallText}>Live image feed</Text>
-            </View>
-
-            <Text style={styles.cardBody}>{activeSolarView.description}</Text>
-          </View>
-
-          <View style={themedCard}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Earth disk</Text>
-              <LearnRow
-                onPress={() =>
-                  openExplain({
-                    title: 'Earth disk view',
-                    summary:
-                      'This is the latest available natural-color full-disk Earth view from the DSCOVR spacecraft at the Sun-Earth L1 point.',
-                    whyItMatters:
-                      'It gives the Space page a planet-scale context view: cloud systems, daylit hemisphere, and Earth as seen from near the solar wind monitoring point.',
-                    howComputed:
-                      'OMNIwx requests the latest NASA EPIC metadata and builds the matching archive image URL for the newest natural-color PNG.',
-                    confidence: 'high',
-                    learnTopicId: 'earth-disk',
-                  })
-                }
-              />
-            </View>
-
-            <View style={styles.earthDiskFrame}>
-              {earthDisk?.imageUrl ? (
-                <Image
-                  source={{ uri: earthDisk.imageUrl }}
-                  style={styles.earthDiskImage}
-                  resizeMode="contain"
-                  onLoadStart={() => setEarthDiskImageState('loading')}
-                  onLoad={() => setEarthDiskImageState('loaded')}
-                  onError={() => setEarthDiskImageState('error')}
-                />
-              ) : null}
-
-              {earthDiskLoading || earthDiskError || earthDiskImageState === 'error' || earthDiskImageState !== 'loaded' ? (
-                <View style={styles.solarImageOverlay}>
-                  {earthDiskLoading ? <ActivityIndicator color="#E0F2FE" /> : null}
-                  <Text style={styles.solarImageOverlayText}>
-                    {earthDiskError || earthDiskImageState === 'error'
-                      ? 'Earth disk unavailable right now'
-                      : 'Loading latest Earth disk...'}
-                  </Text>
-                  <Text style={styles.solarImageOverlaySubtext}>
-                    NASA EPIC imagery is latest available and can lag real time
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            <View style={styles.solarMetaRow}>
-              <View style={styles.solarSourcePill}>
-                <Text style={styles.solarSourcePillText}>{earthDisk?.source ?? 'NASA EPIC / DSCOVR'}</Text>
-              </View>
-              <Text style={styles.smallText}>
-                {earthDisk?.date ? fmtUpdated(earthDisk.date) : 'Latest available'}
-              </Text>
-            </View>
-
-            <Text style={styles.cardBody}>
-              {earthDisk?.caption ??
-                'Natural-color full-disk Earth imagery from DSCOVR EPIC, shown as a latest available context view.'}
-            </Text>
-            {earthDisk?.centroid ? (
-              <Text style={styles.smallText}>
-                Disk center near {earthDisk.centroid.lat.toFixed(1)}°, {earthDisk.centroid.lon.toFixed(1)}°
-              </Text>
-            ) : null}
-          </View>
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
@@ -1460,6 +1620,292 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  dashboardSection: {
+    marginTop: 2,
+  },
+
+  dashboardSectionTitle: {
+    color: '#BAE6FD',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+
+  eyebrow: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0,
+    marginBottom: 6,
+  },
+
+  nowHeroCard: {
+    borderColor: 'rgba(125,211,252,0.28)',
+    backgroundColor: 'rgba(8,18,40,0.86)',
+  },
+
+  nowHeroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  nowStatus: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+
+  nowUpdated: {
+    color: 'rgba(255,255,255,0.56)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+    textAlign: 'right',
+    maxWidth: 118,
+  },
+
+  nowHeroGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+
+  kpHeroBlock: {
+    flex: 1.1,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(251,191,36,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.22)',
+  },
+
+  auroraHeroBlock: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(34,211,238,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.22)',
+  },
+
+  kpHeroValue: {
+    color: '#FBBF24',
+    fontSize: 48,
+    lineHeight: 54,
+    fontWeight: '900',
+  },
+
+  auroraHeroValue: {
+    color: '#67E8F9',
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '900',
+  },
+
+  scaleMiniRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  scaleMiniTile: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  scaleMiniValue: {
+    color: '#E5E7EB',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+
+  noaaScaleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+
+  noaaStatusTile: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    minWidth: 96,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.16)',
+  },
+
+  statusTileTitle: {
+    color: '#E5E7EB',
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900',
+  },
+
+  statusTileLabel: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 3,
+    textTransform: 'uppercase',
+  },
+
+  statusTileBody: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+
+  noaaStatusValue: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+
+  kpOutlookHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+
+  auroraBadge: {
+    minWidth: 98,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(34,211,238,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,211,238,0.20)',
+  },
+
+  auroraBadgeValue: {
+    color: '#67E8F9',
+    fontSize: 26,
+    fontWeight: '900',
+  },
+
+  windTopGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+
+  instrumentTile: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.14)',
+  },
+
+  secondaryMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+
+  secondaryMetricTile: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.035)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+
+  secondaryMetricValue: {
+    color: '#E5E7EB',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  xrayInlinePanel: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+
+  accordionItem: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+
+  accordionHeader: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  accordionTitle: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+
+  accordionChevron: {
+    color: '#BAE6FD',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+
+  accordionBody: {
+    paddingBottom: 12,
+  },
+
+  eventItem: {
+    paddingTop: 10,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+
+  eventHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 4,
+  },
+
+  eventType: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '900',
+    flex: 1,
+  },
+
+  eventSummary: {
+    color: '#D1D5DB',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
   center: {
     marginTop: 28,
     alignItems: 'center',
@@ -1473,6 +1919,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#1F2937',
+  },
+
+  embeddedPanel: {
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 12,
+    backgroundColor: 'rgba(2,6,23,0.34)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
 
   cardError: {
