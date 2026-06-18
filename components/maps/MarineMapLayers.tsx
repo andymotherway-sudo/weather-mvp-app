@@ -89,28 +89,12 @@ export function MarineMapLayers({
             }}
           >
             <MapLibreGL.FillLayer
-              id="global-marine-areas-fill"
+              id="global-marine-areas-hit-fill"
               minZoomLevel={2}
               maxZoomLevel={7.6}
               style={{
-                fillColor: [
-                  'match',
-                  ['get', 'precision'],
-                  'official',
-                  'rgba(56,189,248,1)',
-                  'curated',
-                  'rgba(20,184,166,1)',
-                  'rgba(20,184,166,1)',
-                ] as any,
-                fillOpacity: [
-                  'match',
-                  ['get', 'precision'],
-                  'official',
-                  0.025,
-                  'curated',
-                  0.02,
-                  ['interpolate', ['linear'], ['zoom'], 2, 0.006, 6.5, 0.014],
-                ] as any,
+                fillColor: 'rgba(148,163,184,1)',
+                fillOpacity: 0,
               }}
             />
             <MapLibreGL.LineLayer
@@ -122,10 +106,10 @@ export function MarineMapLayers({
                   'match',
                   ['get', 'precision'],
                   'official',
-                  'rgba(125,211,252,0.46)',
+                  'rgba(148,163,184,0.38)',
                   'curated',
-                  'rgba(94,234,212,0.40)',
-                  'rgba(94,234,212,0.28)',
+                  'rgba(148,163,184,0.34)',
+                  'rgba(148,163,184,0.28)',
                 ] as any,
                 lineJoin: 'round',
                 lineWidth: [
@@ -137,7 +121,7 @@ export function MarineMapLayers({
                   ['interpolate', ['linear'], ['zoom'], 2, 0.4, 7.6, 0.82],
                   ['interpolate', ['linear'], ['zoom'], 2, 0.3, 5, 0.5, 7.6, 0.7],
                 ] as any,
-                lineOpacity: 0.26 * marineConditionsOpacity,
+                lineOpacity: 0.22 * marineConditionsOpacity,
               }}
             />
           </MapLibreGL.ShapeSource>
@@ -145,19 +129,19 @@ export function MarineMapLayers({
           {selectedGlobalMarineArea ? (
             <MapLibreGL.ShapeSource id="selected-global-marine-area-source" shape={selectedGlobalMarineAreaFc as any}>
               <MapLibreGL.FillLayer
-                id="selected-global-marine-area-fill"
+                id="selected-global-marine-area-hit-fill"
                 style={{
-                  fillColor: 'rgba(20,184,166,1)',
-                  fillOpacity: 0.012 * marineConditionsOpacity,
+                  fillColor: 'rgba(148,163,184,1)',
+                  fillOpacity: 0,
                 }}
               />
               <MapLibreGL.LineLayer
                 id="selected-global-marine-area-line"
                 style={{
-                  lineColor: 'rgba(186,230,253,0.72)',
+                  lineColor: 'rgba(203,213,225,0.58)',
                   lineJoin: 'round',
                   lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.8, 7, 1.35] as any,
-                  lineOpacity: 0.62 * marineConditionsOpacity,
+                  lineOpacity: 0.48 * marineConditionsOpacity,
                 }}
               />
             </MapLibreGL.ShapeSource>
@@ -178,18 +162,18 @@ export function MarineMapLayers({
               id="marine-zones-hit-fill"
               minZoomLevel={3.8}
               style={{
-                fillColor: 'rgba(20,184,166,1)',
-                fillOpacity: 0.01,
+                fillColor: 'rgba(148,163,184,1)',
+                fillOpacity: 0,
               }}
             />
             <MapLibreGL.LineLayer
               id="marine-zones-line"
               minZoomLevel={3.8}
               style={{
-                lineColor: 'rgba(94,234,212,0.42)',
+                lineColor: 'rgba(148,163,184,0.34)',
                 lineJoin: 'round',
                 lineWidth: ['interpolate', ['linear'], ['zoom'], 3.8, 0.28, 7.2, 0.48, 10, 0.82] as any,
-                lineOpacity: 0.3 * marineConditionsOpacity,
+                lineOpacity: 0.22 * marineConditionsOpacity,
               }}
             />
           </MapLibreGL.ShapeSource>
@@ -197,19 +181,19 @@ export function MarineMapLayers({
           {selectedMarineZone ? (
             <MapLibreGL.ShapeSource id="selected-marine-zone-source" shape={selectedMarineZoneFc as any}>
               <MapLibreGL.FillLayer
-                id="selected-marine-zone-fill"
+                id="selected-marine-zone-hit-fill"
                 style={{
-                  fillColor: 'rgba(20,184,166,1)',
-                  fillOpacity: 0.035 * marineConditionsOpacity,
+                  fillColor: 'rgba(148,163,184,1)',
+                  fillOpacity: 0,
                 }}
               />
               <MapLibreGL.LineLayer
                 id="selected-marine-zone-line"
                 style={{
-                  lineColor: 'rgba(186,230,253,0.76)',
+                  lineColor: 'rgba(203,213,225,0.62)',
                   lineJoin: 'round',
                   lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.85, 7, 1.35, 10, 1.9] as any,
-                  lineOpacity: 0.64 * marineConditionsOpacity,
+                  lineOpacity: 0.5 * marineConditionsOpacity,
                 }}
               />
             </MapLibreGL.ShapeSource>
