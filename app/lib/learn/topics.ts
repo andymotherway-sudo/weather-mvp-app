@@ -797,6 +797,41 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'Coronagraph imagery is one of the most important views for seeing whether a solar eruption is actually leaving the Sun. It complements flare and X-ray data by showing the outer-coronal response and CME structure.',
   },
   {
+    id: 'earth-disk',
+    title: 'Earth Disk Views',
+    summary:
+      'Earth disk imagery gives the Space Weather screen visual context for the day-night terminator and Earth-facing views from space.',
+    references: [
+      { label: 'GOES GeoColor', value: 'Geostationary full-disk terminator view' },
+      { label: 'EPIC', value: 'DSCOVR L1 Earth imagery when available' },
+    ],
+    bullets: [
+      'The terminator is the moving boundary between day and night.',
+      'GOES views are geostationary and update frequently.',
+      'L1 Earth imagery feels more orbital, but usually updates less often.',
+    ],
+    body:
+      'These images are visual context layers, not weather model fields. They help show where daylight, nighttime, and broad cloud patterns sit relative to Earth.',
+  },
+  {
+    id: 'mars-insight-weather',
+    title: 'Mars InSight Weather Archive',
+    summary:
+      'NASA InSight measured temperature, pressure, and wind from Elysium Planitia on Mars before the mission ended.',
+    references: [
+      { label: 'Mission', value: 'NASA InSight' },
+      { label: 'Location', value: 'Elysium Planitia' },
+      { label: 'Status', value: 'Archived, not live' },
+    ],
+    bullets: [
+      'This is historical Mars weather context, not an active forecast.',
+      'Pressure and temperature on Mars behave very differently from Earth weather.',
+      'The archive is useful as a science reference and comparison point.',
+    ],
+    body:
+      'The InSight lander provided one of the clearest public surface-weather records from Mars. OMNIwx keeps it separated from live Earth and solar weather so it reads as a preserved archive rather than a current operational product.',
+  },
+  {
     id: 'astro-sunrise-sunset',
     title: 'Sunrise and Sunset',
     summary:

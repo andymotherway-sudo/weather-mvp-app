@@ -132,7 +132,7 @@ export function buildNerdyInsights(args: {
           'When spread is tiny (often < 3°F), a little cooling can produce fog, dew, or frost—especially overnight with light wind.',
         howComputed: `Spread = T (${fmt(tempF)}°F) − DP (${fmt(dewpointF)}°F) = ${fmt(spread)}°F`,
         confidence: 'high',
-        learnTopicId: 'thermal_spread',
+        learnTopicId: 'spread_temp_dew',
       },
     });
   }
@@ -229,7 +229,7 @@ export function buildNerdyInsights(args: {
         howComputed:
           'Uses Open-Meteo hourly shortwave radiation (if available) and cloud cover for a quick qualitative regime.',
         confidence: 'medium',
-        learnTopicId: 'radiation',
+        learnTopicId: 'radiation-regime',
       },
     });
   }

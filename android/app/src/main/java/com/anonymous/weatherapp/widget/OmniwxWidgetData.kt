@@ -178,6 +178,8 @@ private data class WidgetDailyRecords(
 
 object OmniwxWidgetData {
   const val ACTION_REFRESH_WIDGETS = "com.anonymous.weatherapp.widget.REFRESH_WIDGETS"
+  const val EXTRA_REFRESH_REASON = "com.anonymous.weatherapp.widget.REFRESH_REASON"
+  const val REFRESH_REASON_MANUAL = "manual"
 
   fun openIntent(context: Context, route: String): PendingIntent {
     // Widgets open the real Expo Router screen through the app's weatherapp://
@@ -201,6 +203,7 @@ object OmniwxWidgetData {
     // installed OMNIwx widget provider to update itself.
     val intent = Intent(context, OmniwxWidgetRefreshReceiver::class.java).apply {
       action = ACTION_REFRESH_WIDGETS
+      putExtra(EXTRA_REFRESH_REASON, REFRESH_REASON_MANUAL)
       setPackage(context.packageName)
     }
     return PendingIntent.getBroadcast(

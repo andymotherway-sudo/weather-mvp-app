@@ -326,6 +326,11 @@ export default function SolarScreen() {
     setExplainOpen(true);
   };
 
+  const openLearnTopic = useCallback((topicId?: string) => {
+    setLearnTopicId(topicId ?? undefined);
+    setLearnOpen(true);
+  }, []);
+
   const refreshEarthDisk = useCallback(async () => {
     if (earthDiskRefreshInFlightRef.current) return;
     earthDiskRefreshInFlightRef.current = true;
@@ -888,31 +893,31 @@ export default function SolarScreen() {
         </View>
 
         <View style={styles.nowHeroGrid}>
-          <View style={styles.kpHeroBlock}>
+          <Pressable style={styles.kpHeroBlock} onPress={() => openLearnTopic('kp')}>
             <Text style={styles.statusTileLabel}>Kp</Text>
             <Text style={styles.kpHeroValue}>{data.kp.toFixed(1)}</Text>
             <Text style={styles.statusTileBody}>{kpNarrative(data.kp)}</Text>
-          </View>
-          <View style={styles.auroraHeroBlock}>
+          </Pressable>
+          <Pressable style={styles.auroraHeroBlock} onPress={() => openLearnTopic('kp')}>
             <Text style={styles.statusTileLabel}>Aurora</Text>
             <Text style={styles.auroraHeroValue}>{chance.toFixed(0)}%</Text>
             <Text style={styles.statusTileBody}>Simple aurora likelihood estimate</Text>
-          </View>
+          </Pressable>
         </View>
 
         <View style={styles.scaleMiniRow}>
-          <View style={styles.scaleMiniTile}>
+          <Pressable style={styles.scaleMiniTile} onPress={() => openLearnTopic('noaa-scales')}>
             <Text style={styles.statusTileLabel}>G</Text>
             <Text style={styles.scaleMiniValue}>{gScale == null ? 'G—' : `G${gScale}`}</Text>
-          </View>
-          <View style={styles.scaleMiniTile}>
+          </Pressable>
+          <Pressable style={styles.scaleMiniTile} onPress={() => openLearnTopic('noaa-scales')}>
             <Text style={styles.statusTileLabel}>R</Text>
             <Text style={styles.scaleMiniValue}>{rScale == null ? 'R—' : `R${rScale}`}</Text>
-          </View>
-          <View style={styles.scaleMiniTile}>
+          </Pressable>
+          <Pressable style={styles.scaleMiniTile} onPress={() => openLearnTopic('noaa-scales')}>
             <Text style={styles.statusTileLabel}>S</Text>
             <Text style={styles.scaleMiniValue}>{sScale == null ? 'S—' : `S${sScale}`}</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
     );
@@ -1017,44 +1022,44 @@ export default function SolarScreen() {
         </View>
 
         <View style={styles.windTopGrid}>
-          <View style={styles.instrumentTile}>
+          <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('solar-wind')}>
             <Text style={styles.label}>Speed</Text>
             <Text style={styles.cardValue}>{data.solarWindSpeed.toFixed(1)} km/s</Text>
-          </View>
-          <View style={styles.instrumentTile}>
+          </Pressable>
+          <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('solar-wind')}>
             <Text style={styles.label}>Density</Text>
             <Text style={styles.cardValue}>{data.solarWindDensity.toFixed(2)} /cmÂ³</Text>
-          </View>
-          <View style={styles.instrumentTile}>
+          </Pressable>
+          <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('imf-bz')}>
             <Text style={styles.label}>Bz</Text>
             <Text style={styles.cardValue}>{typeof bz === 'number' ? `${bz.toFixed(1)} nT` : 'â€”'}</Text>
-          </View>
+          </Pressable>
         </View>
 
         <View style={styles.secondaryMetricGrid}>
-          <View style={styles.secondaryMetricTile}>
+          <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('solar-wind')}>
             <Text style={styles.label}>Temperature</Text>
             <Text style={styles.secondaryMetricValue}>
               {Math.round(data.solarWindTemp).toLocaleString()} K
             </Text>
-          </View>
-          <View style={styles.secondaryMetricTile}>
+          </Pressable>
+          <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('imf-bz')}>
             <Text style={styles.label}>Bt</Text>
             <Text style={styles.secondaryMetricValue}>{typeof bt === 'number' ? `${bt.toFixed(1)} nT` : 'â€”'}</Text>
-          </View>
+          </Pressable>
           {data.protons ? (
-            <View style={styles.secondaryMetricTile}>
+            <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('proton-flux')}>
               <Text style={styles.label}>Protons</Text>
               <Text style={styles.secondaryMetricValue}>
                 {data.protons.pfu10MeV != null ? data.protons.pfu10MeV.toFixed(2) : 'â€”'}
               </Text>
-            </View>
+            </Pressable>
           ) : null}
           {data.protons?.sScale ? (
-            <View style={styles.secondaryMetricTile}>
+            <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('proton-flux')}>
               <Text style={styles.label}>S scale</Text>
               <Text style={styles.secondaryMetricValue}>{data.protons.sScale}</Text>
-            </View>
+            </Pressable>
           ) : null}
         </View>
 
@@ -1140,7 +1145,7 @@ export default function SolarScreen() {
         <Text style={styles.cardBody}>{activeSolarView.description}</Text>
 
         {data?.goesXray ? (
-          <View style={styles.xrayInlinePanel}>
+          <Pressable style={styles.xrayInlinePanel} onPress={() => openLearnTopic('xray-flux')}>
             <View style={styles.row}>
               <View style={styles.col}>
                 <Text style={styles.label}>Current Flux</Text>
@@ -1156,7 +1161,7 @@ export default function SolarScreen() {
                 <Text style={styles.flareClassText}>{data.goesXray.classLabel}</Text>
               </View>
             </View>
-          </View>
+          </Pressable>
         ) : null}
       </View>
     );
@@ -1173,14 +1178,17 @@ export default function SolarScreen() {
       <View style={themedCard}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardTitle}>Earth View</Text>
-          <Pressable
-            style={styles.solarSourcePill}
-            onPress={refreshEarthDisk}
-            accessibilityRole="button"
-            accessibilityLabel="Refresh Earth view"
-          >
-            <Text style={styles.solarSourcePillText}>Refresh</Text>
-          </Pressable>
+          <View style={styles.cardHeaderActions}>
+            <LearnRow onPress={() => openLearnTopic('earth-disk')} />
+            <Pressable
+              style={styles.solarSourcePill}
+              onPress={refreshEarthDisk}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh Earth view"
+            >
+              <Text style={styles.solarSourcePillText}>Refresh</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.solarChipRow}>
@@ -1943,6 +1951,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     marginBottom: 8,
+  },
+
+  cardHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
   },
 
   cardTitle: {

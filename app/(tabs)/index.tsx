@@ -452,9 +452,8 @@ function DayMoonArc({
   showTimes?: boolean;
   embedded?: boolean;
 }) {
-  // Simple mode uses only the sun arc; wxLab can add moonrise/moonset in the
-  // same compact space. The colors are intentionally distinct but muted enough
-  // to live inside the glass daily card.
+  // The colors are intentionally distinct but muted enough to live inside the
+  // glass daily card.
   const width = 320;
   const height = 104;
   const margin = 24;
@@ -2512,6 +2511,8 @@ function SimpleDailyOverview({
     [moonDays]
   );
   const todayMoon = (todayKey ? moonByDate.get(todayKey) : undefined) ?? moonDays?.[0];
+  const moonriseForArc = moonrise ?? todayMoon?.moonrise ?? null;
+  const moonsetForArc = moonset ?? todayMoon?.moonset ?? null;
   const tonightMoonLabel = [
     todayMoon?.moonPhaseLabel,
     typeof todayMoon?.moonIlluminationPct === 'number' && Number.isFinite(todayMoon.moonIlluminationPct)
@@ -2635,7 +2636,13 @@ function SimpleDailyOverview({
           </View>
         </View>
 
-        <DayMoonArc sunrise={sunrise} sunset={sunset} />
+        <DayMoonArc
+          sunrise={sunrise}
+          sunset={sunset}
+          moonrise={moonriseForArc}
+          moonset={moonsetForArc}
+          showMoon
+        />
 
         <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
           {currentMetrics.map((item) => (
