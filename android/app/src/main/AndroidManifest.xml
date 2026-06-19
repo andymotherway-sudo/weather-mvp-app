@@ -25,7 +25,7 @@
     <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="fullSensor">
+    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
@@ -44,56 +44,56 @@
         <category android:name="androidx.car.app.category.WEATHER"/>
       </intent-filter>
     </service>
-    <service android:name=".widget.OmniwxWidgetRefreshJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
-    <receiver android:name=".widget.OmniwxCurrentWidgetProvider" android:exported="false" android:label="OMNIwx Current">
+    <service android:name=".widget.OmniwxWidgetRefreshJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE" android:process=":widgets"/>
+    <receiver android:name=".widget.OmniwxCurrentWidgetProvider" android:exported="false" android:label="OMNIwx Current" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_current_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxCurrentRadarWidgetProvider" android:exported="false" android:label="OMNIwx Current + Radar">
+    <receiver android:name=".widget.OmniwxCurrentRadarWidgetProvider" android:exported="false" android:label="OMNIwx Current + Radar" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_current_radar_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxSkyScoreWidgetProvider" android:exported="false" android:label="OMNIwx SkyScore">
+    <receiver android:name=".widget.OmniwxSkyScoreWidgetProvider" android:exported="false" android:label="OMNIwx SkyScore" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_sky_score_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxAviationWidgetProvider" android:exported="false" android:label="OMNIwx Aviation">
+    <receiver android:name=".widget.OmniwxAviationWidgetProvider" android:exported="false" android:label="OMNIwx Aviation" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_aviation_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxAirportBoardWidgetProvider" android:exported="false" android:label="OMNIwx Airport Board">
+    <receiver android:name=".widget.OmniwxAirportBoardWidgetProvider" android:exported="false" android:label="OMNIwx Airport Board" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_airport_board_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxRouteBriefingWidgetProvider" android:exported="false" android:label="OMNIwx Route Briefing">
+    <receiver android:name=".widget.OmniwxRouteBriefingWidgetProvider" android:exported="false" android:label="OMNIwx Route Briefing" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_route_briefing_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxClimatologyWidgetProvider" android:exported="false" android:label="OMNIwx Climatology">
+    <receiver android:name=".widget.OmniwxClimatologyWidgetProvider" android:exported="false" android:label="OMNIwx Climatology" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climatology_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxClimateArchWidgetProvider" android:exported="false" android:label="OMNIwx Climate Arch">
+    <receiver android:name=".widget.OmniwxClimateArchWidgetProvider" android:exported="false" android:label="OMNIwx Climate Arch" android:process=":widgets">
       <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climate_arch_info"/>
     </receiver>
-    <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="true">
+    <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="true" android:process=":widgets">
       <intent-filter>
         <action android:name="com.anonymous.weatherapp.widget.REFRESH_WIDGETS"/>
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>

@@ -31,6 +31,7 @@ import { MapRenderer } from '../../components/maps/MapRenderer';
 import { MarineMapLayers } from '../../components/maps/MarineMapLayers';
 import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
+import { WindParticleOverlay } from '../../components/maps/WindParticleOverlay';
 import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEngine';
 
 import { useFireContext } from '../lib/fire/useFireContext';
@@ -1388,6 +1389,8 @@ export default function MapsScreen() {
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
   const windVectorsEnabled = !!state.layers?.['wx.wind.vectors']?.enabled;
+  const windParticlesEnabled = !!state.layers?.['wx.wind.particles']?.enabled;
+  const windLayerEnabled = windVectorsEnabled || windParticlesEnabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
@@ -1609,6 +1612,9 @@ export default function MapsScreen() {
   const windVectorsOpacity = Number.isFinite(state.layers?.['wx.wind.vectors']?.opacity)
     ? state.layers['wx.wind.vectors'].opacity
     : 0.82;
+  const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
+    ? state.layers['wx.wind.particles'].opacity
+    : 0.72;
   const fireRestrictionsOpacity = Number.isFinite(state.layers?.['fire.restrictions']?.opacity)
     ? state.layers['fire.restrictions'].opacity
     : 0.48;
@@ -2387,7 +2393,7 @@ export default function MapsScreen() {
   });
 
   const windVectorLayer = useWindVectorLayer({
-    enabled: windVectorsEnabled,
+    enabled: windLayerEnabled,
     isFocused,
     mapZoom,
     region: effectiveRegion,
@@ -4185,6 +4191,16 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
         </MapRenderer>
+
+        <WindParticleOverlay
+          enabled={windParticlesEnabled && !animationRecordMode}
+          geojson={windVectorLayer.geojson}
+          height={viewportHeight}
+          isFocused={isFocused}
+          opacity={windParticlesOpacity}
+          region={effectiveRegion}
+          width={viewportWidth}
+        />
 
         {animationRecordMode ? (
           <View pointerEvents="box-none" style={[styles.recordExitWrap, { top: 12 + insets.top }]}>

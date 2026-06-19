@@ -40,7 +40,7 @@ function AppChromeFrame({ children }: { children: ReactNode }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: chrome.background }}>
-      <StatusBar style="light" translucent={false} backgroundColor={chrome.background} />
+      <StatusBar style="light" translucent />
       {children}
     </View>
   );

@@ -50,6 +50,11 @@ class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
         return false
       }
 
+      if (!force && OmniwxWidgetRuntime.isAppVisible(context)) {
+        OmniwxWidgetScheduler.schedule(context)
+        return true
+      }
+
       if (!force && !shouldRunBackgroundRefresh(context)) {
         OmniwxWidgetScheduler.schedule(context)
         return true

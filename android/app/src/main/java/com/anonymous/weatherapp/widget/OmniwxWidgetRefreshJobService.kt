@@ -5,12 +5,24 @@ import android.app.job.JobService
 
 class OmniwxWidgetRefreshJobService : JobService() {
   override fun onStartJob(params: JobParameters): Boolean {
-    val hasWidgets = OmniwxWidgetRefreshReceiver.refreshAll(applicationContext)
-    if (hasWidgets) {
+    if (OmniwxWidgetRuntime.isAppVisible(applicationContext)) {
       OmniwxWidgetScheduler.schedule(applicationContext)
+      jobFinished(params, false)
+      return false
     }
-    jobFinished(params, false)
-    return false
+
+    OmniwxWidgetExecutor.execute(
+      task = {
+        val hasWidgets = OmniwxWidgetRefreshReceiver.refreshAll(applicationContext)
+        if (hasWidgets) {
+          OmniwxWidgetScheduler.schedule(applicationContext)
+        }
+      },
+      done = {
+        jobFinished(params, false)
+      }
+    )
+    return true
   }
 
   override fun onStopJob(params: JobParameters): Boolean = true

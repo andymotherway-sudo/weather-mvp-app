@@ -1,7 +1,10 @@
 package com.anonymous.weatherapp
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.res.Configuration
+import android.os.Build
+import android.os.Process
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -53,6 +56,9 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    if (!isMainAppProcess()) {
+      return
+    }
     // React Native has several release levels. If Gradle supplies an unknown
     // value, fall back to STABLE so a bad build flag cannot prevent startup.
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
@@ -70,7 +76,24 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
+    if (!isMainAppProcess()) {
+      return
+    }
     // Forward orientation/theme/font-scale/etc. changes into Expo modules.
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
+  }
+
+  private fun isMainAppProcess(): Boolean {
+    val currentProcess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      getProcessName()
+    } else {
+      val myPid = Process.myPid()
+      val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+      manager
+        ?.runningAppProcesses
+        ?.firstOrNull { it.pid == myPid }
+        ?.processName
+    }
+    return currentProcess == packageName
   }
 }
