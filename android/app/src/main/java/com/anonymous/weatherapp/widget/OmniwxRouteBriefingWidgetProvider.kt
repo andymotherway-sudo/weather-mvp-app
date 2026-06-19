@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
-import kotlin.concurrent.thread
 
 // Route briefing widget. It intentionally shows the last analyzed/saved route
 // instead of running a fresh flight briefing from the home screen.
@@ -13,7 +12,7 @@ class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
 
-    thread(name = "omniwx-route-briefing-widget") {
+    OmniwxWidgetExecutor.execute {
       val route = runCatching { OmniwxWidgetData.fetchRouteBriefing(context) }.getOrNull()
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, route, loading = false))

@@ -8,7 +8,6 @@ import com.anonymous.weatherapp.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 // Medium climatology widget. It summarizes today's normal/record context from
@@ -18,7 +17,7 @@ class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
 
-    thread(name = "omniwx-climatology-widget") {
+    OmniwxWidgetExecutor.execute {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, climo))

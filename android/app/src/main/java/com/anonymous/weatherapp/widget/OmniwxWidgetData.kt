@@ -39,6 +39,7 @@ private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
 private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
 private const val SKY_SCORE_CACHE_PREFIX = "omniwx:skyScore:v1"
 private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
+private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
 
 /*
  * Shared data/rendering helper for all Android home-screen widgets.
@@ -76,6 +77,12 @@ data class WidgetWeather(
   val cloudPct: Double,
   val weatherCode: Int,
   val updatedLabel: String,
+)
+
+private data class CachedWidgetWeather(
+  val key: String,
+  val savedAtMs: Long,
+  val weather: WidgetWeather,
 )
 
 data class WidgetSkyScore(
@@ -181,6 +188,8 @@ object OmniwxWidgetData {
   const val EXTRA_REFRESH_REASON = "com.anonymous.weatherapp.widget.REFRESH_REASON"
   const val REFRESH_REASON_MANUAL = "manual"
 
+  private var weatherCache: CachedWidgetWeather? = null
+
   fun openIntent(context: Context, route: String): PendingIntent {
     // Widgets open the real Expo Router screen through the app's weatherapp://
     // deep-link scheme. Keep route names aligned with actual routes or Android
@@ -242,7 +251,20 @@ object OmniwxWidgetData {
     return null
   }
 
+  @Synchronized
   fun fetchWeather(place: WidgetPlace): WidgetWeather {
+    val cacheKey = "${place.lat.roundCoord()},${place.lon.roundCoord()}"
+    val now = System.currentTimeMillis()
+    weatherCache
+      ?.takeIf { it.key == cacheKey && now - it.savedAtMs in 0..WIDGET_WEATHER_CACHE_TTL_MS }
+      ?.let { return it.weather }
+
+    val weather = fetchWeatherFresh(place)
+    weatherCache = CachedWidgetWeather(cacheKey, now, weather)
+    return weather
+  }
+
+  private fun fetchWeatherFresh(place: WidgetPlace): WidgetWeather {
     // Compact one-day Open-Meteo request used by current/radar/sky widgets.
     // The full phone app can fetch richer data; widgets should stay cheap.
     val url =
@@ -1502,6 +1524,10 @@ private fun skyWindowLine(score: Int, low: Double?, mid: Double?, high: Double?)
 
 private fun pctLabel(value: Double?): String {
   return value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "--"
+}
+
+private fun Double.roundCoord(): String {
+  return String.format(Locale.US, "%.3f", this)
 }
 
 private fun looksLikeCoordinateLabel(value: String): Boolean {

@@ -4599,6 +4599,137 @@ function buildOmHourlyCacheKey(reqUrl: URL, lats: string[], lons: string[], unit
   return new Request(keyUrl.toString(), { method: "GET" });
 }
 
+const WIND_VECTOR_TTL_SECONDS = 10 * 60;
+const WIND_VECTOR_STALE_SECONDS = 30 * 60;
+const WIND_VECTOR_VERSION = "wind-vectors-v1";
+
+type WindVectorBbox = { west: number; south: number; east: number; north: number };
+
+function parseWindVectorRequest(url: URL) {
+  const readNumber = (key: string) => {
+    const raw = url.searchParams.get(key);
+    if (raw == null || raw.trim() === "") return NaN;
+    return Number(raw);
+  };
+  const west = clampFloat(readNumber("west"), -180, 180, NaN);
+  const south = clampFloat(readNumber("south"), -80, 80, NaN);
+  const east = clampFloat(readNumber("east"), -180, 180, NaN);
+  const north = clampFloat(readNumber("north"), -80, 80, NaN);
+  const zoom = clampFloat(Number(url.searchParams.get("zoom")), 1, 14, 4);
+  const units = parseUnits(url.searchParams.get("units"));
+
+  if (![west, south, east, north].every(Number.isFinite)) {
+    return { ok: false as const, error: "west, south, east, and north are required" };
+  }
+  if (west >= east || south >= north) {
+    return { ok: false as const, error: "invalid bbox" };
+  }
+
+  return { ok: true as const, bbox: { west, south, east, north }, zoom, units };
+}
+
+function buildWindVectorPoints(bbox: WindVectorBbox, zoom: number) {
+  const lonSpan = Math.max(0.01, bbox.east - bbox.west);
+  const latSpan = Math.max(0.01, bbox.north - bbox.south);
+  const aspect = Math.max(0.65, Math.min(2.4, lonSpan / latSpan));
+  const base = zoom < 4 ? 4 : zoom < 6 ? 5 : zoom < 8 ? 6 : 7;
+  const nx = Math.max(4, Math.min(11, Math.round(base * aspect)));
+  const ny = Math.max(3, Math.min(8, Math.round(base / Math.sqrt(aspect))));
+  const points: Array<{ lat: number; lon: number }> = [];
+
+  for (let y = 0; y < ny; y += 1) {
+    const ty = ny === 1 ? 0.5 : (y + 0.5) / ny;
+    for (let x = 0; x < nx; x += 1) {
+      const tx = nx === 1 ? 0.5 : (x + 0.5) / nx;
+      points.push({
+        lat: bbox.south + latSpan * ty,
+        lon: bbox.west + lonSpan * tx,
+      });
+    }
+  }
+
+  return points.slice(0, 80);
+}
+
+function buildWindVectorCacheKey(reqUrl: URL, bbox: WindVectorBbox, zoom: number, units: Units) {
+  const keyUrl = new URL(reqUrl.toString());
+  const step = zoom < 5 ? 0.5 : zoom < 8 ? 0.25 : 0.12;
+  keyUrl.pathname = "/__cache__/wind/vectors";
+  keyUrl.search = "";
+  keyUrl.searchParams.set(
+    "bbox",
+    [bbox.west, bbox.south, bbox.east, bbox.north].map((v) => roundCoordKey(v, step).toFixed(2)).join(","),
+  );
+  keyUrl.searchParams.set("zoom", String(Math.round(zoom * 2) / 2));
+  keyUrl.searchParams.set("units", units);
+  keyUrl.searchParams.set("v", WIND_VECTOR_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+async function fetchWindVectorsResponse(parsed: {
+  bbox: WindVectorBbox;
+  zoom: number;
+  units: Units;
+}) {
+  const points = buildWindVectorPoints(parsed.bbox, parsed.zoom);
+  const upstream = new URL("https://api.open-meteo.com/v1/forecast");
+  upstream.searchParams.set("latitude", points.map((p) => p.lat.toFixed(4)).join(","));
+  upstream.searchParams.set("longitude", points.map((p) => p.lon.toFixed(4)).join(","));
+  upstream.searchParams.set("current", "wind_speed_10m,wind_direction_10m");
+  upstream.searchParams.set("wind_speed_unit", "ms");
+  upstream.searchParams.set("timezone", "UTC");
+
+  const json: any = await fetchJsonWithTimeout(upstream.toString(), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const rows = Array.isArray(json) ? json : [json];
+  const fetchedAt = new Date().toISOString();
+
+  const features = rows
+    .map((row: any, index: number) => {
+      const point = points[index];
+      if (!point) return null;
+      const speedMps = safeNum(row?.current?.wind_speed_10m);
+      const directionDeg = safeNum(row?.current?.wind_direction_10m);
+      if (speedMps == null || directionDeg == null) return null;
+      const speedMph = speedMps * 2.2369362921;
+      const speedKmh = speedMps * 3.6;
+      const labelValue = parsed.units === "metric" ? Math.round(speedKmh) : Math.round(speedMph);
+      const labelUnit = parsed.units === "metric" ? "km/h" : "mph";
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [point.lon, point.lat] },
+        properties: {
+          id: `wind-${index}`,
+          speedMps,
+          speedMph,
+          speedKmh,
+          directionDeg,
+          rotationDeg: (directionDeg + 180) % 360,
+          label: `${labelValue} ${labelUnit}`,
+          updatedAt: row?.current?.time ?? fetchedAt,
+          source: "Open-Meteo",
+        },
+      };
+    })
+    .filter(Boolean);
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      source: "Open-Meteo Forecast API",
+      units: parsed.units,
+      fetchedAt,
+      pointCount: features.length,
+      geojson: {
+        type: "FeatureCollection",
+        features,
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json; charset=utf-8" } },
+  );
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -7942,6 +8073,23 @@ export default {
             clearTimeout(t);
           }
         },
+      });
+    }
+
+    if (url.pathname === "/api/wind/vectors" || url.pathname === "/v1/wind/vectors") {
+      const parsed = parseWindVectorRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildWindVectorCacheKey(url, parsed.bbox, parsed.zoom, parsed.units),
+        ttlSeconds: WIND_VECTOR_TTL_SECONDS,
+        staleSeconds: WIND_VECTOR_STALE_SECONDS,
+        fetchUpstream: () => fetchWindVectorsResponse(parsed),
       });
     }
 

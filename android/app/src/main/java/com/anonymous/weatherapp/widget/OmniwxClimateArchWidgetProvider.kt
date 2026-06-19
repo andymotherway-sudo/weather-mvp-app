@@ -8,7 +8,6 @@ import com.anonymous.weatherapp.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 // Large 4x4 climatology widget. This gives the annual temperature/precip arch
@@ -17,7 +16,7 @@ class OmniwxClimateArchWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
 
-    thread(name = "omniwx-climate-arch-widget") {
+    OmniwxWidgetExecutor.execute {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, climo, loading = false))

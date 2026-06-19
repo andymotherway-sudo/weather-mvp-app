@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
-import kotlin.concurrent.thread
 
 // SkyScore widget. It tries to mirror the Space tab by reading the app's cached
 // sky-score payload first; only if that is missing do we fall back to a rough
@@ -14,7 +13,7 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
 
-    thread(name = "omniwx-sky-widget") {
+    OmniwxWidgetExecutor.execute {
       val place = OmniwxWidgetData.readPlace(context)
       // Cache-first keeps the widget synchronized with the Space screen's
       // official score instead of inventing a second score on every refresh.

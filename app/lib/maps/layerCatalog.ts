@@ -74,6 +74,25 @@ export const LAYER_CATALOG = [
   },
 
   {
+    id: 'wx.wind.vectors',
+    group: 'weather',
+    title: 'Wind Vectors',
+    subtitle: 'Surface flow',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.82,
+    zIndex: 112,
+    source: {
+      name: 'Open-Meteo via OMNIwx',
+      details: '10 m surface wind sampled into a lightweight viewport vector grid.',
+      url: 'https://open-meteo.com/',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
     id: 'wx.fronts.day1',
     group: 'weather',
     title: 'Fronts',

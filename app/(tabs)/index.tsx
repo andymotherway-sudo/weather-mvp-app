@@ -412,13 +412,22 @@ function buildArcPath(
   const points: string[] = [];
   for (let i = 0; i <= samples; i += 1) {
     const t = displayStart + ((displayEnd - displayStart) * i) / samples;
-    const dayMinute = ((t % 1440) + 1440) % 1440;
-    const x = opts.margin + (dayMinute / 1440) * (opts.width - opts.margin * 2);
+    const x = arcXForDisplayMinute(t, displayStart, opts);
     const progress = Math.max(0, Math.min(1, (t - cycleStart) / span));
     const y = opts.baseline - Math.sin(progress * Math.PI) * opts.height;
     points.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
   }
   return points.join(' ');
+}
+
+function arcXForDisplayMinute(
+  displayMinute: number,
+  segmentDisplayStart: number,
+  opts: { width: number; margin: number }
+) {
+  const minuteInDay = segmentDisplayStart >= 1440 ? displayMinute - 1440 : displayMinute;
+  const clamped = Math.max(0, Math.min(1440, minuteInDay));
+  return opts.margin + (clamped / 1440) * (opts.width - opts.margin * 2);
 }
 
 function dayArcSegments(startMinute: number | null, endMinute: number | null) {
@@ -433,6 +442,17 @@ function dayArcSegments(startMinute: number | null, endMinute: number | null) {
     { displayStart: startMinute, displayEnd: 1440, cycleStart: startMinute, cycleEnd: normalizedEnd },
     { displayStart: 1440, displayEnd: normalizedEnd, cycleStart: startMinute, cycleEnd: normalizedEnd },
   ];
+}
+
+function dayArcEndpoint(
+  segments: ReturnType<typeof dayArcSegments>,
+  edge: 'start' | 'end',
+  opts: { width: number; margin: number }
+) {
+  if (!segments.length) return null;
+  const segment = edge === 'start' ? segments[0] : segments[segments.length - 1];
+  const displayMinute = edge === 'start' ? segment.displayStart : segment.displayEnd;
+  return arcXForDisplayMinute(displayMinute, segment.displayStart, opts);
 }
 
 function DayMoonArc({
@@ -467,6 +487,10 @@ function DayMoonArc({
   const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd) : [];
   const hasSun = sunSegments.length > 0;
   const hasMoon = moonSegments.length > 0;
+  const sunStartX = dayArcEndpoint(sunSegments, 'start', { width, margin });
+  const sunEndX = dayArcEndpoint(sunSegments, 'end', { width, margin });
+  const moonStartX = dayArcEndpoint(moonSegments, 'start', { width, margin });
+  const moonEndX = dayArcEndpoint(moonSegments, 'end', { width, margin });
 
   return (
     <View style={[styles.dayArcCard, embedded ? styles.dayArcEmbedded : null]}>
@@ -517,10 +541,10 @@ function DayMoonArc({
             fill="none"
           />
         ))}
-        {sunStart != null ? <Circle cx={margin + (sunStart / 1440) * (width - margin * 2)} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
-        {sunEnd != null ? <Circle cx={margin + (sunEnd / 1440) * (width - margin * 2)} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
-        {showMoon && moonStart != null ? <Circle cx={margin + (moonStart / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
-        {showMoon && moonEnd != null ? <Circle cx={margin + (moonEnd / 1440) * (width - margin * 2)} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
+        {sunStartX != null ? <Circle cx={sunStartX} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
+        {sunEndX != null ? <Circle cx={sunEndX} cy={baseline} r={4.5} fill="rgba(255, 198, 89, 1)" /> : null}
+        {showMoon && moonStartX != null ? <Circle cx={moonStartX} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
+        {showMoon && moonEndX != null ? <Circle cx={moonEndX} cy={baseline} r={4} fill="rgba(96, 190, 255, 1)" /> : null}
       </Svg>
       {showTimes ? (
         <View style={styles.dayArcTimes}>
@@ -2604,19 +2628,9 @@ function SimpleDailyOverview({
         <View style={styles.dailyTempRangeBlock}>
           <View style={styles.dailyTempRangeLabels}>
             <Text style={styles.dailyTempRangeEndpoint}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
-            <View style={styles.dailyTempRangeLegend}>
-              <View style={styles.dailyTempRangeLegendItem}>
-                <View style={styles.dailyTempRangeActualSwatch} />
-                <Text style={styles.dailyTempRangeNow}>Actual</Text>
-              </View>
-              {feelsLikeF != null ? (
-                <View style={styles.dailyTempRangeLegendItem}>
-                  <View style={styles.dailyTempRangeFeelsSwatch} />
-                  <Text style={styles.dailyTempRangeNow}>Feels {Math.round(feelsLikeF)}°</Text>
-                </View>
-              ) : null}
-            </View>
-            <Text style={styles.dailyTempRangeEndpoint}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
+            <Text style={[styles.dailyTempRangeEndpoint, styles.dailyTempRangeEndpointHigh]}>
+              {todayHi != null ? `${Math.round(todayHi)}°` : '—'}
+            </Text>
           </View>
           <View style={styles.dailyTempRangeTrack}>
             <LinearGradient
@@ -2631,6 +2645,18 @@ function SimpleDailyOverview({
             {feelsMarkerPct != null ? (
               <View style={[styles.dailyTempRangeFeelsMarker, { left: `${feelsMarkerPct}%` }]}>
                 <View style={styles.dailyTempRangeFeelsDot} />
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.dailyTempRangeLegend}>
+            <View style={styles.dailyTempRangeLegendItem}>
+              <View style={styles.dailyTempRangeActualSwatch} />
+              <Text style={styles.dailyTempRangeNow}>Actual</Text>
+            </View>
+            {feelsLikeF != null ? (
+              <View style={styles.dailyTempRangeLegendItem}>
+                <View style={styles.dailyTempRangeFeelsSwatch} />
+                <Text style={styles.dailyTempRangeNow}>Feels {Math.round(feelsLikeF)}°</Text>
               </View>
             ) : null}
           </View>
@@ -5216,7 +5242,7 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   dailyTempRangeBlock: {
-    gap: 8,
+    gap: 6,
   },
   dailyTempRangeLabels: {
     flexDirection: 'row',
@@ -5228,6 +5254,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.76)',
+  },
+  dailyTempRangeEndpointHigh: {
+    textAlign: 'right',
   },
   dailyTempRangeNow: {
     fontSize: 10,
@@ -5242,6 +5271,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
+    paddingTop: 2,
   },
   dailyTempRangeLegendItem: {
     flexDirection: 'row',

@@ -50,6 +50,7 @@ import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useAlertMapLayer } from '../lib/maps/useAlertMapLayer';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
+import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
@@ -1386,6 +1387,7 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
+  const windVectorsEnabled = !!state.layers?.['wx.wind.vectors']?.enabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
@@ -1604,6 +1606,9 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
+  const windVectorsOpacity = Number.isFinite(state.layers?.['wx.wind.vectors']?.opacity)
+    ? state.layers['wx.wind.vectors'].opacity
+    : 0.82;
   const fireRestrictionsOpacity = Number.isFinite(state.layers?.['fire.restrictions']?.opacity)
     ? state.layers['fire.restrictions'].opacity
     : 0.48;
@@ -2379,6 +2384,14 @@ export default function MapsScreen() {
     waterStationsEnabled,
     mapZoom,
     tempUnit,
+  });
+
+  const windVectorLayer = useWindVectorLayer({
+    enabled: windVectorsEnabled,
+    isFocused,
+    mapZoom,
+    region: effectiveRegion,
+    units: tempUnit === 'C' ? 'metric' : 'imperial',
   });
 
   mapPressHandlerRef.current = async (e: any) => {
@@ -3333,6 +3346,43 @@ export default function MapsScreen() {
                 />
               </MapLibreGL.ShapeSource>
             </>
+          ) : null}
+
+          {windVectorsEnabled && windVectorLayer.geojson?.features?.length ? (
+            <MapLibreGL.ShapeSource id="wind-vector-source" shape={windVectorLayer.geojson as any}>
+              <MapLibreGL.SymbolLayer
+                id="wind-vector-arrows"
+                minZoomLevel={3}
+                style={{
+                  textField: '^',
+                  textSize: ['interpolate', ['linear'], ['zoom'], 3, 13, 7, 17, 10, 21] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: 'rgba(191,219,254,0.96)',
+                  textOpacity: Math.max(0.18, Math.min(0.96, windVectorsOpacity)),
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1.25,
+                  textRotate: ['get', 'rotationDeg'] as any,
+                  textRotationAlignment: 'map',
+                  textAllowOverlap: true,
+                  textIgnorePlacement: true,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="wind-vector-labels"
+                minZoomLevel={6}
+                style={{
+                  textField: ['get', 'label'] as any,
+                  textSize: ['interpolate', ['linear'], ['zoom'], 6, 8, 10, 10] as any,
+                  textColor: 'rgba(226,232,240,0.86)',
+                  textOpacity: Math.max(0.14, Math.min(0.78, windVectorsOpacity * 0.9)),
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1,
+                  textOffset: [0, 1.25],
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
           ) : null}
 
           <AlertMapLayers

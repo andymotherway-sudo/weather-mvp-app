@@ -5,9 +5,29 @@ import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
 import android.os.Build
+import android.os.Process
+import java.util.concurrent.Executors
 
 private const val WIDGET_REFRESH_INTERVAL_MS = 30L * 60L * 1000L
 private const val WIDGET_REFRESH_JOB_ID = 0x0A17
+
+// Home-screen widget callbacks can arrive in bursts. Keep widget work serialized
+// and background-priority so launcher refreshes do not compete with the app UI.
+object OmniwxWidgetExecutor {
+  private val executor = Executors.newSingleThreadExecutor { task ->
+    Thread(task, "omniwx-widget-worker").apply {
+      isDaemon = true
+      priority = Thread.MIN_PRIORITY
+    }
+  }
+
+  fun execute(task: () -> Unit) {
+    executor.execute {
+      Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+      task()
+    }
+  }
+}
 
 // Lightweight periodic refresh for widgets. Keep one OS-managed background path
 // so launcher widgets do not compete with the foreground React Native app.

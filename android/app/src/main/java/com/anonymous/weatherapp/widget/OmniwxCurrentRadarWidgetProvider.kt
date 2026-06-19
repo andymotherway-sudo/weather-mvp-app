@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
-import kotlin.concurrent.thread
 
 // Current + radar widget. The radar panel is a native bitmap generated from
 // live map/radar tiles when available, with a styled fallback board when the
@@ -14,7 +13,7 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
 
-    thread(name = "omniwx-current-radar-widget") {
+    OmniwxWidgetExecutor.execute {
       val place = OmniwxWidgetData.readPlace(context)
       val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(it) }.getOrNull() }
       appWidgetIds.forEach { id ->
