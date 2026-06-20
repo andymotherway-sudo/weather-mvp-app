@@ -30,7 +30,6 @@ import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
 import {
-  fetchLatestEarthDisk,
   fetchLatestTerminatorEarthDisk,
   type EarthDiskImage,
   type EarthDiskView,
@@ -65,7 +64,7 @@ function kpNarrative(kp?: number) {
 
 function auroraChancePct(kp?: number) {
   if (kp == null || Number.isNaN(kp)) return 0;
-  if (kp < 3) return 5;
+  if (kp < 3) return 0;
   if (kp < 4) return 15;
   if (kp < 5) return 30;
   if (kp < 6) return 55;
@@ -298,6 +297,7 @@ export default function SolarScreen() {
   const [earthDiskError, setEarthDiskError] = useState<string | null>(null);
   const [earthDiskImageState, setEarthDiskImageState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
+  const [showAllSwpcAlerts, setShowAllSwpcAlerts] = useState(false);
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -338,10 +338,7 @@ export default function SolarScreen() {
     setEarthDiskError(null);
     setEarthDiskImageState('loading');
     try {
-      const next =
-        earthDiskView === 'epic'
-          ? await fetchLatestEarthDisk()
-          : await fetchLatestTerminatorEarthDisk(earthDiskView === 'goes-west' ? 'west' : 'east');
+      const next = await fetchLatestTerminatorEarthDisk(earthDiskView === 'goes-west' ? 'west' : 'east');
       setEarthDisk(next);
     } catch (err: any) {
       setEarthDiskError(err?.message ? String(err.message) : 'Earth disk unavailable right now.');
@@ -749,13 +746,17 @@ export default function SolarScreen() {
   const renderSwpcAlerts = () => {
     const alerts = data?.swpcAlerts ?? [];
     if (!alerts.length) return null;
+    const visibleAlerts = showAllSwpcAlerts ? alerts : alerts.slice(0, 3);
     return (
       <View style={themedCard}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardTitle}>SWPC Watches & Alerts</Text>
-          <Text style={styles.alertCount}>{alerts.length}</Text>
+          <View style={styles.cardHeaderActions}>
+            <LearnRow onPress={() => openLearnTopic('swpc-alerts')} />
+            <Text style={styles.alertCount}>{alerts.length}</Text>
+          </View>
         </View>
-        {alerts.slice(0, 3).map((alert) => (
+        {visibleAlerts.map((alert) => (
           <View key={alert.id} style={styles.swpcAlertItem}>
             <View style={styles.swpcAlertHeader}>
               <Text style={styles.swpcAlertSeverity}>{alert.severity.toUpperCase()}</Text>
@@ -765,6 +766,13 @@ export default function SolarScreen() {
             <Text style={styles.smallText} numberOfLines={4}>{alert.message}</Text>
           </View>
         ))}
+        {alerts.length > 3 ? (
+          <Pressable style={styles.showAllAlertsButton} onPress={() => setShowAllSwpcAlerts((v) => !v)}>
+            <Text style={styles.showAllAlertsText}>
+              {showAllSwpcAlerts ? 'Show fewer alerts' : `Show all ${alerts.length} alerts`}
+            </Text>
+          </Pressable>
+        ) : null}
         <Text style={styles.smallText}>Source: NOAA SWPC alerts</Text>
       </View>
     );
@@ -1171,7 +1179,6 @@ export default function SolarScreen() {
     const earthViewOptions: Array<{ id: EarthDiskView; label: string }> = [
       { id: 'goes-east', label: 'Terminator E' },
       { id: 'goes-west', label: 'Terminator W' },
-      { id: 'epic', label: 'L1 Earth' },
     ];
 
     return (
@@ -1234,7 +1241,7 @@ export default function SolarScreen() {
                   : 'Loading latest Earth disk...'}
               </Text>
               <Text style={styles.solarImageOverlaySubtext}>
-                GOES GeoColor is the terminator view; EPIC is the L1 Earth view
+                GOES GeoColor provides the frequently updated terminator views
               </Text>
             </View>
           ) : null}
@@ -1250,7 +1257,7 @@ export default function SolarScreen() {
         </View>
         <Text style={styles.cardBody}>
           {earthDisk?.caption ??
-            'GOES GeoColor full-disk view shows the day-night terminator. EPIC remains available as the L1 Earth view.'}
+            'GOES GeoColor full-disk view shows the day-night terminator from NOAA geostationary weather satellites.'}
         </Text>
         {earthDisk?.centroid ? (
           <Text style={styles.smallText}>
@@ -2210,6 +2217,22 @@ const styles = StyleSheet.create({
     color: '#F9FAFB',
     fontSize: 14,
     lineHeight: 18,
+    fontWeight: '900',
+  },
+  showAllAlertsButton: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    backgroundColor: 'rgba(14,165,233,0.10)',
+  },
+  showAllAlertsText: {
+    color: '#BAE6FD',
+    fontSize: 12,
     fontWeight: '900',
   },
   sourceRow: {

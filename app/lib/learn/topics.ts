@@ -10,6 +10,12 @@ export type LearnReference = {
   value: string;
 };
 
+export type LearnSection = {
+  title?: string;
+  body?: string;
+  bullets?: string[];
+};
+
 export type LearnTopic = {
   id: string;
   title: string;
@@ -17,9 +23,13 @@ export type LearnTopic = {
   references?: LearnReference[];
   bullets?: string[];
   body?: string;
+  sections?: LearnSection[];
+  callout?: string;
   formula?: string;
+  formulaLabel?: string;
   formulaNotes?: string[];
   insight?: string;
+  footer?: string;
 };
 
 export const LEARN_TOPICS: LearnTopic[] = [
@@ -605,6 +615,50 @@ export const LEARN_TOPICS: LearnTopic[] = [
   },
 
   {
+    id: 'swpc-alerts',
+    title: 'SWPC Watches, Warnings, and Alerts',
+    summary:
+      'SWPC messages are NOAA operational notices for notable space-weather conditions. They can look cryptic because they are written for operators, not casual readers.',
+    references: [
+      { label: 'Watch', value: 'Conditions are possible; stay aware' },
+      { label: 'Warning', value: 'A threshold is expected or imminent' },
+      { label: 'Alert', value: 'A threshold has been observed or exceeded' },
+      { label: 'Serial number', value: 'NOAA message tracking number, not severity' },
+    ],
+    bullets: [
+      'The headline tells you the event family, but the message code tells you the operational product.',
+      'Electron and proton flux alerts are often most relevant to satellite operations.',
+      'Geomagnetic watches and warnings are usually the ones aurora watchers care about most.',
+      'Old alerts may stay visible for context even after the active condition has ended.',
+    ],
+    body:
+      'SWPC alerts are concise bulletins from NOAA Space Weather Prediction Center. They tell operators what threshold was crossed, when it was issued, and what category of space-weather risk is involved.',
+    sections: [
+      {
+        title: 'Common message families',
+        bullets: [
+          'ALTEF3: energetic electron flux exceeded a threshold; mostly satellite-charging relevance.',
+          'ALTK: K-index or geomagnetic activity alert; more relevant to aurora and geomagnetic storm context.',
+          'WARK / WATA: watch products for possible geomagnetic storm levels.',
+          'SUMSUD / SUMX: flare or X-ray summaries tied to radio-blackout context.',
+        ],
+      },
+      {
+        title: 'Electron flux in plain English',
+        body:
+          'An Electron 2MeV Integral Flux alert means high-energy electrons near geosynchronous orbit crossed a NOAA threshold. That is interesting space weather, but it is mostly a spacecraft or satellite charging concern, not a direct ground hazard.',
+      },
+      {
+        title: 'Why some alerts repeat',
+        body:
+          'NOAA may issue repeated alerts as thresholds are crossed again or as new serial messages are generated. OMNIwx keeps the latest messages visible so users can see recent operational context.',
+      },
+    ],
+    insight:
+      'For aurora: prioritize Kp, G scale, Bz, and geomagnetic watches. For satellite environment: electron and proton flux alerts become much more interesting.',
+  },
+
+  {
     id: 'solar-wind',
     title: 'Solar Wind at L1 (speed, density, temperature)',
     summary:
@@ -621,6 +675,32 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Think of L1 as a short-range checkpoint between the Sun and Earth. It gives a heads-up before those conditions fully interact with Earth’s magnetic environment.',
+    formula: 'Dynamic pressure is proportional to density x speed^2',
+    formulaNotes: [
+      'km/s = kilometers per second, the standard speed unit for solar wind.',
+      '/cm3 = particles per cubic centimeter, usually proton density.',
+      'K = Kelvin, plasma temperature rather than ordinary air temperature.',
+      'nT = nanotesla, a magnetic-field strength unit used for IMF Bz and Bt.',
+    ],
+    sections: [
+      {
+        title: 'What is L1?',
+        body:
+          'L1 is the Sun-Earth Lagrange point about 1.5 million km sunward of Earth. Spacecraft there orbit a stable gravitational region and act like upstream buoys for the solar wind.',
+      },
+      {
+        title: 'Speed, density, and pressure',
+        body:
+          'Speed tells how fast the solar wind is arriving. Density tells how packed with particles it is. Together they help describe how hard the flow can press on Earth magnetosphere.',
+      },
+      {
+        title: 'Why Bz is separate',
+        body:
+          'Speed and density describe the flow. Bz describes the magnetic orientation inside that flow. Southward Bz often decides whether the energy couples efficiently into Earth magnetic field.',
+      },
+    ],
+    insight:
+      'Solar wind speed tells you how hard the stream can hit. Bz tells you whether Earth magnetic field is likely to let much of that energy in.',
   },
 
   {
@@ -639,6 +719,25 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Fast solar wind helps, but negative Bz often determines whether the magnetosphere really lights up.',
+    formulaNotes: [
+      'Positive Bz means northward IMF; it usually couples less efficiently.',
+      'Negative Bz means southward IMF; it usually couples more efficiently.',
+      'Bz and Bt are measured in nT, nanotesla.',
+    ],
+    sections: [
+      {
+        title: 'Why southward matters',
+        body:
+          'Earth magnetic field points mostly northward at the dayside boundary. When the incoming interplanetary magnetic field turns southward, the two fields connect more efficiently through magnetic reconnection.',
+      },
+      {
+        title: 'How to read it',
+        body:
+          'A brief negative dip can be interesting. Sustained negative Bz, especially with fast solar wind and rising Kp, is much more meaningful for aurora potential.',
+      },
+    ],
+    insight:
+      'Bz is one reason a fast solar wind stream can sometimes do very little, while another similar stream produces a much better aurora show.',
   },
 
   {
@@ -659,6 +758,20 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
     body:
       'Kp is useful because it compresses a complicated global magnetic response into a simple number, but it is not the whole aurora story.',
+    sections: [
+      {
+        title: 'What Kp is not',
+        body:
+          'Kp is not a cloud forecast, not a local aurora guarantee, and not an instant reading at your exact location. It is a global geomagnetic activity index.',
+      },
+      {
+        title: 'Aurora context',
+        body:
+          'Higher Kp expands the auroral oval toward lower latitudes, but visibility still depends on darkness, cloud cover, moonlight, light pollution, and where the auroral oval actually sits.',
+      },
+    ],
+    insight:
+      'A low Kp should not show a fake aurora promise. It means the geomagnetic environment is quiet unless other local and visual context says otherwise.',
   },
 
   {
@@ -800,18 +913,31 @@ export const LEARN_TOPICS: LearnTopic[] = [
     id: 'earth-disk',
     title: 'Earth Disk Views',
     summary:
-      'Earth disk imagery gives the Space Weather screen visual context for the day-night terminator and Earth-facing views from space.',
+      'Earth disk imagery gives the Space Weather screen visual context for the day-night terminator and full-disk cloud patterns from NOAA geostationary satellites.',
     references: [
-      { label: 'GOES GeoColor', value: 'Geostationary full-disk terminator view' },
-      { label: 'EPIC', value: 'DSCOVR L1 Earth imagery when available' },
+      { label: 'GOES-East', value: 'NOAA GOES-19 over the Americas and Atlantic sector' },
+      { label: 'GOES-West', value: 'NOAA GOES-18 over the Pacific and western North America sector' },
+      { label: 'GeoColor', value: 'Visible-style daytime color blended with infrared at night' },
     ],
     bullets: [
       'The terminator is the moving boundary between day and night.',
-      'GOES views are geostationary and update frequently.',
-      'L1 Earth imagery feels more orbital, but usually updates less often.',
+      'GOES satellites sit in geostationary orbit, so each one stares at the same hemisphere continuously.',
+      'The terminator views update much more reliably than the older L1 Earth option.',
     ],
     body:
-      'These images are visual context layers, not weather model fields. They help show where daylight, nighttime, and broad cloud patterns sit relative to Earth.',
+      'These images are visual context layers, not weather model fields. They help show where daylight, nighttime, and broad cloud patterns sit relative to Earth. GOES-East and GOES-West are parked over the equator in geostationary orbit about 35,786 km above Earth, which lets them refresh the same full-disk view frequently.',
+    sections: [
+      {
+        title: 'Why this is not L1 anymore',
+        body:
+          'The L1 Earth image came from a much farther upstream spacecraft view and could feel more orbital, but it was often stale. OMNIwx now favors the GOES terminator views because they are timely and visually explain day versus night better.',
+      },
+      {
+        title: 'What GeoColor is showing',
+        body:
+          'During daylight, GeoColor resembles natural-color visible imagery. At night, it uses infrared information so clouds and the dark side of Earth remain visible while the terminator stays obvious.',
+      },
+    ],
   },
   {
     id: 'mars-insight-weather',

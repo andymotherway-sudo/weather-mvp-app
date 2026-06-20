@@ -16,8 +16,11 @@ export function dewPointBandF(dpF: number): string {
 }
 
 export function heatIndexF(tF: number, rhPct: number): number | null {
-  // Only valid-ish for warm temps
-  if (tF < 80 || rhPct < 40) return null;
+  // NOAA's regression is built for hot/humid conditions. For warm-but-dry
+  // weather, show the air temperature instead of leaving the Heat Index tile
+  // blank; the practical read is "no extra heat stress from humidity."
+  if (tF < 60) return null;
+  if (tF < 80 || rhPct < 40) return tF;
   const T = tF;
   const R = rhPct;
   const HI =

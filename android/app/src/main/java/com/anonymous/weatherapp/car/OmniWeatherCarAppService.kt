@@ -48,6 +48,7 @@ import java.net.UnknownHostException
 import java.net.URL
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -529,7 +530,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   }
 
   @Volatile private var surface: SurfaceContainer? = null
-  @Volatile private var fetchInFlight = false
+  private val fetchInFlight = AtomicBoolean(false)
   @Volatile private var radarTiles: List<RadarTileBitmap> = emptyList()
   @Volatile private var radarTimestamp: String? = null
   @Volatile private var radarError: String? = null
@@ -568,7 +569,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
 
   fun statusText(): String {
     return synchronized(tileLock) {
-      radarTimestamp ?: radarError ?: if (fetchInFlight) "Loading latest radar" else "Static radar snapshot"
+      radarTimestamp ?: radarError ?: if (fetchInFlight.get()) "Loading latest radar" else "Static radar snapshot"
     }
   }
 
@@ -589,15 +590,15 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
   private fun fetchRadarIfNeeded(force: Boolean) {
     // Avoid overlapping downloads. Car screens can invalidate frequently, and
     // without this guard a refresh could start several tile mosaics at once.
-    if (fetchInFlight || repository.report == null) return
+    if (repository.report == null) return
     if (!force && synchronized(tileLock) { radarTiles.isNotEmpty() }) return
     val now = System.currentTimeMillis()
     if (!force && radarLastAttemptMs > 0L && now - radarLastAttemptMs < CAR_RADAR_RETRY_MS) {
       draw()
       return
     }
+    if (!fetchInFlight.compareAndSet(false, true)) return
     radarLastAttemptMs = now
-    fetchInFlight = true
     thread(name = "omniwx-car-radar") {
       try {
         val report = repository.report ?: return@thread
@@ -614,9 +615,10 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
         }
         oldTiles.forEach { runCatching { it.bitmap.recycle() } }
       } catch (e: Exception) {
-        synchronized(tileLock) { radarError = "Radar unavailable" }
+        android.util.Log.w("OMNIwxCar", "Radar snapshot failed", e)
+        synchronized(tileLock) { radarError = friendlyCarError(e) }
       } finally {
-        fetchInFlight = false
+        fetchInFlight.set(false)
         Handler(Looper.getMainLooper()).post { draw() }
       }
     }
@@ -634,6 +636,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
     }
 
     try {
+      if (target.width <= 0 || target.height <= 0) return
       drawRadarCanvas(canvas, target.width, target.height)
     } finally {
       runCatching { targetSurface.unlockCanvasAndPost(canvas) }
@@ -655,7 +658,7 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
     val timestamp = synchronized(tileLock) {
       val tiles = radarTiles
       if (tiles.isEmpty()) {
-        drawCenteredText(canvas, width, height, if (fetchInFlight) "Loading latest radar" else (radarError ?: "Radar snapshot pending"))
+        drawCenteredText(canvas, width, height, if (fetchInFlight.get()) "Loading latest radar" else (radarError ?: "Radar snapshot pending"))
       } else {
         drawTiles(canvas, width, height, report, tiles)
       }
@@ -1026,18 +1029,17 @@ private fun latestRainViewerTimestamp(): Long {
 }
 
 private fun fetchRadarTileMosaic(lat: Double, lon: Double, timestamp: Long): List<RadarTileBitmap> {
-  // A 3x3 tile mosaic is enough for a static in-car snapshot around the user.
-  // Larger mosaics cost more network and memory with little dashboard benefit.
+  // Center + cardinal neighbors is enough for a static in-car snapshot around
+  // the user. It loads much faster than a 3x3 mosaic on head units.
   val zoom = 7
   val centerTile = latLonToTile(lat, lon, zoom)
   val tiles = mutableListOf<RadarTileBitmap>()
-  for (dy in -1..1) {
-    for (dx in -1..1) {
-      val x = centerTile.first + dx
-      val y = centerTile.second + dy
-      val bitmap = fetchRadarTileBitmap(zoom, x, y, timestamp) ?: continue
-      tiles.add(RadarTileBitmap(x, y, bitmap))
-    }
+  val offsets = arrayOf(0 to 0, -1 to 0, 1 to 0, 0 to -1, 0 to 1)
+  for ((dx, dy) in offsets) {
+    val x = centerTile.first + dx
+    val y = centerTile.second + dy
+    val bitmap = fetchRadarTileBitmap(zoom, x, y, timestamp) ?: continue
+    tiles.add(RadarTileBitmap(x, y, bitmap))
   }
   return tiles
 }
@@ -1058,7 +1060,13 @@ private fun fetchRadarTileBitmap(zoom: Int, x: Int, y: Int, timestamp: Long): Bi
   }
   return try {
     if (conn.responseCode !in 200..299) return null
-    BitmapFactory.decodeStream(conn.inputStream)
+    BitmapFactory.decodeStream(
+      conn.inputStream,
+      null,
+      BitmapFactory.Options().apply {
+        inPreferredConfig = Bitmap.Config.RGB_565
+      }
+    )
   } finally {
     conn.disconnect()
   }

@@ -40,6 +40,8 @@ private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
 private const val SKY_SCORE_CACHE_PREFIX = "omniwx:skyScore:v1"
 private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
+private const val WIDGET_DATA_PREFS = "omniwx_widget_data"
+private const val LAST_WEATHER_JSON = "lastWeatherJson"
 
 /*
  * Shared data/rendering helper for all Android home-screen widgets.
@@ -237,6 +239,14 @@ object OmniwxWidgetData {
           }
           return placeFromJson(active)
         }
+        val favorites = root.optJSONArray("favorites")
+        if (favorites != null) {
+          for (i in 0 until favorites.length()) {
+            favorites.optJSONObject(i)?.let { favorite ->
+              placeFromJson(favorite)?.let { return it }
+            }
+          }
+        }
       }
     }
 
@@ -252,14 +262,20 @@ object OmniwxWidgetData {
   }
 
   @Synchronized
-  fun fetchWeather(place: WidgetPlace): WidgetWeather {
-    val cacheKey = "${place.lat.roundCoord()},${place.lon.roundCoord()}"
+  fun fetchWeather(context: Context, place: WidgetPlace): WidgetWeather {
+    val cacheKey = weatherCacheKey(place)
     val now = System.currentTimeMillis()
     weatherCache
       ?.takeIf { it.key == cacheKey && now - it.savedAtMs in 0..WIDGET_WEATHER_CACHE_TTL_MS }
       ?.let { return it.weather }
 
-    val weather = fetchWeatherFresh(place)
+    val weather = try {
+      fetchWeatherFresh(place).also { saveCachedWidgetWeather(context, it) }
+    } catch (e: Exception) {
+      readCachedWidgetWeather(context, place)?.also {
+        weatherCache = CachedWidgetWeather(cacheKey, now, it)
+      } ?: throw e
+    }
     weatherCache = CachedWidgetWeather(cacheKey, now, weather)
     return weather
   }
@@ -298,6 +314,59 @@ object OmniwxWidgetData {
       weatherCode = current.optInt("weather_code", -1),
       updatedLabel = nowLabel(),
     )
+  }
+
+  private fun saveCachedWidgetWeather(context: Context, weather: WidgetWeather) {
+    val payload = JSONObject()
+      .put("key", weatherCacheKey(weather.place))
+      .put("savedAtMs", System.currentTimeMillis())
+      .put("place", JSONObject().put("name", weather.place.name).put("lat", weather.place.lat).put("lon", weather.place.lon))
+      .put("temperatureF", weather.temperatureF)
+      .put("feelsLikeF", weather.feelsLikeF)
+      .put("highF", weather.highF)
+      .put("lowF", weather.lowF)
+      .put("windMph", weather.windMph)
+      .put("gustMph", weather.gustMph)
+      .put("windDirectionDeg", weather.windDirectionDeg)
+      .put("dewPointF", weather.dewPointF)
+      .put("visibilityMiles", weather.visibilityMiles)
+      .put("humidityPct", weather.humidityPct)
+      .put("cloudPct", weather.cloudPct)
+      .put("weatherCode", weather.weatherCode)
+      .put("updatedLabel", weather.updatedLabel)
+
+    context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE)
+      .edit()
+      .putString(LAST_WEATHER_JSON, payload.toString())
+      .apply()
+  }
+
+  private fun readCachedWidgetWeather(context: Context, place: WidgetPlace): WidgetWeather? {
+    val raw = context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE).getString(LAST_WEATHER_JSON, null)
+      ?: return null
+    return runCatching {
+      val root = JSONObject(raw)
+      if (root.optString("key") != weatherCacheKey(place)) return@runCatching null
+      val savedAtMs = root.optLong("savedAtMs", 0L)
+      if (savedAtMs <= 0L || System.currentTimeMillis() - savedAtMs > 6L * 60L * 60L * 1000L) return@runCatching null
+      val cachedPlace = root.optJSONObject("place")?.let { placeFromJson(it) } ?: place
+      WidgetWeather(
+        place = cachedPlace,
+        temperatureF = root.optDouble("temperatureF", Double.NaN),
+        feelsLikeF = root.optDouble("feelsLikeF", Double.NaN),
+        highF = root.optDouble("highF", Double.NaN),
+        lowF = root.optDouble("lowF", Double.NaN),
+        windMph = root.optDouble("windMph", Double.NaN),
+        gustMph = root.optDouble("gustMph", Double.NaN),
+        windDirectionDeg = root.optDouble("windDirectionDeg", Double.NaN),
+        dewPointF = root.optDouble("dewPointF", Double.NaN),
+        visibilityMiles = root.optDouble("visibilityMiles", Double.NaN),
+        humidityPct = root.optDouble("humidityPct", Double.NaN),
+        cloudPct = root.optDouble("cloudPct", Double.NaN),
+        weatherCode = root.optInt("weatherCode", -1),
+        updatedLabel = root.optString("updatedLabel", "recent cache"),
+      )
+    }.getOrNull()
   }
 
   fun skyScore(weather: WidgetWeather): WidgetSkyScore {
@@ -1524,6 +1593,10 @@ private fun skyWindowLine(score: Int, low: Double?, mid: Double?, high: Double?)
 
 private fun pctLabel(value: Double?): String {
   return value?.takeIf { it.isFinite() }?.let { "${it.roundToInt()}%" } ?: "--"
+}
+
+private fun weatherCacheKey(place: WidgetPlace): String {
+  return "${place.lat.roundCoord()},${place.lon.roundCoord()}"
 }
 
 private fun Double.roundCoord(): String {

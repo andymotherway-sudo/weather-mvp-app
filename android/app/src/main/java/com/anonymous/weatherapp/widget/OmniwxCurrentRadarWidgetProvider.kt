@@ -15,7 +15,7 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
 
     OmniwxWidgetExecutor.execute {
       val place = OmniwxWidgetData.readPlace(context)
-      val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(it) }.getOrNull() }
+      val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(context, it) }.getOrNull() }
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, weather, loading = false))
       }

@@ -25,6 +25,7 @@ type LearnTopic = {
   footer?: string;
   formula?: string;
   formulaLabel?: string;
+  formulaNotes?: string[];
   insight?: string;
 };
 
@@ -77,6 +78,7 @@ export function LearnMoreModal({
         t.footer ?? '',
         t.formula ?? '',
         t.formulaLabel ?? '',
+        ...(t.formulaNotes ?? []),
         ...(t.bullets ?? []),
         ...(t.sections ?? []).flatMap((s) => [s.title ?? '', s.body ?? '', ...(s.bullets ?? [])]),
         ...(t.references ?? []).flatMap((r) => [r.label ?? '', r.value ?? '']),
@@ -246,6 +248,30 @@ export function LearnMoreModal({
                   <Text style={styles.blockTitle}>{selected.formulaLabel ?? 'Formula'}</Text>
                   <View style={styles.formulaCard}>
                     <Text style={styles.formulaText}>{selected.formula}</Text>
+                    {selected.formulaNotes?.length ? (
+                      <View style={styles.formulaNotes}>
+                        {selected.formulaNotes.map((note, idx) => (
+                          <Text key={`${selected.id}-formula-note-${idx}`} style={styles.formulaNoteText}>
+                            {note}
+                          </Text>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+
+              {!selected.formula && selected.formulaNotes?.length ? (
+                <View style={styles.block}>
+                  <Text style={styles.blockTitle}>Units & Notes</Text>
+                  <View style={styles.formulaCard}>
+                    <View style={styles.formulaNotes}>
+                      {selected.formulaNotes.map((note, idx) => (
+                        <Text key={`${selected.id}-unit-note-${idx}`} style={styles.formulaNoteText}>
+                          {note}
+                        </Text>
+                      ))}
+                    </View>
                   </View>
                 </View>
               ) : null}
@@ -536,6 +562,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     fontWeight: '800',
+  },
+  formulaNotes: {
+    marginTop: 12,
+    gap: 4,
+  },
+  formulaNoteText: {
+    color: 'rgba(226,232,240,0.74)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
   },
 
   insightCard: {

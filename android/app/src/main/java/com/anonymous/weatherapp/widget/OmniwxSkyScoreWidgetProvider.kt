@@ -18,7 +18,7 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
       // Cache-first keeps the widget synchronized with the Space screen's
       // official score instead of inventing a second score on every refresh.
       val sky = runCatching { OmniwxWidgetData.fetchSkyScore(context) }.getOrNull()
-        ?: place?.let { runCatching { OmniwxWidgetData.skyScore(OmniwxWidgetData.fetchWeather(it)) }.getOrNull() }
+        ?: place?.let { runCatching { OmniwxWidgetData.skyScore(OmniwxWidgetData.fetchWeather(context, it)) }.getOrNull() }
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, place, sky))
       }

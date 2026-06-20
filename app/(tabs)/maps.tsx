@@ -1235,6 +1235,8 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastSyncedActivePlaceRef = useRef<string | null>(null);
+  const lastSyncedActivePlaceIdentityRef = useRef<string | null>(null);
+  const userMovedMapSinceActiveSyncRef = useRef(false);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
@@ -2271,6 +2273,7 @@ export default function MapsScreen() {
     };
 
     setCameraDebugLabel(`route-focus:${routeFocusTarget.lat.toFixed(2)},${routeFocusTarget.lon.toFixed(2)}`);
+    userMovedMapSinceActiveSyncRef.current = false;
     routeFocusSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
@@ -2297,15 +2300,28 @@ export default function MapsScreen() {
 
     const lat = Number(activePlace.lat);
     const lon = Number(activePlace.lon);
-    const key = [
+    const identityKey = [
       activePlace.source ?? 'place',
       activePlace.id ?? activePlace.name ?? 'active',
+    ].join('|');
+    const key = [
+      identityKey,
       lat.toFixed(4),
       lon.toFixed(4),
     ].join('|');
 
     if (lastSyncedActivePlaceRef.current === key) return;
+    const identityChanged = lastSyncedActivePlaceIdentityRef.current !== identityKey;
+
+    if (userMovedMapSinceActiveSyncRef.current && !identityChanged) {
+      lastSyncedActivePlaceRef.current = key;
+      lastSyncedActivePlaceIdentityRef.current = identityKey;
+      return;
+    }
+
     lastSyncedActivePlaceRef.current = key;
+    lastSyncedActivePlaceIdentityRef.current = identityKey;
+    userMovedMapSinceActiveSyncRef.current = false;
 
     const latitudeDelta = clampNumber(
       region?.latitudeDelta && Number.isFinite(region.latitudeDelta)
@@ -2692,6 +2708,7 @@ export default function MapsScreen() {
 
   const recenterToGps = () => {
     locateRequestIdRef.current += 1;
+    userMovedMapSinceActiveSyncRef.current = false;
     const cachedCoords = loc.state.currentCoords;
     if (cachedCoords && Number.isFinite(cachedCoords.lat) && Number.isFinite(cachedCoords.lon)) {
       if (manualStationRadarMode) {
@@ -3173,8 +3190,9 @@ export default function MapsScreen() {
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
-            onPanDrag={() => {
-              locateRequestIdRef.current += 1;
+              onPanDrag={() => {
+                userMovedMapSinceActiveSyncRef.current = true;
+                locateRequestIdRef.current += 1;
               const now = Date.now();
               if (now - lastPanMarkRef.current > 450) {
                 lastPanMarkRef.current = now;
@@ -4973,6 +4991,14 @@ export default function MapsScreen() {
                   <Text style={styles.fireDetailMeta}>{formatMarineUpdated(selectedMarineBuoy.updatedAt)}</Text>
 
                   <View style={styles.fireDetailRows}>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Wave height</Text>
+                      <Text style={styles.fireDetailValue}>
+                        {selectedMarineBuoy.waveHeightM != null
+                          ? `${(selectedMarineBuoy.waveHeightM * 3.28084).toFixed(1)} ft`
+                          : 'Unavailable'}
+                      </Text>
+                    </View>
                     <View style={styles.fireDetailRow}>
                       <Text style={styles.fireDetailLabel}>Wind / gust</Text>
                       <Text style={styles.fireDetailValue}>
