@@ -1,6 +1,7 @@
 // app/context/PlaceContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { NativeModules, Platform } from 'react-native';
 
 import { formatCompactLocation } from '../lib/locations/formats';
 import { warmFavoriteLocationCaches } from '../lib/locations/favoriteWarmup';
@@ -27,6 +28,12 @@ const KEY = 'omniwx.place.v2';
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 
 const Ctx = createContext<PlaceState | null>(null);
+
+type NativeWidgetStateModule = {
+  updatePlace?: (place: { name: string; lat: number; lon: number; source?: string }) => Promise<boolean>;
+};
+
+const nativeWidgetState = NativeModules.OmniwxWidgetState as NativeWidgetStateModule | undefined;
 
 function makeId(lat: number, lon: number) {
   return `${lat.toFixed(4)},${lon.toFixed(4)}`;
@@ -80,6 +87,17 @@ function placeFromDefaultCity(c: DefaultCity): Place {
     lon: c.lon,
     source: 'search',
   };
+}
+
+function syncNativeWidgetPlace(place: Place | null) {
+  if (Platform.OS !== 'android') return;
+  if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return;
+  nativeWidgetState?.updatePlace?.({
+    name: place.name,
+    lat: place.lat,
+    lon: place.lon,
+    source: place.source,
+  }).catch(() => {});
 }
 
 // Best-effort permission probe (no prompting)
@@ -164,6 +182,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydratedRef.current) return;
     AsyncStorage.setItem(KEY, JSON.stringify({ active, favorites })).catch(() => {});
+    syncNativeWidgetPlace(active);
   }, [active, favorites]);
 
   // ✅ If no active place after hydration, prefer Default City (if set).

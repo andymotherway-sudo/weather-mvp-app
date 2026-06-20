@@ -62,6 +62,8 @@ import org.json.JSONObject
 
 private const val PLACE_STORAGE_KEY = "omniwx.place.v2"
 private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
+private const val WIDGET_STATE_PREFS = "omniwx_widget_data"
+private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
 private const val OMNIWX_RADAR_WORKER_BASE = "https://omniwx-api.omniwx.workers.dev"
 private const val CAR_RADAR_RETRY_MS = 2 * 60 * 1000L
@@ -446,48 +448,33 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
-  private val radarSurfaceRenderer = CarRadarSurfaceRenderer(repository)
-
-  init {
-    carContext.getCarService(AppManager::class.java).setSurfaceCallback(radarSurfaceRenderer)
-    lifecycle.addObserver(object : DefaultLifecycleObserver {
-      override fun onDestroy(owner: LifecycleOwner) {
-        carContext.getCarService(AppManager::class.java).setSurfaceCallback(EmptyCarSurfaceCallback)
-        radarSurfaceRenderer.release()
-      }
-    })
-  }
-
   override fun onGetTemplate(): Template {
     return safeTemplate("Radar Snapshot") {
       ensureLoaded()
       loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
-      radarSurfaceRenderer.ensureLoaded()
+      val radarIcon = carRadarSnapshotIcon(current, emptyList(), loading = false, error = null)
       val pane = Pane.Builder()
         .addRow(
           Row.Builder()
             .setTitle("Radar near ${current.placeName}")
             .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
-            .addText(radarSurfaceRenderer.statusText())
+            .addText("Driver-safe static radar summary")
+            .setImage(radarIcon, Row.IMAGE_TYPE_LARGE)
             .build()
         )
         .addRow(
           Row.Builder()
             .setTitle(current.alertTitle ?: "No active alerts")
-            .addText(current.alertSubtitle ?: "Static radar surface refreshes when you tap Refresh.")
+            .addText(current.alertSubtitle ?: "Open Maps on your phone for the full interactive radar.")
             .build()
         )
         .build()
 
-      MapTemplate.Builder()
-        .setHeader(Header.Builder().setTitle("Radar Snapshot").setStartHeaderAction(Action.BACK).build())
-        .setPane(pane)
-        .setMapController(
-          MapController.Builder()
-            .setMapActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
-            .build()
-        )
+      PaneTemplate.Builder(pane)
+        .setTitle("Radar Snapshot")
+        .setHeaderAction(Action.BACK)
+        .setActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
         .build()
     }
   }
@@ -497,10 +484,8 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .setTitle("Refresh")
       .setOnClickListener {
         repository.load(force = true) {
-          radarSurfaceRenderer.requestRefresh()
           invalidate()
         }
-        radarSurfaceRenderer.requestRefresh()
         invalidate()
       }
       .build()
@@ -837,7 +822,7 @@ private data class NexradSite(
  * predictable; if location is stale, the phone app can refresh it.
  */
 private fun resolveCarPlace(context: Context): CarPlace? {
-  val activePlace = readStoredActivePlace(context)
+  val activePlace = readMirroredActivePlace(context) ?: readStoredActivePlace(context)
   if (activePlace?.source == "gps") {
     val gps = readLastKnownLocation(context)
     if (gps != null) return gps
@@ -846,6 +831,19 @@ private fun resolveCarPlace(context: Context): CarPlace? {
   if (activePlace != null) return activePlace
 
   return readStoredDefaultCity(context) ?: readLastKnownLocation(context)
+}
+
+private fun readMirroredActivePlace(context: Context): CarPlace? {
+  val raw = context.getSharedPreferences(WIDGET_STATE_PREFS, Context.MODE_PRIVATE).getString(ACTIVE_PLACE_JSON, null)
+    ?: return null
+  return runCatching {
+    val root = JSONObject(raw)
+    val savedAtMs = root.optLong("savedAtMs", 0L)
+    if (savedAtMs > 0L && System.currentTimeMillis() - savedAtMs > 30L * 24L * 60L * 60L * 1000L) {
+      return@runCatching null
+    }
+    placeFromJson(root, "App place")
+  }.getOrNull()
 }
 
 private fun readStoredActivePlace(context: Context): CarPlace? {

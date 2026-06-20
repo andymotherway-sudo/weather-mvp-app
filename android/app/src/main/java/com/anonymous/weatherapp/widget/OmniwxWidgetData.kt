@@ -42,6 +42,7 @@ private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
 private const val WIDGET_DATA_PREFS = "omniwx_widget_data"
 private const val LAST_WEATHER_JSON = "lastWeatherJson"
+private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 
 /*
  * Shared data/rendering helper for all Android home-screen widgets.
@@ -226,6 +227,8 @@ object OmniwxWidgetData {
   }
 
   fun readPlace(context: Context): WidgetPlace? {
+    readMirroredWidgetPlace(context)?.let { return it }
+
     // Prefer the active place written by PlaceContext. If the active place is
     // "Current Location", refresh it from the newest cheap background source
     // available, then fall back to the app's default city.
@@ -259,6 +262,19 @@ object OmniwxWidgetData {
     }
 
     return null
+  }
+
+  private fun readMirroredWidgetPlace(context: Context): WidgetPlace? {
+    val raw = context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE).getString(ACTIVE_PLACE_JSON, null)
+      ?: return null
+    return runCatching {
+      val root = JSONObject(raw)
+      val savedAtMs = root.optLong("savedAtMs", 0L)
+      if (savedAtMs > 0L && System.currentTimeMillis() - savedAtMs > 30L * 24L * 60L * 60L * 1000L) {
+        return@runCatching null
+      }
+      placeFromJson(root)
+    }.getOrNull()
   }
 
   @Synchronized

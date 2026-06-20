@@ -18,6 +18,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import com.anonymous.weatherapp.video.OmniwxVideoExportPackage
 import com.anonymous.weatherapp.widget.OmniwxWidgetRefreshReceiver
 import com.anonymous.weatherapp.widget.OmniwxWidgetScheduler
+import com.anonymous.weatherapp.widget.OmniwxWidgetStatePackage
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
@@ -41,6 +42,7 @@ class MainApplication : Application(), ReactApplication {
               // Kotlin code, so React Native will not know about it unless we
               // add its package to the generated package list.
               add(OmniwxVideoExportPackage())
+              add(OmniwxWidgetStatePackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
