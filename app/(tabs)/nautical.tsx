@@ -1,10 +1,10 @@
 // app/(tabs)/nautical.tsx
-// Nautical Wx – Sea State (waves/wind/SST) + Tides + Marine Forecast
+// Nautical Wx - Sea State (waves/wind/SST) + Tides + Marine Forecast
 // Driven by a selected marine area (from Buoy Map) + buoy / station search.
 // Also supports "zone mode" when launched from polygon world map.
 
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -20,9 +20,11 @@ import {
 } from 'react-native';
 
 import { Mode, ModeToggle } from '../../components/common/ModeToggle';
+import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
+import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
@@ -70,7 +72,7 @@ function formatTime(ts: string) {
 }
 
 function degToCompass(deg: number | null | undefined): string {
-  if (deg == null || isNaN(deg)) return '—';
+  if (deg == null || isNaN(deg)) return '-';
   const dirs = [
     'N',
     'NNE',
@@ -168,10 +170,10 @@ function getSeaRisk(
 }
 
 function formatTemp(c: number | null | undefined, unit: 'F' | 'C'): string {
-  if (c == null) return '—';
-  if (unit === 'C') return `${c.toFixed(1)} °C`;
+  if (c == null) return '-';
+  if (unit === 'C') return `${c.toFixed(1)} C`;
   const f = (c * 9) / 5 + 32;
-  return `${f.toFixed(1)} °F`;
+  return `${f.toFixed(1)} F`;
 }
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -237,6 +239,130 @@ function distanceToStationKm(station: NauticalStation, lat: number, lon: number)
   return haversineKm(lat, lon, station.latitude, station.longitude);
 }
 
+function resolveAreaForPoint(lat: number, lon: number): MarineArea {
+  const containing = MARINE_AREAS.filter((candidate) => areaContains(candidate, lat, lon));
+  if (containing.length) {
+    return containing.sort((a, b) => {
+      const kindRank = (candidate: MarineArea) =>
+        candidate.kind === 'coastal' ? 0 : candidate.kind === 'lake' ? 1 : candidate.kind === 'offshore' ? 2 : 3;
+      const rankDiff = kindRank(a) - kindRank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return areaSpan(a) - areaSpan(b);
+    })[0];
+  }
+
+  return (
+    MARINE_AREAS
+      .map((candidate) => {
+        const center = areaCenter(candidate);
+        return {
+          area: candidate,
+          distanceKm: haversineKm(lat, lon, center.lat, center.lon),
+        };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm)[0]?.area ?? DEFAULT_MARINE_AREA
+  );
+}
+
+function resolveNearestCoastalAreaForPoint(lat: number, lon: number, country?: string): MarineArea {
+  const countryKey = normalizeCountry(country);
+  const candidates = MARINE_AREAS.filter((candidate) => candidate.kind === 'coastal');
+  const pool = candidates.length ? candidates : MARINE_AREAS.filter((candidate) => candidate.kind !== 'high-seas');
+
+  return (
+    pool
+      .map((candidate) => {
+        const distanceKm = distanceToAreaBoundsKm(candidate, lat, lon);
+        const contains = areaContains(candidate, lat, lon);
+        const sameCountryBoost =
+          countryKey && normalizeCountry(candidate.country) === countryKey ? 240 : 0;
+        const tideBoost = candidate.tideStationId ? 25 : 0;
+        const score = (contains ? 4000 : 0) + sameCountryBoost + tideBoost - distanceKm * 5 - areaSpan(candidate);
+        return { area: candidate, score };
+      })
+      .sort((a, b) => b.score - a.score)[0]?.area ?? DEFAULT_MARINE_AREA
+  );
+}
+
+function resolveStationForPoint(lat: number, lon: number, fallbackArea: MarineArea): NauticalStation {
+  return (
+    NAUTICAL_STATIONS
+      .filter((candidate) => candidate.latitude != null && candidate.longitude != null)
+      .map((candidate) => {
+        const distanceKm = distanceToStationKm(candidate, lat, lon);
+        const inFallbackArea =
+          candidate.latitude != null &&
+          candidate.longitude != null &&
+          areaContains(fallbackArea, candidate.latitude, candidate.longitude);
+        const score = (inFallbackArea ? 280 : 0) - distanceKm * 3;
+        return { station: candidate, score };
+      })
+      .sort((a, b) => b.score - a.score)[0]?.station ?? stationForArea(fallbackArea)
+  );
+}
+
+function resolveMarineContextForPlace(place: GeocodeResult) {
+  const placeCountry = normalizeCountry(place.country);
+
+  const areaCandidates = MARINE_AREAS
+    .filter((candidate) => candidate.kind !== 'high-seas')
+    .map((candidate) => {
+      const distanceKm = distanceToAreaBoundsKm(candidate, place.lat, place.lon);
+      const contains = areaContains(candidate, place.lat, place.lon);
+      const kindBoost =
+        candidate.kind === 'coastal' ? 220 : candidate.kind === 'lake' ? 200 : 120;
+      const sameCountryBoost =
+        placeCountry && normalizeCountry(candidate.country) === placeCountry ? 420 : 0;
+      const score =
+        (contains ? 4000 : 0) +
+        sameCountryBoost +
+        kindBoost +
+        (candidate.tideStationId ? 40 : 0) -
+        distanceKm * 5 -
+        areaSpan(candidate) * 1.5;
+
+      return { area: candidate, distanceKm, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const bestArea = areaCandidates[0]?.area;
+  const bestAreaDistanceKm = areaCandidates[0]?.distanceKm ?? Number.POSITIVE_INFINITY;
+  if (!bestArea) return null;
+
+  const stationCandidates = NAUTICAL_STATIONS.filter(
+    (candidate) => candidate.latitude != null && candidate.longitude != null,
+  )
+    .map((candidate) => {
+      const distanceKm = distanceToStationKm(candidate, place.lat, place.lon);
+      const inBestArea =
+        candidate.latitude != null &&
+        candidate.longitude != null &&
+        areaContains(bestArea, candidate.latitude, candidate.longitude);
+      const score = (inBestArea ? 300 : 0) - distanceKm * 3;
+      return { station: candidate, distanceKm, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const bestStation = stationCandidates[0]?.station ?? stationForArea(bestArea);
+  const bestStationDistanceKm =
+    stationCandidates[0]?.distanceKm ??
+    distanceToStationKm(stationForArea(bestArea), place.lat, place.lon);
+
+  const maxAllowedDistanceKm =
+    bestArea.kind === 'lake' ? 220 : bestArea.kind === 'coastal' ? 300 : 420;
+  const supported =
+    bestAreaDistanceKm <= maxAllowedDistanceKm || bestStationDistanceKm <= maxAllowedDistanceKm;
+
+  if (!supported) return null;
+
+  return {
+    area: bestArea,
+    station: bestStation,
+    areaDistanceKm: bestAreaDistanceKm,
+    stationDistanceKm: bestStationDistanceKm,
+  };
+}
+
 function asString(v: unknown): string | undefined {
   if (v == null) return undefined;
   return Array.isArray(v) ? String(v[0]) : String(v);
@@ -247,10 +373,10 @@ function asString(v: unknown): string | undefined {
  * and renders common shapes nicely.
  */
 function fmtSmart(v: unknown): string {
-  if (v == null) return '—';
+  if (v == null) return '-';
 
   if (typeof v === 'number') {
-    if (!Number.isFinite(v)) return '—';
+    if (!Number.isFinite(v)) return '-';
     return String(v);
   }
 
@@ -258,9 +384,9 @@ function fmtSmart(v: unknown): string {
   if (typeof v === 'boolean') return v ? 'Yes' : 'No';
 
   if (Array.isArray(v)) {
-    if (v.length === 0) return '—';
+    if (v.length === 0) return '-';
     if (v.length === 1) return fmtSmart(v[0]);
-    return v.slice(0, 3).map(fmtSmart).join(', ') + (v.length > 3 ? '…' : '');
+    return v.slice(0, 3).map(fmtSmart).join(', ') + (v.length > 3 ? '...' : '');
   }
 
   if (typeof v === 'object') {
@@ -318,7 +444,7 @@ function fmtSmart(v: unknown): string {
     try {
       const s = JSON.stringify(o);
       if (!s) return '[data]';
-      return s.length <= 140 ? s : s.slice(0, 140) + '…';
+      return s.length <= 140 ? s : s.slice(0, 140) + '...';
     } catch {
       return '[data]';
     }
@@ -329,7 +455,22 @@ function fmtSmart(v: unknown): string {
 
 const fmt = fmtSmart;
 
-// ---------- Nerdy “Explain” content ---------------------------------
+function displayNumber(value: number | null | undefined, digits = 1) {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toFixed(digits);
+}
+
+function displayMetric(value: number | null | undefined, unit: string, digits = 1) {
+  const n = displayNumber(value, digits);
+  return n === '-' ? '-' : `${n} ${unit}`;
+}
+
+function displayCompass(deg: number | null | undefined) {
+  const dir = degToCompass(deg);
+  return dir === '-' ? '-' : dir;
+}
+
+// ---------- Nerdy "Explain" content ---------------------------------
 
 type ExplainKey =
   | 'breakingRisk'
@@ -351,34 +492,34 @@ function explainFor(key: ExplainKey) {
           '• Significant wave height (Hs)\n' +
           '• Peak period (Tp)\n' +
           '• Wind speed / gusts\n' +
-          '• Wind–wave angle (onshore / opposing wind increases steepness)\n\n' +
+          '• Wind-wave angle (onshore / opposing wind increases steepness)\n\n' +
           'How it’s computed here:\n' +
           '• Estimate steepness ~ Hs / L where L ≈ 1.56·Tp² (deep-water wavelength)\n' +
           '• Map steepness into Low/Moderate/Elevated/High\n\n' +
-          'Note: this is not a certified marine safety metric — it’s a science-y indicator for situational awareness.',
+          'Note: this is not a certified marine safety metric - it’s a science-y indicator for situational awareness.',
       };
     case 'tallestSet':
       return {
         title: 'Tallest set',
         body:
-          'A “set” is a group of larger-than-average waves. This estimates what the biggest wave in a set could be.\n\n' +
+          'A "set" is a group of larger-than-average waves. This estimates what the biggest wave in a set could be.\n\n' +
           'Rule of thumb:\n' +
           '• Tallest set ≈ ~1.8× Hs (significant wave height)\n\n' +
           'Why:\n' +
           '• Hs is roughly the average of the highest 1/3 of waves, but occasional larger waves occur due to randomness and wave-grouping.\n\n' +
           'Use:\n' +
-          '• Helps visualize “sneaker wave” potential when combined with long periods and opposing wind.',
+          '• Helps visualize "sneaker wave" potential when combined with long periods and opposing wind.',
       };
     case 'windWaveAngle':
       return {
-        title: 'Wind–wave angle',
+        title: 'Wind-wave angle',
         body:
           'Angle between wind direction and dominant wave direction.\n\n' +
           'Interpretation:\n' +
-          '• ~0°: wind aligned with waves (following wind)\n' +
-          '• ~180°: wind opposing waves (steeper, rougher seas)\n' +
-          '• ~90°: cross sea (confused / uncomfortable)\n\n' +
-          'Computed as the absolute smallest angular difference between two bearings (0–180°).',
+          '• ~0 deg: wind aligned with waves (following wind)\n' +
+          '• ~180 deg: wind opposing waves (steeper, rougher seas)\n' +
+          '• ~90 deg: cross sea (confused / uncomfortable)\n\n' +
+          'Computed as the absolute smallest angular difference between two bearings (0-180 deg).',
       };
     case 'interaction':
       return {
@@ -393,25 +534,25 @@ function explainFor(key: ExplainKey) {
       };
     case 'stability':
       return {
-        title: 'Stability (air–sea)',
+        title: 'Stability (air-sea)',
         body:
-          'A simple indicator based on ΔT = air temperature − sea surface temperature.\n\n' +
+          'A simple indicator based on Delta T = air temperature − sea surface temperature.\n\n' +
           'Rules of thumb:\n' +
-          '• ΔT > 0 (air warmer): more stable near-surface layer, less vertical mixing\n' +
-          '• ΔT < 0 (air colder): more unstable, more mixing and gustiness possible\n\n' +
-          'This can change how “punchy” winds feel at the surface.',
+          '• Delta T > 0 (air warmer): more stable near-surface layer, less vertical mixing\n' +
+          '• Delta T < 0 (air colder): more unstable, more mixing and gustiness possible\n\n' +
+          'This can change how "punchy" winds feel at the surface.',
       };
     case 'riskScore':
       return {
         title: 'Risk score',
         body:
-          'A combined, heuristic score derived from wave height, period, wind speed, gusts, and wind–wave interaction.\n\n' +
+          'A combined, heuristic score derived from wave height, period, wind speed, gusts, and wind-wave interaction.\n\n' +
           'Typically:\n' +
           '• Increases with wave height (Hs)\n' +
           '• Increases with long period swell (Tp)\n' +
           '• Increases with stronger wind/gusts\n' +
           '• Adds a bump for opposing wind and cross seas\n\n' +
-          'It’s intended for quick scanning — always defer to official forecasts and local knowledge.',
+          'It’s intended for quick scanning - always defer to official forecasts and local knowledge.',
       };
     case 'confidence':
       return {
@@ -449,17 +590,26 @@ export default function NauticalScreen() {
   const isZoneMode = !!zoneId;
 
   const [mode, setMode] = useState<Mode>('simple');
+  const { active } = usePlace();
   const { tempUnit } = useSettings();
+  const lastAutoCoastPlaceKeyRef = useRef<string | null>(null);
 
   // Explain modal state
   const [explainOpen, setExplainOpen] = useState(false);
   const [explainKey, setExplainKey] = useState<ExplainKey | null>(null);
   const explain = explainKey ? explainFor(explainKey) : null;
+  const [learnOpen, setLearnOpen] = useState(false);
+  const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
   const openExplain = (key: ExplainKey) => {
     setExplainKey(key);
     setExplainOpen(true);
   };
+
+  const openLearnTopic = useCallback((topicId?: string) => {
+    setLearnTopicId(topicId ?? undefined);
+    setLearnOpen(true);
+  }, []);
 
   // --- AREA + STATION SELECTION -----------------------------------
 
@@ -495,6 +645,23 @@ export default function NauticalScreen() {
   const activeBuoyId = selectedBuoyId ?? stationBuoyId;
 
   const { data: buoyData } = useBuoyDetail(activeBuoyId ?? undefined);
+
+  useEffect(() => {
+    if (isZoneMode || areaId) return;
+    if (!active || !Number.isFinite(active.lat) || !Number.isFinite(active.lon)) return;
+
+    const nextKey = `${active.id}:${active.lat.toFixed(3)},${active.lon.toFixed(3)}`;
+    if (lastAutoCoastPlaceKeyRef.current === nextKey) return;
+    lastAutoCoastPlaceKeyRef.current = nextKey;
+
+    const nearestArea = resolveNearestCoastalAreaForPoint(active.lat, active.lon);
+    const nearestStation = resolveStationForPoint(active.lat, active.lon, nearestArea);
+
+    setArea(nearestArea);
+    setStation(nearestStation);
+    setSelectedBuoyId(nearestArea.primaryBuoyId ?? nearestStation.buoyId ?? null);
+    setSelectedPlaceLabel(active.name);
+  }, [active, areaId, isZoneMode]);
 
   // Forecast source:
   const forecastZoneId = isZoneMode ? zoneId : area.forecastZoneId;
@@ -564,107 +731,6 @@ export default function NauticalScreen() {
       seen.add(row.key);
       rows.push(row);
     };
-
-    const resolveAreaForPoint = (lat: number, lon: number) => {
-      const containing = MARINE_AREAS.filter((candidate) => areaContains(candidate, lat, lon));
-      if (containing.length) {
-        return containing.sort((a, b) => {
-          const kindRank = (area: MarineArea) =>
-            area.kind === 'coastal' ? 0 : area.kind === 'lake' ? 1 : area.kind === 'offshore' ? 2 : 3;
-          const rankDiff = kindRank(a) - kindRank(b);
-          if (rankDiff !== 0) return rankDiff;
-          return areaSpan(a) - areaSpan(b);
-        })[0];
-      }
-
-      return (
-        MARINE_AREAS
-          .map((candidate) => {
-            const center = areaCenter(candidate);
-            return {
-              area: candidate,
-              distanceKm: haversineKm(lat, lon, center.lat, center.lon),
-            };
-          })
-          .sort((a, b) => a.distanceKm - b.distanceKm)[0]?.area ?? area
-      );
-    };
-
-    const resolveMarineContextForPlace = (place: GeocodeResult) => {
-      const placeCountry = normalizeCountry(place.country);
-
-      const areaCandidates = MARINE_AREAS
-        .filter((candidate) => candidate.kind !== 'high-seas')
-        .map((candidate) => {
-          const distanceKm = distanceToAreaBoundsKm(candidate, place.lat, place.lon);
-          const contains = areaContains(candidate, place.lat, place.lon);
-          const kindBoost =
-            candidate.kind === 'coastal' ? 220 : candidate.kind === 'lake' ? 200 : 120;
-          const sameCountryBoost =
-            placeCountry && normalizeCountry(candidate.country) === placeCountry ? 420 : 0;
-          const score =
-            (contains ? 4000 : 0) +
-            sameCountryBoost +
-            kindBoost +
-            (candidate.tideStationId ? 40 : 0) -
-            distanceKm * 5 -
-            areaSpan(candidate) * 1.5;
-
-          return { area: candidate, distanceKm, score };
-        })
-        .sort((a, b) => b.score - a.score);
-
-      const bestArea = areaCandidates[0]?.area;
-      const bestAreaDistanceKm = areaCandidates[0]?.distanceKm ?? Number.POSITIVE_INFINITY;
-      if (!bestArea) return null;
-
-      const stationCandidates = NAUTICAL_STATIONS.filter(
-        (candidate) => candidate.latitude != null && candidate.longitude != null,
-      )
-        .map((candidate) => {
-          const distanceKm = distanceToStationKm(candidate, place.lat, place.lon);
-          const inBestArea =
-            candidate.latitude != null &&
-            candidate.longitude != null &&
-            areaContains(bestArea, candidate.latitude, candidate.longitude);
-          const score = (inBestArea ? 300 : 0) - distanceKm * 3;
-          return { station: candidate, distanceKm, score };
-        })
-        .sort((a, b) => b.score - a.score);
-
-      const bestStation = stationCandidates[0]?.station ?? stationForArea(bestArea);
-      const bestStationDistanceKm =
-        stationCandidates[0]?.distanceKm ??
-        distanceToStationKm(stationForArea(bestArea), place.lat, place.lon);
-
-      const maxAllowedDistanceKm =
-        bestArea.kind === 'lake' ? 220 : bestArea.kind === 'coastal' ? 300 : 420;
-      const supported =
-        bestAreaDistanceKm <= maxAllowedDistanceKm || bestStationDistanceKm <= maxAllowedDistanceKm;
-
-      if (!supported) return null;
-
-      return {
-        area: bestArea,
-        station: bestStation,
-        areaDistanceKm: bestAreaDistanceKm,
-        stationDistanceKm: bestStationDistanceKm,
-      };
-    };
-
-    const resolveStationForPoint = (lat: number, lon: number, fallbackArea: MarineArea) =>
-      NAUTICAL_STATIONS
-        .filter((candidate) => candidate.latitude != null && candidate.longitude != null)
-        .map((candidate) => ({
-          station: candidate,
-          distanceKm: haversineKm(
-            lat,
-            lon,
-            candidate.latitude as number,
-            candidate.longitude as number,
-          ),
-        }))
-        .sort((a, b) => a.distanceKm - b.distanceKm)[0]?.station ?? stationForArea(fallbackArea);
 
     const applyArea = (nextArea: MarineArea, _nextLabel: string, nextBuoyId?: string | null) => {
       const nextStation = stationForArea(nextArea);
@@ -914,16 +980,23 @@ export default function NauticalScreen() {
     k,
     v,
     explainKey,
+    learnTopicId,
+    hint,
   }: {
     k: string;
     v: string;
     explainKey?: ExplainKey;
+    learnTopicId?: string;
+    hint?: string;
   }) => {
-    const tappable = !!explainKey;
+    const tappable = !!explainKey || !!learnTopicId;
     if (!tappable) {
       return (
         <View style={styles.nerdyKVRow}>
-          <Text style={styles.nerdyKey}>{k}</Text>
+          <View style={styles.nerdyKeyBlock}>
+            <Text style={styles.nerdyKey}>{k}</Text>
+            {hint ? <Text style={styles.nerdyHint}>{hint}</Text> : null}
+          </View>
           <Text style={styles.nerdyVal}>{v}</Text>
         </View>
       );
@@ -931,18 +1004,25 @@ export default function NauticalScreen() {
 
     return (
       <Pressable
-        onPress={() => explainKey && openExplain(explainKey)}
+        onPress={() => {
+          if (learnTopicId) openLearnTopic(learnTopicId);
+          else if (explainKey) openExplain(explainKey);
+        }}
         style={({ pressed }) => [
           styles.nerdyKVRow,
+          styles.nerdyKVRowPressable,
           pressed ? { opacity: 0.7 } : null,
         ]}
         accessibilityRole="button"
         accessibilityLabel={`Explain ${k}`}
       >
-        <Text style={styles.nerdyKey}>{k}</Text>
+        <View style={styles.nerdyKeyBlock}>
+          <Text style={styles.nerdyKey}>{k}</Text>
+          {hint ? <Text style={styles.nerdyHint}>{hint}</Text> : null}
+        </View>
         <View style={styles.nerdyValWrap}>
           <Text style={styles.nerdyVal}>{v}</Text>
-          <Text style={styles.nerdyChevron}>›</Text>
+          <Text style={styles.nerdyChevron}>{'>'}</Text>
         </View>
       </Pressable>
     );
@@ -963,7 +1043,7 @@ export default function NauticalScreen() {
         >
           <Pressable style={styles.modalCard} onPress={() => {}}>
             <Text style={styles.modalTitle}>{explain?.title ?? 'Details'}</Text>
-            <Text style={styles.modalBody}>{explain?.body ?? '—'}</Text>
+            <Text style={styles.modalBody}>{explain?.body ?? '-'}</Text>
 
             <Pressable
               onPress={() => setExplainOpen(false)}
@@ -974,6 +1054,12 @@ export default function NauticalScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <LearnMoreModal
+        visible={learnOpen}
+        onClose={() => setLearnOpen(false)}
+        initialTopicId={learnTopicId}
+      />
 
       <ScrollView
         style={styles.container}
@@ -1007,7 +1093,7 @@ export default function NauticalScreen() {
         <View style={styles.searchBox}>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search buoy or station (e.g., Yaquina, 46050)…"
+            placeholder="Search buoy or station (e.g., Yaquina, 46050)..."
             placeholderTextColor={theme.colors.textSecondary}
             value={search}
             onChangeText={setSearch}
@@ -1015,7 +1101,7 @@ export default function NauticalScreen() {
         </View>
 
         {search.trim().length >= 3 && placeSearchLoading && (
-          <Text style={styles.searchHint}>Looking up coastal places…</Text>
+          <Text style={styles.searchHint}>Looking up coastal places...</Text>
         )}
 
         {search.trim().length > 0 && (
@@ -1045,7 +1131,7 @@ export default function NauticalScreen() {
         {!searchActive && loading && !data && (
           <View style={styles.center}>
             <ActivityIndicator size="large" />
-            <Text style={typography.small}>Loading marine data…</Text>
+            <Text style={typography.small}>Loading marine data...</Text>
           </View>
         )}
 
@@ -1075,25 +1161,25 @@ export default function NauticalScreen() {
             </View>
 
             <Text style={styles.simpleWave}>
-              {waveHeightFt != null ? `${waveHeightFt.toFixed(1)} ft` : '—'}
+              {waveHeightFt != null ? `${waveHeightFt.toFixed(1)} ft` : '-'}
             </Text>
             <Text style={styles.simpleCondition}>{seaLabel}</Text>
 
             <Text style={styles.simpleMeta}>
-              Swell {swellPeriod != null ? `${swellPeriod.toFixed(0)} s` : '—'} ·{' '}
+              Swell {swellPeriod != null ? `${swellPeriod.toFixed(0)} s` : '-'} ·{' '}
               {swellDirDeg != null
-                ? `${swellDir} (${Math.round(swellDirDeg)}°)`
-                : '—'}
+                ? `${swellDir} (${Math.round(swellDirDeg)} deg)`
+                : '-'}
             </Text>
 
             <Text style={styles.simpleMeta}>
-              Wind {windSpeedKts != null ? `${windSpeedKts.toFixed(1)} kt` : '—'}
+              Wind {windSpeedKts != null ? `${windSpeedKts.toFixed(1)} kt` : '-'}
               {windGustKts != null ? ` (gust ${windGustKts.toFixed(1)} kt)` : ''}
-              {windDirDeg != null ? ` @ ${windDir} (${Math.round(windDirDeg)}°)` : ''}
+              {windDirDeg != null ? ` @ ${windDir} (${Math.round(windDirDeg)} deg)` : ''}
             </Text>
 
             <Text style={styles.simpleMeta}>
-              Beaufort {beaufort.force != null ? `F${beaufort.force}` : '—'} ·{' '}
+              Beaufort {beaufort.force != null ? `F${beaufort.force}` : '-'} ·{' '}
               {beaufort.label}
             </Text>
 
@@ -1135,6 +1221,34 @@ export default function NauticalScreen() {
           <Card style={styles.mainCard}>
             <Text style={styles.sectionLabel}>wxLab</Text>
 
+            <View style={styles.nerdySummaryGrid}>
+              <Pressable style={styles.nerdySummaryTile} onPress={() => openLearnTopic('marine-risk-score')}>
+                <Text style={styles.nerdySummaryLabel}>Risk</Text>
+                <Text style={styles.nerdySummaryValue}>
+                  {nerdy.riskScore != null ? `${nerdy.riskScore}/100` : seaRisk.level}
+                </Text>
+                <Text style={styles.nerdySummaryMeta}>{nerdy.riskLevel ?? seaRisk.level}</Text>
+              </Pressable>
+              <Pressable style={styles.nerdySummaryTile} onPress={() => openLearnTopic('significant-wave-height')}>
+                <Text style={styles.nerdySummaryLabel}>Seas</Text>
+                <Text style={styles.nerdySummaryValue}>
+                  {displayMetric(
+                    nerdy.obs?.significantWaveHeightM != null
+                      ? Number(nerdy.obs.significantWaveHeightM) * 3.28084
+                      : null,
+                    'ft',
+                    1,
+                  )}
+                </Text>
+                <Text style={styles.nerdySummaryMeta}>Hs</Text>
+              </Pressable>
+              <Pressable style={styles.nerdySummaryTile} onPress={() => openLearnTopic('marine-confidence')}>
+                <Text style={styles.nerdySummaryLabel}>Confidence</Text>
+                <Text style={styles.nerdySummaryValue}>{fmt(nerdy.confidence?.level ?? '-')}</Text>
+                <Text style={styles.nerdySummaryMeta}>source quality</Text>
+              </Pressable>
+            </View>
+
             {/* Derived indices */}
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Derived indices</Text>
@@ -1143,16 +1257,20 @@ export default function NauticalScreen() {
                 k="Risk score"
                 v={fmt(
                   nerdy.riskScore != null
-                    ? `${nerdy.riskScore}/100 · ${nerdy.riskLevel ?? '—'}`
-                    : (seaRisk.level ?? '—'),
+                    ? `${nerdy.riskScore}/100 · ${nerdy.riskLevel ?? '-'}`
+                    : (seaRisk.level ?? '-'),
                 )}
                 explainKey="riskScore"
+                learnTopicId="marine-risk-score"
+                hint="heuristic scan, not a safety rating"
               />
 
               <NerdyRow
                 k="Confidence"
-                v={fmt(nerdy.confidence?.level ?? nerdy.confidence?.score01 ?? '—')}
+                v={fmt(nerdy.confidence?.level ?? nerdy.confidence?.score01 ?? '-')}
                 explainKey="confidence"
+                learnTopicId="marine-confidence"
+                hint="freshness and source completeness"
               />
 
               <NerdyRow k="Generated" v={new Date().toLocaleString()} />
@@ -1162,23 +1280,41 @@ export default function NauticalScreen() {
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Wave</Text>
 
-              <NerdyRow k="Hs (m)" v={fmt(nerdy.obs?.significantWaveHeightM)} />
               <NerdyRow
-                k="Hs (ft)"
-                v={fmt(
+                k="Significant wave height"
+                v={displayMetric(nerdy.obs?.significantWaveHeightM, 'm', 2)}
+                hint="Hs, average of highest one-third waves"
+                learnTopicId="significant-wave-height"
+              />
+              <NerdyRow
+                k="Significant wave height"
+                v={displayMetric(
                   nerdy.obs?.significantWaveHeightM != null
                     ? Number(nerdy.obs.significantWaveHeightM) * 3.28084
                     : null,
+                  'ft',
+                  1,
                 )}
+                hint="same Hs in user-friendly feet"
+                learnTopicId="significant-wave-height"
               />
-              <NerdyRow k="Tp (s)" v={fmt(nerdy.obs?.dominantPeriodS)} />
-              <NerdyRow k="Dir (°)" v={fmt(nerdy.obs?.dominantDirectionDeg)} />
+              <NerdyRow
+                k="Dominant period"
+                v={displayMetric(nerdy.obs?.dominantPeriodS, 's', 0)}
+                hint="Tp, seconds between dominant waves"
+                learnTopicId="wave-period"
+              />
+              <NerdyRow
+                k="Wave direction degrees"
+                v={displayMetric(nerdy.obs?.dominantDirectionDeg, 'deg', 0)}
+                learnTopicId="wave-direction"
+              />
               <NerdyRow
                 k="Dir"
                 v={fmt(
                   nerdy.obs?.dominantDirectionDeg != null
                     ? degToCompass(Number(nerdy.obs.dominantDirectionDeg))
-                    : '—',
+                    : '-',
                 )}
               />
 
@@ -1200,44 +1336,74 @@ export default function NauticalScreen() {
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Wind</Text>
 
-              <NerdyRow k="Speed (kt)" v={fmt(nerdy.obs?.windSpeedKts)} />
-              <NerdyRow k="Gust (kt)" v={fmt(nerdy.obs?.windGustKts)} />
-              <NerdyRow k="Dir (°)" v={fmt(nerdy.obs?.windDirectionDeg)} />
+              <NerdyRow
+                k="Sustained wind"
+                v={displayMetric(nerdy.obs?.windSpeedKts, 'kt', 1)}
+                hint="knots"
+                learnTopicId="marine-wind"
+              />
+              <NerdyRow
+                k="Gust"
+                v={displayMetric(nerdy.obs?.windGustKts, 'kt', 1)}
+                hint="short bursts above sustained wind"
+                learnTopicId="marine-wind"
+              />
+              <NerdyRow
+                k="Wind direction degrees"
+                v={displayMetric(nerdy.obs?.windDirectionDeg, 'deg', 0)}
+                learnTopicId="marine-wind"
+              />
               <NerdyRow
                 k="Dir"
                 v={fmt(
                   nerdy.obs?.windDirectionDeg != null
                     ? degToCompass(Number(nerdy.obs.windDirectionDeg))
-                    : '—',
+                    : '-',
                 )}
+                hint="direction wind is coming from"
+                learnTopicId="marine-wind"
+              />
+              <NerdyRow
+                k="Beaufort"
+                v={beaufort.force != null ? `F${beaufort.force} - ${beaufort.label}` : '-'}
+                hint="wind force reference scale"
+                learnTopicId="beaufort-scale"
               />
             </View>
 
-            {/* Air–sea physics */}
+            {/* Air-sea physics */}
             <View style={styles.nerdySection}>
-              <Text style={styles.nerdySectionTitle}>Air–sea physics</Text>
+              <Text style={styles.nerdySectionTitle}>Air-sea physics</Text>
 
               <NerdyRow
-                k="Wind–wave angle (°)"
-                v={fmt(nerdy.windWave?.angleOffsetDeg)}
+                k="Wind-wave angle"
+                v={displayMetric(nerdy.windWave?.angleOffsetDeg, 'deg', 0)}
                 explainKey="windWaveAngle"
+                learnTopicId="wind-wave-interaction"
+                hint="wind direction compared with swell direction"
               />
 
               <NerdyRow
                 k="Interaction"
                 v={fmt(nerdy.windWave?.regime)}
                 explainKey="interaction"
+                learnTopicId="wind-wave-interaction"
+                hint="aligned, opposing, or cross sea"
               />
 
               <NerdyRow
                 k="Stability"
-                v={fmt(nerdy.stability ?? '—')}
+                v={fmt(nerdy.stability ?? '-')}
                 explainKey="stability"
+                learnTopicId="air-sea-stability"
+                hint="air temperature compared with sea temperature"
               />
 
               <NerdyRow
-                k="ΔT air–sea (°C)"
-                v={fmt(nerdy.deltaTAirSeaC ?? null)}
+                k="Air minus sea temp"
+                v={displayMetric(nerdy.deltaTAirSeaC ?? null, 'C', 1)}
+                hint="positive means air warmer than water"
+                learnTopicId="air-sea-stability"
               />
             </View>
 
@@ -1245,22 +1411,36 @@ export default function NauticalScreen() {
             <View style={styles.nerdySection}>
               <Text style={styles.nerdySectionTitle}>Hazards</Text>
 
-              <NerdyRow k="Primary" v={fmt(nerdy.primaryHazard ?? '—')} />
+              <NerdyRow k="Primary" v={fmt(nerdy.primaryHazard ?? '-')} />
 
               <NerdyRow
                 k="Tallest set"
                 v={fmt(
                   nerdy.tallestSetM != null
                     ? `${(Number(nerdy.tallestSetM) * 3.28084).toFixed(1)} ft`
-                    : '—',
+                    : '-',
                 )}
                 explainKey="tallestSet"
+                learnTopicId="tallest-set"
+                hint="rough estimate from Hs"
               />
 
               <NerdyRow
                 k="Breaking risk"
                 v={fmt(nerdy.mechanics?.breakingRisk)}
                 explainKey="breakingRisk"
+                learnTopicId="wave-steepness-breaking"
+                hint="steepness-based whitecap risk"
+              />
+            </View>
+
+            <View style={styles.nerdySection}>
+              <Text style={styles.nerdySectionTitle}>Data Quality & Units</Text>
+              <NerdyRow
+                k="Marine units"
+                v="ft, m, kt, s, deg, C, hPa"
+                hint="tap for what each unit means"
+                learnTopicId="marine-units"
               />
             </View>
 
@@ -1277,7 +1457,7 @@ export default function NauticalScreen() {
           </Card>
         )}
 
-        {/* TIDES – only where supported */}
+        {/* TIDES - only where supported */}
         {supportsTides && mode === 'simple' && data && (
           <Card style={styles.mainCard}>
             <Text style={styles.sectionLabel}>{"Today's Tides"}</Text>
@@ -1309,7 +1489,7 @@ export default function NauticalScreen() {
                   <Text style={styles.nerdyValue}>
                     {p.type === 'H' ? 'HIGH' : 'LOW'}
                   </Text>
-                  {` tide at ${formatTime(p.time)} – `}
+                  {` tide at ${formatTime(p.time)} - `}
                   <Text style={styles.nerdyValue}>{p.height.toFixed(2)} ft</Text>
                 </Text>
               </View>
@@ -1346,7 +1526,7 @@ export default function NauticalScreen() {
         {!forecast && forecastLoading && forecastZoneId && (
           <Card style={styles.mainCard}>
             <Text style={styles.sectionLabel}>Coastal &amp; Offshore Forecast</Text>
-            <Text style={styles.simpleMeta}>Loading marine forecast…</Text>
+            <Text style={styles.simpleMeta}>Loading marine forecast...</Text>
           </Card>
         )}
 
@@ -1619,17 +1799,67 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     marginBottom: 8,
   },
+  nerdySummaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  nerdySummaryTile: {
+    flex: 1,
+    minHeight: 84,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    backgroundColor: 'rgba(14,165,233,0.10)',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    justifyContent: 'space-between',
+  },
+  nerdySummaryLabel: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  nerdySummaryValue: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  nerdySummaryMeta: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 10,
+    fontWeight: '800',
+  },
   nerdyKVRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 16,
-    marginBottom: 6,
+    marginBottom: 7,
     alignItems: 'center',
   },
-  nerdyKey: {
+  nerdyKVRowPressable: {
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    marginHorizontal: -8,
+    backgroundColor: 'rgba(255,255,255,0.025)',
+  },
+  nerdyKeyBlock: {
     flex: 1,
+  },
+  nerdyKey: {
     fontSize: 12,
     color: theme.colors.textSecondary,
+  },
+  nerdyHint: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    color: 'rgba(255,255,255,0.42)',
+    fontWeight: '700',
   },
   nerdyValWrap: {
     flexDirection: 'row',

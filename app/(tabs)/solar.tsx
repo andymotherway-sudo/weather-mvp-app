@@ -1036,7 +1036,7 @@ export default function SolarScreen() {
           </Pressable>
           <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('solar-wind')}>
             <Text style={styles.label}>Density</Text>
-            <Text style={styles.cardValue}>{data.solarWindDensity.toFixed(2)} /cmÂ³</Text>
+            <Text style={styles.cardValue}>{data.solarWindDensity.toFixed(2)} p/cm3</Text>
           </Pressable>
           <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('imf-bz')}>
             <Text style={styles.label}>Bz</Text>

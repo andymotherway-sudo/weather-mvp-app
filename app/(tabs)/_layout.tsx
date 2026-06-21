@@ -7,6 +7,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { TabTutorial } from '../../components/onboarding/TabTutorial';
 import TabBarIcon from '../../components/ui/TabBarIcon';
 import { Colors } from '../../constants/theme';
 import { useColorScheme } from '../../hooks/use-color-scheme';
@@ -289,7 +290,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="astronomer" options={{ href: null }} />
       <Tabs.Screen name="aviation-map" options={{ href: null, unmountOnBlur: true } as any} />
       <Tabs.Screen name="astro-map" options={{ href: null, unmountOnBlur: true } as any} />
-        </Tabs>
+      </Tabs>
+      <TabTutorial pathname={pathname} bottomOffset={height - tabBarHitTop + 10} />
       </View>
     </GestureDetector>
   );

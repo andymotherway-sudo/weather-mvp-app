@@ -1411,5 +1411,269 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'VIL is most useful when compared with storm mode, freezing level, and reflectivity structure.',
     ],
   },
+  {
+    id: 'marine-sea-state',
+    title: 'Marine Sea State',
+    summary:
+      'Sea state is the combined practical picture of waves, wind, swell, gusts, and local marine hazards.',
+    references: [
+      { label: 'Wave height', value: 'Usually shown as significant wave height, or Hs' },
+      { label: 'Wind', value: 'Often shown in knots for marine use' },
+      { label: 'Period', value: 'Seconds between dominant waves' },
+      { label: 'Direction', value: 'Where waves or wind are coming from' },
+    ],
+    bullets: [
+      'A small wave height can still feel rough if the period is short or wind opposes the swell.',
+      'Long-period swell can carry more energy and produce larger sets near shoals, bars, and beaches.',
+      'Official marine forecasts should win over any heuristic score when planning real trips.',
+    ],
+    insight:
+      'Sea state is not one number. It is the shape, timing, direction, and energy of the water.',
+  },
+  {
+    id: 'significant-wave-height',
+    title: 'Significant Wave Height (Hs)',
+    summary:
+      'Significant wave height is roughly the average height of the highest one-third of waves in a sea state.',
+    references: [
+      { label: 'Hs', value: 'Significant wave height' },
+      { label: 'm', value: 'Meters' },
+      { label: 'ft', value: 'Feet' },
+      { label: 'Rule of thumb', value: 'Individual waves can be meaningfully taller than Hs' },
+    ],
+    formula: 'Hs = average height of the highest one-third waves',
+    bullets: [
+      'Hs is not the maximum wave.',
+      'Occasional larger waves happen naturally because waves arrive in groups.',
+      'For boating, combine Hs with period, wind, gusts, and direction.',
+    ],
+  },
+  {
+    id: 'wave-period',
+    title: 'Wave Period (Tp)',
+    summary:
+      'Wave period is the time in seconds between dominant waves. Longer periods usually mean more energetic swell.',
+    references: [
+      { label: 'Tp', value: 'Dominant or peak period' },
+      { label: 's', value: 'Seconds' },
+      { label: 'Short period', value: 'Often choppy, locally wind-driven seas' },
+      { label: 'Long period', value: 'Often more organized, energetic swell' },
+    ],
+    bullets: [
+      'Two seas with the same height can feel very different if their periods differ.',
+      'Short-period steep waves can be uncomfortable and wet.',
+      'Long-period swell can surprise beaches, bars, and shallow-water zones.',
+    ],
+  },
+  {
+    id: 'wave-direction',
+    title: 'Wave Direction',
+    summary:
+      'Wave direction is the direction waves are coming from, usually shown as compass text and degrees.',
+    references: [
+      { label: 'deg', value: 'Degrees clockwise from north' },
+      { label: 'N / E / S / W', value: 'Compass direction the waves come from' },
+      { label: 'Use with wind', value: 'Wind opposing waves can steepen the sea' },
+    ],
+    bullets: [
+      'A west swell means waves are coming from the west.',
+      'Direction matters around headlands, inlets, harbors, and lee shores.',
+      'Compare wave direction with wind direction to understand surface roughness.',
+    ],
+  },
+  {
+    id: 'marine-wind',
+    title: 'Marine Wind (knots, gusts, direction)',
+    summary:
+      'Marine wind is commonly reported in knots with direction and gusts because those are operationally useful on the water.',
+    references: [
+      { label: 'kt', value: 'Knots, nautical miles per hour' },
+      { label: '1 kt', value: 'About 1.15 mph' },
+      { label: 'Gust', value: 'Short burst above sustained wind' },
+      { label: 'Direction', value: 'Where the wind is coming from' },
+    ],
+    bullets: [
+      'Sustained wind describes the background flow.',
+      'Gusts often determine how rough and unpredictable the surface feels.',
+      'Wind direction relative to shore and swell can matter as much as wind speed.',
+    ],
+  },
+  {
+    id: 'beaufort-scale',
+    title: 'Beaufort Scale',
+    summary:
+      'The Beaufort scale is a practical wind force scale that connects wind speed to observed sea conditions.',
+    references: [
+      { label: 'F0', value: 'Calm' },
+      { label: 'F4', value: 'Moderate breeze' },
+      { label: 'F6', value: 'Strong breeze' },
+      { label: 'F8+', value: 'Gale conditions and higher' },
+    ],
+    bullets: [
+      'Beaufort is not a forecast model; it is a descriptive wind force scale.',
+      'It helps translate knots into a more intuitive marine feel.',
+      'Local fetch, tide, current, and bathymetry can make conditions rougher than the scale alone suggests.',
+    ],
+  },
+  {
+    id: 'wind-wave-interaction',
+    title: 'Wind-Wave Interaction',
+    summary:
+      'Wind-wave interaction compares wind direction with the dominant wave direction to estimate whether the sea is organized, opposing, or confused.',
+    references: [
+      { label: 'Aligned', value: 'Wind roughly follows wave direction' },
+      { label: 'Opposing', value: 'Wind blows against the waves' },
+      { label: 'Cross sea', value: 'Wind crosses the waves near right angles' },
+      { label: 'deg', value: 'Angular difference in degrees' },
+    ],
+    formula: 'Wind-wave angle = smallest angular difference between wind direction and wave direction',
+    bullets: [
+      'Opposing wind can steepen wave faces.',
+      'Cross seas can feel confused and rolly.',
+      'Aligned flow usually feels more organized, though stronger wind can still build rough seas.',
+    ],
+  },
+  {
+    id: 'wave-steepness-breaking',
+    title: 'Wave Steepness and Breaking Risk',
+    summary:
+      'Wave steepness compares wave height with wavelength. Steeper waves are more likely to break or feel harsh.',
+    references: [
+      { label: 'H/L', value: 'Wave height divided by wavelength' },
+      { label: 'L', value: 'Estimated deep-water wavelength' },
+      { label: 'm', value: 'Meters' },
+      { label: 'Breaking risk', value: 'Heuristic risk based on steepness' },
+    ],
+    formula: 'Deep-water wavelength L is approximately 1.56 x Tp^2; steepness = Hs / L',
+    formulaNotes: [
+      'Tp is wave period in seconds.',
+      'Hs is significant wave height.',
+      'This is a scan metric, not a surf-zone or inlet safety certification.',
+    ],
+    bullets: [
+      'Short-period waves can be steep even when they are not especially tall.',
+      'Longer-period swell usually has a longer wavelength and may feel smoother offshore.',
+      'Breaking risk can increase around shoals, bars, opposing current, and abrupt bathymetry.',
+    ],
+  },
+  {
+    id: 'tallest-set',
+    title: 'Tallest Set Estimate',
+    summary:
+      'Tallest set is a rough estimate of occasional larger waves within a group, based on significant wave height.',
+    references: [
+      { label: 'Hs', value: 'Significant wave height' },
+      { label: 'Estimate', value: 'About 1.8 x Hs in this app' },
+      { label: 'ft / m', value: 'Shown in feet or meters depending on context' },
+    ],
+    formula: 'Tallest set estimate = 1.8 x Hs',
+    bullets: [
+      'This is a heuristic for scanning standout set potential.',
+      'It does not predict the exact biggest wave at a point.',
+      'Use it with period, wind-wave interaction, tide/current, and official forecasts.',
+    ],
+  },
+  {
+    id: 'air-sea-stability',
+    title: 'Air-Sea Stability',
+    summary:
+      'Air-sea stability compares air temperature with sea-surface temperature to estimate how mixed or stable the near-surface marine layer may be.',
+    references: [
+      { label: 'Delta T', value: 'Air temperature minus sea temperature' },
+      { label: 'C', value: 'Degrees Celsius' },
+      { label: 'Air warmer', value: 'More stable-ish near the surface' },
+      { label: 'Air colder', value: 'More unstable-ish and mixed' },
+    ],
+    formula: 'Delta T = air temperature - sea-surface temperature',
+    bullets: [
+      'Cold air over warmer water can promote mixing and punchier gusts.',
+      'Warm air over cooler water can favor a more stable marine layer.',
+      'This is a simple diagnostic and should be read with wind, clouds, and local marine forecasts.',
+    ],
+  },
+  {
+    id: 'marine-risk-score',
+    title: 'Nautical wxLab Risk Score',
+    summary:
+      'The Nautical wxLab risk score is a quick scan metric built from waves, period, wind, gusts, breaking risk, and wind-wave interaction.',
+    references: [
+      { label: '0-100', value: 'Low to extreme heuristic score' },
+      { label: 'Inputs', value: 'Hs, Tp, wind, gusts, steepness, interaction' },
+      { label: 'Use', value: 'Screening and situational awareness' },
+    ],
+    formula:
+      'Score blends normalized wave height, period, sustained wind, gust spread, breaking risk, and wind-wave interaction',
+    bullets: [
+      'The score is intentionally explainable and conservative.',
+      'It is not a substitute for official marine warnings or local knowledge.',
+      'A moderate score can still matter near bars, inlets, shoals, rocks, or lee shores.',
+    ],
+  },
+  {
+    id: 'marine-confidence',
+    title: 'Marine Confidence',
+    summary:
+      'Marine confidence describes how complete and fresh the available inputs are for the selected area or buoy.',
+    references: [
+      { label: 'High', value: 'Fresh observations and useful agreement' },
+      { label: 'Moderate', value: 'Usable but partial or aging data' },
+      { label: 'Low', value: 'Sparse, stale, or model-heavy data' },
+    ],
+    bullets: [
+      'Live buoy observations usually improve confidence.',
+      'Fresh timestamps are better than stale observations.',
+      'Cross seas, missing wave direction, or model/observation disagreement can lower confidence.',
+    ],
+  },
+  {
+    id: 'tide-predictions',
+    title: 'Tide Predictions',
+    summary:
+      'Tide predictions estimate high and low water timing and height for a tide station.',
+    references: [
+      { label: 'High tide', value: 'Predicted local water high point' },
+      { label: 'Low tide', value: 'Predicted local water low point' },
+      { label: 'ft', value: 'Feet relative to the station datum' },
+    ],
+    bullets: [
+      'Tides are station-based predictions, not live water-level observations unless labeled that way.',
+      'Wind, pressure, surge, river flow, and local bathymetry can make actual water levels differ.',
+      'For navigation, use official tide/current products and local notices.',
+    ],
+  },
+  {
+    id: 'buoy-observations',
+    title: 'Buoy Observations',
+    summary:
+      'Buoy observations are live or recent measurements from marine stations such as NOAA NDBC buoys.',
+    references: [
+      { label: 'NDBC', value: 'National Data Buoy Center' },
+      { label: 'Observed time', value: 'Timestamp of the station measurement' },
+      { label: 'Wave, wind, temp', value: 'Common buoy fields when available' },
+    ],
+    bullets: [
+      'Different stations report different sensors.',
+      'Some buoys report waves but not water temperature, or wind but not wave direction.',
+      'Fresh observations are valuable, but always compare them with the forecast and surrounding stations.',
+    ],
+  },
+  {
+    id: 'marine-units',
+    title: 'Marine Units',
+    summary:
+      'Marine weather mixes nautical, metric, and weather-specific units. Nautical wxLab tries to show units directly beside each value.',
+    references: [
+      { label: 'ft', value: 'Feet, common for wave height and tide height in US products' },
+      { label: 'm', value: 'Meters, common for model wave calculations' },
+      { label: 'kt', value: 'Knots, nautical miles per hour' },
+      { label: 's', value: 'Seconds, usually wave period' },
+      { label: 'deg', value: 'Degrees clockwise from north' },
+      { label: 'C', value: 'Degrees Celsius, often used in marine sensor feeds' },
+      { label: 'hPa', value: 'Hectopascals, pressure unit equivalent to millibars' },
+      { label: 'nm', value: 'Nautical miles, often used for visibility and distance offshore' },
+    ],
+    insight:
+      'The unit is part of the forecast. A wave height, period, and direction only become useful when their units are obvious.',
+  },
 ];
 

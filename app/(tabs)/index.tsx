@@ -194,6 +194,43 @@ function wallClockToSortableMs(parts: { year: number; month: number; day: number
   return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0, 0);
 }
 
+function isoHasZone(value: string) {
+  return /[zZ]|[+-]\d{2}:\d{2}$/.test(value.trim());
+}
+
+function clockPartsForIso(value?: string | null, timeZone?: string | null) {
+  if (!value) return null;
+  const wall = extractIsoWallClockParts(value);
+  if (wall && !isoHasZone(value)) return wall;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return wall;
+
+  if (timeZone) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(d);
+    const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? '0');
+    const zoned = { year: pick('year'), month: pick('month'), day: pick('day'), hour: pick('hour'), minute: pick('minute') };
+    return Object.values(zoned).every((v) => Number.isFinite(v)) ? zoned : wall;
+  }
+
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth() + 1,
+    day: d.getDate(),
+    hour: d.getHours(),
+    minute: d.getMinutes(),
+  };
+}
+
 function getNowSortableMs(timeZone?: string | null) {
   if (timeZone) {
     const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -420,6 +457,29 @@ function buildArcPath(
   return points.join(' ');
 }
 
+function formatClockForZone(iso?: string | null, timeZone?: string | null) {
+  if (!iso) return 'â€”';
+  const parts = clockPartsForIso(iso, timeZone);
+  return parts ? formatWallHour(parts.hour, parts.minute) : 'â€”';
+}
+
+function minutesFromClockIsoForZone(iso?: string | null, timeZone?: string | null) {
+  const parts = clockPartsForIso(iso, timeZone);
+  return parts ? parts.hour * 60 + parts.minute : null;
+}
+
+function eventDayOffsetLabel(eventIso?: string | null, referenceIso?: string | null, timeZone?: string | null) {
+  const event = clockPartsForIso(eventIso, timeZone);
+  const reference = clockPartsForIso(referenceIso, timeZone);
+  if (!event || !reference) return '';
+  const eventDay = Date.UTC(event.year, event.month - 1, event.day);
+  const referenceDay = Date.UTC(reference.year, reference.month - 1, reference.day);
+  const diffDays = Math.round((eventDay - referenceDay) / 86_400_000);
+  if (diffDays === 1) return ' +1';
+  if (diffDays === -1) return ' -1';
+  return '';
+}
+
 function arcXForDisplayMinute(
   displayMinute: number,
   segmentDisplayStart: number,
@@ -502,6 +562,7 @@ function DayMoonArc({
   showMoon = false,
   showTimes = true,
   embedded = false,
+  timeZone,
 }: {
   sunrise?: string | null;
   sunset?: string | null;
@@ -510,6 +571,7 @@ function DayMoonArc({
   showMoon?: boolean;
   showTimes?: boolean;
   embedded?: boolean;
+  timeZone?: string | null;
 }) {
   // The colors are intentionally distinct but muted enough to live inside the
   // glass daily card.
@@ -518,12 +580,12 @@ function DayMoonArc({
   const margin = 24;
   const baseline = 66;
   const arcHeight = 38;
-  const sunStart = minutesFromClockIso(sunrise);
-  const sunEnd = minutesFromClockIso(sunset);
-  const moonStart = minutesFromClockIso(moonrise);
-  const moonEnd = minutesFromClockIso(moonset);
+  const sunStart = minutesFromClockIsoForZone(sunrise, timeZone);
+  const sunEnd = minutesFromClockIsoForZone(sunset, timeZone);
+  const moonStart = minutesFromClockIsoForZone(moonrise, timeZone);
+  const moonEnd = minutesFromClockIsoForZone(moonset, timeZone);
   const sunSegments = dayArcSegments(sunStart, sunEnd);
-  const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd, { minVisibleMinutes: 45 }) : [];
+  const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd, { minVisibleMinutes: 75 }) : [];
   const hasSun = sunSegments.length > 0;
   const hasMoon = moonSegments.length > 0;
   const sunStartX = dayArcEndpoint(sunSegments, 'start', { width, margin });
@@ -589,21 +651,27 @@ function DayMoonArc({
         <View style={styles.dayArcTimes}>
           <View style={styles.dayArcTimeBlock}>
             <Text style={styles.dayArcTimeLabel}>Sunrise</Text>
-            <Text style={styles.dayArcTimeValue}>{formatClock(sunrise)}</Text>
+            <Text style={styles.dayArcTimeValue}>{formatClockForZone(sunrise, timeZone)}</Text>
           </View>
           <View style={styles.dayArcTimeBlock}>
             <Text style={styles.dayArcTimeLabel}>Sunset</Text>
-            <Text style={styles.dayArcTimeValue}>{formatClock(sunset)}</Text>
+            <Text style={styles.dayArcTimeValue}>{formatClockForZone(sunset, timeZone)}</Text>
           </View>
           {showMoon ? (
             <>
               <View style={styles.dayArcTimeBlock}>
                 <Text style={styles.dayArcTimeLabel}>Moonrise</Text>
-                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonrise)}</Text>
+                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>
+                  {formatClockForZone(moonrise, timeZone)}
+                  {eventDayOffsetLabel(moonrise, sunrise ?? sunset, timeZone)}
+                </Text>
               </View>
               <View style={styles.dayArcTimeBlock}>
                 <Text style={styles.dayArcTimeLabel}>Moonset</Text>
-                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>{formatClock(moonset)}</Text>
+                <Text style={[styles.dayArcTimeValue, styles.dayArcMoonText]}>
+                  {formatClockForZone(moonset, timeZone)}
+                  {eventDayOffsetLabel(moonset, sunrise ?? sunset, timeZone)}
+                </Text>
               </View>
             </>
           ) : null}
@@ -628,9 +696,10 @@ function formatDayLength(seconds?: number | null) {
   return `${hours}h ${minutes}m`;
 }
 
-function formatWindow(start?: string | null, end?: string | null) {
+function formatWindow(start?: string | null, end?: string | null, timeZone?: string | null) {
   if (!start) return '—';
-  if (!end) return formatClock(start);
+  if (!end) return formatClockForZone(start, timeZone);
+  if (end) return `${formatClockForZone(start, timeZone)}-${formatClockForZone(end, timeZone)}`;
   return `${formatClock(start)}–${formatClock(end)}`;
 }
 
@@ -2530,6 +2599,7 @@ function SimpleDailyOverview({
   moonset,
   moonDays,
   dayLengthSec,
+  timeZone,
 }: {
   tempF: number | null;
   condition: string;
@@ -2558,6 +2628,7 @@ function SimpleDailyOverview({
     moonPhaseLabel?: string | null;
   }>;
   dayLengthSec?: number | null;
+  timeZone?: string | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2706,6 +2777,7 @@ function SimpleDailyOverview({
           sunset={sunset}
           moonrise={moonriseForArc}
           moonset={moonsetForArc}
+          timeZone={timeZone}
           showMoon
         />
 
@@ -2851,11 +2923,11 @@ function SimpleDailyOverview({
                   ))}
                   <View style={styles.dailySunRow}>
                     <Text style={styles.dailySunLabel}>Sunrise</Text>
-                    <Text style={styles.dailySunValue}>{formatClock(sunriseForDay)}</Text>
+                    <Text style={styles.dailySunValue}>{formatClockForZone(sunriseForDay, timeZone)}</Text>
                   </View>
                   <View style={styles.dailySunRow}>
                     <Text style={styles.dailySunLabel}>Sunset</Text>
-                    <Text style={styles.dailySunValue}>{formatClock(sunsetForDay)}</Text>
+                    <Text style={styles.dailySunValue}>{formatClockForZone(sunsetForDay, timeZone)}</Text>
                   </View>
                   <Text style={styles.dailyExpandedSummary}>Day length {formatDayLength(dayLength)}</Text>
                 </View>
@@ -3185,6 +3257,7 @@ function NerdyDeepDive({
   feelsDriverLabel,
   feelsDriverValue,
   feelsDriverTopicId,
+  timeZone,
   onOpenLearnTopic,
 }: {
   condition: string;
@@ -3234,6 +3307,7 @@ function NerdyDeepDive({
   feelsDriverLabel: string;
   feelsDriverValue: string;
   feelsDriverTopicId: string;
+  timeZone?: string | null;
   onOpenLearnTopic: (topicId?: string) => void;
 }) {
   const dir = dirToCompass(windDirDeg);
@@ -3253,9 +3327,9 @@ function NerdyDeepDive({
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
   const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
   const summaryCards = [
-    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime), topicId: astroLearnTopicId('night') },
-    { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime), topicId: astroLearnTopicId('best') },
-    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime), topicId: astroLearnTopicId('true-dark') },
+    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime, timeZone), topicId: astroLearnTopicId('night') },
+    { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime, timeZone), topicId: astroLearnTopicId('best') },
+    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime, timeZone), topicId: astroLearnTopicId('true-dark') },
     { label: 'Day Length', value: formatDayLength(dayLengthSec), topicId: astroLearnTopicId('sunrise') },
   ];
   const quickChips = [moistureState, windState, cloudState, pressureState];
@@ -3427,7 +3501,7 @@ function NerdyDeepDive({
 
         <View style={nd.panelFull}>
           <Text style={nd.panelTitle}>Sun & Moon</Text>
-          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon embedded />
+          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon embedded timeZone={timeZone} />
 
           <View style={nd.moonSummaryRow}>
             <Pressable style={nd.moonPhaseCard} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
@@ -4076,8 +4150,14 @@ function LandWeatherWithCoords({
   const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
   const todayMoonrise = astroData?.moonrise ?? null;
   const todayMoonset = astroData?.moonset ?? null;
+  const forecastTodayKey =
+    typeof todayDaily?.date === 'string'
+      ? todayDaily.date.slice(0, 10)
+      : typeof (todayDaily as any)?.time === 'string'
+        ? (todayDaily as any).time.slice(0, 10)
+        : todayDateKeyLocal();
   const todayMoonDay =
-    astroData?.moonDays?.find((day: any) => day?.date === todayDateKeyLocal()) ?? astroData?.moonDays?.[0] ?? null;
+    astroData?.moonDays?.find((day: any) => day?.date === forecastTodayKey) ?? astroData?.moonDays?.[0] ?? null;
   const hourlyRaw: any[] = forecastData?.hourly ?? [];
 
   const hourly = useMemo(() => {
@@ -4309,6 +4389,7 @@ function LandWeatherWithCoords({
           moonset={todayMoonset}
           moonDays={astroData?.moonDays}
           dayLengthSec={todayDayLengthSec}
+          timeZone={forecastTimeZone}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -4435,6 +4516,7 @@ function LandWeatherWithCoords({
           feelsDriverLabel={feelsDriver.label}
           feelsDriverValue={feelsDriver.value}
           feelsDriverTopicId={feelsDriver.topicId}
+          timeZone={forecastTimeZone}
           onOpenLearnTopic={openLearnTopic}
         />
       )}
