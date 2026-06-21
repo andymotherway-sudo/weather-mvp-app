@@ -48,6 +48,10 @@ private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
 private const val WIDGET_RADAR_CACHE_TTL_MS = 10L * 60L * 1000L
 
+@Suppress("DEPRECATION")
+private fun widgetPrefs(context: Context) =
+  context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS)
+
 /*
  * Shared data/rendering helper for all Android home-screen widgets.
  *
@@ -276,7 +280,7 @@ object OmniwxWidgetData {
   }
 
   private fun readMirroredWidgetPlace(context: Context): WidgetPlace? {
-    val raw = context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE).getString(ACTIVE_PLACE_JSON, null)
+    val raw = widgetPrefs(context).getString(ACTIVE_PLACE_JSON, null)
       ?: return null
     return runCatching {
       val root = JSONObject(raw)
@@ -362,14 +366,14 @@ object OmniwxWidgetData {
       .put("weatherCode", weather.weatherCode)
       .put("updatedLabel", weather.updatedLabel)
 
-    context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE)
+    widgetPrefs(context)
       .edit()
       .putString(LAST_WEATHER_JSON, payload.toString())
-      .apply()
+      .commit()
   }
 
   private fun readCachedWidgetWeather(context: Context, place: WidgetPlace): WidgetWeather? {
-    val raw = context.getSharedPreferences(WIDGET_DATA_PREFS, Context.MODE_PRIVATE).getString(LAST_WEATHER_JSON, null)
+    val raw = widgetPrefs(context).getString(LAST_WEATHER_JSON, null)
       ?: return null
     return runCatching {
       val root = JSONObject(raw)
@@ -1466,8 +1470,13 @@ private fun readAsyncStorageValuesByPrefix(context: Context, prefix: String): Li
 }
 
 private fun placeFromJson(json: JSONObject): WidgetPlace? {
-  val lat = json.optDouble("lat", Double.NaN)
-  val lon = json.optDouble("lon", Double.NaN)
+  val lat = json.optDouble("lat", Double.NaN).takeIf { it.isFinite() }
+    ?: json.optDouble("latitude", Double.NaN).takeIf { it.isFinite() }
+    ?: return null
+  val lon = json.optDouble("lon", Double.NaN).takeIf { it.isFinite() }
+    ?: json.optDouble("lng", Double.NaN).takeIf { it.isFinite() }
+    ?: json.optDouble("longitude", Double.NaN).takeIf { it.isFinite() }
+    ?: return null
   if (!lat.isFinite() || !lon.isFinite()) return null
   val rawName = json.optString("name", "").ifBlank { "OMNIwx location" }
   val name = if (looksLikeCoordinateLabel(rawName)) "Current Location" else rawName

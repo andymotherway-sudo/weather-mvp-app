@@ -11,6 +11,10 @@ import org.json.JSONObject
 private const val WIDGET_STATE_PREFS = "omniwx_widget_data"
 private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 
+@Suppress("DEPRECATION")
+private fun widgetPrefs(context: Context) =
+  context.getSharedPreferences(WIDGET_STATE_PREFS, Context.MODE_PRIVATE or Context.MODE_MULTI_PROCESS)
+
 // Small native bridge so launcher widgets and Android Auto can read the current
 // OMNIwx place from normal Android preferences instead of depending only on the
 // React Native AsyncStorage SQLite implementation.
@@ -35,13 +39,12 @@ class OmniwxWidgetStateModule(private val reactContext: ReactApplicationContext)
         .put("source", if (place.hasKey("source")) place.getString("source") ?: "app" else "app")
         .put("savedAtMs", System.currentTimeMillis())
 
-      reactContext
-        .getSharedPreferences(WIDGET_STATE_PREFS, Context.MODE_PRIVATE)
+      val saved = widgetPrefs(reactContext)
         .edit()
         .putString(ACTIVE_PLACE_JSON, payload.toString())
-        .apply()
+        .commit()
 
-      promise.resolve(true)
+      promise.resolve(saved)
     } catch (e: Exception) {
       promise.reject("E_WIDGET_PLACE", e)
     }

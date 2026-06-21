@@ -17,12 +17,12 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
       val place = OmniwxWidgetData.readPlace(context)
       val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(context, it) }.getOrNull() }
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, weather, loading = false))
+        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, loading = false))
       }
     }
   }
 
-  private fun buildViews(context: Context, weather: WidgetWeather?, loading: Boolean): RemoteViews {
+  private fun buildViews(context: Context, place: WidgetPlace?, weather: WidgetWeather?, loading: Boolean): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current_radar).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/maps"))
       setOnClickPendingIntent(R.id.widget_refresh, OmniwxWidgetData.refreshIntent(context))
@@ -41,17 +41,17 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
         return@apply
       }
       if (weather == null) {
-        setTextViewText(R.id.widget_title, "OMNIwx")
+        setTextViewText(R.id.widget_title, place?.name ?: "OMNIwx")
         setTextViewText(R.id.widget_temp, "--")
-        setTextViewText(R.id.widget_condition, "Open OMNIwx to refresh")
-        setTextViewText(R.id.widget_phrase, "Set a default city or allow location")
+        setTextViewText(R.id.widget_condition, if (place == null) "Open OMNIwx to refresh" else "Weather refresh failed")
+        setTextViewText(R.id.widget_phrase, if (place == null) "Set a default city or allow location" else "Tap refresh or open OMNIwx")
         setTextViewText(R.id.widget_low, "Low --")
         setTextViewText(R.id.widget_range, "Now --")
         setTextViewText(R.id.widget_high, "High --")
         setTextViewText(R.id.widget_wind, "Wind --  Dew --")
-        setTextViewText(R.id.widget_footer, "Tap refresh after opening OMNIwx once")
+        setTextViewText(R.id.widget_footer, if (place == null) "Tap refresh after opening OMNIwx once" else "Using saved location")
         setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
-        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(null, null))
+        setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(place, null))
         return@apply
       }
       setTextViewText(R.id.widget_title, weather.place.name)
