@@ -481,6 +481,8 @@ export function HourlyRangeChart({
   });
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
   const pctAxisX = padL + 6;
+  const aqiAxisX = pctAxisX + (landscape ? 36 : 42);
+  const aqiTicks = [0, 50, 100, 150].map((v) => ({ v, y: yForAqi(v) }));
 
   const windStats = useMemo(() => {
     const ws = data.map((h) => pick(h, 'windMph')).filter((x): x is number => typeof x === 'number');
@@ -683,8 +685,44 @@ export function HourlyRangeChart({
                 fontWeight={landscape ? '800' : '900'}
                 textAnchor="start"
               >
-                % / AQI
+                %
               </SvgText>
+
+              {showAqi ? (
+                <G>
+                  <Line
+                    x1={aqiAxisX}
+                    x2={aqiAxisX}
+                    y1={padT}
+                    y2={padT + plotH}
+                    stroke="rgba(250,204,21,0.22)"
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={aqiAxisX}
+                    y={padT - 8}
+                    fontSize={landscape ? '9' : '11'}
+                    fill="rgba(250,204,21,0.78)"
+                    fontWeight="900"
+                    textAnchor="start"
+                  >
+                    AQI
+                  </SvgText>
+                  {aqiTicks.map((tk) => (
+                    <SvgText
+                      key={`aqi-tick-${tk.v}`}
+                      x={aqiAxisX}
+                      y={tk.y + 3}
+                      fontSize={landscape ? '7' : '8'}
+                      fill="rgba(250,204,21,0.56)"
+                      fontWeight="800"
+                      textAnchor="start"
+                    >
+                      {String(tk.v)}
+                    </SvgText>
+                  ))}
+                </G>
+              ) : null}
 
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
