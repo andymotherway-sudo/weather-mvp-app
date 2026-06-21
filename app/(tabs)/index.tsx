@@ -430,27 +430,66 @@ function arcXForDisplayMinute(
   return opts.margin + (clamped / 1440) * (opts.width - opts.margin * 2);
 }
 
-function dayArcSegments(startMinute: number | null, endMinute: number | null) {
+type DayArcSegment = {
+  displayStart: number;
+  displayEnd: number;
+  cycleStart: number;
+  cycleEnd: number;
+  startsAtActualEvent: boolean;
+  endsAtActualEvent: boolean;
+};
+
+function dayArcSegments(
+  startMinute: number | null,
+  endMinute: number | null,
+  opts: { minVisibleMinutes?: number } = {}
+): DayArcSegment[] {
   // If the event ends after midnight, split it into two visible pieces so the
   // chart still reads left-to-right across one local day.
   if (startMinute == null || endMinute == null) return [];
   const normalizedEnd = endMinute <= startMinute ? endMinute + 1440 : endMinute;
   if (normalizedEnd <= 1440) {
-    return [{ displayStart: startMinute, displayEnd: normalizedEnd, cycleStart: startMinute, cycleEnd: normalizedEnd }];
+    return [{
+      displayStart: startMinute,
+      displayEnd: normalizedEnd,
+      cycleStart: startMinute,
+      cycleEnd: normalizedEnd,
+      startsAtActualEvent: true,
+      endsAtActualEvent: true,
+    }];
   }
+  const minVisibleMinutes = opts.minVisibleMinutes ?? 0;
   return [
-    { displayStart: startMinute, displayEnd: 1440, cycleStart: startMinute, cycleEnd: normalizedEnd },
-    { displayStart: 1440, displayEnd: normalizedEnd, cycleStart: startMinute, cycleEnd: normalizedEnd },
-  ];
+    {
+      displayStart: startMinute,
+      displayEnd: 1440,
+      cycleStart: startMinute,
+      cycleEnd: normalizedEnd,
+      startsAtActualEvent: true,
+      endsAtActualEvent: false,
+    },
+    {
+      displayStart: 1440,
+      displayEnd: normalizedEnd,
+      cycleStart: startMinute,
+      cycleEnd: normalizedEnd,
+      startsAtActualEvent: false,
+      endsAtActualEvent: true,
+    },
+  ].filter((segment) => segment.displayEnd - segment.displayStart >= minVisibleMinutes);
 }
 
 function dayArcEndpoint(
-  segments: ReturnType<typeof dayArcSegments>,
+  segments: DayArcSegment[],
   edge: 'start' | 'end',
   opts: { width: number; margin: number }
 ) {
   if (!segments.length) return null;
-  const segment = edge === 'start' ? segments[0] : segments[segments.length - 1];
+  const segment =
+    edge === 'start'
+      ? segments.find((candidate) => candidate.startsAtActualEvent)
+      : [...segments].reverse().find((candidate) => candidate.endsAtActualEvent);
+  if (!segment) return null;
   const displayMinute = edge === 'start' ? segment.displayStart : segment.displayEnd;
   return arcXForDisplayMinute(displayMinute, segment.displayStart, opts);
 }
@@ -484,7 +523,7 @@ function DayMoonArc({
   const moonStart = minutesFromClockIso(moonrise);
   const moonEnd = minutesFromClockIso(moonset);
   const sunSegments = dayArcSegments(sunStart, sunEnd);
-  const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd) : [];
+  const moonSegments = showMoon ? dayArcSegments(moonStart, moonEnd, { minVisibleMinutes: 45 }) : [];
   const hasSun = sunSegments.length > 0;
   const hasMoon = moonSegments.length > 0;
   const sunStartX = dayArcEndpoint(sunSegments, 'start', { width, margin });

@@ -18,6 +18,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.anonymous.weatherapp.R
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -58,6 +59,10 @@ import kotlin.math.roundToInt
  */
 class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
+  private val brandMarkBitmap: Bitmap? by lazy {
+    BitmapFactory.decodeResource(reactContext.resources, R.drawable.omniwx_mark)
+  }
+
   override fun getName(): String = "OmniwxVideoExport"
 
   @ReactMethod
@@ -497,8 +502,16 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val pad = width * 0.025f
     val top = pad
     canvas.drawRoundRect(RectF(pad, top, width - pad, top + height * 0.105f), 24f, 24f, panelPaint)
-    canvas.drawText(title, pad + 24f, top + height * 0.043f, titlePaint)
-    canvas.drawText(subtitle, pad + 24f, top + height * 0.078f, smallPaint)
+    val mark = brandMarkBitmap
+    if (mark != null) {
+      val markSize = min(width * 0.082f, height * 0.056f)
+      val markLeft = pad + 24f
+      val markTop = top + height * 0.024f
+      canvas.drawBitmap(mark, null, RectF(markLeft, markTop, markLeft + markSize, markTop + markSize), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG))
+    } else {
+      canvas.drawText(title, pad + 24f, top + height * 0.043f, titlePaint)
+    }
+    canvas.drawText(subtitle, pad + 24f, top + height * 0.084f, smallPaint)
     val rightLabel = "$product  •  $frameLabel"
     val rightWidth = cyanPaint.measureText(rightLabel)
     canvas.drawText(rightLabel, width - pad - 24f - rightWidth, top + height * 0.062f, cyanPaint)

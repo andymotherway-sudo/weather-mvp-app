@@ -335,8 +335,8 @@ const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE = 'https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
+const EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE = 'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png';
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -3056,8 +3056,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('geocolor', frame, width, height)],
-          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
         };
@@ -3066,8 +3065,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-east-ir', frame, width, height)],
-          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
         };
@@ -3076,8 +3074,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-west-wv', frame, width, height)],
-          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
         };
@@ -3086,8 +3083,7 @@ export default function MapsScreen() {
         return {
           label,
           urls: [buildAnimationUrl('goes-east-wv', frame, width, height)],
-          basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
         };
@@ -3098,8 +3094,7 @@ export default function MapsScreen() {
           buildAnimationUrl('goes-east-visible', frame, width, height),
           buildAnimationUrl('goes-west-visible', frame, width, height),
         ],
-        basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE,
-        basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+        basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
         region: animationExportRegion,
         zoom: mapZoom,
       };

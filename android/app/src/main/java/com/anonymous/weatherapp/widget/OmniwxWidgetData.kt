@@ -25,6 +25,8 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -43,6 +45,8 @@ private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
 private const val WIDGET_DATA_PREFS = "omniwx_widget_data"
 private const val LAST_WEATHER_JSON = "lastWeatherJson"
 private const val ACTIVE_PLACE_JSON = "activePlaceJson"
+private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
+private const val WIDGET_RADAR_CACHE_TTL_MS = 10L * 60L * 1000L
 
 /*
  * Shared data/rendering helper for all Android home-screen widgets.
@@ -103,6 +107,12 @@ data class WidgetSkyScore(
 private data class TilePoint(
   val x: Double,
   val y: Double,
+)
+
+private data class CachedRadarSnapshot(
+  val key: String,
+  val savedAtMs: Long,
+  val bitmap: Bitmap,
 )
 
 data class WidgetMetar(
@@ -192,6 +202,7 @@ object OmniwxWidgetData {
   const val REFRESH_REASON_MANUAL = "manual"
 
   private var weatherCache: CachedWidgetWeather? = null
+  private var radarSnapshotCache: CachedRadarSnapshot? = null
 
   fun openIntent(context: Context, route: String): PendingIntent {
     // Widgets open the real Expo Router screen through the app's weatherapp://
@@ -921,6 +932,19 @@ object OmniwxWidgetData {
   }
 
   fun radarSnapshotBitmap(place: WidgetPlace?, weather: WidgetWeather?): Bitmap {
+    if (place != null) {
+      val key = "${String.format(Locale.US, "%.2f", place.lat)},${String.format(Locale.US, "%.2f", place.lon)}"
+      val now = System.currentTimeMillis()
+      radarSnapshotCache
+        ?.takeIf { it.key == key && now - it.savedAtMs in 0..WIDGET_RADAR_CACHE_TTL_MS && !it.bitmap.isRecycled }
+        ?.let { return it.bitmap }
+
+      fetchRadarTileComposite(place, weather)?.let { live ->
+        radarSnapshotCache = CachedRadarSnapshot(key, now, live)
+        return live
+      }
+    }
+
     // Keep launcher updates cheap. Live tile composites can require dozens of
     // network bitmap decodes during a widget refresh, which can make the
     // foreground app feel sluggish on some devices.
@@ -956,9 +980,10 @@ object OmniwxWidgetData {
   }
 
   private fun fetchRadarTileComposite(place: WidgetPlace, weather: WidgetWeather?): Bitmap? {
-    // Native mini-map renderer for the current+radar widget. It pulls base map
-    // and radar tiles around the saved location and composites them into one
-    // bitmap because RemoteViews cannot host a live MapLibre map.
+    // Native mini-map renderer for the current+radar widget. Keep this tiny:
+    // one RainViewer timestamp and five transparent radar tiles through the
+    // OMNIwx worker cache. The background is drawn locally so widget refreshes
+    // do not compete with the foreground app for a full map tile stack.
     return runCatching {
       val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
       val canvas = Canvas(bitmap)
@@ -969,53 +994,144 @@ object OmniwxWidgetData {
       canvas.drawRect(0f, 0f, 720f, 360f, background)
 
       val zoom = 7
-      val tileSize = 256.0
+      val tileSize = 512.0
+      val timestamp = latestRainViewerTimestamp()
       val center = lonLatToTilePoint(place.lon, place.lat, zoom)
       val centerPxX = center.x * tileSize
       val centerPxY = center.y * tileSize
       val topLeftPxX = centerPxX - 360.0
       val topLeftPxY = centerPxY - 180.0
-      val minTileX = kotlin.math.floor(topLeftPxX / tileSize).toInt()
-      val maxTileX = kotlin.math.floor((topLeftPxX + 720.0) / tileSize).toInt()
-      val minTileY = kotlin.math.floor(topLeftPxY / tileSize).toInt()
-      val maxTileY = kotlin.math.floor((topLeftPxY + 360.0) / tileSize).toInt()
+      val centerTileX = floor(center.x).toInt()
+      val centerTileY = floor(center.y).toInt()
       val tileMax = 1 shl zoom
 
-      fun drawTileLayer(template: String, alpha: Int) {
-        // Template URLs use {z}/{x}/{y}; this replaces them tile-by-tile and
-        // wraps X at the antimeridian like normal Web Mercator maps.
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-          this.alpha = alpha
-        }
-        for (tileX in minTileX..maxTileX) {
-          for (tileY in minTileY..maxTileY) {
-            if (tileY < 0 || tileY >= tileMax) continue
-            val wrappedX = ((tileX % tileMax) + tileMax) % tileMax
-            val url = template
-              .replace("{z}", zoom.toString())
-              .replace("{x}", wrappedX.toString())
-              .replace("{y}", tileY.toString())
-            val tile = fetchBitmap(url) ?: continue
-            val left = ((tileX * tileSize) - topLeftPxX).toFloat()
-            val top = ((tileY * tileSize) - topLeftPxY).toFloat()
-            canvas.drawBitmap(tile, null, Rect(left.toInt(), top.toInt(), (left + 256f).toInt(), (top + 256f).toInt()), paint)
-          }
-        }
+      val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(56, 189, 248)
+        alpha = 30
+        strokeWidth = 2f
+      }
+      for (x in 0..720 step 72) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), 360f, grid)
+      for (y in 0..360 step 60) canvas.drawLine(0f, y.toFloat(), 720f, y.toFloat(), grid)
+
+      val radarPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+        alpha = 225
+      }
+      var drawnTiles = 0
+      val offsets = arrayOf(0 to 0, -1 to 0, 1 to 0, 0 to -1, 0 to 1)
+      for ((dx, dy) in offsets) {
+        val tileX = centerTileX + dx
+        val tileY = centerTileY + dy
+        if (tileY < 0 || tileY >= tileMax) continue
+        val wrappedX = ((tileX % tileMax) + tileMax) % tileMax
+        val url =
+          "$OMNIWX_API_BASE/v1/radar/rainviewer/tiles/$zoom/$wrappedX/$tileY.png" +
+            "?ts=$timestamp&size=512&color=2&smooth=1&snow=1"
+        val tile = fetchBitmap(url) ?: continue
+        val left = ((tileX * tileSize) - topLeftPxX).toFloat()
+        val top = ((tileY * tileSize) - topLeftPxY).toFloat()
+        canvas.drawBitmap(tile, null, RectF(left, top, (left + tileSize).toFloat(), (top + tileSize).toFloat()), radarPaint)
+        drawnTiles += 1
       }
 
-      drawTileLayer("https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png", 235)
-      drawTileLayer("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png", 230)
-      drawTileLayer("https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png", 230)
+      if (drawnTiles <= 0) {
+        return@runCatching null
+      }
 
-      val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(30, 2, 6, 23)
+      val range = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(34, 211, 238)
+        alpha = 72
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+      }
+      listOf(58f, 116f, 174f).forEach { radius -> canvas.drawCircle(360f, 180f, radius, range) }
+
+      val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(148, 163, 184)
+        alpha = 115
+        textSize = 15f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
+      }
+      canvas.drawText("25 mi", 438f, 127f, label)
+      canvas.drawText("50 mi", 496f, 70f, label)
+
+      val markerGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(56, 189, 248)
+        alpha = 58
         style = Paint.Style.FILL
       }
-      canvas.drawRect(0f, 0f, 720f, 360f, wash)
+      canvas.drawCircle(360f, 180f, 29f, markerGlow)
+      markerGlow.alpha = 96
+      canvas.drawCircle(360f, 180f, 20f, markerGlow)
+      val marker = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(125, 211, 252)
+        style = Paint.Style.FILL
+      }
+      canvas.drawCircle(360f, 180f, 12f, marker)
+      val markerStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        alpha = 220
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+      }
+      canvas.drawCircle(360f, 180f, 13f, markerStroke)
 
-      drawRadarWidgetOverlays(canvas, place.name, weather, hasLiveTiles = true)
+      val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(226, 245, 255)
+        alpha = 190
+        textSize = 19f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setShadowLayer(5f, 0f, 2f, Color.rgb(2, 6, 23))
+      }
+      canvas.drawText(place.name.take(22), 390f, 188f, text)
+      text.textSize = 16f
+      text.alpha = 130
+      canvas.drawText("Live radar", 28f, 330f, text)
+
+      drawRadarChip(canvas, 24f, 24f, radarStatusLabel(weather), accent = true)
+      drawRadarChip(canvas, 556f, 24f, radarAgeLabel(timestamp), accent = false)
       bitmap
     }.getOrNull()
+  }
+
+  private fun latestRainViewerTimestamp(): Long {
+    var connection: HttpURLConnection? = null
+    return try {
+      connection = (URL(RAINVIEWER_TIMELINE_URL).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 4500
+        readTimeout = 4500
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "OMNIwx Alpha Android Widget")
+        setRequestProperty("Accept", "application/json")
+      }
+      if (connection.responseCode !in 200..299) return 0L
+      val root = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+      val radar = root.optJSONObject("radar") ?: return 0L
+      val times = mutableListOf<Long>()
+      val past = radar.optJSONArray("past") ?: JSONArray()
+      val nowcast = radar.optJSONArray("nowcast") ?: JSONArray()
+      for (idx in 0 until past.length()) {
+        past.optJSONObject(idx)?.optLong("time", 0L)?.takeIf { it > 0L }?.let { times.add(it) }
+      }
+      for (idx in 0 until nowcast.length()) {
+        nowcast.optJSONObject(idx)?.optLong("time", 0L)?.takeIf { it > 0L }?.let { times.add(it) }
+      }
+      times.maxOrNull() ?: 0L
+    } catch (_: Exception) {
+      0L
+    } finally {
+      connection?.disconnect()
+    }
+  }
+
+  private fun radarAgeLabel(timestamp: Long): String {
+    if (timestamp <= 0L) return "Radar --"
+    val ageMinutes = ((System.currentTimeMillis() / 1000L - timestamp) / 60L).coerceAtLeast(0L)
+    return when {
+      ageMinutes < 2L -> "Radar now"
+      ageMinutes < 90L -> "${ageMinutes}m old"
+      else -> "Radar latest"
+    }
   }
 
   private fun drawRadarWidgetOverlays(canvas: Canvas, placeName: String, weather: WidgetWeather?, hasLiveTiles: Boolean) {
