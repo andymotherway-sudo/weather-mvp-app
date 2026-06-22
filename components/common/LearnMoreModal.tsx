@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { LEARN_TOPICS } from '../../app/lib/learn/topics';
+import { LEARN_CATEGORIES, LEARN_TOPICS, getLearnCategoryForTopic } from '../../app/lib/learn/topics';
 
 type LearnSection = {
   title?: string;
@@ -16,6 +16,8 @@ type LearnReference = {
 type LearnTopic = {
   id: string;
   title: string;
+  category?: string;
+  tags?: string[];
   body?: string;
   bullets?: string[];
   summary?: string;
@@ -47,6 +49,7 @@ export function LearnMoreModal({
 }) {
   const topics = useMemo(() => asTopicArray(LEARN_TOPICS), []);
   const [q, setQ] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [mode, setMode] = useState<Mode>('browse');
 
@@ -54,6 +57,7 @@ export function LearnMoreModal({
     if (!visible) return;
 
     setQ('');
+    setSelectedCategory('all');
 
     if (initialTopicId) {
       setSelectedId(initialTopicId);
@@ -78,6 +82,9 @@ export function LearnMoreModal({
         t.footer ?? '',
         t.formula ?? '',
         t.formulaLabel ?? '',
+        getLearnCategoryForTopic(t as any).title,
+        getLearnCategoryForTopic(t as any).description,
+        ...(t.tags ?? []),
         ...(t.formulaNotes ?? []),
         ...(t.bullets ?? []),
         ...(t.sections ?? []).flatMap((s) => [s.title ?? '', s.body ?? '', ...(s.bullets ?? [])]),
@@ -90,6 +97,20 @@ export function LearnMoreModal({
       return hay.includes(query);
     });
   }, [q, topics]);
+
+  const categoryFiltered = useMemo(() => {
+    if (selectedCategory === 'all') return filtered;
+    return filtered.filter((topic) => getLearnCategoryForTopic(topic as any).id === selectedCategory);
+  }, [filtered, selectedCategory]);
+
+  const grouped = useMemo(
+    () =>
+      LEARN_CATEGORIES.map((category) => ({
+        category,
+        topics: categoryFiltered.filter((topic) => getLearnCategoryForTopic(topic as any).id === category.id),
+      })).filter((group) => group.topics.length > 0),
+    [categoryFiltered],
+  );
 
   const selected = useMemo(() => {
     if (!selectedId) return undefined;
@@ -105,7 +126,7 @@ export function LearnMoreModal({
     setMode('browse');
   };
 
-  const topicCountLabel = `${filtered.length} topic${filtered.length === 1 ? '' : 's'}`;
+  const topicCountLabel = `${categoryFiltered.length} topic${categoryFiltered.length === 1 ? '' : 's'}`;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -147,42 +168,83 @@ export function LearnMoreModal({
             </View>
 
             <View style={styles.browseMetaRow}>
-              <Text style={styles.sectionLabel}>Browse topics</Text>
+              <Text style={styles.sectionLabel}>Browse wxLearn</Text>
               <Text style={styles.topicCount}>{topicCountLabel}</Text>
             </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryScroller}
+              contentContainerStyle={styles.categoryScrollerContent}
+            >
+              <Pressable
+                onPress={() => setSelectedCategory('all')}
+                style={[styles.categoryChip, selectedCategory === 'all' && styles.categoryChipActive]}
+              >
+                <Text style={[styles.categoryChipText, selectedCategory === 'all' && styles.categoryChipTextActive]}>
+                  All
+                </Text>
+              </Pressable>
+
+              {LEARN_CATEGORIES.map((category) => (
+                <Pressable
+                  key={category.id}
+                  onPress={() => setSelectedCategory(category.id)}
+                  style={[styles.categoryChip, selectedCategory === category.id && styles.categoryChipActive]}
+                >
+                  <Text
+                    style={[styles.categoryChipText, selectedCategory === category.id && styles.categoryChipTextActive]}
+                    numberOfLines={1}
+                  >
+                    {category.title}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
 
             <ScrollView
               style={{ flex: 1 }}
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
             >
-              {!!q.trim() && filtered.length > 0 ? (
+              {!!q.trim() && categoryFiltered.length > 0 ? (
                 <Text style={styles.helperText}>Results for “{q.trim()}”</Text>
               ) : null}
 
               <View style={styles.topicList}>
-                {filtered.map((t) => (
-                  <Pressable
-                    key={t.id}
-                    onPress={() => onPick(t.id)}
-                    style={styles.topicRow}
-                  >
-                    <View style={styles.topicRowTop}>
-                      <Text style={styles.topicText} numberOfLines={2}>
-                        {t.title}
-                      </Text>
-                      <Text style={styles.openHint}>Open</Text>
+                {grouped.map(({ category, topics: categoryTopics }) => (
+                  <View key={category.id} style={styles.categorySection}>
+                    <View style={styles.categoryHeaderRow}>
+                      <Text style={styles.categoryTitle}>{category.title}</Text>
+                      <Text style={styles.categoryCount}>{categoryTopics.length}</Text>
                     </View>
+                    <Text style={styles.categoryDescription}>{category.description}</Text>
 
-                    {t.summary ? (
-                      <Text style={styles.topicSubtext} numberOfLines={3}>
-                        {t.summary}
-                      </Text>
-                    ) : null}
-                  </Pressable>
+                    {categoryTopics.map((t) => (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => onPick(t.id)}
+                        style={styles.topicRow}
+                      >
+                        <View style={styles.topicRowTop}>
+                          <Text style={styles.topicText} numberOfLines={2}>
+                            {t.title}
+                          </Text>
+                          <Text style={styles.openHint}>Open</Text>
+                        </View>
+
+                        {t.summary ? (
+                          <Text style={styles.topicSubtext} numberOfLines={3}>
+                            {t.summary}
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    ))}
+                  </View>
                 ))}
 
-                {!filtered.length ? (
+                {!categoryFiltered.length ? (
                   <View style={styles.emptyCard}>
                     <Text style={styles.emptyTitle}>No matches found</Text>
                     <Text style={styles.emptyText}>
@@ -442,6 +504,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  categoryScroller: {
+    maxHeight: 42,
+    marginBottom: 10,
+  },
+
+  categoryScrollerContent: {
+    paddingRight: 8,
+    gap: 8,
+  },
+
+  categoryChip: {
+    height: 36,
+    paddingHorizontal: 13,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  categoryChipActive: {
+    backgroundColor: 'rgba(90, 166, 255, 0.24)',
+    borderColor: 'rgba(150, 210, 255, 0.42)',
+  },
+
+  categoryChipText: {
+    color: 'rgba(255,255,255,0.64)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  categoryChipTextActive: {
+    color: 'white',
+  },
+
   scrollContent: {
     paddingBottom: 26,
   },
@@ -654,6 +752,37 @@ const styles = StyleSheet.create({
   },
 
   topicList: {},
+
+  categorySection: {
+    marginBottom: 16,
+  },
+
+  categoryHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+
+  categoryTitle: {
+    color: 'rgba(255,255,255,0.94)',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  categoryCount: {
+    color: 'rgba(150, 210, 255, 0.86)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  categoryDescription: {
+    marginBottom: 10,
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
 
   topicRow: {
     paddingVertical: 13,

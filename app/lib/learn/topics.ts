@@ -16,9 +16,29 @@ export type LearnSection = {
   bullets?: string[];
 };
 
+export type LearnCategoryId =
+  | 'start'
+  | 'land'
+  | 'comfort'
+  | 'clouds'
+  | 'maps'
+  | 'marine'
+  | 'aviation'
+  | 'space'
+  | 'astro'
+  | 'data';
+
+export type LearnCategory = {
+  id: LearnCategoryId;
+  title: string;
+  description: string;
+};
+
 export type LearnTopic = {
   id: string;
   title: string;
+  category?: LearnCategoryId;
+  tags?: string[];
   summary?: string;
   references?: LearnReference[];
   bullets?: string[];
@@ -1675,5 +1695,468 @@ export const LEARN_TOPICS: LearnTopic[] = [
     insight:
       'The unit is part of the forecast. A wave height, period, and direction only become useful when their units are obvious.',
   },
+  {
+    id: 'aqi-scale',
+    title: 'AQI Scale',
+    category: 'land',
+    tags: ['air quality', 'aqi', 'pollution', 'health'],
+    summary:
+      'AQI turns several pollutants into one public-health scale. It is useful for quick decisions, but the pollutant driving the number matters too.',
+    references: [
+      { label: '0-50', value: 'Good' },
+      { label: '51-100', value: 'Moderate' },
+      { label: '101-150', value: 'Unhealthy for sensitive groups' },
+      { label: '151-200', value: 'Unhealthy' },
+      { label: '201+', value: 'Very unhealthy to hazardous' },
+    ],
+    bullets: [
+      'AQI is not a weather variable. It is a health-oriented index.',
+      'Two places can have the same AQI for different reasons, such as ozone, smoke, or dust.',
+      'Hourly AQI can move quickly near wildfire smoke, inversions, traffic corridors, and dust events.',
+    ],
+    sections: [
+      {
+        title: 'Why it belongs with weather',
+        body:
+          'Wind, mixing, sunlight, humidity, and stable air all affect how pollution builds, disperses, or reacts. AQI gives the human impact of those atmospheric conditions.',
+      },
+    ],
+  },
+  {
+    id: 'air-pollutants',
+    title: 'Air Pollutants: PM2.5, PM10, Ozone, NO2, SO2, CO',
+    category: 'land',
+    tags: ['aqi', 'pm2.5', 'pm10', 'ozone', 'smoke', 'dust'],
+    summary:
+      'The AQI number is driven by individual pollutants. Knowing the driver helps explain whether the problem is smoke, dust, photochemical smog, or combustion.',
+    references: [
+      { label: 'PM2.5', value: 'Fine particles, often smoke or combustion' },
+      { label: 'PM10', value: 'Coarser particles, often dust' },
+      { label: 'O3', value: 'Ground-level ozone, sunlight chemistry' },
+      { label: 'NO2 / SO2 / CO', value: 'Combustion and industrial gases' },
+    ],
+    bullets: [
+      'PM2.5 is small enough to get deep into lungs and is common in wildfire smoke.',
+      'PM10 often rises with dust, dry soils, construction, or strong outflow winds.',
+      'Ozone is usually a daytime chemistry problem and can peak away from the emissions source.',
+    ],
+  },
+  {
+    id: 'alerts-watches-warnings',
+    title: 'Watches, Warnings, Advisories, and Statements',
+    category: 'land',
+    tags: ['alerts', 'warnings', 'watches', 'nws'],
+    summary:
+      'Alert words describe urgency and confidence. They are not interchangeable, and the exact hazard text matters.',
+    references: [
+      { label: 'Warning', value: 'Hazard is occurring or imminent' },
+      { label: 'Watch', value: 'Conditions are favorable' },
+      { label: 'Advisory', value: 'Less severe, still disruptive' },
+      { label: 'Statement', value: 'Follow-up or special information' },
+    ],
+    bullets: [
+      'Always read the timing, location, impacts, and instructions.',
+      'A broad alert area can include places with very different actual risk.',
+      'For marine and aviation, official text often contains area-specific detail that maps alone cannot show.',
+    ],
+  },
+  {
+    id: 'thunderstorm-risk',
+    title: 'Thunderstorm Risk',
+    category: 'clouds',
+    tags: ['thunderstorm', 'lightning', 'cape', 'convection'],
+    summary:
+      'Thunderstorm wording means the atmosphere can support convection, but it does not always mean heavy rain at your exact point.',
+    references: [
+      { label: 'Ingredients', value: 'Moisture, instability, lift, wind shear' },
+      { label: 'Point forecast', value: 'One location estimate' },
+      { label: 'Radar', value: 'What is happening now' },
+    ],
+    bullets: [
+      'A thunderstorm condition can appear with a low all-day precipitation chance if storms are isolated or brief.',
+      'Lightning risk is not the same thing as rainfall amount.',
+      'Use radar, alerts, and hourly timing to understand whether the risk is nearby or just possible.',
+    ],
+  },
+  {
+    id: 'snow-level',
+    title: 'Snow Level and Freezing Level',
+    category: 'clouds',
+    tags: ['snow', 'freezing level', 'winter'],
+    summary:
+      'Snow level estimates where falling precipitation is likely to reach the ground as snow, but valleys, terrain, and intensity can shift it.',
+    references: [
+      { label: 'Freezing level', value: 'Altitude where air reaches 32 F / 0 C' },
+      { label: 'Snow level', value: 'Approximate rain-snow transition height' },
+      { label: 'Wet-bulb effects', value: 'Evaporative cooling can lower snow level' },
+    ],
+    bullets: [
+      'Snow level is not a hard line on the map.',
+      'Heavy precipitation can drag colder air downward and lower snow levels.',
+      'Mountains, basins, and nighttime cooling can create sharp local differences.',
+    ],
+  },
+  {
+    id: 'satellite-layers',
+    title: 'Satellite Layers',
+    category: 'maps',
+    tags: ['satellite', 'infrared', 'true color', 'clouds'],
+    summary:
+      'Satellite layers show cloud fields and storm structure from above. Different products answer different questions.',
+    references: [
+      { label: 'True color', value: 'Daytime visible-like view' },
+      { label: 'Infrared', value: 'Cloud-top temperature, day or night' },
+      { label: 'Water vapor', value: 'Mid/upper-level moisture patterns' },
+    ],
+    bullets: [
+      'True color is visually natural but depends on daylight.',
+      'Infrared works at night and highlights cold, high cloud tops.',
+      'Satellite is best for large-scale context; radar is better for local precipitation detail where radar exists.',
+    ],
+  },
+  {
+    id: 'radar-mosaic',
+    title: 'Radar Mosaic vs Station Radar',
+    category: 'maps',
+    tags: ['radar', 'nexrad', 'mosaic', 'station'],
+    summary:
+      'A radar mosaic stitches many radars into one broad layer. Station radar keeps you closer to the native radar product for a single radar site.',
+    references: [
+      { label: 'Mosaic', value: 'Broad coverage, easier scanning' },
+      { label: 'Station', value: 'Specific radar site and product' },
+      { label: 'NEXRAD', value: 'US Doppler radar network' },
+    ],
+    bullets: [
+      'Mosaics are convenient, but they can smooth, resample, or blend data.',
+      'Station radar products expose more meteorology, such as velocity and correlation coefficient.',
+      'High zoom can reveal limitations of the source resolution and tile resampling.',
+    ],
+  },
+  {
+    id: 'map-layer-performance',
+    title: 'Map Layer Performance',
+    category: 'maps',
+    tags: ['maps', 'performance', 'animation', 'tiles'],
+    summary:
+      'Animated weather maps combine tiles, vector features, markers, and overlays. Too many live layers can make a phone work harder.',
+    bullets: [
+      'Tile animations should be cached and limited to the active layer.',
+      'Dense marker layers need clustering or viewport limits.',
+      'Vector polygons should be subtle, simplified where appropriate, and only interactive when useful.',
+    ],
+    insight:
+      'The best weather map feels alive without asking every layer to be alive at the same time.',
+  },
+  {
+    id: 'marine-zones',
+    title: 'Official Marine Zones',
+    category: 'marine',
+    tags: ['marine', 'zones', 'offshore', 'coastal', 'forecast area'],
+    summary:
+      'Official marine zones are forecast areas issued by weather agencies. They are the boundary for the text forecast, not a perfect outline of equal conditions.',
+    references: [
+      { label: 'Coastal waters', value: 'Nearshore official forecast zones' },
+      { label: 'Offshore waters', value: 'Larger zones farther from shore' },
+      { label: 'High seas', value: 'Broad ocean forecast regions' },
+    ],
+    bullets: [
+      'Zone boundaries are administrative forecast areas, not exact weather contours.',
+      'Conditions can vary inside a zone, especially near capes, islands, shelves, bars, and currents.',
+      'A good map should pair the official polygon with the detailed bulletin text and nearby observations.',
+    ],
+  },
+  {
+    id: 'high-seas-forecasts',
+    title: 'High Seas Forecasts',
+    category: 'marine',
+    tags: ['marine', 'high seas', 'metarea', 'wmo', 'imo'],
+    summary:
+      'High seas forecasts cover large offshore and ocean regions. They are official, but their regions are broad by design.',
+    references: [
+      { label: 'METAREA', value: 'WMO/IMO marine forecast responsibility area' },
+      { label: 'Bulletin', value: 'Official text forecast and hazards' },
+      { label: 'Model point', value: 'Sampled conditions used for quick context' },
+    ],
+    bullets: [
+      'The bulletin is often more important than the polygon shape.',
+      'Official high seas text may call out subareas, gales, tropical systems, fronts, and significant seas.',
+      'For routing, combine the bulletin with model fields, wave data, satellite, and local coastal forecasts.',
+    ],
+  },
+  {
+    id: 'water-stations',
+    title: 'Water Stations',
+    category: 'marine',
+    tags: ['usgs', 'water temperature', 'water level', 'stations', 'lake'],
+    summary:
+      'Water stations measure rivers, lakes, reservoirs, and coastal water conditions. Each station reports only the sensors installed there.',
+    references: [
+      { label: 'Water temp', value: 'Temperature at a sensor location and depth' },
+      { label: 'Gage height', value: 'Water level relative to station datum' },
+      { label: 'Discharge', value: 'Flow rate, usually cubic feet per second in USGS feeds' },
+    ],
+    bullets: [
+      'A lake can have several stations with different depths, exposures, and update schedules.',
+      'Only recent measurements should be shown as current map values.',
+      'A station with old data is still historically real, but it should not look like live weather.',
+    ],
+  },
+  {
+    id: 'aviation-units',
+    title: 'Aviation Weather Units',
+    category: 'aviation',
+    tags: ['metar', 'taf', 'aviation', 'units'],
+    summary:
+      'Aviation weather uses compact, standardized units so pilots and dispatchers can read reports quickly across regions.',
+    references: [
+      { label: 'Wind', value: 'Degrees true and knots' },
+      { label: 'Visibility', value: 'Statute miles in US METARs, meters in many international reports' },
+      { label: 'Ceiling', value: 'Hundreds of feet AGL' },
+      { label: 'Altimeter', value: 'inHg in US reports, hPa/QNH in many global reports' },
+    ],
+    bullets: [
+      'Runway choice depends on wind direction, speed, gusts, and runway orientation.',
+      'Flight category is driven mainly by ceiling and visibility.',
+      'TAFs describe expected changes over time; METARs describe recent observed conditions.',
+    ],
+  },
+  {
+    id: 'sigmet-airmet',
+    title: 'SIGMETs, AIRMETs, and Convective Advisories',
+    category: 'aviation',
+    tags: ['sigmet', 'airmet', 'cwa', 'aviation hazards'],
+    summary:
+      'Aviation hazard products highlight conditions that matter to flight safety, such as thunderstorms, turbulence, icing, mountain obscuration, and volcanic ash.',
+    references: [
+      { label: 'SIGMET', value: 'Significant meteorological hazard' },
+      { label: 'AIRMET', value: 'Widespread lower-intensity aviation hazard' },
+      { label: 'CWA', value: 'Center Weather Advisory, short-fused aviation hazard' },
+    ],
+    bullets: [
+      'Aviation hazards are three-dimensional. Altitude matters as much as map position.',
+      'Hazard polygons should be read with text, valid time, altitude layers, and route context.',
+      'For flying decisions, always use official aviation weather briefings and current products.',
+    ],
+  },
+  {
+    id: 'solar-wind-density',
+    title: 'Solar Wind Density',
+    category: 'space',
+    tags: ['solar wind', 'density', 'protons', 'units'],
+    summary:
+      'Solar wind density estimates how many particles are in each cubic centimeter of space near L1.',
+    references: [
+      { label: 'Unit', value: 'particles/cm^3' },
+      { label: 'Common shorthand', value: 'protons per cubic centimeter' },
+      { label: 'L1', value: 'Upstream solar wind monitor point' },
+    ],
+    bullets: [
+      'Density is only one ingredient. Speed and magnetic field orientation matter too.',
+      'Higher density can increase pressure on Earths magnetic field when paired with speed and southward Bz.',
+      'The app should show this as /cm^3 or particles/cm^3, not as a corrupted character string.',
+    ],
+  },
+  {
+    id: 'solar-wind-speed',
+    title: 'Solar Wind Speed',
+    category: 'space',
+    tags: ['solar wind', 'speed', 'km/s'],
+    summary:
+      'Solar wind speed is the flow speed of charged particles arriving from the Sun, measured near L1 before they reach Earth.',
+    references: [
+      { label: 'Typical', value: 'About 350-500 km/s' },
+      { label: 'Fast stream', value: 'Often 500+ km/s' },
+      { label: 'Unit', value: 'kilometers per second' },
+    ],
+    bullets: [
+      'Fast solar wind can energize geomagnetic conditions, especially when Bz turns south.',
+      'Speed alone does not guarantee aurora.',
+      'Changes at L1 usually arrive at Earth after a short lead time, not instantly.',
+    ],
+  },
+  {
+    id: 'earth-terminator',
+    title: 'Earth Terminator View',
+    category: 'space',
+    tags: ['earth', 'terminator', 'day night', 'satellite'],
+    summary:
+      'The terminator is the day-night boundary on Earth. It makes the global light pattern easier to understand than a flat geostationary-only view.',
+    references: [
+      { label: 'Terminator', value: 'Sunrise/sunset boundary on Earth' },
+      { label: 'Useful for', value: 'Daylight, night side, aurora context' },
+      { label: 'Source note', value: 'Use the app-displayed image source and timestamp' },
+    ],
+    bullets: [
+      'A terminator view helps connect space weather with who is actually under darkness.',
+      'Aurora visibility still depends on clouds, moonlight, light pollution, Kp, and latitude.',
+      'The image should be treated as situational context, not a local forecast by itself.',
+    ],
+  },
+  {
+    id: 'cme-events',
+    title: 'Coronal Mass Ejections',
+    category: 'space',
+    tags: ['cme', 'donki', 'solar storm'],
+    summary:
+      'A CME is a large eruption of solar plasma and magnetic field. If it is Earth-directed, it can drive geomagnetic storms after it arrives.',
+    references: [
+      { label: 'CME', value: 'Coronal mass ejection' },
+      { label: 'DONKI', value: 'NASA space weather event catalog' },
+      { label: 'Impact', value: 'Possible geomagnetic storm if Earth-directed' },
+    ],
+    bullets: [
+      'Not every CME hits Earth.',
+      'Arrival timing has uncertainty because CMEs evolve as they travel.',
+      'Bz orientation near arrival often determines whether the impact becomes geoeffective.',
+    ],
+  },
+  {
+    id: 'solar-flare-events',
+    title: 'Solar Flares',
+    category: 'space',
+    tags: ['flare', 'xray', 'radio blackout'],
+    summary:
+      'Solar flares are bursts of electromagnetic radiation from the Sun. They can affect radio communication on the sunlit side of Earth.',
+    references: [
+      { label: 'Classes', value: 'A, B, C, M, X' },
+      { label: 'X-ray flux', value: 'Used for flare class' },
+      { label: 'R scale', value: 'NOAA radio blackout scale' },
+    ],
+    bullets: [
+      'Flares arrive at light speed, so the radio effect is essentially immediate.',
+      'A flare does not automatically mean a geomagnetic storm.',
+      'Geomagnetic storms usually depend on solar wind and CME magnetic structure.',
+    ],
+  },
+  {
+    id: 'global-weather-sources',
+    title: 'Global Weather Sources',
+    category: 'data',
+    tags: ['sources', 'global', 'models', 'official'],
+    summary:
+      'A global weather app combines official observations, warnings, model forecasts, and specialty feeds. Coverage varies by feature and country.',
+    references: [
+      { label: 'Forecast models', value: 'Global coverage, consistent grids' },
+      { label: 'Official agencies', value: 'Highest authority for local warnings and marine zones' },
+      { label: 'Observations', value: 'Station-based and unevenly distributed' },
+    ],
+    bullets: [
+      'Global does not mean every feature has equal resolution everywhere.',
+      'Official alerts and zones are strongest where agencies publish usable public data.',
+      'The app should label coverage honestly and use fallback data without pretending it is identical.',
+    ],
+  },
 ];
+
+export const LEARN_CATEGORIES: LearnCategory[] = [
+  {
+    id: 'start',
+    title: 'Start Here',
+    description: 'Core ideas that help the whole app make sense.',
+  },
+  {
+    id: 'land',
+    title: 'Land Weather',
+    description: 'Daily, hourly, alerts, air quality, pressure, visibility, and surface weather.',
+  },
+  {
+    id: 'comfort',
+    title: 'Comfort',
+    description: 'Dew point, humidity, heat index, wind chill, and what the air feels like.',
+  },
+  {
+    id: 'clouds',
+    title: 'Clouds & Precip',
+    description: 'Clouds, rain chance, fog, thunderstorms, snow level, and radiation.',
+  },
+  {
+    id: 'maps',
+    title: 'Maps & Radar',
+    description: 'Radar products, satellite layers, fronts, map performance, and overlays.',
+  },
+  {
+    id: 'marine',
+    title: 'Marine',
+    description: 'Waves, buoys, tides, water stations, official zones, and high seas forecasts.',
+  },
+  {
+    id: 'aviation',
+    title: 'Aviation',
+    description: 'METARs, TAFs, flight categories, units, turbulence, icing, and hazards.',
+  },
+  {
+    id: 'space',
+    title: 'Space Weather',
+    description: 'Kp, NOAA scales, solar wind, flares, CMEs, SWPC alerts, and Earth views.',
+  },
+  {
+    id: 'astro',
+    title: 'Astronomy',
+    description: 'Sun, moon, twilight, sky darkness, aerosols, and observing windows.',
+  },
+  {
+    id: 'data',
+    title: 'Data & Units',
+    description: 'Source coverage, units, freshness, confidence, and how to read app values.',
+  },
+];
+
+const START_TOPIC_IDS = new Set([
+  'activity-scores',
+  'data-availability',
+  'global-weather-sources',
+  'alerts-watches-warnings',
+]);
+
+const COMFORT_TOPIC_IDS = new Set([
+  'dewpoint',
+  'humidity',
+  'spread_temp_dew',
+  'heat-index',
+  'wind-chill',
+  'apparent-temp',
+]);
+
+const CLOUD_TOPIC_IDS = new Set([
+  'pop',
+  'clouds',
+  'shortwave-radiation',
+  'radiation-regime',
+  'uv',
+  'fog',
+  'fog_risk',
+  'frost',
+  'thunderstorm-risk',
+  'snow-level',
+]);
+
+export function getLearnCategoryForTopic(topic: LearnTopic): LearnCategory {
+  const id = topic.id;
+  const explicit = LEARN_CATEGORIES.find((category) => category.id === topic.category);
+  if (explicit) return explicit;
+
+  if (START_TOPIC_IDS.has(id)) return LEARN_CATEGORIES[0];
+  if (COMFORT_TOPIC_IDS.has(id)) return LEARN_CATEGORIES.find((category) => category.id === 'comfort') ?? LEARN_CATEGORIES[1];
+  if (CLOUD_TOPIC_IDS.has(id)) return LEARN_CATEGORIES.find((category) => category.id === 'clouds') ?? LEARN_CATEGORIES[1];
+  if (id.startsWith('radar-') || id === 'front-types' || id === 'satellite-layers' || id === 'radar-mosaic' || id === 'map-layer-performance') {
+    return LEARN_CATEGORIES.find((category) => category.id === 'maps') ?? LEARN_CATEGORIES[1];
+  }
+  if (id.startsWith('marine-') || id.startsWith('wave-') || id === 'significant-wave-height' || id === 'beaufort-scale' || id === 'tallest-set' || id === 'air-sea-stability' || id === 'tide-predictions' || id === 'buoy-observations' || id === 'water-stations' || id === 'high-seas-forecasts') {
+    return LEARN_CATEGORIES.find((category) => category.id === 'marine') ?? LEARN_CATEGORIES[1];
+  }
+  if (id.startsWith('aviation-') || id === 'sigmet-airmet') {
+    return LEARN_CATEGORIES.find((category) => category.id === 'aviation') ?? LEARN_CATEGORIES[1];
+  }
+  if (id.startsWith('astro-') || id === 'mars-insight-weather') {
+    return LEARN_CATEGORIES.find((category) => category.id === 'astro') ?? LEARN_CATEGORIES[1];
+  }
+  if (id.startsWith('solar-') || id.startsWith('swpc-') || id === 'noaa-scales' || id === 'kp' || id === 'imf-bz' || id === 'xray-flux' || id === 'proton-flux' || id === 'donki-events' || id === 'earth-disk' || id === 'earth-terminator' || id === 'cme-events') {
+    return LEARN_CATEGORIES.find((category) => category.id === 'space') ?? LEARN_CATEGORIES[1];
+  }
+  if (id.includes('unit') || id.includes('source') || id.includes('availability') || id.includes('confidence')) {
+    return LEARN_CATEGORIES.find((category) => category.id === 'data') ?? LEARN_CATEGORIES[1];
+  }
+
+  return LEARN_CATEGORIES.find((category) => category.id === 'land') ?? LEARN_CATEGORIES[0];
+}
 
