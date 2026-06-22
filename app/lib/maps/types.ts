@@ -18,7 +18,6 @@ export type MapViewId =
 export type LayerId =
   | 'fire.restrictions'
   | 'radar.reflectivity'
-  | 'wx.wind.vectors'
   | 'wx.wind.particles'
   | 'wx.fronts.day1'
   | 'wx.fronts.day2'

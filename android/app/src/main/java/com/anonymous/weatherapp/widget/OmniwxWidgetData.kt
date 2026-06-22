@@ -44,6 +44,7 @@ private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
 private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
 private const val WIDGET_DATA_PREFS = "omniwx_widget_data"
 private const val LAST_WEATHER_JSON = "lastWeatherJson"
+private const val LAST_WEATHER_ERROR = "lastWeatherError"
 private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
 private const val WIDGET_RADAR_CACHE_TTL_MS = 10L * 60L * 1000L
@@ -301,17 +302,45 @@ object OmniwxWidgetData {
       ?.let { return it.weather }
 
     val weather = try {
-      fetchWeatherFresh(place).also { saveCachedWidgetWeather(context, it) }
+      fetchWeatherFresh(place).also {
+        saveCachedWidgetWeather(context, it)
+        saveLastWeatherError(context, null)
+      }
     } catch (e: Exception) {
       readCachedWidgetWeather(context, place)?.also {
         weatherCache = CachedWidgetWeather(cacheKey, now, it)
-      } ?: throw e
+        saveLastWeatherError(context, "Using cached weather after ${e.shortWidgetMessage()}")
+      } ?: run {
+        saveLastWeatherError(context, e.shortWidgetMessage())
+        throw e
+      }
     }
     weatherCache = CachedWidgetWeather(cacheKey, now, weather)
     return weather
   }
 
+  fun lastWeatherError(context: Context): String? {
+    return widgetPrefs(context).getString(LAST_WEATHER_ERROR, null)
+      ?.takeIf { it.isNotBlank() }
+  }
+
   private fun fetchWeatherFresh(place: WidgetPlace): WidgetWeather {
+    var directError: Throwable? = null
+    runCatching { fetchWeatherFromOpenMeteo(place) }
+      .onSuccess { return it }
+      .onFailure { directError = it }
+
+    runCatching { fetchWeatherFromOmniwxWorker(place) }
+      .onSuccess { return it }
+      .onFailure { workerError ->
+        val directMessage = directError?.shortWidgetMessage() ?: "Open-Meteo failed"
+        throw IllegalStateException("$directMessage; worker ${workerError.shortWidgetMessage()}")
+      }
+
+    throw directError ?: IllegalStateException("Weather unavailable")
+  }
+
+  private fun fetchWeatherFromOpenMeteo(place: WidgetPlace): WidgetWeather {
     // Compact one-day Open-Meteo request used by current/radar/sky widgets.
     // The full phone app can fetch richer data; widgets should stay cheap.
     val url =
@@ -347,6 +376,36 @@ object OmniwxWidgetData {
     )
   }
 
+  private fun fetchWeatherFromOmniwxWorker(place: WidgetPlace): WidgetWeather {
+    val url =
+      "$OMNIWX_API_BASE/api/current" +
+        "?lat=${place.lat}" +
+        "&lon=${place.lon}" +
+        "&units=imperial"
+
+    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    if (!root.optBoolean("ok", false)) {
+      throw IllegalStateException(root.optString("error", "worker current failed"))
+    }
+
+    return WidgetWeather(
+      place = place,
+      temperatureF = root.optDouble("temp", Double.NaN),
+      feelsLikeF = root.optDouble("feels", Double.NaN),
+      highF = Double.NaN,
+      lowF = Double.NaN,
+      windMph = root.optDouble("wind", Double.NaN),
+      gustMph = root.optDouble("windGust", Double.NaN),
+      windDirectionDeg = root.optDouble("windDir", Double.NaN),
+      dewPointF = root.optDouble("dewPoint", Double.NaN),
+      visibilityMiles = Double.NaN,
+      humidityPct = root.optDouble("humidityPct", Double.NaN),
+      cloudPct = root.optDouble("cloudCoverPct", Double.NaN),
+      weatherCode = root.optInt("weatherCode", -1),
+      updatedLabel = nowLabel(),
+    )
+  }
+
   private fun saveCachedWidgetWeather(context: Context, weather: WidgetWeather) {
     val payload = JSONObject()
       .put("key", weatherCacheKey(weather.place))
@@ -370,6 +429,16 @@ object OmniwxWidgetData {
       .edit()
       .putString(LAST_WEATHER_JSON, payload.toString())
       .commit()
+  }
+
+  private fun saveLastWeatherError(context: Context, message: String?) {
+    val editor = widgetPrefs(context).edit()
+    if (message.isNullOrBlank()) {
+      editor.remove(LAST_WEATHER_ERROR)
+    } else {
+      editor.putString(LAST_WEATHER_ERROR, message.take(96))
+    }
+    editor.commit()
   }
 
   private fun readCachedWidgetWeather(context: Context, place: WidgetPlace): WidgetWeather? {
@@ -1850,6 +1919,15 @@ fun windDirectionLabel(degrees: Double): String {
 fun Double.roundLabel(): String {
   if (!isFinite()) return "--"
   return roundToInt().toString()
+}
+
+fun Throwable.shortWidgetMessage(): String {
+  val root = generateSequence(this) { it.cause }.last()
+  val raw = root.message?.takeIf { it.isNotBlank() } ?: root.javaClass.simpleName
+  return raw
+    .replace('\n', ' ')
+    .replace('\r', ' ')
+    .take(96)
 }
 
 private fun metersToMiles(meters: Double): Double {

@@ -15,14 +15,23 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
 
     OmniwxWidgetExecutor.execute {
       val place = OmniwxWidgetData.readPlace(context)
-      val weather = place?.let { runCatching { OmniwxWidgetData.fetchWeather(context, it) }.getOrNull() }
+      val weatherResult = place?.let { runCatching { OmniwxWidgetData.fetchWeather(context, it) } }
+      val weather = weatherResult?.getOrNull()
+      val weatherError = weatherResult?.exceptionOrNull()?.shortWidgetMessage()
+        ?: OmniwxWidgetData.lastWeatherError(context)
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, loading = false))
+        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, loading = false, weatherError = weatherError))
       }
     }
   }
 
-  private fun buildViews(context: Context, place: WidgetPlace?, weather: WidgetWeather?, loading: Boolean): RemoteViews {
+  private fun buildViews(
+    context: Context,
+    place: WidgetPlace?,
+    weather: WidgetWeather?,
+    loading: Boolean,
+    weatherError: String? = null
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current_radar).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/maps"))
       setOnClickPendingIntent(R.id.widget_refresh, OmniwxWidgetData.refreshIntent(context))
@@ -41,10 +50,14 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
         return@apply
       }
       if (weather == null) {
+        val conciseError = weatherError?.takeIf { it.isNotBlank() }?.take(44)
         setTextViewText(R.id.widget_title, place?.name ?: "OMNIwx")
         setTextViewText(R.id.widget_temp, "--")
         setTextViewText(R.id.widget_condition, if (place == null) "Open OMNIwx to refresh" else "Weather refresh failed")
-        setTextViewText(R.id.widget_phrase, if (place == null) "Set a default city or allow location" else "Tap refresh or open OMNIwx")
+        setTextViewText(
+          R.id.widget_phrase,
+          if (place == null) "Set a default city or allow location" else conciseError ?: "Tap refresh or open OMNIwx"
+        )
         setTextViewText(R.id.widget_low, "Low --")
         setTextViewText(R.id.widget_range, "Now --")
         setTextViewText(R.id.widget_high, "High --")

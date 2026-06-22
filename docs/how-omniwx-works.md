@@ -4,6 +4,10 @@ This document explains the app in plain English from the code that is in this re
 
 It is written for someone who is not deeply familiar with coding, React, or mobile app structure.
 
+Last updated: June 22, 2026
+
+Personal note: this is Andy's private plain-English system explanation. It is meant to be more candid and more detailed than a public README.
+
 ## 1. What This App Is
 
 OMNIwx is a React Native mobile app built with Expo and Expo Router.
@@ -13,7 +17,8 @@ At a high level, the app does four jobs:
 1. It decides which screen to show.
 2. It remembers user state such as location, favorites, and display mode.
 3. It fetches weather and environmental data from APIs.
-4. It turns that data into screens like Land, Maps, Nautical, Almanac, Solar, and Aviation.
+4. It turns that data into screens like Land, Maps, Nautical, Almanac, Space, Aviation, and Extremes.
+5. It exposes native Android surfaces such as home-screen widgets, Android Auto, and MP4 animation export.
 
 You can think of it as:
 
@@ -21,6 +26,9 @@ You can think of it as:
 - state layer: what the app remembers
 - data layer: how the app loads weather data
 - backend layer: the Cloudflare Worker in `omniwx-api/`
+- native Android layer: widgets, Android Auto, video export, permissions, and manifest wiring
+
+The biggest current design idea is that OMNIwx is becoming one integrated weather workstation. Land, Hourly, Almanac, Space, Aviation, Nautical, Maps, and Extremes are still separate tabs, but Maps is now the hub for weather map modes instead of a pile of unrelated standalone map screens.
 
 ## 2. The Main Tech Stack
 
@@ -831,4 +839,357 @@ If useful, a good follow-up document would be:
 - "Maps and radar walkthrough"
 - "Backend Worker walkthrough"
 - "Glossary of React terms used in this app"
+
+---
+
+## 26. What Has Changed Since This Was First Written
+
+OMNIwx has grown from a mostly React Native weather app into a hybrid React Native plus native Android product.
+
+The phone app is still mostly Expo Router and React Native:
+
+- tabs are still in `app/(tabs)/`
+- reusable UI is still in `components/`
+- hooks and data logic are still in `app/lib/`
+- global state still lives in `app/context/`
+
+But some major features now require native Android code:
+
+- Android Auto
+- Android home-screen widgets
+- native MP4 export for weather animations
+- Android notification permissions/channels
+
+That means TypeScript checks are necessary but no longer sufficient. For native changes, Gradle has to compile too.
+
+## 27. The Current Product Shape
+
+The app now has these main user-facing surfaces:
+
+- **Land**: current/daily weather, alert card, Simple/WxLab toggle, daily range, sun/moon arcs, metric grid, and 15-day forecast.
+- **Hourly**: short-term forecast and charts.
+- **Almanac**: records, normals, prior-year comparisons, selected-day context, and climate arch.
+- **Maps**: the main map workstation with weather, storm, wildfire, nautical, aviation, and astronomy modes.
+- **Space**: sky score, aurora/space weather, astronomy entry points.
+- **Nautical**: marine forecast/conditions screen while map behavior migrates into Maps.
+- **Aviation**: airport briefing and route briefing.
+- **Extremes**: unified extremes list and future saved-place extreme monitoring.
+- **wxLearn**: categorized learning library shared by Land, Hourly, Maps, Space, Nautical, Aviation, and detailed metric cards.
+- **Settings**: preferences, app appearance, forecast model, always-use-WxLab, and notification preferences.
+- **Widgets**: native Android glanceable surfaces.
+- **Android Auto**: car-safe current weather, alerts, forecasts, sky score, and radar surface.
+
+The strategic direction is:
+
+- Land is the everyday weather surface.
+- Almanac owns climate and records.
+- Maps owns map-based workflows.
+- Storm Scope is the power-user radar mode.
+- Nautical map features should move into Maps.
+- Astronomy and Aviation are specialized map modes with specialized control surfaces.
+- wxLearn is the app's education layer and should explain units, formulas, sources, and "why this matters" for pressable metrics.
+- Widgets and Android Auto are native companion experiences.
+
+## 28. Map Modes Versus Layers
+
+The map system works best when you separate **modes** from **layers**.
+
+A map mode is a whole way of using the map. Examples:
+
+- Weather
+- Clouds
+- Wildfire
+- Storm Scope
+- Nautical
+- Aviation
+- Astronomy
+
+A layer is one visual data overlay. Examples:
+
+- radar reflectivity
+- NWS alert polygons
+- WPC fronts
+- lightning
+- marine conditions
+- fire perimeters
+- smoke
+- aviation SIGMETs
+- aviation PIREPs
+- true color satellite
+- infrared satellite
+
+The mode decides the default layer bundle and the correct controls. The layer catalog describes what each layer is.
+
+Key files:
+
+- `app/lib/maps/views.ts`: map modes/presets.
+- `app/lib/maps/layerCatalog.ts`: layer metadata.
+- `app/lib/maps/state.ts`: runtime map state and exclusivity rules.
+- `components/maps/MapRenderer.tsx`: turns state into MapLibre sources/layers.
+- `components/maps/LayerSheet.tsx`: user-facing layer picker.
+- `components/maps/AnimationCompositor.tsx`: smoother raster animation.
+
+Important current rule:
+
+Astronomy and Aviation should not be active at the same time. They are not just simple overlays; each has its own control surface and mental model.
+
+## 29. Radar and Satellite Animation
+
+Radar/satellite animation is now a major product feature.
+
+There are two related but different jobs:
+
+1. **Live playback in the map**
+2. **Exporting a saved MP4 video**
+
+Live playback is handled by React Native and MapLibre. It uses:
+
+- frame lists
+- image URLs
+- prefetching
+- crossfade/blending
+- loop timing
+- the map viewport
+
+MP4 export is handled by native Android code because React Native is not ideal for encoding video frames.
+
+Key files:
+
+- `components/maps/AnimationCompositor.tsx`
+- `app/lib/maps/videoExport.ts`
+- `android/app/src/main/java/com/anonymous/weatherapp/video/OmniwxVideoExportModule.kt`
+
+Mental model:
+
+- The app collects frame URLs.
+- The compositor tries to make on-screen playback smooth.
+- The native exporter downloads frames, composites them into bitmaps, blends transitions, encodes H.264, and saves an MP4.
+
+Why true color can look different from radar:
+
+- Radar often has frequent frames.
+- True color satellite depends on source cadence and daylight/scan timing.
+- Infrared can work day/night but must preserve aspect ratio carefully.
+- If a provider only has fewer valid frames, a 5-hour loop may still look sparse.
+
+## 30. Native Android Widgets
+
+Widgets are native Android widgets, not normal React Native screens.
+
+They use:
+
+- AppWidgetProvider classes
+- RemoteViews layouts
+- XML widget provider metadata
+- manifest receivers
+
+Main location:
+
+- `android/app/src/main/java/com/anonymous/weatherapp/widget/`
+
+Current widget set includes:
+
+- current conditions
+- current plus radar
+- sky score
+- aviation
+- airport board
+- route briefing
+- climatology
+- climate arch
+
+Important widget idea:
+
+Widgets need their own rendering and data path. They cannot directly render React Native cards. That is why a widget can get out of sync with the app if the native data helper uses different fallback logic or stale cached values.
+
+For Sky Score specifically:
+
+- The app Sky Score and widget Sky Score should match.
+- The widget should use the same cached/canonical score whenever possible.
+- The widget should open the Space tab.
+- Bortle and low/mid/high cloud values are part of the expected glanceable detail.
+
+## 31. Android Auto
+
+Android Auto is native Android code:
+
+- `android/app/src/main/java/com/anonymous/weatherapp/car/OmniWeatherCarAppService.kt`
+
+It uses AndroidX Car App templates, not the normal phone UI.
+
+That creates both constraints and opportunities.
+
+Constraints:
+
+- limited layouts
+- limited interaction
+- strict safety model
+- car display differences
+- head-unit quirks
+
+Opportunities:
+
+- car-safe current conditions
+- visual forecast rows
+- official alerts
+- radar surface
+- simple refresh
+- glanceable sky score
+
+The radar screen is the trickiest Android Auto feature because it uses a custom car surface renderer. It has to fetch weather/radar data, draw map/radar tiles, and avoid trapping the user if data is missing or a request fails.
+
+For the user's Toyota 2023 4Runner, real-vehicle testing matters. Android Auto can behave differently in the vehicle than in an emulator.
+
+## 32. Notifications
+
+Notification preferences currently exist on the client.
+
+Files:
+
+- `app/lib/notifications/preferences.ts`
+- `app/lib/notifications/useNotificationPreferences.ts`
+- `app/profile.tsx`
+
+Current categories:
+
+- NWS alerts
+- New fires
+- Kp spikes
+- Aviation category
+- Sky score
+- Extremes
+
+The app can:
+
+- request notification permission
+- create an Android notification channel
+- store category preferences
+- get an Expo push token
+- send a local test notification
+- attempt device registration with the backend
+
+What still needs full backend support:
+
+- store device tokens
+- associate tokens with saved places, fields, or routes
+- periodically check weather changes
+- detect new versus already-seen events
+- avoid duplicate alerts
+- send Expo push notifications
+
+In plain English: the app has the preference/control side, but a production alert system also needs a server-side watcher.
+
+## 33. Favorites and Saved Context
+
+The current favorite location model is in:
+
+- `app/lib/locations/favorites.ts`
+
+It stores:
+
+- favorite locations
+- active location
+- current GPS-style location
+
+The app also wants richer saved context over time:
+
+- saved pilot fields
+- saved pilot routes
+- saved places for Sky Score download/cache
+- saved places for Almanac records/cache
+- saved places for Extremes monitoring
+
+That means "favorite" may eventually need to mean more than just a latitude/longitude location.
+
+Possible future model:
+
+- saved location
+- saved airport
+- saved aviation route
+- saved marine zone
+- saved map region
+
+Each saved thing can have different data refresh needs.
+
+## 34. wxLearn Library
+
+wxLearn is the app's shared education surface.
+
+Primary files:
+
+- `app/lib/learn/topics.ts`
+- `components/common/LearnMoreModal.tsx`
+- `components/common/NerdyExplainModal.tsx`
+
+The central topic list lives in `app/lib/learn/topics.ts`. Topic IDs are stable deep-link keys. If a metric card, chart point, radar product, space-weather tile, marine value, aviation field, or map inspector opens wxLearn, it should pass one of those IDs.
+
+Current topic shelves:
+
+- Start Here
+- Land Weather
+- Comfort
+- Clouds & Precip
+- Maps & Radar
+- Marine
+- Aviation
+- Space Weather
+- Astronomy
+- Data & Units
+
+Practical rules:
+
+- Do not create one-off explanatory text in a card if the concept belongs in wxLearn.
+- Add units and source context when the value is technical.
+- Keep topic IDs stable once shipped.
+- Use search tags for common user words, abbreviations, and units.
+- When adding a new pressable metric, check whether a topic exists before adding another.
+- If the topic is about a formula or derived metric, include the formula and the limitations.
+
+wxLearn should explain the app without pretending every source has equal global coverage. For global features, the topic should say whether the value is official, model-backed, station-based, curated, or source-dependent.
+
+## 35. Practical Debugging Map
+
+If something breaks, use this quick map.
+
+If a tab looks wrong:
+
+- start in `app/(tabs)/that-tab.tsx`
+- find the hook it uses
+- find the component rendering the broken area
+
+If a map layer looks wrong:
+
+- check `app/lib/maps/layerCatalog.ts`
+- check `app/lib/maps/views.ts`
+- check `components/maps/MapRenderer.tsx`
+- check click/inspector code
+
+If a widget is wrong:
+
+- check `android/app/src/main/java/com/anonymous/weatherapp/widget/`
+- check the matching XML layout
+- check manifest receiver registration
+- check deep link path
+
+If Android Auto is wrong:
+
+- check `OmniWeatherCarAppService.kt`
+- check the car template being returned
+- check whether the screen stack has a back action
+- check whether data fallback text is hiding a real exception
+
+If video export is wrong:
+
+- check the frame URLs
+- check `videoExport.ts`
+- check `OmniwxVideoExportModule.kt`
+- test portrait and landscape
+- test the saved MP4 outside the app
+
+If Google Play rejects a build:
+
+- verify `versionCode`
+- verify `versionName`
+- inspect packaged manifest
+- rebuild AAB after cleaning if needed
 

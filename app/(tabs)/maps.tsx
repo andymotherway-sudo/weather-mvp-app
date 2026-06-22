@@ -1390,9 +1390,8 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
-  const windVectorsEnabled = !!state.layers?.['wx.wind.vectors']?.enabled;
   const windParticlesEnabled = !!state.layers?.['wx.wind.particles']?.enabled;
-  const windLayerEnabled = windVectorsEnabled || windParticlesEnabled;
+  const windLayerEnabled = windParticlesEnabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
@@ -1611,9 +1610,6 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
-  const windVectorsOpacity = Number.isFinite(state.layers?.['wx.wind.vectors']?.opacity)
-    ? state.layers['wx.wind.vectors'].opacity
-    : 0.82;
   const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
     ? state.layers['wx.wind.particles'].opacity
     : 0.72;
@@ -3365,43 +3361,6 @@ export default function MapsScreen() {
                 />
               </MapLibreGL.ShapeSource>
             </>
-          ) : null}
-
-          {windVectorsEnabled && windVectorLayer.geojson?.features?.length ? (
-            <MapLibreGL.ShapeSource id="wind-vector-source" shape={windVectorLayer.geojson as any}>
-              <MapLibreGL.SymbolLayer
-                id="wind-vector-arrows"
-                minZoomLevel={3}
-                style={{
-                  textField: '^',
-                  textSize: ['interpolate', ['linear'], ['zoom'], 3, 13, 7, 17, 10, 21] as any,
-                  textFont: ['Open Sans Bold'],
-                  textColor: 'rgba(191,219,254,0.96)',
-                  textOpacity: Math.max(0.18, Math.min(0.96, windVectorsOpacity)),
-                  textHaloColor: 'rgba(2,6,23,0.96)',
-                  textHaloWidth: 1.25,
-                  textRotate: ['get', 'rotationDeg'] as any,
-                  textRotationAlignment: 'map',
-                  textAllowOverlap: true,
-                  textIgnorePlacement: true,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="wind-vector-labels"
-                minZoomLevel={6}
-                style={{
-                  textField: ['get', 'label'] as any,
-                  textSize: ['interpolate', ['linear'], ['zoom'], 6, 8, 10, 10] as any,
-                  textColor: 'rgba(226,232,240,0.86)',
-                  textOpacity: Math.max(0.14, Math.min(0.78, windVectorsOpacity * 0.9)),
-                  textHaloColor: 'rgba(2,6,23,0.96)',
-                  textHaloWidth: 1,
-                  textOffset: [0, 1.25],
-                  textAllowOverlap: false,
-                  textOptional: true,
-                }}
-              />
-            </MapLibreGL.ShapeSource>
           ) : null}
 
           <AlertMapLayers

@@ -4,7 +4,9 @@
 
 Audience: this is written for someone who can write a basic Python `hello world`, understands simple variables/functions, and has some basic SQL experience. You do not need to already know React Native, Expo, TypeScript, or mobile app architecture.
 
-Last updated: May 9, 2026
+Last updated: June 22, 2026
+
+Personal note: this file is meant to be Andy's private working guide. It explains the product and codebase in more detail than a public README should, including intent, mental models, and implementation notes that are useful while building OMNIwx.
 
 ---
 
@@ -22,6 +24,20 @@ The app is organized around weather “lenses”:
 - **Nautical**: marine forecasts, buoys, sea state, and marine map tools.
 - **Aviation**: aviation weather hazards and aviation-focused views.
 - **Extremes**: land/marine/space extremes that can link into maps.
+
+Current product direction as of June 2026:
+
+- **Land** is the primary daily weather surface. It has a compact header, alert card, Simple/WxLab toggle, daily range card, sun arc, and in WxLab richer diagnostic cards. The old climatology context card was removed because Almanac owns that job now.
+- **Hourly** remains its own forecast tab, but horizontal navigation can also move between tabs using an edge/home-row swipe pattern.
+- **Almanac** owns records, normals, prior-year comparisons, and the climate arch. Pull-to-refresh should refresh forecast and record data without changing the meaning of the page.
+- **Maps** is now the main home for map modes. Weather, Storm Scope, Wildfire, Nautical, Aviation, and Astronomy are treated as map modes/presets instead of unrelated one-off map experiences.
+- **Storm Scope** is the premium radar-workbench direction: radar, fronts, lightning, alerts, range markers, product selectors, and animation controls live here.
+- **Nautical** map functionality is being migrated into the main Maps tab. Marine zones and buoys should be clickable on the main map, with the same official NOAA/marine forecast behavior users expect from the Nautical screen.
+- **Astronomy** and **Aviation** are map modes with their own control surfaces. They should not be active at the same time because their drawers, inspectors, and workflows are complex.
+- **Android widgets** are native Android home-screen widgets, not React Native screens. They use AppWidgetProvider and RemoteViews.
+- **Android Auto** is a native car-app surface, not a mirrored phone screen. It uses AndroidX Car App templates and a custom radar surface renderer.
+- **Notifications** are preference-driven. The app currently stores local preferences and push token state for categories such as NWS alerts, new fires, Kp spikes, aviation category changes, sky score changes, and extremes.
+- **Radar/satellite animation** is an important differentiator. The app now has an in-app compositor for smoother playback and a native Android MP4 exporter for recording loops.
 
 There are two major pieces in the repository:
 
@@ -1054,7 +1070,7 @@ The Nautical section focuses on:
 - Marine forecast zones.
 - Nautical map views.
 
-The app has a separate nautical map because marine data and buoy interactions are different from the general radar map.
+Historically, the app had a separate nautical map because marine data and buoy interactions were different from the general radar map. The current direction is to move those marine map interactions into the main Maps tab so users do not have to understand two separate map products.
 
 The Nautical tab is still evolving, but structurally it follows the same pattern:
 
@@ -1884,3 +1900,750 @@ What state changes when the user interacts?
 
 That question pattern will work for almost every part of OMNIwx.
 
+---
+
+## 35. Current Architecture Snapshot - June 2026
+
+This section is the practical "what we have now" layer. Treat it as the current owner manual for the app.
+
+### App Version and Build Identity
+
+The current Android/Expo app identity is split across several files:
+
+- `package.json`: npm package version.
+- `app.json`: Expo version, Android package, Android version code, app scheme, plugins, and EAS project id.
+- `android/app/build.gradle`: native Android `versionCode` and `versionName`.
+- `android/app/src/main/AndroidManifest.xml`: native permissions, Android Auto service, widget receivers, and deep link intent filters.
+
+Current closed-test build identity:
+
+- App version: `1.1.122`.
+- Android version code: `10139`.
+- Play release note file: `docs/google-play-closed-testing-release-notes.md`.
+
+When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
+
+Practical release rule:
+
+1. Bump `expo.version` in `app.json`.
+2. Bump `android.versionCode` in `app.json`.
+3. Bump `versionCode` and `versionName` in `android/app/build.gradle`.
+4. Bump `package.json` and `package-lock.json` if you want repo metadata aligned.
+5. Build the release AAB from `android/` with `./gradlew.bat :app:bundleRelease`.
+6. Verify the packaged manifest if Play Console is acting strange.
+
+### Native Android Is Now Part of the App
+
+This project is no longer a pure managed Expo app. It has real native Android code under `android/`.
+
+That matters because:
+
+- Android Auto requires native AndroidX Car App code.
+- Home-screen widgets require native AppWidgetProvider and RemoteViews.
+- MP4 export uses a native Android module for MediaCodec and MediaMuxer.
+- Manifest changes are real app behavior changes.
+
+Current native areas:
+
+- `android/app/src/main/java/com/anonymous/weatherapp/car/OmniWeatherCarAppService.kt`
+- `android/app/src/main/java/com/anonymous/weatherapp/widget/*`
+- `android/app/src/main/java/com/anonymous/weatherapp/video/OmniwxVideoExportModule.kt`
+- `android/app/src/main/res/layout/omniwx_widget_*.xml`
+- `android/app/src/main/res/xml/omniwx_widget_*_info.xml`
+- `android/app/src/main/AndroidManifest.xml`
+
+You can still use Expo Router and React Native for the phone app, but anything under `android/app/src/main/java/com/anonymous/weatherapp/` must compile through Gradle.
+
+### Deep Links
+
+The app scheme is `weatherapp`.
+
+Android deep links are accepted by `MainActivity` through the `weatherapp` and `exp+weather-app` schemes. Widgets and native surfaces should use actual Expo Router paths that exist, not invented paths.
+
+Safe mental mapping:
+
+- Land tab: root tab/index behavior.
+- Hourly tab: `/(tabs)/hourly`.
+- Almanac tab: `/(tabs)/almanac`.
+- Maps tab: `/(tabs)/maps`.
+- Space tab: `/(tabs)/solar`.
+- Nautical tab: `/(tabs)/nautical`.
+- Aviation tab: `/(tabs)/aviation`.
+- Extremes tab: `/(tabs)/extremes`.
+
+If a widget opens an "Unmatched Route" screen, the native PendingIntent probably used a path that Expo Router does not recognize.
+
+### Settings and Preferences
+
+User preferences are mostly stored in AsyncStorage.
+
+Important settings live in `app/context/SettingsContext.tsx`:
+
+- Temperature unit: `F` or `C`.
+- Base map style: `dark` or `light`.
+- Radar provider: `iem` or `rainviewer`.
+- Forecast model: `best_match`, `gfs`, `ecmwf`, or `dwd_icon`.
+- App color mode: classic, grayscale, or high contrast.
+- Always use WxLab: if true, Land and Hourly should start in detailed mode.
+
+The Settings screen is `app/profile.tsx`. It is not just a profile screen anymore; it is the app preferences hub.
+
+When adding a setting, remember the full chain:
+
+1. Add the type to `SettingsContext`.
+2. Add an AsyncStorage key.
+3. Load and validate the stored value.
+4. Persist changes in a `useEffect`.
+5. Expose the setter in the context value.
+6. Add UI in `app/profile.tsx`.
+7. Make the relevant screen read the setting.
+
+### WxLab
+
+WxLab is a shared mode, not a separate route.
+
+The current context is `app/context/WxLabContext.tsx`. It stores:
+
+- `wxLab`
+- `setWxLab`
+- `toggleWxLab`
+
+`SettingsContext` owns `alwaysUseWxLab`. `WxLabProvider` watches that setting and turns WxLab on when the preference is enabled.
+
+Practical meaning:
+
+- Simple mode should be clean, compact, and broadly readable.
+- WxLab mode should be more analytical and detailed.
+- The toggle can move in the UI, but the source of truth should remain the shared context.
+
+## 36. Current Screen Guide
+
+### Land
+
+Primary file:
+
+- `app/(tabs)/index.tsx`
+
+Land is the first screen most users experience. It currently combines:
+
+- active place header with logo/location/settings behavior
+- alert card
+- Simple/WxLab mode toggle
+- animated weather background
+- daily range card
+- low-to-high temperature range bar
+- current temperature marker
+- records for the date/location
+- metric grid
+- 15-day forecast list
+- sun arc in Simple
+- sun and moon arcs in WxLab
+
+Recent product intent:
+
+- The logo acts as the settings entry point.
+- The top header should stay compact so alerts and daily range move upward.
+- Hourly and Almanac buttons were removed from the top tile to reduce vertical waste.
+- Low and high tiles should match the slider direction: low on the left, high on the right.
+- Climatology context was removed from Land because Almanac owns climate context.
+
+Things to be careful about:
+
+- Large cards can easily push the 15-day forecast below the fold.
+- Long location names need room.
+- Phone status bars and bottom tabs consume real space.
+- The animated background should not make text unreadable.
+- The Simple and WxLab versions should feel related, not like two unrelated screens.
+
+### Hourly
+
+Primary file:
+
+- `app/(tabs)/hourly.tsx`
+
+Hourly is the short-term forecast surface. It shares active place, forecast model, units, and WxLab mode.
+
+When changing Hourly, check:
+
+- Does it still respect Fahrenheit/Celsius?
+- Does it still use the same active place as Land?
+- Does it stay usable when WxLab is forced on from Settings?
+- Does horizontal tab swipe interfere with chart scrolling?
+
+### Almanac
+
+Primary file:
+
+- `app/(tabs)/almanac.tsx`
+
+Important libraries:
+
+- `app/lib/almanac/records.ts`
+- `app/lib/almanac/recordsCache.ts`
+- `app/lib/almanac/recordsStation.ts`
+- `app/lib/almanac/resolveRecordStation.ts`
+- `app/lib/almanac/useDailyRecordsHook.ts`
+- `app/lib/almanac/dayContextHook.ts`
+- `app/lib/almanac/observationsHook.ts`
+
+Almanac owns:
+
+- normal high and low
+- prior-year high and low
+- prior-year precip
+- record high and date/year
+- record low and date/year
+- record precip and date/year
+- climate arch visualization
+- selected day context
+
+Important product rule:
+
+Pull-to-refresh on Almanac should refresh current forecast and record data. It should not make the page feel like it is re-downloading the entire identity of the location unless that is truly necessary.
+
+### Maps
+
+Primary file:
+
+- `app/(tabs)/maps.tsx`
+
+Core map files:
+
+- `app/lib/maps/views.ts`
+- `app/lib/maps/state.ts`
+- `app/lib/maps/layerCatalog.ts`
+- `components/maps/MapRenderer.tsx`
+- `components/maps/LayerSheet.tsx`
+- `components/maps/LayerSheetModal.tsx`
+- `components/maps/LayerDrawer.tsx`
+- `components/maps/LegendOverlay.tsx`
+- `components/maps/AnimationCompositor.tsx`
+
+The map system has three ideas:
+
+- A **view** is a preset or mode, such as Weather, Storm Scope, Wildfire, Nautical, Aviation, or Astronomy.
+- A **layer** is a specific overlay, such as radar, alerts, marine conditions, fronts, or satellite imagery.
+- A **control surface** is the drawer/legend/selector UI shown for a mode.
+
+Current map views from `app/lib/maps/views.ts`:
+
+- `radar`: Weather
+- `clouds`: Clouds
+- `wildfire`: Wildfire
+- `storm`: Storm Scope
+- `aviation`: Aviation
+- `mariner`: Nautical
+- `astronomer`: Astronomy
+
+Important rule:
+
+Astronomy and Aviation should not be active at the same time. Their control surfaces are complex and should remain mutually exclusive.
+
+### Storm Scope
+
+Storm Scope is the advanced radar mode. It should feel like a premium radar competitor.
+
+Expected ingredients:
+
+- radar reflectivity
+- nearest NEXRAD behavior when zoomed in
+- radar products
+- range markers
+- fronts
+- lightning
+- alert polygons
+- timeline controls
+- animation loop duration controls
+- smooth/cinematic/presentation playback settings
+- record/export option
+
+Product distinction:
+
+- Basic Weather mode should be broadly usable and not require people to know radar station details.
+- Storm Scope is where power-user radar controls belong.
+
+### Nautical
+
+The Nautical tab still exists, but the direction is to move nautical map functionality into Maps.
+
+Current desired behavior:
+
+- Main Maps tab keeps a Nautical mode.
+- Nautical overlays should include one practical marine layer that shows marine zones and buoys.
+- Clicking a buoy should open buoy observations/details similar to the Nautical screen.
+- Clicking a marine polygon should show official NOAA marine forecast text when available.
+- Extremes sea routes should open the main weather map, not an old standalone nautical map.
+
+Be careful:
+
+- Alert polygons and marine polygons can overlap.
+- If the user clicks a warning over a marine zone, the app should still show the official message or relevant forecast panel rather than making the user fight the z-order.
+- Marine users need official language preserved. Summaries are helpful, but the official NOAA product matters.
+
+### Aviation
+
+Primary file:
+
+- `app/(tabs)/aviation.tsx`
+
+Map mode:
+
+- `app/(tabs)/aviation-map.tsx`
+- `components/maps/aviation/*`
+- `app/lib/maps/useAviationMapData.ts`
+- `app/lib/aviation/*`
+
+Aviation has two user-facing briefing modes:
+
+- Airport Briefing
+- Route Briefing
+
+Airport Briefing should show:
+
+- station code
+- airport name
+- overall flight category
+- plain-English status
+- wind
+- visibility
+- ceiling
+- altimeter
+- decoded METAR
+- TAF timeline
+- decoded TAF
+- raw products
+
+Route Briefing should show:
+
+- route
+- cruise altitude
+- departure time
+- overall risk
+- plain-English route concern
+- turbulence/icing/category/SIGMET/CWA/PIREP badges
+- visual route map
+- route strip checkpoints
+- worst segment
+- checkpoint cards with expandable pilot details
+
+Current widget direction:
+
+- There should be separate aviation widgets for home airport and saved route because those answer different pilot questions.
+- Airport widget: "What is my field doing now?"
+- Route widget: "What could bite me along this corridor?"
+
+Important UI pitfall:
+
+The VFR/IFR badge must stay inside the screen/card bounds on narrow phones. If it hangs off the right edge, the layout is too absolute or too wide for the available viewport.
+
+### Space and Astronomy
+
+Primary tab:
+
+- `app/(tabs)/solar.tsx`
+
+Astronomy map:
+
+- `app/(tabs)/astro-map.tsx`
+- `app/lib/astro/skyScore.ts`
+- `app/lib/astro/skyScoreCache.ts`
+- `app/lib/astro/skyGrid.ts`
+
+Space owns the Sky Score card, aurora/space weather context, and the entry into the astronomy map.
+
+Current Sky Score expectations:
+
+- App Sky Score and widget Sky Score should match. If they do not, the widget is probably using a fallback or stale/native calculation instead of the same cached app data.
+- Widget should deep link to the Space tab.
+- Bortle should display when available.
+- Low/mid/high clouds should be shown when available.
+- Best viewing window and dark window matter.
+- Aerosols and local sky brightness matter for deep-sky viewing.
+
+Astronomy map direction:
+
+- Astronomy mode should feel like the original full astronomy map, not a reduced "astro map lite."
+- The drawer should include the richer astronomy details that existed before.
+- Sky Score and Aurora should not appear as ordinary layer toggles in the main overlay selector for now.
+
+### Extremes
+
+Primary file:
+
+- `app/(tabs)/extremes.tsx`
+
+Current product direction:
+
+- Do not separate U.S. extremes as their own special section.
+- Show a unified list of extremes regardless of where they are in the world.
+- Let people add places to Extremes, likely from saved locations.
+- Extremes can become a notification category.
+
+Extremes should link into the correct surface:
+
+- land/radar/weather extremes should go to Maps or Land depending on context
+- marine/sea route extremes should go to the main Maps tab with Nautical mode/layers, not old standalone maps
+- space extremes should connect to Space
+
+## 37. Native Android Widgets
+
+Widgets are not React Native UI. They are Android RemoteViews.
+
+Widget provider classes live in:
+
+- `android/app/src/main/java/com/anonymous/weatherapp/widget/`
+
+Widget XML layouts live in:
+
+- `android/app/src/main/res/layout/`
+
+Widget provider metadata lives in:
+
+- `android/app/src/main/res/xml/`
+
+Registered widgets in the manifest include:
+
+- Current
+- Current + Radar
+- SkyScore
+- Aviation
+- Airport Board
+- Route Briefing
+- Climatology
+- Climate Arch
+
+Shared native data helper:
+
+- `OmniwxWidgetData.kt`
+
+Refresh/scheduling:
+
+- `OmniwxWidgetScheduler.kt`
+- `OmniwxWidgetRefreshReceiver.kt`
+
+Important widget principles:
+
+- Widgets should be glanceable.
+- Widgets should match OMNIwx dark glass style.
+- Widgets should not require live React Native components.
+- Widgets should use cached/shared data when possible.
+- Widgets should gracefully show "Open OMNIwx to refresh" when data is missing.
+- Refresh buttons should update widget content without causing excessive API calls.
+- 15-minute refresh is aggressive for Android widgets; make sure scheduling respects Android limits and does not drain battery.
+
+Common widget bug:
+
+If the widget says it cannot be added, check XML dimensions, class registration, manifest receiver names, and layout resource validity.
+
+Common widget data bug:
+
+If the widget displays different values from the app, the native code is probably using a different endpoint, fallback calculation, or stale cache than the React Native screen.
+
+## 38. Android Auto
+
+Android Auto is implemented in:
+
+- `android/app/src/main/java/com/anonymous/weatherapp/car/OmniWeatherCarAppService.kt`
+
+Manifest permissions/metadata:
+
+- `androidx.car.app.ACCESS_SURFACE`
+- `androidx.car.app.MAP_TEMPLATES`
+- `com.google.android.gms.car.application`
+- `androidx.car.app.minCarApiLevel`
+
+OMNIwx uses AndroidX Car App templates. The car app is not just the phone UI squeezed into a dashboard.
+
+Current Android Auto features include:
+
+- current conditions
+- alerts
+- hourly list/screen
+- five-day/daily forecast screen
+- nearby radar entry
+- Sky Score entry
+- refresh action
+- radar map surface renderer
+
+Radar in Android Auto:
+
+- Uses a custom surface renderer, not a normal React Native MapLibre view.
+- Fetches RainViewer timeline.
+- Draws tiles around the current location.
+- Uses car-safe controls and a map template.
+
+Important Android Auto constraints:
+
+- Many arbitrary layouts are not allowed.
+- Interaction is intentionally limited for driving safety.
+- Visual richness has to be achieved through templates, panes, rows, icons, map surfaces, and carefully chosen text.
+- If a screen traps the user, make sure the template has a back action or the screen manager stack can pop.
+
+Testing reality:
+
+The user's Toyota 2023 4Runner matters. Android Auto behavior can vary by head unit, screen size, Car API level, and phone/vehicle software. A fix that works in emulator may still need testing in the vehicle.
+
+## 39. Radar, Satellite, Animation, and Export
+
+Radar and satellite animation are now one of OMNIwx's standout areas.
+
+Key files:
+
+- `app/lib/maps/useRadarController.ts`
+- `app/lib/maps/radar/useAnimatedRadar.ts`
+- `app/lib/maps/radar/RadarOverlay.tsx`
+- `components/maps/AnimationCompositor.tsx`
+- `app/lib/maps/videoExport.ts`
+- `android/app/src/main/java/com/anonymous/weatherapp/video/OmniwxVideoExportModule.kt`
+
+Current animation concepts:
+
+- Radar, infrared, and true color can be animated.
+- The app supports longer loops, up to around 5 hours depending on source availability.
+- The compositor prefetches frames.
+- It blends from the current frame to the next frame.
+- It loops from the final frame back to the first instead of ping-ponging.
+- Native export can create MP4 files on Android.
+
+Smooth/Cinematic/Presentation mental model:
+
+- **Smooth**: faster, lightweight playback for normal use.
+- **Cinematic**: more emphasis on blended transitions and visual polish.
+- **Presentation**: slower, clearer playback for showing or recording what is happening.
+
+True color reality:
+
+- True color/GeoColor imagery may not be available at the same cadence everywhere or every time.
+- Some services update every 10 to 15 minutes; some products appear hourly or have delayed imagery.
+- If true color seems sparse, inspect the actual returned time-enabled frames before assuming the app is broken.
+
+Infrared reality:
+
+- Infrared should preserve the map aspect and the recording aspect.
+- Stretching usually means the export/composition code is drawing source imagery into a destination rectangle without preserving the viewport ratio.
+- Portrait recordings should produce portrait videos when the user is in portrait mode.
+
+MP4 export pitfalls:
+
+- Need at least two prepared frames.
+- All frame URLs need to download successfully.
+- Android codec support varies by device.
+- Width and height should be even numbers.
+- Bitrate too low causes muddy output; bitrate too high can fail on older devices.
+- The MediaStore save step is separate from the temporary file encode step.
+
+## 40. Notifications
+
+Notification preferences live in:
+
+- `app/lib/notifications/preferences.ts`
+- `app/lib/notifications/useNotificationPreferences.ts`
+
+Settings UI lives in:
+
+- `app/profile.tsx`
+
+Current categories:
+
+- NWS alerts
+- New fires
+- Kp spikes
+- Aviation category
+- Sky score
+- Extremes
+
+Current client behavior:
+
+- Requests notification permission.
+- Creates Android notification channel `omniwx-alerts`.
+- Stores enabled/disabled state and category selection in AsyncStorage.
+- Stores Expo push token when permission is granted.
+- Attempts to register with `/api/notifications/register` if an API base and token exist.
+- Can schedule a local test notification.
+
+Important limitation:
+
+Client preferences are not the same thing as a full production push pipeline. To actually send push notifications for weather events, the backend needs scheduled/event-driven logic that compares latest data with previous known state and sends pushes only when thresholds are met.
+
+What the backend eventually needs:
+
+- device registration endpoint
+- token/category storage
+- saved place storage or user/location association
+- periodic checks for NWS alerts, fires, Kp, aviation categories, sky score, and extremes
+- deduplication so users do not get spammed
+- quiet hours or severity filtering
+- token cleanup for invalid push tokens
+
+## 41. wxLearn as a Real Surface
+
+wxLearn is no longer just a "learn more" popup. It is the education layer for OMNIwx.
+
+Primary files:
+
+- `app/lib/learn/topics.ts`
+- `components/common/LearnMoreModal.tsx`
+- `components/common/NerdyExplainModal.tsx`
+
+The library is organized by shelves:
+
+- Start Here
+- Land Weather
+- Comfort
+- Clouds & Precip
+- Maps & Radar
+- Marine
+- Aviation
+- Space Weather
+- Astronomy
+- Data & Units
+
+When adding or editing a metric, ask:
+
+- Does this value have units that need explanation?
+- Is it official, observed, model-backed, derived, curated, or source-dependent?
+- Is there a formula?
+- Are there thresholds?
+- Does the topic explain why the user should care?
+- Does the pressable tile open the most relevant topic?
+
+For technical features, wxLearn should explain both the concept and the limitation. Examples:
+
+- AQI should explain pollutants, not just the index number.
+- Solar wind density should use a real unit such as `particles/cm^3`.
+- Marine zones should explain official forecast boundaries versus actual ocean conditions.
+- Aviation products should explain altitude, valid time, units, and operational meaning.
+- Radar products should explain what the product can and cannot show.
+- Global products should explain coverage honestly.
+
+Maintenance rule:
+
+If a screen introduces a new pressable data tile, chart series, unit, model field, or official product type, update `app/lib/learn/topics.ts` in the same change.
+
+## 42. How to Make Changes Without Breaking the App
+
+When working on OMNIwx, think in layers.
+
+### If You Change UI
+
+Check:
+
+- small Android phone width
+- large Android phone width
+- long location name
+- bottom tab overlap
+- status bar overlap
+- Simple and WxLab mode
+- dark/light base map if relevant
+- app color mode if relevant
+
+Run:
+
+```bash
+npx tsc --noEmit
+npm run lint -- --quiet
+```
+
+### If You Change Maps
+
+Check:
+
+- `app/lib/maps/types.ts`
+- `app/lib/maps/views.ts`
+- `app/lib/maps/layerCatalog.ts`
+- `app/lib/maps/state.ts`
+- `components/maps/MapRenderer.tsx`
+- legend and drawer behavior
+- click handling/z-order
+- animation readiness
+- source attribution
+
+For map clicks, ask:
+
+- Is the user clicking a point, polygon, raster, or map background?
+- Which layer should win if features overlap?
+- Should an alert open official NWS text?
+- Should a marine polygon open the NOAA marine forecast?
+- Should the inspector show raw details or hide them behind an expandable section?
+
+### If You Change Widgets
+
+Run a full Android build. TypeScript is not enough.
+
+Check:
+
+- layout XML compiles
+- provider XML is valid
+- provider class name matches manifest
+- tap PendingIntent opens a real route
+- refresh receiver works
+- stale data fallback looks acceptable
+- widget can be added on a real launcher
+
+### If You Change Android Auto
+
+Run a full Android build and test on real Android Auto when possible.
+
+Check:
+
+- no screen traps
+- back action works
+- refresh action works
+- car app starts without requiring unsafe phone interaction
+- radar surface does not crash
+- unavailable data produces a clear fallback
+
+### If You Change Native Video Export
+
+Run:
+
+```bash
+cd android
+./gradlew.bat :app:bundleRelease
+```
+
+Then test on a real device:
+
+- radar export
+- infrared export
+- true color export
+- portrait orientation
+- landscape orientation
+- saved MP4 playback in gallery/files
+
+## 43. Current Mental Model Cheat Sheet
+
+Use this when you are trying to orient quickly:
+
+- **Expo Router** decides which phone screen appears.
+- **Context providers** remember settings, place, locations, and WxLab mode.
+- **Hooks** fetch or derive data.
+- **Components** render cards, charts, maps, and controls.
+- **Map views** are presets.
+- **Map layers** are overlays.
+- **Layer catalog** is the menu/source of truth for layer metadata.
+- **MapRenderer** is where layers become MapLibre sources/layers.
+- **wxLearn** is the shared education layer for units, formulas, source context, and limitations.
+- **Nautical map behavior** is moving into Maps.
+- **Astronomy and Aviation** are special map modes, not ordinary simple overlays.
+- **Widgets** are native Android RemoteViews.
+- **Android Auto** is native AndroidX Car App.
+- **Video export** is native Android MediaCodec/MediaMuxer.
+- **Notifications** currently have client preferences; full alerting needs backend event logic.
+
+## 44. Personal Maintenance Notes
+
+These docs are intentionally more detailed and more opinionated than public documentation.
+
+Keep them useful by updating them whenever you make a meaningful product-direction change, especially when:
+
+- a standalone screen becomes a map mode
+- a widget is added
+- Android Auto behavior changes
+- notification categories change
+- wxLearn shelves/topics or pressable education links change
+- a user-facing mental model changes
+- a build/version issue happens
+- a major bug reveals an architectural trap
+
+If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.

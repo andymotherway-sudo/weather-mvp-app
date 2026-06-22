@@ -1,6 +1,6 @@
 # OMNIwx Feature Guide
 
-Last updated: June 19, 2026
+Last updated: June 22, 2026
 
 This guide explains the user-facing screens and major features currently present in OMNIwx. It is written as a product walkthrough rather than a code tutorial. For architecture details, see `docs/how-omniwx-works.md` and `docs/omniwx-training-guide.md`.
 
@@ -45,12 +45,14 @@ Several screens use a Simple/wxLab split:
 
 The setting "Always use WxLab" can make supported screens open in the advanced mode by default.
 
-### Learn and Explain Modals
+### wxLearn and Explain Modals
 
-The app includes educational modal surfaces:
+The app includes educational modal surfaces that are now treated as a first-class learning library:
 
-- Learn more topics explain concepts such as dew point, humidity, wind, pressure, alerts, space-weather scales, Kp, solar wind, twilight, and Sky Score.
+- wxLearn topics are organized into shelves: Start Here, Land Weather, Comfort, Clouds & Precip, Maps & Radar, Marine, Aviation, Space Weather, Astronomy, and Data & Units.
+- Learn more topics explain concepts such as dew point, humidity, AQI, pollutant drivers, heat index, wind chill, wind, pressure, alerts, radar products, satellite layers, marine zones, water stations, aviation products, space-weather scales, Kp, solar wind, twilight, Earth terminator imagery, and Sky Score.
 - Explain modals summarize how a metric was computed or why a condition matters.
+- Search includes topic titles, summaries, units, references, tags, and category context.
 
 These are used across Land, Hourly, Nautical, Aviation, Space, and map details.
 
@@ -169,7 +171,7 @@ Available layer groups include:
 - Weather: radar, wind vectors, wind particles, WPC fronts, clouds, GOES true color, infrared, water vapor, global true color, global precipitation, alerts, and lightning.
 - Fire & Air: fire restrictions, smoke, fire perimeters, hotspots, and SPC fire-weather outlooks.
 - Aviation: turbulence, icing, SIGMETs, CWAs, and PIREPs.
-- Marine: marine conditions, zones, buoys, and water temperature stations.
+- Marine: marine conditions, coastal/offshore/high-seas zones, buoys, water temperature stations, water-level context, and model-backed area summaries where available.
 - Astronomy and Reference groups are reserved for specialized context.
 
 Many layers support opacity control, legend/source info, or timestamp behavior.
@@ -188,6 +190,7 @@ Maps supports:
 - Animation quality profiles such as Smooth, Cinematic, and Presentation.
 - Animated satellite playback where frame sources support it.
 - True color, infrared, and related satellite imagery.
+- Wind vectors and early Windy-like wind-particle visualization for surface 10 m flow.
 
 ### Animation Export
 
@@ -230,10 +233,10 @@ Key features:
 - Earth View:
   - GOES-East GeoColor terminator view.
   - GOES-West GeoColor terminator view.
-  - NASA EPIC/DSCOVR L1 Earth view.
+  - NASA EPIC/DSCOVR L1 Earth view where available, with terminator imagery preferred for current visual context.
 - Sky Score card for observing quality.
 - Mars Weather Archive from NASA InSight-era data.
-- Learn topics for NOAA scales, Kp, solar wind, IMF Bz, X-ray flux, proton flux, DONKI events, solar imagery, Earth disk views, Sky Score, and Mars weather.
+- Learn topics for NOAA scales, Kp, solar wind, solar wind density/speed, IMF Bz, X-ray flux, proton flux, SWPC alerts, DONKI events, CMEs, solar flares, solar imagery, Earth disk/terminator views, Sky Score, and Mars weather.
 - Optional solar event capture videos, controlled from Settings.
 
 ## Nautical
@@ -254,6 +257,8 @@ Key features:
 - wxLab tide prediction table with exact heights and times.
 - Coastal and offshore forecast text.
 - Official forecast zones where available.
+- High-seas/METAREA context where official data and curated boundaries are available.
+- Water-station context for lakes, rivers, reservoirs, and coastal sensors when recent measurements exist.
 - Fallback messaging when marine forecast or tide support is unavailable for an area.
 
 Nautical map behavior is increasingly handled inside the Maps tab's Nautical mode, while this screen remains the focused marine briefing surface.
@@ -318,6 +323,8 @@ Key features:
 - Legend and aviation status strip.
 
 The main Maps tab also contains an Aviation mode with similar specialized controls.
+
+Current product priority is stronger North America aviation usefulness first, especially the US, Canada, and Mexico, while keeping the architecture ready for broader global aviation sources.
 
 ## Astro / Astronomy Map
 
@@ -488,6 +495,8 @@ Widget behavior:
 - Scheduler provides lightweight periodic refresh.
 - Missing data states prompt the user to open OMNIwx to refresh.
 
+Widget behavior is still an active closed-test area. Testers should watch for widgets that fail to hydrate after a default/current location is available, stale radar/current data, or widget refresh behavior that affects phone-app responsiveness.
+
 ## Android Auto
 
 Location: `android/app/src/main/java/com/anonymous/weatherapp/car/OmniWeatherCarAppService.kt`
@@ -506,6 +515,8 @@ Key features:
 - Car-safe navigation and template-based presentation.
 
 The Android Auto radar view fetches radar tiles and draws a static radar snapshot on a car-safe surface rather than embedding the phone map UI.
+
+Android Auto radar stability is still a priority test area because real head units may behave differently than local builds or emulators.
 
 ## Native Animation Video Export
 
@@ -578,4 +589,5 @@ The app also calls some public providers directly, including NOAA/NWS, NOAA SWPC
 - Preferences and notification controls: Settings.
 - Glanceable home-screen surfaces: Android widgets.
 - Car-safe weather and radar: Android Auto.
+- Tester-facing release notes: `docs/google-play-closed-testing-release-notes.md`.
 - Saved radar/satellite loops: native video export.
