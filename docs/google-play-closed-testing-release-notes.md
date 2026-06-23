@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.127**  
-Android version code: **10144**  
-Track: **Closed testing / internal testing candidate**  
+Release: **OMNIwx Alpha 1.1.128**
+Android version code: **10145**
+Track: **Closed testing / internal testing candidate**
 Date: **June 23, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.127 cleans up the new wxLab briefing and chart experience while making Space feel like a broader space-weather and night-sky surface. This build uses a fresh Android version code for Play/device update recognition. Please test the Land wxLab NWS Desk, hourly/daily AQI chart axes, Space tab ordering, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
+OMNIwx Alpha 1.1.128 expands Land wxLab into a more complete local forecast desk, improves satellite animation continuity, and makes animated wind flow smoother and more efficient. This build uses a fresh Android version code for Play/device update recognition. Please test Severe Setup, forecast verification, NWS alert changes, true-color/infrared loops, wind particles, widgets, Maps panning, and Play update recognition.
 
 ## Full Tester Notes
 
@@ -21,6 +21,15 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - Reworked the NWS Desk timing area so timing has a full-width block instead of being clipped inside a cramped half-width tile.
 - Added **Storm Recap** to Land wxLab using official NOAA/NWS Local Storm Reports for the active forecast office.
 - Storm Recap summarizes recent report count, closest report, latest report, strongest wind report, and largest hail report when available.
+- Added **Severe Setup** to Land wxLab using official SPC Day 1 categorical, tornado, hail, and wind outlook layers.
+- Severe Setup identifies the primary outlook hazard and adds active severe-thunderstorm or tornado watch context where available.
+- Added NWS alert lifecycle context so recent alerts can be identified as issued, updated, extended, upgraded, replaced, or cancelled.
+- Added **Forecast vs Reality** context using the current NWS forecast period and a fresh nearby official station observation.
+- Forecast verification shows station name, distance, observation age, and model/NWS differences without treating one station as the selected location.
+- Added a detailed wxLearn topic explaining SPC outlook categories, hazard probabilities, watches, warnings, and limitations.
+- Improved GOES true-color and infrared animation staging with warm, previous, and current frames to reduce blank flashes between frames.
+- Slowed satellite frame cadence slightly and lengthened eased crossfades for a smoother, less choppy loop.
+- Improved animated 10 m wind particles with a persistent runtime, adaptive particle density, and longer speed-sensitive trails.
 - Moved AQI chart labels to a quieter right-side scale in daily/hourly wxLab charts so the AQI axis no longer crowds the time labels and selected-hour cursor.
 - Reordered the Space tab to lead with **Night Sky Context**, followed by Solar Wx, Earth View, and Mars Weather Archive.
 - Renamed the Space header from Solar Wx to **Space Wx** to better reflect the broader screen.
@@ -49,7 +58,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### Known areas that need tester attention
 
 - **Widgets**: After installing this build, open OMNIwx once on the Land screen for your desired location, then refresh the widget. Report whether weather values fill in and whether they stay current.
-- **NWS Desk / Storm Recap**: In Land wxLab, verify the NWS Desk and Storm Recap cards load for US locations, show reasonable source/update text, and fail quietly when no recent reports exist.
+- **NWS Desk / Severe Setup / Storm Recap**: In Land wxLab, verify the cards load for US locations, show reasonable source/update text, and fail quietly when no SPC risk or recent reports exist.
+- **Forecast verification**: Compare several locations. Confirm the nearest-station name, distance, age, and differences look plausible and stale observations are not presented as current evidence.
 - **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
 - **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
 - **Lightning**: This build contains safer layer metadata and mode wiring. Do not treat lightning as exact ground-strike safety guidance.
@@ -69,8 +79,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.127`
-- Android version code: `10144`
+- App version: `1.1.128`
+- Android version code: `10145`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

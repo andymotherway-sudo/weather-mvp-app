@@ -30,7 +30,7 @@ You can think of it as:
 
 The biggest current design idea is that OMNIwx is becoming one integrated weather workstation. Land, Hourly, Almanac, Space, Aviation, Nautical, Maps, and Extremes are still separate tabs, but Maps is now the hub for weather map modes instead of a pile of unrelated standalone map screens.
 
-The Land wxLab screen also has the first "local forecaster desk" pieces. The app asks the worker for NWS Desk data for the active location; the worker resolves the local NWS Weather Forecast Office, fetches official AFD/HWO products, parses a compact briefing, and caches the response. A second worker endpoint fetches recent official Local Storm Reports for the same office and returns a small Storm Recap.
+The Land wxLab screen also has a local forecaster desk. The app asks the worker for NWS Desk data for the active location; the worker resolves the local NWS Weather Forecast Office, fetches official AFD/HWO products, parses a compact briefing, and caches the response. The same response now adds the current NWS forecast period, a fresh nearby official observation when available, official SPC Day 1 categorical and hazard-probability context, active-watch context, and alert lifecycle changes. A second worker endpoint fetches recent official Local Storm Reports for the same office and returns a small Storm Recap.
 
 ## 2. The Main Tech Stack
 

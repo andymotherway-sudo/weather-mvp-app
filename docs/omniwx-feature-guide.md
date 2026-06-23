@@ -97,6 +97,8 @@ Key features:
 - High/low forecast context.
 - Metric cards for temperature, feels-like, dew point, humidity, wind, gusts, pressure, visibility, precipitation probability, UV, air quality, cloud cover, and related signals.
 - NWS Desk in wxLab with local Area Forecast Discussion and Hazardous Weather Outlook briefing context.
+- Severe Setup in wxLab with official SPC Day 1 categorical risk, tornado/hail/wind probabilities, active-watch context, and recent alert lifecycle changes.
+- Forecast verification in wxLab comparing the selected model with the current NWS forecast period and a fresh nearby official station observation.
 - Storm Recap in wxLab with recent official Local Storm Reports where available.
 - 15-day forecast list.
 - Sun arc and astronomy timing in Simple mode.
@@ -127,6 +129,28 @@ The Storm Recap card scans recent official Local Storm Reports from the local NW
 - Recent report rows with event type, location, source, and remarks.
 
 Local Storm Reports are reports of what happened, not forecasts or warnings. No recent reports does not mean no weather occurred.
+
+### Land wxLab Severe Setup
+
+The Severe Setup card combines official SPC and NWS context for the active United States location:
+
+- SPC Day 1 categorical risk.
+- Tornado, hail, and damaging-wind probabilities.
+- The leading severe-weather hazard based on the available outlook layers.
+- Active severe-thunderstorm or tornado watch context when present.
+- Recent alert lifecycle changes such as issued, updated, extended, upgraded, replaced, or cancelled.
+
+The outlook describes the larger setup. Watches focus concern, warnings require immediate attention, and radar shows storm evolution.
+
+### Land wxLab Forecast Verification
+
+Forecast verification compares the selected Open-Meteo forecast with:
+
+- The current official NWS forecast period.
+- A nearby official NWS observation station when its report is fresh enough.
+- Temperature, dew point, wind, gust, and other overlapping values when available.
+
+The card shows the station name, distance, observation age, and source timing so differences are presented as evidence rather than certainty.
 
 ## Hourly
 

@@ -319,7 +319,7 @@ type SatelliteFrame = {
 const SATELLITE_LOOP_MINUTES_BACK = 120;
 const SATELLITE_FRAME_STEP_MINUTES = 5;
 const GOES_WMS_FRAME_STEP_MINUTES = 15;
-const SATELLITE_PLAY_INTERVAL_MS = 950;
+const SATELLITE_PLAY_INTERVAL_MS = 1200;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
@@ -1581,14 +1581,15 @@ export default function MapsScreen() {
     }
 
     const startedAt = Date.now();
-    const blendMs = 650;
+    const blendMs = 820;
     setSatelliteBlend({ from: previous, to: next, t: 0 });
     satelliteFrameIndexRef.current = next;
 
     const timer = setInterval(() => {
       const raw = (Date.now() - startedAt) / blendMs;
       const t = Math.max(0, Math.min(1, raw));
-      setSatelliteBlend({ from: previous, to: next, t });
+      const eased = t * t * (3 - 2 * t);
+      setSatelliteBlend({ from: previous, to: next, t: eased });
       if (t >= 1) clearInterval(timer);
     }, 40);
 
@@ -1975,20 +1976,57 @@ export default function MapsScreen() {
       zIndex: number;
     }) => {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
-      const currentIso = satelliteCurrentFrame?.iso ?? satelliteToFrame?.iso ?? null;
-      const currentRasterId = satelliteCurrentFrame?.rasterId ?? null;
+      const fromFrame = satelliteFromFrame ?? satelliteCurrentFrame;
+      const toFrame = satelliteToFrame ?? satelliteCurrentFrame;
+      const currentFrame = satelliteCurrentFrame ?? toFrame;
+      const sameFrame =
+        !fromFrame?.iso ||
+        !toFrame?.iso ||
+        fromFrame.iso === toFrame.iso ||
+        satelliteFade >= 1;
 
-      list.push({
-        id: args.id,
-        tileUrlTemplates: [arcGisImageServerTileTemplate(args.url, currentIso, satelliteQuality.tileSize, currentRasterId)],
-        opacity,
-        zIndex: args.zIndex,
-        enabled: true,
-        tileSize: satelliteQuality.tileSize,
-        maxZoomLevel: satelliteQuality.maxZoomLevel,
-        fadeDurationMs: 0,
-        resampling: 'linear',
-      });
+      const pushFrame = (
+        suffix: string,
+        frame: SatelliteFrame | null,
+        frameOpacity: number,
+        zOffset: number,
+      ) => {
+        if (!frame?.iso || frameOpacity <= 0) return;
+        list.push({
+          id: `${args.id}${suffix}`,
+          tileUrlTemplates: [
+            arcGisImageServerTileTemplate(
+              args.url,
+              frame.iso,
+              satelliteQuality.tileSize,
+              frame.rasterId ?? null,
+            ),
+          ],
+          opacity: frameOpacity,
+          zIndex: args.zIndex + zOffset,
+          enabled: true,
+          tileSize: satelliteQuality.tileSize,
+          maxZoomLevel: satelliteQuality.maxZoomLevel,
+          fadeDurationMs: 0,
+          resampling: 'linear',
+        });
+      };
+
+      if (
+        satelliteWarmFrame?.iso &&
+        satelliteWarmFrame.iso !== currentFrame?.iso &&
+        satelliteWarmFrame.iso !== toFrame?.iso
+      ) {
+        pushFrame('-warm', satelliteWarmFrame, Math.min(opacity, SATELLITE_WARM_OPACITY), -0.02);
+      }
+
+      if (!sameFrame) {
+        pushFrame('-prev', fromFrame, opacity * (1 - satelliteFade), 0);
+        pushFrame('', toFrame, opacity * satelliteFade, 0.01);
+        return;
+      }
+
+      pushFrame('', currentFrame, opacity, 0.01);
     };
 
     if (isFocused && globalTrueColorEnabled) {

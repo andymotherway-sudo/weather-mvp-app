@@ -1758,7 +1758,44 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'Always read the timing, location, impacts, and instructions.',
       'A broad alert area can include places with very different actual risk.',
       'For marine and aviation, official text often contains area-specific detail that maps alone cannot show.',
+      'Issued, updated, extended, upgraded, replaced, and cancelled describe the alert lifecycle. An update may change timing, wording, or affected locations without changing the hazard name.',
     ],
+  },
+  {
+    id: 'spc-convective-outlook',
+    title: 'SPC Convective Outlooks',
+    category: 'maps',
+    tags: ['spc', 'severe', 'outlook', 'tornado', 'hail', 'wind', 'thunderstorm'],
+    summary:
+      'Storm Prediction Center outlooks describe the organized severe-thunderstorm environment over a broad area. They provide planning context, not a promise that every location inside a risk area will have a storm.',
+    references: [
+      { label: 'TSTM', value: 'General thunderstorm potential' },
+      { label: 'MRGL', value: 'Marginal risk' },
+      { label: 'SLGT', value: 'Slight risk' },
+      { label: 'ENH', value: 'Enhanced risk' },
+      { label: 'MDT / HIGH', value: 'Moderate or high risk' },
+    ],
+    bullets: [
+      'The categorical outlook combines the expected coverage, intensity, and confidence of severe storms.',
+      'Tornado, damaging-wind, and large-hail probabilities are separate layers. The highest probability helps identify the primary hazard, but multiple hazards can occur together.',
+      'An outlook can be active with no watch or warning. Watches are issued closer to the event when conditions support a more focused threat.',
+      'Warnings are short-fuse products for storms that are occurring or considered imminent. Always follow the warning text and local instructions.',
+      'Outlooks cover broad regions and can change as new observations and model guidance arrive.',
+    ],
+    sections: [
+      {
+        title: 'How OMNIwx uses it',
+        body:
+          'Severe Setup checks the official SPC Day 1 categorical, tornado, hail, and wind outlooks at the selected location. It combines that context with active NWS watches and recent alert lifecycle changes.',
+      },
+      {
+        title: 'What the percentages mean',
+        body:
+          'The probability layers express the chance of a qualifying severe-weather report near a point during the outlook period. They are not the chance of rain and should not be read as a minute-by-minute forecast.',
+      },
+    ],
+    insight:
+      'Use the outlook for the setup, watches for growing concern, warnings for immediate action, and radar for storm evolution.',
   },
   {
     id: 'area-forecast-discussion',
@@ -1876,12 +1913,16 @@ export const LEARN_TOPICS: LearnTopic[] = [
     references: [
       { label: 'Higher confidence', value: 'Models, observations, and pattern recognition agree' },
       { label: 'Lower confidence', value: 'Model spread, weak forcing, local terrain effects, or timing uncertainty' },
+      { label: 'Forecast vs reality', value: 'Compare the forecast hour with a fresh nearby station observation' },
       { label: 'Not specified', value: 'The source did not clearly state confidence' },
     ],
     bullets: [
       'Confidence is not the same thing as severity. A low-confidence severe threat can still matter.',
       'Confidence can be high for temperature but low for storm timing on the same day.',
       'NWS discussions often explain uncertainty better than a single icon or percent value can.',
+      'OMNIwx compares the selected Open-Meteo model with the current NWS forecast period, then checks the nearest official station when its observation is fresh enough.',
+      'A station can differ from your exact location because of distance, elevation, pavement, terrain, or local exposure. The station name, distance, and observation age are part of the evidence.',
+      'Forecast verification describes how the forecast is performing now. It does not guarantee that later forecast hours will have the same error.',
     ],
   },
   {

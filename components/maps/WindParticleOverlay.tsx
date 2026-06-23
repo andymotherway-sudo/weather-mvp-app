@@ -28,11 +28,18 @@ type Props = {
 };
 
 type ParticleSeed = {
+  id: number;
   x: number;
   y: number;
   phase: number;
   life: number;
   speedScale: number;
+};
+
+type ParticleRuntime = ParticleSeed & {
+  age: number;
+  generation: number;
+  history: Array<{ x: number; y: number; speed: number }>;
 };
 
 type WindSample = {
@@ -65,12 +72,11 @@ type ParticlePaths = {
   fast: string;
 };
 
-const MAX_PARTICLES = 240;
-const FRAME_MS = 58;
+const MAX_PARTICLES = 280;
+const FRAME_MS = 48;
 const FIELD_CELL_PX = 58;
-const INTEGRATION_STEP_S = 0.18;
-const TRAIL_POINTS = 7;
-const MAX_STEPS = 42;
+const MIN_TRAIL_POINTS = 7;
+const MAX_TRAIL_POINTS = 15;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -185,7 +191,9 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
   }
 
   const area = Math.max(1, width * height);
-  const particleCount = Math.min(MAX_PARTICLES, Math.max(95, Math.round(area / 4200)));
+  const geographicSpan = Math.max(0.08, Math.sqrt(region.latitudeDelta * region.longitudeDelta));
+  const zoomDensity = clamp(2.6 / geographicSpan, 0.72, 1.32);
+  const particleCount = Math.min(MAX_PARTICLES, Math.max(90, Math.round((area / 3900) * zoomDensity)));
   const particles: ParticleSeed[] = [];
 
   for (let i = 0; i < particleCount; i += 1) {
@@ -196,6 +204,7 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
     const d = hash01(`${seed}:life`);
     const e = hash01(`${seed}:scale`);
     particles.push({
+      id: i,
       x: a * width,
       y: b * height,
       phase: c,
@@ -238,10 +247,34 @@ function sampleField(field: WindField, x: number, y: number): WindCell | null {
   };
 }
 
-function buildPaths(field: WindField | null, tick: number, width: number, height: number): ParticlePaths {
+function initializeParticleRuntime(field: WindField | null): ParticleRuntime[] {
+  if (!field) return [];
+  return field.particles.map((particle) => ({
+    ...particle,
+    age: particle.phase * particle.life,
+    generation: 0,
+    history: [],
+  }));
+}
+
+function resetParticle(particle: ParticleRuntime, width: number, height: number) {
+  particle.generation += 1;
+  const seed = `wind-runtime:${particle.id}:${particle.generation}`;
+  particle.x = hash01(`${seed}:x`) * width;
+  particle.y = hash01(`${seed}:y`) * height;
+  particle.age = 0;
+  particle.history = [];
+}
+
+function advanceParticlePaths(
+  field: WindField | null,
+  particles: ParticleRuntime[],
+  elapsedSeconds: number,
+  width: number,
+  height: number,
+): ParticlePaths {
   const empty = { slow: '', medium: '', fast: '' };
-  if (!field?.particles.length) return empty;
-  const t = tick / 1000;
+  if (!field || !particles.length) return empty;
   const buckets: Record<keyof ParticlePaths, string[]> = {
     slow: [],
     medium: [],
@@ -249,32 +282,40 @@ function buildPaths(field: WindField | null, tick: number, width: number, height
   };
 
   for (const particle of field.particles) {
-    const age = (particle.phase * particle.life + t) % particle.life;
-    const steps = Math.min(MAX_STEPS, Math.max(TRAIL_POINTS, Math.floor(age / INTEGRATION_STEP_S)));
-    let x = particle.x;
-    let y = particle.y;
-    const points: Array<{ x: number; y: number; speed: number }> = [];
-    let alive = true;
-
-    for (let i = 0; i < steps; i += 1) {
-      const cell = sampleField(field, x, y);
-      if (!cell) {
-        alive = false;
-        break;
-      }
-      x += cell.u * particle.speedScale * INTEGRATION_STEP_S;
-      y += cell.v * particle.speedScale * INTEGRATION_STEP_S;
-      if (x < -36 || x > width + 36 || y < -36 || y > height + 36) {
-        alive = false;
-        break;
-      }
-      if (i >= steps - TRAIL_POINTS) points.push({ x, y, speed: cell.speed });
+    const runtime = particles[particle.id];
+    if (!runtime) continue;
+    const cell = sampleField(field, runtime.x, runtime.y);
+    if (!cell) {
+      resetParticle(runtime, width, height);
+      continue;
     }
 
-    if (!alive || points.length < 2) continue;
-    const avgSpeed = points.reduce((sum, point) => sum + point.speed, 0) / points.length;
+    runtime.age += elapsedSeconds;
+    runtime.x += cell.u * runtime.speedScale * elapsedSeconds;
+    runtime.y += cell.v * runtime.speedScale * elapsedSeconds;
+    if (
+      runtime.age >= runtime.life ||
+      runtime.x < -36 ||
+      runtime.x > width + 36 ||
+      runtime.y < -36 ||
+      runtime.y > height + 36
+    ) {
+      resetParticle(runtime, width, height);
+      continue;
+    }
+
+    runtime.history.push({ x: runtime.x, y: runtime.y, speed: cell.speed });
+    const trailLength = Math.round(
+      MIN_TRAIL_POINTS + clamp(cell.speed / 18, 0, 1) * (MAX_TRAIL_POINTS - MIN_TRAIL_POINTS),
+    );
+    if (runtime.history.length > trailLength) {
+      runtime.history.splice(0, runtime.history.length - trailLength);
+    }
+    if (runtime.history.length < 2) continue;
+
+    const avgSpeed = runtime.history.reduce((sum, point) => sum + point.speed, 0) / runtime.history.length;
     const bucket: keyof ParticlePaths = avgSpeed >= 13 ? 'fast' : avgSpeed >= 7 ? 'medium' : 'slow';
-    const [first, ...rest] = points;
+    const [first, ...rest] = runtime.history;
     buckets[bucket].push(
       `M ${first.x.toFixed(1)} ${first.y.toFixed(1)} ${rest
         .map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
@@ -290,26 +331,32 @@ function buildPaths(field: WindField | null, tick: number, width: number, height
 }
 
 export function WindParticleOverlay({ enabled, geojson, height, isFocused, opacity, region, width }: Props) {
-  const [tick, setTick] = useState(0);
+  const field = useMemo(() => buildWindField(geojson, region, width, height), [geojson, height, region, width]);
+  const particleRuntimeRef = React.useRef<ParticleRuntime[]>([]);
+  const [paths, setPaths] = useState<ParticlePaths>({ slow: '', medium: '', fast: '' });
 
   useEffect(() => {
-    if (!enabled || !isFocused) return;
+    particleRuntimeRef.current = initializeParticleRuntime(field);
+    setPaths({ slow: '', medium: '', fast: '' });
+  }, [field]);
+
+  useEffect(() => {
+    if (!enabled || !isFocused || !field) return;
     let active = true;
     let last = Date.now();
     const timer = setInterval(() => {
       if (!active) return;
       const now = Date.now();
-      setTick((prev) => prev + Math.min(120, now - last));
+      const elapsedSeconds = Math.min(0.12, Math.max(0.016, (now - last) / 1000));
       last = now;
+      setPaths(advanceParticlePaths(field, particleRuntimeRef.current, elapsedSeconds, width, height));
     }, FRAME_MS);
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [enabled, isFocused]);
+  }, [enabled, field, height, isFocused, width]);
 
-  const field = useMemo(() => buildWindField(geojson, region, width, height), [geojson, height, region, width]);
-  const paths = useMemo(() => buildPaths(field, tick, width, height), [field, height, tick, width]);
   const hasPath = !!(paths.slow || paths.medium || paths.fast);
 
   if (!enabled || !isFocused || !hasPath) return null;

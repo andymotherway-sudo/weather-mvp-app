@@ -32,6 +32,60 @@ export type NwsDesk = {
     afd: NwsDeskProduct | null;
     hwo: NwsDeskProduct | null;
   };
+  verification: {
+    station: {
+      id: string | null;
+      name: string | null;
+      distanceMiles: number | null;
+      observedAt: string | null;
+    } | null;
+    observed: {
+      temperatureF: number | null;
+      dewPointF: number | null;
+      windMph: number | null;
+      gustMph: number | null;
+    } | null;
+    nwsForecast: {
+      name: string | null;
+      startTime: string | null;
+      endTime: string | null;
+      temperatureF: number | null;
+      windMph: number | null;
+      precipChancePct: number | null;
+      shortForecast: string | null;
+    } | null;
+  };
+  severeSetup: {
+    day: 1;
+    categorical: {
+      code: number | null;
+      label: string;
+      valid: string | null;
+      expires: string | null;
+    };
+    probabilities: {
+      tornadoPct: number | null;
+      hailPct: number | null;
+      windPct: number | null;
+    };
+    primaryHazard: 'Tornado' | 'Hail' | 'Wind' | 'General thunderstorms' | 'No organized severe risk';
+    activeWatch: {
+      event: string;
+      headline: string | null;
+      ends: string | null;
+    } | null;
+    summary: string;
+    source: string;
+  } | null;
+  alertChanges: Array<{
+    id: string;
+    event: string;
+    changeType: 'Issued' | 'Updated' | 'Extended' | 'Upgraded' | 'Replaced' | 'Cancelled';
+    sent: string | null;
+    ends: string | null;
+    headline: string | null;
+    previousSent: string | null;
+  }>;
   errors: string[];
 };
 

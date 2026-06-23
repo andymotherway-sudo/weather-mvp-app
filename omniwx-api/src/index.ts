@@ -297,6 +297,9 @@ type GlobalAlert = {
   fullText?: string;
   sent?: string | null;
   senderName?: string;
+  status?: string;
+  messageType?: string;
+  references?: Array<{ id: string | null; sent: string | null }>;
   source?: "weather.gov" | "open-meteo";
   derived?: boolean;
 };
@@ -1036,7 +1039,7 @@ const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v1";
 const SPACE_WEATHER_TIMEOUT_MS = 9000;
 const NWS_DESK_TTL_SECONDS = 20 * 60;
 const NWS_DESK_STALE_SECONDS = 6 * 3600;
-const NWS_DESK_CACHE_VERSION = "nws-desk-v6";
+const NWS_DESK_CACHE_VERSION = "nws-desk-v8";
 const NWS_STORM_REPORTS_TTL_SECONDS = 15 * 60;
 const NWS_STORM_REPORTS_STALE_SECONDS = 6 * 3600;
 const NWS_STORM_REPORTS_CACHE_VERSION = "nws-lsr-v1";
@@ -1608,6 +1611,14 @@ async function fetchWeatherGovPointAlerts(lat: number, lon: number): Promise<Glo
         fullText: buildAlertFullText([headline, description, instruction ? `Instructions: ${instruction}` : undefined, note ? `Note: ${note}` : undefined]),
         sent: safeIsoString(p.sent),
         senderName: cleanAlertText(p.senderName) ?? "National Weather Service",
+        status: cleanAlertText(p.status),
+        messageType: cleanAlertText(p.messageType),
+        references: Array.isArray(p.references)
+          ? p.references.map((reference: any) => ({
+              id: typeof reference?.identifier === "string" ? reference.identifier : typeof reference?.["@id"] === "string" ? reference["@id"] : null,
+              sent: safeIsoString(reference?.sent),
+            }))
+          : [],
         source: "weather.gov",
         derived: false,
       };
@@ -5427,6 +5438,60 @@ type NwsDeskPayload = {
     afd: NwsDeskProduct | null;
     hwo: NwsDeskProduct | null;
   };
+  verification: {
+    station: {
+      id: string | null;
+      name: string | null;
+      distanceMiles: number | null;
+      observedAt: string | null;
+    } | null;
+    observed: {
+      temperatureF: number | null;
+      dewPointF: number | null;
+      windMph: number | null;
+      gustMph: number | null;
+    } | null;
+    nwsForecast: {
+      name: string | null;
+      startTime: string | null;
+      endTime: string | null;
+      temperatureF: number | null;
+      windMph: number | null;
+      precipChancePct: number | null;
+      shortForecast: string | null;
+    } | null;
+  };
+  severeSetup: {
+    day: 1;
+    categorical: {
+      code: number | null;
+      label: string;
+      valid: string | null;
+      expires: string | null;
+    };
+    probabilities: {
+      tornadoPct: number | null;
+      hailPct: number | null;
+      windPct: number | null;
+    };
+    primaryHazard: "Tornado" | "Hail" | "Wind" | "General thunderstorms" | "No organized severe risk";
+    activeWatch: {
+      event: string;
+      headline: string | null;
+      ends: string | null;
+    } | null;
+    summary: string;
+    source: string;
+  } | null;
+  alertChanges: Array<{
+    id: string;
+    event: string;
+    changeType: "Issued" | "Updated" | "Extended" | "Upgraded" | "Replaced" | "Cancelled";
+    sent: string | null;
+    ends: string | null;
+    headline: string | null;
+    previousSent: string | null;
+  }>;
   errors: string[];
 };
 
@@ -5543,6 +5608,237 @@ async function fetchLatestNwsTextProduct(type: "AFD" | "HWO", office: string): P
     const product = await fetchJsonWithTimeout(productUrl, 9000, headers);
     return normalizeNwsProduct(product, type);
   }
+}
+
+function parseNwsWindMph(value: unknown) {
+  const match = String(value ?? "").match(/(\d+(?:\.\d+)?)(?:\s*to\s*(\d+(?:\.\d+)?))?\s*mph/i);
+  if (!match) return null;
+  const low = Number(match[1]);
+  const high = match[2] ? Number(match[2]) : low;
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+  return Math.round(((low + high) / 2) * 10) / 10;
+}
+
+async function fetchNwsDeskVerification(
+  lat: number,
+  lon: number,
+  pointProps: any,
+): Promise<NwsDeskPayload["verification"]> {
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const stationsUrl = typeof pointProps?.observationStations === "string" ? pointProps.observationStations : null;
+  const forecastUrl = typeof pointProps?.forecast === "string" ? pointProps.forecast : null;
+
+  const [stationsResult, forecastResult] = await Promise.allSettled([
+    stationsUrl ? fetchJsonWithTimeout(stationsUrl, 9000, headers) : Promise.resolve(null),
+    forecastUrl ? fetchJsonWithTimeout(forecastUrl, 9000, headers) : Promise.resolve(null),
+  ]);
+
+  const stations = stationsResult.status === "fulfilled" ? stationsResult.value : null;
+  const stationFeature = Array.isArray(stations?.features) ? stations.features[0] : null;
+  const stationUrl =
+    (typeof stationFeature?.id === "string" ? stationFeature.id : null) ??
+    (Array.isArray(stations?.observationStations) && typeof stations.observationStations[0] === "string"
+      ? stations.observationStations[0]
+      : null);
+
+  let station: NwsDeskPayload["verification"]["station"] = null;
+  let observed: NwsDeskPayload["verification"]["observed"] = null;
+  if (stationUrl) {
+    try {
+      const latest = await fetchJsonWithTimeout(`${stationUrl.replace(/\/+$/, "")}/observations/latest`, 9000, headers);
+      const obs = latest?.properties ?? {};
+      const coords = Array.isArray(stationFeature?.geometry?.coordinates) ? stationFeature.geometry.coordinates : [];
+      const stationLon = safeNum(coords[0]);
+      const stationLat = safeNum(coords[1]);
+      const stationId =
+        typeof stationFeature?.properties?.stationIdentifier === "string"
+          ? stationFeature.properties.stationIdentifier
+          : stationUrl.split("/").filter(Boolean).pop() ?? null;
+      station = {
+        id: stationId,
+        name: typeof stationFeature?.properties?.name === "string" ? stationFeature.properties.name : null,
+        distanceMiles:
+          stationLat != null && stationLon != null
+            ? Math.round(distanceMiles(lat, lon, stationLat, stationLon) * 10) / 10
+            : null,
+        observedAt: typeof obs.timestamp === "string" ? obs.timestamp : null,
+      };
+      observed = {
+        temperatureF: tempForUnits(nwsValueUnit(obs.temperature), "imperial"),
+        dewPointF: tempForUnits(nwsValueUnit(obs.dewpoint), "imperial"),
+        windMph: windForUnits(nwsValueUnit(obs.windSpeed), "imperial"),
+        gustMph: windForUnits(nwsValueUnit(obs.windGust), "imperial"),
+      };
+    } catch {
+      station = null;
+      observed = null;
+    }
+  }
+
+  const forecast = forecastResult.status === "fulfilled" ? forecastResult.value : null;
+  const periods = Array.isArray(forecast?.properties?.periods) ? forecast.properties.periods : [];
+  const now = Date.now();
+  const period =
+    periods.find((candidate: any) => {
+      const start = Date.parse(String(candidate?.startTime ?? ""));
+      const end = Date.parse(String(candidate?.endTime ?? ""));
+      return Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end;
+    }) ?? periods[0] ?? null;
+  const nwsForecast = period
+    ? {
+        name: typeof period.name === "string" ? period.name : null,
+        startTime: typeof period.startTime === "string" ? period.startTime : null,
+        endTime: typeof period.endTime === "string" ? period.endTime : null,
+        temperatureF:
+          safeNum(period.temperature) == null
+            ? null
+            : String(period.temperatureUnit ?? "F").toUpperCase() === "C"
+              ? tempForUnits(safeNum(period.temperature), "imperial")
+              : safeNum(period.temperature),
+        windMph: parseNwsWindMph(period.windSpeed),
+        precipChancePct: nwsValueUnit(period.probabilityOfPrecipitation),
+        shortForecast: typeof period.shortForecast === "string" ? period.shortForecast : null,
+      }
+    : null;
+
+  return { station, observed, nwsForecast };
+}
+
+const SPC_OUTLOOK_SERVICE =
+  "https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer";
+
+function spcCategoryLabel(code: number | null, rawLabel: unknown) {
+  const label = String(rawLabel ?? "").trim();
+  if (label) return label;
+  switch (code) {
+    case 2:
+      return "General thunderstorms";
+    case 3:
+      return "Marginal risk";
+    case 4:
+      return "Slight risk";
+    case 5:
+      return "Enhanced risk";
+    case 6:
+      return "Moderate risk";
+    case 8:
+      return "High risk";
+    default:
+      return "No organized severe risk";
+  }
+}
+
+async function querySpcPointLayer(layerId: number, lat: number, lon: number) {
+  const url = new URL(`${SPC_OUTLOOK_SERVICE}/${layerId}/query`);
+  url.searchParams.set("f", "json");
+  url.searchParams.set("geometry", `${lon},${lat}`);
+  url.searchParams.set("geometryType", "esriGeometryPoint");
+  url.searchParams.set("inSR", "4326");
+  url.searchParams.set("spatialRel", "esriSpatialRelIntersects");
+  url.searchParams.set("outFields", "*");
+  url.searchParams.set("returnGeometry", "false");
+  const json = await fetchJsonWithTimeout(url.toString(), 9000, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const features = Array.isArray(json?.features) ? json.features : [];
+  return features
+    .map((feature: any) => feature?.attributes ?? null)
+    .filter(Boolean)
+    .sort((a: any, b: any) => (safeNum(b?.dn) ?? -1) - (safeNum(a?.dn) ?? -1))[0] ?? null;
+}
+
+function classifyAlertChange(alert: GlobalAlert): NwsDeskPayload["alertChanges"][number]["changeType"] {
+  const text = `${alert.headline ?? ""} ${alert.description ?? ""} ${alert.note ?? ""}`.toLowerCase();
+  if (/\bcancell?ed\b|\bcancellation\b/.test(text)) return "Cancelled";
+  if (/\bupgraded\b|\breplaced by\b/.test(text)) return "Upgraded";
+  if (/\breplaces\b|\breplaced\b/.test(text)) return "Replaced";
+  if (/\bextended\b|\bextension\b/.test(text)) return "Extended";
+  const messageType = String(alert.messageType ?? "").toLowerCase();
+  if (messageType === "cancel") return "Cancelled";
+  if (messageType === "update" || (alert.references?.length ?? 0) > 0) return "Updated";
+  return "Issued";
+}
+
+async function fetchSpcSevereSetup(
+  lat: number,
+  lon: number,
+  activeAlerts: GlobalAlert[],
+): Promise<NwsDeskPayload["severeSetup"]> {
+  const [categoryResult, tornadoResult, hailResult, windResult] = await Promise.allSettled([
+    querySpcPointLayer(1, lat, lon),
+    querySpcPointLayer(3, lat, lon),
+    querySpcPointLayer(5, lat, lon),
+    querySpcPointLayer(7, lat, lon),
+  ]);
+  const category = categoryResult.status === "fulfilled" ? categoryResult.value : null;
+  const tornado = tornadoResult.status === "fulfilled" ? tornadoResult.value : null;
+  const hail = hailResult.status === "fulfilled" ? hailResult.value : null;
+  const wind = windResult.status === "fulfilled" ? windResult.value : null;
+  if (!category && !tornado && !hail && !wind) return null;
+
+  const categoryCode = safeNum(category?.dn);
+  const categoricalLabel = spcCategoryLabel(categoryCode, category?.label ?? category?.label2);
+  const tornadoPct = safeNum(tornado?.dn);
+  const hailPct = safeNum(hail?.dn);
+  const windPct = safeNum(wind?.dn);
+  const hazards = [
+    { label: "Tornado" as const, value: tornadoPct },
+    { label: "Hail" as const, value: hailPct },
+    { label: "Wind" as const, value: windPct },
+  ].filter((item) => item.value != null);
+  hazards.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  const primaryHazard =
+    hazards[0]?.label ??
+    (categoryCode != null && categoryCode >= 2 ? "General thunderstorms" : "No organized severe risk");
+  const watchAlert =
+    activeAlerts.find((alert) => /tornado watch|severe thunderstorm watch/i.test(alert.event)) ?? null;
+  const probabilityBits = [
+    tornadoPct != null ? `tornado ${tornadoPct}%` : null,
+    hailPct != null ? `hail ${hailPct}%` : null,
+    windPct != null ? `wind ${windPct}%` : null,
+  ].filter(Boolean);
+  const summary = [
+    `${categoricalLabel} today.`,
+    probabilityBits.length ? `Point probabilities: ${probabilityBits.join(", ")}.` : null,
+    watchAlert ? `${watchAlert.event} is active.` : null,
+  ].filter(Boolean).join(" ");
+
+  return {
+    day: 1,
+    categorical: {
+      code: categoryCode == null ? null : Math.round(categoryCode),
+      label: categoricalLabel,
+      valid: typeof category?.valid === "string" ? category.valid : null,
+      expires: typeof category?.expire === "string" ? category.expire : null,
+    },
+    probabilities: { tornadoPct, hailPct, windPct },
+    primaryHazard,
+    activeWatch: watchAlert
+      ? {
+          event: watchAlert.event,
+          headline: watchAlert.headline ?? null,
+          ends: watchAlert.ends ?? watchAlert.expires ?? null,
+        }
+      : null,
+    summary,
+    source: "NOAA Storm Prediction Center Day 1 Outlook",
+  };
+}
+
+function buildAlertChanges(alerts: GlobalAlert[]): NwsDeskPayload["alertChanges"] {
+  return alerts
+    .filter((alert) => alert.source === "weather.gov" && !alert.derived)
+    .sort((a, b) => Date.parse(b.sent ?? "") - Date.parse(a.sent ?? ""))
+    .slice(0, 5)
+    .map((alert) => ({
+      id: alert.id,
+      event: alert.event,
+      changeType: classifyAlertChange(alert),
+      sent: alert.sent ?? null,
+      ends: alert.ends ?? alert.expires ?? null,
+      headline: alert.headline ?? null,
+      previousSent: alert.references?.[0]?.sent ?? null,
+    }));
 }
 
 function cleanNwsBriefSentence(sentence: string) {
@@ -5790,18 +6086,40 @@ async function buildNwsDeskPayload(lat: number, lon: number): Promise<NwsDeskPay
       timing: null,
       confidence: null,
       products: { afd: null, hwo: null },
+      verification: { station: null, observed: null, nwsForecast: null },
+      severeSetup: null,
+      alertChanges: [],
       errors: ["Missing CWA from NWS points response"],
     };
   }
 
-  const [afdResult, hwoResult] = await Promise.allSettled([
+  const [afdResult, hwoResult, verificationResult, alertsResult] = await Promise.allSettled([
     fetchLatestNwsTextProduct("AFD", office),
     fetchLatestNwsTextProduct("HWO", office),
+    fetchNwsDeskVerification(lat, lon, props),
+    fetchWeatherGovPointAlerts(lat, lon),
   ]);
   const afd = afdResult.status === "fulfilled" ? afdResult.value : null;
   const hwo = hwoResult.status === "fulfilled" ? hwoResult.value : null;
+  const verification =
+    verificationResult.status === "fulfilled"
+      ? verificationResult.value
+      : { station: null, observed: null, nwsForecast: null };
+  const activeAlerts = alertsResult.status === "fulfilled" ? alertsResult.value : [];
+  let severeSetup: NwsDeskPayload["severeSetup"] = null;
+  try {
+    severeSetup = await fetchSpcSevereSetup(lat, lon, activeAlerts);
+  } catch (err: any) {
+    errors.push(`SPC: ${String(err?.message ?? err ?? "failed")}`);
+  }
   if (afdResult.status === "rejected") errors.push(`AFD: ${String(afdResult.reason?.message ?? afdResult.reason ?? "failed")}`);
   if (hwoResult.status === "rejected") errors.push(`HWO: ${String(hwoResult.reason?.message ?? hwoResult.reason ?? "failed")}`);
+  if (verificationResult.status === "rejected") {
+    errors.push(`Verification: ${String(verificationResult.reason?.message ?? verificationResult.reason ?? "failed")}`);
+  }
+  if (alertsResult.status === "rejected") {
+    errors.push(`Alerts: ${String(alertsResult.reason?.message ?? alertsResult.reason ?? "failed")}`);
+  }
 
   const summary = summarizeNwsDesk(afd, hwo);
   const issuedTimes = [afd?.issuedAt, hwo?.issuedAt]
@@ -5822,6 +6140,9 @@ async function buildNwsDeskPayload(lat: number, lon: number): Promise<NwsDeskPay
     },
     ...summary,
     products: { afd, hwo },
+    verification,
+    severeSetup,
+    alertChanges: buildAlertChanges(activeAlerts),
     errors,
   };
 }

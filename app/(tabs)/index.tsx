@@ -3628,6 +3628,246 @@ function NwsDeskCard({
   );
 }
 
+function ForecastConfidenceCard({
+  desk,
+  modelLabel,
+  modelForecast,
+  onOpenLearnTopic,
+}: {
+  desk: ReturnType<typeof useNwsDesk>['data'];
+  modelLabel: string;
+  modelForecast: {
+    temperatureF: number | null;
+    dewPointF: number | null;
+    windMph: number | null;
+    gustMph: number | null;
+    precipChancePct: number | null;
+  };
+  onOpenLearnTopic: (topicId?: string) => void;
+}) {
+  const verification = desk?.verification;
+  const station = verification?.station ?? null;
+  const observed = verification?.observed ?? null;
+  const nwsForecast = verification?.nwsForecast ?? null;
+  if (!station && !observed && !nwsForecast) return null;
+
+  const observationTimeMs = station?.observedAt ? Date.parse(station.observedAt) : Number.NaN;
+  const observationAgeMinutes = Number.isFinite(observationTimeMs)
+    ? Math.max(0, Math.round((Date.now() - observationTimeMs) / 60000))
+    : null;
+  const observationStale = observationAgeMinutes != null && observationAgeMinutes > 120;
+  const tempForecastSpread =
+    nwsForecast?.temperatureF != null && modelForecast.temperatureF != null
+      ? modelForecast.temperatureF - nwsForecast.temperatureF
+      : null;
+  const windForecastSpread =
+    nwsForecast?.windMph != null && modelForecast.windMph != null
+      ? modelForecast.windMph - nwsForecast.windMph
+      : null;
+  const precipForecastSpread =
+    nwsForecast?.precipChancePct != null && modelForecast.precipChancePct != null
+      ? modelForecast.precipChancePct - nwsForecast.precipChancePct
+      : null;
+  const tempError =
+    !observationStale && observed?.temperatureF != null && modelForecast.temperatureF != null
+      ? observed.temperatureF - modelForecast.temperatureF
+      : null;
+  const dewError =
+    !observationStale && observed?.dewPointF != null && modelForecast.dewPointF != null
+      ? observed.dewPointF - modelForecast.dewPointF
+      : null;
+  const windError =
+    !observationStale && observed?.windMph != null && modelForecast.windMph != null
+      ? observed.windMph - modelForecast.windMph
+      : null;
+
+  const disagreementScore =
+    (tempForecastSpread == null ? 0 : Math.min(2, Math.abs(tempForecastSpread) / 4)) +
+    (windForecastSpread == null ? 0 : Math.min(2, Math.abs(windForecastSpread) / 6)) +
+    (precipForecastSpread == null ? 0 : Math.min(2, Math.abs(precipForecastSpread) / 25));
+  const agreementLabel = disagreementScore >= 2.4 ? 'Lower' : disagreementScore >= 1.1 ? 'Mixed' : 'Good';
+  const statements: string[] = [];
+  if (tempForecastSpread != null && Math.abs(tempForecastSpread) >= 3) {
+    statements.push(
+      `${modelLabel} is ${Math.abs(Math.round(tempForecastSpread))}°F ${tempForecastSpread > 0 ? 'warmer' : 'cooler'} than the NWS period.`
+    );
+  }
+  if (windForecastSpread != null && Math.abs(windForecastSpread) >= 4) {
+    statements.push(
+      `${modelLabel} wind is ${Math.abs(Math.round(windForecastSpread))} mph ${windForecastSpread > 0 ? 'stronger' : 'lighter'} than NWS.`
+    );
+  }
+  if (precipForecastSpread != null && Math.abs(precipForecastSpread) >= 20) {
+    statements.push(
+      `Precipitation chances differ by ${Math.abs(Math.round(precipForecastSpread))} percentage points.`
+    );
+  }
+  if (tempError != null && Math.abs(tempError) >= 2) {
+    statements.push(
+      `The forecast is running ${Math.abs(Math.round(tempError))}°F ${tempError > 0 ? 'too cool' : 'too warm'} at the station.`
+    );
+  }
+  if (dewError != null && Math.abs(dewError) >= 3) {
+    statements.push(
+      `Observed dew point is ${Math.abs(Math.round(dewError))}°F ${dewError > 0 ? 'higher' : 'lower'} than forecast.`
+    );
+  }
+  if (windError != null && Math.abs(windError) >= 4) {
+    statements.push(
+      `Observed wind is ${Math.abs(Math.round(windError))} mph ${windError > 0 ? 'stronger' : 'lighter'} than forecast.`
+    );
+  }
+  if (!statements.length) {
+    statements.push(
+      observationStale
+        ? 'The latest station report is too old for forecast verification, but model agreement is still shown.'
+        : 'Available forecasts and observations are reasonably aligned right now.'
+    );
+  }
+
+  const stationLabel = [station?.id, station?.distanceMiles != null ? `${station.distanceMiles.toFixed(1)} mi` : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <View style={nwd.card}>
+      <View style={nwd.headerRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={nwd.kicker}>FORECAST CONFIDENCE</Text>
+          <Text style={nwd.title}>Forecast vs Reality</Text>
+        </View>
+        <Pressable style={nwd.learnButton} onPress={() => onOpenLearnTopic('forecast-confidence')}>
+          <Text style={nwd.learnButtonText}>wxLearn</Text>
+        </Pressable>
+      </View>
+
+      <View style={nwd.confidenceHero}>
+        <View>
+          <Text style={nwd.factLabel}>MODEL AGREEMENT</Text>
+          <Text style={nwd.confidenceValue}>{agreementLabel}</Text>
+        </View>
+        <Text style={nwd.confidenceSource}>{modelLabel} / NWS</Text>
+      </View>
+
+      <View style={nwd.briefingList}>
+        {statements.slice(0, 3).map((statement) => (
+          <Text key={statement} style={nwd.briefingLine}>• {statement}</Text>
+        ))}
+      </View>
+
+      <View style={nwd.factGrid}>
+        <View style={[nwd.fact, nwd.factCompact]}>
+          <Text style={nwd.factLabel}>NWS PERIOD</Text>
+          <Text style={nwd.factValue}>
+            {nwsForecast?.temperatureF != null ? `${Math.round(nwsForecast.temperatureF)}°F` : '—'}
+            {nwsForecast?.windMph != null ? ` · ${Math.round(nwsForecast.windMph)} mph` : ''}
+          </Text>
+          {nwsForecast?.shortForecast ? <Text style={nwd.factSub} numberOfLines={2}>{nwsForecast.shortForecast}</Text> : null}
+        </View>
+        <View style={[nwd.fact, nwd.factCompact]}>
+          <Text style={nwd.factLabel}>OBSERVATION</Text>
+          <Text style={nwd.factValue}>
+            {observed?.temperatureF != null ? `${Math.round(observed.temperatureF)}°F` : '—'}
+            {observed?.windMph != null ? ` · ${Math.round(observed.windMph)} mph` : ''}
+          </Text>
+          <Text style={nwd.factSub}>
+            {stationLabel || 'Nearest NWS station'}
+            {observationAgeMinutes != null ? ` · ${observationAgeMinutes}m old` : ''}
+            {observationStale ? ' · stale' : ''}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function SevereSetupCard({
+  desk,
+  onOpenLearnTopic,
+}: {
+  desk: ReturnType<typeof useNwsDesk>['data'];
+  onOpenLearnTopic: (topicId?: string) => void;
+}) {
+  const setup = desk?.severeSetup ?? null;
+  const changes = desk?.alertChanges ?? [];
+  if (!setup && !changes.length) return null;
+  const probabilities = setup
+    ? [
+        { label: 'Tornado', value: setup.probabilities.tornadoPct },
+        { label: 'Hail', value: setup.probabilities.hailPct },
+        { label: 'Wind', value: setup.probabilities.windPct },
+      ]
+    : [];
+
+  return (
+    <View style={nwd.card}>
+      <View style={nwd.headerRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={nwd.kicker}>SPC / NWS OPERATIONS</Text>
+          <Text style={nwd.title}>Severe Setup</Text>
+        </View>
+        <Pressable style={nwd.learnButton} onPress={() => onOpenLearnTopic('spc-convective-outlook')}>
+          <Text style={nwd.learnButtonText}>wxLearn</Text>
+        </Pressable>
+      </View>
+
+      {setup ? (
+        <>
+          <View style={nwd.severeHero}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={nwd.factLabel}>DAY 1 OUTLOOK</Text>
+              <Text style={nwd.severeRisk}>{setup.categorical.label}</Text>
+              <Text style={nwd.factSub}>Primary hazard: {setup.primaryHazard}</Text>
+            </View>
+            {setup.activeWatch ? (
+              <View style={nwd.watchPill}>
+                <Text style={nwd.watchPillText}>{setup.activeWatch.event}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <Text style={nwd.summary}>{setup.summary}</Text>
+
+          <View style={nwd.probabilityGrid}>
+            {probabilities.map((item) => (
+              <View key={item.label} style={nwd.probabilityTile}>
+                <Text style={nwd.factLabel}>{item.label}</Text>
+                <Text style={nwd.probabilityValue}>{item.value == null ? '—' : `${Math.round(item.value)}%`}</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={nwd.source}>Source: {setup.source}</Text>
+        </>
+      ) : null}
+
+      {changes.length ? (
+        <View style={nwd.alertChangeBox}>
+          <View style={nwd.rawHeader}>
+            <Text style={nwd.rawTitle}>Alert changes</Text>
+            <Text style={nwd.meta}>{changes.length} active</Text>
+          </View>
+          <View style={nwd.reportList}>
+            {changes.slice(0, 4).map((change) => (
+              <Pressable
+                key={change.id}
+                style={nwd.alertChangeRow}
+                onPress={() => onOpenLearnTopic('alerts-watches-warnings')}
+              >
+                <View style={nwd.alertChangeTop}>
+                  <Text style={nwd.alertChangeType}>{change.changeType}</Text>
+                  {change.sent ? <Text style={nwd.meta}>{formatUpdatedTime(change.sent)}</Text> : null}
+                </View>
+                <Text style={nwd.reportEvent}>{change.event}</Text>
+                {change.headline ? <Text style={nwd.reportDetail} numberOfLines={2}>{change.headline}</Text> : null}
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function formatReportDistance(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return null;
   if (value < 10) return `${value.toFixed(1)} mi`;
@@ -3880,6 +4120,129 @@ const nwd = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.86)',
+  },
+  factSub: {
+    marginTop: 5,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.52)',
+  },
+  confidenceHero: {
+    minHeight: 82,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  confidenceValue: {
+    marginTop: 5,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '900',
+    color: 'white',
+  },
+  confidenceSource: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    color: 'rgba(186,230,253,0.74)',
+    textAlign: 'right',
+  },
+  briefingList: {
+    gap: 7,
+  },
+  briefingLine: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.76)',
+  },
+  severeHero: {
+    minHeight: 92,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(249,115,22,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,146,60,0.25)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  severeRisk: {
+    marginTop: 5,
+    fontSize: 23,
+    lineHeight: 28,
+    fontWeight: '900',
+    color: 'white',
+  },
+  watchPill: {
+    maxWidth: 128,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(249,115,22,0.20)',
+    borderWidth: 1,
+    borderColor: 'rgba(253,186,116,0.35)',
+  },
+  watchPillText: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    color: '#ffedd5',
+    textAlign: 'center',
+  },
+  probabilityGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  probabilityTile: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 66,
+    borderRadius: 14,
+    padding: 10,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+  },
+  probabilityValue: {
+    marginTop: 6,
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  alertChangeBox: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(3,8,20,0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  alertChangeRow: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 10,
+    gap: 4,
+  },
+  alertChangeTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  alertChangeType: {
+    fontSize: 10,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    fontWeight: '900',
+    color: 'rgba(253,186,116,0.94)',
   },
   rawBox: {
     borderRadius: 16,
@@ -4624,6 +4987,26 @@ function LandWeatherWithCoords({
   }, [hourlyRaw]);
 
   const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now(), forecastTimeZone), [hourly, forecastTimeZone]);
+  const modelForecastNow = useMemo(
+    () => ({
+      temperatureF:
+        safeNum(nearestHourly?.tempF ?? nearestHourly?.temperatureF ?? nearestHourly?.temperature_2m ?? nearestHourly?.temperature ?? nearestHourly?.temp) ??
+        null,
+      dewPointF:
+        safeNum(nearestHourly?.dewPointF ?? nearestHourly?.dewpointF ?? nearestHourly?.dew_point_2m ?? nearestHourly?.dew_point) ??
+        null,
+      windMph:
+        safeNum(nearestHourly?.windMph ?? nearestHourly?.windSpeedMph ?? nearestHourly?.wind_speed_10m ?? nearestHourly?.windspeed_10m ?? nearestHourly?.wind) ??
+        null,
+      gustMph:
+        safeNum(nearestHourly?.windGustMph ?? nearestHourly?.gustMph ?? nearestHourly?.wind_gusts_10m ?? nearestHourly?.gust ?? nearestHourly?.windGust) ??
+        null,
+      precipChancePct:
+        safeNum(nearestHourly?.precipitation_probability ?? nearestHourly?.precipProbPct ?? nearestHourly?.precipChancePct ?? nearestHourly?.pop) ??
+        null,
+    }),
+    [nearestHourly]
+  );
 
   const tempF =
     currentTempF ??
@@ -5031,6 +5414,22 @@ function LandWeatherWithCoords({
           desk={nwsDesk}
           loading={nwsDeskLoading}
           error={nwsDeskError}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      ) : null}
+
+      {wxLab ? (
+        <SevereSetupCard
+          desk={nwsDesk}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      ) : null}
+
+      {wxLab ? (
+        <ForecastConfidenceCard
+          desk={nwsDesk}
+          modelLabel={forecastModelLabel(forecastModel)}
+          modelForecast={modelForecastNow}
           onOpenLearnTopic={openLearnTopic}
         />
       ) : null}
