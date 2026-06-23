@@ -482,6 +482,8 @@ type GlobalCapability = {
     | "maps-satellite"
     | "aviation"
     | "alerts"
+    | "nws-desk"
+    | "nws-storm-reports"
     | "space-weather"
     | "water-stations";
   label: string;
@@ -1032,6 +1034,12 @@ const SPACE_WEATHER_TTL_SECONDS = 5 * 60;
 const SPACE_WEATHER_STALE_SECONDS = 6 * 3600;
 const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v1";
 const SPACE_WEATHER_TIMEOUT_MS = 9000;
+const NWS_DESK_TTL_SECONDS = 20 * 60;
+const NWS_DESK_STALE_SECONDS = 6 * 3600;
+const NWS_DESK_CACHE_VERSION = "nws-desk-v5";
+const NWS_STORM_REPORTS_TTL_SECONDS = 15 * 60;
+const NWS_STORM_REPORTS_STALE_SECONDS = 6 * 3600;
+const NWS_STORM_REPORTS_CACHE_VERSION = "nws-lsr-v1";
 const FIRE_CONTEXT_TTL_SECONDS = 30 * 60;
 const FIRE_CONTEXT_STALE_SECONDS = 12 * 3600;
 const GLOBAL_ALERTS_TTL_SECONDS = 5 * 60;
@@ -1164,6 +1172,24 @@ function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
         endpoint: "/api/alerts/global",
         ttlSeconds: GLOBAL_ALERTS_TTL_SECONDS,
         staleSeconds: GLOBAL_ALERTS_STALE_SECONDS,
+      },
+      {
+        id: "nws-desk",
+        label: "NWS Desk",
+        coverage: "us-only",
+        source: "NOAA/NWS AFD and HWO text products",
+        endpoint: "/api/nws/desk",
+        ttlSeconds: NWS_DESK_TTL_SECONDS,
+        staleSeconds: NWS_DESK_STALE_SECONDS,
+      },
+      {
+        id: "nws-storm-reports",
+        label: "Local storm reports",
+        coverage: "us-only",
+        source: "NOAA/NWS LSR text products",
+        endpoint: "/api/nws/storm-reports",
+        ttlSeconds: NWS_STORM_REPORTS_TTL_SECONDS,
+        staleSeconds: NWS_STORM_REPORTS_STALE_SECONDS,
       },
       {
         id: "space-weather",
@@ -5372,6 +5398,466 @@ async function fetchAwcFeatureCollection(path: string) {
   return asWorkerFeatureCollection(json);
 }
 
+type NwsDeskProduct = {
+  id: string | null;
+  type: string;
+  title: string | null;
+  issuedAt: string | null;
+  url: string | null;
+  text: string | null;
+};
+
+type NwsDeskPayload = {
+  ok: boolean;
+  version: string;
+  source: string;
+  generatedAt: string;
+  updatedAt: string | null;
+  office: {
+    id: string | null;
+    forecastOffice: string | null;
+    radarStation: string | null;
+  };
+  headline: string;
+  summary: string;
+  hazards: string[];
+  timing: string | null;
+  confidence: "Low" | "Moderate" | "High" | null;
+  products: {
+    afd: NwsDeskProduct | null;
+    hwo: NwsDeskProduct | null;
+  };
+  errors: string[];
+};
+
+type NwsStormReport = {
+  id: string | null;
+  issuedAt: string | null;
+  event: string;
+  location: string | null;
+  countyState: string | null;
+  magnitude: string | null;
+  source: string | null;
+  remarks: string | null;
+  lat: number | null;
+  lon: number | null;
+  distanceMiles: number | null;
+};
+
+type NwsStormReportsPayload = {
+  ok: boolean;
+  version: string;
+  source: string;
+  generatedAt: string;
+  updatedAt: string | null;
+  office: {
+    id: string | null;
+    forecastOffice: string | null;
+  };
+  hours: number;
+  summary: {
+    count: number;
+    closest: NwsStormReport | null;
+    strongestWind: NwsStormReport | null;
+    largestHail: NwsStormReport | null;
+    latest: NwsStormReport | null;
+  };
+  reports: NwsStormReport[];
+  errors: string[];
+};
+
+function buildNwsDeskCacheKey(reqUrl: URL, lat: number, lon: number) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/api/nws/desk";
+  keyUrl.search = "";
+  keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+  keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+  keyUrl.searchParams.set("v", NWS_DESK_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildNwsStormReportsCacheKey(reqUrl: URL, lat: number, lon: number, hours: number) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/api/nws/storm-reports";
+  keyUrl.search = "";
+  keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+  keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+  keyUrl.searchParams.set("hours", String(hours));
+  keyUrl.searchParams.set("v", NWS_STORM_REPORTS_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function normalizeNwsProductText(text: unknown) {
+  return String(text ?? "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function firstNonEmptyLine(text: string | null) {
+  if (!text) return null;
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !/^\$\$/.test(line)) ?? null;
+}
+
+function productIssuedAt(product: any): string | null {
+  const raw = product?.issuanceTime ?? product?.issueTime ?? product?.updateTime ?? product?.validTime ?? product?.creationTime ?? null;
+  return typeof raw === "string" && raw.trim() ? raw : null;
+}
+
+function normalizeNwsProduct(product: any, type: string): NwsDeskProduct | null {
+  if (!product || typeof product !== "object") return null;
+  const text = normalizeNwsProductText(product.productText ?? product.text ?? product.properties?.productText ?? "");
+  const id = product.id ?? product["@id"] ?? product.properties?.id ?? null;
+  const title = product.productName ?? product.title ?? product.properties?.productName ?? product.properties?.title ?? firstNonEmptyLine(text);
+  const issuedAt = productIssuedAt(product);
+  return {
+    id: typeof id === "string" ? id : null,
+    type,
+    title: typeof title === "string" ? title.trim() : null,
+    issuedAt,
+    url: typeof id === "string" && id.startsWith("http") ? id : null,
+    text: text || null,
+  };
+}
+
+async function fetchLatestNwsTextProduct(type: "AFD" | "HWO", office: string): Promise<NwsDeskProduct | null> {
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const latestUrl = `https://api.weather.gov/products/types/${encodeURIComponent(type)}/locations/${encodeURIComponent(office)}/latest`;
+  try {
+    const latest = await fetchJsonWithTimeout(latestUrl, 9000, headers);
+    return normalizeNwsProduct(latest, type);
+  } catch {
+    const listUrl = `https://api.weather.gov/products/types/${encodeURIComponent(type)}/locations/${encodeURIComponent(office)}`;
+    const list = await fetchJsonWithTimeout(listUrl, 9000, headers);
+    const first =
+      Array.isArray(list?.["@graph"]) ? list["@graph"][0] :
+      Array.isArray(list?.features) ? list.features[0]?.properties :
+      Array.isArray(list?.products) ? list.products[0] :
+      null;
+    const productUrl = first?.["@id"] ?? first?.id ?? null;
+    if (typeof productUrl !== "string" || !productUrl) return null;
+    const product = await fetchJsonWithTimeout(productUrl, 9000, headers);
+    return normalizeNwsProduct(product, type);
+  }
+}
+
+function meaningfulSentences(text: string | null, max = 4) {
+  if (!text) return [];
+  const cleaned = text
+    .replace(/\n/g, " ")
+    .replace(/&&/g, " ")
+    .replace(/\.[A-Z][A-Z0-9 /-]+?\.\.\./g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 35 && !/^(FXUS|FLUS|000|National Weather Service|Area Forecast Discussion|Hazardous Weather Outlook)/i.test(s))
+    .slice(0, max);
+}
+
+function extractHazards(...texts: Array<string | null>) {
+  const hazardRules: Array<[string, RegExp]> = [
+    ["Thunderstorms", /thunderstorm|lightning|convection|convective/i],
+    ["Severe storms", /severe|tornado|hail|damaging wind/i],
+    ["Heavy rain", /heavy rain|excessive rainfall|flash flood|flooding/i],
+    ["Winter weather", /snow|sleet|freezing rain|ice|blizzard|winter/i],
+    ["Heat", /heat risk|heat index|excessive heat|heat advisory|dangerous heat/i],
+    ["Wind", /strong wind|gusty wind|high wind|wind advisory/i],
+    ["Fire weather", /fire weather|red flag|critical fire/i],
+    ["Fog / low visibility", /fog|dense fog|low visibility/i],
+    ["Marine/coastal", /marine|coastal|surf|rip current|small craft|gale/i],
+  ];
+  const lines = texts
+    .flatMap((text) => meaningfulSentences(text, 40))
+    .filter((line) => !/^\.(aviation|fire weather|marine|hydrology|synopsis|short term|long term)\b/i.test(line))
+    .filter((line) => !/\b(no|none|not|without|little to no|minimal)\b.{0,50}\b(thunderstorm|severe|tornado|hail|flood|snow|ice|heat|wind|fire weather|fog|marine|coastal|surf|gale)\b/i.test(line));
+  return hazardRules.filter(([, re]) => lines.some((line) => re.test(line))).map(([label]) => label);
+}
+
+function extractTiming(...texts: Array<string | null>) {
+  const timingRe = /\b(today|tonight|this morning|this afternoon|this evening|overnight|late tonight|early|after midnight|before sunrise|after sunrise|after sunset|through [^.]+|into [^.]+|by [^.]+|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i;
+  for (const text of texts) {
+    for (const sentence of meaningfulSentences(text, 18)) {
+      if (timingRe.test(sentence)) return sentence.replace(/\s+/g, " ").slice(0, 220);
+    }
+  }
+  return null;
+}
+
+function extractConfidence(...texts: Array<string | null>): "Low" | "Moderate" | "High" | null {
+  const all = texts.filter(Boolean).join(" ").toLowerCase();
+  if (/high confidence|confidence is high|good confidence/.test(all)) return "High";
+  if (/low confidence|uncertain|uncertainty|confidence is low/.test(all)) return "Low";
+  if (/moderate confidence|some confidence|confidence/.test(all)) return "Moderate";
+  return null;
+}
+
+function summarizeNwsDesk(afd: NwsDeskProduct | null, hwo: NwsDeskProduct | null) {
+  const hwoSentences = meaningfulSentences(hwo?.text ?? null, 3);
+  const afdSentences = meaningfulSentences(afd?.text ?? null, 3);
+  const primary = hwoSentences[0] ?? afdSentences[0] ?? "No recent NWS discussion text was available for this office.";
+  const supporting = [...hwoSentences.slice(1), ...afdSentences].slice(0, 2);
+  const hwoHazards = extractHazards(hwo?.text ?? null);
+  const summaryText = [primary, ...supporting].join(" ");
+  const hazards = hwoHazards.length ? hwoHazards : extractHazards(summaryText);
+  const headline =
+    hazards.length > 0
+      ? `${hazards.slice(0, 2).join(" and ")} in the local NWS desk discussion`
+      : "Local NWS desk discussion";
+  return {
+    headline,
+    summary: summaryText.slice(0, 520),
+    hazards,
+    timing: extractTiming(hwo?.text ?? null, afd?.text ?? null),
+    confidence: extractConfidence(afd?.text ?? null, hwo?.text ?? null),
+  };
+}
+
+function distanceMiles(aLat: number, aLon: number, bLat: number, bLon: number) {
+  const r = 3958.7613;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function parseLatLonPair(value: string) {
+  const match = value.match(/(-?\d{1,2}\.\d{2})N\s+(\d{1,3}\.\d{2})W/i);
+  if (match) return { lat: Number(match[1]), lon: -Number(match[2]) };
+  const signed = value.match(/(-?\d{1,2}\.\d{2})\s*,?\s*(-?\d{1,3}\.\d{2})/);
+  if (signed) return { lat: Number(signed[1]), lon: Number(signed[2]) };
+  return { lat: null, lon: null };
+}
+
+function parseLsrReport(product: NwsDeskProduct, centerLat: number, centerLon: number): NwsStormReport | null {
+  const text = product.text ?? "";
+  const lines = text.split("\n");
+  const eventLineIndex = lines.findIndex((line) => /^\d{4}\s+[AP]M\s+/i.test(line.trim()));
+  if (eventLineIndex < 0) return null;
+  const eventLine = lines[eventLineIndex].trim().replace(/\s+/g, " ");
+  const eventMatch = eventLine.match(/^(\d{4}\s+[AP]M)\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/i);
+  const event = eventMatch?.[2]?.trim() || "Storm report";
+  const location = eventMatch?.[3]?.trim() || null;
+  const latLonText = eventMatch?.[4]?.trim() || "";
+  const parsed = parseLatLonPair(latLonText);
+
+  const detailLine = lines[eventLineIndex + 1]?.trim().replace(/\s+/g, " ") ?? "";
+  const countyStateSourceMatch = detailLine.match(/^\d{2}\/\d{2}\/\d{4}\s+(.*?)\s{2,}(.+?)\s{2,}([A-Z]{2})\s+(.+)$/);
+  const magnitude = countyStateSourceMatch?.[1]?.trim() || null;
+  const countyState =
+    countyStateSourceMatch?.[2] && countyStateSourceMatch?.[3]
+      ? `${countyStateSourceMatch[2].trim()}, ${countyStateSourceMatch[3].trim()}`
+      : null;
+  const source = countyStateSourceMatch?.[4]?.trim() || null;
+
+  const remarkLines: string[] = [];
+  for (let i = eventLineIndex + 2; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line || line === "&&" || line === "$$") {
+      if (remarkLines.length) break;
+      continue;
+    }
+    if (/^\d{4}\s+[AP]M\s+/i.test(line)) break;
+    if (/^\.\./.test(line)) continue;
+    remarkLines.push(line);
+  }
+  const remarks = remarkLines.join(" ").replace(/\s+/g, " ").trim() || null;
+  const lat = parsed.lat;
+  const lon = parsed.lon;
+
+  return {
+    id: product.id,
+    issuedAt: product.issuedAt,
+    event,
+    location,
+    countyState,
+    magnitude,
+    source,
+    remarks,
+    lat,
+    lon,
+    distanceMiles: lat != null && lon != null ? distanceMiles(centerLat, centerLon, lat, lon) : null,
+  };
+}
+
+function magnitudeNumber(report: NwsStormReport | null) {
+  if (!report?.magnitude) return null;
+  const n = Number(String(report.magnitude).match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function fetchRecentLsrProducts(office: string, hours: number): Promise<NwsDeskProduct[]> {
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const listUrl = `https://api.weather.gov/products/types/LSR/locations/${encodeURIComponent(office)}`;
+  const list = await fetchJsonWithTimeout(listUrl, 9000, headers);
+  const cutoff = Date.now() - hours * 3600 * 1000;
+  const entries: any[] =
+    Array.isArray(list?.["@graph"]) ? list["@graph"] :
+    Array.isArray(list?.features) ? list.features.map((f: any) => f?.properties).filter(Boolean) :
+    Array.isArray(list?.products) ? list.products :
+    [];
+  const recent = entries
+    .filter((entry) => {
+      const issued = productIssuedAt(entry);
+      const ms = issued ? Date.parse(issued) : NaN;
+      return Number.isFinite(ms) && ms >= cutoff;
+    })
+    .slice(0, 18);
+
+  const settled = await Promise.allSettled(
+    recent.map(async (entry) => {
+      const productUrl = entry?.["@id"] ?? entry?.id;
+      if (typeof productUrl !== "string" || !productUrl) return null;
+      const product = await fetchJsonWithTimeout(productUrl, 9000, headers);
+      return normalizeNwsProduct(product, "LSR");
+    }),
+  );
+
+  return settled
+    .map((result) => (result.status === "fulfilled" ? result.value : null))
+    .filter((product): product is NwsDeskProduct => Boolean(product?.text));
+}
+
+async function buildNwsDeskPayload(lat: number, lon: number): Promise<NwsDeskPayload> {
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const generatedAt = new Date().toISOString();
+  const pointsUrl = `https://api.weather.gov/points/${encodeURIComponent(lat.toFixed(4))},${encodeURIComponent(lon.toFixed(4))}`;
+  const points = await fetchJsonWithTimeout(pointsUrl, 9000, headers);
+  const props = points?.properties ?? {};
+  const office = typeof props.cwa === "string" ? props.cwa : null;
+  const errors: string[] = [];
+  if (!office) {
+    return {
+      ok: false,
+      version: NWS_DESK_CACHE_VERSION,
+      source: "NOAA / NWS",
+      generatedAt,
+      updatedAt: null,
+      office: {
+        id: null,
+        forecastOffice: typeof props.forecastOffice === "string" ? props.forecastOffice : null,
+        radarStation: typeof props.radarStation === "string" ? props.radarStation : null,
+      },
+      headline: "NWS office unavailable",
+      summary: "The NWS points service did not return a local Weather Forecast Office for this location.",
+      hazards: [],
+      timing: null,
+      confidence: null,
+      products: { afd: null, hwo: null },
+      errors: ["Missing CWA from NWS points response"],
+    };
+  }
+
+  const [afdResult, hwoResult] = await Promise.allSettled([
+    fetchLatestNwsTextProduct("AFD", office),
+    fetchLatestNwsTextProduct("HWO", office),
+  ]);
+  const afd = afdResult.status === "fulfilled" ? afdResult.value : null;
+  const hwo = hwoResult.status === "fulfilled" ? hwoResult.value : null;
+  if (afdResult.status === "rejected") errors.push(`AFD: ${String(afdResult.reason?.message ?? afdResult.reason ?? "failed")}`);
+  if (hwoResult.status === "rejected") errors.push(`HWO: ${String(hwoResult.reason?.message ?? hwoResult.reason ?? "failed")}`);
+
+  const summary = summarizeNwsDesk(afd, hwo);
+  const issuedTimes = [afd?.issuedAt, hwo?.issuedAt]
+    .filter((v): v is string => typeof v === "string")
+    .sort();
+  const updatedAt = issuedTimes.length ? issuedTimes[issuedTimes.length - 1] : generatedAt;
+
+  return {
+    ok: true,
+    version: NWS_DESK_CACHE_VERSION,
+    source: "NOAA / NWS",
+    generatedAt,
+    updatedAt,
+    office: {
+      id: office,
+      forecastOffice: typeof props.forecastOffice === "string" ? props.forecastOffice : null,
+      radarStation: typeof props.radarStation === "string" ? props.radarStation : null,
+    },
+    ...summary,
+    products: { afd, hwo },
+    errors,
+  };
+}
+
+async function buildNwsStormReportsPayload(lat: number, lon: number, hours: number): Promise<NwsStormReportsPayload> {
+  const headers = { "User-Agent": WEATHER_FALLBACK_USER_AGENT };
+  const generatedAt = new Date().toISOString();
+  const pointsUrl = `https://api.weather.gov/points/${encodeURIComponent(lat.toFixed(4))},${encodeURIComponent(lon.toFixed(4))}`;
+  const points = await fetchJsonWithTimeout(pointsUrl, 9000, headers);
+  const props = points?.properties ?? {};
+  const office = typeof props.cwa === "string" ? props.cwa : null;
+  const errors: string[] = [];
+  if (!office) {
+    return {
+      ok: false,
+      version: NWS_STORM_REPORTS_CACHE_VERSION,
+      source: "NOAA / NWS Local Storm Reports",
+      generatedAt,
+      updatedAt: null,
+      office: { id: null, forecastOffice: typeof props.forecastOffice === "string" ? props.forecastOffice : null },
+      hours,
+      summary: { count: 0, closest: null, strongestWind: null, largestHail: null, latest: null },
+      reports: [],
+      errors: ["Missing CWA from NWS points response"],
+    };
+  }
+
+  let products: NwsDeskProduct[] = [];
+  try {
+    products = await fetchRecentLsrProducts(office, hours);
+  } catch (err: any) {
+    errors.push(String(err?.message ?? err ?? "LSR fetch failed"));
+  }
+
+  const reports = products
+    .map((product) => parseLsrReport(product, lat, lon))
+    .filter((report): report is NwsStormReport => Boolean(report))
+    .sort((a, b) => {
+      const aMs = a.issuedAt ? Date.parse(a.issuedAt) : 0;
+      const bMs = b.issuedAt ? Date.parse(b.issuedAt) : 0;
+      return bMs - aMs;
+    });
+
+  const closest = reports
+    .filter((report) => report.distanceMiles != null)
+    .sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity))[0] ?? null;
+  const strongestWind = reports
+    .filter((report) => /wind|gust/i.test(report.event))
+    .sort((a, b) => (magnitudeNumber(b) ?? -Infinity) - (magnitudeNumber(a) ?? -Infinity))[0] ?? null;
+  const largestHail = reports
+    .filter((report) => /hail/i.test(report.event))
+    .sort((a, b) => (magnitudeNumber(b) ?? -Infinity) - (magnitudeNumber(a) ?? -Infinity))[0] ?? null;
+  const latest = reports[0] ?? null;
+
+  return {
+    ok: true,
+    version: NWS_STORM_REPORTS_CACHE_VERSION,
+    source: "NOAA / NWS Local Storm Reports",
+    generatedAt,
+    updatedAt: latest?.issuedAt ?? generatedAt,
+    office: { id: office, forecastOffice: typeof props.forecastOffice === "string" ? props.forecastOffice : null },
+    hours,
+    summary: {
+      count: reports.length,
+      closest,
+      strongestWind,
+      largestHail,
+      latest,
+    },
+    reports,
+    errors,
+  };
+}
+
 async function buildAviationOverlaysPayload(region: AviationOverlayRegion): Promise<AviationOverlaysResponse> {
   const bbox = AVIATION_NORTH_AMERICA_BBOX;
   const bboxParam = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
@@ -8153,6 +8639,53 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/nws/desk" || url.pathname === "/v1/nws/desk") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKey = buildNwsDeskCacheKey(url, lat, lon);
+      const payload = await swrFetchObject(ctx, cacheKey, NWS_DESK_TTL_SECONDS, NWS_DESK_STALE_SECONDS, () => buildNwsDeskPayload(lat, lon));
+      return new Response(JSON.stringify(payload), {
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, max-age=${NWS_DESK_TTL_SECONDS}, stale-while-revalidate=${NWS_DESK_STALE_SECONDS}`,
+        }),
+      });
+    }
+
+    if (url.pathname === "/api/nws/storm-reports" || url.pathname === "/v1/nws/storm-reports") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lon = Number(url.searchParams.get("lon"));
+      const hours = Math.max(1, Math.min(72, Math.round(Number(url.searchParams.get("hours") || "24"))));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheKey = buildNwsStormReportsCacheKey(url, lat, lon, hours);
+      const payload = await swrFetchObject(
+        ctx,
+        cacheKey,
+        NWS_STORM_REPORTS_TTL_SECONDS,
+        NWS_STORM_REPORTS_STALE_SECONDS,
+        () => buildNwsStormReportsPayload(lat, lon, hours),
+      );
+      return new Response(JSON.stringify(payload), {
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, max-age=${NWS_STORM_REPORTS_TTL_SECONDS}, stale-while-revalidate=${NWS_STORM_REPORTS_STALE_SECONDS}`,
+        }),
+      });
+    }
+
     if (url.pathname === "/api/astro/location" || url.pathname === "/v1/astro/location") {
       const lat = Number(url.searchParams.get("lat"));
       const lon = Number(url.searchParams.get("lon"));
@@ -9931,6 +10464,8 @@ export default {
           "/api/aviation/overlays?region=north-america",
           "/api/marine/sources",
           "/api/alerts/global?lat=##&lon=##&units=imperial|metric",
+          "/api/nws/desk?lat=##&lon=##",
+          "/api/nws/storm-reports?lat=##&lon=##&hours=24",
           "/api/marine/conditions?lat=##&lon=##",
           "/api/fire/hotspots?west=##&south=##&east=##&north=##&days=1",
           "/api/current?lat=##&lon=##&units=imperial|metric",

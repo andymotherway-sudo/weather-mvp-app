@@ -1761,6 +1761,130 @@ export const LEARN_TOPICS: LearnTopic[] = [
     ],
   },
   {
+    id: 'area-forecast-discussion',
+    title: 'Area Forecast Discussion (AFD)',
+    category: 'land',
+    tags: ['nws', 'afd', 'forecast discussion', 'wxlab'],
+    summary:
+      'The AFD is where local NWS forecasters explain the thinking behind the forecast. It is often the best place to understand what changed, what is uncertain, and what forecasters are watching.',
+    references: [
+      { label: 'Issued by', value: 'Local NWS Weather Forecast Office' },
+      { label: 'Best for', value: 'Reasoning, timing, uncertainty, forecast changes' },
+      { label: 'Format', value: 'Technical discussion split into sections' },
+    ],
+    bullets: [
+      'The AFD is not a simple forecast. It is the forecaster desk notes behind the forecast.',
+      'Useful sections often include Short Term, Long Term, Aviation, Marine, Fire Weather, and Hydrology.',
+      'Confidence language matters. Forecasters often say when model agreement is strong or when uncertainty is high.',
+    ],
+    sections: [
+      {
+        title: 'How OMNIwx uses it',
+        body:
+          'NWS Desk pulls the latest local AFD and summarizes the most useful operational pieces: headline, hazards, timing, and confidence. The raw discussion remains available because the full text can include nuance that a summary cannot.',
+      },
+      {
+        title: 'What to look for',
+        bullets: [
+          'Timing words such as this afternoon, tonight, overnight, or after sunset.',
+          'Hazard words such as severe, flooding, fog, snow, heat, wind, or fire weather.',
+          'Confidence words such as high confidence, low confidence, uncertainty, or model spread.',
+        ],
+      },
+    ],
+    insight:
+      'If the regular forecast says what, the AFD often explains why.',
+  },
+  {
+    id: 'hazardous-weather-outlook',
+    title: 'Hazardous Weather Outlook (HWO)',
+    category: 'land',
+    tags: ['nws', 'hwo', 'hazards', 'outlook'],
+    summary:
+      'The HWO is a plain-language NWS product that calls out potential hazardous weather for the next several days.',
+    references: [
+      { label: 'Focus', value: 'Potential hazards and timing' },
+      { label: 'Time range', value: 'Usually today through the extended forecast' },
+      { label: 'Tone', value: 'Broader outlook, not always an active warning' },
+    ],
+    bullets: [
+      'The HWO can mention hazards before watches or warnings are issued.',
+      'It may cover a broad forecast area, so local impacts can vary.',
+      'It is especially helpful for thunderstorms, winter weather, flooding, heat, wind, fire weather, and fog.',
+    ],
+    insight:
+      'Think of HWO as the local office saying, "Here is what could cause trouble."',
+  },
+  {
+    id: 'nws-weather-story',
+    title: 'NWS Weather Story',
+    category: 'land',
+    tags: ['nws', 'weather story', 'briefing'],
+    summary:
+      'A Weather Story is a local NWS briefing-style graphic or narrative. It is useful when available, but it is not published in one perfectly standardized API format everywhere.',
+    bullets: [
+      'Weather Stories are designed for quick public understanding.',
+      'Availability and freshness vary by office.',
+      'OMNIwx can use AFD and HWO as a reliable fallback when Weather Story content is missing or stale.',
+    ],
+    insight:
+      'Weather Story is the polished briefing board; AFD/HWO are the more reliable text backbone.',
+  },
+  {
+    id: 'local-storm-reports',
+    title: 'Local Storm Reports (LSR)',
+    category: 'maps',
+    tags: ['nws', 'lsr', 'storm reports', 'hail', 'wind', 'tornado', 'flood'],
+    summary:
+      'Local Storm Reports are official NWS bulletins that record notable storm impacts reported by spotters, emergency managers, law enforcement, the public, sensors, and NWS staff.',
+    references: [
+      { label: 'LSR', value: 'Local Storm Report' },
+      { label: 'Common events', value: 'Hail, damaging wind, tornado, flooding, snow, heavy rain, dust, measured gusts' },
+      { label: 'Status', value: 'Usually preliminary until reviewed' },
+    ],
+    bullets: [
+      'LSRs are reports of what happened, not forecasts of what will happen next.',
+      'A report point marks the report location, not the full footprint of the storm impact.',
+      'Some offices issue many reports during active weather; quiet offices may have none for days.',
+      'Distances are approximate because reports can reference towns, roads, spotter positions, or sensor locations.',
+    ],
+    sections: [
+      {
+        title: 'How OMNIwx uses them',
+        body:
+          'Storm Recap scans recent official LSR products from the local NWS office and summarizes the count, closest report, latest report, strongest wind report, and largest hail report when those are present.',
+      },
+      {
+        title: 'What not to assume',
+        bullets: [
+          'No reports does not guarantee no impacts.',
+          'A report can be delayed or corrected later.',
+          'Magnitude fields vary by event type and may be blank for reports like flooding, dust, or funnel clouds.',
+        ],
+      },
+    ],
+    insight:
+      'LSRs are the storm logbook. They are excellent for recap and verification, but they are not a substitute for warnings or radar.',
+  },
+  {
+    id: 'forecast-confidence',
+    title: 'Forecast Confidence',
+    category: 'data',
+    tags: ['forecast', 'confidence', 'models', 'uncertainty'],
+    summary:
+      'Forecast confidence describes how much trust forecasters have in a specific outcome. It changes by hazard, place, and time.',
+    references: [
+      { label: 'Higher confidence', value: 'Models, observations, and pattern recognition agree' },
+      { label: 'Lower confidence', value: 'Model spread, weak forcing, local terrain effects, or timing uncertainty' },
+      { label: 'Not specified', value: 'The source did not clearly state confidence' },
+    ],
+    bullets: [
+      'Confidence is not the same thing as severity. A low-confidence severe threat can still matter.',
+      'Confidence can be high for temperature but low for storm timing on the same day.',
+      'NWS discussions often explain uncertainty better than a single icon or percent value can.',
+    ],
+  },
+  {
     id: 'thunderstorm-risk',
     title: 'Thunderstorm Risk',
     category: 'clouds',

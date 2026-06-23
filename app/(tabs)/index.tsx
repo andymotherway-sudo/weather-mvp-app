@@ -33,6 +33,7 @@ import { syncNativeWidgetWeather, usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
+import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
@@ -3528,6 +3529,404 @@ function NerdyDeepDive({
   );
 }
 
+function NwsDeskCard({
+  desk,
+  loading,
+  error,
+  onOpenLearnTopic,
+}: {
+  desk: ReturnType<typeof useNwsDesk>['data'];
+  loading: boolean;
+  error: string | null;
+  onOpenLearnTopic: (topicId?: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const afdText = desk?.products?.afd?.text?.trim() ?? '';
+  const hwoText = desk?.products?.hwo?.text?.trim() ?? '';
+  const rawText = [hwoText ? `HWO\n${hwoText}` : '', afdText ? `AFD\n${afdText}` : ''].filter(Boolean).join('\n\n');
+  const rawPreview = rawText.length > 2200 ? `${rawText.slice(0, 2200).trim()}...` : rawText;
+  const updated = desk?.updatedAt ? formatUpdatedTime(desk.updatedAt) : null;
+  const office = desk?.office?.id ? `WFO ${desk.office.id}` : 'NWS office';
+  const hasDesk = !!desk;
+
+  return (
+    <View style={nwd.card}>
+      <View style={nwd.headerRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={nwd.kicker}>NWS DESK</Text>
+          <Text style={nwd.title}>Local Forecaster Briefing</Text>
+        </View>
+        <Pressable style={nwd.learnButton} onPress={() => onOpenLearnTopic('area-forecast-discussion')}>
+          <Text style={nwd.learnButtonText}>wxLearn</Text>
+        </Pressable>
+      </View>
+
+      {loading && !hasDesk ? (
+        <View style={nwd.loadingRow}>
+          <ActivityIndicator size="small" />
+          <Text style={nwd.muted}>Fetching latest NWS discussion...</Text>
+        </View>
+      ) : null}
+
+      {error && !hasDesk ? (
+        <Text style={nwd.muted}>NWS desk is temporarily unavailable.</Text>
+      ) : null}
+
+      {desk ? (
+        <>
+          <View style={nwd.metaRow}>
+            <Text style={nwd.meta}>{office}</Text>
+            {updated ? <Text style={nwd.meta}>Updated {updated}</Text> : null}
+          </View>
+
+          <Text style={nwd.headline}>{desk.headline}</Text>
+          <Text style={nwd.summary}>{desk.summary}</Text>
+
+          {desk.hazards?.length ? (
+            <View style={nwd.chipRow}>
+              {desk.hazards.slice(0, 5).map((hazard) => (
+                <View key={hazard} style={nwd.chip}>
+                  <Text style={nwd.chipText}>{hazard}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={nwd.factGrid}>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('hazardous-weather-outlook')}>
+              <Text style={nwd.factLabel}>Timing</Text>
+              <Text style={nwd.factValue} numberOfLines={3}>
+                {desk.timing ?? 'No standout timing called out'}
+              </Text>
+            </Pressable>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('forecast-confidence')}>
+              <Text style={nwd.factLabel}>Confidence</Text>
+              <Text style={nwd.factValue}>{desk.confidence ?? 'Not specified'}</Text>
+            </Pressable>
+          </View>
+
+          {rawText ? (
+            <View style={nwd.rawBox}>
+              <Pressable style={nwd.rawHeader} onPress={() => setExpanded((value) => !value)}>
+                <Text style={nwd.rawTitle}>Raw AFD / HWO</Text>
+                <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color="rgba(255,255,255,0.72)" />
+              </Pressable>
+              {expanded ? <Text style={nwd.rawText}>{rawPreview}</Text> : null}
+            </View>
+          ) : null}
+
+          <Text style={nwd.source}>Source: {desk.source}</Text>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function formatReportDistance(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return null;
+  if (value < 10) return `${value.toFixed(1)} mi`;
+  return `${Math.round(value)} mi`;
+}
+
+function formatStormReport(report: NonNullable<ReturnType<typeof useNwsStormReports>['data']>['reports'][number] | null | undefined) {
+  if (!report) return 'None';
+  const bits = [
+    report.event,
+    report.magnitude && report.magnitude !== '0' ? report.magnitude : null,
+    report.location,
+    formatReportDistance(report.distanceMiles),
+  ].filter(Boolean);
+  return bits.join(' • ');
+}
+
+function StormRecapCard({
+  reports,
+  loading,
+  error,
+  onOpenLearnTopic,
+}: {
+  reports: ReturnType<typeof useNwsStormReports>['data'];
+  loading: boolean;
+  error: string | null;
+  onOpenLearnTopic: (topicId?: string) => void;
+}) {
+  if (!reports && !loading && !error) return null;
+  const count = reports?.summary?.count ?? 0;
+  const updated = reports?.updatedAt ? formatUpdatedTime(reports.updatedAt) : null;
+  const office = reports?.office?.id ? `WFO ${reports.office.id}` : 'NWS office';
+  const recent = reports?.reports?.slice(0, 3) ?? [];
+
+  return (
+    <View style={nwd.card}>
+      <View style={nwd.headerRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={nwd.kicker}>STORM RECAP</Text>
+          <Text style={nwd.title}>Local Storm Reports</Text>
+        </View>
+        <Pressable style={nwd.learnButton} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+          <Text style={nwd.learnButtonText}>wxLearn</Text>
+        </Pressable>
+      </View>
+
+      {loading && !reports ? (
+        <View style={nwd.loadingRow}>
+          <ActivityIndicator size="small" />
+          <Text style={nwd.muted}>Checking recent official reports...</Text>
+        </View>
+      ) : null}
+
+      {error && !reports ? <Text style={nwd.muted}>Local storm reports are temporarily unavailable.</Text> : null}
+
+      {reports ? (
+        <>
+          <View style={nwd.metaRow}>
+            <Text style={nwd.meta}>{office}</Text>
+            <Text style={nwd.meta}>Last {reports.hours}h</Text>
+            {updated ? <Text style={nwd.meta}>Updated {updated}</Text> : null}
+          </View>
+
+          <Text style={nwd.headline}>
+            {count > 0 ? `${count} official storm ${count === 1 ? 'report' : 'reports'} near this forecast office` : 'No recent official local storm reports'}
+          </Text>
+
+          <View style={nwd.factGrid}>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+              <Text style={nwd.factLabel}>Closest</Text>
+              <Text style={nwd.factValue} numberOfLines={3}>
+                {formatStormReport(reports.summary.closest)}
+              </Text>
+            </Pressable>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+              <Text style={nwd.factLabel}>Latest</Text>
+              <Text style={nwd.factValue} numberOfLines={3}>
+                {formatStormReport(reports.summary.latest)}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={nwd.factGrid}>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+              <Text style={nwd.factLabel}>Max Wind</Text>
+              <Text style={nwd.factValue} numberOfLines={2}>
+                {formatStormReport(reports.summary.strongestWind)}
+              </Text>
+            </Pressable>
+            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+              <Text style={nwd.factLabel}>Largest Hail</Text>
+              <Text style={nwd.factValue} numberOfLines={2}>
+                {formatStormReport(reports.summary.largestHail)}
+              </Text>
+            </Pressable>
+          </View>
+
+          {recent.length ? (
+            <View style={nwd.rawBox}>
+              <View style={nwd.rawHeader}>
+                <Text style={nwd.rawTitle}>Recent reports</Text>
+              </View>
+              <View style={nwd.reportList}>
+                {recent.map((report, index) => (
+                  <View key={`${report.id ?? index}-${report.event}`} style={nwd.reportRow}>
+                    <Text style={nwd.reportEvent}>{report.event}</Text>
+                    <Text style={nwd.reportDetail} numberOfLines={2}>
+                      {[report.location, report.countyState, report.source].filter(Boolean).join(' • ')}
+                    </Text>
+                    {report.remarks ? <Text style={nwd.reportRemark} numberOfLines={2}>{report.remarks}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <Text style={nwd.source}>Source: {reports.source}</Text>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+const nwd = StyleSheet.create({
+  card: {
+    marginTop: 12,
+    marginBottom: 12,
+    borderRadius: 22,
+    padding: 16,
+    backgroundColor: GLASS_PANEL_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+    gap: 12,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  kicker: {
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: '900',
+    color: 'rgba(154,213,255,0.92)',
+  },
+  title: {
+    marginTop: 4,
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900',
+    color: 'white',
+  },
+  learnButton: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+  },
+  learnButtonText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.86)',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  meta: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.54)',
+  },
+  headline: {
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '900',
+    color: 'white',
+  },
+  summary: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.74)',
+  },
+  muted: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.58)',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(95,190,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(128,210,255,0.28)',
+  },
+  chipText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(184,230,255,0.95)',
+  },
+  factGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fact: {
+    flex: 1,
+    minHeight: 82,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: GLASS_INSET_BG_SOFT,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+  },
+  factLabel: {
+    fontSize: 10,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.46)',
+  },
+  factValue: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.86)',
+  },
+  rawBox: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(3,8,20,0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  rawHeader: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rawTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.78)',
+  },
+  rawText: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    fontSize: 10,
+    lineHeight: 14,
+    fontFamily: 'monospace',
+    color: 'rgba(255,255,255,0.64)',
+  },
+  reportList: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  reportRow: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 10,
+    gap: 4,
+  },
+  reportEvent: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  reportDetail: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.56)',
+  },
+  reportRemark: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.68)',
+  },
+  source: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.44)',
+  },
+});
+
 const nd = StyleSheet.create({
   wrap: { marginTop: 8, gap: 12 },
   topBar: {
@@ -4095,8 +4494,36 @@ function LandWeatherWithCoords({
     enabled,
   });
 
+  const {
+    data: nwsDesk,
+    loading: nwsDeskLoading,
+    error: nwsDeskError,
+    refresh: nwsDeskRefresh,
+  } = useNwsDesk({
+    lat: coords.lat,
+    lon: coords.lon,
+    enabled: enabled && wxLab,
+  });
+
+  const {
+    data: nwsStormReports,
+    loading: nwsStormReportsLoading,
+    error: nwsStormReportsError,
+    refresh: nwsStormReportsRefresh,
+  } = useNwsStormReports({
+    lat: coords.lat,
+    lon: coords.lon,
+    hours: 24,
+    enabled: enabled && wxLab,
+  });
+
   const loading = currentLoading || (wxLab && forecastLoading);
-  const refreshing = currentRefreshing || forecastRefreshing || astroRefreshing || fireContextRefreshing;
+  const refreshing =
+    currentRefreshing ||
+    forecastRefreshing ||
+    astroRefreshing ||
+    fireContextRefreshing ||
+    (wxLab && (nwsDeskLoading || nwsStormReportsLoading));
 
   const onRefresh = () => {
     if (!enabled) return;
@@ -4104,6 +4531,8 @@ function LandWeatherWithCoords({
     forecastRefresh?.();
     astroRefresh?.();
     fireContextRefresh?.();
+    if (wxLab) nwsDeskRefresh?.();
+    if (wxLab) nwsStormReportsRefresh?.();
   };
 
   const wx: any = currentData ?? {};
@@ -4580,6 +5009,24 @@ function LandWeatherWithCoords({
           onOpenLearnTopic={openLearnTopic}
         />
       )}
+
+      {wxLab ? (
+        <NwsDeskCard
+          desk={nwsDesk}
+          loading={nwsDeskLoading}
+          error={nwsDeskError}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      ) : null}
+
+      {wxLab ? (
+        <StormRecapCard
+          reports={nwsStormReports}
+          loading={nwsStormReportsLoading}
+          error={nwsStormReportsError}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      ) : null}
 
       {wxLab && isLandscape && (daily.length > 0 || hourly.length > 0) ? (
         <>

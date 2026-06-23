@@ -96,6 +96,8 @@ Key features:
 - Current temperature marker.
 - High/low forecast context.
 - Metric cards for temperature, feels-like, dew point, humidity, wind, gusts, pressure, visibility, precipitation probability, UV, air quality, cloud cover, and related signals.
+- NWS Desk in wxLab with local Area Forecast Discussion and Hazardous Weather Outlook briefing context.
+- Storm Recap in wxLab with recent official Local Storm Reports where available.
 - 15-day forecast list.
 - Sun arc and astronomy timing in Simple mode.
 - Sun/moon/sky detail in wxLab mode.
@@ -104,6 +106,27 @@ Key features:
 - Location picker with search, current location, and favorites.
 
 Land is also where saved places begin. Favorites created here appear in the location picker and feed saved-place comparisons in Extremes.
+
+### Land wxLab NWS Desk
+
+The wxLab view includes an NWS Desk card for supported United States locations. It uses the local NWS Weather Forecast Office to pull official text products, then presents:
+
+- Area Forecast Discussion and Hazardous Weather Outlook context.
+- Headline, summary, hazards, timing, confidence, source, and update time.
+- Collapsed raw AFD/HWO text for users who want the official discussion.
+- wxLearn topics explaining AFD, HWO, Weather Story, forecast confidence, and Local Storm Reports.
+
+### Land wxLab Storm Recap
+
+The Storm Recap card scans recent official Local Storm Reports from the local NWS office. It summarizes:
+
+- Report count for the last 24 hours.
+- Closest report to the active location.
+- Latest report.
+- Strongest wind report and largest hail report when present.
+- Recent report rows with event type, location, source, and remarks.
+
+Local Storm Reports are reports of what happened, not forecasts or warnings. No recent reports does not mean no weather occurred.
 
 ## Hourly
 

@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.124**  
-Android version code: **10141**  
+Release: **OMNIwx Alpha 1.1.125**  
+Android version code: **10142**  
 Track: **Closed testing / internal testing candidate**  
 Date: **June 22, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.124 focuses on stability and map-workstation polish: widgets now receive an app-mirrored weather cache when OMNIwx is opened, Maps no longer forces the camera back to the active location, Storm Scope is visible as a dedicated map mode, and Settings now includes privacy/support links with reduced Android permissions. Please test widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
+OMNIwx Alpha 1.1.125 adds the first NWS Desk upgrades for wxLab while keeping the prior stability work: Land wxLab now includes a local forecaster briefing from official NWS Area Forecast Discussion / Hazardous Weather Outlook products and a Storm Recap from official Local Storm Reports. Please test wxLab NWS cards, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
 
 ## Full Tester Notes
 
@@ -15,6 +15,11 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Added **NWS Desk** to Land wxLab using official NOAA/NWS AFD and HWO text products.
+- Added a cached worker endpoint for local NWS desk briefings, including WFO, update time, headline, summary, hazards, timing, confidence, and raw AFD/HWO text.
+- Added **Storm Recap** to Land wxLab using official NOAA/NWS Local Storm Reports for the active forecast office.
+- Storm Recap summarizes recent report count, closest report, latest report, strongest wind report, and largest hail report when available.
+- Added wxLearn topics for Area Forecast Discussion, Hazardous Weather Outlook, Weather Story, Forecast Confidence, and Local Storm Reports.
 - Fixed a Maps camera behavior where the map could re-center on the active app location after the user tried to pan elsewhere.
 - Maps now only changes camera for explicit actions such as one-time route focus, the locate button, manual radar station selection, or cluster zoom.
 - Added an app-to-widget weather cache handoff so opening OMNIwx can refresh native widget weather data even if Android background widget DNS/network fetches fail.
@@ -39,6 +44,7 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### Known areas that need tester attention
 
 - **Widgets**: After installing this build, open OMNIwx once on the Land screen for your desired location, then refresh the widget. Report whether weather values fill in and whether they stay current.
+- **NWS Desk / Storm Recap**: In Land wxLab, verify the NWS Desk and Storm Recap cards load for US locations, show reasonable source/update text, and fail quietly when no recent reports exist.
 - **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
 - **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
 - **Lightning**: This build contains safer layer metadata and mode wiring. Do not treat lightning as exact ground-strike safety guidance.
@@ -58,8 +64,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.124`
-- Android version code: `10141`
+- App version: `1.1.125`
+- Android version code: `10142`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
