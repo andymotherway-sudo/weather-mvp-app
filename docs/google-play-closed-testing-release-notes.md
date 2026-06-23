@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.126**  
-Android version code: **10143**  
+Release: **OMNIwx Alpha 1.1.127**  
+Android version code: **10144**  
 Track: **Closed testing / internal testing candidate**  
 Date: **June 23, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.126 cleans up the new wxLab briefing and chart experience while making Space feel like a broader space-weather and night-sky surface. Please test the Land wxLab NWS Desk, hourly/daily AQI chart axes, Space tab ordering, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
+OMNIwx Alpha 1.1.127 cleans up the new wxLab briefing and chart experience while making Space feel like a broader space-weather and night-sky surface. This build uses a fresh Android version code for Play/device update recognition. Please test the Land wxLab NWS Desk, hourly/daily AQI chart axes, Space tab ordering, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
 
 ## Full Tester Notes
 
@@ -69,8 +69,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.126`
-- Android version code: `10143`
+- App version: `1.1.127`
+- Android version code: `10144`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
