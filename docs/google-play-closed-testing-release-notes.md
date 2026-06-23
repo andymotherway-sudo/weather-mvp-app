@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.125**  
-Android version code: **10142**  
+Release: **OMNIwx Alpha 1.1.126**  
+Android version code: **10143**  
 Track: **Closed testing / internal testing candidate**  
-Date: **June 22, 2026**
+Date: **June 23, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.125 adds the first NWS Desk upgrades for wxLab while keeping the prior stability work: Land wxLab now includes a local forecaster briefing from official NWS Area Forecast Discussion / Hazardous Weather Outlook products and a Storm Recap from official Local Storm Reports. Please test wxLab NWS cards, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
+OMNIwx Alpha 1.1.126 cleans up the new wxLab briefing and chart experience while making Space feel like a broader space-weather and night-sky surface. Please test the Land wxLab NWS Desk, hourly/daily AQI chart axes, Space tab ordering, widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
 
 ## Full Tester Notes
 
@@ -17,8 +17,13 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 - Added **NWS Desk** to Land wxLab using official NOAA/NWS AFD and HWO text products.
 - Added a cached worker endpoint for local NWS desk briefings, including WFO, update time, headline, summary, hazards, timing, confidence, and raw AFD/HWO text.
+- Cleaned up NWS Desk summaries so repeated AFD/HWO sentences are deduped and leading bulletin dash/bullet noise is removed.
+- Reworked the NWS Desk timing area so timing has a full-width block instead of being clipped inside a cramped half-width tile.
 - Added **Storm Recap** to Land wxLab using official NOAA/NWS Local Storm Reports for the active forecast office.
 - Storm Recap summarizes recent report count, closest report, latest report, strongest wind report, and largest hail report when available.
+- Moved AQI chart labels to a quieter right-side scale in daily/hourly wxLab charts so the AQI axis no longer crowds the time labels and selected-hour cursor.
+- Reordered the Space tab to lead with **Night Sky Context**, followed by Solar Wx, Earth View, and Mars Weather Archive.
+- Renamed the Space header from Solar Wx to **Space Wx** to better reflect the broader screen.
 - Added wxLearn topics for Area Forecast Discussion, Hazardous Weather Outlook, Weather Story, Forecast Confidence, and Local Storm Reports.
 - Fixed a Maps camera behavior where the map could re-center on the active app location after the user tried to pan elsewhere.
 - Maps now only changes camera for explicit actions such as one-time route focus, the locate button, manual radar station selection, or cluster zoom.
@@ -34,10 +39,10 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### Recent Alpha improvements included in this test line
 
 - wxLearn is organized into a categorized learning library.
-- Solar Wx has a command-center layout with Kp, NOAA G/R/S scales, aurora, L1 solar wind, solar activity, Earth terminator imagery, and SWPC/DONKI context.
+- Space Wx now leads with night-sky context and still includes Kp, NOAA G/R/S scales, aurora, L1 solar wind, solar activity, Earth terminator imagery, and SWPC/DONKI context.
 - Marine maps include official-zone/high-seas work, buoy/water-station layers, and subtler zone styling.
 - Radar and satellite animation/export behavior has been improved.
-- Daily/hourly charts have more breathing room and better AQI handling.
+- Daily/hourly charts have more breathing room and less crowded AQI axis handling.
 - Sun/moon arcs and moon timing presentation have been improved.
 - Android widgets are being hardened for lower power use and more reliable loading.
 
@@ -64,8 +69,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.125`
-- Android version code: `10142`
+- App version: `1.1.126`
+- Android version code: `10143`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

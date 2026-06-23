@@ -2,8 +2,8 @@
 
 OMNIwx is an Android-first weather workstation that brings daily forecasts, radar and satellite maps, marine weather, aviation weather, space weather, climatology, and educational wxLearn topics into one app.
 
-Current release line: **OMNIwx Alpha 1.1.125**  
-Current Android version code: **10142**
+Current release line: **OMNIwx Alpha 1.1.126**  
+Current Android version code: **10143**
 
 ## Product Shape
 
@@ -13,7 +13,7 @@ OMNIwx is organized around weather lenses:
 - **Hourly**: next-72-hour timing, forecast charts, hourly details, and wxLab timeline analysis.
 - **Almanac**: normals, records, prior-year context, climate arch, and selected-day climate signals.
 - **Maps**: radar, satellite, storm scope, wildfire, marine, aviation, astronomy, alerts, wind, and export workflows.
-- **Space**: Solar Wx command-center view with Kp, NOAA G/R/S scales, aurora context, solar wind at L1, solar imagery, Earth terminator imagery, SWPC alerts, DONKI events, Sky Score, and Mars archive context.
+- **Space**: night-sky context first, then Solar Wx with Kp, NOAA G/R/S scales, aurora context, solar wind at L1, solar imagery, Earth terminator imagery, SWPC alerts, DONKI events, and Mars archive context.
 - **Nautical**: sea state, buoys, tides, official coastal/offshore/high-seas forecast context, marine wxLab metrics, and water-station context.
 - **Aviation**: METAR/TAF airport briefings, route briefings, aviation hazard context, and map handoff.
 - **Extremes**: ranked land, marine, saved-place, and space extremes.

@@ -1036,7 +1036,7 @@ const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v1";
 const SPACE_WEATHER_TIMEOUT_MS = 9000;
 const NWS_DESK_TTL_SECONDS = 20 * 60;
 const NWS_DESK_STALE_SECONDS = 6 * 3600;
-const NWS_DESK_CACHE_VERSION = "nws-desk-v5";
+const NWS_DESK_CACHE_VERSION = "nws-desk-v6";
 const NWS_STORM_REPORTS_TTL_SECONDS = 15 * 60;
 const NWS_STORM_REPORTS_STALE_SECONDS = 6 * 3600;
 const NWS_STORM_REPORTS_CACHE_VERSION = "nws-lsr-v1";
@@ -5545,6 +5545,38 @@ async function fetchLatestNwsTextProduct(type: "AFD" | "HWO", office: string): P
   }
 }
 
+function cleanNwsBriefSentence(sentence: string) {
+  return sentence
+    .replace(/^\s*[-•*]+\s*/, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+}
+
+function nwsSentenceKey(sentence: string) {
+  return cleanNwsBriefSentence(sentence)
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+function uniqueNwsSentences(sentences: string[], max = sentences.length) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const sentence of sentences) {
+    const cleaned = cleanNwsBriefSentence(sentence);
+    if (cleaned.length < 35) continue;
+    const key = nwsSentenceKey(cleaned);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(cleaned);
+    if (output.length >= max) break;
+  }
+  return output;
+}
+
 function meaningfulSentences(text: string | null, max = 4) {
   if (!text) return [];
   const cleaned = text
@@ -5553,11 +5585,11 @@ function meaningfulSentences(text: string | null, max = 4) {
     .replace(/\.[A-Z][A-Z0-9 /-]+?\.\.\./g, ". ")
     .replace(/\s+/g, " ")
     .trim();
-  return cleaned
+  const sentences = cleaned
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length >= 35 && !/^(FXUS|FLUS|000|National Weather Service|Area Forecast Discussion|Hazardous Weather Outlook)/i.test(s))
-    .slice(0, max);
+    .filter((s) => s.length >= 35 && !/^(FXUS|FLUS|000|National Weather Service|Area Forecast Discussion|Hazardous Weather Outlook)/i.test(s));
+  return uniqueNwsSentences(sentences, max);
 }
 
 function extractHazards(...texts: Array<string | null>) {
@@ -5583,14 +5615,19 @@ function extractTiming(...texts: Array<string | null>) {
   const timingRe = /\b(today|tonight|this morning|this afternoon|this evening|overnight|late tonight|early|after midnight|before sunrise|after sunrise|after sunset|through [^.]+|into [^.]+|by [^.]+|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i;
   for (const text of texts) {
     for (const sentence of meaningfulSentences(text, 18)) {
-      if (timingRe.test(sentence)) return sentence.replace(/\s+/g, " ").slice(0, 220);
+      if (timingRe.test(sentence)) return cleanNwsBriefSentence(sentence).slice(0, 240);
     }
   }
   return null;
 }
 
 function extractConfidence(...texts: Array<string | null>): "Low" | "Moderate" | "High" | null {
-  const all = texts.filter(Boolean).join(" ").toLowerCase();
+  const all = texts
+    .flatMap((text) => meaningfulSentences(text, 18))
+    .filter((sentence) => /confidence|uncertain|uncertainty/i.test(sentence))
+    .join(" ")
+    .toLowerCase();
+  if (!all) return null;
   if (/high confidence|confidence is high|good confidence/.test(all)) return "High";
   if (/low confidence|uncertain|uncertainty|confidence is low/.test(all)) return "Low";
   if (/moderate confidence|some confidence|confidence/.test(all)) return "Moderate";
@@ -5598,17 +5635,18 @@ function extractConfidence(...texts: Array<string | null>): "Low" | "Moderate" |
 }
 
 function summarizeNwsDesk(afd: NwsDeskProduct | null, hwo: NwsDeskProduct | null) {
-  const hwoSentences = meaningfulSentences(hwo?.text ?? null, 3);
-  const afdSentences = meaningfulSentences(afd?.text ?? null, 3);
-  const primary = hwoSentences[0] ?? afdSentences[0] ?? "No recent NWS discussion text was available for this office.";
-  const supporting = [...hwoSentences.slice(1), ...afdSentences].slice(0, 2);
+  const hwoSentences = meaningfulSentences(hwo?.text ?? null, 5);
+  const afdSentences = meaningfulSentences(afd?.text ?? null, 6);
+  const briefingSentences = uniqueNwsSentences([...hwoSentences, ...afdSentences], 3);
+  const primary = briefingSentences[0] ?? "No recent NWS discussion text was available for this office.";
+  const supporting = briefingSentences.slice(1, 3);
   const hwoHazards = extractHazards(hwo?.text ?? null);
   const summaryText = [primary, ...supporting].join(" ");
   const hazards = hwoHazards.length ? hwoHazards : extractHazards(summaryText);
   const headline =
     hazards.length > 0
-      ? `${hazards.slice(0, 2).join(" and ")} in the local NWS desk discussion`
-      : "Local NWS desk discussion";
+      ? `${hazards.slice(0, 2).join(" and ")} highlighted by local forecasters`
+      : "Local forecaster briefing";
   return {
     headline,
     summary: summaryText.slice(0, 520),

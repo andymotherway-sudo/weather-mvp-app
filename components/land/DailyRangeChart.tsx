@@ -328,7 +328,7 @@ export function DailyRangeChart({
 
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
   const pctAxisX = padL + 6;
-  const aqiAxisX = pctAxisX + 42;
+  const aqiAxisX = W - padR - 4;
   const aqiTicks = [0, 50, 100, 150].map((v) => ({ v, y: yForAqi(v) }));
 
   // Wind stats
@@ -558,28 +558,18 @@ export function DailyRangeChart({
                     x2={aqiAxisX}
                     y1={padT}
                     y2={padT + plotH}
-                    stroke="rgba(250,204,21,0.22)"
+                    stroke="rgba(250,204,21,0.16)"
                     strokeWidth={1}
                   />
-                  <SvgText
-                    x={aqiAxisX}
-                    y={padT - 6}
-                    fontSize="10"
-                    fill="rgba(250,204,21,0.78)"
-                    fontWeight="900"
-                    textAnchor="start"
-                  >
-                    AQI
-                  </SvgText>
                   {aqiTicks.map((tk) => (
                     <SvgText
                       key={`aqi-tick-${tk.v}`}
                       x={aqiAxisX}
                       y={tk.y + 3}
                       fontSize="8"
-                      fill="rgba(250,204,21,0.56)"
+                      fill="rgba(250,204,21,0.48)"
                       fontWeight="800"
-                      textAnchor="start"
+                      textAnchor="end"
                     >
                       {String(tk.v)}
                     </SvgText>

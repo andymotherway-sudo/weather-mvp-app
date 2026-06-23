@@ -3548,6 +3548,8 @@ function NwsDeskCard({
   const updated = desk?.updatedAt ? formatUpdatedTime(desk.updatedAt) : null;
   const office = desk?.office?.id ? `WFO ${desk.office.id}` : 'NWS office';
   const hasDesk = !!desk;
+  const timingText = desk?.timing?.trim() || 'No standout timing called out';
+  const confidenceText = desk?.confidence?.trim() || 'Not specified';
 
   return (
     <View style={nwd.card}>
@@ -3592,17 +3594,21 @@ function NwsDeskCard({
             </View>
           ) : null}
 
-          <View style={nwd.factGrid}>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('hazardous-weather-outlook')}>
+          <View style={nwd.briefingStack}>
+            <Pressable style={[nwd.fact, nwd.factFull]} onPress={() => onOpenLearnTopic('hazardous-weather-outlook')}>
               <Text style={nwd.factLabel}>Timing</Text>
-              <Text style={nwd.factValue} numberOfLines={3}>
-                {desk.timing ?? 'No standout timing called out'}
-              </Text>
+              <Text style={nwd.factValue}>{timingText}</Text>
             </Pressable>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('forecast-confidence')}>
-              <Text style={nwd.factLabel}>Confidence</Text>
-              <Text style={nwd.factValue}>{desk.confidence ?? 'Not specified'}</Text>
-            </Pressable>
+            <View style={nwd.factGrid}>
+              <Pressable style={[nwd.fact, nwd.factCompact]} onPress={() => onOpenLearnTopic('forecast-confidence')}>
+                <Text style={nwd.factLabel}>Confidence</Text>
+                <Text style={nwd.factValue}>{confidenceText}</Text>
+              </Pressable>
+              <Pressable style={[nwd.fact, nwd.factCompact]} onPress={() => onOpenLearnTopic('area-forecast-discussion')}>
+                <Text style={nwd.factLabel}>Products</Text>
+                <Text style={nwd.factValue}>{[hwoText ? 'HWO' : null, afdText ? 'AFD' : null].filter(Boolean).join(' / ') || 'NWS text'}</Text>
+              </Pressable>
+            </View>
           </View>
 
           {rawText ? (
@@ -3842,6 +3848,9 @@ const nwd = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
+  briefingStack: {
+    gap: 10,
+  },
   fact: {
     flex: 1,
     minHeight: 82,
@@ -3850,6 +3859,13 @@ const nwd = StyleSheet.create({
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
+  },
+  factFull: {
+    flex: 0,
+    minHeight: 0,
+  },
+  factCompact: {
+    minHeight: 72,
   },
   factLabel: {
     fontSize: 10,

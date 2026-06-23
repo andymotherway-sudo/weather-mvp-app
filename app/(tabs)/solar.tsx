@@ -1312,6 +1312,63 @@ export default function SolarScreen() {
     };
   }, [activeSolarView.id, isFocused]);
 
+  const renderNightSkySection = () => (
+    <>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Night Sky Context</Text>
+        <Text style={styles.sectionSubtitle}>
+          Location-based observing conditions and astronomy context
+        </Text>
+      </View>
+
+      {showAstroLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.smallText}>Loading astro forecast...</Text>
+        </View>
+      ) : astroError && !astro ? (
+        <View style={themedErrorCard}>
+          <Text style={styles.cardTitle}>Astro Forecast Error</Text>
+          <Text style={styles.cardValue}>{renderable(astroError)}</Text>
+        </View>
+      ) : astroReady ? (
+        <>
+          <AstroHeroCard
+            forecast={astro}
+            onLearnSkyScore={() =>
+              openExplain({
+                title: 'Sky Score',
+                summary:
+                  'Sky Score is OMNIwx observing-quality score that blends Bortle darkness, cloud layers, transparency, moonlight, and stability into one number.',
+                whyItMatters:
+                  'It gives a fast read on whether the sky is truly worth your time, not just whether the Sun is down.',
+                howComputed:
+                  'The current model weights Bortle and cloud-driven transparency most heavily, then factors in darkness state, moonlight, wind stability, humidity, visibility, and aerosols.',
+                confidence: 'medium',
+                learnTopicId: 'astro-sky-score',
+              })
+            }
+          />
+          <OpenAstroMapCard
+            lat={astro.lat}
+            lon={astro.lon}
+            placeName={astro.placeName}
+            compact
+          />
+          <SkyScoreChart hours={chartHours} />
+          <AstroHourlyStrip hours={astro.tonightHours} />
+          <MoonDarknessCard
+            forecast={astro}
+            onLearnTopic={(topicId) => {
+              setLearnTopicId(topicId ?? undefined);
+              setLearnOpen(true);
+            }}
+          />
+        </>
+      ) : null}
+    </>
+  );
+
   return (
     <>
       <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
@@ -1329,7 +1386,7 @@ export default function SolarScreen() {
                 <View style={styles.domainPill}>
                   <Text style={styles.domainPillText}>Space</Text>
                 </View>
-                <Text style={styles.headerTitle}>Solar Wx</Text>
+                <Text style={styles.headerTitle}>Space Wx</Text>
                 <Text style={styles.headerSubline} numberOfLines={2}>
                   {active?.name ? `${active.name} · night sky forecast and solar activity` : 'Night sky forecast, moonlight, observing conditions, aurora context, and space weather'}
                 </Text>
@@ -1346,6 +1403,8 @@ export default function SolarScreen() {
               </Text>
             </View>
           ) : null}
+
+          {renderNightSkySection()}
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Solar Wx</Text>
@@ -1388,6 +1447,10 @@ export default function SolarScreen() {
               <View style={styles.dashboardSection}>
                 <Text style={styles.dashboardSectionTitle}>SOLAR ACTIVITY</Text>
                 {renderSolarActivityPanel()}
+              </View>
+
+              <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>EARTH VIEW</Text>
                 {renderEarthDiskPanel()}
               </View>
 
@@ -1426,59 +1489,6 @@ export default function SolarScreen() {
               </Text>
             </View>
           )}
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Night Sky Context</Text>
-            <Text style={styles.sectionSubtitle}>
-              Location-based observing conditions and astronomy context
-            </Text>
-          </View>
-
-          {showAstroLoading ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={styles.smallText}>Loading astro forecast…</Text>
-            </View>
-          ) : astroError && !astro ? (
-            <View style={themedErrorCard}>
-              <Text style={styles.cardTitle}>Astro Forecast Error</Text>
-              <Text style={styles.cardValue}>{renderable(astroError)}</Text>
-            </View>
-          ) : astroReady ? (
-            <>
-              <AstroHeroCard
-                forecast={astro}
-                onLearnSkyScore={() =>
-                  openExplain({
-                    title: 'Sky Score',
-                    summary:
-                      'Sky Score is OMNIwx’s observing-quality score that blends Bortle darkness, cloud layers, transparency, moonlight, and stability into one number.',
-                    whyItMatters:
-                      'It gives a fast read on whether the sky is truly worth your time, not just whether the Sun is down.',
-                    howComputed:
-                      'The current model weights Bortle and cloud-driven transparency most heavily, then factors in darkness state, moonlight, wind stability, humidity, visibility, and aerosols.',
-                    confidence: 'medium',
-                    learnTopicId: 'astro-sky-score',
-                  })
-                }
-              />
-              <OpenAstroMapCard
-                lat={astro.lat}
-                lon={astro.lon}
-                placeName={astro.placeName}
-                compact
-              />
-              <SkyScoreChart hours={chartHours} />
-              <AstroHourlyStrip hours={astro.tonightHours} />
-              <MoonDarknessCard
-                forecast={astro}
-                onLearnTopic={(topicId) => {
-                  setLearnTopicId(topicId ?? undefined);
-                  setLearnOpen(true);
-                }}
-              />
-            </>
-          ) : null}
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
