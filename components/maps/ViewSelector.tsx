@@ -6,6 +6,7 @@ import { MAP_VIEWS } from '../../app/lib/maps/views';
 
 const VIEW_SELECTOR_IDS: MapViewId[] = [
   'radar',
+  'storm',
   'aviation',
   'mariner',
   'astronomer',
@@ -26,7 +27,6 @@ export function ViewSelector(props: {
       .map((id) => MAP_VIEWS.find((v) => v.id === id))
       .filter(Boolean)
       .filter((v: any) => {
-        if (v.id === 'storm' && !nerdy) return false;
         if (v.nerdyOnly && !nerdy) return false;
         return true;
       });

@@ -47,12 +47,19 @@ export const MAP_VIEWS: MapViewDefinition[] = [
   {
     id: 'storm',
     title: 'Storm Scope',
-    presetEnabledLayers: ['radar.reflectivity', 'wx.fronts.day1', 'lightning.strikes', 'alerts.polygons'],
+    presetEnabledLayers: [
+      'radar.reflectivity',
+      'alerts.polygons',
+      'lightning.strikes',
+      'wx.fronts.day1',
+      'wx.wind.particles',
+    ],
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
-      'wx.fronts.day1': 0.96,
-      'lightning.strikes': 0.95,
       'alerts.polygons': 0.95,
+      'lightning.strikes': 0.84,
+      'wx.fronts.day1': 0.96,
+      'wx.wind.particles': 0.7,
     },
     timelineDriverLayer: 'radar.reflectivity',
   },

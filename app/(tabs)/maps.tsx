@@ -1234,9 +1234,6 @@ export default function MapsScreen() {
   const locateSeedRegionRef = useRef<Region | null>(null);
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
-  const lastSyncedActivePlaceRef = useRef<string | null>(null);
-  const lastSyncedActivePlaceIdentityRef = useRef<string | null>(null);
-  const userMovedMapSinceActiveSyncRef = useRef(false);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
@@ -2269,7 +2266,6 @@ export default function MapsScreen() {
     };
 
     setCameraDebugLabel(`route-focus:${routeFocusTarget.lat.toFixed(2)},${routeFocusTarget.lon.toFixed(2)}`);
-    userMovedMapSinceActiveSyncRef.current = false;
     routeFocusSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
@@ -2288,85 +2284,6 @@ export default function MapsScreen() {
       });
     });
   }, [routeFocusTarget, router]);
-
-  useEffect(() => {
-    if (!isFocused) return;
-    if (routeFocusTarget) return;
-    if (!activePlace || !Number.isFinite(activePlace.lat) || !Number.isFinite(activePlace.lon)) return;
-
-    const lat = Number(activePlace.lat);
-    const lon = Number(activePlace.lon);
-    const identityKey = [
-      activePlace.source ?? 'place',
-      activePlace.id ?? activePlace.name ?? 'active',
-    ].join('|');
-    const key = [
-      identityKey,
-      lat.toFixed(4),
-      lon.toFixed(4),
-    ].join('|');
-
-    if (lastSyncedActivePlaceRef.current === key) return;
-    const identityChanged = lastSyncedActivePlaceIdentityRef.current !== identityKey;
-
-    if (userMovedMapSinceActiveSyncRef.current && !identityChanged) {
-      lastSyncedActivePlaceRef.current = key;
-      lastSyncedActivePlaceIdentityRef.current = identityKey;
-      return;
-    }
-
-    lastSyncedActivePlaceRef.current = key;
-    lastSyncedActivePlaceIdentityRef.current = identityKey;
-    userMovedMapSinceActiveSyncRef.current = false;
-
-    const latitudeDelta = clampNumber(
-      region?.latitudeDelta && Number.isFinite(region.latitudeDelta)
-        ? region.latitudeDelta
-        : stableInitialRegion.latitudeDelta,
-      0.05,
-      80,
-    );
-    const longitudeDelta = clampNumber(
-      region?.longitudeDelta && Number.isFinite(region.longitudeDelta)
-        ? region.longitudeDelta
-        : stableInitialRegion.longitudeDelta,
-      0.05,
-      80,
-    );
-    const nextRegion: Region = {
-      latitude: lat,
-      longitude: lon,
-      latitudeDelta,
-      longitudeDelta,
-      zoom: approxZoomFromLongitudeDelta(longitudeDelta),
-    };
-
-    setCameraDebugLabel(`active-place:${lat.toFixed(2)},${lon.toFixed(2)}`);
-    setRegion(nextRegion);
-    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
-
-    try {
-      mapCameraRef.current?.setCamera?.({
-        centerCoordinate: [lon, lat],
-        zoomLevel: clampNumber(approxZoomFromLongitudeDelta(longitudeDelta), 2, 14),
-        animationDuration: 500,
-      });
-    } catch {
-      // Map camera may not be mounted on the first focus pass.
-    }
-  }, [
-    activePlace?.id,
-    activePlace?.lat,
-    activePlace?.lon,
-    activePlace?.name,
-    activePlace?.source,
-    isFocused,
-    region?.latitudeDelta,
-    region?.longitudeDelta,
-    routeFocusTarget,
-    stableInitialRegion.latitudeDelta,
-    stableInitialRegion.longitudeDelta,
-  ]);
 
   const effectiveRegion = region ?? stableInitialRegion;
   const {
@@ -2704,7 +2621,6 @@ export default function MapsScreen() {
 
   const recenterToGps = () => {
     locateRequestIdRef.current += 1;
-    userMovedMapSinceActiveSyncRef.current = false;
     const cachedCoords = loc.state.currentCoords;
     if (cachedCoords && Number.isFinite(cachedCoords.lat) && Number.isFinite(cachedCoords.lon)) {
       if (manualStationRadarMode) {
@@ -3182,7 +3098,6 @@ export default function MapsScreen() {
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
               onPanDrag={() => {
-                userMovedMapSinceActiveSyncRef.current = true;
                 locateRequestIdRef.current += 1;
               const now = Date.now();
               if (now - lastPanMarkRef.current > 450) {

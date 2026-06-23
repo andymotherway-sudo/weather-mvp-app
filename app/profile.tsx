@@ -2,7 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePlace, type Place } from './context/PlaceContext';
@@ -14,6 +14,9 @@ import { loadSolarCaptureEnabled, saveSolarCaptureEnabled } from './lib/spacewea
 import { APP_COLOR_MODE_OPTIONS, appChrome } from './lib/theme/appAppearance';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
+const PRIVACY_POLICY_URL = 'https://www.omni-wx.com/privacy';
+const SUPPORT_URL = 'https://www.omni-wx.com/support';
+const SUPPORT_EMAIL_URL = 'mailto:admin@omni-wx.com?subject=OMNIwx%20support';
 
 type DefaultCity = { name: string; lat: number; lon: number; country?: string; admin1?: string };
 
@@ -405,6 +408,34 @@ export default function ProfileScreen() {
                 </Pressable>
               );
             })}
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
+          <Text style={styles.label}>Legal & Support</Text>
+          <Text style={styles.value}>Privacy, support, and safety notes</Text>
+          <Text style={styles.helperText}>
+            OMNIwx uses your selected or current location for weather, radar, maps, marine, aviation, widgets, and Android Auto.
+            Always verify life-safety, marine, and aviation decisions with official sources.
+          </Text>
+
+          <View style={styles.optionGrid}>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open OMNIwx privacy policy"
+              style={pillStyle(false, styles.compactPill)}
+              onPress={() => Linking.openURL(PRIVACY_POLICY_URL).catch(() => undefined)}
+            >
+              <Text style={styles.pillText}>Privacy Policy</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Open OMNIwx support page"
+              style={pillStyle(false, styles.compactPill)}
+              onPress={() => Linking.openURL(SUPPORT_URL).catch(() => Linking.openURL(SUPPORT_EMAIL_URL).catch(() => undefined))}
+            >
+              <Text style={styles.pillText}>Support</Text>
+            </Pressable>
           </View>
         </View>
 

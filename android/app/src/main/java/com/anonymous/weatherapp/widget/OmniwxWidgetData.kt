@@ -431,6 +431,15 @@ object OmniwxWidgetData {
       .commit()
   }
 
+  @Synchronized
+  fun saveWeatherSnapshot(context: Context, weather: WidgetWeather) {
+    val cacheKey = weatherCacheKey(weather.place)
+    val now = System.currentTimeMillis()
+    saveCachedWidgetWeather(context, weather)
+    weatherCache = CachedWidgetWeather(cacheKey, now, weather)
+    saveLastWeatherError(context, null)
+  }
+
   private fun saveLastWeatherError(context: Context, message: String?) {
     val editor = widgetPrefs(context).edit()
     if (message.isNullOrBlank()) {

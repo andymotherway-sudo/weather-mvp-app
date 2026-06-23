@@ -1,62 +1,52 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.122**  
-Android version code: **10139**  
-Track: **Closed testing**  
+Release: **OMNIwx Alpha 1.1.124**  
+Android version code: **10141**  
+Track: **Closed testing / internal testing candidate**  
 Date: **June 22, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.122 turns wxLearn into a categorized learning library and refreshes app docs for closed testing. Please test wxLearn search/categories, Land/Hourly/Maps/Space/Nautical/Aviation/Extremes navigation, map performance with radar/satellite/marine/wind layers, widgets after setting a default/current location, Android Auto radar fallback behavior, and Play update recognition.
+OMNIwx Alpha 1.1.124 focuses on stability and map-workstation polish: widgets now receive an app-mirrored weather cache when OMNIwx is opened, Maps no longer forces the camera back to the active location, Storm Scope is visible as a dedicated map mode, and Settings now includes privacy/support links with reduced Android permissions. Please test widgets, Maps panning, Storm Scope, radar/satellite loops, and Play update recognition.
 
 ## Full Tester Notes
 
-This is still an Alpha build. OMNIwx is now much broader than a simple weather app: it includes daily weather, short-term forecasts, climate context, radar and satellite maps, marine data, aviation weather, solar weather, astronomy context, global extremes, widgets, Android Auto, and native MP4 map exports.
+This is still an Alpha build. OMNIwx is becoming a weather workstation: daily weather, hourly timing, climatology, radar, satellite, marine, aviation, solar weather, astronomy context, global extremes, wxLearn, widgets, Android Auto, and native MP4 map exports.
 
 ### What changed in this build
 
-- wxLearn is now organized like a real library instead of one flat list.
-- Learn topics are grouped by Start Here, Land Weather, Comfort, Clouds & Precip, Maps & Radar, Marine, Aviation, Space Weather, Astronomy, and Data & Units.
-- Added deeper wxLearn material for:
-  - AQI and pollutant drivers.
-  - Watches, warnings, advisories, and statements.
-  - Thunderstorm risk.
-  - Snow level and freezing level.
-  - Satellite layers.
-  - Radar mosaic versus station radar.
-  - Map layer performance.
-  - Official marine zones and high seas forecasts.
-  - Water stations.
-  - Aviation units and SIGMET/AIRMET products.
-  - Solar wind density/speed, Earth terminator imagery, CMEs, solar flares, and global source coverage.
-- Search now considers topic category context and tags, so users can find material by source area or concept.
-- Repo documentation was refreshed for the current Alpha product shape and release workflow.
+- Fixed a Maps camera behavior where the map could re-center on the active app location after the user tried to pan elsewhere.
+- Maps now only changes camera for explicit actions such as one-time route focus, the locate button, manual radar station selection, or cluster zoom.
+- Added an app-to-widget weather cache handoff so opening OMNIwx can refresh native widget weather data even if Android background widget DNS/network fetches fail.
+- Widgets now have a better fallback path for current temperature, daily high/low, wind, dew point, humidity, cloud cover, weather code, and radar-card weather context.
+- Storm Scope is now visible in the map mode selector instead of being hidden behind nerdy mode.
+- Storm Scope now defaults to a stronger operational bundle: radar, alert polygons, recent lightning activity metadata, WPC fronts, and animated 10 m wind particles.
+- Lightning wording was adjusted to describe recent lightning activity rather than exact strike-by-strike safety guidance.
+- Added Privacy Policy and Support links in Settings.
+- Drafted a replacement privacy policy in `docs/privacy-policy.md` for publishing on omni-wx.com.
+- Removed unused sensitive Android permissions from the manifest.
 
 ### Recent Alpha improvements included in this test line
 
-- Improved Solar Wx / Space Weather screen hierarchy.
-- Better Earth terminator imagery context.
-- More explanatory space-weather topics for SWPC alerts, L1 solar wind, X-ray flux, proton flux, and DONKI-style events.
-- More global marine work, including official-zone/high-seas direction and clearer map behavior.
-- More subtle marine polygon styling while keeping zone outlines visible.
-- Improved radar/satellite animation and export behavior.
-- Added wind vectors and early wind-particle map work.
-- Improved daily/hourly chart spacing and AQI treatment.
-- Improved sun/moon arc behavior and moon timing presentation.
-- Reduced widget impact on app responsiveness, with widget loading still an active test area.
+- wxLearn is organized into a categorized learning library.
+- Solar Wx has a command-center layout with Kp, NOAA G/R/S scales, aurora, L1 solar wind, solar activity, Earth terminator imagery, and SWPC/DONKI context.
+- Marine maps include official-zone/high-seas work, buoy/water-station layers, and subtler zone styling.
+- Radar and satellite animation/export behavior has been improved.
+- Daily/hourly charts have more breathing room and better AQI handling.
+- Sun/moon arcs and moon timing presentation have been improved.
+- Android widgets are being hardened for lower power use and more reliable loading.
 
 ### Known areas that need tester attention
 
-- **Widgets**: Some widget types may still show "Open OMNIwx to refresh" until the app has a usable default location/current location cache. Please test adding widgets after opening the app and setting a default place.
-- **Android Auto radar**: Radar should fail gracefully instead of crashing or staying stuck. Please test in the vehicle if possible, because head-unit behavior can differ from emulator behavior.
-- **Maps performance**: Try maps with radar, satellite, wind, marine, aviation, and wildfire layers. Watch for sluggish scrolling, camera snapping, choppy animation, or heavy battery/heat behavior.
-- **Marine zones**: Official polygons should be useful but not visually overwhelming. Please test coastal/offshore areas near the US, Canada, Mexico, Europe, and Australia where data is available.
-- **Global coverage**: Some global features are model-backed or source-dependent. Coverage may be stronger in the US than elsewhere. The app should label or handle gaps without pretending all regions are equal.
-- **wxLearn links**: Pressable educational links should open a relevant topic. Please report tiles that open the wrong topic, no topic, or a topic that feels too thin.
+- **Widgets**: After installing this build, open OMNIwx once on the Land screen for your desired location, then refresh the widget. Report whether weather values fill in and whether they stay current.
+- **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
+- **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
+- **Lightning**: This build contains safer layer metadata and mode wiring. Do not treat lightning as exact ground-strike safety guidance.
+- **Android Auto radar**: Radar should fail gracefully instead of crashing or staying stuck. Test on real head units where possible.
+- **Maps performance**: Try radar, satellite, wind particles, marine zones, aviation hazards, and wildfire layers. Watch for sluggishness, heat, battery drain, or camera snapping.
+- **Privacy/support links**: Confirm Settings opens the published Privacy Policy and support contact paths.
 
 ### What to report
-
-The most useful feedback includes:
 
 - Device model and Android version.
 - Whether the app was installed from Internal testing or Closed testing.
@@ -64,12 +54,12 @@ The most useful feedback includes:
 - Screen/tab where the issue happened.
 - Steps to reproduce.
 - Screenshot or screen recording.
-- Whether deleting widgets, disabling a map layer, or changing location affects the issue.
+- Whether deleting widgets, disabling a map layer, changing location, or opening OMNIwx once affects the issue.
 
 ## Internal Release Checklist
 
-- App version: `1.1.122`
-- Android version code: `10139`
+- App version: `1.1.124`
+- Android version code: `10141`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

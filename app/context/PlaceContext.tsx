@@ -31,9 +31,27 @@ const Ctx = createContext<PlaceState | null>(null);
 
 type NativeWidgetStateModule = {
   updatePlace?: (place: { name: string; lat: number; lon: number; source?: string }) => Promise<boolean>;
+  updateWeather?: (weather: NativeWidgetWeatherSnapshot) => Promise<boolean>;
 };
 
 const nativeWidgetState = NativeModules.OmniwxWidgetState as NativeWidgetStateModule | undefined;
+
+export type NativeWidgetWeatherSnapshot = {
+  place: { name: string; lat: number; lon: number };
+  temperatureF?: number | null;
+  feelsLikeF?: number | null;
+  highF?: number | null;
+  lowF?: number | null;
+  windMph?: number | null;
+  gustMph?: number | null;
+  windDirectionDeg?: number | null;
+  dewPointF?: number | null;
+  visibilityMiles?: number | null;
+  humidityPct?: number | null;
+  cloudPct?: number | null;
+  weatherCode?: number | null;
+  updatedLabel?: string | null;
+};
 
 function makeId(lat: number, lon: number) {
   return `${lat.toFixed(4)},${lon.toFixed(4)}`;
@@ -98,6 +116,36 @@ function syncNativeWidgetPlace(place: Place | null) {
     lon: place.lon,
     source: place.source,
   }).catch(() => {});
+}
+
+function finiteOrNull(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function syncNativeWidgetWeather(snapshot: NativeWidgetWeatherSnapshot | null) {
+  if (Platform.OS !== 'android') return;
+  if (!snapshot?.place || !Number.isFinite(snapshot.place.lat) || !Number.isFinite(snapshot.place.lon)) return;
+  const weather: NativeWidgetWeatherSnapshot = {
+    place: {
+      name: snapshot.place.name || 'OMNIwx location',
+      lat: snapshot.place.lat,
+      lon: snapshot.place.lon,
+    },
+    temperatureF: finiteOrNull(snapshot.temperatureF),
+    feelsLikeF: finiteOrNull(snapshot.feelsLikeF),
+    highF: finiteOrNull(snapshot.highF),
+    lowF: finiteOrNull(snapshot.lowF),
+    windMph: finiteOrNull(snapshot.windMph),
+    gustMph: finiteOrNull(snapshot.gustMph),
+    windDirectionDeg: finiteOrNull(snapshot.windDirectionDeg),
+    dewPointF: finiteOrNull(snapshot.dewPointF),
+    visibilityMiles: finiteOrNull(snapshot.visibilityMiles),
+    humidityPct: finiteOrNull(snapshot.humidityPct),
+    cloudPct: finiteOrNull(snapshot.cloudPct),
+    weatherCode: finiteOrNull(snapshot.weatherCode),
+    updatedLabel: typeof snapshot.updatedLabel === 'string' && snapshot.updatedLabel.trim() ? snapshot.updatedLabel.trim() : null,
+  };
+  nativeWidgetState?.updateWeather?.(weather).catch(() => {});
 }
 
 // Best-effort permission probe (no prompting)

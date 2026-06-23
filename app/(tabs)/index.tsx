@@ -29,7 +29,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import { usePlace } from '../context/PlaceContext';
+import { syncNativeWidgetWeather, usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
@@ -4038,6 +4038,7 @@ function LandWeatherWithCoords({
   const isLandscape = width > height && width >= 640;
   const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
   const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
+  const lastNativeWidgetMirrorRef = useRef<string | null>(null);
   const { forecastModel, tempUnit } = useSettings();
   const { primary, alerts } = useNwsAlerts({
     lat: coords.lat,
@@ -4309,6 +4310,65 @@ function LandWeatherWithCoords({
 
   const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime, forecastTimeZone) : null;
   const updatedText = updatedTimeLabel ? `Updated ${updatedTimeLabel}` : null;
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lon)) return;
+    if (tempF == null && daily.length === 0 && hourly.length === 0) return;
+
+    const snapshot = {
+      place: { name: activeLabel || 'OMNIwx location', lat: coords.lat, lon: coords.lon },
+      temperatureF: tempF,
+      feelsLikeF,
+      highF: safeNum(todayDaily?.tempMaxF) ?? tempF,
+      lowF: safeNum(todayDaily?.tempMinF) ?? tempF,
+      windMph,
+      gustMph,
+      windDirectionDeg: windDirDeg,
+      dewPointF: dewpointF,
+      visibilityMiles: visibilityMi,
+      humidityPct,
+      cloudPct: cloudCoverPct,
+      weatherCode,
+      updatedLabel: updatedTimeLabel ? `Updated ${updatedTimeLabel}` : 'App cache',
+    };
+    const mirrorKey = JSON.stringify({
+      place: snapshot.place,
+      temp: snapshot.temperatureF == null ? null : Math.round(snapshot.temperatureF),
+      feels: snapshot.feelsLikeF == null ? null : Math.round(snapshot.feelsLikeF),
+      high: snapshot.highF == null ? null : Math.round(snapshot.highF),
+      low: snapshot.lowF == null ? null : Math.round(snapshot.lowF),
+      wind: snapshot.windMph == null ? null : Math.round(snapshot.windMph),
+      gust: snapshot.gustMph == null ? null : Math.round(snapshot.gustMph),
+      dew: snapshot.dewPointF == null ? null : Math.round(snapshot.dewPointF),
+      humidity: snapshot.humidityPct == null ? null : Math.round(snapshot.humidityPct),
+      clouds: snapshot.cloudPct == null ? null : Math.round(snapshot.cloudPct),
+      code: snapshot.weatherCode ?? null,
+    });
+    if (lastNativeWidgetMirrorRef.current === mirrorKey) return;
+    lastNativeWidgetMirrorRef.current = mirrorKey;
+    syncNativeWidgetWeather(snapshot);
+  }, [
+    activeLabel,
+    cloudCoverPct,
+    coords.lat,
+    coords.lon,
+    daily.length,
+    dewpointF,
+    enabled,
+    feelsLikeF,
+    gustMph,
+    hourly.length,
+    humidityPct,
+    tempF,
+    todayDaily?.tempMaxF,
+    todayDaily?.tempMinF,
+    updatedTimeLabel,
+    visibilityMi,
+    weatherCode,
+    windDirDeg,
+    windMph,
+  ]);
 
   const moistureHint =
     dewpointF != null

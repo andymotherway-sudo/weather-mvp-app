@@ -49,4 +49,61 @@ class OmniwxWidgetStateModule(private val reactContext: ReactApplicationContext)
       promise.reject("E_WIDGET_PLACE", e)
     }
   }
+
+  @ReactMethod
+  fun updateWeather(weather: ReadableMap, promise: Promise) {
+    try {
+      val placeMap = if (weather.hasKey("place") && !weather.isNull("place")) weather.getMap("place") else null
+      val lat = placeMap?.let { readDouble(it, "lat") } ?: Double.NaN
+      val lon = placeMap?.let { readDouble(it, "lon") } ?: Double.NaN
+      if (!lat.isFinite() || !lon.isFinite()) {
+        promise.reject("E_INVALID_WEATHER", "Widget weather must include finite place lat/lon.")
+        return
+      }
+
+      val place = WidgetPlace(
+        name = placeMap?.let { readString(it, "name") } ?: "OMNIwx location",
+        lat = lat,
+        lon = lon,
+      )
+      val snapshot = WidgetWeather(
+        place = place,
+        temperatureF = readDouble(weather, "temperatureF"),
+        feelsLikeF = readDouble(weather, "feelsLikeF"),
+        highF = readDouble(weather, "highF"),
+        lowF = readDouble(weather, "lowF"),
+        windMph = readDouble(weather, "windMph"),
+        gustMph = readDouble(weather, "gustMph"),
+        windDirectionDeg = readDouble(weather, "windDirectionDeg"),
+        dewPointF = readDouble(weather, "dewPointF"),
+        visibilityMiles = readDouble(weather, "visibilityMiles"),
+        humidityPct = readDouble(weather, "humidityPct"),
+        cloudPct = readDouble(weather, "cloudPct"),
+        weatherCode = readDouble(weather, "weatherCode").takeIf { it.isFinite() }?.toInt() ?: -1,
+        updatedLabel = readString(weather, "updatedLabel") ?: "App cache",
+      )
+
+      OmniwxWidgetData.saveWeatherSnapshot(reactContext, snapshot)
+      OmniwxWidgetRefreshReceiver.refreshAll(reactContext, force = true)
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("E_WIDGET_WEATHER", e)
+    }
+  }
+
+  private fun readDouble(map: ReadableMap, key: String): Double {
+    return if (map.hasKey(key) && !map.isNull(key)) {
+      runCatching { map.getDouble(key) }.getOrDefault(Double.NaN)
+    } else {
+      Double.NaN
+    }
+  }
+
+  private fun readString(map: ReadableMap, key: String): String? {
+    return if (map.hasKey(key) && !map.isNull(key)) {
+      map.getString(key)?.takeIf { it.isNotBlank() }
+    } else {
+      null
+    }
+  }
 }
