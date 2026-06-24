@@ -31,7 +31,10 @@ import { MapRenderer } from '../../components/maps/MapRenderer';
 import { MarineMapLayers } from '../../components/maps/MarineMapLayers';
 import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
-import { WindParticleOverlay } from '../../components/maps/WindParticleOverlay';
+import {
+  buildWindParticleExportFrames,
+  WindParticleOverlay,
+} from '../../components/maps/WindParticleOverlay';
 import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEngine';
 
 import { useFireContext } from '../lib/fire/useFireContext';
@@ -2904,6 +2907,29 @@ export default function MapsScreen() {
       }),
     [animationViewportRegion, viewportHeight, viewportWidth],
   );
+  const windExportFrameCount = activeAnimationKind
+    ? Math.max(2, animationCompositorFrames.length)
+    : 24;
+  const windParticleExportFrames = useMemo(
+    () =>
+      windParticlesEnabled
+        ? buildWindParticleExportFrames({
+            frameCount: windExportFrameCount,
+            geojson: windVectorLayer.geojson,
+            height: animationExportSize.height,
+            region: animationExportRegion,
+            width: animationExportSize.width,
+          })
+        : [],
+    [
+      animationExportRegion,
+      animationExportSize.height,
+      animationExportSize.width,
+      windExportFrameCount,
+      windParticlesEnabled,
+      windVectorLayer.geojson,
+    ],
+  );
   const buildAnimationUrl = useCallback(
     (
       source: 'radar' | 'geocolor' | 'goes-east-ir' | 'goes-west-ir' | 'goes-east-wv' | 'goes-west-wv' | 'goes-east-visible' | 'goes-west-visible',
@@ -2962,35 +2988,83 @@ export default function MapsScreen() {
   );
 
   const animationProductLabel = useMemo(() => {
+    let label = 'Weather loop';
     if (activeAnimationKind === 'radar') {
       const radarLabel = radarProductMeta?.summaryLabel ?? radarProductMeta?.chipLabel ?? 'Radar';
-      if (goesTrueColorEnabled) return `${radarLabel} + true color`;
-      if (goesEastIrEnabled) return `${radarLabel} + infrared`;
-      return radarLabel;
+      const layers = [radarLabel];
+      if (cloudsEnabled) layers.push('visible clouds');
+      if (goesTrueColorEnabled) layers.push('true color');
+      if (goesEastIrEnabled) layers.push('infrared');
+      if (goesEastWvEnabled) layers.push('East water vapor');
+      if (goesWestWvEnabled) layers.push('West water vapor');
+      if (windParticlesEnabled) layers.push('wind flow');
+      return layers.join(' + ');
     }
-    if (activeAnimationKind === 'truecolor') return 'True color';
-    if (activeAnimationKind === 'ir') return 'Infrared';
-    if (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west') return 'Water vapor';
-    if (activeAnimationKind === 'clouds') return 'Visible cloud loop';
-    return 'Weather loop';
-  }, [activeAnimationKind, goesEastIrEnabled, goesTrueColorEnabled, radarProductMeta?.chipLabel, radarProductMeta?.summaryLabel]);
+    if (activeAnimationKind === 'truecolor') label = 'True color';
+    if (activeAnimationKind === 'ir') label = 'Infrared';
+    if (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west') label = 'Water vapor';
+    if (activeAnimationKind === 'clouds') label = 'Visible cloud loop';
+    if (!activeAnimationKind && windParticlesEnabled) return '10 m wind flow';
+    return windParticlesEnabled ? `${label} + wind flow` : label;
+  }, [
+    activeAnimationKind,
+    cloudsEnabled,
+    goesEastIrEnabled,
+    goesEastWvEnabled,
+    goesTrueColorEnabled,
+    goesWestWvEnabled,
+    radarProductMeta?.chipLabel,
+    radarProductMeta?.summaryLabel,
+    windParticlesEnabled,
+  ]);
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
-    if (!activeAnimationKind || animationCompositorFrames.length < 2) return [];
+    if (!activeAnimationKind) {
+      if (windParticleExportFrames.length < 2) return [];
+      return windParticleExportFrames.map((windSegments, index) => ({
+        label: `Flow ${index + 1}`,
+        urls: [],
+        basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
+        region: animationExportRegion,
+        zoom: mapZoom,
+        windSegments,
+        windOpacity: windParticlesOpacity,
+      }));
+    }
+    if (animationCompositorFrames.length < 2) return [];
     const { width, height } = animationExportSize;
-    return animationCompositorFrames.map((frame) => {
+    return animationCompositorFrames.map((frame, frameIndex) => {
       const label = new Date(frame.iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const windSegments = windParticleExportFrames.length
+        ? windParticleExportFrames[frameIndex % windParticleExportFrames.length]
+        : [];
       if (activeAnimationKind === 'radar') {
         const idx = animationCompositorFrames.findIndex((candidate) => candidate.id === frame.id);
         const tileTemplate = idx >= 0 ? uiTemplates[idx] : null;
         const satelliteIndex = nearestFrameIndexByIso(satellitePlaybackFrames, frame.iso);
         const satelliteFrame = satelliteIndex >= 0 ? satellitePlaybackFrames[satelliteIndex] : null;
-        const underlayUrls =
-          satelliteFrame && goesTrueColorEnabled
-            ? [buildAnimationUrl('geocolor', satelliteFrame, width, height)]
-            : satelliteFrame && goesEastIrEnabled
-              ? [buildAnimationUrl('goes-east-ir', satelliteFrame, width, height)]
-              : [];
+        const underlayUrls = satelliteFrame
+          ? [
+              ...(cloudsEnabled
+                ? [
+                    buildAnimationUrl('goes-east-visible', satelliteFrame, width, height),
+                    buildAnimationUrl('goes-west-visible', satelliteFrame, width, height),
+                  ]
+                : []),
+              ...(goesTrueColorEnabled
+                ? [buildAnimationUrl('geocolor', satelliteFrame, width, height)]
+                : []),
+              ...(goesEastIrEnabled
+                ? [buildAnimationUrl('goes-east-ir', satelliteFrame, width, height)]
+                : []),
+              ...(goesEastWvEnabled
+                ? [buildAnimationUrl('goes-east-wv', satelliteFrame, width, height)]
+                : []),
+              ...(goesWestWvEnabled
+                ? [buildAnimationUrl('goes-west-wv', satelliteFrame, width, height)]
+                : []),
+            ]
+          : [];
         return {
           label,
           urls: tileTemplate ? [] : [buildAnimationUrl('radar', frame, width, height)],
@@ -3000,6 +3074,8 @@ export default function MapsScreen() {
           region: animationExportRegion,
           zoom: mapZoom,
           opacity: radarCtl.radarOpacity,
+          windSegments,
+          windOpacity: windParticlesOpacity,
         };
       }
       if (activeAnimationKind === 'truecolor') {
@@ -3009,6 +3085,8 @@ export default function MapsScreen() {
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
+          windSegments,
+          windOpacity: windParticlesOpacity,
         };
       }
       if (activeAnimationKind === 'ir') {
@@ -3018,6 +3096,8 @@ export default function MapsScreen() {
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
+          windSegments,
+          windOpacity: windParticlesOpacity,
         };
       }
       if (activeAnimationKind === 'wv-west') {
@@ -3027,6 +3107,8 @@ export default function MapsScreen() {
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
+          windSegments,
+          windOpacity: windParticlesOpacity,
         };
       }
       if (activeAnimationKind === 'wv-east') {
@@ -3036,6 +3118,8 @@ export default function MapsScreen() {
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
+          windSegments,
+          windOpacity: windParticlesOpacity,
         };
       }
       return {
@@ -3047,6 +3131,8 @@ export default function MapsScreen() {
         basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
         region: animationExportRegion,
         zoom: mapZoom,
+        windSegments,
+        windOpacity: windParticlesOpacity,
       };
     });
   }, [
@@ -3055,18 +3141,23 @@ export default function MapsScreen() {
     animationExportRegion,
     animationExportSize,
     buildAnimationUrl,
+    cloudsEnabled,
+    goesEastWvEnabled,
     mapZoom,
     radarCtl.radarOpacity,
     goesEastIrEnabled,
     goesTrueColorEnabled,
+    goesWestWvEnabled,
     satellitePlaybackFrames,
     uiTemplates,
+    windParticleExportFrames,
+    windParticlesOpacity,
   ]);
 
   const handleAnimationRecordPress = useCallback(async () => {
     const exportFrames = animationExportFrames;
-    if (!activeAnimationKind || exportFrames.length < 2) {
-      Alert.alert('Animation not ready', 'Turn on an animated radar or satellite layer first.');
+    if (exportFrames.length < 2) {
+      Alert.alert('Animation not ready', 'Turn on radar, satellite, or animated wind particles first.');
       return;
     }
     if (!canExportAnimationVideo()) {
@@ -3081,7 +3172,7 @@ export default function MapsScreen() {
     setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
     if (activeAnimationKind === 'radar') {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-    } else {
+    } else if (activeAnimationKind) {
       setSatellitePlaying(true);
     }
 
@@ -3097,9 +3188,9 @@ export default function MapsScreen() {
         height,
         fps: 30,
         secondsPerSourceFrame:
-          activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
+          !activeAnimationKind ? 0.12 : activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
         transitionSeconds:
-          activeAnimationKind === 'truecolor' ? 0.44 : 0.24,
+          !activeAnimationKind ? 0.04 : activeAnimationKind === 'truecolor' ? 0.44 : 0.24,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
@@ -4118,7 +4209,7 @@ export default function MapsScreen() {
         </MapRenderer>
 
         <WindParticleOverlay
-          enabled={windParticlesEnabled && !animationRecordMode}
+          enabled={windParticlesEnabled}
           geojson={windVectorLayer.geojson}
           height={viewportHeight}
           isFocused={isFocused}
@@ -5183,6 +5274,32 @@ export default function MapsScreen() {
             officialText={selectedWeatherAlertOfficialText}
             onClose={closeWeatherAlert}
             onOpenForecast={openSelectedAlertForecast}
+          />
+        ) : null}
+
+        {!showTimeline && !animationRecordMode && windParticlesEnabled ? (
+          <BottomDock
+            center={
+              <Glass style={styles.timelineDock}>
+                <View style={styles.animationControlStrip}>
+                  <Text style={styles.windRecordLabel}>Animated 10 m wind flow</Text>
+                  <Pressable
+                    onPress={handleAnimationRecordPress}
+                    disabled={animationExporting || windParticleExportFrames.length < 2}
+                    style={[
+                      styles.recordModeButton,
+                      animationExporting || windParticleExportFrames.length < 2
+                        ? styles.recordModeButtonDisabled
+                        : null,
+                    ]}
+                  >
+                    <Text style={styles.recordModeButtonText}>
+                      {animationExporting ? 'Saving' : 'Record'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </Glass>
+            }
           />
         ) : null}
 
@@ -6798,6 +6915,12 @@ const styles = StyleSheet.create({
     paddingBottom: 7,
   },
   animationControlSpacer: {
+    flex: 1,
+  },
+  windRecordLabel: {
+    color: 'rgba(226,232,240,0.82)',
+    fontSize: 11,
+    fontWeight: '800',
     flex: 1,
   },
   recordModeButton: {

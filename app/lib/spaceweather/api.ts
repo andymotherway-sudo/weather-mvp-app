@@ -9,6 +9,7 @@ import type {
   MarsInsightWeather,
   SpaceWeatherExtremes,
   SpaceWeatherSummary,
+  KpForecastSample,
 } from './types';
 import type { SpaceWeatherEvent } from './useSpaceWeatherEvents';
 
@@ -551,12 +552,41 @@ export async function fetchSpaceWeatherExtremes(): Promise<SpaceWeatherExtremes>
   };
 }
 
+async function loadKpForecastTimeline(): Promise<KpForecastSample[]> {
+  const rows = await fetchJsonArray(KP_FALLBACK_FORECAST, 'Kp forecast timeline');
+  return rows
+    .map((row: any): KpForecastSample | null => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+      const timeRaw = String(row.time_tag ?? row.time ?? '').trim();
+      const kp = Number(row.kp ?? row.Kp ?? row.planetary_k_index);
+      if (!timeRaw || !Number.isFinite(kp)) return null;
+      const statusRaw = String(row.observed ?? 'predicted').toLowerCase();
+      const status: KpForecastSample['status'] =
+        statusRaw === 'observed' || statusRaw === 'estimated' || statusRaw === 'predicted'
+          ? statusRaw
+          : 'predicted';
+      const parsed = new Date(`${timeRaw.replace(' ', 'T')}Z`);
+      if (!Number.isFinite(parsed.getTime())) return null;
+      return {
+        time: parsed.toISOString(),
+        kp,
+        status,
+        noaaScale:
+          typeof row.noaa_scale === 'string' && row.noaa_scale.trim()
+            ? row.noaa_scale.trim()
+            : null,
+      };
+    })
+    .filter((row): row is KpForecastSample => row != null)
+    .slice(-96);
+}
+
 // ---------- Public summary API (Solar tab) ----------
 
 async function fetchSpaceWeatherSummaryDirect(): Promise<SpaceWeatherSummary> {
   const [plasma, kp] = await Promise.all([loadPlasmaWithFallbacks(), loadKpWithFallbacks()]);
 
-  const [noaaScales, goesXray, imf, protons] = await Promise.all([
+  const [noaaScales, goesXray, imf, protons, kpForecast] = await Promise.all([
     safeOptional(() => fetchNoaaScalesNow(), 'NOAA scales'),
     safeOptional(() => fetchGoesXrayNow(), 'GOES x-ray'),
     safeOptional(async () => {
@@ -566,6 +596,7 @@ async function fetchSpaceWeatherSummaryDirect(): Promise<SpaceWeatherSummary> {
       return out;
     }, 'IMF mag (Bz/Bt)'),
     safeOptional(() => fetchProtonsNow(), 'GOES protons (>=10 MeV)'),
+    safeOptional(() => loadKpForecastTimeline(), 'Kp forecast timeline'),
   ]);
 
   const plasmaTime = new Date(plasma.time);
@@ -583,6 +614,7 @@ async function fetchSpaceWeatherSummaryDirect(): Promise<SpaceWeatherSummary> {
     solarWindDensity: plasma.density,
     solarWindTemp: plasma.temperature,
     kp: kp.kp,
+    kpForecast: kpForecast ?? undefined,
     updatedAt: newest,
     windHistory: plasma.history,
 

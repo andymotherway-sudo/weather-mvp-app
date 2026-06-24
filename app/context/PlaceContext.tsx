@@ -161,7 +161,15 @@ async function getPermissionStatus(): Promise<'unknown' | 'granted' | 'denied'> 
 }
 
 export function PlaceProvider({ children }: { children: React.ReactNode }) {
-  const { active: locActive, activeCoords, refreshCurrentLocation, state: locState } = useLocations();
+  const {
+    active: locActive,
+    activeCoords,
+    activeLabel,
+    addOrActivateFavorite,
+    refreshCurrentLocation,
+    setActiveCurrent,
+    state: locState,
+  } = useLocations();
 
   // We expose a similar “permission/loading” semantics that PlaceContext used before
   const locationLoading = !locState.hydrated;
@@ -284,7 +292,55 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
     });
   }, [active, activeCoords, locActive.kind]);
 
-  const setActive = (p: Place) => setActiveState(p);
+  // LocationsProvider is the canonical location selector. Mirror every
+  // favorite/current change here so tabs still using PlaceContext cannot
+  // remain attached to a previous city.
+  useEffect(() => {
+    if (!hydratedRef.current || !locState.hydrated || !activeCoords) return;
+
+    const source: Place['source'] = locActive.kind === 'current' ? 'gps' : 'favorite';
+    const name =
+      activeLabel?.trim() ||
+      (source === 'gps' ? 'Current Location' : active?.name?.trim()) ||
+      `${activeCoords.lat.toFixed(2)}, ${activeCoords.lon.toFixed(2)}`;
+    const next: Place = {
+      id: makeId(activeCoords.lat, activeCoords.lon),
+      name,
+      lat: activeCoords.lat,
+      lon: activeCoords.lon,
+      source,
+    };
+
+    if (
+      active &&
+      active.name === next.name &&
+      active.source === next.source &&
+      nearlySame(active.lat, next.lat) &&
+      nearlySame(active.lon, next.lon)
+    ) {
+      return;
+    }
+
+    setActiveState(next);
+  }, [
+    active,
+    activeCoords,
+    activeLabel,
+    locActive.kind,
+    locState.hydrated,
+  ]);
+
+  const setActive = useCallback(
+    (p: Place) => {
+      setActiveState(p);
+      if (p.source === 'gps') {
+        setActiveCurrent();
+        return;
+      }
+      addOrActivateFavorite(p.name, p.lat, p.lon);
+    },
+    [addOrActivateFavorite, setActiveCurrent]
+  );
 
   const addFavorite = (p: Place) => {
     const fav: Place = { ...p, source: 'favorite' };
@@ -294,6 +350,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
       return next.slice(0, 30);
     });
     setActiveState(fav);
+    addOrActivateFavorite(fav.name, fav.lat, fav.lon);
     warmFavoriteLocationCaches(fav.lat, fav.lon).catch(() => {});
   };
 
@@ -331,7 +388,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<PlaceState>(
     () => ({ active, favorites, setActive, addFavorite, removeFavorite, useGPS }),
-    [active, favorites, useGPS],
+    [active, favorites, setActive, useGPS],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

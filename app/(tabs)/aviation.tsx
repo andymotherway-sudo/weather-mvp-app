@@ -823,6 +823,10 @@ export default function AviationScreen() {
 
     let cancelled = false;
     lastNearestFieldSyncRef.current = key;
+    setStation(null);
+    setFlight(null);
+    setLoading(true);
+    setError(null);
 
     async function syncNearestField() {
       const nearest =
@@ -832,11 +836,10 @@ export default function AviationScreen() {
       if (cancelled) return;
       if (!nearest?.code) {
         lastNearestFieldSyncRef.current = null;
+        setLoading(false);
         return;
       }
 
-      setLoading(true);
-      setError(null);
       setStationInput(nearest.code);
 
       try {

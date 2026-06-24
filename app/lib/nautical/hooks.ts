@@ -1,6 +1,6 @@
 // app/lib/nautical/hooks.ts
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchNauticalSummary } from './api';
 import type { NauticalStation } from './stations';
 import { DEFAULT_NAUTICAL_STATION } from './stations';
@@ -27,39 +27,53 @@ export function useNauticalSummary(
   const [loading, setLoading] = useState(enabled);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isRefresh = false) => {
     if (!enabled) {
+      requestIdRef.current += 1;
+      setData(null);
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
+    const requestId = ++requestIdRef.current;
     try {
       setError(null);
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setData(null);
+        setLoading(true);
+      }
 
       const result = await fetchNauticalSummary(station);
-      setData(result);
+      if (requestId === requestIdRef.current) setData(result);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       console.error('Error loading nautical data', err);
       setError(
         err instanceof Error ? err.message : 'Error loading nautical data',
       );
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [enabled, station]);
 
   const refresh = useCallback(() => {
     if (!enabled) return;
-    setRefreshing(true);
-    void load();
+    void load(true);
   }, [enabled, load]);
 
   useEffect(() => {
-    void load();
+    void load(false);
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [load]);
 
   return {

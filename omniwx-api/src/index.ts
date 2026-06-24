@@ -1035,7 +1035,7 @@ const DONKI_TTL_SECONDS = 15 * 60;
 const DONKI_STALE_SECONDS = 24 * 3600;
 const SPACE_WEATHER_TTL_SECONDS = 5 * 60;
 const SPACE_WEATHER_STALE_SECONDS = 6 * 3600;
-const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v1";
+const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v2";
 const SPACE_WEATHER_TIMEOUT_MS = 9000;
 const NWS_DESK_TTL_SECONDS = 20 * 60;
 const NWS_DESK_STALE_SECONDS = 6 * 3600;
@@ -3833,6 +3833,32 @@ async function loadSwpcKp() {
   return { ...parsed, source: swpcSource("kp", "Planetary Kp forecast", parsed.observedAt, SWPC_KP_FORECAST) };
 }
 
+async function loadSwpcKpForecast() {
+  const rows = await fetchSwpcJson<any[]>(SWPC_KP_FORECAST, "SWPC Kp forecast");
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .map((row: any) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const time = noaaTableTimeToIso(row.time_tag ?? row.time);
+      const kp = safeNum(row.kp ?? row.Kp ?? row.planetary_k_index);
+      const statusRaw = String(row.observed ?? "predicted").toLowerCase();
+      const status =
+        statusRaw === "observed" || statusRaw === "estimated" || statusRaw === "predicted"
+          ? statusRaw
+          : "predicted";
+      if (!time || kp == null) return null;
+      return {
+        time,
+        kp,
+        status,
+        noaaScale: typeof row.noaa_scale === "string" && row.noaa_scale.trim() ? row.noaa_scale.trim() : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(-96);
+}
+
 function parseNoaaScaleItem(x: any) {
   if (!x || typeof x !== "object") return null;
   const scale = safeNum(x.Scale);
@@ -3970,12 +3996,13 @@ function classifyIncomingStorm(args: { kp?: number | null; speed?: number | null
 
 async function fetchSpaceWeatherSummaryResponse() {
   const [plasma, kp] = await Promise.all([loadSwpcPlasma(), loadSwpcKp()]);
-  const [scales, xray, mag, protons, alerts] = await Promise.all([
+  const [scales, xray, mag, protons, alerts, kpForecast] = await Promise.all([
     loadSwpcScales().catch(() => null),
     loadSwpcXray().catch(() => null),
     loadSwpcMag().catch(() => null),
     loadSwpcProtons().catch(() => null),
     loadSwpcAlerts().catch(() => []),
+    loadSwpcKpForecast().catch(() => []),
   ]);
   const observedCandidates = [plasma.observedAt, kp.observedAt, mag?.observedAt, xray?.timeTag, protons?.timeTag].filter(Boolean) as string[];
   const newest = observedCandidates.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? new Date().toISOString();
@@ -3993,6 +4020,7 @@ async function fetchSpaceWeatherSummaryResponse() {
       solarWindTemp: plasma.temperature,
       windHistory: plasma.history,
       kp: kp.kp,
+      kpForecast,
       noaaScales: scales ? { dateStamp: scales.dateStamp, timeStamp: scales.timeStamp, G: scales.G, R: scales.R, S: scales.S } : undefined,
       noaaScalesUpdatedAt: scales?.observedAt ?? undefined,
       goesXray: xray ? { timeTag: xray.timeTag, fluxWm2: xray.fluxWm2, classLabel: xray.classLabel } : undefined,

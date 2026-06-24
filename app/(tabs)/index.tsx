@@ -5908,6 +5908,7 @@ export default function LandWeatherScreen() {
               </View>
 
               <LandWeatherWithCoords
+                key={`${coords.lat.toFixed(4)},${coords.lon.toFixed(4)}`}
                 coords={coords}
                 activeLabel={locationLabel}
                 wxLab={wxLab}

@@ -209,7 +209,10 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
 
       try {
         if (isRefresh) setRefreshing(true);
-        else setLoading(true);
+        else {
+          setData(null);
+          setLoading(true);
+        }
 
         setError(null);
 
@@ -232,14 +235,16 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
         }
 
         const normalized = normalizeCurrentFromForecastJson(json, units);
-        setData(normalized);
+        if (!ac.signal.aborted && abortRef.current === ac) setData(normalized);
       } catch (err: any) {
-        if (err?.name === 'AbortError') return;
+        if (err?.name === 'AbortError' || ac.signal.aborted || abortRef.current !== ac) return;
         setError(err?.message ?? 'Failed to load current weather');
         setData(null);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (abortRef.current === ac) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [lat, lon, units, enabled]

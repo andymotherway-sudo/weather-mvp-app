@@ -228,7 +228,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
     val sourceBitmaps = listOfNotNull(tileScene) + urlBitmaps
     val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
-    if (sourceBitmaps.isEmpty() || sourceBitmaps.size != expectedCount) {
+    val windOnlyFrame = expectedCount == 0 && frame.windSegments.isNotEmpty() && !frame.basemapTemplate.isNullOrBlank()
+    if ((!windOnlyFrame && sourceBitmaps.isEmpty()) || sourceBitmaps.size != expectedCount) {
       sourceBitmaps.forEach { runCatching { it.recycle() } }
       return null
     }
@@ -244,6 +245,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           basemapOverlayTemplate = frame.basemapOverlayTemplate,
           region = frame.region,
           zoom = frame.zoom,
+          windSegments = frame.windSegments,
+          windOpacity = frame.windOpacity,
         )
       )
       PreparedFrame(label = frame.label, scene = scene)
@@ -359,7 +362,44 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     frame.bitmaps.forEach { drawBitmapFit(canvas, it, width, height, paint) }
     drawTileTemplateLayer(canvas, width, height, frame.basemapBoundaryTemplate, frame.region, frame.zoom, 190)
     drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, frame.region, frame.zoom, 235)
+    drawWindSegments(canvas, frame.windSegments, frame.windOpacity)
     return out
+  }
+
+  private fun drawWindSegments(canvas: Canvas, segments: List<WindSegment>, opacity: Double?) {
+    if (segments.isEmpty()) return
+    val layerOpacity = (opacity ?: 0.72).coerceIn(0.08, 0.95).toFloat()
+    val shadow = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+      strokeWidth = 3.2f
+      color = Color.argb((55 * layerOpacity).roundToInt(), 8, 13, 24)
+    }
+    val streak = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeCap = Paint.Cap.ROUND
+    }
+
+    segments.forEach { segment ->
+      val intensity = segment.intensity.coerceIn(0.08, 1.0).toFloat()
+      shadow.color = Color.argb((55 * layerOpacity * intensity).roundToInt(), 8, 13, 24)
+      canvas.drawLine(segment.x1, segment.y1, segment.x2, segment.y2, shadow)
+      val fast = segment.speed >= 13.0
+      val medium = segment.speed >= 7.0
+      streak.strokeWidth = (if (fast) 1.7f else if (medium) 1.45f else 1.15f) * (0.62f + intensity * 0.38f)
+      streak.color =
+        if (fast) Color.argb((190 * layerOpacity * intensity).roundToInt(), 240, 249, 255)
+        else if (medium) Color.argb((165 * layerOpacity * intensity).roundToInt(), 186, 230, 253)
+        else Color.argb((125 * layerOpacity * intensity).roundToInt(), 147, 197, 253)
+      canvas.drawLine(segment.x1, segment.y1, segment.x2, segment.y2, streak)
+      if (intensity > 0.92f) {
+        val head = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+          style = Paint.Style.FILL
+          color = Color.argb((205 * layerOpacity).roundToInt(), 248, 250, 252)
+        }
+        canvas.drawCircle(segment.x2, segment.y2, if (fast) 1.7f else 1.25f, head)
+      }
+    }
   }
 
   private fun renderTileScene(width: Int, height: Int, frame: ExportFrame, underlays: List<Bitmap> = emptyList()): Bitmap? {
@@ -687,7 +727,21 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         }
       }
       val tileTemplate = item.optNullableString("tileTemplate")
-      if (urls.isNotEmpty() || underlayUrls.isNotEmpty() || !tileTemplate.isNullOrBlank()) {
+      val windSegmentsArray = item.getArray("windSegments")
+      val windSegments = mutableListOf<WindSegment>()
+      if (windSegmentsArray != null) {
+        for (j in 0 until windSegmentsArray.size()) {
+          val segment = windSegmentsArray.getMap(j) ?: continue
+          val x1 = segment.optNullableDouble("x1") ?: continue
+          val y1 = segment.optNullableDouble("y1") ?: continue
+          val x2 = segment.optNullableDouble("x2") ?: continue
+          val y2 = segment.optNullableDouble("y2") ?: continue
+          val speed = segment.optNullableDouble("speed") ?: 0.0
+          val intensity = segment.optNullableDouble("intensity") ?: 1.0
+          windSegments.add(WindSegment(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), speed, intensity))
+        }
+      }
+      if (urls.isNotEmpty() || underlayUrls.isNotEmpty() || !tileTemplate.isNullOrBlank() || windSegments.isNotEmpty()) {
         list.add(
           ExportFrame(
             label = item.optString("label", "Frame ${i + 1}"),
@@ -700,6 +754,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             region = item.getMap("region")?.toExportRegion(),
             zoom = item.optNullableDouble("zoom"),
             opacity = item.optNullableDouble("opacity"),
+            windSegments = windSegments,
+            windOpacity = item.optNullableDouble("windOpacity"),
           )
         )
       }
@@ -726,6 +782,8 @@ private data class ExportFrame(
   val region: ExportRegion? = null,
   val zoom: Double? = null,
   val opacity: Double? = null,
+  val windSegments: List<WindSegment> = emptyList(),
+  val windOpacity: Double? = null,
 )
 
 private data class RenderSourceFrame(
@@ -735,6 +793,17 @@ private data class RenderSourceFrame(
   val basemapOverlayTemplate: String? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
+  val windSegments: List<WindSegment> = emptyList(),
+  val windOpacity: Double? = null,
+)
+
+private data class WindSegment(
+  val x1: Float,
+  val y1: Float,
+  val x2: Float,
+  val y2: Float,
+  val speed: Double,
+  val intensity: Double,
 )
 
 private data class PreparedFrame(

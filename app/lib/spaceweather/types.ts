@@ -36,6 +36,13 @@ export type ProtonNow = {
   sScale?: 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 };
 
+export type KpForecastSample = {
+  time: string;
+  kp: number;
+  status: 'observed' | 'estimated' | 'predicted';
+  noaaScale?: string | null;
+};
+
 export type SpaceWeatherSourceStatus = {
   id: string;
   label: string;
@@ -89,6 +96,7 @@ export type SpaceWeatherSummary = {
   solarWindDensity: number;
   solarWindTemp: number;
   kp: number;
+  kpForecast?: KpForecastSample[];
   updatedAt: string;
   windHistory: SolarWindSample[];
 

@@ -192,7 +192,12 @@ export function useClimatologyNormals({
 
   const abortRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
+  const dataRef = useRef<ClimatologyResult | null>(null);
   const hasValidCoords = isFiniteCoord(lat) && isFiniteCoord(lon);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const locKey = useMemo(() => {
     if (!hasValidCoords) return 'invalid';
@@ -233,8 +238,12 @@ export function useClimatologyNormals({
       };
 
       safeSet(() => {
-        if (mode === 'initial') setLoading(true);
-        else setRefreshing(true);
+        if (mode === 'initial') {
+          setData(null);
+          setLoading(true);
+        } else {
+          setRefreshing(true);
+        }
         setError(null);
       });
 
@@ -284,7 +293,7 @@ export function useClimatologyNormals({
   const ce = e instanceof ClimoError ? e : null;
 
   safeSet(() => {
-    if (hasUsableNormals(data)) {
+    if (hasUsableNormals(dataRef.current)) {
       setError(null);
       return;
     }
@@ -299,7 +308,7 @@ export function useClimatologyNormals({
         });
       }
     },
-    [enabled, hasValidCoords, lat, lon, preferCache, data]
+    [enabled, hasValidCoords, lat, lon, preferCache]
   );
 
   useEffect(() => {

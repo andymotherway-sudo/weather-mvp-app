@@ -1,4 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
+import type { WindParticleExportSegment } from '../../../components/maps/WindParticleOverlay';
 
 export type AnimationVideoFrame = {
   label: string;
@@ -16,6 +17,8 @@ export type AnimationVideoFrame = {
   } | null;
   zoom?: number | null;
   opacity?: number | null;
+  windSegments?: WindParticleExportSegment[];
+  windOpacity?: number | null;
 };
 
 export type AnimationVideoExportOptions = {
@@ -68,8 +71,16 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
       region: frame.region ?? null,
       zoom: frame.zoom ?? null,
       opacity: frame.opacity ?? null,
+      windSegments: frame.windSegments ?? [],
+      windOpacity: frame.windOpacity ?? null,
     }))
-    .filter((frame) => frame.urls.length > 0 || frame.underlayUrls.length > 0 || !!frame.tileTemplate);
+    .filter(
+      (frame) =>
+        frame.urls.length > 0 ||
+        frame.underlayUrls.length > 0 ||
+        !!frame.tileTemplate ||
+        frame.windSegments.length > 0,
+    );
 
   // Native export expects every source frame to have at least one prepared
   // image layer or renderable tile template. Rejecting here gives the UI a

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Canvas, Path } from '@shopify/react-native-skia';
+import { Canvas, Circle, Path } from '@shopify/react-native-skia';
 
 import type { Region } from './MapRenderer';
 
@@ -67,13 +67,23 @@ type WindField = {
 };
 
 type ParticlePaths = {
-  slow: string;
-  medium: string;
-  fast: string;
+  tail: string;
+  body: string;
+  head: string;
+  heads: Array<{ x: number; y: number; speed: number }>;
+};
+
+export type WindParticleExportSegment = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  speed: number;
+  intensity: number;
 };
 
 const MAX_PARTICLES = 280;
-const FRAME_MS = 48;
+const FRAME_MS = 40;
 const FIELD_CELL_PX = 58;
 const MIN_TRAIL_POINTS = 7;
 const MAX_TRAIL_POINTS = 15;
@@ -257,13 +267,38 @@ function initializeParticleRuntime(field: WindField | null): ParticleRuntime[] {
   }));
 }
 
-function resetParticle(particle: ParticleRuntime, width: number, height: number) {
+function resetParticle(
+  particle: ParticleRuntime,
+  field: WindField,
+  width: number,
+  height: number,
+) {
   particle.generation += 1;
   const seed = `wind-runtime:${particle.id}:${particle.generation}`;
-  particle.x = hash01(`${seed}:x`) * width;
-  particle.y = hash01(`${seed}:y`) * height;
+  let x = hash01(`${seed}:x`) * width;
+  let y = hash01(`${seed}:y`) * height;
+
+  // Prefer locations where the interpolated field is valid and moving. This
+  // avoids obvious empty patches and stationary dots along sparse field edges.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const sample = sampleField(field, x, y);
+    if (sample?.valid && sample.speed >= 0.35) break;
+    x = hash01(`${seed}:x:${attempt}`) * width;
+    y = hash01(`${seed}:y:${attempt}`) * height;
+  }
+
+  particle.x = x;
+  particle.y = y;
   particle.age = 0;
   particle.history = [];
+}
+
+function pathForPoints(points: Array<{ x: number; y: number }>) {
+  if (points.length < 2) return '';
+  const [first, ...rest] = points;
+  return `M ${first.x.toFixed(1)} ${first.y.toFixed(1)} ${rest
+    .map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(' ')}`;
 }
 
 function advanceParticlePaths(
@@ -273,26 +308,33 @@ function advanceParticlePaths(
   width: number,
   height: number,
 ): ParticlePaths {
-  const empty = { slow: '', medium: '', fast: '' };
+  const empty: ParticlePaths = { tail: '', body: '', head: '', heads: [] };
   if (!field || !particles.length) return empty;
-  const buckets: Record<keyof ParticlePaths, string[]> = {
-    slow: [],
-    medium: [],
-    fast: [],
-  };
+  const tailPaths: string[] = [];
+  const bodyPaths: string[] = [];
+  const headPaths: string[] = [];
+  const heads: ParticlePaths['heads'] = [];
 
   for (const particle of field.particles) {
     const runtime = particles[particle.id];
     if (!runtime) continue;
     const cell = sampleField(field, runtime.x, runtime.y);
     if (!cell) {
-      resetParticle(runtime, width, height);
+      resetParticle(runtime, field, width, height);
       continue;
     }
 
+    // Midpoint (RK2) advection follows curved wind fields more naturally than
+    // a single Euler step while requiring only one additional field sample.
+    const midpoint = sampleField(
+      field,
+      runtime.x + cell.u * runtime.speedScale * elapsedSeconds * 0.5,
+      runtime.y + cell.v * runtime.speedScale * elapsedSeconds * 0.5,
+    ) ?? cell;
+
     runtime.age += elapsedSeconds;
-    runtime.x += cell.u * runtime.speedScale * elapsedSeconds;
-    runtime.y += cell.v * runtime.speedScale * elapsedSeconds;
+    runtime.x += midpoint.u * runtime.speedScale * elapsedSeconds;
+    runtime.y += midpoint.v * runtime.speedScale * elapsedSeconds;
     if (
       runtime.age >= runtime.life ||
       runtime.x < -36 ||
@@ -300,7 +342,7 @@ function advanceParticlePaths(
       runtime.y < -36 ||
       runtime.y > height + 36
     ) {
-      resetParticle(runtime, width, height);
+      resetParticle(runtime, field, width, height);
       continue;
     }
 
@@ -313,31 +355,85 @@ function advanceParticlePaths(
     }
     if (runtime.history.length < 2) continue;
 
-    const avgSpeed = runtime.history.reduce((sum, point) => sum + point.speed, 0) / runtime.history.length;
-    const bucket: keyof ParticlePaths = avgSpeed >= 13 ? 'fast' : avgSpeed >= 7 ? 'medium' : 'slow';
-    const [first, ...rest] = runtime.history;
-    buckets[bucket].push(
-      `M ${first.x.toFixed(1)} ${first.y.toFixed(1)} ${rest
-        .map((point) => `L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
-        .join(' ')}`,
-    );
+    const lastIndex = runtime.history.length - 1;
+    const bodyStart = Math.max(0, Math.floor(lastIndex * 0.38));
+    const headStart = Math.max(bodyStart, Math.floor(lastIndex * 0.72));
+    const tail = pathForPoints(runtime.history.slice(0, bodyStart + 2));
+    const body = pathForPoints(runtime.history.slice(bodyStart, headStart + 2));
+    const head = pathForPoints(runtime.history.slice(headStart));
+    if (tail) tailPaths.push(tail);
+    if (body) bodyPaths.push(body);
+    if (head) headPaths.push(head);
+    heads.push({ x: runtime.x, y: runtime.y, speed: midpoint.speed });
   }
 
   return {
-    slow: buckets.slow.join(' '),
-    medium: buckets.medium.join(' '),
-    fast: buckets.fast.join(' '),
+    tail: tailPaths.join(' '),
+    body: bodyPaths.join(' '),
+    head: headPaths.join(' '),
+    heads,
   };
+}
+
+function snapshotParticleSegments(particles: ParticleRuntime[]): WindParticleExportSegment[] {
+  const segments: WindParticleExportSegment[] = [];
+  for (const particle of particles) {
+    if (particle.history.length < 2) continue;
+    const startIndex = Math.max(0, particle.history.length - 7);
+    const trail = particle.history.slice(startIndex);
+    for (let index = 1; index < trail.length; index += 1) {
+      const start = trail[index - 1];
+      const end = trail[index];
+      segments.push({
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        speed: end.speed,
+        intensity: index / Math.max(1, trail.length - 1),
+      });
+    }
+  }
+  return segments;
+}
+
+export function buildWindParticleExportFrames({
+  frameCount,
+  geojson,
+  height,
+  region,
+  width,
+}: {
+  frameCount: number;
+  geojson: any;
+  height: number;
+  region: Region | null;
+  width: number;
+}) {
+  const field = buildWindField(geojson, region, width, height);
+  if (!field || frameCount < 2) return [];
+  const particles = initializeParticleRuntime(field);
+
+  // Warm the deterministic particle field before capturing so the first
+  // exported frame already contains developed trails.
+  for (let step = 0; step < 10; step += 1) {
+    advanceParticlePaths(field, particles, 0.1, width, height);
+  }
+
+  return Array.from({ length: frameCount }, () => {
+    advanceParticlePaths(field, particles, 0.12, width, height);
+    return snapshotParticleSegments(particles);
+  });
 }
 
 export function WindParticleOverlay({ enabled, geojson, height, isFocused, opacity, region, width }: Props) {
   const field = useMemo(() => buildWindField(geojson, region, width, height), [geojson, height, region, width]);
   const particleRuntimeRef = React.useRef<ParticleRuntime[]>([]);
-  const [paths, setPaths] = useState<ParticlePaths>({ slow: '', medium: '', fast: '' });
+  const [paths, setPaths] = useState<ParticlePaths>({ tail: '', body: '', head: '', heads: [] });
 
   useEffect(() => {
     particleRuntimeRef.current = initializeParticleRuntime(field);
-    setPaths({ slow: '', medium: '', fast: '' });
+    setPaths({ tail: '', body: '', head: '', heads: [] });
   }, [field]);
 
   useEffect(() => {
@@ -357,7 +453,7 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
     };
   }, [enabled, field, height, isFocused, width]);
 
-  const hasPath = !!(paths.slow || paths.medium || paths.fast);
+  const hasPath = !!(paths.tail || paths.body || paths.head);
 
   if (!enabled || !isFocused || !hasPath) return null;
 
@@ -366,25 +462,37 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Canvas style={StyleSheet.absoluteFill}>
-        {paths.slow ? (
+        {paths.tail ? (
+          <Path
+            path={paths.tail}
+            color={`rgba(125, 211, 252, ${0.16 * layerOpacity})`}
+            style="stroke"
+            strokeWidth={0.8}
+            strokeCap="round"
+            strokeJoin="round"
+          />
+        ) : null}
+        {paths.body ? (
           <>
-            <Path path={paths.slow} color={`rgba(8, 13, 24, ${0.14 * layerOpacity})`} style="stroke" strokeWidth={3.0} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.slow} color={`rgba(147, 197, 253, ${0.34 * layerOpacity})`} style="stroke" strokeWidth={1.1} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.body} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.0} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.body} color={`rgba(186, 230, 253, ${0.42 * layerOpacity})`} style="stroke" strokeWidth={1.18} strokeCap="round" strokeJoin="round" />
           </>
         ) : null}
-        {paths.medium ? (
+        {paths.head ? (
           <>
-            <Path path={paths.medium} color={`rgba(8, 13, 24, ${0.18 * layerOpacity})`} style="stroke" strokeWidth={3.3} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.medium} color={`rgba(186, 230, 253, ${0.56 * layerOpacity})`} style="stroke" strokeWidth={1.42} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.head} color={`rgba(8, 13, 24, ${0.22 * layerOpacity})`} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.head} color={`rgba(240, 249, 255, ${0.72 * layerOpacity})`} style="stroke" strokeWidth={1.55} strokeCap="round" strokeJoin="round" />
           </>
         ) : null}
-        {paths.fast ? (
-          <>
-            <Path path={paths.fast} color={`rgba(8, 13, 24, ${0.22 * layerOpacity})`} style="stroke" strokeWidth={3.7} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.fast} color={`rgba(255, 255, 255, ${0.66 * layerOpacity})`} style="stroke" strokeWidth={1.65} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.fast} color={`rgba(125, 211, 252, ${0.28 * layerOpacity})`} style="stroke" strokeWidth={0.72} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
+        {paths.heads.map((head, index) => (
+          <Circle
+            key={index}
+            cx={head.x}
+            cy={head.y}
+            r={head.speed >= 13 ? 1.65 : head.speed >= 7 ? 1.35 : 1.05}
+            color={`rgba(255, 255, 255, ${0.72 * layerOpacity})`}
+          />
+        ))}
       </Canvas>
     </View>
   );

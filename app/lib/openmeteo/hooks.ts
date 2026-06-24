@@ -1,5 +1,5 @@
 // app/lib/openmeteo/hooks.ts
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
@@ -142,10 +142,14 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
     async (isRefresh: boolean) => {
       if (latKey == null || lonKey == null) {
+        requestIdRef.current += 1;
+        abortRef.current?.abort();
         setError(null);
         setData(null);
         setLoading(true);
@@ -154,15 +158,26 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
       }
 
       if (!enabled) {
+        requestIdRef.current += 1;
+        abortRef.current?.abort();
         setError(null);
+        setData(null);
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
+      const requestId = ++requestIdRef.current;
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+
       try {
         if (isRefresh) setRefreshing(true);
-        else setLoading(true);
+        else {
+          setData(null);
+          setLoading(true);
+        }
 
         setError(null);
 
@@ -215,7 +230,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
 
         console.log('[net] requesting:', url);
-        const res = await fetchWithTimeout(url, 12000);
+        const res = await fetchWithTimeout(url, 12000, { signal: ac.signal });
         console.log('[net] status:', res.status, url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
@@ -235,7 +250,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           });
           if (pastDays > 0) aqParams.set('past_hours', String(Math.min(24, pastDays * 24)));
           const aqUrl = apiUrl(`/api/air-quality/hourly?${aqParams.toString()}`);
-          const aqRes = await fetchWithTimeout(aqUrl, 10000);
+          const aqRes = await fetchWithTimeout(aqUrl, 10000, { signal: ac.signal });
           if (aqRes.ok) {
             const aqJson = await aqRes.json();
             const aqRows = Array.isArray(aqJson?.hourly) ? aqJson.hourly : [];
@@ -244,7 +259,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
             }
           }
         } catch (aqErr) {
-          console.warn('AQI hourly unavailable', aqErr);
+          if (!ac.signal.aborted) console.warn('AQI hourly unavailable', aqErr);
         }
 
         // ---- Hourly parse ----
@@ -376,6 +391,8 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           uvIndexMax: safeNum(dUvMax[idx]),
         }));
 
+        if (requestId !== requestIdRef.current || ac.signal.aborted) return;
+
         setData({
           daily,
           hourly,
@@ -384,11 +401,14 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
           utcOffsetSeconds,
         });
       } catch (err: any) {
+        if (err?.name === 'AbortError' || ac.signal.aborted || requestId !== requestIdRef.current) return;
         console.error('useOpenMeteoForecast error', err);
         setError(err?.message ?? 'Failed to load forecast');
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (requestId === requestIdRef.current && abortRef.current === ac) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [latKey, lonKey, days, pastDays, model, enabled]
@@ -396,6 +416,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
 
   useEffect(() => {
     load(false);
+    return () => abortRef.current?.abort();
   }, [load]);
 
   const refresh = useCallback(() => load(true), [load]);

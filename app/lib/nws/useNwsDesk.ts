@@ -117,6 +117,7 @@ export function useNwsDesk({
     }
 
     const ac = new AbortController();
+    setData(null);
     setLoading(true);
     setError(null);
 
@@ -209,6 +210,7 @@ export function useNwsStormReports({
     }
 
     const ac = new AbortController();
+    setData(null);
     setLoading(true);
     setError(null);
 

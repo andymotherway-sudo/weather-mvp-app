@@ -4,7 +4,7 @@ This document explains the app in plain English from the code that is in this re
 
 It is written for someone who is not deeply familiar with coding, React, or mobile app structure.
 
-Last updated: June 22, 2026
+Last updated: June 24, 2026
 
 Personal note: this is Andy's private plain-English system explanation. It is meant to be more candid and more detailed than a public README.
 
@@ -31,6 +31,10 @@ You can think of it as:
 The biggest current design idea is that OMNIwx is becoming one integrated weather workstation. Land, Hourly, Almanac, Space, Aviation, Nautical, Maps, and Extremes are still separate tabs, but Maps is now the hub for weather map modes instead of a pile of unrelated standalone map screens.
 
 The Land wxLab screen also has a local forecaster desk. The app asks the worker for NWS Desk data for the active location; the worker resolves the local NWS Weather Forecast Office, fetches official AFD/HWO products, parses a compact briefing, and caches the response. The same response now adds the current NWS forecast period, a fresh nearby official observation when available, official SPC Day 1 categorical and hazard-probability context, active-watch context, and alert lifecycle changes. A second worker endpoint fetches recent official Local Storm Reports for the same office and returns a small Storm Recap.
+
+Location state is intentionally unified. `LocationsProvider` is the canonical selector, while `PlaceContext` mirrors that active location for older feature hooks. Location-sensitive hooks clear prior-location data immediately and reject aborted or late responses. This prevents current conditions from changing cities while daily cards, marine data, astronomy, or another tab remains attached to the previous place.
+
+The Space tab now renders its Sky Score trend and hourly observing cards as one 72-hour forecast timeline. The worker supplies observed, estimated, and predicted Kp samples; the app combines them with location-specific cloud, moon, darkness, wind, and astronomy timing without changing the underlying source calculations.
 
 ## 2. The Main Tech Stack
 
@@ -970,7 +974,9 @@ Mental model:
 
 - The app collects frame URLs.
 - The compositor tries to make on-screen playback smooth.
-- The native exporter downloads frames, composites them into bitmaps, blends transitions, encodes H.264, and saves an MP4.
+- The native exporter downloads frames, composites them into bitmaps, blends transitions, draws optional animated wind trails, encodes H.264, and saves an MP4.
+- Recorder frames reflect the enabled animated stack: radar can include visible clouds, true color, infrared, water vapor, and wind flow; satellite products can include wind flow; and wind particles can be exported without another animated layer.
+- Live wind particles use midpoint advection, deterministic reseeding, tapered fading trails, and moving heads. The native exporter uses the same graded trail data so saved videos resemble the map.
 
 Why true color can look different from radar:
 

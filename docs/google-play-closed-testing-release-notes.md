@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.128**
-Android version code: **10145**
+Release: **OMNIwx Alpha 1.1.129**
+Android version code: **10146**
 Track: **Closed testing / internal testing candidate**
-Date: **June 23, 2026**
+Date: **June 24, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.128 expands Land wxLab into a more complete local forecast desk, improves satellite animation continuity, and makes animated wind flow smoother and more efficient. This build uses a fresh Android version code for Play/device update recognition. Please test Severe Setup, forecast verification, NWS alert changes, true-color/infrared loops, wind particles, widgets, Maps panning, and Play update recognition.
+OMNIwx Alpha 1.1.129 makes location changes consistent across every tab, combines the Space observing forecast into one synchronized 72-hour timeline, improves Windy-style flow animation, and expands Maps recording to capture animated wind and layered weather products. This build uses a fresh Android version code for Play/device update recognition.
 
 ## Full Tester Notes
 
@@ -15,6 +15,16 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Unified active-location behavior across Land, Hourly, Almanac, Maps, Space, Nautical, Aviation, Extremes, and supporting data hooks.
+- Location-sensitive requests now clear old-place content and ignore late responses from the previous city.
+- Added one synchronized 72-hour astronomy forecast to Space, combining the Sky Score graph and hourly observing cards in a shared horizontal timeline.
+- Added daily astronomy summaries with peak observing time, clouds, moon illumination, true-dark duration, wind, moonrise/moonset, Kp forecast, and estimated aurora-viewing context.
+- Added SWPC Kp forecast samples to the existing Space Weather summary contract and direct fallback.
+- Improved animated 10 m wind flow with curved midpoint advection, better particle reseeding, tapered fading trails, and bright moving heads.
+- Increased wind animation smoothness while keeping the effect in the lightweight Skia overlay.
+- Expanded native MP4 recording so enabled animated radar/satellite underlays and wind particles can be preserved together.
+- Added wind-only MP4 recording for the animated 10 m flow layer.
+- Matched exported wind styling to the live map with graded trails and moving particle heads.
 - Added **NWS Desk** to Land wxLab using official NOAA/NWS AFD and HWO text products.
 - Added a cached worker endpoint for local NWS desk briefings, including WFO, update time, headline, summary, hazards, timing, confidence, and raw AFD/HWO text.
 - Cleaned up NWS Desk summaries so repeated AFD/HWO sentences are deduped and leading bulletin dash/bullet noise is removed.
@@ -79,8 +89,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.128`
-- Android version code: `10145`
+- App version: `1.1.129`
+- Android version code: `10146`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

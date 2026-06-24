@@ -76,7 +76,10 @@ export function useFireContext({
 
       try {
         if (isRefresh) setRefreshing(true);
-        else setLoading(true);
+        else {
+          setData(null);
+          setLoading(true);
+        }
         setError(null);
 
         const url = apiUrl(`/api/fire/context?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`);

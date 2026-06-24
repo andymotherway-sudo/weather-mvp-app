@@ -1,6 +1,6 @@
 # OMNIwx Feature Guide
 
-Last updated: June 22, 2026
+Last updated: June 24, 2026
 
 This guide explains the user-facing screens and major features currently present in OMNIwx. It is written as a product walkthrough rather than a code tutorial. For architecture details, see `docs/how-omniwx-works.md` and `docs/omniwx-training-guide.md`.
 
@@ -25,6 +25,8 @@ The visible bottom tabs are Land, Hourly, Almanac, Maps, Space, Nautical, Aviati
 ### Location and Favorites
 
 OMNIwx keeps one active place that drives the weather screens. The active place can come from GPS, a searched city, the default city, or a saved favorite.
+
+The active place is shared across every tab. When the user changes location, current conditions, daily/hourly forecasts, Almanac, Maps, Space, Nautical, Aviation, Extremes, and supporting background requests all move to the same coordinates. In-flight requests from the previous location are ignored so late responses cannot repaint a screen with stale-city data.
 
 The Land screen's location picker supports:
 
@@ -241,7 +243,7 @@ Maps supports:
 
 ### Animation Export
 
-On Android, OMNIwx can export radar/satellite animation loops as MP4 files through the native video export module. Export uses prepared animation frames, preserves the recording region, and saves through Android media APIs.
+On Android, OMNIwx can export animated map loops as MP4 files through the native video export module. Recording preserves the visible animated weather stack, including radar, visible clouds, GOES true color, infrared, water vapor, and animated wind flow when those layers are enabled. Wind flow can also be recorded by itself. Export uses prepared animation frames, preserves the recording region, and saves through Android media APIs.
 
 ### Map Interaction
 
@@ -258,7 +260,7 @@ Maps can show:
 
 Route: `app/(tabs)/solar.tsx`
 
-The Space tab is labeled "Space" in the tab bar and titled "Solar Wx" inside the screen. It combines live space-weather signals, observing conditions, solar imagery, Earth imagery, and Mars archive data.
+The Space tab combines night-sky observing forecasts, live space-weather signals, solar imagery, Earth imagery, and Mars archive data.
 
 Key features:
 
@@ -282,6 +284,8 @@ Key features:
   - GOES-West GeoColor terminator view.
   - NASA EPIC/DSCOVR L1 Earth view where available, with terminator imagery preferred for current visual context.
 - Sky Score card for observing quality.
+- Unified 72-hour astronomy forecast that keeps the Sky Score curve and hourly forecast cards on one synchronized horizontal timeline.
+- Daily observing summaries with peak Sky Score/time, clouds, moon illumination, true-dark hours, wind, moonrise/moonset, forecast Kp, and an estimated aurora-viewing signal.
 - Mars Weather Archive from NASA InSight-era data.
 - Learn topics for NOAA scales, Kp, solar wind, solar wind density/speed, IMF Bz, X-ray flux, proton flux, SWPC alerts, DONKI events, CMEs, solar flares, solar imagery, Earth disk/terminator views, Sky Score, and Mars weather.
 - Optional solar event capture videos, controlled from Settings.

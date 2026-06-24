@@ -14,10 +14,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useIsFocused } from '@react-navigation/native';
 
 import { AstroHeroCard } from '../../components/astro/AstroHeroCard';
-import { AstroHourlyStrip } from '../../components/astro/AstroHourlyStrip';
+import { AstroForecastTimeline } from '../../components/astro/AstroForecastTimeline';
 import { MoonDarknessCard } from '../../components/astro/MoonDarknessCard';
 import { OpenAstroMapCard } from '../../components/astro/OpenAstroMapCard';
-import { SkyScoreChart } from '../../components/astro/SkyScoreChart';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import {
   NerdyExplainModal,
@@ -1355,8 +1354,13 @@ export default function SolarScreen() {
             placeName={astro.placeName}
             compact
           />
-          <SkyScoreChart hours={chartHours} />
-          <AstroHourlyStrip hours={astro.tonightHours} />
+          <AstroForecastTimeline
+            hours={chartHours}
+            latitude={astro.lat}
+            timeZone={astro.timezone}
+            kpForecast={data?.kpForecast}
+            moonDays={astro.moonDays}
+          />
           <MoonDarknessCard
             forecast={astro}
             onLearnTopic={(topicId) => {
