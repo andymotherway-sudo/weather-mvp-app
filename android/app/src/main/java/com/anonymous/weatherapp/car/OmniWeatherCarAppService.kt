@@ -187,9 +187,14 @@ private abstract class OmniWeatherBaseScreen(
    * throws, so every user-facing screen goes through safeTemplate() and has a
    * predictable loading/error fallback.
    */
-  protected fun ensureLoaded(force: Boolean = false) {
+  protected fun ensureLoaded(force: Boolean = false, onDone: (() -> Unit)? = null) {
     if (force || (!repository.loaded && !repository.loading)) {
-      repository.load(force) { invalidate() }
+      repository.load(force) {
+        onDone?.invoke()
+        invalidate()
+      }
+    } else if (repository.loaded) {
+      onDone?.invoke()
     }
   }
 
@@ -448,33 +453,57 @@ private class OmniWeatherSkyScoreScreen(carContext: CarContext, repository: CarW
 }
 
 private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeatherRepository) : OmniWeatherBaseScreen(carContext, repository) {
+  private val appManager = carContext.getCarService(AppManager::class.java)
+  private val radarRenderer = CarRadarSurfaceRenderer(repository) { invalidate() }
+
+  init {
+    lifecycle.addObserver(
+      object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+          appManager.setSurfaceCallback(radarRenderer)
+          radarRenderer.ensureLoaded()
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+          appManager.setSurfaceCallback(EmptyCarSurfaceCallback)
+          radarRenderer.release()
+        }
+
+        override fun onDestroy(owner: LifecycleOwner) {
+          radarRenderer.release()
+          lifecycle.removeObserver(this)
+        }
+      }
+    )
+  }
+
   override fun onGetTemplate(): Template {
     return safeTemplate("Radar Snapshot") {
-      ensureLoaded()
+      ensureLoaded {
+        radarRenderer.ensureLoaded()
+      }
       loadingOrErrorTemplate("Radar Snapshot")?.let { return@safeTemplate it }
       val current = repository.report!!
-      val radarIcon = carRadarSnapshotIcon(current, emptyList(), loading = false, error = null)
       val pane = Pane.Builder()
         .addRow(
           Row.Builder()
-            .setTitle("Radar near ${current.placeName}")
-            .addText("Nearest NEXRAD ${current.nearestRadar.id} - ${current.nearestRadarDistanceMi.roundLabel()} mi")
-            .addText("Driver-safe static radar summary")
-            .setImage(radarIcon, Row.IMAGE_TYPE_LARGE)
-            .build()
-        )
-        .addRow(
-          Row.Builder()
-            .setTitle(current.alertTitle ?: "No active alerts")
-            .addText(current.alertSubtitle ?: "Open Maps on your phone for the full interactive radar.")
+            .setTitle("${current.placeName} radar")
+            .addText("${radarRenderer.statusText()} - nearest NEXRAD ${current.nearestRadar.id}")
+            .addText(current.alertTitle ?: "No active alerts")
             .build()
         )
         .build()
 
-      PaneTemplate.Builder(pane)
-        .setTitle("Radar Snapshot")
-        .setHeaderAction(Action.BACK)
-        .setActionStrip(ActionStrip.Builder().addAction(radarRefreshAction()).build())
+      radarRenderer.ensureLoaded()
+      MapTemplate.Builder()
+        .setHeader(
+          Header.Builder()
+            .setTitle("Radar Snapshot")
+            .setStartHeaderAction(Action.BACK)
+            .addEndHeaderAction(radarRefreshAction())
+            .build()
+        )
+        .setPane(pane)
         .build()
     }
   }
@@ -484,8 +513,10 @@ private class OmniWeatherMapScreen(carContext: CarContext, repository: CarWeathe
       .setTitle("Refresh")
       .setOnClickListener {
         repository.load(force = true) {
+          radarRenderer.requestRefresh()
           invalidate()
         }
+        radarRenderer.requestRefresh()
         invalidate()
       }
       .build()
@@ -502,7 +533,10 @@ private object EmptyCarSurfaceCallback : SurfaceCallback
  * It is intentionally a static snapshot: safer in-car, simpler to reason about,
  * and less likely to overwhelm lower-powered head units.
  */
-private class CarRadarSurfaceRenderer(private val repository: CarWeatherRepository) : SurfaceCallback {
+private class CarRadarSurfaceRenderer(
+  private val repository: CarWeatherRepository,
+  private val onUpdated: () -> Unit,
+) : SurfaceCallback {
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     color = Color.WHITE
@@ -604,7 +638,10 @@ private class CarRadarSurfaceRenderer(private val repository: CarWeatherReposito
         synchronized(tileLock) { radarError = friendlyCarError(e) }
       } finally {
         fetchInFlight.set(false)
-        Handler(Looper.getMainLooper()).post { draw() }
+        Handler(Looper.getMainLooper()).post {
+          draw()
+          onUpdated()
+        }
       }
     }
   }

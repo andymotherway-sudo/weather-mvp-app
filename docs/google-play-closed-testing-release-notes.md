@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.129**
-Android version code: **10146**
+Release: **OMNIwx Alpha 1.1.130**
+Android version code: **10147**
 Track: **Closed testing / internal testing candidate**
 Date: **June 24, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.129 makes location changes consistent across every tab, combines the Space observing forecast into one synchronized 72-hour timeline, improves Windy-style flow animation, and expands Maps recording to capture animated wind and layered weather products. This build uses a fresh Android version code for Play/device update recognition.
+OMNIwx Alpha 1.1.130 gives Android Auto radar a full map surface, connects the Space observing graph and hourly forecast into one interactive timeline, and replaces the crowded AQI axis with values attached directly to AQI data points.
 
 ## Full Tester Notes
 
@@ -15,6 +15,14 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Replaced the shrinking Android Auto radar thumbnail with a full `MapTemplate` radar surface.
+- Android Auto now registers the native radar renderer while the radar screen is visible and detaches it cleanly when leaving.
+- Added a compact radar status/alert pane and refresh action without replacing the primary radar image.
+- Connected Space day summaries, Sky Score graph, and hourly observing columns into one shared horizontal forecast track.
+- Tapping an astronomy hour now highlights the matching graph point and column and updates a complete selected-hour inspector.
+- Preserved all astronomy content, including summary text, clouds, moon state, visibility, wind, temperature, Kp, aurora estimate, daily peaks, true darkness, and moonrise/moonset.
+- Removed the far-right AQI axes from daily and hourly wxLab charts.
+- Added compact AQI values directly beside each yellow AQI point with automatic above/below placement to reduce collisions with temperature, dew point, and humidity.
 - Unified active-location behavior across Land, Hourly, Almanac, Maps, Space, Nautical, Aviation, Extremes, and supporting data hooks.
 - Location-sensitive requests now clear old-place content and ignore late responses from the previous city.
 - Added one synchronized 72-hour astronomy forecast to Space, combining the Sky Score graph and hourly observing cards in a shared horizontal timeline.
@@ -40,7 +48,7 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - Improved GOES true-color and infrared animation staging with warm, previous, and current frames to reduce blank flashes between frames.
 - Slowed satellite frame cadence slightly and lengthened eased crossfades for a smoother, less choppy loop.
 - Improved animated 10 m wind particles with a persistent runtime, adaptive particle density, and longer speed-sensitive trails.
-- Moved AQI chart labels to a quieter right-side scale in daily/hourly wxLab charts so the AQI axis no longer crowds the time labels and selected-hour cursor.
+- AQI uses its own internal plotting scale but is identified by direct point labels rather than a detached screen-edge axis.
 - Reordered the Space tab to lead with **Night Sky Context**, followed by Solar Wx, Earth View, and Mars Weather Archive.
 - Renamed the Space header from Solar Wx to **Space Wx** to better reflect the broader screen.
 - Added wxLearn topics for Area Forecast Discussion, Hazardous Weather Outlook, Weather Story, Forecast Confidence, and Local Storm Reports.
@@ -73,7 +81,7 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
 - **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
 - **Lightning**: This build contains safer layer metadata and mode wiring. Do not treat lightning as exact ground-strike safety guidance.
-- **Android Auto radar**: Radar should fail gracefully instead of crashing or staying stuck. Test on real head units where possible.
+- **Android Auto radar**: Confirm radar fills the main map area instead of appearing as a small thumbnail. Test loading, refresh, back navigation, and unavailable-radar behavior on real head units where possible.
 - **Maps performance**: Try radar, satellite, wind particles, marine zones, aviation hazards, and wildfire layers. Watch for sluggishness, heat, battery drain, or camera snapping.
 - **Privacy/support links**: Confirm Settings opens the published Privacy Policy and support contact paths.
 
@@ -89,8 +97,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.129`
-- Android version code: `10146`
+- App version: `1.1.130`
+- Android version code: `10147`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

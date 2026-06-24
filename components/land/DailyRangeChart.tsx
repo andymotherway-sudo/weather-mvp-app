@@ -64,6 +64,20 @@ function clamp(n: number, a: number, b: number) {
 function clampInt(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, Math.round(n)));
 }
+function aqiLabelCenterY(
+  pointY: number,
+  nearbyYs: Array<number | null>,
+  plotTop: number,
+  plotBottom: number,
+) {
+  const collides = (candidate: number) =>
+    nearbyYs.some((value) => value != null && Math.abs(candidate - value) < 16);
+  const above = pointY - 16;
+  const below = pointY + 18;
+  if (above >= plotTop + 8 && !collides(above)) return above;
+  if (below <= plotBottom - 8 && !collides(below)) return below;
+  return clamp(above >= plotTop + 8 ? above : below, plotTop + 8, plotBottom - 8);
+}
 function fmtInt(v: number | null, suffix = '') {
   return v == null ? '—' : `${Math.round(v)}${suffix}`;
 }
@@ -328,8 +342,6 @@ export function DailyRangeChart({
 
   const pctTicks = [0, 25, 50, 75, 100].map((p) => ({ p, y: yForPct(p) }));
   const pctAxisX = padL + 6;
-  const aqiAxisX = W - padR - 4;
-  const aqiTicks = [0, 50, 100, 150].map((v) => ({ v, y: yForAqi(v) }));
 
   // Wind stats
   const windStats = useMemo(() => {
@@ -551,32 +563,6 @@ export function DailyRangeChart({
                 %
               </SvgText>
 
-              {showAqi ? (
-                <G>
-                  <Line
-                    x1={aqiAxisX}
-                    x2={aqiAxisX}
-                    y1={padT}
-                    y2={padT + plotH}
-                    stroke="rgba(250,204,21,0.16)"
-                    strokeWidth={1}
-                  />
-                  {aqiTicks.map((tk) => (
-                    <SvgText
-                      key={`aqi-tick-${tk.v}`}
-                      x={aqiAxisX}
-                      y={tk.y + 3}
-                      fontSize="8"
-                      fill="rgba(250,204,21,0.48)"
-                      fontWeight="800"
-                      textAnchor="end"
-                    >
-                      {String(tk.v)}
-                    </SvgText>
-                  ))}
-                </G>
-              ) : null}
-
               {/* Cursor */}
               <Line x1={selX} x2={selX} y1={padT} y2={cloudBandBot} stroke={C.cursor} strokeWidth={2} />
 
@@ -644,6 +630,15 @@ export function DailyRangeChart({
                 const yDp = showDew && typeof d.dewPointMaxF === 'number' ? yForTemp(d.dewPointMaxF) : null;
                 const yRh = showRh && typeof d.humidityMaxPct === 'number' ? yForPct(d.humidityMaxPct) : null;
                 const yAqi = showAqi && typeof d.airQualityUsAqiMax === 'number' ? yForAqi(d.airQualityUsAqiMax) : null;
+                const aqiLabelY =
+                  yAqi != null
+                    ? aqiLabelCenterY(yAqi, [yMax, yMin, yDp, yRh], padT, padT + plotH)
+                    : null;
+                const aqiText =
+                  typeof d.airQualityUsAqiMax === 'number'
+                    ? String(Math.round(d.airQualityUsAqiMax))
+                    : '';
+                const aqiLabelWidth = Math.max(20, aqiText.length * 6 + 8);
 
                 return (
                   <G key={`pt-${d.date}`}>
@@ -657,6 +652,30 @@ export function DailyRangeChart({
                     {yDp != null ? <Circle cx={x} cy={yDp} r={4.8} fill="white" stroke={C.dew} strokeWidth={2.1} /> : null}
                     {yRh != null ? <Circle cx={x} cy={yRh} r={4.4} fill="white" stroke={C.rh} strokeWidth={2.1} /> : null}
                     {yAqi != null ? <Circle cx={x} cy={yAqi} r={4.4} fill="white" stroke={C.aqi} strokeWidth={2.1} /> : null}
+                    {yAqi != null && aqiLabelY != null ? (
+                      <>
+                        <Rect
+                          x={x - aqiLabelWidth / 2}
+                          y={aqiLabelY - 7}
+                          width={aqiLabelWidth}
+                          height={14}
+                          rx={7}
+                          fill="rgba(15,23,42,0.88)"
+                          stroke="rgba(250,204,21,0.42)"
+                          strokeWidth={0.8}
+                        />
+                        <SvgText
+                          x={x}
+                          y={aqiLabelY + 3}
+                          fontSize="8"
+                          fill={C.aqi}
+                          fontWeight="900"
+                          textAnchor="middle"
+                        >
+                          {aqiText}
+                        </SvgText>
+                      </>
+                    ) : null}
                   </G>
                 );
               })}

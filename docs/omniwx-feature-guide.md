@@ -284,7 +284,8 @@ Key features:
   - GOES-West GeoColor terminator view.
   - NASA EPIC/DSCOVR L1 Earth view where available, with terminator imagery preferred for current visual context.
 - Sky Score card for observing quality.
-- Unified 72-hour astronomy forecast that keeps the Sky Score curve and hourly forecast cards on one synchronized horizontal timeline.
+- Unified 72-hour astronomy forecast that keeps day summaries, the Sky Score curve, and hourly forecast columns on one synchronized horizontal timeline.
+- Tappable hourly astronomy points: selecting an hour highlights the matching graph point and forecast column while preserving the complete observing summary and metrics.
 - Daily observing summaries with peak Sky Score/time, clouds, moon illumination, true-dark hours, wind, moonrise/moonset, forecast Kp, and an estimated aurora-viewing signal.
 - Mars Weather Archive from NASA InSight-era data.
 - Learn topics for NOAA scales, Kp, solar wind, solar wind density/speed, IMF Bz, X-ray flux, proton flux, SWPC alerts, DONKI events, CMEs, solar flares, solar imagery, Earth disk/terminator views, Sky Score, and Mars weather.
@@ -565,7 +566,7 @@ Key features:
 - Refresh action.
 - Car-safe navigation and template-based presentation.
 
-The Android Auto radar view fetches radar tiles and draws a static radar snapshot on a car-safe surface rather than embedding the phone map UI.
+The Android Auto radar view fetches radar tiles and draws a static radar snapshot on the full car-safe map surface rather than embedding the phone map UI or shrinking radar into a row thumbnail. A compact pane supplies status, alert context, and refresh while the radar remains visible behind it.
 
 Android Auto radar stability is still a priority test area because real head units may behave differently than local builds or emulators.
 

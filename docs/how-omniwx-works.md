@@ -34,7 +34,7 @@ The Land wxLab screen also has a local forecaster desk. The app asks the worker 
 
 Location state is intentionally unified. `LocationsProvider` is the canonical selector, while `PlaceContext` mirrors that active location for older feature hooks. Location-sensitive hooks clear prior-location data immediately and reject aborted or late responses. This prevents current conditions from changing cities while daily cards, marine data, astronomy, or another tab remains attached to the previous place.
 
-The Space tab now renders its Sky Score trend and hourly observing cards as one 72-hour forecast timeline. The worker supplies observed, estimated, and predicted Kp samples; the app combines them with location-specific cloud, moon, darkness, wind, and astronomy timing without changing the underlying source calculations.
+The Space tab now renders its day summaries, Sky Score trend, and hourly observing cards as one 72-hour forecast timeline. One horizontal scroll controls the entire forecast track. Tapping an hour selects the same graph point and detail column and opens a complete inspector without dropping any cloud, moon, visibility, wind, temperature, Kp, aurora, darkness, or moonrise/moonset content.
 
 ## 2. The Main Tech Stack
 
@@ -1049,7 +1049,7 @@ Opportunities:
 - simple refresh
 - glanceable sky score
 
-The radar screen is the trickiest Android Auto feature because it uses a custom car surface renderer. It has to fetch weather/radar data, draw map/radar tiles, and avoid trapping the user if data is missing or a request fails.
+The radar screen is the trickiest Android Auto feature because it uses a custom car surface renderer. The screen registers that renderer with `AppManager` while visible and uses a `MapTemplate`, allowing radar tiles to fill the real map canvas. A small pane overlays status and alert context instead of asking the host to display the radar bitmap as a thumbnail. The callback is detached and native tile bitmaps are released when the screen stops.
 
 For the user's Toyota 2023 4Runner, real-vehicle testing matters. Android Auto can behave differently in the vehicle than in an emulator.
 

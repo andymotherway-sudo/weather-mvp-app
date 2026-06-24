@@ -1917,8 +1917,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.129`.
-- Android version code: `10146`.
+- App version: `1.1.130`.
+- Android version code: `10147`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
@@ -2370,7 +2370,10 @@ Radar in Android Auto:
 - Uses a custom surface renderer, not a normal React Native MapLibre view.
 - Fetches RainViewer timeline.
 - Draws tiles around the current location.
-- Uses car-safe controls and a map template.
+- Registers the renderer through `AppManager` while the radar screen is visible.
+- Uses a `MapTemplate` so radar fills the map canvas instead of appearing as a row thumbnail.
+- Keeps only compact status, alert, and refresh controls in the overlay pane.
+- Detaches the callback and recycles tile bitmaps when the radar screen stops.
 
 Important Android Auto constraints:
 

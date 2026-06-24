@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Line, Path, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Line, Path, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { AstroHourRow } from '../../app/lib/astro/locationAstro';
 import type { KpForecastSample } from '../../app/lib/spaceweather/types';
@@ -140,6 +140,8 @@ export function AstroForecastTimeline({
   title = '72-Hour Night Sky Forecast',
 }: Props) {
   const { chrome } = useAppChrome();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const trackRef = useRef<ScrollView>(null);
   const model = useMemo(() => {
     if (!hours.length) return null;
 
@@ -244,7 +246,24 @@ export function AstroForecastTimeline({
     return { width, xFor, yFor, linePoints, areaPath, best, dayGroups, enrichedHours };
   }, [hours, kpForecast, latitude, moonDays, timeZone]);
 
+  useEffect(() => {
+    if (!model?.enrichedHours.length) {
+      setSelectedIndex(0);
+      return;
+    }
+    const firstNightIndex = model.enrichedHours.findIndex(({ hour }) => hour.isNight);
+    const nextIndex = firstNightIndex >= 0 ? firstNightIndex : 0;
+    setSelectedIndex(nextIndex);
+    requestAnimationFrame(() => {
+      trackRef.current?.scrollTo({
+        x: Math.max(0, nextIndex * COLUMN_WIDTH - COLUMN_WIDTH),
+        animated: false,
+      });
+    });
+  }, [model]);
+
   if (!model) return null;
+  const selected = model.enrichedHours[Math.min(selectedIndex, model.enrichedHours.length - 1)];
 
   return (
     <View style={[styles.card, { backgroundColor: chrome.cardStrong, borderColor: chrome.border }]}>
@@ -256,7 +275,46 @@ export function AstroForecastTimeline({
         </Text>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={[styles.selectedHour, { borderColor: chrome.border }]}>
+        <View style={styles.selectedTopRow}>
+          <View>
+            <Text style={styles.selectedTime}>{selected.hour.timeLabel}</Text>
+            <Text style={styles.selectedPhase}>{phaseLabel(selected.hour)}</Text>
+          </View>
+          <View style={[styles.selectedScore, { borderColor: scoreColor(selected.hour.score) }]}>
+            <Text style={[styles.selectedScoreValue, { color: scoreColor(selected.hour.score) }]}>
+              {selected.hour.score}
+            </Text>
+            <Text style={styles.selectedScoreLabel}>SKY SCORE</Text>
+          </View>
+        </View>
+        <Text style={styles.selectedQuality}>{selected.hour.label}</Text>
+        <Text style={styles.selectedSummary}>{selected.hour.summary}</Text>
+        <View style={styles.selectedMetrics}>
+          <Text style={styles.selectedMetric}>
+            Clouds {selected.hour.cloudTotal == null ? '--' : `${Math.round(selected.hour.cloudTotal)}%`}
+          </Text>
+          <Text style={styles.selectedMetric}>
+            {selected.hour.moonIsUp
+              ? `Moon ${selected.hour.moonIlluminationPct == null ? 'up' : `${Math.round(selected.hour.moonIlluminationPct)}%`}`
+              : 'Moon down'}
+          </Text>
+          <Text style={styles.selectedMetric}>Visibility {visibilityLabel(selected.hour.visibilityM)}</Text>
+          <Text style={styles.selectedMetric}>Wind {windMph(selected.hour.windMps)}</Text>
+          <Text style={styles.selectedMetric}>Temperature {temperatureF(selected.hour.temperatureC)}</Text>
+          <Text style={styles.selectedMetric}>
+            Kp {selected.kpSample == null ? '--' : selected.kpSample.kp.toFixed(1)}
+          </Text>
+          <Text style={styles.selectedMetric}>Aurora view {selected.auroraPotential}%</Text>
+        </View>
+      </View>
+
+      <View style={styles.trackLabelRow}>
+        <Text style={styles.trackLabel}>SCROLL THE FORECAST</Text>
+        <Text style={styles.trackHint}>Tap an hour to inspect</Text>
+      </View>
+
+      <ScrollView ref={trackRef} horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ width: model.width }}>
           <View style={styles.daySummaryRow}>
             {model.dayGroups.map((group) => (
@@ -340,8 +398,21 @@ export function AstroForecastTimeline({
             {hours.map((hour, index) => {
               const x = model.xFor(index);
               const y = model.yFor(hour.score);
+              const isSelected = index === selectedIndex;
               return (
                 <React.Fragment key={hour.time}>
+                  {isSelected ? (
+                    <Rect
+                      x={index * COLUMN_WIDTH + 2}
+                      y={0}
+                      width={COLUMN_WIDTH - 4}
+                      height={CHART_HEIGHT}
+                      rx={8}
+                      fill="rgba(125,211,252,0.07)"
+                      stroke="rgba(125,211,252,0.28)"
+                      strokeWidth={1}
+                    />
+                  ) : null}
                   <Line
                     x1={x}
                     y1={PAD_TOP}
@@ -350,13 +421,13 @@ export function AstroForecastTimeline({
                     stroke="rgba(255,255,255,0.035)"
                     strokeWidth={1}
                   />
-                  <Rect
-                    x={x - 4}
-                    y={y - 4}
-                    width={8}
-                    height={8}
-                    rx={4}
+                  <Circle
+                    cx={x}
+                    cy={y}
+                    r={isSelected ? 6 : 4}
                     fill={scoreColor(hour.score)}
+                    stroke={isSelected ? '#F8FAFC' : 'transparent'}
+                    strokeWidth={isSelected ? 2 : 0}
                   />
                   <SvgText
                     x={x}
@@ -374,14 +445,17 @@ export function AstroForecastTimeline({
           </Svg>
 
           <View style={styles.hourRow}>
-            {model.enrichedHours.map(({ hour, kpSample, auroraPotential }) => (
-              <View
+            {model.enrichedHours.map(({ hour, kpSample, auroraPotential }, index) => (
+              <Pressable
                 key={`detail-${hour.time}`}
+                onPress={() => setSelectedIndex(index)}
                 style={[
                   styles.hourColumn,
                   {
                     width: COLUMN_WIDTH,
-                    borderColor: chrome.border,
+                    borderColor: index === selectedIndex ? 'rgba(125,211,252,0.55)' : chrome.border,
+                    backgroundColor:
+                      index === selectedIndex ? 'rgba(14,116,144,0.16)' : 'rgba(2,6,23,0.34)',
                     opacity: hour.isNight ? 1 : 0.66,
                   },
                 ]}
@@ -394,6 +468,9 @@ export function AstroForecastTimeline({
                 </View>
                 <Text style={styles.hourQuality}>{hour.label}</Text>
                 <Text style={styles.phase}>{phaseLabel(hour)}</Text>
+                <Text style={styles.hourSummary} numberOfLines={3}>
+                  {hour.summary}
+                </Text>
                 <View style={styles.metricGrid}>
                   <Text style={styles.metric}>Clouds {hour.cloudTotal == null ? '--' : `${Math.round(hour.cloudTotal)}%`}</Text>
                   <Text style={styles.metric}>
@@ -409,7 +486,7 @@ export function AstroForecastTimeline({
                   </Text>
                   <Text style={styles.metric}>Aurora view {auroraPotential}%</Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -455,6 +532,93 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 4,
   },
+  selectedHour: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 13,
+    backgroundColor: 'rgba(2,6,23,0.40)',
+  },
+  selectedTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  selectedTime: {
+    color: '#F8FAFC',
+    fontSize: 19,
+    fontWeight: '900',
+  },
+  selectedPhase: {
+    color: '#7DD3FC',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 3,
+  },
+  selectedScore: {
+    minWidth: 78,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  selectedScoreValue: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  selectedScoreLabel: {
+    color: '#64748B',
+    fontSize: 8,
+    fontWeight: '900',
+  },
+  selectedQuality: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+  selectedSummary: {
+    color: '#94A3B8',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  selectedMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 10,
+  },
+  selectedMetric: {
+    color: '#CBD5E1',
+    fontSize: 9,
+    fontWeight: '800',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.09)',
+  },
+  trackLabelRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  trackLabel: {
+    color: '#7DD3FC',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  trackHint: {
+    color: '#64748B',
+    fontSize: 9,
+    fontWeight: '700',
+  },
   daySummaryRow: {
     flexDirection: 'row',
     paddingHorizontal: 0,
@@ -488,7 +652,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   hourColumn: {
-    minHeight: 174,
+    minHeight: 214,
     paddingHorizontal: 11,
     paddingVertical: 12,
     borderTopWidth: 1,
@@ -521,6 +685,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 3,
     minHeight: 14,
+  },
+  hourSummary: {
+    color: '#94A3B8',
+    fontSize: 9,
+    lineHeight: 13,
+    minHeight: 39,
+    marginTop: 7,
   },
   metricGrid: {
     gap: 5,
