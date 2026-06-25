@@ -103,8 +103,8 @@ Key features:
 - Forecast verification in wxLab comparing the selected model with the current NWS forecast period and a fresh nearby official station observation.
 - Storm Recap in wxLab with recent official Local Storm Reports where available.
 - 15-day forecast list.
-- Sun arc and astronomy timing in Simple mode.
-- Sun/moon/sky detail in wxLab mode.
+- Simple mode keeps astronomy arcs out of the daily card so current weather and practical metrics remain compact.
+- Sun/moon arcs, rise/set timing, moon phase, night windows, true-dark timing, and day length live together in wxLab.
 - Activity score cards and explanatory topics.
 - Full-screen landscape graph modal for daily/hourly forecast charts.
 - Location picker with search, current location, and favorites.

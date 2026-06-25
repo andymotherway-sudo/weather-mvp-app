@@ -877,7 +877,7 @@ That means TypeScript checks are necessary but no longer sufficient. For native 
 
 The app now has these main user-facing surfaces:
 
-- **Land**: current/daily weather, alert card, Simple/WxLab toggle, daily range, sun/moon arcs, metric grid, and 15-day forecast.
+- **Land**: current/daily weather, alert card, Simple/WxLab toggle, daily range, metric grid, and 15-day forecast. Detailed Sun/Moon arcs and astronomy timing belong to wxLab rather than the Simple card.
 - **Hourly**: short-term forecast and charts.
 - **Almanac**: records, normals, prior-year comparisons, selected-day context, and climate arch.
 - **Maps**: the main map workstation with weather, storm, wildfire, nautical, aviation, and astronomy modes.

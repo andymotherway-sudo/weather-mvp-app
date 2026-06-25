@@ -13,10 +13,8 @@ import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 
-import { AstroHeroCard } from '../../components/astro/AstroHeroCard';
 import { AstroForecastTimeline } from '../../components/astro/AstroForecastTimeline';
 import { MoonDarknessCard } from '../../components/astro/MoonDarknessCard';
-import { OpenAstroMapCard } from '../../components/astro/OpenAstroMapCard';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import {
   NerdyExplainModal,
@@ -1332,7 +1330,12 @@ export default function SolarScreen() {
         </View>
       ) : astroReady ? (
         <>
-          <AstroHeroCard
+          <AstroForecastTimeline
+            hours={chartHours}
+            latitude={astro.lat}
+            timeZone={astro.timezone}
+            kpForecast={data?.kpForecast}
+            moonDays={astro.moonDays}
             forecast={astro}
             onLearnSkyScore={() =>
               openExplain({
@@ -1347,19 +1350,6 @@ export default function SolarScreen() {
                 learnTopicId: 'astro-sky-score',
               })
             }
-          />
-          <OpenAstroMapCard
-            lat={astro.lat}
-            lon={astro.lon}
-            placeName={astro.placeName}
-            compact
-          />
-          <AstroForecastTimeline
-            hours={chartHours}
-            latitude={astro.lat}
-            timeZone={astro.timezone}
-            kpForecast={data?.kpForecast}
-            moonDays={astro.moonDays}
           />
           <MoonDarknessCard
             forecast={astro}

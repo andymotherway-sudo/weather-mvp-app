@@ -27,7 +27,7 @@ The app is organized around weather “lenses”:
 
 Current product direction as of June 2026:
 
-- **Land** is the primary daily weather surface. It has a compact header, alert card, Simple/WxLab toggle, daily range card, sun arc, and in WxLab richer diagnostic cards. The old climatology context card was removed because Almanac owns that job now.
+- **Land** is the primary daily weather surface. It has a compact header, alert card, Simple/WxLab toggle, and daily range card. Sun/Moon arcs and detailed astronomy timing live in wxLab with the richer diagnostic cards. The old climatology context card was removed because Almanac owns that job now.
 - **Hourly** remains its own forecast tab, but horizontal navigation can also move between tabs using an edge/home-row swipe pattern.
 - **Almanac** owns records, normals, prior-year comparisons, and the climate arch. Pull-to-refresh should refresh forecast and record data without changing the meaning of the page.
 - **Maps** is now the main home for map modes. Weather, Storm Scope, Wildfire, Nautical, Aviation, and Astronomy are treated as map modes/presets instead of unrelated one-off map experiences.
@@ -1917,8 +1917,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.130`.
-- Android version code: `10147`.
+- App version: `1.1.131`.
+- Android version code: `10148`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
@@ -2036,8 +2036,8 @@ Land is the first screen most users experience. It currently combines:
 - records for the date/location
 - metric grid
 - 15-day forecast list
-- sun arc in Simple
-- sun and moon arcs in WxLab
+- no astronomy arc in Simple; keep the everyday surface compact
+- sun and moon arcs, timing, phase, and darkness context in wxLab
 
 Recent product intent:
 

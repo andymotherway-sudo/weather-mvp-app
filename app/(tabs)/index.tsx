@@ -2594,12 +2594,7 @@ function SimpleDailyOverview({
   airQualityIndex,
   daily,
   hourly,
-  sunrise,
-  sunset,
-  moonrise,
-  moonset,
   moonDays,
-  dayLengthSec,
   timeZone,
 }: {
   tempF: number | null;
@@ -2616,10 +2611,6 @@ function SimpleDailyOverview({
   airQualityIndex: number | null;
   daily: any[];
   hourly: any[];
-  sunrise?: string | null;
-  sunset?: string | null;
-  moonrise?: string | null;
-  moonset?: string | null;
   moonDays?: Array<{
     date: string;
     moonrise?: string | null;
@@ -2628,34 +2619,16 @@ function SimpleDailyOverview({
     moonIlluminationPct?: number | null;
     moonPhaseLabel?: string | null;
   }>;
-  dayLengthSec?: number | null;
   timeZone?: string | null;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
-  const todayKey =
-    typeof today?.date === 'string'
-      ? today.date.slice(0, 10)
-      : typeof today?.time === 'string'
-        ? today.time.slice(0, 10)
-        : '';
   const nextDays = daily.slice(0, 15);
   const [expandedKey, setExpandedKey] = React.useState<string | null>(null);
   const moonByDate = React.useMemo(
     () => new Map((moonDays ?? []).map((day) => [day.date, day] as const)),
     [moonDays]
   );
-  const todayMoon = (todayKey ? moonByDate.get(todayKey) : undefined) ?? moonDays?.[0];
-  const moonriseForArc = moonrise ?? todayMoon?.moonrise ?? null;
-  const moonsetForArc = moonset ?? todayMoon?.moonset ?? null;
-  const tonightMoonLabel = [
-    todayMoon?.moonPhaseLabel,
-    typeof todayMoon?.moonIlluminationPct === 'number' && Number.isFinite(todayMoon.moonIlluminationPct)
-      ? `${Math.round(todayMoon.moonIlluminationPct)}% full`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' • ');
   const todaySplit = buildDayNightSummary(today?.date ?? today?.time, hourly);
   const fmtWind = (v: number | null) => (v != null ? `${Math.round(v)} mph` : '—');
   const todayHi =
@@ -2772,15 +2745,6 @@ function SimpleDailyOverview({
             ) : null}
           </View>
         </View>
-
-        <DayMoonArc
-          sunrise={sunrise}
-          sunset={sunset}
-          moonrise={moonriseForArc}
-          moonset={moonsetForArc}
-          timeZone={timeZone}
-          showMoon
-        />
 
         <View style={[styles.dailyCurrentMetricRow, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
           {currentMetrics.map((item) => (
@@ -5271,12 +5235,7 @@ function LandWeatherWithCoords({
           airQualityIndex={airQualityIndex}
           daily={daily}
           hourly={hourly}
-          sunrise={todaySunrise}
-          sunset={todaySunset}
-          moonrise={todayMoonrise}
-          moonset={todayMoonset}
           moonDays={astroData?.moonDays}
-          dayLengthSec={todayDayLengthSec}
           timeZone={forecastTimeZone}
         />
 

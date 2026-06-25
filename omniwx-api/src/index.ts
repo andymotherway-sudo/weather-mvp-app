@@ -5348,7 +5348,7 @@ function extractMoonPhaseDegrees(props: any): number | null {
 
 function buildAstroLocationCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
-  keyUrl.pathname = "/__cache__/astro/location/v5";
+  keyUrl.pathname = "/__cache__/astro/location/v6";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.02)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.02)));
   const placeName = reqUrl.searchParams.get("placeName");
@@ -7607,14 +7607,18 @@ function formatLocalIsoFromUtcMinutes(args: { date: string; utcMinutes: number; 
   const localMs = utcMs + offsetMinutes * 60_000;
   const local = new Date(localMs);
 
-  const yyyy = local.getUTCFullYear();
-  const MM = String(local.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(local.getUTCDate()).padStart(2, "0");
   const hh = String(local.getUTCHours()).padStart(2, "0");
   const mm = String(local.getUTCMinutes()).padStart(2, "0");
   const ss = String(local.getUTCSeconds()).padStart(2, "0");
 
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}${offset}`;
+  // `calcSolarEventUtcMinutes` returns a UTC clock time normalized to one
+  // 24-hour day. Evening events west of Greenwich commonly occur after 00:00
+  // UTC on the following day. Applying the offset directly can therefore
+  // produce the previous local date even though the requested event belongs
+  // to `date`. The API contract is explicitly a solar event for that local
+  // calendar date, so preserve the requested date and use the calculated
+  // local wall clock.
+  return `${date}T${hh}:${mm}:${ss}${offset}`;
 }
 
 function calcSolarEventUtcMinutes(args: {

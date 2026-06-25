@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.130**
-Android version code: **10147**
+Release: **OMNIwx Alpha 1.1.131**
+Android version code: **10148**
 Track: **Closed testing / internal testing candidate**
 Date: **June 24, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.130 gives Android Auto radar a full map surface, connects the Space observing graph and hourly forecast into one interactive timeline, and replaces the crowded AQI axis with values attached directly to AQI data points.
+OMNIwx Alpha 1.1.131 streamlines Land Simple, consolidates Space observing context into one forecast hero, and corrects local-date handling for twilight and true-dark labels.
 
 ## Full Tester Notes
 
@@ -15,6 +15,14 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Removed the Sun & Moon arc from Land Simple so the everyday daily card stays focused on current weather, range, and practical metrics.
+- Kept the complete Sun & Moon arc, moon phase, rise/set times, night window, best window, true-dark timing, and day length in Land wxLab.
+- Removed the duplicate standalone Sky Score hero from Space.
+- Made the 72-hour observing forecast the primary Night Sky hero and moved Astro Map and wxLearn actions into its header.
+- Folded Bortle class, aerosols, elevation, best window, darkest window, and source context into the unified observing forecast without dropping content.
+- Fixed a Worker solar-event date bug that could assign evening twilight to the previous local day.
+- Added app-side normalization for cached/legacy solar-event dates so twilight banners cannot silently label early evening as true dark.
+- For Mesa on June 24, the corrected sequence is sunset 7:40 PM, civil dusk 8:09 PM, nautical dusk 8:45 PM, and true dark 9:24 PM.
 - Replaced the shrinking Android Auto radar thumbnail with a full `MapTemplate` radar surface.
 - Android Auto now registers the native radar renderer while the radar screen is visible and detaches it cleanly when leaving.
 - Added a compact radar status/alert pane and refresh action without replacing the primary radar image.
@@ -97,8 +105,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.130`
-- Android version code: `10147`
+- App version: `1.1.131`
+- Android version code: `10148`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

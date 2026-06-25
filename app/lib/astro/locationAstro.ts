@@ -166,6 +166,35 @@ function isBetween(
   return t >= s && t <= e;
 }
 
+function alignSolarEventToDate(value: string | null | undefined, date: string) {
+  if (!value || !date) return value ?? null;
+  return value.replace(/^\d{4}-\d{2}-\d{2}(?=[T\s])/, date);
+}
+
+function normalizeSunDay<T extends {
+  date: string;
+  sunrise?: string | null;
+  sunset?: string | null;
+  civilDawn?: string | null;
+  civilDusk?: string | null;
+  nauticalDawn?: string | null;
+  nauticalDusk?: string | null;
+  astronomicalDawn?: string | null;
+  astronomicalDusk?: string | null;
+}>(day: T): T {
+  return {
+    ...day,
+    sunrise: alignSolarEventToDate(day.sunrise, day.date),
+    sunset: alignSolarEventToDate(day.sunset, day.date),
+    civilDawn: alignSolarEventToDate(day.civilDawn, day.date),
+    civilDusk: alignSolarEventToDate(day.civilDusk, day.date),
+    nauticalDawn: alignSolarEventToDate(day.nauticalDawn, day.date),
+    nauticalDusk: alignSolarEventToDate(day.nauticalDusk, day.date),
+    astronomicalDawn: alignSolarEventToDate(day.astronomicalDawn, day.date),
+    astronomicalDusk: alignSolarEventToDate(day.astronomicalDusk, day.date),
+  };
+}
+
 function darknessScoreForHour(args: {
   isTrueDark: boolean;
   isAstronomicalTwilight: boolean;
@@ -659,10 +688,8 @@ async function fetchLocationAstroForecast(args: {
   const moonByDate = new Map(
     (payload.moonDays ?? []).map((m) => [m.date, m] as const)
   );
-  const sunByDate = new Map(
-    (payload.sunDays ?? []).map((s) => [s.date, s] as const)
-  );
-  const sunDays = payload.sunDays ?? [];
+  const sunDays = (payload.sunDays ?? []).map(normalizeSunDay);
+  const sunByDate = new Map(sunDays.map((s) => [s.date, s] as const));
 
   const hourTimes = Array.isArray(payload.hourly?.time) ? payload.hourly.time : [];
   if (!hourTimes.length) {
@@ -832,8 +859,22 @@ async function fetchLocationAstroForecast(args: {
   const tonightHours = rows.filter((h) => h.isNight);
   const best = pickBestWindow(tonightHours);
 
-  const trueDarkStartTime = payload.twilight?.todayAstronomicalDusk ?? undefined;
-  const trueDarkEndTime = payload.twilight?.tomorrowAstronomicalDawn ?? undefined;
+  const todaySunDay = sunDays[0];
+  const tomorrowSunDay = sunDays[1];
+  const trueDarkStartTime =
+    todaySunDay?.astronomicalDusk ??
+    alignSolarEventToDate(
+      payload.twilight?.todayAstronomicalDusk,
+      todaySunDay?.date ?? payload.sun?.todaySunset?.slice(0, 10) ?? '',
+    ) ??
+    undefined;
+  const trueDarkEndTime =
+    tomorrowSunDay?.astronomicalDawn ??
+    alignSolarEventToDate(
+      payload.twilight?.tomorrowAstronomicalDawn,
+      tomorrowSunDay?.date ?? payload.sun?.tomorrowSunrise?.slice(0, 10) ?? '',
+    ) ??
+    undefined;
 
   const darkest = pickDarkestWindowPrecise({
     trueDarkStartTime,
@@ -857,12 +898,12 @@ async function fetchLocationAstroForecast(args: {
     moonrise: nightMoonrise,
     moonset: nightMoonset,
 
-    civilDusk: payload.twilight?.todayCivilDusk ?? undefined,
-    nauticalDusk: payload.twilight?.todayNauticalDusk ?? undefined,
-    astronomicalDusk: payload.twilight?.todayAstronomicalDusk ?? undefined,
-    civilDawn: payload.twilight?.tomorrowCivilDawn ?? undefined,
-    nauticalDawn: payload.twilight?.tomorrowNauticalDawn ?? undefined,
-    astronomicalDawn: payload.twilight?.tomorrowAstronomicalDawn ?? undefined,
+    civilDusk: todaySunDay?.civilDusk ?? undefined,
+    nauticalDusk: todaySunDay?.nauticalDusk ?? undefined,
+    astronomicalDusk: trueDarkStartTime,
+    civilDawn: tomorrowSunDay?.civilDawn ?? undefined,
+    nauticalDawn: tomorrowSunDay?.nauticalDawn ?? undefined,
+    astronomicalDawn: trueDarkEndTime,
 
     moonPhase: relevantMoonDay?.moonPhaseDegrees ?? null,
     moonPhaseLabel: fallbackMoonPhaseLabel(
@@ -914,8 +955,8 @@ async function fetchLocationAstroForecast(args: {
         }
       : undefined,
 
-    sunDays: Array.isArray(payload.sunDays)
-      ? payload.sunDays.map((day) => ({
+    sunDays: sunDays.length
+      ? sunDays.map((day) => ({
           date: day.date,
           sunrise: day.sunrise ?? null,
           sunset: day.sunset ?? null,
