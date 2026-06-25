@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.132**
-Android version code: **10149**
+Release: **OMNIwx Alpha 1.1.133**
+Android version code: **10150**
 Track: **Closed testing / internal testing candidate**
 Date: **June 25, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.132 rebuilds animated radar and satellite playback around a buffered, persistent-frame engine to reduce flashing, blank transitions, and animation stalls.
+OMNIwx Alpha 1.1.133 restores genuine radar motion with native timestamped radar tiles, improves buffered satellite transitions, and adds compact sunrise and sunset information to Land Simple.
 
 ## Full Tester Notes
 
@@ -15,6 +15,12 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Restored live regional radar to its native RainViewer timestamped tile sequence so precipitation motion advances through the correct source frames.
+- Removed the mismatched wide-radar screenshot compositor that could make radar appear frozen and then jump.
+- Preserved tile prewarming and crossfading for live radar while retaining the buffered image compositor for satellite imagery and map export.
+- Fixed a buffered-frame lifecycle issue where unrelated background downloads could cancel an active satellite crossfade.
+- Added a compact **Sunlight** strip to Land Simple with sunrise, sunset, and total daylight for the selected location.
+- Kept the full Sun & Moon arc, moon details, twilight windows, and observing context exclusive to Land wxLab.
 - Added a shared disk-backed playback cache for animated radar and satellite imagery.
 - Radar, GOES true color, infrared, water vapor, and east/west visible clouds now prepare viewport frames before displaying them.
 - Replaced frame-by-frame source teardown with persistent front/back MapLibre image slots.
@@ -25,7 +31,7 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - Radar and satellite have independent buffered channels so layered Storm Scope workflows can animate both.
 - Added adaptive frame dimensions for longer loops and a global download-concurrency limit to reduce memory, bandwidth, and device load.
 - Unified record-mode map preview with the same buffered compositor used by normal playback.
-- High-zoom station radar retains its sharper tiled path while broad/regional radar uses the smoother viewport compositor.
+- High-zoom station radar retains its sharper tiled path, while live regional RainViewer radar uses its native timestamped tile animation.
 - Removed the Sun & Moon arc from Land Simple so the everyday daily card stays focused on current weather, range, and practical metrics.
 - Kept the complete Sun & Moon arc, moon phase, rise/set times, night window, best window, true-dark timing, and day length in Land wxLab.
 - Removed the duplicate standalone Sky Score hero from Space.
@@ -118,8 +124,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.132`
-- Android version code: `10149`
+- App version: `1.1.133`
+- Android version code: `10150`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

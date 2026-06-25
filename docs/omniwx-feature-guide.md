@@ -38,6 +38,10 @@ The Land screen's location picker supports:
 
 Settings also lets the user return to the default city or GPS mode.
 
+### Simple Land Sunlight
+
+The Simple Land daily card includes a compact Sunlight strip with sunrise, sunset, and total daylight for the active location. It intentionally avoids another chart. The full Sun/Moon arc, moonrise and moonset, twilight stages, true-dark timing, and observing windows remain in wxLab.
+
 ### Simple and wxLab Modes
 
 Several screens use a Simple/wxLab split:

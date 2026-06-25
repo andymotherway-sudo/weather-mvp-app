@@ -948,6 +948,10 @@ Astronomy and Aviation should not be active at the same time. They are not just 
 
 ## 29. Radar and Satellite Animation
 
+Live regional radar follows the provider's native timestamped RainViewer tile sequence so each timeline step maps to a real radar frame. The map prewarms adjacent tiles and crossfades between active slots, but it does not replace RainViewer playback with viewport screenshots.
+
+The disk-backed front/back image compositor remains in use for GOES satellite imagery and export previews, where complete viewport images help prevent blank flashes. Buffer progress is isolated from the requested display frame so an unrelated background download cannot cancel a crossfade already in progress.
+
 Radar/satellite animation is now a major product feature.
 
 There are two related but different jobs:

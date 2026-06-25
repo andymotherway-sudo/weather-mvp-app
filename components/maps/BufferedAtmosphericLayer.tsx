@@ -166,6 +166,12 @@ export function BufferedAtmosphericLayer(props: Props) {
     slotOpacityRefs.current[heldFront === 0 ? 1 : 0].setValue(0);
     setCachedUris(new Map());
     setFailedIds(new Set());
+    onBufferStatusRef.current?.({
+      ready: 0,
+      total: requests.length,
+      buffering: true,
+      failed: 0,
+    });
 
     const desired = clampIndex(frameIndexRef.current, requests.length);
     const order = requests
@@ -216,21 +222,19 @@ export function BufferedAtmosphericLayer(props: Props) {
       buffering: enabled && ready + failedIds.size < total,
       failed: failedIds.size,
     });
-  }, [cachedUris, enabled, failedIds.size, requests.length]);
+  }, [cachedUris, enabled, failedIds, requests]);
+
+  const desiredIndex = clampIndex(frameIndex, requests.length);
+  const desiredRequest = requests[desiredIndex] ?? null;
+  const desiredLocalUri = desiredRequest ? cachedUris.get(desiredRequest.requestId) ?? null : null;
 
   useEffect(() => {
-    if (!enabled || !requests.length) return;
-    const desiredIndex = clampIndex(frameIndex, requests.length);
-    const desiredRequest = requests[desiredIndex];
-    const desiredFrame = desiredRequest?.frame;
+    if (!enabled || !desiredRequest || !desiredLocalUri) return;
+    const desiredFrame = desiredRequest.frame;
     if (
-      !desiredRequest ||
-      !desiredFrame ||
       displayedRequestIdRef.current === desiredRequest.requestId ||
       transitioningRequestIdRef.current === desiredRequest.requestId
     ) return;
-    const localUri = cachedUris.get(desiredRequest.requestId);
-    if (!localUri) return;
 
     const token = transitionTokenRef.current + 1;
     transitionTokenRef.current = token;
@@ -241,7 +245,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     const nextSlot: Slot = {
       frameId: desiredFrame.id,
       requestId: desiredRequest.requestId,
-      localUri,
+      localUri: desiredLocalUri,
       coordinates,
     };
 
@@ -263,7 +267,9 @@ export function BufferedAtmosphericLayer(props: Props) {
     }
 
     // The file is already downloaded. Give the native image source one render
-    // beat to bind the local URI before changing opacity.
+    // beat to bind the local URI before changing opacity. This effect depends
+    // only on the requested frame's URI, so unrelated buffer progress cannot
+    // cancel an in-flight crossfade.
     const warmTimer = setTimeout(() => {
       if (transitionTokenRef.current !== token) return;
       const safeOpacity = Math.max(0, Math.min(1, opacity));
@@ -292,7 +298,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[currentFront].setValue(0);
         slotOpacities[nextFront].setValue(safeOpacity);
       });
-    }, 96);
+    }, 48);
 
     return () => {
       clearTimeout(warmTimer);
@@ -306,7 +312,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[heldFront === 0 ? 1 : 0].setValue(0);
       }
     };
-  }, [blendMs, cachedUris, coordinates, enabled, frameIndex, opacity, requests]);
+  }, [blendMs, coordinates, desiredLocalUri, desiredRequest, enabled, opacity]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -1384,6 +1384,7 @@ export default function MapsScreen() {
     isFocused &&
     !animationRecordMode &&
     radarEnabled &&
+    effectiveRadarProvider !== 'rainviewer' &&
     !stationRadarMode &&
     !stormMode &&
     mapZoom <= 8.5;
@@ -3468,7 +3469,7 @@ export default function MapsScreen() {
               frameIndex={state.radarTime.frameIndex}
               coordinates={bufferedPlaybackCoordinates}
               opacity={radarCtl.radarOpacity}
-              blendMs={420}
+              blendMs={300}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl('radar', frame, width, height)
               }

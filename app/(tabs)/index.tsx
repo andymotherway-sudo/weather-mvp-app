@@ -2637,6 +2637,10 @@ function SimpleDailyOverview({
     safeNum(today?.tempMinF ?? today?.temperatureMinF ?? today?.temperature_2m_min ?? today?.minTempF ?? today?.lowF) ?? null;
   const todayPop =
     safeNum(today?.precipProbMaxPct ?? today?.precipitationProbabilityMax ?? today?.pop ?? today?.precipChancePct) ?? null;
+  const todaySunrise = typeof today?.sunrise === 'string' ? today.sunrise : null;
+  const todaySunset = typeof today?.sunset === 'string' ? today.sunset : null;
+  const todayDaylightDurationSec =
+    safeNum(today?.daylightDurationSec ?? today?.daylight_duration ?? today?.daylightDuration) ?? null;
   const todayCode = safeNum(today?.weatherCode ?? today?.weather_code ?? today?.weathercode ?? today?.code) ?? null;
   const displayTodayCode = reconcileDailyWeatherCode(todayCode, todayPop, condition);
   const todayCondition = weatherCodeToLabel(displayTodayCode);
@@ -2743,6 +2747,25 @@ function SimpleDailyOverview({
                 <Text style={styles.dailyTempRangeNow}>Feels {Math.round(feelsLikeF)}°</Text>
               </View>
             ) : null}
+          </View>
+        </View>
+
+        <View style={[styles.dailySunlightCard, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
+          <View style={styles.dailySunlightIcon}>
+            <Ionicons name="sunny-outline" size={22} color="rgba(255, 205, 92, 0.96)" />
+          </View>
+          <View style={styles.dailySunlightTime}>
+            <Text style={styles.dailySunlightLabel}>Sunrise</Text>
+            <Text style={styles.dailySunlightValue}>{formatClockForZone(todaySunrise, timeZone)}</Text>
+          </View>
+          <View style={styles.dailySunlightDivider} />
+          <View style={styles.dailySunlightTime}>
+            <Text style={styles.dailySunlightLabel}>Sunset</Text>
+            <Text style={styles.dailySunlightValue}>{formatClockForZone(todaySunset, timeZone)}</Text>
+          </View>
+          <View style={styles.dailySunlightDayLength}>
+            <Text style={styles.dailySunlightDayLabel}>Daylight</Text>
+            <Text style={styles.dailySunlightDayValue}>{formatDayLength(todayDaylightDurationSec)}</Text>
           </View>
         </View>
 
@@ -6342,6 +6365,67 @@ const styles = StyleSheet.create({
     backgroundColor: '#fbbf24',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.88)',
+  },
+  dailySunlightCard: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: GLASS_INSET_BG,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER_SOFT,
+  },
+  dailySunlightIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 205, 92, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 205, 92, 0.20)',
+  },
+  dailySunlightTime: {
+    flex: 1,
+    minWidth: 58,
+  },
+  dailySunlightLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.48)',
+  },
+  dailySunlightValue: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '900',
+    color: 'rgba(255, 216, 132, 0.98)',
+  },
+  dailySunlightDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  dailySunlightDayLength: {
+    alignItems: 'flex-end',
+    minWidth: 64,
+  },
+  dailySunlightDayLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.42)',
+  },
+  dailySunlightDayValue: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.72)',
   },
   dayArcCard: {
     borderRadius: 18,
