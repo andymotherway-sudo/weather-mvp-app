@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import { AnimationCompositor, type AnimationBufferStatus } from '../../components/maps/AnimationCompositor';
+import { BufferedAtmosphericLayer } from '../../components/maps/BufferedAtmosphericLayer';
 import { AlertDetailCard } from '../../components/maps/AlertDetailCard';
 import { AlertMapLayers } from '../../components/maps/AlertMapLayers';
 import { LayerSheetModal } from '../../components/maps/LayerSheetModal';
@@ -1193,6 +1194,12 @@ export default function MapsScreen() {
   const [animationRecordMode, setAnimationRecordMode] = useState(false);
   const [animationRecordRegion, setAnimationRecordRegion] = useState<Region | null>(null);
   const [animationBufferStatus, setAnimationBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [radarPlaybackBufferStatus, setRadarPlaybackBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [radarBufferedPlaybackReady, setRadarBufferedPlaybackReady] = useState(false);
+  const [satellitePrimaryBufferStatus, setSatellitePrimaryBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [satelliteSecondaryBufferStatus, setSatelliteSecondaryBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [satellitePrimaryReady, setSatellitePrimaryReady] = useState(false);
+  const [satelliteSecondaryReady, setSatelliteSecondaryReady] = useState(false);
   const [animationExporting, setAnimationExporting] = useState(false);
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
@@ -1373,6 +1380,19 @@ export default function MapsScreen() {
       ? 'N0B'
       : 'N0Q';
   const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+  const preferBufferedWideRadar =
+    isFocused &&
+    !animationRecordMode &&
+    radarEnabled &&
+    !stationRadarMode &&
+    !stormMode &&
+    mapZoom <= 8.5;
+  const radarBufferedReadyCount = radarPlaybackBufferStatus?.ready ?? 0;
+  const radarBufferedTotal = radarPlaybackBufferStatus?.total ?? 0;
+  const radarBufferedLeadReady =
+    radarBufferedReadyCount >= Math.min(3, radarBufferedTotal || 3) ||
+    (radarPlaybackBufferStatus?.buffering === false &&
+      radarBufferedReadyCount >= Math.min(2, radarBufferedTotal || 2));
 
   useEffect(() => {
     setManualRadarSiteId3(null);
@@ -1450,6 +1470,37 @@ export default function MapsScreen() {
   const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
   const trueColorUsingCatalog = goesTrueColorEnabled && trueColorFrames.length > 1;
   const infraredUsingCatalog = goesEastIrEnabled && infraredFrames.length > 1;
+  const bufferedSatelliteNeedsSecondary =
+    !trueColorUsingCatalog &&
+    !infraredUsingCatalog &&
+    !goesEastWvEnabled &&
+    !goesWestWvEnabled &&
+    cloudsEnabled;
+  const bufferedSatelliteReady =
+    satellitePrimaryReady &&
+    (!bufferedSatelliteNeedsSecondary || satelliteSecondaryReady);
+  const satellitePrimaryReadyCount = satellitePrimaryBufferStatus?.ready ?? 0;
+  const satellitePrimaryTotal = satellitePrimaryBufferStatus?.total ?? 0;
+  const satellitePrimaryLeadReady =
+    satellitePrimaryReadyCount >= Math.min(3, satellitePrimaryTotal || 3) ||
+    (satellitePrimaryBufferStatus?.buffering === false &&
+      satellitePrimaryReadyCount >= Math.min(2, satellitePrimaryTotal || 2));
+  const satelliteSecondaryReadyCount = satelliteSecondaryBufferStatus?.ready ?? 0;
+  const satelliteSecondaryTotal = satelliteSecondaryBufferStatus?.total ?? 0;
+  const satelliteSecondaryLeadReady =
+    !bufferedSatelliteNeedsSecondary ||
+    satelliteSecondaryReadyCount >= Math.min(3, satelliteSecondaryTotal || 3) ||
+    (satelliteSecondaryBufferStatus?.buffering === false &&
+      satelliteSecondaryReadyCount >= Math.min(2, satelliteSecondaryTotal || 2));
+  const bufferedSatelliteCandidate =
+    trueColorUsingCatalog ||
+    infraredUsingCatalog ||
+    goesEastWvEnabled ||
+    goesWestWvEnabled ||
+    cloudsEnabled;
+  const bufferedSatelliteCanAdvance =
+    !bufferedSatelliteCandidate ||
+    (satellitePrimaryLeadReady && satelliteSecondaryLeadReady);
 
   useEffect(() => {
     if (!goesTrueColorEnabled) {
@@ -1559,19 +1610,39 @@ export default function MapsScreen() {
   }, [animatedSatelliteEnabled, satelliteLoopMinutes, satelliteFrameStepMinutes]);
 
   useEffect(() => {
-    if (radarEnabled || !animatedSatelliteEnabled || !satellitePlaying || satellitePlaybackFrameCount < 2) return;
+    if (
+      radarEnabled ||
+      !animatedSatelliteEnabled ||
+      !satellitePlaying ||
+      satellitePlaybackFrameCount < 2 ||
+      !bufferedSatelliteCanAdvance
+    ) return;
 
     const timer = setInterval(() => {
       setSatelliteFrameIndex((current) => (clampIndex(current, satellitePlaybackFrameCount) + 1) % satellitePlaybackFrameCount);
     }, satellitePlayIntervalMs);
 
     return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, radarEnabled, satellitePlaybackFrameCount, satellitePlaying, satellitePlayIntervalMs]);
+  }, [
+    animatedSatelliteEnabled,
+    bufferedSatelliteCanAdvance,
+    radarEnabled,
+    satellitePlaybackFrameCount,
+    satellitePlaying,
+    satellitePlayIntervalMs,
+  ]);
 
   useEffect(() => {
     if (!animatedSatelliteEnabled || satellitePlaybackFrameCount < 2) {
       setSatelliteBlend({ from: satelliteFrameIndex, to: satelliteFrameIndex, t: 1 });
       satelliteFrameIndexRef.current = satelliteFrameIndex;
+      return;
+    }
+
+    if (bufferedSatelliteCandidate && bufferedSatelliteReady) {
+      const current = clampIndex(satelliteFrameIndex, satellitePlaybackFrameCount);
+      setSatelliteBlend({ from: current, to: current, t: 1 });
+      satelliteFrameIndexRef.current = current;
       return;
     }
 
@@ -1597,7 +1668,13 @@ export default function MapsScreen() {
     }, 40);
 
     return () => clearInterval(timer);
-  }, [animatedSatelliteEnabled, satelliteFrameIndex, satellitePlaybackFrameCount]);
+  }, [
+    animatedSatelliteEnabled,
+    bufferedSatelliteReady,
+    bufferedSatelliteCandidate,
+    satelliteFrameIndex,
+    satellitePlaybackFrameCount,
+  ]);
 
   const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
     ? state.layers['sat.clouds'].opacity
@@ -1789,6 +1866,8 @@ export default function MapsScreen() {
     localMinZoom: stormMode ? 10.5 : 12,
     ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
+    suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
+    playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -1844,9 +1923,42 @@ export default function MapsScreen() {
                 ? 'clouds'
                 : null;
   const animationCompositorKind = animationRecordMode ? activeAnimationKind : null;
+  const bufferedRadarActive =
+    preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
+  const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
+    !animationRecordMode && isFocused
+      ? trueColorUsingCatalog
+        ? 'truecolor'
+        : infraredUsingCatalog
+          ? 'ir'
+          : goesEastWvEnabled
+            ? 'wv-east'
+            : goesWestWvEnabled
+              ? 'wv-west'
+              : cloudsEnabled
+                ? 'clouds'
+                : null
+      : null;
+  const bufferedPlaybackNeedsSecondary = bufferedSatelliteKind === 'clouds';
+
+  useEffect(() => {
+    setRadarBufferedPlaybackReady(false);
+    setRadarPlaybackBufferStatus(null);
+  }, [bufferedRadarActive]);
+
+  useEffect(() => {
+    setSatellitePrimaryReady(false);
+    setSatelliteSecondaryReady(false);
+    setSatellitePrimaryBufferStatus(null);
+    setSatelliteSecondaryBufferStatus(null);
+  }, [bufferedSatelliteKind]);
 
   const mapRadar = useMemo(() => {
-    if (!isFocused || animationCompositorKind === 'radar') {
+    if (
+      !isFocused ||
+      animationCompositorKind === 'radar' ||
+      (bufferedRadarActive && radarBufferedPlaybackReady)
+    ) {
       return {
         enabled: false,
         templates: [null, null, null],
@@ -1860,7 +1972,14 @@ export default function MapsScreen() {
       ...radarCtl.radar,
       tileMaxZ: radarTileMaxZ,
     };
-  }, [animationCompositorKind, isFocused, radarCtl.radar, radarTileMaxZ]);
+  }, [
+    animationCompositorKind,
+    bufferedRadarActive,
+    radarBufferedPlaybackReady,
+    isFocused,
+    radarCtl.radar,
+    radarTileMaxZ,
+  ]);
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     const list: WmsOverlayConfig[] = [];
@@ -2231,7 +2350,34 @@ export default function MapsScreen() {
   ]);
 
   const renderedOverlays = useMemo(() => {
-    if (!animationCompositorKind || animationCompositorKind === 'radar') return overlays;
+    const hiddenAnimationKind =
+      animationCompositorKind && animationCompositorKind !== 'radar'
+        ? animationCompositorKind
+        : bufferedSatelliteReady
+          ? bufferedSatelliteKind
+          : null;
+    if (!hiddenAnimationKind) return overlays;
+
+    if (hiddenAnimationKind === 'truecolor') {
+      return overlays.filter((overlay) => !overlay.id.startsWith('goes-truecolor'));
+    }
+    if (hiddenAnimationKind === 'ir') {
+      return overlays.filter((overlay) => !overlay.id.startsWith('goes-abi13-ir'));
+    }
+    if (hiddenAnimationKind === 'wv-east') {
+      return overlays.filter((overlay) => !overlay.id.startsWith('goes-east-wv'));
+    }
+    if (hiddenAnimationKind === 'wv-west') {
+      return overlays.filter((overlay) => !overlay.id.startsWith('goes-west-wv'));
+    }
+    if (hiddenAnimationKind === 'clouds') {
+      return overlays.filter(
+        (overlay) =>
+          !overlay.id.startsWith('goes-east-visible') &&
+          !overlay.id.startsWith('goes-west-visible'),
+      );
+    }
+
     const satellitePrefixes = [
       'goes-truecolor',
       'goes-abi13-ir',
@@ -2243,7 +2389,7 @@ export default function MapsScreen() {
       'goes-west-visible',
     ];
     return overlays.filter((overlay) => !satellitePrefixes.some((prefix) => overlay.id.startsWith(prefix)));
-  }, [animationCompositorKind, overlays]);
+  }, [animationCompositorKind, bufferedSatelliteKind, bufferedSatelliteReady, overlays]);
 
   const [consumedRouteFocusKey, setConsumedRouteFocusKey] = useState<string | null>(null);
 
@@ -2742,15 +2888,37 @@ export default function MapsScreen() {
         ? Math.max(2, Math.floor(satelliteLoopMinutes / 10))
         : Math.max(2, Math.floor(satelliteLoopMinutes / satelliteFrameStepMinutes));
     const coverage = Math.max(0, Math.min(1, satelliteFrameCount / expectedFrames));
-    const percent = status === 'loading' ? 0.18 : coverage;
+    const bufferedProduct = bufferedSatelliteKind != null;
+    const bufferedReady =
+      (satellitePrimaryBufferStatus?.ready ?? 0) +
+      (bufferedPlaybackNeedsSecondary ? satelliteSecondaryBufferStatus?.ready ?? 0 : 0);
+    const bufferedTotal =
+      (satellitePrimaryBufferStatus?.total ?? 0) +
+      (bufferedPlaybackNeedsSecondary ? satelliteSecondaryBufferStatus?.total ?? 0 : 0);
+    const bufferedFailed =
+      (satellitePrimaryBufferStatus?.failed ?? 0) +
+      (bufferedPlaybackNeedsSecondary ? satelliteSecondaryBufferStatus?.failed ?? 0 : 0);
+    const bufferCoverage = bufferedTotal > 0 ? bufferedReady / bufferedTotal : 0;
+    const percent =
+      status === 'loading'
+        ? 0.18
+        : bufferedProduct && satellitePrimaryBufferStatus
+          ? Math.max(0.2, Math.min(1, bufferCoverage))
+          : coverage;
     const sparse = status === 'ready' && coverage < 0.7;
+    const buffering =
+      bufferedProduct &&
+      (satellitePrimaryBufferStatus?.buffering === true ||
+        (bufferedPlaybackNeedsSecondary && satelliteSecondaryBufferStatus?.buffering === true));
 
     return {
-      loading: status === 'loading',
+      loading: status === 'loading' || buffering === true,
       percent,
       title:
         status === 'loading'
           ? `Loading ${product} source imagery`
+          : buffering
+            ? `Buffering ${product} animation`
           : status === 'fallback'
             ? `${product} source is slow`
             : sparse
@@ -2759,6 +2927,10 @@ export default function MapsScreen() {
       detail:
         status === 'loading'
           ? `Building a ${satelliteLoopHours}h loop from ${source}. High-quality frames can take a moment.`
+          : buffering
+            ? `${bufferedReady} of ${bufferedTotal} viewport frames are ready. Playback holds the current image until the next frame is available.`
+          : bufferedFailed > 0
+            ? `${bufferedReady} frames are ready; ${bufferedFailed} unavailable source frames will be skipped.`
           : status === 'fallback'
             ? `Using a fallback timeline while ${source} catches up.`
             : sparse
@@ -2771,6 +2943,10 @@ export default function MapsScreen() {
     goesTrueColorEnabled,
     goesWestWvEnabled,
     infraredFrameStatus,
+    bufferedSatelliteKind,
+    bufferedPlaybackNeedsSecondary,
+    satellitePrimaryBufferStatus,
+    satelliteSecondaryBufferStatus,
     satelliteFrameCount,
     satelliteFrameStepMinutes,
     satelliteLoopHours,
@@ -2867,6 +3043,27 @@ export default function MapsScreen() {
         })),
     [animationFrameSource],
   );
+  const radarPlaybackFrames = useMemo(
+    () =>
+      uiFrames
+        .filter((frame: any) => typeof frame?.iso === 'string')
+        .map((frame: any, index: number) => ({
+          id: `${index}-${frame.iso}`,
+          iso: frame.iso,
+        })),
+    [uiFrames],
+  );
+  const satelliteCompositorFrames = useMemo(
+    () =>
+      satellitePlaybackFrames
+        .filter((frame: any) => typeof frame?.iso === 'string')
+        .map((frame: any, index: number) => ({
+          id: `${index}-${frame.iso}`,
+          iso: frame.iso,
+          rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
+        })),
+    [satellitePlaybackFrames],
+  );
   const animationCompositorCoordinates = useMemo(
     () => animationCoordinates(animationViewportRegion),
     [animationViewportRegion],
@@ -2883,6 +3080,16 @@ export default function MapsScreen() {
             : activeAnimationKind === 'wv-west'
               ? goesWestWvOpacity
               : cloudsOpacity;
+  const bufferedSatelliteOpacity =
+    bufferedSatelliteKind === 'truecolor'
+      ? goesTrueColorOpacity
+      : bufferedSatelliteKind === 'ir'
+        ? goesEastIrOpacity
+        : bufferedSatelliteKind === 'wv-east'
+          ? goesEastWvOpacity
+          : bufferedSatelliteKind === 'wv-west'
+            ? goesWestWvOpacity
+            : cloudsOpacity;
   const animationCompositorInterval =
     activeAnimationKind === 'truecolor'
       ? 1050
@@ -2906,6 +3113,10 @@ export default function MapsScreen() {
         height: viewportHeight,
       }),
     [animationViewportRegion, viewportHeight, viewportWidth],
+  );
+  const bufferedPlaybackCoordinates = useMemo(
+    () => animationCoordinates(animationExportRegion),
+    [animationExportRegion],
   );
   const windExportFrameCount = activeAnimationKind
     ? Math.max(2, animationCompositorFrames.length)
@@ -3249,6 +3460,68 @@ export default function MapsScreen() {
           radar={mapRadar}
           overlays={renderedOverlays}
         >
+          {bufferedRadarActive && radarPlaybackFrames.length > 1 ? (
+            <BufferedAtmosphericLayer
+              id="playback-radar"
+              enabled
+              frames={radarPlaybackFrames}
+              frameIndex={state.radarTime.frameIndex}
+              coordinates={bufferedPlaybackCoordinates}
+              opacity={radarCtl.radarOpacity}
+              blendMs={420}
+              buildUrl={(frame, width, height) =>
+                buildAnimationUrl('radar', frame, width, height)
+              }
+              onBufferStatus={setRadarPlaybackBufferStatus}
+              onDisplayReady={setRadarBufferedPlaybackReady}
+            />
+          ) : null}
+          {bufferedSatelliteKind && satelliteCompositorFrames.length > 1 ? (
+            <BufferedAtmosphericLayer
+              id={`playback-${bufferedSatelliteKind}`}
+              enabled
+              frames={satelliteCompositorFrames}
+              frameIndex={satelliteFrameIndex}
+              coordinates={bufferedPlaybackCoordinates}
+              opacity={bufferedSatelliteOpacity}
+              blendMs={bufferedSatelliteKind === 'truecolor' ? 680 : 460}
+              buildUrl={(frame, width, height) =>
+                buildAnimationUrl(
+                  bufferedSatelliteKind === 'truecolor'
+                    ? 'geocolor'
+                    : bufferedSatelliteKind === 'ir'
+                      ? 'goes-east-ir'
+                      : bufferedSatelliteKind === 'wv-west'
+                        ? 'goes-west-wv'
+                        : bufferedSatelliteKind === 'wv-east'
+                          ? 'goes-east-wv'
+                          : 'goes-east-visible',
+                  frame,
+                  width,
+                  height,
+                )
+              }
+              onBufferStatus={setSatellitePrimaryBufferStatus}
+              onDisplayReady={setSatellitePrimaryReady}
+            />
+          ) : null}
+          {bufferedSatelliteKind === 'clouds' && satelliteCompositorFrames.length > 1 ? (
+            <BufferedAtmosphericLayer
+              id="playback-clouds-west"
+              enabled
+              frames={satelliteCompositorFrames}
+              frameIndex={satelliteFrameIndex}
+              coordinates={bufferedPlaybackCoordinates}
+              opacity={bufferedSatelliteOpacity}
+              blendMs={460}
+              buildUrl={(frame, width, height) =>
+                buildAnimationUrl('goes-west-visible', frame, width, height)
+              }
+              onBufferStatus={setSatelliteSecondaryBufferStatus}
+              onDisplayReady={setSatelliteSecondaryReady}
+            />
+          ) : null}
+
           {animationCompositorKind && animationCompositorFrames.length > 1 ? (
             <>
               {animationCompositorKind === 'radar' ? (

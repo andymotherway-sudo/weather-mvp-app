@@ -1917,8 +1917,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.131`.
-- Android version code: `10148`.
+- App version: `1.1.132`.
+- Android version code: `10149`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
@@ -2395,16 +2395,23 @@ Key files:
 - `app/lib/maps/useRadarController.ts`
 - `app/lib/maps/radar/useAnimatedRadar.ts`
 - `app/lib/maps/radar/RadarOverlay.tsx`
+- `app/lib/maps/animationFrameCache.ts`
+- `components/maps/BufferedAtmosphericLayer.tsx`
 - `components/maps/AnimationCompositor.tsx`
 - `app/lib/maps/videoExport.ts`
 - `android/app/src/main/java/com/anonymous/weatherapp/video/OmniwxVideoExportModule.kt`
 
 Current animation concepts:
 
-- Radar, infrared, and true color can be animated.
+- Radar, infrared, true color, water vapor, and paired east/west visible clouds can be animated through one buffered engine.
 - The app supports longer loops, up to around 5 hours depending on source availability.
-- The compositor prefetches frames.
-- It blends from the current frame to the next frame.
+- Viewport images are downloaded into a bounded local cache with global concurrency limits.
+- Playback waits for a small lead buffer and skips failed source frames.
+- Persistent front/back MapLibre image slots keep the last complete frame visible until the next local frame is ready.
+- Native layer opacity animation blends from the current frame to the next without driving full-screen React renders.
+- Radar and satellite use independent buffered channels so both can animate in layered map workflows.
+- Panning or zooming retains the previous complete viewport while replacement imagery is prepared.
+- Record-mode preview uses the same buffered compositor as normal playback.
 - It loops from the final frame back to the first instead of ping-ponging.
 - Native export can create MP4 files on Android.
 

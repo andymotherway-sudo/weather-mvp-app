@@ -1,16 +1,14 @@
-import MapLibreGL from '@maplibre/maplibre-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+
+import {
+  BufferedAtmosphericLayer,
+  type AnimationBufferStatus,
+} from './BufferedAtmosphericLayer';
 
 type FrameLike = {
   id: string;
   iso: string;
-};
-
-export type AnimationBufferStatus = {
-  ready: number;
-  total: number;
-  buffering: boolean;
+  rasterId?: number;
 };
 
 type Props = {
@@ -25,25 +23,12 @@ type Props = {
   onBufferStatus?: (status: AnimationBufferStatus) => void;
 };
 
-// This compositor is for on-map playback, not the saved MP4 path. It preloads
-// static frame URLs, then cross-fades two MapLibre raster image sources so
-// radar/satellite loops feel smoother than a hard source swap.
-function clampIndex(index: number, count: number) {
-  if (count <= 0) return 0;
-  return Math.max(0, Math.min(count - 1, Math.floor(index)));
-}
+export type { AnimationBufferStatus } from './BufferedAtmosphericLayer';
 
-function shortHash(input: string) {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
-}
-
+// Record-mode previews use the same disk-backed, readiness-gated compositor
+// as normal map playback. This keeps the visual preview and exported frame
+// selection aligned instead of maintaining a second raster animation system.
 export function AnimationCompositor(props: Props) {
-  const { width, height } = useWindowDimensions();
   const {
     id,
     frames,
@@ -55,158 +40,45 @@ export function AnimationCompositor(props: Props) {
     buildUrl,
     onBufferStatus,
   } = props;
-
-  const imageWidth = Math.max(512, Math.min(2048, Math.round(width * 1.65)));
-  const imageHeight = Math.max(512, Math.min(2048, Math.round(height * 1.65)));
-  const buildUrlRef = useRef(buildUrl);
+  const [frameIndex, setFrameIndex] = useState(() => Math.max(0, frames.length - 1));
+  const [bufferStatus, setBufferStatus] = useState<AnimationBufferStatus | null>(null);
 
   useEffect(() => {
-    buildUrlRef.current = buildUrl;
-  }, [buildUrl]);
-
-  const urls = useMemo(
-    () =>
-      frames.map((frame) => ({
-        frame,
-        url: buildUrlRef.current(frame, imageWidth, imageHeight),
-      })),
-    [frames, imageHeight, imageWidth],
-  );
-
-  const [ready, setReady] = useState<Set<string>>(() => new Set());
-  const [currentIndex, setCurrentIndex] = useState(() => Math.max(0, frames.length - 1));
-  const [previousIndex, setPreviousIndex] = useState<number | null>(null);
-  const [blend, setBlend] = useState(1);
-  const readyRef = useRef(ready);
-  const currentIndexRef = useRef(currentIndex);
+    setFrameIndex(Math.max(0, frames.length - 1));
+    setBufferStatus(null);
+  }, [frames]);
 
   useEffect(() => {
-    readyRef.current = ready;
-    onBufferStatus?.({ ready: ready.size, total: urls.length, buffering: ready.size < urls.length });
-  }, [onBufferStatus, ready, urls.length]);
-
-  useEffect(() => {
-    currentIndexRef.current = currentIndex;
-  }, [currentIndex]);
-
-  useEffect(() => {
-    setReady(new Set());
-    setCurrentIndex(Math.max(0, urls.length - 1));
-    setPreviousIndex(null);
-    setBlend(1);
-
-    let cancelled = false;
-    urls.forEach(({ url }) => {
-      // Prefetching is a practical readiness signal for React Native images.
-      // Failed frames are still marked ready so one bad satellite/radar URL
-      // does not freeze the entire loop.
-      Image.prefetch(url)
-        .then(() => {
-          if (cancelled) return;
-          setReady((current) => {
-            if (current.has(url)) return current;
-            const next = new Set(current);
-            next.add(url);
-            return next;
-          });
-        })
-        .catch(() => {
-          if (cancelled) return;
-          // Mark failed frames ready so playback can skip past transient source gaps.
-          setReady((current) => {
-            if (current.has(url)) return current;
-            const next = new Set(current);
-            next.add(url);
-            return next;
-          });
-        });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [urls]);
-
-  useEffect(() => {
-    if (!playing || urls.length < 2) return;
+    if (!playing || frames.length < 2) return;
+    const ready = bufferStatus?.ready ?? 0;
+    const total = bufferStatus?.total ?? frames.length;
+    const hasLead =
+      ready >= Math.min(3, total) ||
+      (bufferStatus?.buffering === false && ready >= Math.min(2, total));
+    if (!hasLead) return;
 
     const timer = setInterval(() => {
-      const count = urls.length;
-      const current = clampIndex(currentIndexRef.current, count);
-      const next = current >= count - 1 ? 0 : current + 1;
-      const nextUrl = urls[next]?.url;
-      // Hold the current frame until the next one is at least attempted. This
-      // avoids the worst "blank between frames" flash on slow tile loads.
-      if (!nextUrl || !readyRef.current.has(nextUrl)) return;
-
-      setPreviousIndex(current);
-      setCurrentIndex(next);
-      setBlend(0);
-      currentIndexRef.current = next;
-    }, Math.max(250, intervalMs));
-
+      setFrameIndex((current) => (current + 1) % frames.length);
+    }, Math.max(300, intervalMs));
     return () => clearInterval(timer);
-  }, [intervalMs, playing, urls]);
+  }, [bufferStatus, frames.length, intervalMs, playing]);
 
-  useEffect(() => {
-    if (previousIndex == null) return;
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      const t = Math.max(0, Math.min(1, (Date.now() - startedAt) / Math.max(1, blendMs)));
-      setBlend(t);
-      if (t >= 1) {
-        setPreviousIndex(null);
-        clearInterval(timer);
-      }
-    }, 32);
-    return () => clearInterval(timer);
-  }, [blendMs, previousIndex]);
-
-  if (!urls.length) return null;
-
-  const current = urls[clampIndex(currentIndex, urls.length)];
-  const previous = previousIndex == null ? null : urls[clampIndex(previousIndex, urls.length)];
-  const safeOpacity = Math.max(0, Math.min(1, opacity));
+  const handleBufferStatus = (status: AnimationBufferStatus) => {
+    setBufferStatus(status);
+    onBufferStatus?.(status);
+  };
 
   return (
-    <>
-      {previous ? (
-        <MapLibreGL.ImageSource
-          id={`${id}-prev-src-${shortHash(previous.url)}`}
-          key={`${id}-prev-${previous.frame.id}-${shortHash(previous.url)}`}
-          url={previous.url}
-          coordinates={coordinates}
-        >
-          <MapLibreGL.RasterLayer
-            id={`${id}-prev-lyr-${shortHash(previous.url)}`}
-            sourceID={`${id}-prev-src-${shortHash(previous.url)}`}
-            style={{
-              rasterOpacity: safeOpacity * (1 - blend),
-              rasterFadeDuration: 0,
-              rasterResampling: 'linear',
-            } as any}
-          />
-        </MapLibreGL.ImageSource>
-      ) : null}
-
-      {current ? (
-        <MapLibreGL.ImageSource
-          id={`${id}-current-src-${shortHash(current.url)}`}
-          key={`${id}-current-${current.frame.id}-${shortHash(current.url)}`}
-          url={current.url}
-          coordinates={coordinates}
-        >
-          <MapLibreGL.RasterLayer
-            id={`${id}-current-lyr-${shortHash(current.url)}`}
-            sourceID={`${id}-current-src-${shortHash(current.url)}`}
-            style={{
-              rasterOpacity: safeOpacity * (previous ? blend : 1),
-              rasterFadeDuration: 0,
-              rasterResampling: 'linear',
-            } as any}
-          />
-        </MapLibreGL.ImageSource>
-      ) : null}
-    </>
+    <BufferedAtmosphericLayer
+      id={id}
+      enabled={frames.length > 0}
+      frames={frames}
+      frameIndex={frameIndex}
+      coordinates={coordinates}
+      opacity={opacity}
+      blendMs={blendMs}
+      buildUrl={buildUrl}
+      onBufferStatus={handleBufferStatus}
+    />
   );
 }

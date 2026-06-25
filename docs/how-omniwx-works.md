@@ -938,7 +938,9 @@ Key files:
 - `app/lib/maps/state.ts`: runtime map state and exclusivity rules.
 - `components/maps/MapRenderer.tsx`: turns state into MapLibre sources/layers.
 - `components/maps/LayerSheet.tsx`: user-facing layer picker.
-- `components/maps/AnimationCompositor.tsx`: smoother raster animation.
+- `components/maps/BufferedAtmosphericLayer.tsx`: disk-backed, readiness-gated live raster playback.
+- `components/maps/AnimationCompositor.tsx`: record-mode preview wrapper around the same buffered playback engine.
+- `app/lib/maps/animationFrameCache.ts`: bounded local frame cache and download concurrency control.
 
 Important current rule:
 
@@ -956,24 +958,33 @@ There are two related but different jobs:
 Live playback is handled by React Native and MapLibre. It uses:
 
 - frame lists
-- image URLs
-- prefetching
-- crossfade/blending
+- viewport-specific image URLs
+- a bounded disk cache
+- successful-download readiness checks
+- persistent front/back image slots
+- native MapLibre opacity animation
+- a small lead buffer before playback advances
 - loop timing
 - the map viewport
+
+The last valid image remains visible while the user pans or zooms and the next viewport is prepared. Radar and satellite channels buffer independently, which allows Storm Scope and other layered workflows to animate both without source-remount flashes. Failed source frames are skipped, download concurrency is capped, and requested frame dimensions are reduced for longer loops.
 
 MP4 export is handled by native Android code because React Native is not ideal for encoding video frames.
 
 Key files:
 
 - `components/maps/AnimationCompositor.tsx`
+- `components/maps/BufferedAtmosphericLayer.tsx`
+- `app/lib/maps/animationFrameCache.ts`
 - `app/lib/maps/videoExport.ts`
 - `android/app/src/main/java/com/anonymous/weatherapp/video/OmniwxVideoExportModule.kt`
 
 Mental model:
 
-- The app collects frame URLs.
-- The compositor tries to make on-screen playback smooth.
+- The app collects frame metadata and builds viewport-specific image URLs.
+- The cache downloads a small ready-ahead set and keeps a bounded set of recent frames on disk.
+- The buffered layer keeps two stable native image slots and crossfades them without rerendering the full Maps screen on every animation step.
+- Record-mode preview reuses the same compositor instead of maintaining a separate playback implementation.
 - The native exporter downloads frames, composites them into bitmaps, blends transitions, draws optional animated wind trails, encodes H.264, and saves an MP4.
 - Recorder frames reflect the enabled animated stack: radar can include visible clouds, true color, infrared, water vapor, and wind flow; satellite products can include wind flow; and wind particles can be exported without another animated layer.
 - Live wind particles use midpoint advection, deterministic reseeding, tapered fading trails, and moving heads. The native exporter uses the same graded trail data so saved videos resemble the map.

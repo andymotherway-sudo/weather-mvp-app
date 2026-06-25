@@ -269,9 +269,13 @@ export function useRadarController(args: {
   localMinZoom?: number;
   ridgeMinZoom?: number;
   animationQuality?: AnimationQuality;
+  suspendRasterTransitions?: boolean;
+  playbackBlocked?: boolean;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
   const animationQuality = args.animationQuality ?? 'cinematic';
+  const suspendRasterTransitions = args.suspendRasterTransitions === true;
+  const playbackBlocked = args.playbackBlocked === true;
   const stationMode = args.stationMode === true;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
@@ -759,6 +763,13 @@ export function useRadarController(args: {
     const next = safeFrameIndex;
     if (prev === next) return;
 
+    if (suspendRasterTransitions) {
+      prevFrameRef.current = next;
+      setPreloadTo(null);
+      setXfade({ from: next, to: next, t: 1 });
+      return;
+    }
+
     const prevTpl = effectiveTemplates[clampIndex(prev, effectiveTemplates.length)];
     const nextTpl = effectiveTemplates[clampIndex(next, effectiveTemplates.length)];
 
@@ -819,7 +830,15 @@ export function useRadarController(args: {
       if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
       xfadeTimerRef.current = null;
     };
-  }, [usingLocalImage, safeFrameIndex, profile.blendMs, mapZoom, effectiveTemplates, effectiveTemplates.length]);
+  }, [
+    usingLocalImage,
+    safeFrameIndex,
+    profile.blendMs,
+    mapZoom,
+    effectiveTemplates,
+    effectiveTemplates.length,
+    suspendRasterTransitions,
+  ]);
 
   const perFrameOpacities = useMemo(() => {
     const n = effectiveTemplates.length;
@@ -979,6 +998,7 @@ export function useRadarController(args: {
   const minDwellRef = useRef<number>(profile.dwellMs);
   const radarEnabledRef = useRef<boolean>(radarEnabled);
   const preloadRef = useRef<number | null>(preloadTo);
+  const playbackBlockedRef = useRef(playbackBlocked);
   useEffect(() => {
     playingRef.current = state.radarTime.playing;
   }, [state.radarTime.playing]);
@@ -1007,6 +1027,10 @@ export function useRadarController(args: {
     preloadRef.current = preloadTo;
   }, [preloadTo]);
 
+  useEffect(() => {
+    playbackBlockedRef.current = playbackBlocked;
+  }, [playbackBlocked]);
+
   const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAdvanceRef = useRef<number>(0);
 
@@ -1031,6 +1055,7 @@ export function useRadarController(args: {
     playTimerRef.current = setInterval(() => {
       if (!playingRef.current) return;
       if (!radarEnabledRef.current) return;
+      if (playbackBlockedRef.current) return;
       if (preloadRef.current !== null) return;
 
       const fc = frameCountRef.current;
