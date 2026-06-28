@@ -1489,7 +1489,7 @@ function RouteProfileCard({
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.background },
+  safe: { flex: 1, backgroundColor: '#020817' },
   header: { marginBottom: theme.spacing.md },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },

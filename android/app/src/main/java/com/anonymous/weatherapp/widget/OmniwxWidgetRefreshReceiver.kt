@@ -18,14 +18,9 @@ private const val BACKGROUND_REFRESH_COOLDOWN_MS = 12L * 60L * 1000L
 class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val action = intent.action
-    if (
-      action != Intent.ACTION_MY_PACKAGE_REPLACED &&
-      action != Intent.ACTION_BOOT_COMPLETED &&
-      action != Intent.ACTION_LOCKED_BOOT_COMPLETED &&
-      action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS
-    ) return
+    if (action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS) return
     val manual = intent.getStringExtra(OmniwxWidgetData.EXTRA_REFRESH_REASON) == OmniwxWidgetData.REFRESH_REASON_MANUAL
-    refreshAll(context, force = manual || action != OmniwxWidgetData.ACTION_REFRESH_WIDGETS)
+    refreshAll(context, force = manual)
   }
 
   companion object {
@@ -114,5 +109,17 @@ class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
       providerClass.getDeclaredConstructor().newInstance().onUpdate(context, manager, ids)
       return true
     }
+  }
+}
+
+class OmniwxWidgetBootReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    val action = intent.action
+    if (
+      action != Intent.ACTION_MY_PACKAGE_REPLACED &&
+      action != Intent.ACTION_BOOT_COMPLETED &&
+      action != Intent.ACTION_LOCKED_BOOT_COMPLETED
+    ) return
+    OmniwxWidgetRefreshReceiver.refreshAll(context, force = true)
   }
 }

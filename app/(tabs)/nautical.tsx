@@ -21,6 +21,7 @@ import {
 
 import { Mode, ModeToggle } from '../../components/common/ModeToggle';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -1106,7 +1107,8 @@ export default function NauticalScreen() {
   };
 
   return (
-    <>
+    <View style={styles.screenRoot}>
+      <AnimatedPageBackground variant="nautical" />
       {/* Explain modal */}
       <Modal
         visible={explainOpen}
@@ -1631,14 +1633,18 @@ export default function NauticalScreen() {
           </View>
         )}
       </ScrollView>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screenRoot: {
+    flex: 1,
+    backgroundColor: '#020817',
+  },
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
   },
   content: {
     padding: theme.spacing.lg,

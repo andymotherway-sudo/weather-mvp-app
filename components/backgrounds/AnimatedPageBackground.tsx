@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 
-export type AnimatedPageBackgroundVariant = 'aviation' | 'almanac' | 'space';
+export type AnimatedPageBackgroundVariant = 'aviation' | 'almanac' | 'nautical' | 'space';
 
 type Props = {
   variant: AnimatedPageBackgroundVariant;
@@ -20,6 +20,7 @@ type Props = {
 const BACKGROUNDS: Record<AnimatedPageBackgroundVariant, ImageSourcePropType> = {
   aviation: require('../../assets/backgrounds/bg-aviation.png'),
   almanac: require('../../assets/backgrounds/bg-almanac.png'),
+  nautical: require('../../assets/backgrounds/bg-nautical.png'),
   space: require('../../assets/backgrounds/bg-space.png'),
 };
 
@@ -69,7 +70,7 @@ export function AnimatedPageBackground({ variant, style }: Props) {
       { translateX: interpolate(slow.value, [0, 1], variant === 'space' ? [-14, 18] : [-18, 22]) },
       { translateY: interpolate(slow.value, [0, 1], variant === 'aviation' ? [8, -8] : [4, -5]) },
     ],
-    opacity: interpolate(slow.value, [0, 1], [0.06, 0.14]),
+    opacity: interpolate(slow.value, [0, 1], variant === 'aviation' || variant === 'nautical' ? [0.1, 0.22] : [0.06, 0.14]),
   }));
 
   const reverseDriftStyle = useAnimatedStyle(() => ({
@@ -77,7 +78,7 @@ export function AnimatedPageBackground({ variant, style }: Props) {
       { translateX: interpolate(slow.value, [0, 1], [16, -18]) },
       { translateY: interpolate(slow.value, [0, 1], [-4, 6]) },
     ],
-    opacity: interpolate(slow.value, [0, 1], [0.04, 0.11]),
+    opacity: interpolate(slow.value, [0, 1], variant === 'aviation' || variant === 'nautical' ? [0.08, 0.18] : [0.04, 0.11]),
   }));
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -100,6 +101,9 @@ export function AnimatedPageBackground({ variant, style }: Props) {
       {variant === 'aviation' ? (
         <AviationOverlay driftStyle={driftStyle} reverseDriftStyle={reverseDriftStyle} pulseStyle={pulseStyle} />
       ) : null}
+      {variant === 'nautical' ? (
+        <NauticalOverlay driftStyle={driftStyle} reverseDriftStyle={reverseDriftStyle} pulseStyle={pulseStyle} glowStyle={glowStyle} />
+      ) : null}
       {variant === 'almanac' ? (
         <AlmanacOverlay driftStyle={driftStyle} pulseStyle={pulseStyle} glowStyle={glowStyle} />
       ) : null}
@@ -107,6 +111,59 @@ export function AnimatedPageBackground({ variant, style }: Props) {
         <SpaceOverlay driftStyle={driftStyle} reverseDriftStyle={reverseDriftStyle} pulseStyle={pulseStyle} glowStyle={glowStyle} />
       ) : null}
     </View>
+  );
+}
+
+function NauticalOverlay({
+  driftStyle,
+  reverseDriftStyle,
+  pulseStyle,
+  glowStyle,
+}: {
+  driftStyle: StyleProp<ViewStyle>;
+  reverseDriftStyle: StyleProp<ViewStyle>;
+  pulseStyle: StyleProp<ViewStyle>;
+  glowStyle: StyleProp<ViewStyle>;
+}) {
+  return (
+    <>
+      <Animated.View style={[styles.marineGlow, glowStyle]} />
+      <Animated.View style={[StyleSheet.absoluteFill, driftStyle]}>
+        <Svg width="100%" height="100%" viewBox="0 0 390 844" preserveAspectRatio="none">
+          <G opacity={0.68} stroke="rgba(94,234,212,0.28)" strokeWidth={0.95} fill="none">
+            <Path d="M-36 178 C 70 132, 142 174, 232 128 S 338 82, 426 104" strokeDasharray="5 20" />
+            <Path d="M-42 514 C 76 468, 150 502, 246 456 S 346 398, 430 432" />
+            <Path d="M-28 618 C 78 574, 166 604, 248 562 S 346 520, 426 540" strokeDasharray="2 16" />
+          </G>
+          <G opacity={0.48} stroke="rgba(125,211,252,0.22)" strokeWidth={0.75} fill="none">
+            <Path d="M22 302 C 95 276, 160 320, 238 292 S 330 248, 406 270" />
+            <Path d="M-20 710 C 90 668, 172 694, 260 654 S 342 618, 420 632" />
+          </G>
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, reverseDriftStyle]}>
+        <Svg width="100%" height="100%" viewBox="0 0 390 844" preserveAspectRatio="none">
+          <G opacity={0.5} stroke="rgba(186,230,253,0.2)" strokeWidth={0.75} fill="none">
+            <Path d="M-38 384 C 52 344, 150 376, 236 336 S 334 292, 428 308" strokeDasharray="10 22" />
+            <Path d="M12 816 C 76 650, 132 520, 222 392 S 334 170, 420 -20" strokeDasharray="7 22" />
+          </G>
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, pulseStyle]}>
+        <Svg width="100%" height="100%" viewBox="0 0 390 844" preserveAspectRatio="none">
+          <G fill="rgba(94,234,212,0.38)" stroke="rgba(226,245,255,0.16)" strokeWidth={1}>
+            <Circle cx={84} cy={202} r={2.4} />
+            <Circle cx={296} cy={454} r={2.7} />
+            <Circle cx={148} cy={640} r={2.5} />
+            <Circle cx={332} cy={706} r={2.2} />
+          </G>
+          <G opacity={0.2} stroke="rgba(165,243,252,0.25)" strokeWidth={0.8}>
+            <Line x1={46} y1={228} x2={352} y2={208} />
+            <Line x1={28} y1={654} x2={370} y2={626} />
+          </G>
+        </Svg>
+      </Animated.View>
+    </>
   );
 }
 
@@ -289,5 +346,15 @@ const styles = StyleSheet.create({
     borderRadius: 150,
     backgroundColor: 'rgba(45, 212, 191, 0.28)',
     transform: [{ rotate: '-18deg' }],
+  },
+  marineGlow: {
+    position: 'absolute',
+    right: -120,
+    top: 160,
+    width: 290,
+    height: 470,
+    borderRadius: 170,
+    backgroundColor: 'rgba(20, 184, 166, 0.24)',
+    transform: [{ rotate: '18deg' }],
   },
 });

@@ -799,6 +799,44 @@ function withCors(headers: Record<string, string>) {
   return { ...headers, ...corsHeaders() };
 }
 
+const NCEI_ALLOWED_CDO_PATHS = new Set([
+  "/data",
+  "/stations",
+]);
+
+const NCEI_ALLOWED_QUERY_PARAMS = new Set([
+  "datasetid",
+  "stationid",
+  "datatypeid",
+  "locationid",
+  "extent",
+  "startdate",
+  "enddate",
+  "limit",
+  "offset",
+  "sortfield",
+  "sortorder",
+  "units",
+]);
+
+function sanitizeNceiCdoParams(input: URLSearchParams) {
+  const output = new URLSearchParams();
+  input.forEach((value, key) => {
+    const cleanKey = key.toLowerCase();
+    if (!NCEI_ALLOWED_QUERY_PARAMS.has(cleanKey)) return;
+    if (value.length > 240) return;
+    output.set(cleanKey, value);
+  });
+
+  const limit = Number(output.get("limit") || "1000");
+  output.set("limit", String(Math.max(1, Math.min(1000, Number.isFinite(limit) ? Math.floor(limit) : 1000))));
+
+  const offset = Number(output.get("offset") || "1");
+  output.set("offset", String(Math.max(1, Math.min(100000, Number.isFinite(offset) ? Math.floor(offset) : 1))));
+
+  return output;
+}
+
 /* =============================================================================
  * SWR + stale-if-error cache helpers
  * ============================================================================= */
@@ -11206,7 +11244,21 @@ export default {
 
     if (url.pathname.startsWith("/api/ncei/")) {
       const subpath = url.pathname.replace("/api/ncei", "");
-      const upstream = `https://www.ncei.noaa.gov/cdo-web/api/v2${subpath}?${url.searchParams.toString()}`;
+      if (!NCEI_ALLOWED_CDO_PATHS.has(subpath)) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "Unsupported NCEI endpoint",
+          }),
+          {
+            status: 404,
+            headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+          },
+        );
+      }
+
+      const upstreamParams = sanitizeNceiCdoParams(url.searchParams);
+      const upstream = `https://www.ncei.noaa.gov/cdo-web/api/v2${subpath}?${upstreamParams.toString()}`;
 
       const res = await fetch(upstream, {
         headers: { token: env.NOAA_NCEI_TOKEN, accept: "application/json" },
