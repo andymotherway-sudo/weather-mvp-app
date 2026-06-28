@@ -23,6 +23,8 @@ import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
+import { Buffer } from "node:buffer";
+import { JpxImage } from "jpeg2000";
 
 const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
 
@@ -1074,6 +1076,10 @@ const AVIATION_OVERLAYS_TTL_SECONDS = 5 * 60;
 const AVIATION_OVERLAYS_STALE_SECONDS = 30 * 60;
 const AVIATION_OVERLAYS_VERSION = "aviation-overlays-na-caribbean-v2";
 const GLOBAL_CAPABILITIES_VERSION = "global-capabilities-v2";
+const LIGHTNING_OPC_TTL_SECONDS = 10 * 60;
+const LIGHTNING_OPC_STALE_SECONDS = 6 * 3600;
+const LIGHTNING_OPC_VERSION = "opc-lightning-density-v1";
+const OPC_LIGHTNING_DENSITY_BASE = "https://ftp.opc.ncep.noaa.gov/grids/operational/lightning_density";
 
 function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
   return {
@@ -5415,6 +5421,328 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number, headers?: Re
   }
 }
 
+type OpcLightningFile = {
+  name: string;
+  url: string;
+  validTime: string | null;
+  modified: string | null;
+  size: string | null;
+};
+
+function opcLightningValidTimeFromName(name: string) {
+  const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})\.\d+\.(?:grb2|gem|gz)$/i.exec(name);
+  if (!match) return null;
+  const [, y, mo, d, h, mi] = match;
+  return `${y}-${mo}-${d}T${h}:${mi}:00Z`;
+}
+
+function parseOpcLightningDirectory(html: string, minutes: 15 | 30): OpcLightningFile[] {
+  const files: OpcLightningFile[] = [];
+  const rowPattern =
+    /<tr><td><a href="([^"]+)">([^<]+\.(?:grb2|gem|gz))<\/a><\/td><td[^>]*>([^<]*)<\/td><td[^>]*>([^<]*)<\/td><\/tr>/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = rowPattern.exec(html))) {
+    const href = match[1];
+    const name = match[2];
+    if (/^latest\./i.test(name)) continue;
+    const modified = match[3]?.replace(/\s+/g, " ").trim() || null;
+    const size = match[4]?.replace(/\s+/g, " ").trim() || null;
+    const folder = minutes === 15 ? "ltng_15" : "ltng_30";
+    files.push({
+      name,
+      url: `${OPC_LIGHTNING_DENSITY_BASE}/${folder}/${href}`,
+      validTime: opcLightningValidTimeFromName(name),
+      modified,
+      size,
+    });
+  }
+
+  return files.sort((a, b) => String(a.validTime || a.name).localeCompare(String(b.validTime || b.name)));
+}
+
+async function fetchOpcLightningWindow(minutes: 15 | 30) {
+  const folder = minutes === 15 ? "ltng_15" : "ltng_30";
+  const url = `${OPC_LIGHTNING_DENSITY_BASE}/${folder}/`;
+  const html = await fetchTextWithTimeout(url, 9000, {
+    accept: "text/html",
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+  });
+  const files = parseOpcLightningDirectory(html, minutes);
+  const latest = files.at(-1) ?? null;
+  return {
+    minutes,
+    sourceUrl: url,
+    latest,
+    recent: files.slice(-8).reverse(),
+  };
+}
+
+async function buildOpcLightningPayload() {
+  const windows = await Promise.all([fetchOpcLightningWindow(15), fetchOpcLightningWindow(30)]);
+  return {
+    ok: true,
+    version: LIGHTNING_OPC_VERSION,
+    provider: "NOAA/NWS/NCEP Ocean Prediction Center",
+    product: "Lightning Strike Density",
+    updatedAt: new Date().toISOString(),
+    sourceUrl: OPC_LIGHTNING_DENSITY_BASE,
+    windows,
+    mapLayerReady: true,
+    normalization:
+      "OMNIwx decodes the official GRIB2 JPEG2000 grids in the worker and exposes a compact GeoJSON density-cell layer for Maps.",
+    safety:
+      "Use lightning density for storm awareness only. It is not an exact ground-strike alert or an all-clear signal.",
+    nextStep:
+      "Future refinement can convert the same decoded grid into smoother raster tiles or contour polygons, but the current layer is already georeferenced and source-backed.",
+    meta: {
+      ttlSeconds: LIGHTNING_OPC_TTL_SECONDS,
+      staleSeconds: LIGHTNING_OPC_STALE_SECONDS,
+    },
+  };
+}
+
+function readGribSignedMicroDegrees(buf: Uint8Array, offset: number) {
+  const raw =
+    ((buf[offset] ?? 0) * 0x1000000) +
+    ((buf[offset + 1] ?? 0) << 16) +
+    ((buf[offset + 2] ?? 0) << 8) +
+    (buf[offset + 3] ?? 0);
+  if (raw === 0xffffffff) return null;
+  const sign = raw & 0x80000000 ? -1 : 1;
+  const magnitude = raw & 0x7fffffff;
+  return (sign * magnitude) / 1_000_000;
+}
+
+function readUInt32BE(buf: Uint8Array, offset: number) {
+  return (
+    ((buf[offset] ?? 0) * 0x1000000) +
+    ((buf[offset + 1] ?? 0) << 16) +
+    ((buf[offset + 2] ?? 0) << 8) +
+    (buf[offset + 3] ?? 0)
+  );
+}
+
+function readUInt16BE(buf: Uint8Array, offset: number) {
+  return ((buf[offset] ?? 0) << 8) + (buf[offset + 1] ?? 0);
+}
+
+function normalizeLon(lon: number) {
+  let next = lon;
+  while (next > 180) next -= 360;
+  while (next < -180) next += 360;
+  return next;
+}
+
+function opcLightningColor(value: number) {
+  if (value >= 40) return "#f43f5e";
+  if (value >= 20) return "#fb923c";
+  if (value >= 10) return "#facc15";
+  if (value >= 5) return "#22c55e";
+  if (value >= 2) return "#38bdf8";
+  return "#67e8f9";
+}
+
+function parseOpcLightningGrib(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 32 || String.fromCharCode(...bytes.slice(0, 4)) !== "GRIB" || bytes[7] !== 2) {
+    throw new Error("Unsupported OPC lightning GRIB payload");
+  }
+
+  const messageLength = Number((BigInt(readUInt32BE(bytes, 8)) << 32n) + BigInt(readUInt32BE(bytes, 12)));
+  let offset = 16;
+  let section3: Uint8Array | null = null;
+  let section5: Uint8Array | null = null;
+  let jpeg2000Payload: Uint8Array | null = null;
+
+  while (offset < Math.min(bytes.length, messageLength) - 4) {
+    const sectionLength = readUInt32BE(bytes, offset);
+    const section = bytes[offset + 4];
+    if (!sectionLength || offset + sectionLength > bytes.length) break;
+    const slice = bytes.slice(offset, offset + sectionLength);
+    if (section === 3) section3 = slice;
+    if (section === 5) section5 = slice;
+    if (section === 7) jpeg2000Payload = bytes.slice(offset + 5, offset + sectionLength);
+    offset += sectionLength;
+  }
+
+  if (!section3 || !section5 || !jpeg2000Payload) {
+    throw new Error("OPC lightning GRIB is missing grid, data representation, or JPEG2000 sections");
+  }
+
+  const template3 = readUInt16BE(section3, 12);
+  const template5 = readUInt16BE(section5, 9);
+  if (template3 !== 0 || template5 !== 40) {
+    throw new Error(`Unsupported OPC lightning GRIB templates grid=${template3} data=${template5}`);
+  }
+
+  const ni = readUInt32BE(section3, 30);
+  const nj = readUInt32BE(section3, 34);
+  const lat1 = readGribSignedMicroDegrees(section3, 46);
+  const lon1 = readGribSignedMicroDegrees(section3, 50);
+  const lat2 = readGribSignedMicroDegrees(section3, 55);
+  const lon2 = readGribSignedMicroDegrees(section3, 59);
+  const di = readUInt32BE(section3, 63) / 1_000_000;
+  const dj = readUInt32BE(section3, 67) / 1_000_000;
+
+  if (!ni || !nj || lat1 == null || lon1 == null || lat2 == null || lon2 == null) {
+    throw new Error("OPC lightning GRIB has incomplete grid metadata");
+  }
+
+  const image = new JpxImage();
+  image.parse(Buffer.from(jpeg2000Payload));
+  const tile = image.tiles?.[0];
+  if (!tile?.items || image.width !== ni || image.height !== nj) {
+    throw new Error(`OPC lightning JPEG2000 dimensions ${image.width}x${image.height} do not match grid ${ni}x${nj}`);
+  }
+
+  return {
+    values: tile.items,
+    width: ni,
+    height: nj,
+    lat1,
+    lon1,
+    lat2,
+    lon2,
+    di: di || Math.abs(lon2 - lon1) / Math.max(1, ni - 1),
+    dj: dj || Math.abs(lat2 - lat1) / Math.max(1, nj - 1),
+  };
+}
+
+function buildOpcLightningGeoJsonFromGrid(
+  grid: ReturnType<typeof parseOpcLightningGrib>,
+  opts?: { binDegrees?: number; maxFeatures?: number; threshold?: number },
+) {
+  const binDegrees = Math.max(0.1, Math.min(1.5, opts?.binDegrees ?? 0.35));
+  const maxFeatures = Math.max(100, Math.min(3000, opts?.maxFeatures ?? 1400));
+  const threshold = Math.max(1, Math.min(255, opts?.threshold ?? 1));
+  const cells = new Map<
+    string,
+    { lonBin: number; latBin: number; max: number; sum: number; count: number }
+  >();
+
+  for (let idx = 0; idx < grid.values.length; idx++) {
+    const value = grid.values[idx] ?? 0;
+    if (value < threshold) continue;
+    const x = idx % grid.width;
+    const y = Math.floor(idx / grid.width);
+    const lonRaw = grid.lon1 + x * grid.di;
+    const lon = normalizeLon(lonRaw);
+    const lat = grid.lat1 + y * grid.dj;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const lonBin = Math.floor(lon / binDegrees);
+    const latBin = Math.floor(lat / binDegrees);
+    const key = `${lonBin}:${latBin}`;
+    const current = cells.get(key);
+    if (current) {
+      current.max = Math.max(current.max, value);
+      current.sum += value;
+      current.count += 1;
+    } else {
+      cells.set(key, { lonBin, latBin, max: value, sum: value, count: 1 });
+    }
+  }
+
+  const ranked = [...cells.values()]
+    .sort((a, b) => b.max - a.max || b.sum - a.sum)
+    .slice(0, maxFeatures)
+    .sort((a, b) => a.latBin - b.latBin || a.lonBin - b.lonBin);
+
+  const features = ranked.map((cell) => {
+    const west = cell.lonBin * binDegrees;
+    const east = west + binDegrees;
+    const south = cell.latBin * binDegrees;
+    const north = south + binDegrees;
+    const avg = cell.sum / Math.max(1, cell.count);
+    return {
+      type: "Feature",
+      properties: {
+        kind: "lightning-density",
+        maxDensity: cell.max,
+        avgDensity: Number(avg.toFixed(1)),
+        sampleCount: cell.count,
+        fillColor: opcLightningColor(cell.max),
+        strokeColor: opcLightningColor(cell.max),
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south],
+          ],
+        ],
+      },
+    };
+  });
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
+}
+
+function parseOpcLightningGeoJsonParams(url: URL) {
+  const windowRaw = Number(url.searchParams.get("window") || "15");
+  const minutes: 15 | 30 = windowRaw === 30 ? 30 : 15;
+  const binDegrees = Number(url.searchParams.get("binDegrees") || "0.35");
+  const threshold = Number(url.searchParams.get("threshold") || "1");
+  const maxFeatures = Number(url.searchParams.get("maxFeatures") || "1400");
+  return {
+    minutes,
+    binDegrees: Number.isFinite(binDegrees) ? binDegrees : 0.35,
+    threshold: Number.isFinite(threshold) ? threshold : 1,
+    maxFeatures: Number.isFinite(maxFeatures) ? maxFeatures : 1400,
+  };
+}
+
+async function buildOpcLightningGeoJsonPayload(url: URL) {
+  const params = parseOpcLightningGeoJsonParams(url);
+  const window = await fetchOpcLightningWindow(params.minutes);
+  const latest = window.latest;
+  if (!latest?.url) {
+    throw new Error(`No OPC lightning ${params.minutes}-minute GRIB2 file is available`);
+  }
+
+  const res = await fetch(latest.url, {
+    headers: {
+      accept: "application/octet-stream,*/*",
+      "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`OPC lightning GRIB fetch failed: HTTP ${res.status}`);
+  }
+  const grid = parseOpcLightningGrib(await res.arrayBuffer());
+  const geojson = buildOpcLightningGeoJsonFromGrid(grid, params);
+  return {
+    ...geojson,
+    properties: {
+      provider: "NOAA/NWS/NCEP Ocean Prediction Center",
+      product: "Lightning Strike Density",
+      sourceUrl: latest.url,
+      validTime: latest.validTime,
+      modified: latest.modified,
+      windowMinutes: params.minutes,
+      binDegrees: Math.max(0.1, Math.min(1.5, params.binDegrees)),
+      threshold: Math.max(1, Math.min(255, params.threshold)),
+      mapLayerReady: true,
+      safety: "Storm awareness only. This is not a strike-by-strike lightning safety alert.",
+      grid: {
+        width: grid.width,
+        height: grid.height,
+        lat1: grid.lat1,
+        lon1: normalizeLon(grid.lon1),
+        lat2: grid.lat2,
+        lon2: normalizeLon(grid.lon2),
+      },
+    },
+  };
+}
+
 const AVIATION_NORTH_AMERICA_BBOX = { south: 5, west: -170, north: 84, east: -45 } as const;
 
 function emptyFeatureCollection() {
@@ -9633,6 +9961,53 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/lightning/opc" || url.pathname === "/v1/lightning/opc") {
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/lightning/opc";
+      cacheKeyUrl.search = "";
+      cacheKeyUrl.searchParams.set("v", LIGHTNING_OPC_VERSION);
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: LIGHTNING_OPC_TTL_SECONDS,
+        staleSeconds: LIGHTNING_OPC_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildOpcLightningPayload();
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/api/lightning/opc/geojson" || url.pathname === "/v1/lightning/opc/geojson") {
+      const params = parseOpcLightningGeoJsonParams(url);
+      const cacheKeyUrl = new URL(request.url);
+      cacheKeyUrl.pathname = "/__cache__/api/lightning/opc/geojson";
+      cacheKeyUrl.search = "";
+      cacheKeyUrl.searchParams.set("v", LIGHTNING_OPC_VERSION);
+      cacheKeyUrl.searchParams.set("window", String(params.minutes));
+      cacheKeyUrl.searchParams.set("bin", String(Math.round(params.binDegrees * 100)));
+      cacheKeyUrl.searchParams.set("threshold", String(Math.round(params.threshold)));
+      cacheKeyUrl.searchParams.set("max", String(Math.round(params.maxFeatures)));
+      const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+
+      return swrFetchJson(request, ctx, {
+        cacheKey,
+        ttlSeconds: LIGHTNING_OPC_TTL_SECONDS,
+        staleSeconds: LIGHTNING_OPC_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const payload = await buildOpcLightningGeoJsonPayload(url);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/geo+json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
     if (url.pathname === "/api/marine/sources" || url.pathname === "/v1/marine/sources") {
       const payload = buildMarineSourcesPayload();
       return new Response(JSON.stringify(payload), {
@@ -10852,6 +11227,8 @@ export default {
         routes: [
           "/land-extremes?unit=F|C",
           "/api/global/capabilities",
+          "/api/lightning/opc",
+          "/api/lightning/opc/geojson?window=15&binDegrees=0.35",
           "/api/aviation/overlays?region=north-america",
           "/api/marine/sources",
           "/api/alerts/global?lat=##&lon=##&units=imperial|metric",

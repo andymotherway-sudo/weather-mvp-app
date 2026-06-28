@@ -15,6 +15,7 @@ import { useIsFocused } from '@react-navigation/native';
 
 import { AstroForecastTimeline } from '../../components/astro/AstroForecastTimeline';
 import { MoonDarknessCard } from '../../components/astro/MoonDarknessCard';
+import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
 import {
   NerdyExplainModal,
@@ -1366,8 +1367,9 @@ export default function SolarScreen() {
   return (
     <>
       <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
+        <AnimatedPageBackground variant="space" />
         <ScrollView
-          style={[styles.container, { backgroundColor: chrome.background }]}
+          style={styles.container}
           contentContainerStyle={[styles.content, contentPad]}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={onRefreshAll} />
@@ -1591,7 +1593,7 @@ export default function SolarScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#020817' },
-  container: { flex: 1, backgroundColor: '#020817' },
+  container: { flex: 1, backgroundColor: 'transparent' },
   content: { paddingHorizontal: 16 },
 
   headerRow: {

@@ -54,6 +54,7 @@ import { normalizeRadarSiteId } from '../lib/maps/radarIem';
 import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useAlertMapLayer } from '../lib/maps/useAlertMapLayer';
+import { useLightningMapData } from '../lib/maps/useLightningMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
@@ -1442,6 +1443,7 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
+  const lightningEnabled = !!state.layers?.['lightning.strikes']?.enabled;
   const windParticlesEnabled = !!state.layers?.['wx.wind.particles']?.enabled;
   const windLayerEnabled = windParticlesEnabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
@@ -1763,6 +1765,9 @@ export default function MapsScreen() {
   const alertsOpacity = Number.isFinite(state.layers?.['alerts.polygons']?.opacity)
     ? state.layers['alerts.polygons'].opacity
     : 0.95;
+  const lightningOpacity = Number.isFinite(state.layers?.['lightning.strikes']?.opacity)
+    ? state.layers['lightning.strikes'].opacity
+    : 0.78;
 
   const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
@@ -2688,6 +2693,10 @@ export default function MapsScreen() {
     mapZoom,
     region: effectiveRegion,
     units: tempUnit === 'C' ? 'metric' : 'imperial',
+  });
+  const lightningLayer = useLightningMapData(lightningEnabled, {
+    focused: isFocused,
+    windowMinutes: 15,
   });
 
   mapPressHandlerRef.current = async (e: any) => {
@@ -4010,6 +4019,39 @@ export default function MapsScreen() {
             waterStationsOpacity={waterStationsOpacity}
             layerBudget={marineLayerBudget}
           />
+          {lightningEnabled && lightningLayer.geojson?.features?.length ? (
+            <MapLibreGL.ShapeSource id="opc-lightning-density-source" shape={lightningLayer.geojson as any}>
+              <MapLibreGL.FillLayer
+                id="opc-lightning-density-fill"
+                style={{
+                  fillColor: ['coalesce', ['get', 'fillColor'], '#38bdf8'] as any,
+                  fillOpacity: Math.max(0.08, Math.min(0.42, lightningOpacity * 0.34)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="opc-lightning-density-line"
+                style={{
+                  lineColor: ['coalesce', ['get', 'strokeColor'], '#7dd3fc'] as any,
+                  lineOpacity: Math.max(0.18, Math.min(0.88, lightningOpacity * 0.85)),
+                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.55, 6, 1.0, 10, 1.35] as any,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="opc-lightning-density-label"
+                minZoomLevel={5.2}
+                style={{
+                  textField: ['to-string', ['get', 'maxDensity']] as any,
+                  textSize: ['interpolate', ['linear'], ['zoom'], 5.2, 9, 8, 10.5, 11, 12] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#fefce8',
+                  textHaloColor: 'rgba(2,6,23,0.92)',
+                  textHaloWidth: 1.2,
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
           {aviationTurbEnabled ? (
             <MapLibreGL.ShapeSource
               id="aviation-turbulence-source"

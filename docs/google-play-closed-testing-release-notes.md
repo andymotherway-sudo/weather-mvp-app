@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.133**
-Android version code: **10150**
+Release: **OMNIwx Alpha 1.1.134**
+Android version code: **10151**
 Track: **Closed testing / internal testing candidate**
-Date: **June 25, 2026**
+Date: **June 28, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.133 restores genuine radar motion with native timestamped radar tiles, improves buffered satellite transitions, and adds compact sunrise and sunset information to Land Simple.
+OMNIwx Alpha 1.1.134 adds subtle animated backgrounds for Aviation, Almanac, and Space, fixes wxLab label clipping, and turns Storm Scope lightning into a source-backed NOAA OPC density overlay.
 
 ## Full Tester Notes
 
@@ -15,6 +15,13 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ### What changed in this build
 
+- Added subtle animated 9:16 page backgrounds to Aviation, Almanac, and Space.
+- Aviation now has quiet route/wind-line motion and faint waypoint pulses behind the existing content.
+- Almanac now has slow seasonal/arc trace motion and a low-contrast warm breathing glow behind the existing content.
+- Space now has sparse twinkle, faint solar-wind drift, orbital-line motion, and a soft aurora-style glow behind the existing content.
+- The new backgrounds respect reduced-motion preferences and render behind cards with `pointerEvents="none"`.
+- Fixed wxLab metric labels that could render as clipped text on some Android devices, including `AIR` appearing as `AI` and `VISIBILITY` appearing as `VISIBILIT`.
+- Reworked wxLab metric labels to avoid Android uppercase text-measurement clipping while preserving the same content and wxLearn links.
 - Restored live regional radar to its native RainViewer timestamped tile sequence so precipitation motion advances through the correct source frames.
 - Removed the mismatched wide-radar screenshot compositor that could make radar appear frozen and then jump.
 - Preserved tile prewarming and crossfading for live radar while retaining the buffered image compositor for satellite imagery and map export.
@@ -82,8 +89,9 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - Added an app-to-widget weather cache handoff so opening OMNIwx can refresh native widget weather data even if Android background widget DNS/network fetches fail.
 - Widgets now have a better fallback path for current temperature, daily high/low, wind, dew point, humidity, cloud cover, weather code, and radar-card weather context.
 - Storm Scope is now visible in the map mode selector instead of being hidden behind nerdy mode.
-- Storm Scope now defaults to a stronger operational bundle: radar, alert polygons, recent lightning activity metadata, WPC fronts, and animated 10 m wind particles.
-- Lightning wording was adjusted to describe recent lightning activity rather than exact strike-by-strike safety guidance.
+- Storm Scope now defaults to a stronger operational bundle: radar, alert polygons, decoded NOAA OPC lightning density, WPC fronts, excessive rainfall outlook context, and animated 10 m wind particles.
+- Lightning is now source-backed: the worker decodes NOAA OPC 15-minute GRIB2 lightning-density grids into compact georeferenced cells for Maps.
+- Added a worker-side `/api/lightning/opc/geojson` endpoint that decodes OPC GRIB2/JPEG2000 lightning density and returns compact GeoJSON cells for the map.
 - Added Privacy Policy and Support links in Settings.
 - Drafted a replacement privacy policy in `docs/privacy-policy.md` for publishing on omni-wx.com.
 - Removed unused sensitive Android permissions from the manifest.
@@ -105,7 +113,7 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 - **Forecast verification**: Compare several locations. Confirm the nearest-station name, distance, age, and differences look plausible and stale observations are not presented as current evidence.
 - **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
 - **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
-- **Lightning**: This build contains safer layer metadata and mode wiring. Do not treat lightning as exact ground-strike safety guidance.
+- **Lightning**: Test Storm Scope with lightning enabled. The layer should show recent NOAA OPC density cells, not exact ground-strike alerts.
 - **Android Auto radar**: Confirm radar fills the main map area instead of appearing as a small thumbnail. Test loading, refresh, back navigation, and unavailable-radar behavior on real head units where possible.
 - **Maps performance**: Try radar, satellite, wind particles, marine zones, aviation hazards, and wildfire layers. Watch for sluggishness, heat, battery drain, or camera snapping.
 - **Animation continuity**: Loop broad radar, GeoColor, infrared, water vapor, and visible clouds. Pan and zoom during playback. Report any white/black flash, disappearing frame, misaligned image, stalled loop, or excessive rebuffing.
@@ -124,8 +132,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.133`
-- Android version code: `10150`
+- App version: `1.1.134`
+- Android version code: `10151`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

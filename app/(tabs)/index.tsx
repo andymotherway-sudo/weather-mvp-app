@@ -3368,7 +3368,7 @@ function NerdyDeepDive({
             <View style={nd.panelRule} />
             <View style={nd.metricGrid2}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('dewpoint')}>
-                <Text style={nd.metricLabel}>Dew Pt</Text>
+                <Text style={nd.metricLabel}>DEW PT</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('humidity')}>
@@ -3378,16 +3378,16 @@ function NerdyDeepDive({
             </View>
             <View style={nd.metricGrid2}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic(feelsDriverTopicId)}>
-                <Text style={nd.metricLabel}>{feelsDriverLabel}</Text>
+                <Text style={nd.metricLabel}>{feelsDriverLabel.toUpperCase()}</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.66}>{feelsDriverValue}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('spread_temp_dew')}>
-                <Text style={nd.metricLabel}>Spread</Text>
+                <Text style={nd.metricLabel}>SPREAD</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
               </Pressable>
             </View>
             <Pressable style={nd.metricHiddenCard} onPress={() => onOpenLearnTopic('dewpoint')}>
-              <Text style={nd.metricLabel}>Dew Band</Text>
+              <Text style={nd.metricLabel}>DEW BAND</Text>
               <Text style={[nd.metricWideValue, nd.metricStackedValue]}>{dpBand ?? '—'}</Text>
             </Pressable>
           </View>
@@ -3406,21 +3406,21 @@ function NerdyDeepDive({
             <View style={nd.panelRule} />
             <View style={nd.metricGrid2}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('wind')}>
-                <Text style={nd.metricLabel}>Speed</Text>
+                <Text style={nd.metricLabel}>SPEED</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{windMph != null ? `${Math.round(windMph)} mph` : '—'}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('gusts')}>
-                <Text style={nd.metricLabel}>Gusts</Text>
+                <Text style={nd.metricLabel}>GUSTS</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
               </Pressable>
             </View>
             <View style={nd.metricGrid2Tall}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('gust_factor')}>
-                <Text style={nd.metricLabel}>Gust Fx</Text>
+                <Text style={nd.metricLabel}>GUST FX</Text>
                 <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{gf != null ? gf.toFixed(2) : '—'}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricTallCard]} onPress={() => onOpenLearnTopic('wind')}>
-                <Text style={nd.metricLabel}>{windState}</Text>
+                <Text style={nd.metricLabel}>{windState.toUpperCase()}</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>{windState}</Text>
               </Pressable>
             </View>
@@ -3434,7 +3434,7 @@ function NerdyDeepDive({
               <Text style={nd.panelTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.76}>Sky, Sun & Air</Text>
             </View>
             <Pressable style={nd.metricWideCard} onPress={() => onOpenLearnTopic('clouds')}>
-              <Text style={nd.metricLabel}>Cloud Cover</Text>
+              <Text style={nd.metricLabel}>CLOUD COVER</Text>
               <View style={nd.cloudRow}>
                 <Text style={nd.metricWideValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{cloudCoverPct != null ? `${Math.round(cloudCoverPct)}%` : '—'}</Text>
                 <View style={nd.cloudTrack}>
@@ -3444,16 +3444,16 @@ function NerdyDeepDive({
             </Pressable>
             <View style={nd.metricStack}>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('uv')}>
-                <Text style={nd.metricLabel}>UV Index</Text>
+                <Text style={nd.metricLabel}>UV INDEX</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{uvIndex != null ? fmt(uvIndex, 1) : '—'}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('air-quality')}>
-                <Text style={nd.metricLabel}>Air</Text>
+                <Text style={nd.metricLabel}>AIR</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.66}>{airQualityIndex != null ? `${Math.round(airQualityIndex)} AQI` : '—'}</Text>
                 {airQualityLabel ? <Text style={nd.metricHint}>{airQualityLabel}</Text> : null}
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('radiation-regime')}>
-                <Text style={nd.metricLabel}>Radiation Regime</Text>
+                <Text style={nd.metricLabel}>RADIATION REGIME</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>{radiationRegime}</Text>
               </Pressable>
             </View>
@@ -3465,14 +3465,14 @@ function NerdyDeepDive({
               <Text style={nd.panelTitle} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7}>Pressure, Visibility & Precip</Text>
             </View>
             <Pressable style={nd.pressureHeroCard} onPress={() => onOpenLearnTopic('pressure')}>
-              <Text style={nd.metricLabel}>Pressure</Text>
+              <Text style={nd.metricLabel}>PRESSURE</Text>
               <Text style={nd.pressureHeroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>{pressurePrimary}</Text>
               <Text style={nd.pressureHeroSub}>{pressureSecondary}</Text>
               <Text style={nd.pressureHeroHint}>{pressureTrendText}</Text>
             </Pressable>
             <View style={nd.metricStack}>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('visibility')}>
-                <Text style={nd.metricLabel}>Visibility</Text>
+                <Text style={nd.metricLabel}>VISIBILITY</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>{formatSurfaceVisibility(visibilityMi)}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('pop')}>
@@ -3480,7 +3480,7 @@ function NerdyDeepDive({
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—'}</Text>
               </Pressable>
               <Pressable style={[nd.metricCard, nd.metricCardFull]} onPress={() => onOpenLearnTopic('pressure')}>
-                <Text style={nd.metricLabel}>Pressure Regime</Text>
+                <Text style={nd.metricLabel}>PRESSURE REGIME</Text>
                 <Text style={nd.metricValueSmall} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62}>{pressureRegime}</Text>
               </Pressable>
             </View>
@@ -4552,12 +4552,14 @@ const nd = StyleSheet.create({
     gap: 8,
   },
   metricLabel: {
+    width: '100%',
+    flexShrink: 0,
+    paddingRight: 3,
     fontSize: 10,
     letterSpacing: 0.55,
-    textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.52)',
     fontWeight: '900',
-    lineHeight: 12,
+    lineHeight: 13,
     includeFontPadding: false,
   },
   metricValue: {

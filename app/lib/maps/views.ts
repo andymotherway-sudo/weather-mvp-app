@@ -58,7 +58,7 @@ export const MAP_VIEWS: MapViewDefinition[] = [
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
       'alerts.polygons': 0.95,
-      'lightning.strikes': 0.84,
+      'lightning.strikes': 0.78,
       'wx.fronts.day1': 0.96,
       'wpc.excessiveRain.day1': 0.62,
       'wx.wind.particles': 0.7,

@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { Card } from '../../components/layout/Card';
 import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
@@ -1015,6 +1016,7 @@ export default function AviationScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
+      <AnimatedPageBackground variant="aviation" />
       <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 28 + insets.bottom }} showsVerticalScrollIndicator={false}>
         <View style={s.header}>
           <View style={s.brandRow}>

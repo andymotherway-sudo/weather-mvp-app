@@ -19,6 +19,7 @@ import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 
 import { useAlmanacPreload } from '../../components/boot/AlmanacWarmup';
+import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { ClimatologyChart } from '../../components/land/ClimatologyChart';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
@@ -642,8 +643,9 @@ const hasNormals = chartNormals.length > 0;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
+      <AnimatedPageBackground variant="almanac" />
       <ScrollView
-        style={[styles.container, { backgroundColor: chrome.background }]}
+        style={styles.container}
         contentContainerStyle={[
           styles.content,
           { paddingTop: Math.max(theme.spacing.md, Math.round(insets.top * 0.25)) },
@@ -1004,7 +1006,7 @@ const hasNormals = chartNormals.length > 0;
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
-  container: { flex: 1, backgroundColor: theme.colors.background },
+  container: { flex: 1, backgroundColor: 'transparent' },
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing['2xl'] },
 
   header: { marginBottom: theme.spacing.md },

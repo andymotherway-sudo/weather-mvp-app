@@ -16,5 +16,8 @@
 		"vitest": "~3.2.0",
 		"wrangler": "^4.65.0",
 		"xlsx": "^0.18.5"
+	},
+	"dependencies": {
+		"jpeg2000": "^1.1.1"
 	}
 }

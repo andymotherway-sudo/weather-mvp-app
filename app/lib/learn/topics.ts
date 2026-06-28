@@ -1803,17 +1803,19 @@ export const LEARN_TOPICS: LearnTopic[] = [
     category: 'maps',
     tags: ['lightning', 'glm', 'storm scope', 'thunderstorm', 'satellite'],
     summary:
-      'Lightning-density layers show recent storm electrification over an area. They are useful for storm awareness, but they are not a street-level lightning alert.',
+      'Lightning-density products show recent storm electrification over an area. They are useful for storm awareness, but they are not a street-level lightning alert.',
     references: [
+      { label: 'Official feed', value: 'NOAA OPC 15/30 min density grids' },
       { label: 'Best for', value: 'Storm electrification trends' },
       { label: 'Not for', value: 'Exact strike-by-strike safety decisions' },
       { label: 'Safety rule', value: 'When thunder roars, go indoors' },
     ],
     bullets: [
+      'NOAA OPC publishes lightning-density grids that summarize lightning over recent 15-minute and 30-minute windows.',
       'Satellite GLM products detect total lightning, including in-cloud and cloud-to-cloud flashes, across broad regions.',
       'Density products summarize flashes over a grid cell or time window, so one colored area can represent many flashes.',
       'Latency, grid size, parallax, and product smoothing mean the displayed area may not match the exact ground point of a strike.',
-      'OMNIwx uses wording like recent lightning activity because this is context for Storm Scope, not a precision strike-warning service.',
+      'OMNIwx decodes the official grids in the worker and renders a compact georeferenced density layer in Storm Scope.',
     ],
     sections: [
       {
