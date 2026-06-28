@@ -475,7 +475,102 @@ export const MARINE_AREAS: MarineArea[] = [
   forecastZoneId: 'PHZ180',
 },
 
-  // --- GREAT LAKES (simplified single area) ---
+  // --- GREAT LAKES ---
+
+  {
+    id: 'GL_LAKE_SUPERIOR',
+    name: 'Lake Superior',
+    region: 'Western Lake Superior',
+    ocean: 'lake',
+    country: 'US',
+    kind: 'lake',
+    bounds: {
+      minLat: 46.2,
+      maxLat: 49.1,
+      minLon: -92.7,
+      maxLon: -84.2,
+    },
+    tideStationId: undefined,
+    primaryBuoyId: '45006',
+    forecastZoneId: 'LSZ144',
+    supportsTides: false,
+  },
+
+  {
+    id: 'GL_LAKE_MICHIGAN',
+    name: 'Lake Michigan',
+    region: 'Lake Michigan',
+    ocean: 'lake',
+    country: 'US',
+    kind: 'lake',
+    bounds: {
+      minLat: 41.4,
+      maxLat: 46.3,
+      minLon: -88.2,
+      maxLon: -84.8,
+    },
+    tideStationId: undefined,
+    primaryBuoyId: '45007',
+    forecastZoneId: 'LMZ844',
+    supportsTides: false,
+  },
+
+  {
+    id: 'GL_LAKE_HURON',
+    name: 'Lake Huron',
+    region: 'Lake Huron',
+    ocean: 'lake',
+    country: 'US',
+    kind: 'lake',
+    bounds: {
+      minLat: 43.0,
+      maxLat: 46.6,
+      minLon: -84.9,
+      maxLon: -79.6,
+    },
+    tideStationId: undefined,
+    primaryBuoyId: '45008',
+    forecastZoneId: 'LHZ421',
+    supportsTides: false,
+  },
+
+  {
+    id: 'GL_LAKE_ERIE',
+    name: 'Lake Erie',
+    region: 'Lake Erie',
+    ocean: 'lake',
+    country: 'US',
+    kind: 'lake',
+    bounds: {
+      minLat: 41.2,
+      maxLat: 42.9,
+      minLon: -83.6,
+      maxLon: -78.6,
+    },
+    tideStationId: undefined,
+    primaryBuoyId: '45005',
+    forecastZoneId: 'LEZ142',
+    supportsTides: false,
+  },
+
+  {
+    id: 'GL_LAKE_ONTARIO',
+    name: 'Lake Ontario',
+    region: 'Lake Ontario',
+    ocean: 'lake',
+    country: 'US',
+    kind: 'lake',
+    bounds: {
+      minLat: 43.1,
+      maxLat: 44.4,
+      minLon: -79.9,
+      maxLon: -76.0,
+    },
+    tideStationId: undefined,
+    primaryBuoyId: '45012',
+    forecastZoneId: 'LOZ042',
+    supportsTides: false,
+  },
 
   {
     id: 'GL_LAKES',

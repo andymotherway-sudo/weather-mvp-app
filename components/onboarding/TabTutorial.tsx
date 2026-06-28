@@ -239,7 +239,7 @@ export function TabTutorial({
         </View>
 
         {step.image ? (
-          <Image source={step.image} style={styles.image} resizeMode="cover" />
+          <Image source={step.image} style={styles.image} resizeMode="contain" />
         ) : null}
 
         <Text style={styles.title}>{step.title}</Text>
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 520,
+    maxWidth: 620,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(180,210,255,0.22)',
@@ -337,11 +337,12 @@ const styles = StyleSheet.create({
   image: {
     marginTop: 12,
     width: '100%',
-    height: 88,
+    height: 210,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
-    opacity: 0.9,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    opacity: 1,
   },
   title: {
     marginTop: 12,

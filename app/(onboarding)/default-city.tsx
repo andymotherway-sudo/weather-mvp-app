@@ -18,6 +18,10 @@ import {
 import { usePlace, type Place } from '../context/PlaceContext';
 import { primeClimatologyCache } from '../lib/climatology/hook';
 import { formatCompactLocation } from '../lib/locations/formats';
+import {
+  LOCATION_ONBOARDING_KEY,
+  LOCATION_ONBOARDING_VERSION,
+} from '../lib/onboarding/locationGate';
 
 const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 const PENDING_GPS_KEY = 'omniwx:onboarding:pendingGps';
@@ -98,7 +102,10 @@ export default function DefaultCityScreen() {
     country?: string;
     admin1?: string;
   }) {
-    await AsyncStorage.setItem(DEFAULT_CITY_KEY, JSON.stringify(payload));
+    await Promise.all([
+      AsyncStorage.setItem(DEFAULT_CITY_KEY, JSON.stringify(payload)),
+      AsyncStorage.setItem(LOCATION_ONBOARDING_KEY, LOCATION_ONBOARDING_VERSION),
+    ]);
     setActive(placeFromCity(payload));
     void primeClimatologyCache(payload.lat, payload.lon);
     await tick(100);

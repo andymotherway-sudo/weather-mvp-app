@@ -18,6 +18,7 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
 };
 
 const AWC_BASE = 'https://aviationweather.gov/api/data';
+const NORTH_AMERICA_CARIBBEAN_BBOX = '5,-170,84,-45';
 
 function asFeatureCollection(input: any): GeoJsonFeatureCollection {
   if (input?.type === 'FeatureCollection' && Array.isArray(input?.features)) {
@@ -518,8 +519,8 @@ export function useAviationMapData(enabled: boolean) {
           fetchGeoJson('/gairmet?format=geojson'),
           fetchGeoJson('/airsigmet?format=geojson'),
           fetchGeoJson('/cwa?format=geojson'),
-          fetchGeoJson('/pirep?format=geojson&bbox=7,-170,84,-50'),
-          fetchGeoJson('/metar?format=geojson&hours=2&bbox=7,-170,84,-50'),
+          fetchGeoJson(`/pirep?format=geojson&bbox=${NORTH_AMERICA_CARIBBEAN_BBOX}`),
+          fetchGeoJson(`/metar?format=geojson&hours=2&bbox=${NORTH_AMERICA_CARIBBEAN_BBOX}`),
         ]);
 
         if (cancelled) return;

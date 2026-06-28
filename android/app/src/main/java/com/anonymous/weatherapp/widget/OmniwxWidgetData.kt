@@ -532,9 +532,13 @@ object OmniwxWidgetData {
   fun fetchNearestMetar(place: WidgetPlace): WidgetMetar? {
     // AviationWeather's bbox search can miss sparse areas, so expand outward in
     // steps and stop as soon as we get a usable nearest METAR.
-    val deltas = listOf(0.75, 1.5, 3.0)
+    val deltas = listOf(1.0, 2.5, 5.0, 9.0, 14.0)
     for (delta in deltas) {
-      val bbox = "${place.lon - delta},${place.lat - delta},${place.lon + delta},${place.lat + delta}"
+      val south = (place.lat - delta).coerceAtLeast(-90.0)
+      val west = (place.lon - delta).coerceAtLeast(-180.0)
+      val north = (place.lat + delta).coerceAtMost(90.0)
+      val east = (place.lon + delta).coerceAtMost(180.0)
+      val bbox = "$south,$west,$north,$east"
       val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&bbox=$bbox"
       val array = runCatching { fetchJsonArray(url, "OMNIwx Alpha Android Widget") }.getOrNull() ?: continue
       val nearest = nearestMetarJson(place, array) ?: continue
@@ -671,27 +675,69 @@ object OmniwxWidgetData {
   }
 
   fun fetchNearestCandidateMetar(place: WidgetPlace): WidgetMetar? {
-    // Last-resort airport lookup for the Southwest-heavy alpha use case. This
-    // prevents a totally blank aviation widget if bbox search fails around Mesa.
-    // Long term, replace with a broader airport index.
+    // Last-resort airport lookup for sparse bbox responses across North
+    // America, Mexico, the Caribbean, and nearby Central America.
     val candidates = listOf(
-      AirportCandidate("KFFZ", 33.4659, -111.7212),
-      AirportCandidate("KIWA", 33.3008, -111.6437),
-      AirportCandidate("KPHX", 33.4278, -112.0037),
-      AirportCandidate("KDVT", 33.6883, -112.0825),
-      AirportCandidate("KSDL", 33.6229, -111.9105),
-      AirportCandidate("KTUS", 32.1315, -110.9564),
-      AirportCandidate("KFLG", 35.1385, -111.6712),
-      AirportCandidate("KLAS", 36.0801, -115.1522),
+      AirportCandidate("KATL", 33.6367, -84.4281),
+      AirportCandidate("KBOS", 42.3656, -71.0096),
       AirportCandidate("KDEN", 39.8617, -104.6731),
-      AirportCandidate("KSLC", 40.7884, -111.9778),
-      AirportCandidate("KABQ", 35.0402, -106.6092),
+      AirportCandidate("KDFW", 32.8998, -97.0403),
+      AirportCandidate("KFFZ", 33.4659, -111.7212),
+      AirportCandidate("KIAH", 29.9844, -95.3414),
+      AirportCandidate("KIWA", 33.3008, -111.6437),
+      AirportCandidate("KJFK", 40.6413, -73.7781),
+      AirportCandidate("KPHX", 33.4278, -112.0037),
+      AirportCandidate("KLAS", 36.0801, -115.1522),
       AirportCandidate("KLAX", 33.9425, -118.4081),
+      AirportCandidate("KMIA", 25.7959, -80.2870),
+      AirportCandidate("KMSP", 44.8848, -93.2223),
+      AirportCandidate("KORD", 41.9742, -87.9073),
+      AirportCandidate("KSAN", 32.7338, -117.1933),
+      AirportCandidate("KSEA", 47.4502, -122.3088),
       AirportCandidate("KSFO", 37.6190, -122.3750),
-      AirportCandidate("KSEA", 47.4502, -122.3088)
+      AirportCandidate("KSLC", 40.7884, -111.9778),
+      AirportCandidate("CYEG", 53.3097, -113.5797),
+      AirportCandidate("CYHZ", 44.8808, -63.5086),
+      AirportCandidate("CYOW", 45.3225, -75.6692),
+      AirportCandidate("CYQB", 46.7911, -71.3933),
+      AirportCandidate("CYQT", 48.3719, -89.3239),
+      AirportCandidate("CYUL", 45.4706, -73.7408),
+      AirportCandidate("CYVR", 49.1939, -123.1844),
+      AirportCandidate("CYWG", 49.9100, -97.2399),
+      AirportCandidate("CYYC", 51.1139, -114.0203),
+      AirportCandidate("CYYT", 47.6186, -52.7519),
+      AirportCandidate("CYYZ", 43.6777, -79.6248),
+      AirportCandidate("MMGL", 20.5218, -103.3112),
+      AirportCandidate("MMMX", 19.4363, -99.0721),
+      AirportCandidate("MMMY", 25.7785, -100.1070),
+      AirportCandidate("MMSD", 23.1518, -109.7210),
+      AirportCandidate("MMTJ", 32.5411, -116.9700),
+      AirportCandidate("MMUN", 21.0365, -86.8771),
+      AirportCandidate("MMVR", 19.1459, -96.1873),
+      AirportCandidate("MBPV", 21.7736, -72.2659),
+      AirportCandidate("MDPC", 18.5674, -68.3634),
+      AirportCandidate("MDSD", 18.4297, -69.6689),
+      AirportCandidate("MKJP", 17.9357, -76.7875),
+      AirportCandidate("MKJS", 18.5037, -77.9134),
+      AirportCandidate("MUHA", 22.9892, -82.4091),
+      AirportCandidate("MWCR", 19.2928, -81.3577),
+      AirportCandidate("MYNN", 25.0390, -77.4662),
+      AirportCandidate("TBPB", 13.0746, -59.4925),
+      AirportCandidate("TFFF", 14.5910, -61.0032),
+      AirportCandidate("TFFR", 16.2653, -61.5318),
+      AirportCandidate("TIST", 18.3373, -64.9734),
+      AirportCandidate("TISX", 17.7019, -64.7986),
+      AirportCandidate("TJSJ", 18.4394, -66.0018),
+      AirportCandidate("TNCA", 12.5014, -70.0152),
+      AirportCandidate("TNCC", 12.1889, -68.9598),
+      AirportCandidate("TNCM", 18.0409, -63.1089),
+      AirportCandidate("TTPP", 10.5954, -61.3372),
+      AirportCandidate("MGGT", 14.5833, -90.5275),
+      AirportCandidate("MPTO", 9.0714, -79.3835),
+      AirportCandidate("MROC", 9.9939, -84.2088)
     ).sortedBy { haversineMiles(place.lat, place.lon, it.lat, it.lon) }
 
-    val ids = candidates.take(4).joinToString(",") { it.id }
+    val ids = candidates.take(6).joinToString(",") { it.id }
     val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&ids=$ids"
     val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
     if (array.length() == 0) return null

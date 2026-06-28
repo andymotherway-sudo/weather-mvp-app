@@ -60,13 +60,14 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function shortHash(input: string) {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+function radarTileSizeForTemplate(template?: string | null) {
+  if (!template) return 256;
+  try {
+    const size = new URL(template.replace('{z}', '0').replace('{x}', '0').replace('{y}', '0')).searchParams.get('size');
+    return size === '512' ? 512 : 256;
+  } catch {
+    return template.includes('size=512') ? 512 : 256;
   }
-  return (h >>> 0).toString(36);
 }
 
 function regionFromBounds(bounds: any): Region | null {
@@ -504,16 +505,16 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              const tplKey = shortHash(tpl);
-              const srcId = `radar-warm-src-${slotIdx}-${tplKey}`;
-              const lyrId = `radar-warm-lyr-${slotIdx}-${tplKey}`;
+              const srcId = `radar-warm-src-${slotIdx}`;
+              const lyrId = `radar-warm-lyr-${slotIdx}`;
+              const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
                 <MapLibreGL.RasterSource
                   key={srcId}
                   id={srcId}
                   tileUrlTemplates={[tpl]}
-                  tileSize={256}
+                  tileSize={tileSize}
                   maxZoomLevel={requestMaxZ}
                 >
                   <MapLibreGL.RasterLayer
@@ -532,19 +533,16 @@ export function MapRenderer(props: MapRendererProps) {
               if (!tpl) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
-
-              // Force remount when template changes.
-              // This is the most likely regression fix for animated radar.
-              const tplKey = shortHash(tpl);
-              const srcId = `radar-src-${slotIdx}-${tplKey}`;
-              const lyrId = `radar-lyr-${slotIdx}-${tplKey}`;
+              const srcId = `radar-src-${slotIdx}`;
+              const lyrId = `radar-lyr-${slotIdx}`;
+              const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
                 <MapLibreGL.RasterSource
                   key={srcId}
                   id={srcId}
                   tileUrlTemplates={[tpl]}
-                  tileSize={256}
+                  tileSize={tileSize}
                   maxZoomLevel={requestMaxZ}
                 >
                   <MapLibreGL.RasterLayer

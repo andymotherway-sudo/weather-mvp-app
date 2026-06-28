@@ -1072,7 +1072,7 @@ const MARINE_OFFICIAL_FORECAST_STALE_SECONDS = 12 * 3600;
 const MARINE_OFFICIAL_FORECAST_VERSION = "official-bulletins-v3";
 const AVIATION_OVERLAYS_TTL_SECONDS = 5 * 60;
 const AVIATION_OVERLAYS_STALE_SECONDS = 30 * 60;
-const AVIATION_OVERLAYS_VERSION = "aviation-overlays-na-v1";
+const AVIATION_OVERLAYS_VERSION = "aviation-overlays-na-caribbean-v2";
 const GLOBAL_CAPABILITIES_VERSION = "global-capabilities-v2";
 
 function buildGlobalCapabilitiesPayload(): GlobalCapabilitiesResponse {
@@ -5415,7 +5415,7 @@ async function fetchTextWithTimeout(url: string, timeoutMs: number, headers?: Re
   }
 }
 
-const AVIATION_NORTH_AMERICA_BBOX = { south: 7, west: -170, north: 84, east: -50 } as const;
+const AVIATION_NORTH_AMERICA_BBOX = { south: 5, west: -170, north: 84, east: -45 } as const;
 
 function emptyFeatureCollection() {
   return { type: "FeatureCollection", features: [] as any[] };

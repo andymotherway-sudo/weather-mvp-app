@@ -327,7 +327,8 @@ export function useRadarController(args: {
       ttlMs: 60_000,
       includeNowcast: false,
       maxFrames: 24,
-      maxZoom: 7,
+      maxZoom: 8,
+      tileSize: 512,
     }),
   );
 
@@ -799,7 +800,17 @@ export function useRadarController(args: {
 
     setPreloadTo(next);
 
-    const preloadMs = mapZoom <= 5 ? 360 : mapZoom <= 8 ? 300 : 240;
+    const preloadMs = usingRainViewer
+      ? mapZoom <= 5
+        ? 700
+        : mapZoom <= 8
+          ? 560
+          : 440
+      : mapZoom <= 5
+        ? 440
+        : mapZoom <= 8
+          ? 360
+          : 280;
 
     preloadTimerRef.current = setTimeout(() => {
       const start = Date.now();
@@ -838,6 +849,7 @@ export function useRadarController(args: {
     effectiveTemplates,
     effectiveTemplates.length,
     suspendRasterTransitions,
+    usingRainViewer,
   ]);
 
   const perFrameOpacities = useMemo(() => {

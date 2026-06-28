@@ -6,6 +6,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Image, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  LOCATION_ONBOARDING_KEY,
+  LOCATION_ONBOARDING_VERSION,
+} from '../../app/lib/onboarding/locationGate';
+
 type Props = {
   children: React.ReactNode;
 };
@@ -39,6 +44,7 @@ export function AppBoot({ children }: Props) {
   const [overlayDone, setOverlayDone] = useState(false);
 
   const [hasDefaultCity, setHasDefaultCity] = useState<boolean | null>(null);
+  const [locationOnboardingComplete, setLocationOnboardingComplete] = useState<boolean | null>(null);
   const refreshSeqRef = useRef(0);
 
   const fade = useRef(new Animated.Value(1)).current;
@@ -48,7 +54,10 @@ export function AppBoot({ children }: Props) {
 
   const refreshDefaultCity = useCallback(async () => {
     const seq = ++refreshSeqRef.current;
-    const raw = await AsyncStorage.getItem(DEFAULT_CITY_KEY);
+    const [raw, completedVersion] = await Promise.all([
+      AsyncStorage.getItem(DEFAULT_CITY_KEY),
+      AsyncStorage.getItem(LOCATION_ONBOARDING_KEY),
+    ]);
     const city = safeJsonParse<any>(raw);
 
     const ok = !!(
@@ -59,6 +68,7 @@ export function AppBoot({ children }: Props) {
 
     if (seq === refreshSeqRef.current) {
       setHasDefaultCity(ok);
+      setLocationOnboardingComplete(completedVersion === LOCATION_ONBOARDING_VERSION);
     }
     return ok;
   }, []);
@@ -104,10 +114,11 @@ export function AppBoot({ children }: Props) {
     void refreshDefaultCity();
   }, [bootReady, refreshDefaultCity, segments]);
 
-  const gatePending = hasDefaultCity == null;
+  const gatePending = hasDefaultCity == null || locationOnboardingComplete == null;
   const inOnboarding = String(segments?.[0] ?? '') === '(onboarding)';
-  const mustOnboard = bootReady && hasDefaultCity === false && !inOnboarding;
-  const shouldLeaveOnboarding = bootReady && hasDefaultCity === true && inOnboarding;
+  const locationReady = hasDefaultCity === true && locationOnboardingComplete === true;
+  const mustOnboard = bootReady && !locationReady && !inOnboarding;
+  const shouldLeaveOnboarding = bootReady && locationReady && inOnboarding;
 
   return (
     <View style={styles.root}>
@@ -156,7 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   center: { alignItems: 'center', justifyContent: 'center' },
-  logo: { width: 120, height: 120 },
+  logo: { width: 168, height: 168 },
   glowRow: {
     position: 'absolute',
     bottom: 80,

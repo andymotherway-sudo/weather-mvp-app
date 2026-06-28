@@ -14,6 +14,7 @@ import { MapRenderer } from '../../components/maps/MapRenderer';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { airportCandidatesForToken, airportEntryForCode, nearestAirportCandidates } from '../lib/aviation/airportIndex';
 import { normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature } from '../lib/aviation/types';
 import { usePlace } from '../context/PlaceContext';
@@ -284,9 +285,7 @@ function airportRiskText(risk: Sample['airportRisk']) {
 }
 
 function airportCandidates(token: string) {
-  const raw = token.trim().toUpperCase();
-  if (!/^[A-Z0-9]{3,4}$/.test(raw)) return [];
-  return Array.from(new Set(/^[A-Z]{3}$/.test(raw) ? [raw, `K${raw}`] : [raw]));
+  return airportCandidatesForToken(token);
 }
 
 async function resolveAirport(token: string): Promise<Stop | null> {
@@ -308,6 +307,8 @@ async function resolveAirport(token: string): Promise<Stop | null> {
       }
     } catch {}
   }
+  const indexed = airportEntryForCode(token);
+  if (indexed) return { raw: token, code: indexed.icao, label: indexed.name, lat: indexed.lat, lon: indexed.lon };
   return null;
 }
 
@@ -385,7 +386,7 @@ function nearestStopFromMetarFeatures(features: any[], lat: number, lon: number)
 }
 
 async function fetchNearestMetarStation(lat: number, lon: number): Promise<Stop | null> {
-  const radii = [1.5, 3.5, 7];
+  const radii = [4, 8, 14];
 
   for (const radius of radii) {
     const south = Math.max(-90, lat - radius);
@@ -397,7 +398,7 @@ async function fetchNearestMetarStation(lat: number, lon: number): Promise<Stop 
       `&bbox=${encodeURIComponent(`${south},${west},${north},${east}`)}`;
 
     try {
-      const r = await fetchWithTimeout(url, 10000, {
+      const r = await fetchWithTimeout(url, 9000, {
         headers: { Accept: 'application/geo+json, application/json' },
       });
       if (!r.ok) continue;
@@ -408,6 +409,35 @@ async function fetchNearestMetarStation(lat: number, lon: number): Promise<Stop 
     } catch {
       // Try the next wider box.
     }
+  }
+
+  const indexedCandidates = nearestAirportCandidates(lat, lon, 8);
+  if (indexedCandidates.length) {
+    const url =
+      `https://aviationweather.gov/api/data/metar?format=geojson&hours=6` +
+      `&ids=${encodeURIComponent(indexedCandidates.map((airport) => airport.icao).join(','))}`;
+    try {
+      const r = await fetchWithTimeout(url, 9000, {
+        headers: { Accept: 'application/geo+json, application/json' },
+      });
+      if (r.ok) {
+        const json = await r.json().catch(() => null);
+        const features = Array.isArray(json?.features) ? json.features : [];
+        const nearest = nearestStopFromMetarFeatures(features, lat, lon);
+        if (nearest) return nearest;
+      }
+    } catch {
+      // Fall through to the static nearest airport fallback below.
+    }
+
+    const nearestIndexed = indexedCandidates[0];
+    return {
+      raw: nearestIndexed.icao,
+      code: nearestIndexed.icao,
+      label: nearestIndexed.name,
+      lat: nearestIndexed.lat,
+      lon: nearestIndexed.lon,
+    };
   }
 
   return null;
@@ -705,8 +735,11 @@ export default function AviationScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const { active } = usePlace();
-  const aviation = useAviationMapData(isFocused);
   const [mode, setMode] = useState<Mode>('station');
+  // Continental hazards and PIREPs are route/map context. Keeping that heavy
+  // bundle off the station landing path lets the nearest airport briefing load
+  // from a single local METAR query first.
+  const aviation = useAviationMapData(isFocused && mode === 'flight');
   const [reportView, setReportView] = useState<ReportView>('decoded');
   const [stationInput, setStationInput] = useState('KPHX');
   const [fromInput, setFromInput] = useState('KPHX');
@@ -1033,7 +1066,7 @@ export default function AviationScreen() {
             <Text style={s.disclaimer}>For situational awareness only. Not for flight planning or navigation. Verify with official FAA/NWS/AWC briefing sources.</Text>
           )}
 
-          <Text style={s.helper}>Three- and four-letter airport codes are supported. US three-letter inputs also try the matching K-prefixed station.</Text>
+          <Text style={s.helper}>Three- and four-letter airport codes are supported, with ICAO/IATA help for the US, Canada, Mexico, the Caribbean, and nearby Central America where AWC data is available.</Text>
           {mode === 'station' ? (
             <Text style={[s.summary, error ? s.error : null]}>{error ?? (station ? `Loaded ${station.station.code ?? station.station.label}.` : 'Enter a station to load raw and decoded aviation weather.')}</Text>
           ) : null}

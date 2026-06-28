@@ -228,6 +228,58 @@ function normalizeCountry(value?: string) {
   return raw.toUpperCase();
 }
 
+const GREAT_LAKES_ADMIN_KEYS = new Set([
+  'IL',
+  'ILLINOIS',
+  'IN',
+  'INDIANA',
+  'MI',
+  'MICHIGAN',
+  'MN',
+  'MINNESOTA',
+  'NY',
+  'NEW YORK',
+  'OH',
+  'OHIO',
+  'ON',
+  'ONTARIO',
+  'PA',
+  'PENNSYLVANIA',
+  'WI',
+  'WISCONSIN',
+]);
+
+function normalizeAdminKey(value?: string | null) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\./g, '');
+}
+
+function adminKeyFromPlaceLabel(label?: string | null) {
+  const raw = String(label ?? '');
+  const commaParts = raw.split(',').map((part) => normalizeAdminKey(part));
+  for (const part of commaParts) {
+    if (GREAT_LAKES_ADMIN_KEYS.has(part)) return part;
+  }
+
+  const words = normalizeAdminKey(raw);
+  for (const key of GREAT_LAKES_ADMIN_KEYS) {
+    if (key.length > 2 && words.includes(key)) return key;
+  }
+
+  return '';
+}
+
+function isGreatLakesAdmin(value?: string | null) {
+  const key = normalizeAdminKey(value);
+  return GREAT_LAKES_ADMIN_KEYS.has(key) || GREAT_LAKES_ADMIN_KEYS.has(adminKeyFromPlaceLabel(value));
+}
+
+function isNamedGreatLakeArea(area: MarineArea) {
+  return area.kind === 'lake' && area.id.startsWith('GL_LAKE_');
+}
+
 function distanceToAreaBoundsKm(area: MarineArea, lat: number, lon: number) {
   const clampedLat = Math.max(area.bounds.minLat, Math.min(lat, area.bounds.maxLat));
   const clampedLon = Math.max(area.bounds.minLon, Math.min(lon, area.bounds.maxLon));
@@ -264,9 +316,12 @@ function resolveAreaForPoint(lat: number, lon: number): MarineArea {
   );
 }
 
-function resolveNearestCoastalAreaForPoint(lat: number, lon: number, country?: string): MarineArea {
+function resolveNearestMarineAreaForPoint(lat: number, lon: number, country?: string, admin?: string): MarineArea {
   const countryKey = normalizeCountry(country);
-  const candidates = MARINE_AREAS.filter((candidate) => candidate.kind === 'coastal');
+  const greatLakesAdmin = isGreatLakesAdmin(admin);
+  const candidates = MARINE_AREAS.filter(
+    (candidate) => candidate.kind === 'coastal' || candidate.kind === 'lake',
+  );
   const pool = candidates.length ? candidates : MARINE_AREAS.filter((candidate) => candidate.kind !== 'high-seas');
 
   return (
@@ -277,7 +332,18 @@ function resolveNearestCoastalAreaForPoint(lat: number, lon: number, country?: s
         const sameCountryBoost =
           countryKey && normalizeCountry(candidate.country) === countryKey ? 240 : 0;
         const tideBoost = candidate.tideStationId ? 25 : 0;
-        const score = (contains ? 4000 : 0) + sameCountryBoost + tideBoost - distanceKm * 5 - areaSpan(candidate);
+        const namedGreatLakeBoost = greatLakesAdmin && isNamedGreatLakeArea(candidate) ? 520 : 0;
+        const inlandWaterBoost = candidate.kind === 'lake' ? 35 : 0;
+        const genericGreatLakesPenalty = candidate.id === 'GL_LAKES' ? 1200 : 0;
+        const score =
+          (contains ? 4000 : 0) +
+          sameCountryBoost +
+          namedGreatLakeBoost +
+          tideBoost +
+          inlandWaterBoost -
+          genericGreatLakesPenalty -
+          distanceKm * 5 -
+          areaSpan(candidate);
         return { area: candidate, score };
       })
       .sort((a, b) => b.score - a.score)[0]?.area ?? DEFAULT_MARINE_AREA
@@ -303,6 +369,7 @@ function resolveStationForPoint(lat: number, lon: number, fallbackArea: MarineAr
 
 function resolveMarineContextForPlace(place: GeocodeResult) {
   const placeCountry = normalizeCountry(place.country);
+  const greatLakesAdmin = isGreatLakesAdmin(place.admin1);
 
   const areaCandidates = MARINE_AREAS
     .filter((candidate) => candidate.kind !== 'high-seas')
@@ -311,13 +378,17 @@ function resolveMarineContextForPlace(place: GeocodeResult) {
       const contains = areaContains(candidate, place.lat, place.lon);
       const kindBoost =
         candidate.kind === 'coastal' ? 220 : candidate.kind === 'lake' ? 200 : 120;
+      const genericGreatLakesPenalty = candidate.id === 'GL_LAKES' ? 1200 : 0;
+      const namedGreatLakeBoost = greatLakesAdmin && isNamedGreatLakeArea(candidate) ? 640 : 0;
       const sameCountryBoost =
         placeCountry && normalizeCountry(candidate.country) === placeCountry ? 420 : 0;
       const score =
         (contains ? 4000 : 0) +
         sameCountryBoost +
+        namedGreatLakeBoost +
         kindBoost +
         (candidate.tideStationId ? 40 : 0) -
+        genericGreatLakesPenalty -
         distanceKm * 5 -
         areaSpan(candidate) * 1.5;
 
@@ -349,7 +420,13 @@ function resolveMarineContextForPlace(place: GeocodeResult) {
     distanceToStationKm(stationForArea(bestArea), place.lat, place.lon);
 
   const maxAllowedDistanceKm =
-    bestArea.kind === 'lake' ? 220 : bestArea.kind === 'coastal' ? 300 : 420;
+    bestArea.kind === 'lake' && greatLakesAdmin
+      ? 650
+      : bestArea.kind === 'lake'
+        ? 260
+        : bestArea.kind === 'coastal'
+          ? 300
+          : 420;
   const supported =
     bestAreaDistanceKm <= maxAllowedDistanceKm || bestStationDistanceKm <= maxAllowedDistanceKm;
 
@@ -654,7 +731,7 @@ export default function NauticalScreen() {
     if (lastAutoCoastPlaceKeyRef.current === nextKey) return;
     lastAutoCoastPlaceKeyRef.current = nextKey;
 
-    const nearestArea = resolveNearestCoastalAreaForPoint(active.lat, active.lon);
+    const nearestArea = resolveNearestMarineAreaForPoint(active.lat, active.lon, undefined, active.name);
     const nearestStation = resolveStationForPoint(active.lat, active.lon, nearestArea);
 
     setArea(nearestArea);

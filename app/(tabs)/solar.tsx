@@ -1439,6 +1439,11 @@ export default function SolarScreen() {
               </View>
 
               <View style={styles.dashboardSection}>
+                <Text style={styles.dashboardSectionTitle}>SOLAR EVENTS</Text>
+                {renderRecentEvents()}
+              </View>
+
+              <View style={styles.dashboardSection}>
                 <Text style={styles.dashboardSectionTitle}>SOLAR ACTIVITY</Text>
                 {renderSolarActivityPanel()}
               </View>
@@ -1446,11 +1451,6 @@ export default function SolarScreen() {
               <View style={styles.dashboardSection}>
                 <Text style={styles.dashboardSectionTitle}>EARTH VIEW</Text>
                 {renderEarthDiskPanel()}
-              </View>
-
-              <View style={styles.dashboardSection}>
-                <Text style={styles.dashboardSectionTitle}>SOLAR EVENTS</Text>
-                {renderRecentEvents()}
               </View>
 
               <View style={styles.dashboardSection}>
@@ -1493,7 +1493,10 @@ export default function SolarScreen() {
 
           <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Mars Weather Archive</Text>
+              <View>
+                <Text style={styles.eyebrow}>INSIGHT MISSION ARCHIVE</Text>
+                <Text style={styles.cardTitle}>Weather from another world</Text>
+              </View>
               <LearnRow
                 onPress={() =>
                   openExplain({
@@ -1517,6 +1520,22 @@ export default function SolarScreen() {
               <Text style={styles.smallText}>{marsError}</Text>
             ) : mars ? (
               <>
+                <View style={styles.marsHero}>
+                  <View style={styles.marsPlanet}>
+                    <View style={styles.marsPlanetHighlight} />
+                    <View style={styles.marsPlanetBand} />
+                  </View>
+                  <View style={styles.marsHeroCopy}>
+                    <Text style={styles.marsSolLabel}>SOL {mars.sol}</Text>
+                    <Text style={styles.marsHeroTitle}>Elysium Planitia</Text>
+                    <Text style={styles.marsHeroBody}>
+                      A preserved surface-weather report from NASA&apos;s retired InSight lander.
+                    </Text>
+                    <View style={styles.marsArchivePill}>
+                      <Text style={styles.marsArchivePillText}>ARCHIVED MISSION DATA</Text>
+                    </View>
+                  </View>
+                </View>
                 <View style={styles.marsMetricRow}>
                   <View style={styles.marsMetricTile}>
                     <Text style={styles.label}>Air temp avg</Text>
@@ -2286,6 +2305,101 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 10,
+  },
+
+  marsHero: {
+    marginTop: 12,
+    minHeight: 150,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(251,146,60,0.28)',
+    backgroundColor: 'rgba(69,26,3,0.24)',
+    overflow: 'hidden',
+  },
+
+  marsPlanet: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: '#C65A34',
+    borderWidth: 2,
+    borderColor: 'rgba(255,190,130,0.70)',
+    shadowColor: '#FB923C',
+    shadowOpacity: 0.42,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+    overflow: 'hidden',
+  },
+
+  marsPlanetHighlight: {
+    position: 'absolute',
+    width: 52,
+    height: 42,
+    borderRadius: 30,
+    left: 14,
+    top: 12,
+    backgroundColor: 'rgba(255,190,130,0.38)',
+    transform: [{ rotate: '-18deg' }],
+  },
+
+  marsPlanetBand: {
+    position: 'absolute',
+    width: 124,
+    height: 24,
+    left: -10,
+    bottom: 20,
+    backgroundColor: 'rgba(82,27,10,0.36)',
+    transform: [{ rotate: '12deg' }],
+  },
+
+  marsHeroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  marsSolLabel: {
+    color: '#FDBA74',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+
+  marsHeroTitle: {
+    marginTop: 4,
+    color: '#FFF7ED',
+    fontSize: 21,
+    fontWeight: '900',
+  },
+
+  marsHeroBody: {
+    marginTop: 6,
+    color: 'rgba(255,237,213,0.70)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+
+  marsArchivePill: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(251,146,60,0.30)',
+    backgroundColor: 'rgba(251,146,60,0.12)',
+  },
+
+  marsArchivePillText: {
+    color: '#FDBA74',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
 
   marsMetricTile: {
