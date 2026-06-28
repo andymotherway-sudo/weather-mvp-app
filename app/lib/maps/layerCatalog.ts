@@ -247,6 +247,46 @@ export const LAYER_CATALOG = [
   },
 
   {
+    id: 'wpc.excessiveRain.day1',
+    group: 'weather',
+    title: 'Excessive Rain',
+    subtitle: 'WPC Day 1',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.62,
+    zIndex: 111,
+    source: {
+      name: 'NOAA WPC',
+      details:
+        'Weather Prediction Center excessive-rainfall outlook polygons for flash-flood guidance exceedance risk over the Day 1 period.',
+      url: 'https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'wpc.excessiveRain.day2',
+    group: 'weather',
+    title: 'Excessive Rain',
+    subtitle: 'WPC Day 2',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.58,
+    zIndex: 110,
+    source: {
+      name: 'NOAA WPC',
+      details:
+        'Weather Prediction Center excessive-rainfall outlook polygons for the Day 2 planning period.',
+      url: 'https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
     id: 'sat.global.truecolor',
     group: 'weather',
     title: 'Global True Color',
@@ -316,9 +356,9 @@ export const LAYER_CATALOG = [
     zIndex: 120,
     legendKey: 'lightning',
     source: {
-      name: 'Provider TBD',
+      name: 'NOAA GLM / lightning density candidate',
       details:
-        'Recent lightning activity layer placeholder for GLM-compatible flash-density data. Treat as storm electrification context, not exact ground-strike safety guidance.',
+        'Recent lightning activity should be treated as storm electrification context, not exact ground-strike safety guidance. OMNIwx avoids strike-by-strike wording unless the source supports that precision.',
     },
     supportsOpacity: true,
     supportsLegend: true,
@@ -536,6 +576,106 @@ export const LAYER_CATALOG = [
       name: 'NOAA / NDBC',
       details: 'Marine forecast zones and buoy observations.',
     },
+  },
+
+  {
+    id: 'flood.riverStages',
+    group: 'weather',
+    title: 'River Stages',
+    subtitle: 'NWPS observed + forecast',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.9,
+    zIndex: 126,
+    source: {
+      name: 'NOAA NWPS',
+      details:
+        'National Water Prediction Service observed river stage points and full-period forecast stage context where available.',
+      url: 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'flood.qpe.last24h',
+    group: 'weather',
+    title: 'Rainfall Estimate',
+    subtitle: 'RFC QPE last 24h',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.5,
+    zIndex: 103,
+    source: {
+      name: 'NOAA RFC / NWS',
+      details:
+        'River Forecast Center quantitative precipitation estimate mosaic for hydrologic context over the last 24 hours.',
+      url: 'https://mapservices.weather.noaa.gov/raster/rest/services/obs/rfc_qpe/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'heat.nwsHeatRisk',
+    group: 'weather',
+    title: 'HeatRisk',
+    subtitle: 'NWS experimental',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.56,
+    zIndex: 104,
+    source: {
+      name: 'NOAA NWS / CDC',
+      details:
+        'Experimental NWS HeatRisk index showing potential heat-related impact risk. It supplements official watches, warnings, and advisories.',
+      url: 'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'tropics.nhcOutlook',
+    group: 'weather',
+    title: 'Tropics Outlook',
+    subtitle: 'NHC 2/7 day',
+    visibility: 'both',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.72,
+    zIndex: 116,
+    source: {
+      name: 'NOAA NHC / CPHC',
+      details:
+        'National Hurricane Center and Central Pacific Hurricane Center graphical tropical weather outlook areas.',
+      url: 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
+  },
+
+  {
+    id: 'tropics.nhcTracks',
+    group: 'weather',
+    title: 'Tropical Tracks',
+    subtitle: 'NHC active storms',
+    visibility: 'nerdy',
+    timestampMode: 'latest_snapshot',
+    defaultOpacity: 0.82,
+    zIndex: 117,
+    source: {
+      name: 'NOAA NHC / CPHC',
+      details:
+        'Active tropical cyclone forecast tracks, cones, watches/warnings, and wind-radii context when an official storm is active.',
+      url: 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer',
+    },
+    supportsLegend: false,
+    supportsOpacity: true,
+    supportsSourceInfo: true,
   },
 
   {

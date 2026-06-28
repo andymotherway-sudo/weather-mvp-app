@@ -67,6 +67,14 @@ import { useSettings } from '../context/SettingsContext';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const WPC_PRECIP_HAZARDS_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const NHC_TROPICAL_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const NWPS_RIVER_GAUGES_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const RFC_QPE_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/raster/rest/services/obs/rfc_qpe/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
@@ -334,6 +342,8 @@ const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
+const NWS_HEATRISK_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
@@ -830,6 +840,13 @@ function getSimpleStatus(args: {
   frontsDay1Enabled: boolean;
   frontsDay2Enabled: boolean;
   frontsDay3Enabled: boolean;
+  excessiveRainDay1Enabled: boolean;
+  excessiveRainDay2Enabled: boolean;
+  riverStagesEnabled: boolean;
+  qpeLast24hEnabled: boolean;
+  heatRiskEnabled: boolean;
+  tropicsOutlookEnabled: boolean;
+  tropicsTracksEnabled: boolean;
   cloudsEnabled: boolean;
   wildfireHotspotsEnabled: boolean;
   wildfireSmokeEnabled: boolean;
@@ -851,6 +868,13 @@ function getSimpleStatus(args: {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
+    excessiveRainDay1Enabled,
+    excessiveRainDay2Enabled,
+    riverStagesEnabled,
+    qpeLast24hEnabled,
+    heatRiskEnabled,
+    tropicsOutlookEnabled,
+    tropicsTracksEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
@@ -876,6 +900,13 @@ function getSimpleStatus(args: {
   if (frontsDay1Enabled) return 'WPC Day 1 fronts active';
   if (frontsDay2Enabled) return 'WPC Day 2 fronts active';
   if (frontsDay3Enabled) return 'WPC Day 3 fronts active';
+  if (excessiveRainDay1Enabled) return 'WPC Day 1 excessive rain active';
+  if (excessiveRainDay2Enabled) return 'WPC Day 2 excessive rain active';
+  if (riverStagesEnabled) return 'NWPS river stages active';
+  if (qpeLast24hEnabled) return 'RFC 24h rainfall estimate active';
+  if (heatRiskEnabled) return 'NWS HeatRisk active';
+  if (tropicsOutlookEnabled) return 'NHC tropical outlook active';
+  if (tropicsTracksEnabled) return 'NHC tropical tracks active';
 
   if (viewId === 'clouds') {
     return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
@@ -1417,6 +1448,13 @@ export default function MapsScreen() {
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
   const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
+  const excessiveRainDay1Enabled = !!state.layers?.['wpc.excessiveRain.day1']?.enabled;
+  const excessiveRainDay2Enabled = !!state.layers?.['wpc.excessiveRain.day2']?.enabled;
+  const riverStagesEnabled = !!state.layers?.['flood.riverStages']?.enabled;
+  const qpeLast24hEnabled = !!state.layers?.['flood.qpe.last24h']?.enabled;
+  const heatRiskEnabled = !!state.layers?.['heat.nwsHeatRisk']?.enabled;
+  const tropicsOutlookEnabled = !!state.layers?.['tropics.nhcOutlook']?.enabled;
+  const tropicsTracksEnabled = !!state.layers?.['tropics.nhcTracks']?.enabled;
   const aviationModeActive = state.viewId === 'aviation';
   const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
   const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
@@ -1689,6 +1727,27 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
+  const excessiveRainDay1Opacity = Number.isFinite(state.layers?.['wpc.excessiveRain.day1']?.opacity)
+    ? state.layers['wpc.excessiveRain.day1'].opacity
+    : 0.62;
+  const excessiveRainDay2Opacity = Number.isFinite(state.layers?.['wpc.excessiveRain.day2']?.opacity)
+    ? state.layers['wpc.excessiveRain.day2'].opacity
+    : 0.58;
+  const riverStagesOpacity = Number.isFinite(state.layers?.['flood.riverStages']?.opacity)
+    ? state.layers['flood.riverStages'].opacity
+    : 0.9;
+  const qpeLast24hOpacity = Number.isFinite(state.layers?.['flood.qpe.last24h']?.opacity)
+    ? state.layers['flood.qpe.last24h'].opacity
+    : 0.5;
+  const heatRiskOpacity = Number.isFinite(state.layers?.['heat.nwsHeatRisk']?.opacity)
+    ? state.layers['heat.nwsHeatRisk'].opacity
+    : 0.56;
+  const tropicsOutlookOpacity = Number.isFinite(state.layers?.['tropics.nhcOutlook']?.opacity)
+    ? state.layers['tropics.nhcOutlook'].opacity
+    : 0.72;
+  const tropicsTracksOpacity = Number.isFinite(state.layers?.['tropics.nhcTracks']?.opacity)
+    ? state.layers['tropics.nhcTracks'].opacity
+    : 0.82;
   const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
     ? state.layers['wx.wind.particles'].opacity
     : 0.72;
@@ -2268,6 +2327,106 @@ export default function MapsScreen() {
       });
     }
 
+    if (excessiveRainDay1Enabled) {
+      list.push({
+        id: 'wpc-excessive-rain-day1',
+        tileUrlTemplates: [`${WPC_PRECIP_HAZARDS_EXPORT_URL}&layers=show:0`],
+        opacity: Math.max(0, Math.min(1, Number(excessiveRainDay1Opacity))),
+        zIndex: 111,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (excessiveRainDay2Enabled) {
+      list.push({
+        id: 'wpc-excessive-rain-day2',
+        tileUrlTemplates: [`${WPC_PRECIP_HAZARDS_EXPORT_URL}&layers=show:1`],
+        opacity: Math.max(0, Math.min(1, Number(excessiveRainDay2Opacity))),
+        zIndex: 110,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (qpeLast24hEnabled) {
+      list.push({
+        id: 'rfc-qpe-last24h',
+        tileUrlTemplates: [`${RFC_QPE_EXPORT_URL}&layers=show:25,26,27,28`],
+        opacity: Math.max(0, Math.min(1, Number(qpeLast24hOpacity))),
+        zIndex: 103,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (heatRiskEnabled) {
+      list.push({
+        id: 'nws-heatrisk',
+        tileUrlTemplates: [arcGisImageServerTileTemplate(NWS_HEATRISK_EXPORT_URL, null, 512)],
+        opacity: Math.max(0, Math.min(1, Number(heatRiskOpacity))),
+        zIndex: 104,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'nearest',
+      });
+    }
+
+    if (riverStagesEnabled) {
+      list.push({
+        id: 'nwps-river-stages',
+        tileUrlTemplates: [`${NWPS_RIVER_GAUGES_EXPORT_URL}&layers=show:0,15`],
+        opacity: Math.max(0, Math.min(1, Number(riverStagesOpacity))),
+        zIndex: 126,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 11,
+        fadeDurationMs: 120,
+        resampling: 'nearest',
+      });
+    }
+
+    if (tropicsOutlookEnabled) {
+      list.push({
+        id: 'nhc-tropics-outlook',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:0,1,2,3,398,399`],
+        opacity: Math.max(0, Math.min(1, Number(tropicsOutlookOpacity))),
+        zIndex: 116,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
+    if (tropicsTracksEnabled) {
+      list.push({
+        id: 'nhc-tropics-tracks',
+        tileUrlTemplates: [
+          `${NHC_TROPICAL_EXPORT_URL}&layers=show:6,7,8,9,16,17,18,32,33,34,35,42,43,44,58,59,60,61,68,69,70,84,85,86,87,94,95,96,110,111,112,113,120,121,122,136,137,138,139,146,147,148,162,163,164,165,172,173,174,188,189,190,191,198,199,200,214,215,216,217,224,225,226,240,241,242,243,250,251,252,266,267,268,269,276,277,278,292,293,294,295,302,303,304,318,319,320,321,328,329,330,344,345,346,347,354,355,356,370,371,372,373,380,381,382,394,395,396,397`,
+        ],
+        opacity: Math.max(0, Math.min(1, Number(tropicsTracksOpacity))),
+        zIndex: 117,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+    }
+
     if (wildfireFireWxEnabled) {
       list.push({
         id: 'wildfire-firewx',
@@ -2327,6 +2486,20 @@ export default function MapsScreen() {
     frontsDay2Opacity,
     frontsDay3Enabled,
     frontsDay3Opacity,
+    excessiveRainDay1Enabled,
+    excessiveRainDay1Opacity,
+    excessiveRainDay2Enabled,
+    excessiveRainDay2Opacity,
+    qpeLast24hEnabled,
+    qpeLast24hOpacity,
+    heatRiskEnabled,
+    heatRiskOpacity,
+    riverStagesEnabled,
+    riverStagesOpacity,
+    tropicsOutlookEnabled,
+    tropicsOutlookOpacity,
+    tropicsTracksEnabled,
+    tropicsTracksOpacity,
     wildfireFireWxEnabled,
     wildfireFireWxOpacity,
     goesTrueColorEnabled,
@@ -2850,6 +3023,13 @@ export default function MapsScreen() {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
+    excessiveRainDay1Enabled,
+    excessiveRainDay2Enabled,
+    riverStagesEnabled,
+    qpeLast24hEnabled,
+    heatRiskEnabled,
+    tropicsOutlookEnabled,
+    tropicsTracksEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,

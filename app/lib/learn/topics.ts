@@ -1798,6 +1798,127 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'Use the outlook for the setup, watches for growing concern, warnings for immediate action, and radar for storm evolution.',
   },
   {
+    id: 'lightning-density',
+    title: 'Lightning Density',
+    category: 'maps',
+    tags: ['lightning', 'glm', 'storm scope', 'thunderstorm', 'satellite'],
+    summary:
+      'Lightning-density layers show recent storm electrification over an area. They are useful for storm awareness, but they are not a street-level lightning alert.',
+    references: [
+      { label: 'Best for', value: 'Storm electrification trends' },
+      { label: 'Not for', value: 'Exact strike-by-strike safety decisions' },
+      { label: 'Safety rule', value: 'When thunder roars, go indoors' },
+    ],
+    bullets: [
+      'Satellite GLM products detect total lightning, including in-cloud and cloud-to-cloud flashes, across broad regions.',
+      'Density products summarize flashes over a grid cell or time window, so one colored area can represent many flashes.',
+      'Latency, grid size, parallax, and product smoothing mean the displayed area may not match the exact ground point of a strike.',
+      'OMNIwx uses wording like recent lightning activity because this is context for Storm Scope, not a precision strike-warning service.',
+    ],
+    sections: [
+      {
+        title: 'How to read it',
+        body:
+          'Look for growing or persistent lightning cores near radar echoes. Increasing lightning can suggest strengthening updrafts or more active convection.',
+      },
+      {
+        title: 'Limitation',
+        body:
+          'If you can hear thunder or see lightning, use real-world safety behavior immediately regardless of what any app layer shows.',
+      },
+    ],
+    insight:
+      'Lightning density is a storm-awareness layer. It tells you storms are electrically active, not that a precise point is safe.',
+  },
+  {
+    id: 'wpc-excessive-rainfall',
+    title: 'WPC Excessive Rainfall Outlook',
+    category: 'maps',
+    tags: ['wpc', 'excessive rainfall', 'flash flood', 'flooding', 'qpf'],
+    summary:
+      'The Weather Prediction Center Excessive Rainfall Outlook highlights areas where rainfall may exceed flash-flood guidance during the outlook period.',
+    references: [
+      { label: 'MRGL', value: 'At least 5% chance of flash flooding nearby' },
+      { label: 'SLGT', value: 'At least 15% chance' },
+      { label: 'MDT', value: 'At least 40% chance' },
+      { label: 'HIGH', value: 'At least 70% chance' },
+    ],
+    bullets: [
+      'The outlook is about flash-flood potential, not simply the chance of rain.',
+      'Urban areas, burn scars, steep terrain, washes, small streams, and poor-drainage roads can respond faster than larger rivers.',
+      'The Day 1 product can update multiple times per day as the setup changes.',
+      'Use this with radar, alerts, river stages, and local NWS text for a fuller flood picture.',
+    ],
+    insight:
+      'A low rain chance and an excessive-rain area can both be true if storms are localized but capable of producing high rainfall rates.',
+  },
+  {
+    id: 'nwps-river-stages',
+    title: 'NWPS River Stages',
+    category: 'maps',
+    tags: ['nwps', 'river', 'flood', 'stage', 'forecast'],
+    summary:
+      'The National Water Prediction Service shows observed and forecast river stages for official river forecast points.',
+    references: [
+      { label: 'Observed stage', value: 'What the gauge reports now' },
+      { label: 'Forecast stage', value: 'Official river forecast guidance' },
+      { label: 'Flood categories', value: 'Action, minor, moderate, major' },
+    ],
+    bullets: [
+      'River stage is height relative to a local gauge datum, not water depth everywhere along the river.',
+      'Flood categories are defined locally because each river reach has different impacts.',
+      'Forecast stages depend on rainfall, runoff, upstream flow, reservoirs, snowmelt, and hydrologic model guidance.',
+      'Some gauges have observations only, while others include official forecast hydrographs.',
+    ],
+    insight:
+      'River stages are a slower, hydrologic view of flood risk. They complement fast radar and excessive-rainfall layers.',
+  },
+  {
+    id: 'nws-heatrisk',
+    title: 'NWS HeatRisk',
+    category: 'land',
+    tags: ['heat', 'heatrisk', 'health', 'nws', 'cdc'],
+    summary:
+      'NWS HeatRisk is a color-number index for potential heat-related impacts over a 24-hour period. It supplements official heat watches, warnings, and advisories.',
+    references: [
+      { label: '0', value: 'Little to no risk' },
+      { label: '1', value: 'Minor' },
+      { label: '2', value: 'Moderate' },
+      { label: '3', value: 'Major' },
+      { label: '4', value: 'Extreme' },
+    ],
+    bullets: [
+      'HeatRisk considers how unusual the heat is, how long it lasts, and whether overnight temperatures allow recovery.',
+      'It is especially useful for people sensitive to heat, outdoor workers, events, pets, and places without reliable cooling.',
+      'HeatRisk is not the same thing as heat index. Heat index estimates how hot it feels from temperature and humidity.',
+      'Official local NWS heat alerts still matter; HeatRisk is additional decision support.',
+    ],
+    insight:
+      'HeatRisk is the impact lens. Heat index is the feels-like physics lens.',
+  },
+  {
+    id: 'nhc-tropical-weather',
+    title: 'NHC Tropical Weather',
+    category: 'maps',
+    tags: ['nhc', 'tropical', 'hurricane', 'cyclone', 'cone', 'track'],
+    summary:
+      'National Hurricane Center products show tropical development areas, active storm tracks, forecast cones, wind radii, watches, and warnings where official storms or outlook areas exist.',
+    references: [
+      { label: 'Outlook', value: 'Potential development area' },
+      { label: 'Track', value: 'Forecast center positions' },
+      { label: 'Cone', value: 'Historical track-error envelope' },
+      { label: 'Wind radii', value: 'Potential wind field size' },
+    ],
+    bullets: [
+      'The cone is not an impact cone. Hazards can extend far outside it, especially rain, surge, tornadoes, and large wind fields.',
+      'A tropical outlook area means forecasters are monitoring development potential, not that a named storm exists yet.',
+      'Forecast tracks and wind radii update with advisories, typically every six hours and more often when needed.',
+      'Always read official watches, warnings, and local emergency guidance for decisions near the coast.',
+    ],
+    insight:
+      'Tropical mode is about the whole hazard envelope, not just the skinny line down the middle.',
+  },
+  {
     id: 'area-forecast-discussion',
     title: 'Area Forecast Discussion (AFD)',
     category: 'land',
