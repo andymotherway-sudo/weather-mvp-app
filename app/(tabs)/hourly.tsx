@@ -20,7 +20,7 @@ import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
@@ -1200,9 +1200,7 @@ const styles = StyleSheet.create({
   },
 
   headerCompactLogo: {
-    width: 58,
-    height: 68,
-    opacity: 0.96,
+    ...OMNI_TAB_LOGO_STYLE,
   },
 
   locationPrimary: { fontSize: 13, fontWeight: '900', color: 'white' },

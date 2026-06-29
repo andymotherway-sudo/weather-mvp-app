@@ -72,6 +72,15 @@ const WPC_PRECIP_HAZARDS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const NHC_TROPICAL_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const NHC_TROPICAL_OUTLOOK_LAYERS = '0,1,2,3,398,399';
+const NHC_ACTIVE_CONE_LAYERS = '8,34,60,86,112,138,164,190,216,242,268,294,320,346,372';
+const NHC_ACTIVE_TRACK_LAYERS =
+  '6,7,11,12,32,33,37,38,58,59,63,64,84,85,89,90,110,111,115,116,136,137,141,142,162,163,167,168,188,189,193,194,214,215,219,220,240,241,245,246,266,267,271,272,292,293,297,298,318,319,323,324,344,345,349,350,370,371,375,376';
+const NHC_ACTIVE_WATCH_WARNING_LAYERS = '9,35,61,87,113,139,165,191,217,243,269,295,321,347,373';
+const NHC_ACTIVE_WIND_RADII_LAYERS =
+  '16,42,68,94,120,146,172,198,224,250,276,302,328,354,380';
+const NHC_ACTIVE_ARRIVAL_LAYERS =
+  '19,20,45,46,71,72,97,98,123,124,149,150,175,176,201,202,227,228,253,254,279,280,305,306,331,332,357,358,383,384';
 const NWPS_RIVER_GAUGES_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 const RFC_QPE_EXPORT_URL =
@@ -2415,7 +2424,7 @@ export default function MapsScreen() {
     if (tropicsOutlookEnabled) {
       list.push({
         id: 'nhc-tropics-outlook',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:0,1,2,3,398,399`],
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_TROPICAL_OUTLOOK_LAYERS}`],
         opacity: Math.max(0, Math.min(1, Number(tropicsOutlookOpacity))),
         zIndex: 116,
         enabled: true,
@@ -2427,16 +2436,59 @@ export default function MapsScreen() {
     }
 
     if (tropicsTracksEnabled) {
+      const activeOpacity = Math.max(0, Math.min(1, Number(tropicsTracksOpacity)));
       list.push({
-        id: 'nhc-tropics-tracks',
-        tileUrlTemplates: [
-          `${NHC_TROPICAL_EXPORT_URL}&layers=show:6,7,8,9,16,17,18,32,33,34,35,42,43,44,58,59,60,61,68,69,70,84,85,86,87,94,95,96,110,111,112,113,120,121,122,136,137,138,139,146,147,148,162,163,164,165,172,173,174,188,189,190,191,198,199,200,214,215,216,217,224,225,226,240,241,242,243,250,251,252,266,267,268,269,276,277,278,292,293,294,295,302,303,304,318,319,320,321,328,329,330,344,345,346,347,354,355,356,370,371,372,373,380,381,382,394,395,396,397`,
-        ],
-        opacity: Math.max(0, Math.min(1, Number(tropicsTracksOpacity))),
+        id: 'nhc-tropics-cones',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_CONE_LAYERS}`],
+        opacity: activeOpacity * 0.68,
         zIndex: 117,
         enabled: true,
         tileSize: 512,
         maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+      list.push({
+        id: 'nhc-tropics-wind-radii',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_WIND_RADII_LAYERS}`],
+        opacity: activeOpacity * 0.72,
+        zIndex: 118,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+      list.push({
+        id: 'nhc-tropics-arrival',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_ARRIVAL_LAYERS}`],
+        opacity: activeOpacity * 0.46,
+        zIndex: 119,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 8,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+      list.push({
+        id: 'nhc-tropics-track',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_TRACK_LAYERS}`],
+        opacity: activeOpacity,
+        zIndex: 120,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 10,
+        fadeDurationMs: 120,
+        resampling: 'linear',
+      });
+      list.push({
+        id: 'nhc-tropics-watch-warning',
+        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_WATCH_WARNING_LAYERS}`],
+        opacity: activeOpacity,
+        zIndex: 121,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 10,
         fadeDurationMs: 120,
         resampling: 'linear',
       });
@@ -7192,12 +7244,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   productLegendCard: {
-    width: 306,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    width: 284,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   productLegendBody: {
-    gap: 7,
+    gap: 5,
   },
   productLegendHeader: {
     flexDirection: 'row',
@@ -7213,8 +7265,8 @@ const styles = StyleSheet.create({
   },
   productLegendTitle: {
     color: 'rgba(255,255,255,0.94)',
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: '900',
     textTransform: 'capitalize',
   },
@@ -7223,8 +7275,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(139,220,255,0.28)',
     backgroundColor: 'rgba(139,220,255,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
   },
   productLegendChipText: {
     color: '#c7efff',
@@ -7232,7 +7284,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   heatRiskRamp: {
-    height: 14,
+    height: 12,
     flexDirection: 'row',
     overflow: 'hidden',
     borderRadius: 999,
@@ -7257,18 +7309,18 @@ const styles = StyleSheet.create({
   },
   productLegendNote: {
     color: 'rgba(255,255,255,0.66)',
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 9,
+    lineHeight: 12,
     fontWeight: '700',
   },
   productLegendDivider: {
     marginTop: 2,
-    paddingTop: 7,
+    paddingTop: 5,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.12)',
   },
   tropicalLegendRows: {
-    gap: 6,
+    gap: 5,
   },
   tropicalLegendRow: {
     flexDirection: 'row',
@@ -7278,8 +7330,8 @@ const styles = StyleSheet.create({
   tropicalLegendText: {
     flex: 1,
     color: 'rgba(255,255,255,0.78)',
-    fontSize: 10,
-    lineHeight: 13,
+    fontSize: 9,
+    lineHeight: 12,
     fontWeight: '800',
   },
   tropicalHatchedSample: {

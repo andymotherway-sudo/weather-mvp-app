@@ -68,8 +68,12 @@ type WindField = {
 
 type ParticlePaths = {
   tail: string;
-  body: string;
-  head: string;
+  bodySlow: string;
+  bodyBreezy: string;
+  bodyFast: string;
+  headSlow: string;
+  headBreezy: string;
+  headFast: string;
   heads: Array<{ x: number; y: number; speed: number }>;
 };
 
@@ -82,11 +86,11 @@ export type WindParticleExportSegment = {
   intensity: number;
 };
 
-const MAX_PARTICLES = 280;
-const FRAME_MS = 40;
-const FIELD_CELL_PX = 58;
-const MIN_TRAIL_POINTS = 7;
-const MAX_TRAIL_POINTS = 15;
+const MAX_PARTICLES = 420;
+const FRAME_MS = 33;
+const FIELD_CELL_PX = 46;
+const MIN_TRAIL_POINTS = 11;
+const MAX_TRAIL_POINTS = 26;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -131,7 +135,7 @@ function hash01(seed: string) {
 function windToScreenVelocity(directionDeg: number, speedMps: number) {
   const toDeg = (directionDeg + 180) % 360;
   const rad = (toDeg * Math.PI) / 180;
-  const visualSpeed = 18 + clamp(speedMps, 0, 32) * 4.2;
+  const visualSpeed = 20 + clamp(speedMps, 0, 34) * 4.9;
   return {
     u: Math.sin(rad) * visualSpeed,
     v: -Math.cos(rad) * visualSpeed,
@@ -203,7 +207,7 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
   const area = Math.max(1, width * height);
   const geographicSpan = Math.max(0.08, Math.sqrt(region.latitudeDelta * region.longitudeDelta));
   const zoomDensity = clamp(2.6 / geographicSpan, 0.72, 1.32);
-  const particleCount = Math.min(MAX_PARTICLES, Math.max(90, Math.round((area / 3900) * zoomDensity)));
+  const particleCount = Math.min(MAX_PARTICLES, Math.max(130, Math.round((area / 3050) * zoomDensity)));
   const particles: ParticleSeed[] = [];
 
   for (let i = 0; i < particleCount; i += 1) {
@@ -218,8 +222,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
       x: a * width,
       y: b * height,
       phase: c,
-      life: 4.2 + d * 3.8,
-      speedScale: 0.72 + e * 0.58,
+      life: 5.4 + d * 5.2,
+      speedScale: 0.58 + e * 0.54,
     });
   }
 
@@ -308,11 +312,24 @@ function advanceParticlePaths(
   width: number,
   height: number,
 ): ParticlePaths {
-  const empty: ParticlePaths = { tail: '', body: '', head: '', heads: [] };
+  const empty: ParticlePaths = {
+    tail: '',
+    bodySlow: '',
+    bodyBreezy: '',
+    bodyFast: '',
+    headSlow: '',
+    headBreezy: '',
+    headFast: '',
+    heads: [],
+  };
   if (!field || !particles.length) return empty;
   const tailPaths: string[] = [];
-  const bodyPaths: string[] = [];
-  const headPaths: string[] = [];
+  const bodySlowPaths: string[] = [];
+  const bodyBreezyPaths: string[] = [];
+  const bodyFastPaths: string[] = [];
+  const headSlowPaths: string[] = [];
+  const headBreezyPaths: string[] = [];
+  const headFastPaths: string[] = [];
   const heads: ParticlePaths['heads'] = [];
 
   for (const particle of field.particles) {
@@ -332,9 +349,17 @@ function advanceParticlePaths(
       runtime.y + cell.v * runtime.speedScale * elapsedSeconds * 0.5,
     ) ?? cell;
 
+    const nextCell = sampleField(
+      field,
+      runtime.x + midpoint.u * runtime.speedScale * elapsedSeconds,
+      runtime.y + midpoint.v * runtime.speedScale * elapsedSeconds,
+    ) ?? midpoint;
+    const flowU = (midpoint.u * 0.72 + nextCell.u * 0.28);
+    const flowV = (midpoint.v * 0.72 + nextCell.v * 0.28);
+
     runtime.age += elapsedSeconds;
-    runtime.x += midpoint.u * runtime.speedScale * elapsedSeconds;
-    runtime.y += midpoint.v * runtime.speedScale * elapsedSeconds;
+    runtime.x += flowU * runtime.speedScale * elapsedSeconds;
+    runtime.y += flowV * runtime.speedScale * elapsedSeconds;
     if (
       runtime.age >= runtime.life ||
       runtime.x < -36 ||
@@ -362,15 +387,28 @@ function advanceParticlePaths(
     const body = pathForPoints(runtime.history.slice(bodyStart, headStart + 2));
     const head = pathForPoints(runtime.history.slice(headStart));
     if (tail) tailPaths.push(tail);
-    if (body) bodyPaths.push(body);
-    if (head) headPaths.push(head);
-    heads.push({ x: runtime.x, y: runtime.y, speed: midpoint.speed });
+    const speed = Math.max(cell.speed, midpoint.speed, nextCell.speed);
+    if (speed >= 11) {
+      if (body) bodyFastPaths.push(body);
+      if (head) headFastPaths.push(head);
+    } else if (speed >= 5.5) {
+      if (body) bodyBreezyPaths.push(body);
+      if (head) headBreezyPaths.push(head);
+    } else {
+      if (body) bodySlowPaths.push(body);
+      if (head) headSlowPaths.push(head);
+    }
+    heads.push({ x: runtime.x, y: runtime.y, speed });
   }
 
   return {
     tail: tailPaths.join(' '),
-    body: bodyPaths.join(' '),
-    head: headPaths.join(' '),
+    bodySlow: bodySlowPaths.join(' '),
+    bodyBreezy: bodyBreezyPaths.join(' '),
+    bodyFast: bodyFastPaths.join(' '),
+    headSlow: headSlowPaths.join(' '),
+    headBreezy: headBreezyPaths.join(' '),
+    headFast: headFastPaths.join(' '),
     heads,
   };
 }
@@ -429,11 +467,29 @@ export function buildWindParticleExportFrames({
 export function WindParticleOverlay({ enabled, geojson, height, isFocused, opacity, region, width }: Props) {
   const field = useMemo(() => buildWindField(geojson, region, width, height), [geojson, height, region, width]);
   const particleRuntimeRef = React.useRef<ParticleRuntime[]>([]);
-  const [paths, setPaths] = useState<ParticlePaths>({ tail: '', body: '', head: '', heads: [] });
+  const [paths, setPaths] = useState<ParticlePaths>({
+    tail: '',
+    bodySlow: '',
+    bodyBreezy: '',
+    bodyFast: '',
+    headSlow: '',
+    headBreezy: '',
+    headFast: '',
+    heads: [],
+  });
 
   useEffect(() => {
     particleRuntimeRef.current = initializeParticleRuntime(field);
-    setPaths({ tail: '', body: '', head: '', heads: [] });
+    setPaths({
+      tail: '',
+      bodySlow: '',
+      bodyBreezy: '',
+      bodyFast: '',
+      headSlow: '',
+      headBreezy: '',
+      headFast: '',
+      heads: [],
+    });
   }, [field]);
 
   useEffect(() => {
@@ -453,7 +509,15 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
     };
   }, [enabled, field, height, isFocused, width]);
 
-  const hasPath = !!(paths.tail || paths.body || paths.head);
+  const hasPath = !!(
+    paths.tail ||
+    paths.bodySlow ||
+    paths.bodyBreezy ||
+    paths.bodyFast ||
+    paths.headSlow ||
+    paths.headBreezy ||
+    paths.headFast
+  );
 
   if (!enabled || !isFocused || !hasPath) return null;
 
@@ -472,16 +536,40 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
             strokeJoin="round"
           />
         ) : null}
-        {paths.body ? (
+        {paths.bodySlow ? (
           <>
-            <Path path={paths.body} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.0} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.body} color={`rgba(186, 230, 253, ${0.42 * layerOpacity})`} style="stroke" strokeWidth={1.18} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.bodySlow} color={`rgba(8, 13, 24, ${0.12 * layerOpacity})`} style="stroke" strokeWidth={2.8} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.bodySlow} color={`rgba(147, 197, 253, ${0.34 * layerOpacity})`} style="stroke" strokeWidth={1.05} strokeCap="round" strokeJoin="round" />
           </>
         ) : null}
-        {paths.head ? (
+        {paths.bodyBreezy ? (
           <>
-            <Path path={paths.head} color={`rgba(8, 13, 24, ${0.22 * layerOpacity})`} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.head} color={`rgba(240, 249, 255, ${0.72 * layerOpacity})`} style="stroke" strokeWidth={1.55} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.bodyBreezy} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.0} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.bodyBreezy} color={`rgba(103, 232, 249, ${0.46 * layerOpacity})`} style="stroke" strokeWidth={1.22} strokeCap="round" strokeJoin="round" />
+          </>
+        ) : null}
+        {paths.bodyFast ? (
+          <>
+            <Path path={paths.bodyFast} color={`rgba(8, 13, 24, ${0.20 * layerOpacity})`} style="stroke" strokeWidth={3.3} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.bodyFast} color={`rgba(252, 211, 77, ${0.50 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
+          </>
+        ) : null}
+        {paths.headSlow ? (
+          <>
+            <Path path={paths.headSlow} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.2} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.headSlow} color={`rgba(219, 234, 254, ${0.58 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
+          </>
+        ) : null}
+        {paths.headBreezy ? (
+          <>
+            <Path path={paths.headBreezy} color={`rgba(8, 13, 24, ${0.20 * layerOpacity})`} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.headBreezy} color={`rgba(240, 249, 255, ${0.74 * layerOpacity})`} style="stroke" strokeWidth={1.55} strokeCap="round" strokeJoin="round" />
+          </>
+        ) : null}
+        {paths.headFast ? (
+          <>
+            <Path path={paths.headFast} color={`rgba(8, 13, 24, ${0.24 * layerOpacity})`} style="stroke" strokeWidth={3.8} strokeCap="round" strokeJoin="round" />
+            <Path path={paths.headFast} color={`rgba(254, 240, 138, ${0.84 * layerOpacity})`} style="stroke" strokeWidth={1.72} strokeCap="round" strokeJoin="round" />
           </>
         ) : null}
         {paths.heads.map((head, index) => (

@@ -14,7 +14,7 @@ import type { Region } from '../../components/maps/MapRenderer';
 import { MapRenderer } from '../../components/maps/MapRenderer';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 import { airportCandidatesForToken, airportEntryForCode, nearestAirportCandidates } from '../lib/aviation/airportIndex';
 import { normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature } from '../lib/aviation/types';
@@ -1493,7 +1493,7 @@ const s = StyleSheet.create({
   header: { marginBottom: theme.spacing.md },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  brandWordmark: { width: 96, height: 112, backgroundColor: 'transparent' },
+  brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
   domainPill: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,

@@ -26,7 +26,7 @@ import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 import {
   fetchLatestTerminatorEarthDisk,
   type EarthDiskImage,
@@ -973,7 +973,7 @@ export default function SolarScreen() {
               openExplain({
                 title: 'Kp index',
                 summary:
-                  'Kp is a 0â€“9 global score for geomagnetic disturbance.',
+                  'Kp is a 0-9 global score for geomagnetic disturbance.',
                 whyItMatters:
                   'Higher Kp often means better aurora odds (latitude + sky conditions still matter).',
                 howComputed:
@@ -1038,7 +1038,7 @@ export default function SolarScreen() {
           </Pressable>
           <Pressable style={styles.instrumentTile} onPress={() => openLearnTopic('imf-bz')}>
             <Text style={styles.label}>Bz</Text>
-            <Text style={styles.cardValue}>{typeof bz === 'number' ? `${bz.toFixed(1)} nT` : 'â€”'}</Text>
+            <Text style={styles.cardValue}>{typeof bz === 'number' ? `${bz.toFixed(1)} nT` : '--'}</Text>
           </Pressable>
         </View>
 
@@ -1051,13 +1051,13 @@ export default function SolarScreen() {
           </Pressable>
           <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('imf-bz')}>
             <Text style={styles.label}>Bt</Text>
-            <Text style={styles.secondaryMetricValue}>{typeof bt === 'number' ? `${bt.toFixed(1)} nT` : 'â€”'}</Text>
+            <Text style={styles.secondaryMetricValue}>{typeof bt === 'number' ? `${bt.toFixed(1)} nT` : '--'}</Text>
           </Pressable>
           {data.protons ? (
             <Pressable style={styles.secondaryMetricTile} onPress={() => openLearnTopic('proton-flux')}>
               <Text style={styles.label}>Protons</Text>
               <Text style={styles.secondaryMetricValue}>
-                {data.protons.pfu10MeV != null ? data.protons.pfu10MeV.toFixed(2) : 'â€”'}
+                {data.protons.pfu10MeV != null ? data.protons.pfu10MeV.toFixed(2) : '--'}
               </Text>
             </Pressable>
           ) : null}
@@ -1156,7 +1156,7 @@ export default function SolarScreen() {
               <View style={styles.col}>
                 <Text style={styles.label}>Current Flux</Text>
                 <Text style={styles.cardValue}>
-                  {data.goesXray.fluxWm2 != null ? data.goesXray.fluxWm2.toExponential(2) : 'â€”'}
+                  {data.goesXray.fluxWm2 != null ? data.goesXray.fluxWm2.toExponential(2) : '--'}
                 </Text>
                 <Text style={styles.smallText}>
                   Time: {data.goesXray.timeTag ? fmtUpdated(data.goesXray.timeTag) : 'Unavailable'}
@@ -1412,7 +1412,7 @@ export default function SolarScreen() {
           {showSpaceWeatherLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
-              <Text style={styles.smallText}>Loading space weatherâ€¦</Text>
+              <Text style={styles.smallText}>Loading space weather...</Text>
             </View>
           ) : error ? (
             <View style={themedErrorCard}>
@@ -1474,7 +1474,7 @@ export default function SolarScreen() {
                   Last updated: {fmtUpdated(data.updatedAt)}
                 </Text>
                 <Text style={styles.smallText}>
-                  Data sources: {data.source ?? 'NOAA SWPC'} â€¢ NASA DONKI (events)
+                  Data sources: {data.source ?? 'NOAA SWPC'} • NASA DONKI (events)
                 </Text>
               </View>
             </>
@@ -1613,9 +1613,7 @@ const styles = StyleSheet.create({
   },
 
   brandWordmark: {
-    width: 96,
-    height: 112,
-    backgroundColor: 'transparent',
+    ...OMNI_TAB_LOGO_STYLE,
   },
 
   domainPill: {

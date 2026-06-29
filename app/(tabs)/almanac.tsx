@@ -27,7 +27,7 @@ import { typography } from '../../styles/typography';
 import { useOpenMeteoDayContext } from '../lib/almanac/dayContextHook';
 import { isAlmanacAreaDownloaded, markAlmanacAreaDownloaded } from '../lib/almanac/downloadManifest';
 import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 import { useClimatologyNormals } from '../lib/climatology/hook';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
@@ -1014,7 +1014,7 @@ const styles = StyleSheet.create({
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   brandRight: { flexDirection: 'row', alignItems: 'center' },
 
-  brandWordmark: { width: 96, height: 112, backgroundColor: 'transparent' },
+  brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
 
   sub: { ...typography.subtitle, opacity: 0.75 },
 

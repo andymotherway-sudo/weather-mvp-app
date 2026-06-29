@@ -29,7 +29,7 @@ import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { useMarsInsightWeather } from '../lib/spaceweather/hooks';
 
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 const MAX_ROWS = 10;
 
@@ -1073,9 +1073,7 @@ const styles = StyleSheet.create({
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
 
   brandWordmark: {
-    width: 96,
-    height: 112,
-    backgroundColor: 'transparent',
+    ...OMNI_TAB_LOGO_STYLE,
   },
 
   domainPill: {

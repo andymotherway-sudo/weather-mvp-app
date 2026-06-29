@@ -4,7 +4,7 @@
 
 Audience: this is written for someone who can write a basic Python `hello world`, understands simple variables/functions, and has some basic SQL experience. You do not need to already know React Native, Expo, TypeScript, or mobile app architecture.
 
-Last updated: June 22, 2026
+Last updated: June 29, 2026
 
 Personal note: this file is meant to be Andy's private working guide. It explains the product and codebase in more detail than a public README should, including intent, mental models, and implementation notes that are useful while building OMNIwx.
 
@@ -32,12 +32,16 @@ Current product direction as of June 2026:
 - **Almanac** owns records, normals, prior-year comparisons, and the climate arch. Pull-to-refresh should refresh forecast and record data without changing the meaning of the page.
 - **Maps** is now the main home for map modes. Weather, Storm Scope, Wildfire, Nautical, Aviation, and Astronomy are treated as map modes/presets instead of unrelated one-off map experiences.
 - **Storm Scope** is the premium radar-workbench direction: radar, fronts, lightning, alerts, range markers, product selectors, and animation controls live here.
+- **Tropics / NHC work** belongs in Maps as official tropical products rather than decorative storm markers. Active storms should render as ordered overlays: cone context, wind radii, arrival timing, track, and watches/warnings, with legends that clearly differ from radar intensity legends.
+- **Wind particles** are the preferred Windy-like visualization. Keep the live effect in the lightweight Skia overlay, use surface 10 m wind, and avoid pushing hundreds of animated particles through MapLibre sources.
 - **Nautical** map functionality is being migrated into the main Maps tab. Marine zones and buoys should be clickable on the main map, with the same official NOAA/marine forecast behavior users expect from the Nautical screen.
 - **Astronomy** and **Aviation** are map modes with their own control surfaces. They should not be active at the same time because their drawers, inspectors, and workflows are complex.
 - **Android widgets** are native Android home-screen widgets, not React Native screens. They use AppWidgetProvider and RemoteViews.
 - **Android Auto** is a native car-app surface, not a mirrored phone screen. It uses AndroidX Car App templates and a custom radar surface renderer.
 - **Notifications** are preference-driven. The app currently stores local preferences and push token state for categories such as NWS alerts, new fires, Kp spikes, aviation category changes, sky score changes, and extremes.
 - **Radar/satellite animation** is an important differentiator. The app now has an in-app compositor for smoother playback and a native Android MP4 exporter for recording loops.
+- **Branding** should use the shared OMNIwx transparent logo asset and shared tab-logo style instead of one-off tab dimensions. This keeps the logo consistent across Land, Hourly, Almanac, Space, Nautical, Aviation, and Extremes.
+- **wxLearn / tutorial content** should be treated as a real app surface. Reusable tutorial content belongs in `app/lib/learn/tutorial.ts` and should be registered with the rest of the wxLearn topics so it can be updated without rewriting individual screens.
 
 There are two major pieces in the repository:
 
@@ -1917,8 +1921,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.136`.
-- Android version code: `10153`.
+- App version: `1.1.137`.
+- Android version code: `10154`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.

@@ -28,7 +28,7 @@ import { typography } from '../../styles/typography';
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 
-import { OMNI_MARK_WORD } from '../lib/brand/assets';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 import { useAllBuoyDetails, useBuoyDetail } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
@@ -1674,7 +1674,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  brandWordmark: { width: 92, height: 108, backgroundColor: 'transparent' },
+  brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
 
   domainPill: {
     alignSelf: 'flex-start',

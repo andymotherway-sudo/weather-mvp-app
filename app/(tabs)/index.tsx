@@ -37,6 +37,7 @@ import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
+import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 import type { FavoriteLocation } from '../lib/locations/favorites';
 import { formatCompactLocation } from '../lib/locations/formats';
@@ -459,9 +460,9 @@ function buildArcPath(
 }
 
 function formatClockForZone(iso?: string | null, timeZone?: string | null) {
-  if (!iso) return 'â€”';
+  if (!iso) return '--';
   const parts = clockPartsForIso(iso, timeZone);
-  return parts ? formatWallHour(parts.hour, parts.minute) : 'â€”';
+  return parts ? formatWallHour(parts.hour, parts.minute) : '--';
 }
 
 function minutesFromClockIsoForZone(iso?: string | null, timeZone?: string | null) {
@@ -845,15 +846,7 @@ function normalizePreviewScore(value: any) {
 
 function cleanUiText(value?: string | null) {
   if (!value) return value ?? '';
-  return value
-    .replace(/Ã‚Â°/g, ' deg')
-    .replace(/Â°/g, '°')
-    .replace(/â€¢/g, '•')
-    .replace(/â€”/g, '—')
-    .replace(/â€“/g, '-')
-    .replace(/â†’/g, '->')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  return String(value).replace(/\s{2,}/g, ' ').trim();
 }
 
 function describeBestDay(bestDate?: string | null, fallback = 'Watch conditions') {
@@ -1475,13 +1468,13 @@ function buildActivityForecast(args: {
       ? 'Fire Weather Watch is active nearby, so dry and windy conditions deserve extra caution.'
       : safeNum(today?.windMaxMph) != null && safeNum(today?.dewPointMaxF) != null && (safeNum(today?.windMaxMph) ?? 0) >= 15 && (safeNum(today?.dewPointMaxF) ?? 99) < 35
         ? `Dry and breezy today${fireDangerLabel ? ` with ${fireDangerLabel.toLowerCase()} fire danger nearby` : ''}.`
-        : `${fmtInt(safeNum(today?.tempMinF), 'Â°')} overnight with ${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk${fireDangerLabel ? `; ${fireDangerLabel.toLowerCase()} fire danger nearby` : ''}.`;
+        : `${fmtInt(safeNum(today?.tempMinF), '°')} overnight with ${fmtInt(safeNum(today?.windMaxMph), ' mph')} wind and ${fmtInt(safeNum(today?.precipProbMaxPct), '%')} rain risk${fireDangerLabel ? `; ${fireDangerLabel.toLowerCase()} fire danger nearby` : ''}.`;
 
   const campingReason = explainBestShift(
     campingBest.bestDay?.date,
     campingBest.bestDay,
     [
-      safeNum(campingBest.bestDay?.tempMinF) != null ? `${Math.round(safeNum(campingBest.bestDay?.tempMinF) ?? 0)}Â° overnight low` : null,
+      safeNum(campingBest.bestDay?.tempMinF) != null ? `${Math.round(safeNum(campingBest.bestDay?.tempMinF) ?? 0)}° overnight low` : null,
       safeNum(campingBest.bestDay?.windMaxMph) != null ? `${Math.round(safeNum(campingBest.bestDay?.windMaxMph) ?? 0)} mph wind` : null,
       safeNum(campingBest.bestDay?.precipProbMaxPct) != null ? `${Math.round(safeNum(campingBest.bestDay?.precipProbMaxPct) ?? 0)}% rain risk` : null,
       fireRestrictionsInEffect ? 'fire restrictions stay in effect nearby' : null,
@@ -2684,7 +2677,7 @@ function SimpleDailyOverview({
           <Text style={styles.dailyPanelEyebrow}>Daily Range</Text>
         </View>
         <View style={styles.dailyCurrentTop}>
-          <PremiumWeatherIcon code={displayTodayCode} size={54} variant="hero" style={styles.dailyCurrentIconBadge} />
+          <PremiumWeatherIcon code={displayTodayCode} size={48} variant="hero" style={styles.dailyCurrentIconBadge} />
           <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
           <View style={styles.dailyCurrentText}>
             <Text
@@ -3365,7 +3358,7 @@ function NerdyDeepDive({
             </View>
             <Pressable style={nd.panelHeroBlock} onPress={() => onOpenLearnTopic('dewpoint')}>
               <Text style={nd.panelHeroValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.48}>
-                {dpBand ?? 'â€”'}
+                {dpBand ?? '--'}
               </Text>
               <Text style={nd.panelHeroLabel}>Dew Band</Text>
             </Pressable>
@@ -5238,7 +5231,7 @@ function LandWeatherWithCoords({
         {loading && !currentData ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" />
-            <Text style={styles.smallText}>Loading weatherâ€¦</Text>
+            <Text style={styles.smallText}>Loading weather...</Text>
           </View>
         ) : null}
 
@@ -5804,7 +5797,7 @@ export default function LandWeatherScreen() {
                     style={styles.headerLogoButton}
                   >
                     <Image
-                      source={require('../../assets/brand/omniwx-logo-transparent.png')}
+                      source={OMNI_MARK_WORD}
                       style={styles.headerCompactLogo}
                       resizeMode="contain"
                     />
@@ -6005,9 +5998,7 @@ const styles = StyleSheet.create({
   },
 
   headerCompactLogo: {
-    width: 60,
-    height: 70,
-    opacity: 0.96,
+    ...OMNI_TAB_LOGO_STYLE,
   },
 
   headerCompactLocation: {
@@ -6166,19 +6157,19 @@ const styles = StyleSheet.create({
   },
 
   dailySimpleWrap: {
-    gap: 14,
+    gap: 10,
     marginBottom: theme.spacing.lg,
   },
   dailyCurrentCard: {
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 24,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 22,
     backgroundColor: GLASS_PANEL_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
   },
   dailyRangeCard: {
-    gap: 12,
+    gap: 9,
   },
   dailyRangeHeaderRow: {
     flexDirection: 'row',
@@ -6188,9 +6179,9 @@ const styles = StyleSheet.create({
   },
   dailyCurrentTop: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginTop: 4,
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 0,
   },
   dailyPanelEyebrow: {
     flex: 1,
@@ -6207,35 +6198,35 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   dailyCurrentIconBadge: {
-    marginTop: 8,
+    marginTop: 0,
   },
   dailyCurrentTemp: {
-    fontSize: 76,
-    lineHeight: 78,
+    fontSize: 68,
+    lineHeight: 70,
     fontWeight: '900',
     color: 'white',
   },
   dailyCurrentText: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 10,
+    paddingTop: 0,
   },
   dailyCurrentCondition: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
     color: 'white',
   },
   dailyCurrentSummaryBox: {
-    borderRadius: 18,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 11,
     backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
   },
   dailyCurrentSummary: {
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 17,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.82)',
   },
@@ -6247,14 +6238,14 @@ const styles = StyleSheet.create({
   },
   dailyRangeStats: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   dailyRangeStat: {
     flex: 1,
-    minHeight: 68,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    minHeight: 54,
+    borderRadius: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
@@ -6272,15 +6263,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   dailyRangeStatValue: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 22,
+    lineHeight: 25,
     fontWeight: '900',
     color: 'white',
     flexShrink: 1,
     textAlign: 'right',
   },
   dailyTempRangeBlock: {
-    gap: 6,
+    gap: 4,
   },
   dailyTempRangeLabels: {
     flexDirection: 'row',
@@ -6309,7 +6300,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingTop: 2,
+    paddingTop: 0,
   },
   dailyTempRangeLegendItem: {
     flexDirection: 'row',
@@ -6379,21 +6370,21 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.88)',
   },
   dailySunlightCard: {
-    minHeight: 74,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 16,
     backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
   },
   dailySunlightIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 205, 92, 0.10)',
@@ -6412,8 +6403,8 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.48)',
   },
   dailySunlightValue: {
-    marginTop: 4,
-    fontSize: 15,
+    marginTop: 2,
+    fontSize: 14,
     fontWeight: '900',
     color: 'rgba(255, 216, 132, 0.98)',
   },
@@ -6434,7 +6425,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.42)',
   },
   dailySunlightDayValue: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.72)',
@@ -6528,26 +6519,26 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'stretch',
     justifyContent: 'space-between',
-    borderRadius: 22,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    borderRadius: 18,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
     backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
-    rowGap: 10,
+    rowGap: 6,
   },
   dailyCurrentMetricCell: {
     width: '31%',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    gap: 4,
-    minHeight: 76,
+    gap: 2,
+    minHeight: 54,
     paddingHorizontal: 4,
   },
   dailyCurrentMetricValue: {
-    minHeight: 21,
-    fontSize: 16,
-    lineHeight: 20,
+    minHeight: 19,
+    fontSize: 15,
+    lineHeight: 18,
     fontWeight: '900',
     color: 'white',
     textAlign: 'center',

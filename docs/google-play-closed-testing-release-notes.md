@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.136**
-Android version code: **10153**
+Release: **OMNIwx Alpha 1.1.137**
+Android version code: **10154**
 Track: **Closed testing / internal testing candidate**
-Date: **June 28, 2026**
+Date: **June 29, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.136 clarifies Storm Scope map legends so HeatRisk and NHC tropical products are explained as their own products instead of borrowing the generic radar legend. It also includes the latest logo/background refreshes, Worker hardening, lightning, wxLab, and Android Auto radar work from the recent alpha line.
+OMNIwx Alpha 1.1.137 adds clearer NHC active-storm rendering, improves Windy-style 10 m wind particles, standardizes the OMNIwx logo size across tab headers, and continues the recent map, wxLab, tutorial, and visual-polish work from the alpha line.
 
 ## Full Tester Notes
 
@@ -16,6 +16,13 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### What changed in this build
 
 
+- Added ordered NHC active-storm map overlays for cones, wind radii, arrival timing, tracks, and watch/warning products instead of treating tropical systems as one generic track layer.
+- Renamed the active tropical layer as **NHC Active Storm Cones** so testers understand that this includes official cone context when storms are active.
+- Improved animated 10 m wind particles with denser seeded flow, longer speed-sensitive trails, smoother curved advection, and brighter moving heads by wind-speed bucket.
+- Standardized the OMNIwx logo size across Land, Hourly, Almanac, Maps-adjacent tabs, Space, Nautical, Aviation, and Extremes headers using one shared brand style.
+- Added the in-app tutorial topic to wxLearn so the tutorial content can live in the learning surface and be easier to maintain when the feature guide changes.
+- Continued compacting the Land Simple daily card so the current temperature, high/low range, sunlight strip, and practical metrics use vertical space more efficiently.
+- Cleaned several remaining placeholder/encoding fallbacks in Land and Space so loading states and missing values do not briefly show bad characters.
 - Added a dedicated **NWS HeatRisk** map legend with Little, Minor, Moderate, Major, and Extreme impact categories.
 - Suppressed the generic radar “Light / Moderate / Severe” legend when HeatRisk or tropical products are the dominant active map layer.
 - Added a compact **NHC Tropics** legend explaining development outlook areas, hatched zones, tropical markers, and active storm tracks/cones.
@@ -142,8 +149,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.136`
-- Android version code: `10153`
+- App version: `1.1.137`
+- Android version code: `10154`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

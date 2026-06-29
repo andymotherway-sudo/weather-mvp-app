@@ -1,5 +1,6 @@
 // app/lib/learn/topics.ts
 // Central Learn-more topic library (Land Wx + Space Wx)
+import { OMNIWX_TUTORIAL_TOPIC } from './tutorial';
 //
 // Notes:
 // - IDs are stable deep-link keys (via learnTopicId from NerdyExplainModal).
@@ -53,6 +54,7 @@ export type LearnTopic = {
 };
 
 export const LEARN_TOPICS: LearnTopic[] = [
+  OMNIWX_TUTORIAL_TOPIC,
   // =========================
   // Land Wx
   // =========================
