@@ -1,161 +1,44 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.138**
-Android version code: **10155**
+Release: **OMNIwx Alpha 1.1.139**
+Android version code: **10156**
 Track: **Closed testing / internal testing candidate**
 Date: **June 29, 2026**
 
-## Short Play Console Notes
+## Play Console Paste Notes
 
-OMNIwx Alpha 1.1.138 cleans up several tab headers, improves Hourly text fitting, adds map zoom controls that preserve the current map center, and explicitly keeps MP4 map export display-neutral so OMNIwx does not use screen-brightness or wake-lock controls during recording.
+Maps animation controls are cleaner: recording now lives beside play, rewind, and fast-forward as a red record-dot button. Wind-flow particles are denser, so animated 10 m winds look more continuous and less scattered. Timeline control symbols were simplified for more reliable Android rendering.
 
-## Full Tester Notes
+## Tester Notes
 
-This is still an Alpha build. OMNIwx is becoming a weather workstation: daily weather, hourly timing, climatology, radar, satellite, marine, aviation, solar weather, astronomy context, global extremes, wxLearn, widgets, Android Auto, and native MP4 map exports.
+This build is a focused Maps usability pass.
 
-### What changed in this build
+### What Changed
 
+- Moved map animation recording into the playback control row next to play, rewind, and fast-forward.
+- Replaced the worded **Record** pill with a compact red record-dot button.
+- Increased animated 10 m wind-particle density and the particle cap so wind streaks sit closer together.
+- Replaced fragile timeline playback glyphs with stable text controls to avoid symbol rendering problems on Android.
+- Kept the existing MP4 export pipeline and output location unchanged.
 
-- Removed duplicate small title chips from Nautical, Aviation, Extremes, and Space so each screen has one clearer primary title.
-- Added a proper Almanac screen title to match the other major tabs.
-- Tightened Hourly forecast layout so long condition names such as Thunderstorm fit better instead of wrapping awkwardly on narrow phones.
-- Added on-screen Maps zoom in/out buttons for testers who want to zoom while keeping the current map center or GPS-centered position.
-- Reviewed the app for device brightness and wake-lock APIs after tester feedback. OMNIwx does not use device-brightness controls, Android `screenBrightness`, `WRITE_SETTINGS`, wake locks, or `FLAG_KEEP_SCREEN_ON`; MP4 export now has an explicit guardrail to keep recording display-neutral.
-- Added ordered NHC active-storm map overlays for cones, wind radii, arrival timing, tracks, and watch/warning products instead of treating tropical systems as one generic track layer.
-- Renamed the active tropical layer as **NHC Active Storm Cones** so testers understand that this includes official cone context when storms are active.
-- Improved animated 10 m wind particles with denser seeded flow, longer speed-sensitive trails, smoother curved advection, and brighter moving heads by wind-speed bucket.
-- Standardized the OMNIwx logo size across Land, Hourly, Almanac, Maps-adjacent tabs, Space, Nautical, Aviation, and Extremes headers using one shared brand style.
-- Added the in-app tutorial topic to wxLearn so the tutorial content can live in the learning surface and be easier to maintain when the feature guide changes.
-- Continued compacting the Land Simple daily card so the current temperature, high/low range, sunlight strip, and practical metrics use vertical space more efficiently.
-- Cleaned several remaining placeholder/encoding fallbacks in Land and Space so loading states and missing values do not briefly show bad characters.
-- Added a dedicated **NWS HeatRisk** map legend with Little, Minor, Moderate, Major, and Extreme impact categories.
-- Suppressed the generic radar “Light / Moderate / Severe” legend when HeatRisk or tropical products are the dominant active map layer.
-- Added a compact **NHC Tropics** legend explaining development outlook areas, hatched zones, tropical markers, and active storm tracks/cones.
-- Renamed tropical map layers to clearer labels: **NHC Development Outlook** and **NHC Active Storm Tracks**.
-- Updated map status text so HeatRisk and NHC tropical products describe the active product more clearly.
-- Made the Aviation animated background visible behind the page instead of being hidden by an opaque root surface.
-- Added a dedicated Nautical animated page background with subtle current lines, marine route arcs, buoy pulses, and a low-contrast ocean glow.
-- Added a new reusable Nautical background asset at `assets/backgrounds/bg-nautical.png`.
-- Refreshed the in-app OMNIwx wordmark/logo asset from the updated image in `assets/brand/omniwx-mark-word.png`.
-- Added subtle animated 9:16 page backgrounds to Aviation, Almanac, and Space.
-- Aviation now has quiet route/wind-line motion and faint waypoint pulses behind the existing content.
-- Almanac now has slow seasonal/arc trace motion and a low-contrast warm breathing glow behind the existing content.
-- Space now has sparse twinkle, faint solar-wind drift, orbital-line motion, and a soft aurora-style glow behind the existing content.
-- The new backgrounds respect reduced-motion preferences and render behind cards with `pointerEvents="none"`.
-- Fixed wxLab metric labels that could render as clipped text on some Android devices, including `AIR` appearing as `AI` and `VISIBILITY` appearing as `VISIBILIT`.
-- Reworked wxLab metric labels to avoid Android uppercase text-measurement clipping while preserving the same content and wxLearn links.
-- Restored live regional radar to its native RainViewer timestamped tile sequence so precipitation motion advances through the correct source frames.
-- Removed the mismatched wide-radar screenshot compositor that could make radar appear frozen and then jump.
-- Preserved tile prewarming and crossfading for live radar while retaining the buffered image compositor for satellite imagery and map export.
-- Fixed a buffered-frame lifecycle issue where unrelated background downloads could cancel an active satellite crossfade.
-- Added a compact **Sunlight** strip to Land Simple with sunrise, sunset, and total daylight for the selected location.
-- Kept the full Sun & Moon arc, moon details, twilight windows, and observing context exclusive to Land wxLab.
-- Added a shared disk-backed playback cache for animated radar and satellite imagery.
-- Radar, GOES true color, infrared, water vapor, and east/west visible clouds now prepare viewport frames before displaying them.
-- Replaced frame-by-frame source teardown with persistent front/back MapLibre image slots.
-- Moved crossfade opacity animation out of full Maps-screen React render loops and into MapLibre animated layers.
-- Playback now waits for a small lead buffer and holds the current frame when the next frame is not ready.
-- Failed source frames are skipped instead of flashing or stalling the entire loop.
-- Panning and zooming retain the last complete image while replacement imagery for the settled viewport downloads.
-- Radar and satellite have independent buffered channels so layered Storm Scope workflows can animate both.
-- Added adaptive frame dimensions for longer loops and a global download-concurrency limit to reduce memory, bandwidth, and device load.
-- Unified record-mode map preview with the same buffered compositor used by normal playback.
-- High-zoom station radar retains its sharper tiled path, while live regional RainViewer radar uses its native timestamped tile animation.
-- Removed the Sun & Moon arc from Land Simple so the everyday daily card stays focused on current weather, range, and practical metrics.
-- Kept the complete Sun & Moon arc, moon phase, rise/set times, night window, best window, true-dark timing, and day length in Land wxLab.
-- Removed the duplicate standalone Sky Score hero from Space.
-- Made the 72-hour observing forecast the primary Night Sky hero and moved Astro Map and wxLearn actions into its header.
-- Folded Bortle class, aerosols, elevation, best window, darkest window, and source context into the unified observing forecast without dropping content.
-- Fixed a Worker solar-event date bug that could assign evening twilight to the previous local day.
-- Added app-side normalization for cached/legacy solar-event dates so twilight banners cannot silently label early evening as true dark.
-- For Mesa on June 24, the corrected sequence is sunset 7:40 PM, civil dusk 8:09 PM, nautical dusk 8:45 PM, and true dark 9:24 PM.
-- Replaced the shrinking Android Auto radar thumbnail with a full `MapTemplate` radar surface.
-- Android Auto now registers the native radar renderer while the radar screen is visible and detaches it cleanly when leaving.
-- Added a compact radar status/alert pane and refresh action without replacing the primary radar image.
-- Connected Space day summaries, Sky Score graph, and hourly observing columns into one shared horizontal forecast track.
-- Tapping an astronomy hour now highlights the matching graph point and column and updates a complete selected-hour inspector.
-- Preserved all astronomy content, including summary text, clouds, moon state, visibility, wind, temperature, Kp, aurora estimate, daily peaks, true darkness, and moonrise/moonset.
-- Removed the far-right AQI axes from daily and hourly wxLab charts.
-- Added compact AQI values directly beside each yellow AQI point with automatic above/below placement to reduce collisions with temperature, dew point, and humidity.
-- Unified active-location behavior across Land, Hourly, Almanac, Maps, Space, Nautical, Aviation, Extremes, and supporting data hooks.
-- Location-sensitive requests now clear old-place content and ignore late responses from the previous city.
-- Added one synchronized 72-hour astronomy forecast to Space, combining the Sky Score graph and hourly observing cards in a shared horizontal timeline.
-- Added daily astronomy summaries with peak observing time, clouds, moon illumination, true-dark duration, wind, moonrise/moonset, Kp forecast, and estimated aurora-viewing context.
-- Added SWPC Kp forecast samples to the existing Space Weather summary contract and direct fallback.
-- Improved animated 10 m wind flow with curved midpoint advection, better particle reseeding, tapered fading trails, and bright moving heads.
-- Increased wind animation smoothness while keeping the effect in the lightweight Skia overlay.
-- Expanded native MP4 recording so enabled animated radar/satellite underlays and wind particles can be preserved together.
-- Added wind-only MP4 recording for the animated 10 m flow layer.
-- Matched exported wind styling to the live map with graded trails and moving particle heads.
-- Added **NWS Desk** to Land wxLab using official NOAA/NWS AFD and HWO text products.
-- Added a cached worker endpoint for local NWS desk briefings, including WFO, update time, headline, summary, hazards, timing, confidence, and raw AFD/HWO text.
-- Cleaned up NWS Desk summaries so repeated AFD/HWO sentences are deduped and leading bulletin dash/bullet noise is removed.
-- Reworked the NWS Desk timing area so timing has a full-width block instead of being clipped inside a cramped half-width tile.
-- Added **Storm Recap** to Land wxLab using official NOAA/NWS Local Storm Reports for the active forecast office.
-- Storm Recap summarizes recent report count, closest report, latest report, strongest wind report, and largest hail report when available.
-- Added **Severe Setup** to Land wxLab using official SPC Day 1 categorical, tornado, hail, and wind outlook layers.
-- Severe Setup identifies the primary outlook hazard and adds active severe-thunderstorm or tornado watch context where available.
-- Added NWS alert lifecycle context so recent alerts can be identified as issued, updated, extended, upgraded, replaced, or cancelled.
-- Added **Forecast vs Reality** context using the current NWS forecast period and a fresh nearby official station observation.
-- Forecast verification shows station name, distance, observation age, and model/NWS differences without treating one station as the selected location.
-- Added a detailed wxLearn topic explaining SPC outlook categories, hazard probabilities, watches, warnings, and limitations.
-- Improved GOES true-color and infrared animation staging with warm, previous, and current frames to reduce blank flashes between frames.
-- Slowed satellite frame cadence slightly and lengthened eased crossfades for a smoother, less choppy loop.
-- Improved animated 10 m wind particles with a persistent runtime, adaptive particle density, and longer speed-sensitive trails.
-- AQI uses its own internal plotting scale but is identified by direct point labels rather than a detached screen-edge axis.
-- Reordered the Space tab to lead with **Night Sky Context**, followed by Solar Wx, Earth View, and Mars Weather Archive.
-- Renamed the Space header from Solar Wx to **Space Wx** to better reflect the broader screen.
-- Added wxLearn topics for Area Forecast Discussion, Hazardous Weather Outlook, Weather Story, Forecast Confidence, and Local Storm Reports.
-- Fixed a Maps camera behavior where the map could re-center on the active app location after the user tried to pan elsewhere.
-- Maps now only changes camera for explicit actions such as one-time route focus, the locate button, manual radar station selection, or cluster zoom.
-- Added an app-to-widget weather cache handoff so opening OMNIwx can refresh native widget weather data even if Android background widget DNS/network fetches fail.
-- Widgets now have a better fallback path for current temperature, daily high/low, wind, dew point, humidity, cloud cover, weather code, and radar-card weather context.
-- Storm Scope is now visible in the map mode selector instead of being hidden behind nerdy mode.
-- Storm Scope now defaults to a stronger operational bundle: radar, alert polygons, decoded NOAA OPC lightning density, WPC fronts, excessive rainfall outlook context, and animated 10 m wind particles.
-- Lightning is now source-backed: the worker decodes NOAA OPC 15-minute GRIB2 lightning-density grids into compact georeferenced cells for Maps.
-- Added a worker-side `/api/lightning/opc/geojson` endpoint that decodes OPC GRIB2/JPEG2000 lightning density and returns compact GeoJSON cells for the map.
-- Added Privacy Policy and Support links in Settings.
-- Drafted a replacement privacy policy in `docs/privacy-policy.md` for publishing on omni-wx.com.
-- Removed unused sensitive Android permissions from the manifest.
+### What To Test
 
-### Recent Alpha improvements included in this test line
+- Open Maps with radar enabled and confirm the red record-dot button appears in the same row as playback controls.
+- Tap the red record-dot button and confirm MP4 export still saves to `Movies/OMNIwx`.
+- Enable 10 m wind particles and confirm the streaks appear closer together without making Maps sluggish.
+- Test play, pause, rewind, fast-forward, and scrub controls on radar and satellite loops.
+- Confirm normal layer controls, map panning, locate, and zoom buttons still behave normally.
 
-- wxLearn is organized into a categorized learning library.
-- Space Wx now leads with night-sky context and still includes Kp, NOAA G/R/S scales, aurora, L1 solar wind, solar activity, Earth terminator imagery, and SWPC/DONKI context.
-- Marine maps include official-zone/high-seas work, buoy/water-station layers, and subtler zone styling.
-- Radar and satellite animation/export behavior has been improved.
-- Daily/hourly charts have more breathing room and less crowded AQI axis handling.
-- Sun/moon arcs and moon timing presentation have been improved.
-- Android widgets are being hardened for lower power use and more reliable loading.
+### Known Watch Areas
 
-### Known areas that need tester attention
-
-- **Widgets**: After installing this build, open OMNIwx once on the Land screen for your desired location, then refresh the widget. Report whether weather values fill in and whether they stay current.
-- **NWS Desk / Severe Setup / Storm Recap**: In Land wxLab, verify the cards load for US locations, show reasonable source/update text, and fail quietly when no SPC risk or recent reports exist.
-- **Forecast verification**: Compare several locations. Confirm the nearest-station name, distance, age, and differences look plausible and stale observations are not presented as current evidence.
-- **Maps camera**: Pan away from the selected city, switch layers, open/close panels, and leave/return to Maps. The map should not snap back unless you tap locate or intentionally select a focused map target.
-- **Storm Scope**: Test the Weather and Storm Scope map modes. Storm Scope should feel operational without breaking normal Weather, Nautical, Aviation, Astronomy, or Wildfire modes.
-- **Lightning**: Test Storm Scope with lightning enabled. The layer should show recent NOAA OPC density cells, not exact ground-strike alerts.
-- **Android Auto radar**: Confirm radar fills the main map area instead of appearing as a small thumbnail. Test loading, refresh, back navigation, and unavailable-radar behavior on real head units where possible.
-- **Maps performance**: Try radar, satellite, wind particles, marine zones, aviation hazards, and wildfire layers. Watch for sluggishness, heat, battery drain, or camera snapping.
-- **Animation continuity**: Loop broad radar, GeoColor, infrared, water vapor, and visible clouds. Pan and zoom during playback. Report any white/black flash, disappearing frame, misaligned image, stalled loop, or excessive rebuffing.
-- **Layered animation**: In Storm Scope, combine radar with infrared or visible-cloud imagery and confirm both remain aligned and transition smoothly.
-- **Privacy/support links**: Confirm Settings opens the published Privacy Policy and support contact paths.
-
-### What to report
-
-- Device model and Android version.
-- Whether the app was installed from Internal testing or Closed testing.
-- The app version shown by Google Play.
-- Screen/tab where the issue happened.
-- Steps to reproduce.
-- Screenshot or screen recording.
-- Whether deleting widgets, disabling a map layer, changing location, or opening OMNIwx once affects the issue.
+- Wind particles should feel denser, but not so dense that lower-end devices stutter.
+- MP4 export can still take time for high-resolution radar/satellite loops.
+- If a map loop flashes, stalls, or exports missing frames, include the active layers and whether wind particles were enabled.
 
 ## Internal Release Checklist
 
-- App version: `1.1.138`
-- Android version code: `10155`
+- App version: `1.1.139`
+- Android version code: `10156`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
-- Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
+- Android build: `cd android && .\gradlew.bat :app:bundleRelease --console=plain`

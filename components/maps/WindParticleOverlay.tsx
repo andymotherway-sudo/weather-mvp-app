@@ -86,7 +86,7 @@ export type WindParticleExportSegment = {
   intensity: number;
 };
 
-const MAX_PARTICLES = 420;
+const MAX_PARTICLES = 620;
 const FRAME_MS = 33;
 const FIELD_CELL_PX = 46;
 const MIN_TRAIL_POINTS = 11;
@@ -206,8 +206,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
 
   const area = Math.max(1, width * height);
   const geographicSpan = Math.max(0.08, Math.sqrt(region.latitudeDelta * region.longitudeDelta));
-  const zoomDensity = clamp(2.6 / geographicSpan, 0.72, 1.32);
-  const particleCount = Math.min(MAX_PARTICLES, Math.max(130, Math.round((area / 3050) * zoomDensity)));
+  const zoomDensity = clamp(3.2 / geographicSpan, 0.9, 1.65);
+  const particleCount = Math.min(MAX_PARTICLES, Math.max(220, Math.round((area / 2100) * zoomDensity)));
   const particles: ParticleSeed[] = [];
 
   for (let i = 0; i < particleCount; i += 1) {

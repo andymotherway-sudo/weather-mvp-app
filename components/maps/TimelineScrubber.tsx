@@ -69,12 +69,25 @@ type TimelineScrubberProps = {
   playing: boolean;
   frames?: FrameLike[];
   modeLabel?: string;
+  onRecord?: () => void;
+  recordDisabled?: boolean;
+  recordBusy?: boolean;
   onSetFrame: (frameIndex: number) => void;
   onSetPlaying: (playing: boolean) => void;
 };
 
 function TimelineScrubberInner(props: TimelineScrubberProps) {
-  const { frameIndex, playing, frames = [], modeLabel, onSetFrame, onSetPlaying } = props;
+  const {
+    frameIndex,
+    playing,
+    frames = [],
+    modeLabel,
+    onRecord,
+    recordDisabled,
+    recordBusy,
+    onSetFrame,
+    onSetPlaying,
+  } = props;
 
   const fallbackFrames = useMemo(() => buildFallbackFrames({ minutesBack: 120, stepMinutes: 5 }), []);
   const effectiveFrames = frames.length ? frames : fallbackFrames;
@@ -185,13 +198,13 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
       <View style={styles.topRow}>
         <View style={styles.controlsRow}>
           <ControlButton
-            label={playing ? '❚❚' : '▶'}
+            label={playing ? 'II' : '>'}
             onPress={() => onSetPlaying(!playing)}
             disabled={playDisabled}
             active={playing}
           />
           <ControlButton
-            label="◀◀"
+            label="<<"
             onPress={() => {
               if (playing) onSetPlaying(false);
               commitFrame(prevFrameIndex(idx, frameCount));
@@ -199,13 +212,23 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
             disabled={frameCount < 1}
           />
           <ControlButton
-            label="▶▶"
+            label=">>"
             onPress={() => {
               if (playing) onSetPlaying(false);
               commitFrame(nextFrameIndex(idx, frameCount));
             }}
             disabled={frameCount < 1}
           />
+          {onRecord ? (
+            <Pressable
+              accessibilityLabel={recordBusy ? 'Saving animation' : 'Record animation'}
+              onPress={onRecord}
+              disabled={!!recordDisabled}
+              style={[styles.recordButton, recordBusy ? styles.recordButtonBusy : null, recordDisabled ? styles.disabled : null]}
+            >
+              <View style={styles.recordDot} />
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.labelCard}>
@@ -277,9 +300,32 @@ const styles = StyleSheet.create({
   },
   controlButtonText: {
     color: 'rgba(255,255,255,0.94)',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.2,
+  },
+  recordButton: {
+    width: 36,
+    height: 32,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.58)',
+    backgroundColor: 'rgba(127,29,29,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordButtonBusy: {
+    backgroundColor: 'rgba(127,29,29,0.46)',
+  },
+  recordDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
   },
   disabled: {
     opacity: 0.45,

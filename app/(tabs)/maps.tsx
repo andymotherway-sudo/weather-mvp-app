@@ -5263,16 +5263,6 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  <View style={styles.animationControlStrip}>
-                    <View style={styles.animationControlSpacer} />
-                    <Pressable
-                      onPress={handleAnimationRecordPress}
-                      disabled={animationExporting}
-                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
-                    >
-                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
-                    </Pressable>
-                  </View>
                   {satelliteTimelineActive ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
@@ -5346,6 +5336,9 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
+                    onRecord={handleAnimationRecordPress}
+                    recordDisabled={animationExporting}
+                    recordBusy={animationExporting}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -7753,9 +7746,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 4,
     paddingBottom: 7,
-  },
-  animationControlSpacer: {
-    flex: 1,
   },
   windRecordLabel: {
     color: 'rgba(226,232,240,0.82)',
