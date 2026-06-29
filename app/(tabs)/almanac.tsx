@@ -657,10 +657,7 @@ const hasNormals = chartNormals.length > 0;
             <View style={styles.brandLeft}>
               <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
               <View style={{ flex: 1 }}>
-                <View style={styles.domainPill}>
-                  <Text style={styles.domainPillText}>Almanac</Text>
-                </View>
-
+                <Text style={styles.headerTitle}>Almanac</Text>
                 <Text style={styles.sub} numberOfLines={1}>
                   {locationLabel}
                 </Text>
@@ -1016,6 +1013,7 @@ const styles = StyleSheet.create({
 
   brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
 
+  headerTitle: { ...typography.title },
   sub: { ...typography.subtitle, opacity: 0.75 },
 
   badge: {
@@ -1041,17 +1039,6 @@ const styles = StyleSheet.create({
   },
   metaPillLabel: { fontSize: 11, opacity: 0.7, color: theme.colors.textSecondary, fontWeight: '800' },
   metaPillValue: { marginTop: 4, fontSize: 13, color: 'white', fontWeight: '900' },
-
-  domainPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
 
   helper: { marginTop: 10, fontSize: 12, color: 'rgba(255,255,255,0.60)', fontWeight: '700' },
 

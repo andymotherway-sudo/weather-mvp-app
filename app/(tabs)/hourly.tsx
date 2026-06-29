@@ -655,7 +655,12 @@ function HourlySimpleTimelineExpanded({
                 <Text style={styles.hourlyFeatureTemp}>
                   {safeNum(featured.temperatureF) != null ? `${Math.round(safeNum(featured.temperatureF) as number)}°` : '—'}
                 </Text>
-                <Text style={styles.hourlyFeatureCondition}>
+                <Text
+                  style={styles.hourlyFeatureCondition}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.72}
+                >
                   {weatherCodeToLabel(safeNum(featured.weatherCode))}
                 </Text>
                 <Text style={styles.hourlyFeatureMeta}>{formatHeroSummary(featured)}</Text>
@@ -1451,10 +1456,10 @@ const styles = StyleSheet.create({
   hourlyFeatureTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 10,
   },
   hourlyFeatureTimeCol: {
-    width: 70,
+    width: 62,
   },
   hourlyFeatureDay: {
     fontSize: 16,
@@ -1474,7 +1479,7 @@ const styles = StyleSheet.create({
   hourlyFeatureSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   hourlyFeatureEmoji: {
     fontSize: 42,
@@ -1483,8 +1488,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   hourlyFeatureIconBadge: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
   },
   hourlyFeatureSummaryText: {
     flex: 1,
@@ -1499,6 +1504,7 @@ const styles = StyleSheet.create({
   hourlyFeatureCondition: {
     marginTop: 2,
     fontSize: 18,
+    lineHeight: 22,
     fontWeight: '800',
     color: 'white',
   },
@@ -1509,7 +1515,8 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.74)',
   },
   hourlyFeaturePressure: {
-    width: 88,
+    width: 78,
+    flexShrink: 0,
     alignItems: 'flex-end',
   },
   hourlyFeaturePressurePrimary: {

@@ -1023,9 +1023,6 @@ export default function AviationScreen() {
             <View style={s.brandLeft}>
               <Image source={OMNI_MARK_WORD} style={s.brandWordmark} resizeMode="contain" />
               <View style={{ flex: 1 }}>
-                <View style={s.domainPill}>
-                  <Text style={s.domainPillText}>Aviation</Text>
-                </View>
                 <Text style={s.headerTitle}>Aviation</Text>
                 <Text style={s.headerSubtitle}>{headerSubtitle}</Text>
               </View>
@@ -1494,17 +1491,6 @@ const s = StyleSheet.create({
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
-  domainPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    marginBottom: 6,
-  },
-  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
   headerTitle: { ...typography.title },
   headerSubtitle: { ...typography.subtitle },
   hero: { borderRadius: 24, padding: 14, marginBottom: 12 },

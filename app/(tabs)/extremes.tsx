@@ -872,9 +872,6 @@ export default function ExtremesScreen() {
           <View style={styles.brandLeft}>
             <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
             <View style={{ flex: 1 }}>
-              <View style={styles.domainPill}>
-                <Text style={styles.domainPillText}>Extremes</Text>
-              </View>
               <Text style={styles.headerTitle}>Extremes</Text>
               <Text style={styles.headerSubtitle}>{headerSubtitle}</Text>
             </View>
@@ -1075,18 +1072,6 @@ const styles = StyleSheet.create({
   brandWordmark: {
     ...OMNI_TAB_LOGO_STYLE,
   },
-
-  domainPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    marginBottom: 6,
-  },
-  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
 
   headerTitle: { ...typography.title },
   headerSubtitle: { ...typography.subtitle },

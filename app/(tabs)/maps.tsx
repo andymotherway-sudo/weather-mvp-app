@@ -3081,6 +3081,21 @@ export default function MapsScreen() {
     setCameraDebugLabel('locate-unavailable');
   };
 
+  const zoomBy = useCallback((delta: number) => {
+    const anchorRegion = region ?? effectiveRegion;
+    const lat = Number(anchorRegion.latitude);
+    const lon = Number(anchorRegion.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const nextZoom = clampNumber((Number.isFinite(mapZoom) ? mapZoom : 4) + delta, 1, 18);
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [lon, lat],
+      zoomLevel: nextZoom,
+      animationDuration: 220,
+    });
+    setCameraDebugLabel(`user-zoom:${nextZoom.toFixed(1)}`);
+  }, [effectiveRegion, mapZoom, region]);
+
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
     : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
@@ -3643,6 +3658,7 @@ export default function MapsScreen() {
     }
 
     try {
+      // Keep export display-neutral: no brightness or wake-lock APIs should be used here.
       const placeLabel = activePlace?.name ?? 'Current map';
       const { width, height } = animationExportSize;
       const result = await exportAnimationVideo({
@@ -4797,6 +4813,8 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
+              <ZoomButton label="+" accessibilityLabel="Zoom in" onPress={() => zoomBy(1)} />
+              <ZoomButton label="-" accessibilityLabel="Zoom out" onPress={() => zoomBy(-1)} />
             </View>
           </View>
         )}
@@ -6582,6 +6600,14 @@ function MiniToggle(props: { label: string; active?: boolean; onPress: () => voi
   );
 }
 
+function ZoomButton(props: { label: string; accessibilityLabel: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityLabel={props.accessibilityLabel} onPress={props.onPress} style={styles.zoomButton}>
+      <Text style={styles.zoomButtonText}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
 function HeatRiskLegend(props: { tropicalActive?: boolean }) {
   return (
     <View style={styles.productLegendBody}>
@@ -6940,6 +6966,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(2,6,23,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  zoomButton: {
+    width: 48,
+    height: 38,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(2,6,23,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonText: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 24,
   },
   locationRing: {
     width: 22,

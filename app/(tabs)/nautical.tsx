@@ -1153,9 +1153,6 @@ export default function NauticalScreen() {
           <View style={styles.headerTopRow}>
             <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
             <View style={styles.headerControls}>
-              <View style={styles.domainPill}>
-                <Text style={styles.domainPillText}>Nautical</Text>
-              </View>
               <ModeToggle mode={mode} onChange={setMode} />
             </View>
           </View>
@@ -1676,17 +1673,7 @@ const styles = StyleSheet.create({
   },
   brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
 
-  domainPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  domainPillText: { fontSize: 11, fontWeight: '900', color: 'white' },
-    searchBox: {
+  searchBox: {
     marginTop: theme.spacing.sm,
     borderRadius: theme.radius.lg,
     borderWidth: 1,

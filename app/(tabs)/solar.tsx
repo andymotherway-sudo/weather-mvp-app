@@ -1379,9 +1379,6 @@ export default function SolarScreen() {
             <View style={styles.brandRow}>
               <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
               <View style={{ flex: 1 }}>
-                <View style={styles.domainPill}>
-                  <Text style={styles.domainPillText}>Space</Text>
-                </View>
                 <Text style={styles.headerTitle}>Space Wx</Text>
                 <Text style={styles.headerSubline} numberOfLines={2}>
                   {active?.name ? `${active.name} · night sky forecast and solar activity` : 'Night sky forecast, moonlight, observing conditions, aurora context, and space weather'}
@@ -1614,22 +1611,6 @@ const styles = StyleSheet.create({
 
   brandWordmark: {
     ...OMNI_TAB_LOGO_STYLE,
-  },
-
-  domainPill: {
-    alignSelf: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-
-  domainPillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: 'white',
   },
 
   headerTitle: {

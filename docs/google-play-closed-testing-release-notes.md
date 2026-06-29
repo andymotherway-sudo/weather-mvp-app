@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.137**
-Android version code: **10154**
+Release: **OMNIwx Alpha 1.1.138**
+Android version code: **10155**
 Track: **Closed testing / internal testing candidate**
 Date: **June 29, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.137 adds clearer NHC active-storm rendering, improves Windy-style 10 m wind particles, standardizes the OMNIwx logo size across tab headers, and continues the recent map, wxLab, tutorial, and visual-polish work from the alpha line.
+OMNIwx Alpha 1.1.138 cleans up several tab headers, improves Hourly text fitting, adds map zoom controls that preserve the current map center, and explicitly keeps MP4 map export display-neutral so OMNIwx does not use screen-brightness or wake-lock controls during recording.
 
 ## Full Tester Notes
 
@@ -16,6 +16,11 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### What changed in this build
 
 
+- Removed duplicate small title chips from Nautical, Aviation, Extremes, and Space so each screen has one clearer primary title.
+- Added a proper Almanac screen title to match the other major tabs.
+- Tightened Hourly forecast layout so long condition names such as Thunderstorm fit better instead of wrapping awkwardly on narrow phones.
+- Added on-screen Maps zoom in/out buttons for testers who want to zoom while keeping the current map center or GPS-centered position.
+- Reviewed the app for device brightness and wake-lock APIs after tester feedback. OMNIwx does not use device-brightness controls, Android `screenBrightness`, `WRITE_SETTINGS`, wake locks, or `FLAG_KEEP_SCREEN_ON`; MP4 export now has an explicit guardrail to keep recording display-neutral.
 - Added ordered NHC active-storm map overlays for cones, wind radii, arrival timing, tracks, and watch/warning products instead of treating tropical systems as one generic track layer.
 - Renamed the active tropical layer as **NHC Active Storm Cones** so testers understand that this includes official cone context when storms are active.
 - Improved animated 10 m wind particles with denser seeded flow, longer speed-sensitive trails, smoother curved advection, and brighter moving heads by wind-speed bucket.
@@ -149,8 +154,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.137`
-- Android version code: `10154`
+- App version: `1.1.138`
+- Android version code: `10155`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
