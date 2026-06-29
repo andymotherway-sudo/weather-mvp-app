@@ -66,7 +66,7 @@ function tick(ms = 0) {
 export default function DefaultCityScreen() {
   const { setActive } = usePlace();
 
-  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-mark.png'), []);
+  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-logo-transparent.png'), []);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GeoResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   header: { paddingTop: 28, paddingHorizontal: 24, paddingBottom: 10 },
   logoWrap: { width: 74, height: 74, marginBottom: 14, justifyContent: 'center', alignItems: 'center' },
   logoGlow: { position: 'absolute', width: 92, height: 92, borderRadius: 92, backgroundColor: 'rgba(80,200,255,0.18)' },
-  logo: { width: 64, height: 64 },
+  logo: { width: 70, height: 84 },
 
   title: { color: 'white', fontSize: 28, fontWeight: '900' },
   subtitle: { marginTop: 6, color: 'rgba(255,255,255,0.62)', fontWeight: '700' },

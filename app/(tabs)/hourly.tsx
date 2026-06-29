@@ -1200,8 +1200,8 @@ const styles = StyleSheet.create({
   },
 
   headerCompactLogo: {
-    width: 48,
-    height: 48,
+    width: 58,
+    height: 68,
     opacity: 0.96,
   },
 

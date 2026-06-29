@@ -50,7 +50,7 @@ export function AppBoot({ children }: Props) {
   const fade = useRef(new Animated.Value(1)).current;
   const scale = useRef(new Animated.Value(0.98)).current;
 
-  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-mark.png'), []);
+  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-logo-transparent.png'), []);
 
   const refreshDefaultCity = useCallback(async () => {
     const seq = ++refreshSeqRef.current;

@@ -55,7 +55,7 @@ export default function ProfileScreen() {
     alwaysUseWxLab,
     setAlwaysUseWxLab,
   } = useSettings();
-  const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-mark-word.png'), []);
+  const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-logo-transparent.png'), []);
   const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
   const notificationSettings = useNotificationPreferences();
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     borderRadius: 76,
     backgroundColor: 'rgba(80,200,255,0.14)',
   },
-  logo: { width: 46, height: 46 },
+  logo: { width: 52, height: 62 },
 
   title: { color: 'white', fontSize: 28, fontWeight: '900' },
   subtitle: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 13 },

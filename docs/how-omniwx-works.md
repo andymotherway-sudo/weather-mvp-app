@@ -920,7 +920,7 @@ A layer is one visual data overlay. Examples:
 - radar reflectivity
 - NWS alert polygons
 - WPC fronts
-- lightning
+- decoded NOAA OPC lightning density
 - marine conditions
 - fire perimeters
 - smoke

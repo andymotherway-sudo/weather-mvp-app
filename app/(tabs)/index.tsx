@@ -2705,11 +2705,15 @@ function SimpleDailyOverview({
         <View style={styles.dailyRangeStats}>
           <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>Low</Text>
-            <Text style={styles.dailyRangeStatValue}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+            <Text style={styles.dailyRangeStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
+              {todayLo != null ? `${Math.round(todayLo)}°` : '—'}
+            </Text>
           </View>
           <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>High</Text>
-            <Text style={styles.dailyRangeStatValue}>{todayHi != null ? `${Math.round(todayHi)}°` : '—'}</Text>
+            <Text style={styles.dailyRangeStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
+              {todayHi != null ? `${Math.round(todayHi)}°` : '—'}
+            </Text>
           </View>
         </View>
 
@@ -5800,7 +5804,7 @@ export default function LandWeatherScreen() {
                     style={styles.headerLogoButton}
                   >
                     <Image
-                      source={require('../../assets/brand/omniwx-mark-word.png')}
+                      source={require('../../assets/brand/omniwx-logo-transparent.png')}
                       style={styles.headerCompactLogo}
                       resizeMode="contain"
                     />
@@ -5993,16 +5997,16 @@ const styles = StyleSheet.create({
   },
 
   headerLogoButton: {
-    width: 54,
-    height: 48,
+    width: 62,
+    height: 66,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   headerCompactLogo: {
-    width: 54,
-    height: 48,
+    width: 60,
+    height: 70,
     opacity: 0.96,
   },
 
@@ -6250,11 +6254,14 @@ const styles = StyleSheet.create({
     minHeight: 68,
     borderRadius: 16,
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
   dailyRangeStatLabel: {
     fontSize: 10,
@@ -6262,12 +6269,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.58)',
+    flexShrink: 0,
   },
   dailyRangeStatValue: {
     fontSize: 24,
     lineHeight: 28,
     fontWeight: '900',
     color: 'white',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   dailyTempRangeBlock: {
     gap: 6,

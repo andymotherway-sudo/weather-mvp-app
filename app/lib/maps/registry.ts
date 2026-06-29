@@ -103,7 +103,7 @@ export const LAYERS: LayerDefinition[] = [
   },
   {
     id: 'tropics.nhcOutlook',
-    title: 'NHC Tropical Outlook',
+    title: 'NHC Development Outlook',
     kind: 'tile',
     visibility: 'both',
     defaultOpacity: 0.72,
@@ -112,7 +112,7 @@ export const LAYERS: LayerDefinition[] = [
   },
   {
     id: 'tropics.nhcTracks',
-    title: 'NHC Tropical Tracks',
+    title: 'NHC Active Storm Tracks',
     kind: 'tile',
     visibility: 'nerdy',
     defaultOpacity: 0.82,

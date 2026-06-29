@@ -22,7 +22,7 @@ export function TopLocationCard({
   saved,
   wxLabEnabled,
 }: Props) {
-  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-mark.png'), []);
+  const OMNI_MARK = useMemo(() => require('../../assets/brand/omniwx-logo-transparent.png'), []);
 
   return (
     <View style={styles.shell}>
@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  mark: { width: 34, height: 34, borderRadius: 10 },
+  mark: { width: 38, height: 44 },
 
   kicker: {
     color: 'rgba(255,255,255,0.72)',

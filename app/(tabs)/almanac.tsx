@@ -1014,7 +1014,7 @@ const styles = StyleSheet.create({
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   brandRight: { flexDirection: 'row', alignItems: 'center' },
 
-  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+  brandWordmark: { width: 96, height: 112, backgroundColor: 'transparent' },
 
   sub: { ...typography.subtitle, opacity: 0.75 },
 

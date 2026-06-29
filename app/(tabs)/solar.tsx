@@ -1613,8 +1613,8 @@ const styles = StyleSheet.create({
   },
 
   brandWordmark: {
-    width: 92,
-    height: 92,
+    width: 96,
+    height: 112,
     backgroundColor: 'transparent',
   },
 

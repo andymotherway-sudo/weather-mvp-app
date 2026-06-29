@@ -1493,7 +1493,7 @@ const s = StyleSheet.create({
   header: { marginBottom: theme.spacing.md },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  brandWordmark: { width: 92, height: 92, backgroundColor: 'transparent' },
+  brandWordmark: { width: 96, height: 112, backgroundColor: 'transparent' },
   domainPill: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,

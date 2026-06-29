@@ -1674,7 +1674,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  brandWordmark: { width: 70, height: 70, backgroundColor: 'transparent' },
+  brandWordmark: { width: 92, height: 108, backgroundColor: 'transparent' },
 
   domainPill: {
     alignSelf: 'flex-start',

@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.135**
-Android version code: **10152**
+Release: **OMNIwx Alpha 1.1.136**
+Android version code: **10153**
 Track: **Closed testing / internal testing candidate**
 Date: **June 28, 2026**
 
 ## Short Play Console Notes
 
-OMNIwx Alpha 1.1.135 makes animated page backgrounds visible on Aviation, adds a dedicated animated Nautical background, refreshes the in-app OMNIwx logo asset, keeps the Worker security hardening, and preserves the recent Storm Scope lightning and wxLab fixes.
+OMNIwx Alpha 1.1.136 clarifies Storm Scope map legends so HeatRisk and NHC tropical products are explained as their own products instead of borrowing the generic radar legend. It also includes the latest logo/background refreshes, Worker hardening, lightning, wxLab, and Android Auto radar work from the recent alpha line.
 
 ## Full Tester Notes
 
@@ -16,6 +16,11 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 ### What changed in this build
 
 
+- Added a dedicated **NWS HeatRisk** map legend with Little, Minor, Moderate, Major, and Extreme impact categories.
+- Suppressed the generic radar “Light / Moderate / Severe” legend when HeatRisk or tropical products are the dominant active map layer.
+- Added a compact **NHC Tropics** legend explaining development outlook areas, hatched zones, tropical markers, and active storm tracks/cones.
+- Renamed tropical map layers to clearer labels: **NHC Development Outlook** and **NHC Active Storm Tracks**.
+- Updated map status text so HeatRisk and NHC tropical products describe the active product more clearly.
 - Made the Aviation animated background visible behind the page instead of being hidden by an opaque root surface.
 - Added a dedicated Nautical animated page background with subtle current lines, marine route arcs, buoy pulses, and a low-contrast ocean glow.
 - Added a new reusable Nautical background asset at `assets/backgrounds/bg-nautical.png`.
@@ -137,8 +142,8 @@ This is still an Alpha build. OMNIwx is becoming a weather workstation: daily we
 
 ## Internal Release Checklist
 
-- App version: `1.1.135`
-- Android version code: `10152`
+- App version: `1.1.136`
+- Android version code: `10153`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

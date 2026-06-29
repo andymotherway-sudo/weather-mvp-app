@@ -212,7 +212,7 @@ The current map modes are:
 - Weather: radar-focused weather map.
 - Clouds: GOES visible cloud imagery.
 - Wildfire: restrictions, smoke, fire perimeters, hotspots, fire weather, and radar.
-- Storm Scope: radar, fronts, lightning, alerts, and storm-focused tools.
+- Storm Scope: radar, fronts, alerts, decoded lightning density, excessive rainfall context, wind particles, and storm-focused tools.
 - Aviation: aviation hazards and PIREPs.
 - Nautical: marine zones and buoys.
 - Astronomy: sky/observing-oriented map mode.
@@ -221,7 +221,7 @@ The current map modes are:
 
 Available layer groups include:
 
-- Weather: radar, wind vectors, wind particles, WPC fronts, clouds, GOES true color, infrared, water vapor, global true color, global precipitation, alerts, and lightning.
+- Weather: radar, wind vectors, wind particles, WPC fronts, clouds, GOES true color, infrared, water vapor, global true color, global precipitation, alerts, and decoded NOAA OPC lightning density.
 - Fire & Air: fire restrictions, smoke, fire perimeters, hotspots, and SPC fire-weather outlooks.
 - Aviation: turbulence, icing, SIGMETs, CWAs, and PIREPs.
 - Marine: marine conditions, coastal/offshore/high-seas zones, buoys, water temperature stations, water-level context, and model-backed area summaries where available.

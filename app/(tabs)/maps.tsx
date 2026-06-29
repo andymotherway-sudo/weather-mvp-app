@@ -834,6 +834,14 @@ function isRadarPrimaryView(viewId: string) {
   return viewId === 'radar' || viewId === 'wildfire' || viewId === 'storm' || viewId === 'aviation';
 }
 
+const HEATRISK_LEGEND_STOPS = [
+  { label: 'Little', color: '#f7f4a3' },
+  { label: 'Minor', color: '#f4cf4c' },
+  { label: 'Moderate', color: '#e5843e' },
+  { label: 'Major', color: '#c74444' },
+  { label: 'Extreme', color: '#7b2f8f' },
+];
+
 function getSimpleStatus(args: {
   viewId: string;
   fireRestrictionsEnabled: boolean;
@@ -905,9 +913,11 @@ function getSimpleStatus(args: {
   if (excessiveRainDay2Enabled) return 'WPC Day 2 excessive rain active';
   if (riverStagesEnabled) return 'NWPS river stages active';
   if (qpeLast24hEnabled) return 'RFC 24h rainfall estimate active';
-  if (heatRiskEnabled) return 'NWS HeatRisk active';
-  if (tropicsOutlookEnabled) return 'NHC tropical outlook active';
-  if (tropicsTracksEnabled) return 'NHC tropical tracks active';
+  if (heatRiskEnabled && (tropicsOutlookEnabled || tropicsTracksEnabled)) return 'HeatRisk + NHC tropics active';
+  if (heatRiskEnabled) return 'NWS HeatRisk impact map active';
+  if (tropicsOutlookEnabled && tropicsTracksEnabled) return 'NHC outlook + active storm tracks';
+  if (tropicsOutlookEnabled) return 'NHC tropical development outlook';
+  if (tropicsTracksEnabled) return 'NHC active storm tracks/cones';
 
   if (viewId === 'clouds') {
     return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
@@ -3023,7 +3033,10 @@ export default function MapsScreen() {
     ? activeLayerSummary.title
     : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
 
-  const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId));
+  const showHeatRiskLegend = isFocused && heatRiskEnabled;
+  const showTropicsLegend = isFocused && (tropicsOutlookEnabled || tropicsTracksEnabled);
+  const showProductLegend = showHeatRiskLegend || showTropicsLegend;
+  const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId)) && !showProductLegend;
 
   const simpleStatus = getSimpleStatus({
     viewId: String(state.viewId),
@@ -4753,6 +4766,22 @@ export default function MapsScreen() {
               </Text>
               <Text style={styles.stationProductBadgeTitle}>{radarProductMeta.legendTitle}</Text>
             </View>
+          </View>
+        ) : null}
+
+        {!animationRecordMode && showHeatRiskLegend ? (
+          <View style={[styles.legendWrap, styles.topLegendWrap]}>
+            <Glass style={[styles.legendCard, styles.productLegendCard]}>
+              <HeatRiskLegend tropicalActive={showTropicsLegend} />
+            </Glass>
+          </View>
+        ) : null}
+
+        {!animationRecordMode && !showHeatRiskLegend && showTropicsLegend ? (
+          <View style={[styles.legendWrap, styles.topLegendWrap]}>
+            <Glass style={[styles.legendCard, styles.productLegendCard]}>
+              <TropicalLegend outlookEnabled={tropicsOutlookEnabled} tracksEnabled={tropicsTracksEnabled} />
+            </Glass>
           </View>
         ) : null}
 
@@ -6501,6 +6530,101 @@ function MiniToggle(props: { label: string; active?: boolean; onPress: () => voi
   );
 }
 
+function HeatRiskLegend(props: { tropicalActive?: boolean }) {
+  return (
+    <View style={styles.productLegendBody}>
+      <View style={styles.productLegendHeader}>
+        <View>
+          <Text style={styles.productLegendEyebrow}>NWS HEATRISK</Text>
+          <Text style={styles.productLegendTitle}>Heat impact risk</Text>
+        </View>
+        <View style={styles.productLegendChip}>
+          <Text style={styles.productLegendChipText}>Not radar</Text>
+        </View>
+      </View>
+      <View style={styles.heatRiskRamp}>
+        {HEATRISK_LEGEND_STOPS.map((stop, index) => (
+          <View
+            key={stop.label}
+            style={[
+              styles.heatRiskRampStop,
+              {
+                backgroundColor: stop.color,
+                borderTopLeftRadius: index === 0 ? 999 : 0,
+                borderBottomLeftRadius: index === 0 ? 999 : 0,
+                borderTopRightRadius: index === HEATRISK_LEGEND_STOPS.length - 1 ? 999 : 0,
+                borderBottomRightRadius: index === HEATRISK_LEGEND_STOPS.length - 1 ? 999 : 0,
+              },
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.productLegendLabels}>
+        {HEATRISK_LEGEND_STOPS.map((stop) => (
+          <Text key={stop.label} style={styles.productLegendScaleLabel} numberOfLines={1}>
+            {stop.label}
+          </Text>
+        ))}
+      </View>
+      <Text style={styles.productLegendNote}>
+        Potential heat-related impacts. Use official alerts for watches, warnings, and advisories.
+      </Text>
+      {props.tropicalActive ? (
+        <View style={styles.productLegendDivider}>
+          <TropicalLegend outlookEnabled tracksEnabled compact />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TropicalLegend(props: { outlookEnabled?: boolean; tracksEnabled?: boolean; compact?: boolean }) {
+  const parts = [
+    props.outlookEnabled ? 'development outlook' : null,
+    props.tracksEnabled ? 'active storm tracks' : null,
+  ].filter(Boolean);
+
+  return (
+    <View style={styles.productLegendBody}>
+      <View style={styles.productLegendHeader}>
+        <View>
+          <Text style={styles.productLegendEyebrow}>NHC TROPICS</Text>
+          <Text style={styles.productLegendTitle}>{parts.length ? parts.join(' + ') : 'Official tropical guidance'}</Text>
+        </View>
+      </View>
+      <View style={styles.tropicalLegendRows}>
+        {props.outlookEnabled ? (
+          <>
+            <View style={styles.tropicalLegendRow}>
+              <View style={styles.tropicalHatchedSample}>
+                <View style={[styles.tropicalHatchLine, { left: 3 }]} />
+                <View style={[styles.tropicalHatchLine, { left: 10 }]} />
+                <View style={[styles.tropicalHatchLine, { left: 17 }]} />
+              </View>
+              <Text style={styles.tropicalLegendText}>Hatched area: possible development area</Text>
+            </View>
+            <View style={styles.tropicalLegendRow}>
+              <Text style={styles.tropicalMarkerSample}>X</Text>
+              <Text style={styles.tropicalLegendText}>Marker: system center or outlook point</Text>
+            </View>
+          </>
+        ) : null}
+        {props.tracksEnabled ? (
+          <View style={styles.tropicalLegendRow}>
+            <View style={styles.tropicalTrackSample} />
+            <Text style={styles.tropicalLegendText}>Line/cone: official active storm forecast</Text>
+          </View>
+        ) : null}
+      </View>
+      {!props.compact ? (
+        <Text style={styles.productLegendNote}>
+          Probabilities and symbols come directly from NOAA NHC/CPHC; tap the layer source for the official product.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function AstroMetric(props: { label: string; value: string }) {
   return (
     <View style={styles.astroMetric}>
@@ -7066,6 +7190,132 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
     gap: 6,
+  },
+  productLegendCard: {
+    width: 306,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  productLegendBody: {
+    gap: 7,
+  },
+  productLegendHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  productLegendEyebrow: {
+    color: '#8bdcff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  productLegendTitle: {
+    color: 'rgba(255,255,255,0.94)',
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '900',
+    textTransform: 'capitalize',
+  },
+  productLegendChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(139,220,255,0.28)',
+    backgroundColor: 'rgba(139,220,255,0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  productLegendChipText: {
+    color: '#c7efff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  heatRiskRamp: {
+    height: 14,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  heatRiskRampStop: {
+    flex: 1,
+  },
+  productLegendLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  productLegendScaleLabel: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.76)',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  productLegendNote: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700',
+  },
+  productLegendDivider: {
+    marginTop: 2,
+    paddingTop: 7,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+  },
+  tropicalLegendRows: {
+    gap: 6,
+  },
+  tropicalLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tropicalLegendText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800',
+  },
+  tropicalHatchedSample: {
+    width: 26,
+    height: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,214,80,0.82)',
+    backgroundColor: 'rgba(255,214,80,0.18)',
+    overflow: 'hidden',
+  },
+  tropicalHatchLine: {
+    position: 'absolute',
+    top: -5,
+    width: 2,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,214,80,0.42)',
+    transform: [{ rotate: '42deg' }],
+  },
+  tropicalMarkerSample: {
+    width: 26,
+    color: '#f7d94d',
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  tropicalTrackSample: {
+    width: 26,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: '#f7d94d',
+    shadowColor: '#f7d94d',
+    shadowOpacity: 0.42,
+    shadowRadius: 4,
   },
   wildfireLegendCard: {
     width: 304,
