@@ -959,6 +959,16 @@ At broader zoom levels, radar is usually rendered as map tiles.
 
 At high zoom levels, the app can switch to a generated local image/WMS-style overlay. That can improve detail and reduce tile churn.
 
+### Radar Mode Invariants
+
+Radar should preserve three user-facing behaviors:
+
+- Broad map views show the national radar mosaic.
+- Local zoom and station contexts can use the nearest NEXRAD site and expose station products.
+- Storm Scope is an in-place radar mode, not a separate map view that forces the camera.
+
+Zoom controls should only change camera zoom. They should not recenter the map, lock the user to a radar site, or keep snapping back to the active location.
+
 ### Timeline
 
 The timeline state is stored in the map reducer:
@@ -1926,8 +1936,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.143`.
-- Android version code: `10160`.
+- App version: `1.1.144`.
+- Android version code: `10161`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
@@ -2170,6 +2180,7 @@ Product distinction:
 
 - Basic Weather mode should be broadly usable and not require people to know radar station details.
 - Storm Scope is where power-user radar controls belong.
+- Storm Scope should toggle on top of the normal radar map workflow. It should not force the user into a separate map view or prevent panning away from the active location.
 
 ### Nautical
 

@@ -1,46 +1,48 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.143**
-Android version code: **10160**
+Release: **OMNIwx Alpha 1.1.144**
+Android version code: **10161**
 Track: **Closed testing / internal testing candidate**
 Date: **June 30, 2026**
 
 ## Play Console Paste Notes
 
-This build is a code hygiene and maintainability release. It removes shipped debug logging, replaces patch-history comments with durable developer-facing comments, cleans stale note-to-self comments, and keeps the app behavior unchanged while making future map, weather, nautical, space, and Android Auto work easier to maintain.
+This build restores the previous radar workflow after the zoom-control pass. National radar is again the broad-view mosaic, local NEXRAD products return when using station or Storm Scope context, Storm Scope behaves as a radar mode instead of forcing a separate map view, and zoom controls remain simple camera controls.
 
 ## Tester Notes
 
-This build should feel the same in normal use. Please regression-test the main surfaces that depend on cleaned fallback paths: Land, Hourly, Almanac records, Maps radar, Nautical, Space Weather, widgets, and Android Auto radar.
+Please focus testing on Maps radar behavior. The important expectation is that the map should not force the camera to a radar site or active location, national radar should still appear at broad zoom, and zooming/local Storm Scope use should expose NEXRAD detail without removing the normal radar product picker.
 
 ### What Changed
 
-- Removed debug console logging from shipped React Native app and Worker source paths.
-- Removed an Android Auto radar warning log because the car UI already shows a friendly error state.
-- Removed the Nautical wxLab development-only raw JSON dump.
-- Rewrote stale patch notes and note-to-self comments into durable comments explaining why key code exists.
-- Cleaned broken mojibake in a Nautical official forecast loading message.
-- Preserved existing user-facing behavior and release-critical map, aviation, nautical, and radar changes already in the working tree.
+- Restored national radar as the broad-zoom animated mosaic rather than a selectable station radar product.
+- Restored Storm Scope as an in-place radar mode toggle, so it no longer switches the map into a separate forced view.
+- Restored NEXRAD station product controls for station/Storm Scope contexts.
+- Kept the new zoom buttons, but constrained them to zoom-only camera behavior.
+- Kept nearest NEXRAD behavior available at local zoom without forcing the user's map position.
 
 ### What To Test
 
 - Open Land and Hourly and confirm forecast cards still load normally.
 - Open Almanac and confirm record building/cached records still progress normally.
-- Open Maps and confirm radar, Storm Scope, zoom controls, and recording controls still behave as expected.
+- Open Maps at national scale and confirm national radar appears and animates.
+- Zoom toward a local area and confirm nearest NEXRAD detail/products are available without camera snap-back.
+- Toggle Storm Scope on/off and confirm it does not trap the map in Storm Scope or force recentering.
+- Use the radar product selector and confirm base reflectivity, velocity, storm total precip, echo tops, and hail tracks still appear when available.
 - Open Nautical and confirm sea state, tides, wxLab rows, and official forecast unsupported states still render cleanly.
 - Open Space and confirm SWPC/DONKI fallback content still loads when available.
 - Try Android Auto radar and confirm failures show friendly UI instead of crashing.
 
 ### Known Watch Areas
 
-- This is intentionally a maintainability pass, so any UI or data behavior changes should be treated as regressions.
-- Provider outages should still fail gracefully without developer-only logs appearing in the shipped app.
+- Radar providers can still return stale or missing frames; those states should be visible without trapping playback.
+- Storm Scope should not become a separate map workflow again unless that is a deliberate future design change.
 - Android Auto still reports upstream AndroidX Car App deprecation warnings during native compile; this build does not change that API surface.
 
 ## Internal Release Checklist
 
-- App version: `1.1.143`
-- Android version code: `10160`
+- App version: `1.1.144`
+- Android version code: `10161`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

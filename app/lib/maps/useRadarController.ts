@@ -519,6 +519,8 @@ export function useRadarController(args: {
         setIemError(null);
         setIemLoading(true);
 
+        const effectiveRidgeMinZoom = stormMode ? Math.min(ridgeMinZoom, 7.5) : ridgeMinZoom;
+
         const out = await resolveIemFrames({
           lat: centerForRadar.lat,
           lon: centerForRadar.lon,
@@ -526,12 +528,12 @@ export function useRadarController(args: {
             zoom: mapZoom,
             product,
             mosaicMaxZoom: 9,
-            ridgeMinZoom: stationMode ? 2 : ridgeMinZoom,
+            ridgeMinZoom: stationMode ? 2 : effectiveRidgeMinZoom,
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
-            maxLocalDistanceKm: stationMode ? 5000 : 350,
-            allowMosaicFallback: !stationMode || product === 'EET',
-            force: stationMode ? 'ridge' : undefined,
+            maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
+            allowMosaicFallback: !stormMode && (!stationMode || product === 'EET'),
+            force: stormMode || stationMode ? 'ridge' : undefined,
             forceRadarId3: stationMode ? radarSiteId3 : null,
           },
         });
