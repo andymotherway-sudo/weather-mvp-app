@@ -357,7 +357,7 @@ export function AstroForecastTimeline({
           <Text style={[styles.tonightScoreValue, { color: scoreColor(forecast.peakScore) }]}>
             {forecast.peakScore}
           </Text>
-          <Text style={styles.tonightScoreLabel}>TONIGHT'S PEAK</Text>
+          <Text style={styles.tonightScoreLabel}>TONIGHT PEAK</Text>
         </View>
         <View style={styles.tonightWindows}>
           <Text style={styles.tonightQuality}>{forecast.peakLabel}</Text>

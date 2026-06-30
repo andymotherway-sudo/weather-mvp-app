@@ -71,7 +71,7 @@ export function HybridTrends({
                 {!hasToken ? (
                   <View style={styles.hintBox}>
                     <Text style={styles.hintText}>
-                      Add <Text style={{ fontWeight: '900' }}>EXPO_PUBLIC_NOAA_NCEI_TOKEN</Text> to enable climate normals.
+                      Climate normals need the OMNIwx API proxy to be configured for this build.
                     </Text>
                   </View>
                 ) : null}

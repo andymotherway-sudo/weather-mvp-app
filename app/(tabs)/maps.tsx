@@ -1405,8 +1405,8 @@ export default function MapsScreen() {
     !manualStationRadarMode &&
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
+  const stationRadarMode = (manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
+  const showAdvancedRadarControls = manualStationRadarMode && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1430,7 +1430,7 @@ export default function MapsScreen() {
     : stationRadarMode
       ? 'N0B'
       : 'N0Q';
-  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider = 'iem' as 'iem' | 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&
@@ -1947,8 +1947,8 @@ export default function MapsScreen() {
     region,
     stationMode: stationRadarMode,
     radarSiteId3: selectedRadarId3,
-    localMinZoom: stormMode ? 10.5 : 12,
-    ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
+    localMinZoom: 12,
+    ridgeMinZoom: stationRadarMode ? 2 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
     playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,

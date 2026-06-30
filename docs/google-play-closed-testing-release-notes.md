@@ -1,44 +1,44 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.140**
-Android version code: **10157**
+Release: **OMNIwx Alpha 1.1.141**
+Android version code: **10158**
 Track: **Closed testing / internal testing candidate**
 Date: **June 29, 2026**
 
 ## Play Console Paste Notes
 
-Maps controls are safer and less sticky: Storm Scope now turns off cleanly, changing map modes clears Storm Scope state correctly, and the zoom buttons now zoom the current map camera only without forcing the map back to the selected city or GPS location.
+Maps radar behavior is restored: Weather mode now uses the national radar mosaic again, Storm Scope no longer forces the map to the nearest NEXRAD site, and zoomed-in NEXRAD enhancement remains limited to normal Weather mode.
 
 ## Tester Notes
 
-This build is a focused Maps control stability pass.
+This build is a focused Maps radar restoration pass.
 
 ### What Changed
 
-- Fixed Storm Scope so it can be turned off from both the Radar and Storm Scope views.
-- Switching out of Storm Scope now clears the sticky Storm Scope radar state.
-- Reworked the map zoom buttons so they call native camera zoom only.
-- Zoom buttons no longer use the saved city, selected place, GPS location, or forecast region as the zoom anchor.
-- Kept explicit recentering limited to the location button and intentional feature focus actions.
+- Restored Weather mode to the IEM national radar mosaic path.
+- Storm Scope is now treated as a layer preset/workflow, not as forced nearest-site radar.
+- Storm Scope no longer centers the camera on the nearest radar station.
+- Automatic nearest-NEXRAD enhancement is preserved for normal Weather mode when zoomed in.
+- Kept manual station radar behavior available only when explicitly selected.
 
 ### What To Test
 
-- Open Maps, enable Storm Scope, then turn it off and confirm the map returns to normal Radar mode.
-- Switch from Storm Scope to another map mode and confirm Storm Scope does not remain stuck.
-- Pan away from the selected city and use zoom in/out; the map should zoom in place and should not snap back to the city.
-- Tap the location button and confirm that explicit recenter still works.
-- Confirm normal layer controls, radar playback, map panning, and feature taps still behave normally.
+- Open Maps in Weather mode and confirm national radar is visible before entering Storm Scope.
+- Zoom in while still in Weather mode and confirm local NEXRAD enhancement appears when available.
+- Enter Storm Scope and confirm the camera does not jump to the nearest radar station.
+- Pan/zoom in Storm Scope and confirm the map stays where the user moved it.
+- Confirm manual station radar still works when deliberately selected.
 
 ### Known Watch Areas
 
 - The location button is still intentionally allowed to recenter the map.
-- Feature focus actions, such as route focus and station radar focus, may still intentionally move the camera.
-- If Maps snaps back without tapping locate or a feature, include the active mode/layers and whether Storm Scope was active.
+- Manual station radar and feature focus actions may still intentionally move the camera.
+- If national radar is missing, include the active mode, zoom level, and whether Weather or Storm Scope was active.
 
 ## Internal Release Checklist
 
-- App version: `1.1.140`
-- Android version code: `10157`
+- App version: `1.1.141`
+- Android version code: `10158`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat :app:bundleRelease --console=plain`
