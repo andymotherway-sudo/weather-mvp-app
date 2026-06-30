@@ -19,7 +19,7 @@ const STATIONS_URL =
 const CACHE_KEY = 'omniwx:ghcn:stations:v1';
 const CACHE_META_KEY = 'omniwx:ghcn:stations:v1:meta';
 
-// Reasonable defaults for MVP:
+// Station search defaults favor nearby, recently active observing sites.
 const MAX_CACHE_AGE_DAYS = 90; // refresh quarterly
 
 // Fetch policy

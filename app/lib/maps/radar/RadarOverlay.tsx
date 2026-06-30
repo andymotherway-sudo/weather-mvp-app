@@ -15,7 +15,7 @@ function hashTemplate(s: string) {
 }
 
 /**
- * RadarOverlay (drop-in, backwards compatible)
+ * RadarOverlay keeps radar rendering isolated from the map screen shell.
  *
  * Key changes vs your version:
  * - Always use LINEAR resampling for radar (prevents “minecraft” blocks)
@@ -62,9 +62,7 @@ export function RadarOverlay(props: {
     clamp01(opacityB) > 0.01 &&
     (!playing || allowCrossfadeWhilePlaying);
 
-  const bOpacity = shouldRenderB ? clamp01(opacityB) : 0;
-
-  // ✅ For radar, linear is the right default (nearest => pixel blocks)
+  const bOpacity = shouldRenderB ? clamp01(opacityB) : 0;  // Linear filtering avoids chunky pixels while preserving radar detail.
   const rasterResampling: 'linear' | 'nearest' = 'linear';
 
   const aHash = useMemo(() => hashTemplate(String(templateA ?? '')), [templateA]);

@@ -3,9 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type DayContext = {
-  date: string; // YYYY-MM-DD
-
-  // ✅ NEW: observed highs/lows (F)
+  date: string; // YYYY-MM-DD  // Observed high/low values are normalized to Fahrenheit for almanac comparison.
   tempMaxF: number | null;
   tempMinF: number | null;
 
@@ -20,7 +18,7 @@ type DayContext = {
   fetchedAtIso: string;
 };
 
-const KEY_PREFIX = 'omniwx:dayctx:v2'; // ✅ bump version due to schema change
+const KEY_PREFIX = 'omniwx:dayctx:v2';
 const TTL_MS = 24 * 60 * 60 * 1000; // 24h (safe for history)
 
 function keyFor(lat: number, lon: number, date: string) {
@@ -113,8 +111,7 @@ export function useOpenMeteoDayContext({
           }
         }
 
-        // Open-Meteo archive endpoint (historical hourly)
-        // ✅ Add temperature_2m so we can compute observed high/low.
+        // Open-Meteo archive endpoint (historical hourly)        // Include hourly temperature so observed high/low can be computed locally.
         const hourlyVars = ['temperature_2m', 'cloudcover', 'windspeed_10m', 'wind_gusts_10m', 'precipitation'].join(
           ','
         );
@@ -124,7 +121,7 @@ export function useOpenMeteoDayContext({
           `?latitude=${latKey}&longitude=${lonKey}` +
           `&start_date=${date}&end_date=${date}` +
           `&hourly=${hourlyVars}` +
-          `&temperature_unit=fahrenheit` + // ✅ IMPORTANT
+          `&temperature_unit=fahrenheit` +
           `&wind_speed_unit=mph` +
           `&timezone=auto`;
 

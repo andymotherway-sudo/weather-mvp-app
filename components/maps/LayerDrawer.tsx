@@ -8,9 +8,7 @@ import { LayerSheet } from './LayerSheet';
 export function LayerDrawer(props: {
   state: MapRuntimeState;
   onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
-  onSetOpacity: (layerId: LayerId, opacity: number) => void;
-
-  // optional: wire these later if you add a legend/source modal
+  onSetOpacity: (layerId: LayerId, opacity: number) => void;  // Reserved callbacks for future legend and source-detail actions.
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
 }) {

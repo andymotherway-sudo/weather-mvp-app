@@ -16,7 +16,7 @@ type RainViewerMapsResponse = {
 // returns an empty array, while weather-maps.json contains the live radar paths.
 const MAPS_JSON = 'https://api.rainviewer.com/public/weather-maps.json';
 
-// ✅ Your Cloudflare Worker base (RainViewer tiles are proxied/cached here)
+// RainViewer tiles are proxied through the Worker for caching and consistent CORS behavior.
 const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 function toFrame(t: number): RadarFrame {
@@ -86,12 +86,10 @@ export function createRainViewerProvider(opts?: {
     return { frames, host, paths };
   }
 
-  /**
-   * ✅ Worker-based tile template:
+  /**   * Worker-based tile template:
    *   /v1/radar/rainviewer/tiles/{z}/{x}/{y}.png?ts=UNIX&size=512&color=2&smooth=1&snow=1
    *
-   * Note: We do NOT need RainViewer host/path here — the Worker fetches by ts.
-   * We still keep cachedHost/cachedPaths to preserve structure + debugging continuity.
+   * Note: We do NOT need RainViewer host/path here — the Worker fetches by ts.   * cachedHost and cachedPaths are retained for compatibility with existing frame consumers.
    */
   function workerTileTemplateForTs(ts: number) {
     const qs =

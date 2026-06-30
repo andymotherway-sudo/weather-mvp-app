@@ -54,9 +54,7 @@ export type ForecastDay = {
 
 export type ForecastData = {
   daily: ForecastDay[];
-  hourly: ForecastHour[];
-
-  // ✅ timezone metadata from Open-Meteo
+  hourly: ForecastHour[];  // Preserve provider timezone metadata so UI labels match the selected location.
   timezone?: string | null;
   timezoneAbbreviation?: string | null;
   utcOffsetSeconds?: number | null;
@@ -229,9 +227,7 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         if (pastDays > 0) params.set('past_days', String(pastDays));
         const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
 
-        console.log('[net] requesting:', url);
         const res = await fetchWithTimeout(url, 12000, { signal: ac.signal });
-        console.log('[net] status:', res.status, url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
@@ -258,8 +254,8 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
               if (typeof row?.time === 'string') aqByTime.set(row.time, row);
             }
           }
-        } catch (aqErr) {
-          if (!ac.signal.aborted) console.warn('AQI hourly unavailable', aqErr);
+        } catch {
+          // AQI is optional enrichment; keep the weather forecast usable when it fails.
         }
 
         // ---- Hourly parse ----
@@ -402,7 +398,6 @@ export function useOpenMeteoForecast(arg: OpenMeteoForecastArg = 3): ForecastSta
         });
       } catch (err: any) {
         if (err?.name === 'AbortError' || ac.signal.aborted || requestId !== requestIdRef.current) return;
-        console.error('useOpenMeteoForecast error', err);
         setError(err?.message ?? 'Failed to load forecast');
       } finally {
         if (requestId === requestIdRef.current && abortRef.current === ac) {

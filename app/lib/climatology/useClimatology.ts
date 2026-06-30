@@ -29,8 +29,7 @@ export type NormalsSummary = {
 const BASE = 'https://www.ncei.noaa.gov/access/services/data/v1';
 
 // Dataset name is discoverable via the API and commonly used as below.
-// If NOAA ever changes it, you can discover datasets via the search service,
-// but this is a solid MVP default.
+// NOAA normals dataset ids are stable, but the search service can rediscover them if NOAA changes naming.
 const DATASET = 'normals-monthly-1991-2020';
 
 type NceiRow = Record<string, string>;
@@ -83,8 +82,7 @@ export async function fetchMonthlyNormals(stationId: string): Promise<MonthlyNor
     dataTypes: [DT_TAVG, DT_TMAX, DT_TMIN, DT_PRCP].join(','),
     format: 'json',
     includeAttributes: 'false',
-    // Many normals datasets return one row per month.
-    // If needed later, you can add startDate/endDate, but normals are climatological monthly values.
+    // Many normals datasets return one row per month.    // Normals are climatological monthly values, so start/end dates are intentionally omitted.
   });
 
   const res = await fetch(url);

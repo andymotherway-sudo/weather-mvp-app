@@ -1,20 +1,4 @@
-//
-// Drop-in replacement for your current useRadarController.
-//
-// Focus of this version:
-// - Keeps your smoother / less-blocky worker WMS path
-// - Keeps unified IEM + RainViewer provider handling
-// - Improves playback smoothness by:
-//   1) freezing the animation playlist while playback is running
-//   2) only swapping in fresh live frames/templates at safe edges
-//   3) preserving the displayed timestamp when a new playlist is promoted
-//   4) prewarming upcoming frames before they become visible
-//
-// Assumptions (matches your codebase):
-// - types: RadarOverlay, Region come from components/maps/MapRenderer
-// - state, actions, runtime types come from app/lib/maps/state + types
-// - iemNationalMosaicTimestamps / resolveIemFrames live in ./radarIem
-// - RainViewer provider exists at ./radar/providers/rainviewer
+// Radar controller coordinates provider frames, playback state, and product selection.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, PixelRatio } from 'react-native';

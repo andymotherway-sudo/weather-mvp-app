@@ -4,7 +4,7 @@
 
 Audience: this is written for someone who can write a basic Python `hello world`, understands simple variables/functions, and has some basic SQL experience. You do not need to already know React Native, Expo, TypeScript, or mobile app architecture.
 
-Last updated: June 29, 2026
+Last updated: June 30, 2026
 
 Personal note: this file is meant to be Andy's private working guide. It explains the product and codebase in more detail than a public README should, including intent, mental models, and implementation notes that are useful while building OMNIwx.
 
@@ -71,6 +71,11 @@ If you know SQL, think of the app as having a few “tables” of state:
 React components read those state “tables” and render the UI.
 
 ---
+
+
+### Code hygiene and developer comments
+
+Comments should explain durable intent: why a fallback exists, why a provider is optional, why a cache key is versioned, or why map/radar state is constrained. Avoid commit-history comments such as "new", "drop-in", "MVP", or notes to self. Debug logging should not ship in React Native app, Worker, or Android Auto paths unless it is intentionally guarded and documented. CLI scripts may still print progress because those messages are the script UI.
 
 ## 2. Vocabulary You Need Before Reading the Code
 
@@ -1921,8 +1926,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.142`.
-- Android version code: `10159`.
+- App version: `1.1.143`.
+- Android version code: `10160`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.

@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
-import { useWxLab } from '../../app/context/WxLabContext'; // adjust relative path if needed
+import { useWxLab } from '../../app/context/WxLabContext';
 import { getTypography } from '../../styles/typography';
 import { PremiumWeatherIcon } from '../weather/PremiumWeatherIcon';
 
@@ -90,7 +90,7 @@ function todayISODateLocal() {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-// ✅ IMPORTANT: parse yyyy-mm-dd as LOCAL midnight (not UTC)
+// Parse daily forecast dates in local time so day labels do not drift across UTC boundaries.
 function parseISODateLocal(dateISO: string) {
   const y = Number(dateISO.slice(0, 4));
   const m = Number(dateISO.slice(5, 7));
@@ -227,8 +227,6 @@ export function DailyRangeChart({
   const padX = isLandscape ? 12 : 14;
   const n = Math.max(1, data.length);
   const contentW = padX * 2 + n * TILE_W + (n - 1) * GAP;
-
-  // ✅ Fix: svg width matches inner content width
   const W = contentW - padX * 2;
   const H = chartHeight ?? (isLandscape ? Math.max(250, Math.min(height - 116, 360)) : 382);
 
@@ -499,7 +497,7 @@ export function DailyRangeChart({
           {/* Chart */}
           <View style={{ marginTop: CHART_TOP_OFFSET, paddingBottom: CHART_BOTTOM_OFFSET }}>
             <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-              {/* TEMP axis grid + labels (left) */}
+              {/* Temperature axis grid and labels. */}
               {tempTickTemps.map((tk, idx) => (
                 <G key={`t-yt-${idx}`}>
                   <Line x1={padL} x2={W - padR} y1={tk.y} y2={tk.y} stroke={C.grid} strokeWidth={1} />
@@ -770,7 +768,7 @@ export function DailyRangeChart({
                 </>
               ) : null}
 
-              {/* ✅ Wind direction markers (meteorological FROM) centered over each day */}
+              {/* Wind direction markers use meteorological from degrees and align with each day. */}
               {data.map((d, i) => {
                 const degFrom = d.windDirDominantDeg;
                 if (typeof degFrom !== 'number') return null;

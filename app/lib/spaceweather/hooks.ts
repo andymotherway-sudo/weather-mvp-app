@@ -24,7 +24,6 @@ export function useSpaceWeatherSummary(enabled = true) {
       const result = await fetchSpaceWeatherSummary();
       setData(result);
     } catch (err: any) {
-      console.error('Error loading solar data', err);
       setError(err?.message ?? 'Error loading solar data');
     } finally {
       setLoading(false);

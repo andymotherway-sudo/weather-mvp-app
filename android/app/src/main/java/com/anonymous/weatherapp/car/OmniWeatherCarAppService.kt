@@ -634,7 +634,6 @@ private class CarRadarSurfaceRenderer(
         }
         oldTiles.forEach { runCatching { it.bitmap.recycle() } }
       } catch (e: Exception) {
-        android.util.Log.w("OMNIwxCar", "Radar snapshot failed", e)
         synchronized(tileLock) { radarError = friendlyCarError(e) }
       } finally {
         fetchInFlight.set(false)

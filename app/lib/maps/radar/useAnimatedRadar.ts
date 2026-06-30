@@ -30,9 +30,7 @@ export function useAnimatedRadar(opts: UseAnimatedRadarOptions = {}) {
   } = opts;
 
   const [frameIndex, setFrameIndex] = useState(0);
-  const [front, setFront] = useState<RadarFront>('A');
-
-  // NEW: runtime controls
+  const [front, setFront] = useState<RadarFront>('A');  // Runtime playback controls are owned by the map timeline UI.
   const [isPlaying, setIsPlaying] = useState(enabled);
   const [speedMs, setSpeedMs] = useState(intervalMs);
 
@@ -113,8 +111,7 @@ export function useAnimatedRadar(opts: UseAnimatedRadarOptions = {}) {
   }
 
   setFrameIndex(idx);
-}
-  // NEW: use isPlaying + speedMs so caller can pause/change speed live
+}  // Playback state and speed update live from the caller.
   useEffect(() => {
     if (!isPlaying) return;
     if (frames.length < 2) return;
@@ -152,9 +149,7 @@ export function useAnimatedRadar(opts: UseAnimatedRadarOptions = {}) {
     front,
 
     frameIndex,
-    frames,
-
-    // NEW controls
+    frames,    // Expose timeline controls for map chrome and recording.
     isPlaying,
     setIsPlaying,
     speedMs,

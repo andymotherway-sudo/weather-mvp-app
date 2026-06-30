@@ -1,5 +1,5 @@
 // app/lib/maps/timeline.ts
-// Radar timeline helpers. For MVP, we generate synthetic frames at fixed intervals.
+// Radar timeline helpers for providers that expose a latest frame but no full timeline.
 // Later: replace with real timestamps returned by your radar provider.
 
 export type RadarFrame = {
@@ -48,8 +48,7 @@ export function prevFrameIndex(current: number, frameCount: number): number {
   return (c - 1 + frameCount) % frameCount;
 }
 
-export function formatRadarFrameLabel(iso: string): string {
-  // MVP: "HH:MM" local time
+export function formatRadarFrameLabel(iso: string): string {  // Display local HH:MM labels for timeline ticks.
   try {
     const d = new Date(iso);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

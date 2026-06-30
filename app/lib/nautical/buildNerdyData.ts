@@ -453,9 +453,7 @@ export function buildNerdyData({
 
     mechanics,
     windWave,
-    model,
-
-    // ✅ NEW: fields your Nautical nerdy card is already trying to show
+    model,    // Derived fields consumed by the Nautical wxLab summary cards.
     // If your NerdyData type doesn't include these yet, add them there too.
     tallestSetM: tallestSetM ?? undefined,
     primaryHazard,

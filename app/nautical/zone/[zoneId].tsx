@@ -58,16 +58,16 @@ export default function NauticalZoneDetailScreen() {
             {loading && (
               <View style={{ marginTop: 10 }}>
                 <ActivityIndicator />
-                <Text style={{ color: '#94a3b8', marginTop: 8 }}>Loading official forecast…</Text>
+                <Text style={{ color: '#94a3b8', marginTop: 8 }}>Loading official forecast...</Text>
               </View>
             )}
 
-            {/* ✅ only show red for real errors */}
+            {/* Error styling is reserved for provider failures. */}
             {!!error && status === 'error' && (
               <Text style={{ color: '#fb7185', marginTop: 10 }}>{error}</Text>
             )}
 
-            {/* ✅ neutral “not available” message */}
+            {/* Unsupported zones use neutral copy so they do not look broken. */}
             {!forecast && !loading && status === 'not_available' && (
               <Text style={{ color: '#cbd5e1', marginTop: 10, lineHeight: 18 }}>
                 No official bulletin for this area. Showing model-based marine conditions elsewhere in Nautical Wx.

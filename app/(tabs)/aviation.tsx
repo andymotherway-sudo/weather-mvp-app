@@ -90,6 +90,20 @@ const str = (...xs: any[]) => {
   for (const x of xs) if (typeof x === 'string' && x.trim()) return x.trim();
   return null;
 };
+const looseNum = (...xs: any[]) => {
+  for (const x of xs) {
+    const direct = num(x);
+    if (direct != null) return direct;
+    if (typeof x === 'string') {
+      const match = x.trim().match(/^-?\d+(?:\.\d+)?/);
+      if (match) {
+        const parsed = Number(match[0]);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+  return null;
+};
 const fmt = (v: number | null | undefined, s = '', d = 0) =>
   v == null || !Number.isFinite(v) ? '--' : `${v.toFixed(d)}${s}`;
 const milesFromMaybeMeters = (v: number | null) =>
@@ -447,7 +461,7 @@ async function fetchNearestMetarStation(lat: number, lon: number): Promise<Stop 
 const metarRaw = (row: any) => str(row?.rawOb, row?.raw_text, row?.raw, row?.metar, row?.observation);
 const tafRaw = (row: any) => str(row?.rawTAF, row?.raw_text, row?.raw, row?.taf);
 const visibilityMiles = (row: any) => {
-  const direct = num(row?.visib, row?.visibility, row?.visibility_statute_mi, row?.visibility_mi, row?.vis);
+  const direct = looseNum(row?.visib, row?.visibility, row?.visibility_statute_mi, row?.visibility_mi, row?.vis);
   if (direct != null) return direct;
   const meters = num(row?.visibility_meters, row?.visibility_m);
   return meters == null ? null : meters / 1609.344;
@@ -469,7 +483,7 @@ const ceilingFeet = (row: any) => {
   return cloudBases.length ? Math.min(...cloudBases) : null;
 };
 const flightCat = (row: any) => {
-  const direct = str(row?.flight_category, row?.flightCategory, row?.category);
+  const direct = str(row?.fltCat, row?.flight_category, row?.flightCategory, row?.flight_rules, row?.category);
   if (direct) return direct;
   const vis = visibilityMiles(row);
   const ceil = ceilingFeet(row);

@@ -83,16 +83,14 @@ export function useNoaaTides(stationId: string | undefined) {
       setGeneratedAt(null);
       setLoading(false);
       return;
-    }
-
-    // ✅ New local const with narrowed type
+    }    // Narrow to a concrete station id before fetching tide predictions.
     const id = stationId; // type: string
 
     async function load() {
       try {
         setError(null);
         setLoading(true);
-        const result = await fetchTodayTides(id); // ✅ id is string here
+        const result = await fetchTodayTides(id);
         setPredictions(result.predictions);
         setGeneratedAt(result.generatedAt);
       } catch (e: any) {

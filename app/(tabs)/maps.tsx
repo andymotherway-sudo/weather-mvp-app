@@ -1263,6 +1263,7 @@ export default function MapsScreen() {
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [stormProductMode, setStormProductMode] = useState(false);
+  const [nearestProductMode, setNearestProductMode] = useState(false);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
@@ -1418,9 +1419,14 @@ export default function MapsScreen() {
     !manualStationRadarMode &&
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+  useEffect(() => {
+    if (!autoNearestRadarMode) setNearestProductMode(false);
+  }, [autoNearestRadarMode]);
   const stationRadarMode = (manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
   const stormProductRadarMode = stormMode && stormProductMode && localRadarAvailable;
-  const productRadarMode = stationRadarMode || stormProductRadarMode;
+  const nearestProductRadarMode = autoNearestRadarMode && nearestProductMode && localRadarAvailable;
+  const productRadarMode = (manualStationRadarMode || nearestProductRadarMode || stormProductRadarMode) && localRadarAvailable;
+  const radarSiteContextMode = stationRadarMode || stormProductRadarMode;
   const showAdvancedRadarControls = (manualStationRadarMode || autoNearestRadarMode || stormMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
@@ -1436,18 +1442,25 @@ export default function MapsScreen() {
     return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
   }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(productRadarMode ? selectedRadarSite : null), [
-    productRadarMode,
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(radarSiteContextMode ? selectedRadarSite : null), [
+    radarSiteContextMode,
     selectedRadarSite,
   ]);
   const product: RadarProductId = showAdvancedRadarControls
     ? stormMode && !stormProductMode
       ? 'N0Q'
-      : stationProduct
-    : stationRadarMode
-      ? 'N0B'
-      : 'N0Q';
-  const effectiveRadarProvider = productRadarMode ? 'iem' : 'rainviewer';
+      : autoNearestRadarMode && !nearestProductMode
+        ? 'N0Q'
+        : stationProduct
+    : 'N0Q';
+  const highZoomNationalRadarMode =
+    radarEnabled &&
+    localRadarAvailable &&
+    !productRadarMode &&
+    product === 'N0Q' &&
+    mapZoom >= AUTO_NEXRAD_MIN_ZOOM &&
+    (autoNearestRadarMode || stormMode);
+  const effectiveRadarProvider = productRadarMode || highZoomNationalRadarMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&
@@ -1965,7 +1978,7 @@ export default function MapsScreen() {
     stationMode: productRadarMode,
     radarSiteId3: selectedRadarId3,
     localMinZoom: 12,
-    ridgeMinZoom: productRadarMode ? 2 : 8.6,
+    ridgeMinZoom: productRadarMode ? 2 : 99,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
     playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
@@ -1990,19 +2003,21 @@ export default function MapsScreen() {
         : stationProductUnavailable
           ? 'source unavailable'
           : 'loading station scans';
-  const stormNationalRadarMode = stormMode && !stormProductMode;
+  const nationalRadarProductMode = (stormMode && !stormProductMode) || (autoNearestRadarMode && !nearestProductMode);
   const radarProductPanelEyebrow = stormMode ? 'STORM SCOPE' : autoNearestRadarMode ? 'NEAREST NEXRAD' : 'RADAR PRODUCT';
-  const radarProductPanelTitle = stormNationalRadarMode
+  const radarProductPanelTitle = nationalRadarProductMode
     ? 'National radar mosaic'
     : selectedRadarSite
       ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
       : 'Selecting nearest radar';
-  const radarProductPanelMeta = stormNationalRadarMode
-    ? 'Animated national radar / choose a product below for single-site scans'
+  const radarProductPanelMeta = nationalRadarProductMode
+    ? autoNearestRadarMode && selectedRadarSite
+      ? `Nearest site ${getStationDisplayId(selectedRadarSite)} is ready / choose a product below for single-site scans`
+      : 'Animated national radar / choose a product below for single-site scans'
     : `${selectedRadarDistanceMi != null ? `${Math.round(selectedRadarDistanceMi)} mi from map center` : 'Distance pending'} / ${
         stationProductLoading ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans` : stationProductSourceLabel
       }`;
-  const radarProductPanelStatus = stormNationalRadarMode
+  const radarProductPanelStatus = nationalRadarProductMode
     ? activeFrameIso
       ? `Radar ${formatFrameAge(activeFrameIso)}`
       : 'National radar'
@@ -3988,7 +4003,7 @@ export default function MapsScreen() {
             onPress={handleWeatherAlertPress}
           />
 
-          {productRadarMode && selectedRadarSite ? (
+          {radarSiteContextMode && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
               <MapLibreGL.LineLayer
                 id="radar-station-rings"
@@ -4899,7 +4914,7 @@ export default function MapsScreen() {
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.stationCollapsedEyebrow}>{radarProductPanelEyebrow}</Text>
                     <Text style={styles.stationCollapsedTitle} numberOfLines={1}>
-                      {stormNationalRadarMode ? radarProductPanelTitle : `${radarProductPanelTitle} - ${radarProductMeta.legendTitle}`}
+                      {nationalRadarProductMode ? radarProductPanelTitle : `${radarProductPanelTitle} - ${radarProductMeta.legendTitle}`}
                     </Text>
                     <Text style={styles.stationCollapsedMeta} numberOfLines={1}>
                       {radarProductPanelStatus}
@@ -4957,7 +4972,7 @@ export default function MapsScreen() {
                   <Text style={styles.legendCardMeta}>
                     {autoNearestRadarMode && selectedRadarSite
                       ? `Nearest radar site ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
-                      : stormNationalRadarMode
+                      : nationalRadarProductMode
                       ? 'Animated national radar mosaic. Choose a single-site product below when you want NEXRAD detail.'
                       : effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
@@ -4979,7 +4994,10 @@ export default function MapsScreen() {
                       <Text style={styles.stationMeta}>{radarProductPanelMeta}</Text>
 
                       <View style={styles.stationProductGrid}>
-                        {(stormMode ? STATION_RADAR_PRODUCTS : STATION_RADAR_PRODUCTS.filter((option) => option.id !== 'N0Q')).map((item) => {
+                        {(stormMode || autoNearestRadarMode
+                          ? STATION_RADAR_PRODUCTS
+                          : STATION_RADAR_PRODUCTS.filter((option) => option.id !== 'N0Q')
+                        ).map((item) => {
                           const active = product === item.id;
                           const loading = active && stationProductLoading;
                           return (
@@ -4993,9 +5011,11 @@ export default function MapsScreen() {
                                 }
                                 if (item.id === 'N0Q') {
                                   setStormProductMode(false);
+                                  setNearestProductMode(false);
                                 } else {
                                   setStationProduct(item.id as RadarProductId);
                                   if (stormMode) setStormProductMode(true);
+                                  if (autoNearestRadarMode) setNearestProductMode(true);
                                 }
                                 dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
                               }}

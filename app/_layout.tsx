@@ -11,7 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppBoot } from '../components/boot/AppBoot';
 import { AlmanacWarmupProvider } from '../components/boot/AlmanacWarmup';
 
-// ✅ NEW: app-wide locations provider (last-known coords + GPS warmup)
+// App-wide place state, last-known coordinates, and location warmup.
 import { LocationsProvider } from './lib/locations/useLocations';
 
 import { PlaceProvider } from './context/PlaceContext';
@@ -56,7 +56,6 @@ export default function RootLayout() {
       <SafeAreaProvider>
       <SettingsProvider>
         <AppChromeFrame>
-        {/* ✅ replaces LocationProvider */}
         <LocationsProvider>
           <PlaceProvider>
             <WxLabProvider>

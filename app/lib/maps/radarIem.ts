@@ -301,7 +301,7 @@ async function fetchRidgeWithProductFallback(args: {
   return { tsList: [] as string[], product: preferred };
 }
 
-// ✅ try multiple nearby radars until one has RIDGE scans
+// Try multiple nearby radars until one has usable RIDGE scans.
 async function findBestRidgeRadar(args: {
   lat: number;
   lon: number;
@@ -339,9 +339,7 @@ async function findBestRidgeRadar(args: {
     .filter((s) => isFiniteNumber(s.lat) && isFiniteNumber(s.lon))
     .filter((s) => {
       const id = String(s.id ?? '').trim().toUpperCase();
-      if (!id || id.length < 3) return false;
-
-      // ✅ RIDGE is for WSR-88D (NEXRAD) sites; exclude TDWR (TMIA, TTPA, etc.)
+      if (!id || id.length < 3) return false;      // RIDGE is for WSR-88D NEXRAD sites; TDWR identifiers do not provide these scans.
       const owner = String(s.ownerType ?? '').trim().toUpperCase();
       return owner === 'NEXRAD';
     })

@@ -52,7 +52,6 @@ export function useNauticalSummary(
       if (requestId === requestIdRef.current) setData(result);
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
-      console.error('Error loading nautical data', err);
       setError(
         err instanceof Error ? err.message : 'Error loading nautical data',
       );

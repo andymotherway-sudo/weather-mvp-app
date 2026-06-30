@@ -38,8 +38,8 @@ async function fetchTidePredictions(
       station: stationId,
       product: 'predictions',
       datum: 'MLLW',
-      interval: 'hilo',        // high/low tides
-      time_zone: 'lst_ldt',    // local standard / daylight
+      interval: 'hilo',
+      time_zone: 'lst_ldt',
       units: 'english',
       format: 'json',
       begin_date: today,
@@ -48,10 +48,7 @@ async function fetchTidePredictions(
 
     const res = await fetch(`${NOAA_TIDES_BASE}?${params.toString()}`);
 
-    if (!res.ok) {
-      console.warn('NOAA tides response not ok', res.status);
-      throw new Error('NOAA tides not ok');
-    }
+    if (!res.ok) throw new Error('NOAA tides not ok');
 
     const json = await res.json();
     const rawPreds = Array.isArray(json.predictions)
@@ -59,9 +56,9 @@ async function fetchTidePredictions(
       : [];
 
     const predictions: TidePrediction[] = rawPreds.map((p: any) => ({
-      time: new Date(p.t).toISOString(),        // p.t is local time string
-      type: p.type === 'H' ? 'H' : 'L',         // H / L
-      height: parseFloat(p.v),                  // height in feet (already english)
+      time: new Date(p.t).toISOString(),
+      type: p.type === 'H' ? 'H' : 'L',
+      height: parseFloat(p.v),
     }));
 
     return {
@@ -70,10 +67,8 @@ async function fetchTidePredictions(
       longitude: station.longitude,
       predictions,
     };
-  } catch (err) {
-    console.error('Error fetching real tide predictions, using fallback', err);
-
-    // 🔁 Fallback to your old mock so the UI never breaks
+  } catch {
+    // Keep the tide card usable for stations without NOAA predictions or during provider outages.
     const baseDate = new Date(yyyy, now.getMonth(), now.getDate());
     const makeTime = (hours: number) =>
       new Date(baseDate.getTime() + hours * 60 * 60 * 1000).toISOString();
@@ -129,10 +124,7 @@ async function fetchMarineConditions(
     const url = `https://marine-api.open-meteo.com/v1/marine?${params.toString()}`;
     const res = await fetch(url);
 
-    if (!res.ok) {
-      console.warn('Marine API response not ok', res.status);
-      return null;
-    }
+    if (!res.ok) return null;
 
     const json = await res.json();
     const hourly = json.hourly;
@@ -182,8 +174,7 @@ async function fetchMarineConditions(
     };
 
     return conditions;
-  } catch (err) {
-    console.error('Error fetching marine conditions', err);
+  } catch {
     return null;
   }
 }
@@ -218,10 +209,7 @@ async function fetchFallbackWindConditions(
     const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
     const res = await fetch(url);
 
-    if (!res.ok) {
-      console.warn('Fallback wind API response not ok', res.status);
-      return null;
-    }
+    if (!res.ok) return null;
 
     const json = await res.json();
     const hourly = json.hourly;
@@ -253,8 +241,7 @@ async function fetchFallbackWindConditions(
       observedAt,
       source: 'Open-Meteo Forecast',
     };
-  } catch (err) {
-    console.error('Error fetching fallback wind conditions', err);
+  } catch {
     return null;
   }
 }
@@ -266,8 +253,7 @@ export async function fetchNauticalSummary(
 ): Promise<NauticalSummary> {
 
   const stationId = station.id;
-
-  // ✅ No default coords. If station doesn't have coords, we won't fetch conditions.
+  // Do not invent marine conditions when the selected station has no coordinates.
   const hasCoords =
     typeof station.latitude === 'number' &&
     Number.isFinite(station.latitude) &&

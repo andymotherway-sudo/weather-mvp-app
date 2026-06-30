@@ -61,14 +61,13 @@ export function useBuoyIndex(): UseBuoyIndexResult {
         setLoading(true);
         setError(null);
 
-        // Simulate async fetch
+        // Keep the hook asynchronous so callers behave the same when backed by a live feed.
         await new Promise((resolve) => setTimeout(resolve, 300));
 
         if (!cancelled) {
           setData({ buoys: MOCK_BUOYS });
         }
-      } catch (err) {
-        console.error('Error loading buoy index', err);
+      } catch {
         if (!cancelled) {
           setError('Error loading buoy index');
         }

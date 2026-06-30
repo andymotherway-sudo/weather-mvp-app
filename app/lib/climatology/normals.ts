@@ -5,7 +5,7 @@ import { ClimoError } from './types';
 
 /**
  * Monthly normals (temperature) from NORMAL_MLY (CDO API).
- * ✅ Worker-proxied: token is optional (Worker holds the token).
+ * Worker-proxied so NOAA credentials stay server-side.
  */
 export async function fetchMonthlyTempNormalsF(
   stationId: string,
@@ -127,7 +127,7 @@ export async function fetchMonthlyTempNormalsF(
 
 /**
  * Monthly precip normals (inches) from NORMAL_MLY (CDO API).
- * ✅ Worker-proxied: token is optional (Worker holds the token).
+ * Worker-proxied so NOAA credentials stay server-side.
  */
 export async function fetchMonthlyPrecipNormalsIn(
   stationId: string,

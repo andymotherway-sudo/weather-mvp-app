@@ -88,11 +88,11 @@ async function fetchJson<T>(url: string, label: string): Promise<T> {
   }
 }
 
-async function safeOptional<T>(fn: () => Promise<T>, label: string): Promise<T | null> {
+async function safeOptional<T>(fn: () => Promise<T>, _label: string): Promise<T | null> {
   try {
     return await fn();
-  } catch (err) {
-    console.warn(`[spaceweather] optional source failed: ${label}`, err);
+  } catch {
+    // Optional feeds enrich the dashboard, but the core space weather summary should still render without them.
     return null;
   }
 }
@@ -156,7 +156,6 @@ async function loadPlasmaWithFallbacks(): Promise<PlasmaData> {
       return { speed, density, temperature, time: timeRaw, history };
     } catch (err) {
       lastError = err;
-      console.warn('[spaceweather] plasma source failed', url, err);
     }
   }
 
@@ -194,7 +193,6 @@ async function loadMagWithFallbacks(): Promise<MagData> {
       return { time: timeRaw, bzGsmNt: bz, btNt: bt };
     } catch (err) {
       lastError = err;
-      console.warn('[spaceweather] mag source failed', url, err);
     }
   }
 
@@ -251,8 +249,8 @@ async function loadKpWithFallbacks(): Promise<KpSample> {
     const parsed = tryParse(table);
     if (parsed) return parsed;
     throw new Error('Unable to parse observed Kp');
-  } catch (err) {
-    console.warn('[spaceweather] primary Kp source failed', err);
+  } catch {
+    // Fall back to the forecast Kp feed when the observed table is temporarily unavailable.
   }
 
   try {
@@ -260,8 +258,8 @@ async function loadKpWithFallbacks(): Promise<KpSample> {
     const parsed = tryParse(table);
     if (parsed) return parsed;
     throw new Error('Unable to parse forecast Kp');
-  } catch (err) {
-    console.warn('[spaceweather] forecast Kp source failed', err);
+  } catch {
+    // If both Kp sources fail, surface the hard failure below so callers can show an error state.
   }
 
   throw new Error('All Kp sources failed');
@@ -450,8 +448,7 @@ async function fetchMaxKp24h(): Promise<number | null> {
     }
 
     return max;
-  } catch (e) {
-    console.warn('[spaceweather] maxKp24h failed', e);
+  } catch {
     return null;
   }
 }
@@ -482,8 +479,8 @@ async function fetchMaxWindSpeed24h(): Promise<number | null> {
       }
 
       if (max != null) return max;
-    } catch (e) {
-      console.warn('[spaceweather] maxWindSpeed24h source failed', url, e);
+    } catch {
+      // Try the next SWPC plasma mirror before giving up on this optional extreme.
     }
   }
 
@@ -495,9 +492,7 @@ async function fetchFastestCme30d(): Promise<{ startTime?: string; speedKms: num
   const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
 
   const startDate = isoDate(start);
-  const endDate = isoDate(end);
-
-  // ✅ Use Worker proxy (NASA key is private server-side)
+  const endDate = isoDate(end);  // DONKI requests go through the Worker so the NASA key stays server-side.
   const url = apiUrl(`/api/nasa/donki/CME?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 
   type DonkiCmeAnalysis = { isMostAccurate?: boolean; speed?: number };
@@ -527,8 +522,7 @@ async function fetchFastestCme30d(): Promise<{ startTime?: string; speedKms: num
       speedKms: bestSpeed != null ? Math.round(bestSpeed) : null,
       cmeId: bestId,
     };
-  } catch (e) {
-    console.warn('[spaceweather] fastestCme30d failed', e);
+  } catch {
     return { speedKms: null };
   }
 }
@@ -639,8 +633,8 @@ export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
   if (API_BASE) {
     try {
       return await fetchSpaceWeatherSummaryFromWorker();
-    } catch (err) {
-      console.warn('[spaceweather] worker summary failed; falling back to direct SWPC', err);
+    } catch {
+      // Direct SWPC products keep Space usable during Worker deploys or edge outages.
     }
   }
   return fetchSpaceWeatherSummaryDirect();
@@ -741,9 +735,7 @@ export async function fetchSpaceWeatherEvents(days = 7): Promise<SpaceWeatherEve
   const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
 
   const startDate = isoDate(start);
-  const endDate = isoDate(end);
-
-  // ✅ Use Worker proxy routes (no client-side NASA key)
+  const endDate = isoDate(end);  // Worker routes keep NASA credentials out of the client bundle.
   const urls = {
     FLR: apiUrl(`/api/nasa/donki/FLR?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),
     CME: apiUrl(`/api/nasa/donki/CME?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`),

@@ -217,13 +217,8 @@ export function useCurrentWeather(opts: CurrentWeatherOptions): CurrentWeatherSt
         setError(null);
 
         const url = buildCurrentWeatherUrl(lat, lon, units);
-        console.log('[net] current requesting (worker):', url);
-
         const res = await fetchWithTimeout(url, 12000, { signal: ac.signal });
-        console.log('[net] current status:', res.status, url);
-
         const text = await res.text().catch(() => '');
-        console.log('[net] current body:', text.slice(0, 300));
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 

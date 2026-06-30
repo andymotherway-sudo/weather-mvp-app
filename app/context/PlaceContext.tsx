@@ -175,9 +175,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
   const locationLoading = !locState.hydrated;
 
   const [active, setActiveState] = useState<Place | null>(null);
-  const [favorites, setFavorites] = useState<Place[]>([]);
-
-  // ✅ Default City presence + value (hydrated on boot)
+  const [favorites, setFavorites] = useState<Place[]>([]);  // Default city is hydrated before screens decide whether GPS should be used.
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [defaultCityChecked, setDefaultCityChecked] = useState(false);
 
@@ -239,18 +237,14 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
     if (!hydratedRef.current) return;
     AsyncStorage.setItem(KEY, JSON.stringify({ active, favorites })).catch(() => {});
     syncNativeWidgetPlace(active);
-  }, [active, favorites]);
-
-  // ✅ If no active place after hydration, prefer Default City (if set).
+  }, [active, favorites]);  // Prefer the saved default city after hydration when no active place is selected.
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (!defaultCityChecked) return;
     if (active) return;
 
     if (defaultCity) setActiveState(placeFromDefaultCity(defaultCity));
-  }, [active, defaultCity, defaultCityChecked]);
-
-  // ✅ Default-to-GPS behavior (ONLY after default city exists):
+  }, [active, defaultCity, defaultCityChecked]);  // GPS fallback only runs after default-city hydration has had a chance to win.
   // - Only after hydration
   // - Only when active location mode is "current"
   // - Only when we actually have coords (last-known or fresh)
@@ -272,9 +266,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
       lon: activeCoords.lon,
       source: 'gps',
     });
-  }, [active, activeCoords, locActive.kind, locationLoading, defaultCity, defaultCityChecked]);
-
-  // ✅ Keep "Current Location" truly current (but only if user is in GPS mode)
+  }, [active, activeCoords, locActive.kind, locationLoading, defaultCity, defaultCityChecked]);  // Keep Current Location fresh without moving users who chose a fixed place.
   useEffect(() => {
     if (!hydratedRef.current) return;
     if (!active || active.source !== 'gps') return;

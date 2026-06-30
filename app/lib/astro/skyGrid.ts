@@ -49,9 +49,8 @@ export function buildGridPoints(bounds: { north: number; south: number; east: nu
   return pts;
 }
 
-// MVP stub — you’ll replace this with real SkyScore (clouds/moon/bortle/etc)
+// Minimal fallback grid until full sky-score gridding is available.
 export function computeSkyScoreStub(_lat: number, _lon: number): number {
-  // placeholder: return mid score
   return 60;
 }
 

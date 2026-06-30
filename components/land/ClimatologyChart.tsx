@@ -167,7 +167,7 @@ function monthFromDoy(doy1: number) {
   return 1;
 }
 
-// ✅ SVG animated components
+// Animated SVG primitives used by the climatology chart.
 const AView = Animated.createAnimatedComponent(View);
 
 export function ClimatologyChart({

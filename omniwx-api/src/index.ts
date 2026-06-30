@@ -1,23 +1,5 @@
 // omniwx-api/src/index.ts
-//
-// Drop-in replacement
-// - Keeps existing radar / current / land-extremes / NASA / NOAA routes
-// - Keeps /api/astro/location (and /v1/astro/location)
-// - Keeps /api/astro/skyscore-grid (and /v1/astro/skyscore-grid)
-// - Adds astro grid query support for:
-//     mode=hero|regional
-//     density=auto|low|medium|high
-//     centerLat / centerLon
-// - Returns richer SkyScore point metadata while preserving compatibility
-// - App should continue rendering the smooth gradient locally with Skia
-//
-// Targeted fixes only:
-// - Makes SkyScore grid path consistently UTC/GMT
-// - Makes density=auto conservative instead of expensive
-// - Reduces SkyScore upstream batch size
-// - Adds coarser fallback pass instead of immediate 502
-// - Accepts sparse usable points instead of failing too aggressively
-// - Retains unrelated routes and logic
+// Cloudflare Worker entrypoint for cached and normalized OMNIwx data sources.
 
 import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";

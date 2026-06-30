@@ -1,11 +1,5 @@
 // app/(tabs)/index.tsx
-// Land Wx - Rich + Nerdy (Branded + Alpha polish)
-// Drop-in replacement
-// Compresses header so current conditions sit higher
-// Simple mode shows vertical 15-day forecast list
-// wxLab shows daily chart + insights + hourly chart
-// Keeps location picker, alerts, video bg, favorites, explain + learn modals
-// Nerdy education taps now go straight to LearnMoreModal
+// Land is the primary weather dashboard: current conditions, forecast, alerts, wxLab detail, and wxLearn entry points.
 
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';

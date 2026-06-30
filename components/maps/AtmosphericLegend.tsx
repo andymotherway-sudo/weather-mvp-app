@@ -5,7 +5,7 @@ import { Glass } from '../common/Glass';
 type Props = {
   title?: string;
   compact?: boolean;
-  sliver?: boolean; // ✅ new
+  sliver?: boolean;
 };
 
 export function AtmosphericLegend({
@@ -13,8 +13,7 @@ export function AtmosphericLegend({
   compact = false,
   sliver = false,
 }: Props) {
-  if (compact) {
-    // ✅ SLIVER: just the ramp (super low footprint)
+  if (compact) {    // Sliver mode renders only the color ramp for compact map chrome.
     if (sliver) {
       return (
         <Glass style={styles.sliver}>
@@ -84,8 +83,7 @@ function SliverSwatch({ color }: { color: string }) {
   return <View style={[styles.sliverSwatch, { backgroundColor: color }]} />;
 }
 
-const styles = StyleSheet.create({
-  // ✅ compact sliver
+const styles = StyleSheet.create({  // Compact sliver styles keep the legend from competing with map controls.
   sliver: {
     paddingVertical: 6,
     paddingHorizontal: 8,

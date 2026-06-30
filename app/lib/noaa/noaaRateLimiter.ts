@@ -4,8 +4,8 @@
 // NOAA may say "5/sec" but real-world behavior (mobile, paging, multi-hook bursts)
 // is much happier at ~1 req/sec with a shared cooldown on 429.
 
-const MIN_SPACING_MS = 1000; // ✅ stabilize at ~1 req/sec
-const JITTER_MS = 250;       // ✅ spread bursts a bit
+const MIN_SPACING_MS = 1000;
+const JITTER_MS = 250;
 
 let chain = Promise.resolve();
 

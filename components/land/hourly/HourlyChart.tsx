@@ -287,7 +287,7 @@ function yForValue(v: number, axis: { min: number; max: number }, top: number, h
 }
 
 /**
- * ✅ Day blocks are based on the date key BUT labels prefer the midnight sample (00:00).
+ * Day blocks use the date key, while labels prefer the midnight sample when it exists.
  * That prevents a day label from “starting” at noon visually if your slice begins mid-day.
  */
 function buildDayBlocks(hours: ForecastHour[]) {

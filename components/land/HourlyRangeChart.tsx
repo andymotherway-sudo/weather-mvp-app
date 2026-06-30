@@ -1,9 +1,5 @@
 // components/land/HourlyRangeChart.tsx
-// ✅ drop-in replacement
-// ✅ fixes timezone bug for "now" / hourly slice selection
-// ✅ accepts optional timeZone prop from parent
-// ✅ keeps Daily-style ring around wind direction + moves it BELOW clouds band
-// ✅ removes duplicate Clouds readout row under the chart (keeps tile "Clouds %" + clouds band)
+// Hourly forecast visualization with location-timezone aware slicing, compact metric rows, and wind/cloud bands.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

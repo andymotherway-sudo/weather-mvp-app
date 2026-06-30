@@ -59,7 +59,7 @@ export function useBuoyDetail(stationId: string | undefined, enabled = true) {
   return { data, loading, error, refreshing, refresh };
 }
 
-// 🔹 NEW: hook to get ALL NOAA buoys (bulk feed)
+// Bulk NOAA buoy hook used by map layers and marine extremes.
 export function useAllBuoyDetails(enabled = true) {
   const [data, setData] = useState<BuoyDetailData[] | null>(null);
   const [loading, setLoading] = useState(enabled);

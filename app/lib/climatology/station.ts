@@ -27,7 +27,7 @@ function isAbortError(err: any) {
  * Validate that a station actually returns NORMAL_MLY rows for core temp normals.
  * We probe a small 1-year window; dataset returns monthly normals.
  *
- * ✅ Worker-proxied: token is optional (Worker holds the token).
+ * Worker-proxied so NOAA credentials stay server-side.
  */
 async function stationHasTempNormals(stationId: string, token?: string, signal?: AbortSignal): Promise<boolean> {
   const startdate = '2010-01-01';
@@ -59,7 +59,7 @@ async function stationHasTempNormals(stationId: string, token?: string, signal?:
  * Find the nearest station that actually supports usable NORMAL_MLY temp normals
  * near (lat, lon).
  *
- * ✅ Worker-proxied: token is optional (Worker holds the token).
+ * Worker-proxied so NOAA credentials stay server-side.
  */
 export async function findNearestNormalsStation(
   lat: number,

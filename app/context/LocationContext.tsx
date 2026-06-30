@@ -72,9 +72,7 @@ export function LocationProvider(props: { children: React.ReactNode }) {
           return;
         }
 
-        setPermission('granted');
-
-        // ✅ Do NOT set any "default place" here.
+        setPermission('granted');        // Location warmup should not overwrite the user-selected default place.
         // We only set a location when we actually have one (last known or current).
 
         // Best effort: last known first (fast), then current (accurate)

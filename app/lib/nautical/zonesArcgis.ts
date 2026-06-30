@@ -108,7 +108,7 @@ function ringsToGeoJsonGeometry(rings: number[][][]): GeoJSONGeometry | null {
 }
 
 /* =============================================================================
- * ✅ Robust attribute extraction (fixes “only one zone works”)
+ * ArcGIS services vary their attribute names, so extraction accepts known aliases.
  * ============================================================================= */
 
 function asString(v: unknown): string | null {
@@ -237,9 +237,7 @@ export async function fetchMarineZonesByBbox(bbox: {
 
     const polygon = ringToLatLng(outerRing);
 
-    const attrs = (f.attributes ?? {}) as Record<string, unknown>;
-
-    // ✅ CRITICAL: require a real zone id so taps route correctly
+    const attrs = (f.attributes ?? {}) as Record<string, unknown>;    // Require a real zone id so map taps can open the correct forecast.
     const zoneId = pickZoneId(attrs);
     if (!zoneId) continue;
 

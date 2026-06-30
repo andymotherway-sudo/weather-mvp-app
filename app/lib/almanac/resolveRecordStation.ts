@@ -11,15 +11,12 @@ function apiUrl(path: string) {
   return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
-const KEY_PREFIX = 'omniwx:record-station:v7'; // ✅ bump because transport changed (Worker proxy)
-
-// flip off when stable
-const DEBUG_STATION = true;
+const KEY_PREFIX = 'omniwx:record-station:v7';
 
 // Request policy (mobile-safe)
 const STATION_REQ_TIMEOUT_MS = 20_000;
 
-// Policy knobs
+// NOAA station selection requires recent data so almanac cards do not anchor to stale stations.
 const RECENT_DAYS = 365 * 2; // must have data in last 2 years
 
 export type RecordStationResolved = {
@@ -53,7 +50,7 @@ function toIsoDate(v: any): string | undefined {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : undefined;
 }
 
-/** ✅ Local YYYY-MM-DD (avoids UTC rolling into "tomorrow" at night) */
+/** Local YYYY-MM-DD avoids UTC rolling into tomorrow near midnight. */
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -216,7 +213,7 @@ export async function resolveRecordStation(
   const cacheKey = `${KEY_PREFIX}:${lat.toFixed(3)},${lon.toFixed(3)}`;
 
   const recentCutoff = daysAgoIso(RECENT_DAYS);
-  const enddate = isoToday(); // ✅ local date
+  const enddate = isoToday();
 
   // ---- cache (only accept if recent) ----
   const cached = await AsyncStorage.getItem(cacheKey);
@@ -233,14 +230,10 @@ export async function resolveRecordStation(
         };
 
         if (isRecentEnough(resolved.maxdate, recentCutoff)) {
-          if (DEBUG_STATION) console.log('[records] station cache hit', { cacheKey, resolved, recentCutoff });
           return resolved;
         }
-
-        if (DEBUG_STATION) console.log('[records] station cache rejected (stale)', { cacheKey, resolved, recentCutoff });
       }
     } catch {
-      if (DEBUG_STATION) console.log('[records] station cache parse failed', { cacheKey });
     }
   }
 
@@ -256,7 +249,6 @@ export async function resolveRecordStation(
     if (signal?.aborted) throw makeAbortError();
 
     const url = buildStationsUrl({ extentDeg, lat, lon, enddate });
-    if (DEBUG_STATION) console.log('[records] station lookup', { extentDeg, url, recentCutoff });
 
     for (let attempt = 0; attempt <= retryBackoff.length; attempt++) {
       if (signal?.aborted) throw makeAbortError();
@@ -266,7 +258,6 @@ export async function resolveRecordStation(
 
         const results: any[] = json?.results ?? [];
         if (!results.length) {
-          if (DEBUG_STATION) console.log('[records] no stations returned', { extentDeg });
           break;
         }
 
@@ -277,14 +268,6 @@ export async function resolveRecordStation(
         const recent = candidates.filter((c) => !!c.maxdate && isRecentEnough(c.maxdate, recentCutoff));
 
         if (!recent.length) {
-          if (DEBUG_STATION) {
-            console.log('[records] no recent stations in extent', {
-              extentDeg,
-              total: candidates.length,
-              sampleMaxdates: candidates.slice(0, 8).map((c) => c.maxdate ?? null),
-              recentCutoff,
-            });
-          }
           break;
         }
 
@@ -301,24 +284,6 @@ export async function resolveRecordStation(
 
         scored.sort((a, b) => (b.score ?? -999) - (a.score ?? -999));
 
-        if (DEBUG_STATION) {
-          console.log('[records] station candidates (top 10)', {
-            extentDeg,
-            recentCutoff,
-            total: candidates.length,
-            recent: recent.length,
-            top: scored.slice(0, 10).map((c) => ({
-              id: c.id,
-              name: c.name,
-              mindate: c.mindate,
-              maxdate: c.maxdate,
-              datacoverage: c.datacoverage,
-              distanceKm: c.distanceKm != null ? Math.round(c.distanceKm * 10) / 10 : null,
-              score: c.score != null ? Math.round(c.score * 1000) / 1000 : null,
-            })),
-          });
-        }
-
         const best = scored[0];
         if (!best) throw new Error('No suitable recent GHCND station found after scoring');
 
@@ -331,7 +296,6 @@ export async function resolveRecordStation(
         };
 
         await AsyncStorage.setItem(cacheKey, JSON.stringify(resolved));
-        if (DEBUG_STATION) console.log('[records] station resolved (final)', { extentDeg, resolved });
 
         return resolved;
       } catch (e: any) {
@@ -343,23 +307,14 @@ export async function resolveRecordStation(
         const is429 = status === 429 || (typeof e?.message === 'string' && e.message.includes('(429)'));
 
         if (!is429 || attempt === retryBackoff.length) {
-          if (DEBUG_STATION) {
-            console.log('[records] station lookup error', {
-              extentDeg,
-              status: status || null,
-              msg: e?.message,
-            });
-          }
           break;
         }
 
         const ra = e?.retryAfterSec;
         if (typeof ra === 'number' && Number.isFinite(ra)) {
-          if (DEBUG_STATION) console.log('[records] station lookup 429 retry-after', { extentDeg, ra });
           await sleep(ra * 1000);
         } else {
           const d = retryBackoff[attempt];
-          if (DEBUG_STATION) console.log('[records] station lookup 429 backoff', { extentDeg, delayMs: d });
           await sleep(d);
         }
       }

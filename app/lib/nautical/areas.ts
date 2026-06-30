@@ -58,7 +58,7 @@ export function getMarineAreaCenter(area: MarineArea): {
   };
 }
 
-/** 🌍 Starter global dataset – you can keep adding to this over time */
+/** Curated global marine areas used when official zone geometry is unavailable. */
 export const MARINE_AREAS: MarineArea[] = [
   // --- U.S. PACIFIC COASTAL (split into nearshore + offshore bands) ---
 

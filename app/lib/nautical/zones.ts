@@ -25,11 +25,9 @@ export interface NauticalZone {
   wfo: string;       // forecast office (CWA)
   type: NauticalZoneType;
   centroid: LatLng;
-
-  // ✅ keep for compatibility / quick rendering
+  // Outer ring kept for lightweight previews and legacy renderers.
   polygon: LatLng[];
-
-  // ✅ NEW: keep full shape for MapLibre + multipolygons
+  // Full GeoJSON geometry preserves multipolygons for MapLibre and tap targets.
   geometry: GeoJSONGeometry;
 }
 
@@ -65,7 +63,7 @@ async function fetchAllPages(url: string): Promise<any[]> {
   while (nextUrl) {
     const res: Response = await fetch(nextUrl, {
       headers: {
-        'User-Agent': 'OmniWx/1.0 (contact: youremail@example.com)',
+        'User-Agent': 'OMNIwx/1.0 (contact: admin@omni-wx.com)',
         Accept: 'application/geo+json, application/json',
       },
     });
@@ -114,7 +112,7 @@ export async function fetchMarineZones(): Promise<NauticalZone[]> {
       type: 'coastal',
       centroid: computeCentroidApprox(ring),
       polygon: ring,
-      geometry: geom, // ✅ keep full geometry
+      geometry: geom,
     });
   }
 

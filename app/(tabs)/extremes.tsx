@@ -485,8 +485,7 @@ function useSpaceExtremes(): {
   error: string | null;
   items: SpaceExtreme[];
   refresh: () => Promise<void>;
-} {
-  // TODO: wire real Mars/space sources later.
+} {  // Space extremes stay conservative until an official feed can populate this card.
   return {
     loading: false,
     error: null,

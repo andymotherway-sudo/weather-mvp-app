@@ -17,8 +17,7 @@ export interface MarineForecast {
 interface UseMarineForecastResult {
   forecast: MarineForecast | null;
   loading: boolean;
-  error: string | null;
-  // ✅ NEW: let UI distinguish “no official available” from “real error”
+  error: string | null;  // Let the UI distinguish unsupported official products from provider failures.
   status?: 'ok' | 'not_available' | 'error';
 }
 
@@ -117,8 +116,7 @@ async function fetchZoneForecastJson(path: string, zoneId: string) {
 
 async function fetchTgftpText(zoneId: string) {
   const url = tgftpUrlForZone(zoneId);
-  if (!url) {
-    // ✅ This is not a “system error”; it just means “no US TGFTP mapping”
+  if (!url) {    // Missing TGFTP mapping means this zone has no supported official text product.
     const e = new Error('Official text forecast not available for this zone.');
     (e as any).code = 'NOT_AVAILABLE';
     throw e;
@@ -419,9 +417,7 @@ export function useMarineForecast(zoneId?: string, wfo?: string, enabled = true)
         setLoading(false);
         setStatus('ok');
       } catch (e: any) {
-        if (cancelled) return;
-
-        // ✅ Treat NOT_AVAILABLE as “no official for this zone”, not a scary error.
+        if (cancelled) return;        // NOT_AVAILABLE is a normal unsupported-zone state, not a system error.
         if (e?.code === 'NOT_AVAILABLE') {
           setForecast(null);
           setLoading(false);

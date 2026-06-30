@@ -1,9 +1,5 @@
 // components/land/HourlyCharts72h.tsx
-// ✅ Keeps: midnight padding (no device-local Date boundary bugs), Learn modal, Card header
-// ✅ Renders: HourlyRangeChart (which owns panels/graphs)
-// ✅ Adds: timeZone prop compatibility with updated hourly screen
-// ✅ Adds: safer ISO wall-clock parsing for padding
-// ❌ Removes: Expand button + expanded state + expanded prop spread
+// Wrapper for the 72-hour chart that pads local-day boundaries and hands rendering to HourlyRangeChart.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';

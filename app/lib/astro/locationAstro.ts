@@ -628,8 +628,6 @@ async function fetchLocationAstroForecast(args: {
     `&lon=${encodeURIComponent(String(lon))}` +
     `&placeName=${encodeURIComponent(placeName ?? '')}`;
 
-  console.log('[astro] request start', { lat, lon, placeName, url });
-
   let res: Response;
   try {
     res = await fetch(url);
@@ -1004,7 +1002,6 @@ export function useLocationAstroForecast(args: {
 
   const load = async (mode: 'initial' | 'refresh' = 'initial') => {
     if (!canLoad || lat == null || lon == null) {
-      console.log('[astro] skipped load', { enabled, lat, lon, placeName });
       return;
     }
 
@@ -1036,14 +1033,11 @@ export function useLocationAstroForecast(args: {
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
 
-      const message = errorToMessage(error);
-      console.log('[astro] load failed', { message, raw: error });
-
       setState((prev) => ({
         ...prev,
         loading: false,
         refreshing: false,
-        error: message,
+        error: errorToMessage(error),
       }));
     }
   };

@@ -21,23 +21,20 @@ function apiUrl(path: string) {
   return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
-// cache policy
+// Cache record windows because NOAA daily history is slow and rate-limited.
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 60; // 60 days
 
-// request policy
+// Worker requests are chunked so the UI can report progress and retry transient failures.
 const LIMIT = 1000;
 
-// NOAA can be slow; keep timeout generous
+// NOAA can be slow, especially on first load for a station.
 const REQ_TIMEOUT_MS = 25_000;
 
-// Retry/backoff: tuned for 429 + mobile flakiness
+// Backoff handles NOAA rate limits and mobile network drops.
 const RETRY_BACKOFF_MS = [300, 800, 1500, 2500, 4000];
 
 // bump when record-building logic changes
-const ALGO_VERSION = 'v6-30yr-window-yearly-chunked-worker-proxy'; // ✅ bump for Worker proxy
-
-// ✅ keep true while debugging; turn off once stable
-const DEBUG_RECORDS = true;
+const ALGO_VERSION = 'v6-30yr-window-yearly-chunked-worker-proxy';
 
 type RecordsMap = Record<string, AlmanacDailyRecord>;
 export type RecordsYears = { from: number; to: number } | null;
@@ -69,7 +66,7 @@ function prcp10mmToIn(v: number) {
   return mm / 25.4;
 }
 
-/** ✅ Local YYYY-MM-DD (avoids UTC rolling into "tomorrow") */
+/** Local YYYY-MM-DD avoids UTC rolling into tomorrow near midnight. */
 function localYmd(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -130,27 +127,6 @@ function initRec(mmdd: string): AlmanacDailyRecord {
     recordLowMaxYears: [],
     recordSnowIn: null,
     recordSnowYears: [],
-  };
-}
-
-function summarizeYears(results: any[], yearFrom: number, yearTo: number) {
-  let min = Infinity;
-  let max = -Infinity;
-  let outOfWindow = 0;
-
-  for (const r of results) {
-    const y = Number(String(r?.date ?? '').slice(0, 4));
-    if (!Number.isFinite(y)) continue;
-    if (y < min) min = y;
-    if (y > max) max = y;
-    if (y < yearFrom || y > yearTo) outOfWindow++;
-  }
-
-  return {
-    minYear: Number.isFinite(min) ? min : null,
-    maxYear: Number.isFinite(max) ? max : null,
-    outOfWindow,
-    sampleCount: results.length,
   };
 }
 
@@ -302,9 +278,7 @@ export function useDailyRecords({
     return await noaaSchedule(async () => {
       if (ac.signal.aborted) throw makeAbortError();
 
-      const t0 = Date.now();
       const res = await withTimeout(fetch(url, { signal: ac.signal }), REQ_TIMEOUT_MS, 'NOAA request timed out');
-      const ms = Date.now() - t0;
 
       if (ac.signal.aborted) throw makeAbortError();
 
@@ -317,17 +291,6 @@ export function useDailyRecords({
         const retryAfterSec =
           res.status === 429 ? parseRetryAfterSeconds(res.headers?.get?.('retry-after') ?? null) : null;
 
-        if (DEBUG_RECORDS) {
-          // eslint-disable-next-line no-console
-          console.log('[records] http error', {
-            ms,
-            status: res.status,
-            retryAfterSec,
-            body: body.slice(0, 180),
-            url: url.slice(0, 220),
-          });
-        }
-
         const err: any = new Error(httpErrMsg(res.status, body));
         err.status = res.status;
         err.body = body;
@@ -336,14 +299,6 @@ export function useDailyRecords({
       }
 
       const json = await res.json();
-      if (DEBUG_RECORDS) {
-        // eslint-disable-next-line no-console
-        console.log('[records] http ok', {
-          ms,
-          count: json?.metadata?.resultset?.count ?? null,
-          url: url.slice(0, 160),
-        });
-      }
       return json;
     });
   }, []);
@@ -381,11 +336,6 @@ export function useDailyRecords({
             is429
               ? (typeof ra === 'number' && Number.isFinite(ra) ? Math.max(1000, ra * 1000) : backoff429)
               : baseDelay;
-
-          if (DEBUG_RECORDS) {
-            // eslint-disable-next-line no-console
-            console.log('[records] retry', { attempt: attempt + 1, status: status ?? null, delayMs: delay });
-          }
 
           await sleep(delay);
         }
@@ -439,11 +389,11 @@ export function useDailyRecords({
         const minYResolved = yearFromIso(resolved.mindate) ?? 1950;
 
         const stationMaxY = yearFromIso(resolved.maxdate) ?? new Date().getFullYear();
-        const stationMaxIso = resolved.maxdate ?? localYmd(); // ✅ local
+        const stationMaxIso = resolved.maxdate ?? localYmd();
 
         const today = new Date();
         const todayY = today.getFullYear();
-        const todayIso = localYmd(today); // ✅ local
+        const todayIso = localYmd(today);
 
         const yearTo = Math.min(todayY, stationMaxY);
         let yearFrom = Math.max(minYResolved, yearTo - 29);
@@ -466,21 +416,6 @@ export function useDailyRecords({
           algoVersion: ALGO_VERSION,
         });
 
-        if (DEBUG_RECORDS) {
-          // eslint-disable-next-line no-console
-          console.log('[records] resolved', {
-            lat,
-            lon,
-            stationId,
-            stationName,
-            mindate: resolved.mindate,
-            maxdate: resolved.maxdate,
-            yearFrom,
-            yearTo,
-            cacheKey,
-          });
-        }
-
         // --- cache ---
         if (!force) {
           safeSet(() => setProgress({ phase: 'cache', message: 'Checking cache…', yearFrom, yearTo }));
@@ -488,11 +423,6 @@ export function useDailyRecords({
 
           const keys = Object.keys(cached?.data ?? {}).length;
           if (cached && metaMatches(cached.meta, wantMeta) && keys > 0) {
-            if (DEBUG_RECORDS) {
-              // eslint-disable-next-line no-console
-              console.log('[records] cache hit', { keys, meta: cached.meta });
-            }
-
             safeSet(() => {
               setRecords(cached.data);
               haveRecordsRef.current = true;
@@ -501,9 +431,6 @@ export function useDailyRecords({
               setProgress(null);
             });
             return;
-          } else if (DEBUG_RECORDS && cached) {
-            // eslint-disable-next-line no-console
-            console.log('[records] cache miss (meta/empty)', { keys, cachedMeta: cached.meta, wantMeta });
           }
         }
 
@@ -534,7 +461,6 @@ export function useDailyRecords({
               );
 
               let offset = 1;
-              let incrementalRows = 0;
               while (true) {
                 if (ac.signal.aborted) throw makeAbortError();
 
@@ -544,7 +470,6 @@ export function useDailyRecords({
 
                 dbgRef.current.pages += 1;
                 dbgRef.current.totalRows += results.length;
-                incrementalRows += results.length;
                 applyRecordRows(map, results, yearFrom, yearTo);
 
                 safeSet(() =>
@@ -564,10 +489,6 @@ export function useDailyRecords({
                 offset += LIMIT;
               }
 
-              if (DEBUG_RECORDS) {
-                // eslint-disable-next-line no-console
-                console.log('[records] incremental refresh', { incrementalStart, incrementalEnd, incrementalRows });
-              }
             } else {
               safeSet(() =>
                 setProgress({
@@ -608,17 +529,6 @@ export function useDailyRecords({
         const probeTotal = Number(probeJson?.metadata?.resultset?.count ?? 0);
         const probeResults: any[] = probeJson?.results ?? [];
 
-        if (DEBUG_RECORDS) {
-          // eslint-disable-next-line no-console
-          console.log('[records] probe', {
-            probeStart,
-            probeEnd,
-            total: probeTotal,
-            years: summarizeYears(probeResults, yearFrom, yearTo),
-            firstRow: probeResults?.[0] ?? null,
-          });
-        }
-
         if (!probeResults.length && (!Number.isFinite(probeTotal) || probeTotal <= 0)) {
           throw new Error('No NOAA daily data found for this station (probe returned empty).');
         }
@@ -639,7 +549,6 @@ export function useDailyRecords({
           })
         );
 
-        let totalRowsAllYears = 0;
         const totalYears = Math.max(1, yearTo - yearFrom + 1);
 
         for (let y = yearFrom; y <= yearTo; y++) {
@@ -667,7 +576,6 @@ export function useDailyRecords({
             dbgRef.current.totalRows += results.length;
 
             yearRows += results.length;
-            totalRowsAllYears += results.length;
 
             const yearIdx = y - yearFrom; // 0-based
             const pct = clamp((yearIdx + 0.15) / totalYears, 0, 1);
@@ -736,27 +644,10 @@ export function useDailyRecords({
             if (dbgRef.current.pages % 3 === 0) await sleep(0);
           }
 
-          if (DEBUG_RECORDS) {
-            // eslint-disable-next-line no-console
-            console.log('[records] year done', { y, yearRows, start, end });
-          }
         }
 
         if (Object.keys(map).length === 0) {
           throw new Error('NOAA records returned 0 usable rows for the last 30 years.');
-        }
-
-        if (DEBUG_RECORDS) {
-          const sampleKey = Object.keys(map)[0];
-          // eslint-disable-next-line no-console
-          console.log('[records] built', {
-            days: Object.keys(map).length,
-            sampleDay: sampleKey,
-            sample: sampleKey ? map[sampleKey] : null,
-            pages: dbgRef.current.pages,
-            rows: dbgRef.current.totalRows,
-            totalRowsAllYears,
-          });
         }
 
         // --- save ---

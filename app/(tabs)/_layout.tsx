@@ -185,8 +185,6 @@ export default function TabsLayout() {
         tabBarLabelStyle: { fontWeight: '800', fontSize: 10, marginTop: -2, marginBottom: 1 },
         tabBarIconStyle: { marginTop: 1, marginBottom: -1 },
         tabBarItemStyle: { paddingHorizontal: 0, minWidth: 0 },
-
-        // ✅ use the computed style
         tabBarStyle,
 
         tabBarActiveTintColor: 'white',

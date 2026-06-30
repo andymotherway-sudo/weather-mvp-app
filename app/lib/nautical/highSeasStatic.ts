@@ -1,7 +1,5 @@
 // app/lib/nautical/highSeasStatic.ts
-//
-// TEMP starter polygons so you can wire the UI + “zone under cursor” logic.
-// Replace this FeatureCollection later with real Offshore (OZ) + High Seas (HZ) datasets.
+// Fallback polygons used only when official offshore or high-seas geometry is unavailable.
 
 export type ZoneKind = 'coastal' | 'offshore' | 'highseas';
 
@@ -25,8 +23,7 @@ export type StaticZonesFC = {
   }>;
 };
 
-// NOTE: Coordinates here are just demo blocks off the OR/CA coast.
-// They let you validate rendering + “am I in a huge polygon?” logic immediately.
+// These coarse polygons are intentionally low-priority fallbacks, not chart-grade boundaries.
 export const OFFSHORE_HIGHSEAS_ZONES: StaticZonesFC = {
   type: 'FeatureCollection',
   features: [

@@ -48,7 +48,7 @@ import {
 } from '../lib/nautical/stations';
 import { geocodePlaces, type GeocodeResult } from '../lib/locations/geocode';
 
-// nerdy builder
+// Build the wxLab model from the same live nautical inputs used by Simple mode.
 import { buildNerdyData } from '../lib/nautical/buildNerdyData';
 
 // ---- small local types to avoid `any` -----------------------------
@@ -1004,6 +1004,13 @@ export default function NauticalScreen() {
       ? `Marine area: ${area.name}`
       : `${area.region} · ${area.ocean}`;
 
+  const nauticalHeaderSubtitle = [
+    headerLine,
+    headerSubLine.replace(/^Marine area:\s*/i, ''),
+  ]
+    .filter(Boolean)
+    .join(' - ');
+
   // typed view of predictions/periods without forcing you to change your hook types
   const predictions = (data?.predictions ?? []) as TidePrediction[];
   const forecastPeriods = (forecast?.periods ?? []) as ForecastPeriod[];
@@ -1040,18 +1047,6 @@ export default function NauticalScreen() {
         }
       : null,
   });
-
-  const debugNerdy =
-    __DEV__ && nerdy
-      ? JSON.stringify(
-          nerdy,
-          (k, v) =>
-            typeof v === 'number' && Number.isFinite(v)
-              ? Number(v.toFixed(3))
-              : v,
-          2,
-        )
-      : null;
 
   // Tappable nerdy row (key/value + chevron)
   const NerdyRow = ({
@@ -1151,18 +1146,21 @@ export default function NauticalScreen() {
         {/* HEADER (standard OMNI) */}
         <View style={styles.headerBlock}>
           <View style={styles.headerTopRow}>
-            <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+            <View style={styles.brandLeft}>
+              <Image source={OMNI_MARK_WORD} style={styles.brandWordmark} resizeMode="contain" />
+              <View style={styles.headerTextBlock}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                  Nautical
+                </Text>
+                <Text style={styles.headerLine} numberOfLines={2}>
+                  {nauticalHeaderSubtitle}
+                </Text>
+              </View>
+            </View>
             <View style={styles.headerControls}>
               <ModeToggle mode={mode} onChange={setMode} />
             </View>
           </View>
-
-          <Text style={styles.headerTitle} numberOfLines={2}>
-            {headerLine}
-          </Text>
-          <Text style={styles.headerLine} numberOfLines={2}>
-            {headerSubLine}
-          </Text>
         </View>
 
         {/* SEARCH */}
@@ -1520,16 +1518,6 @@ export default function NauticalScreen() {
               />
             </View>
 
-            {__DEV__ && (
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
-                  wxLab data (debug)
-                </Text>
-                <Text style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 16 }}>
-                  {debugNerdy}
-                </Text>
-              </View>
-            )}
           </Card>
         )}
 
@@ -1652,24 +1640,30 @@ const styles = StyleSheet.create({
   },
   headerLine: {
     ...typography.subtitle,
-    marginTop: 4,
   },
   headerTitle: {
     ...typography.title,
-    marginTop: theme.spacing.sm,
   },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 12,
   },
-  headerControls: {
+  brandLeft: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerControls: {
+    flexShrink: 0,
+    alignItems: 'center',
   },
   brandWordmark: { ...OMNI_TAB_LOGO_STYLE },
 
