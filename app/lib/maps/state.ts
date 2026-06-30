@@ -135,7 +135,12 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
       }
 
       // Preserve radar playback state by default...
-      next.radarTime = state.radarTime;
+      next.radarTime = {
+        ...state.radarTime,
+        stormMode: action.viewId === 'storm',
+        frameIndex: action.viewId === 'storm' ? 0 : state.radarTime.frameIndex,
+        playing: action.viewId === 'storm' ? false : state.radarTime.playing,
+      };
 
       // ...but if the next view doesn't have radar enabled, pause playing to avoid wasted work.
       const radarEnabled = !!next.layers?.['radar.reflectivity' as LayerId]?.enabled;

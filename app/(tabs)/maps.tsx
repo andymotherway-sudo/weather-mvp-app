@@ -3082,19 +3082,9 @@ export default function MapsScreen() {
   };
 
   const zoomBy = useCallback((delta: number) => {
-    const anchorRegion = region ?? effectiveRegion;
-    const lat = Number(anchorRegion.latitude);
-    const lon = Number(anchorRegion.longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-    const nextZoom = clampNumber((Number.isFinite(mapZoom) ? mapZoom : 4) + delta, 1, 18);
-    mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [lon, lat],
-      zoomLevel: nextZoom,
-      animationDuration: 220,
-    });
-    setCameraDebugLabel(`user-zoom:${nextZoom.toFixed(1)}`);
-  }, [effectiveRegion, mapZoom, region]);
+    mapCameraRef.current?.zoomBy?.(delta, 180);
+    setCameraDebugLabel(`user-zoom:${delta > 0 ? 'in' : 'out'}`);
+  }, []);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -4895,7 +4885,7 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {state.viewId === 'radar' ? (
+                  {state.viewId === 'radar' || state.viewId === 'storm' ? (
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
@@ -4903,11 +4893,15 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
-                            if (nextStormMode) setRadarMode('mosaic');
-                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
+                            if (nextStormMode) {
+                              setRadarMode('mosaic');
+                              dispatch({ type: 'SET_VIEW', viewId: 'storm' });
+                            } else {
+                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+                              dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
+                            }
                             dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />
                       </View>

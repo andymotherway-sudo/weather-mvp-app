@@ -1,6 +1,6 @@
 // components/maps/MapRenderer.tsx
 import MapLibreGL from '@maplibre/maplibre-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { OverlayEngine, type WmsOverlayConfig } from './overlays/OverlayEngine';
@@ -254,6 +254,7 @@ export function MapRenderer(props: MapRendererProps) {
   } = props;
 
   const internalCameraRef = useRef<any>(null);
+  const nativeCameraRef = useRef<any>(null);
   const cameraRef = props.cameraRef ?? internalCameraRef;
 
   const mapStyleUrl = mapStyleUrlFor(mapStyle);
@@ -270,7 +271,33 @@ export function MapRenderer(props: MapRendererProps) {
   const initialCamera = mountInitialCameraRef.current;
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
+  const liveZoomRef = useRef<number>(initialCamera.zoomLevel);
   const lastRegionRef = useRef<Region>(mountInitialRegionRef.current);
+
+  useImperativeHandle(
+    cameraRef,
+    () => ({
+      setCamera: (config: any) => nativeCameraRef.current?.setCamera?.(config),
+      flyTo: (centerCoordinate: [number, number], animationDuration?: number) =>
+        nativeCameraRef.current?.flyTo?.(centerCoordinate, animationDuration),
+      moveTo: (centerCoordinate: [number, number], animationDuration?: number) =>
+        nativeCameraRef.current?.moveTo?.(centerCoordinate, animationDuration),
+      zoomTo: (zoomLevel: number, animationDuration?: number) =>
+        nativeCameraRef.current?.zoomTo?.(zoomLevel, animationDuration),
+      zoomBy: (delta: number, animationDuration = 180) => {
+        const nextZoom = clamp((Number.isFinite(liveZoomRef.current) ? liveZoomRef.current : initialCamera.zoomLevel) + delta, 1, 20);
+        if (nativeCameraRef.current?.zoomTo) {
+          nativeCameraRef.current.zoomTo(nextZoom, animationDuration);
+        } else {
+          nativeCameraRef.current?.setCamera?.({ zoomLevel: nextZoom, animationDuration });
+        }
+        liveZoomRef.current = nextZoom;
+        setLiveZoom(nextZoom);
+      },
+      getLastRegion: () => lastRegionRef.current,
+    }),
+    [cameraRef, initialCamera.zoomLevel],
+  );
 
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
   const burstRef = useRef<{ t0: number; n: number }>({ t0: 0, n: 0 });
@@ -331,7 +358,10 @@ export function MapRenderer(props: MapRendererProps) {
 
     const zRaw = e?.properties?.zoomLevel;
     const zoom = typeof zRaw === 'number' && Number.isFinite(zRaw) ? clamp(zRaw, 1, 20) : null;
-    if (zoom !== null) setLiveZoom(zoom);
+    if (zoom !== null) {
+      liveZoomRef.current = zoom;
+      setLiveZoom(zoom);
+    }
 
     const coords = e?.geometry?.coordinates?.[0];
     const polyRegion = regionFromBoundsPolygon(coords);
@@ -367,6 +397,7 @@ export function MapRenderer(props: MapRendererProps) {
       const r = regionFromBounds(bounds);
       if (r) {
         const z2 = zoom ?? approxZoomFromLongitudeDelta(r.longitudeDelta);
+        liveZoomRef.current = z2;
         setLiveZoom(z2);
         nextRegion = { ...r, zoom: z2 };
       }
@@ -473,7 +504,7 @@ export function MapRenderer(props: MapRendererProps) {
         onPress={onMapPress}
       >
         <MapLibreGL.Camera
-          ref={cameraRef}
+          ref={nativeCameraRef}
           defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
           followUserLocation={false}
           animationDuration={0}
