@@ -966,6 +966,8 @@ Radar should preserve three user-facing behaviors:
 - Broad map views show the national radar mosaic.
 - Local zoom and station contexts can use the nearest NEXRAD site and expose station products.
 - Storm Scope is an in-place radar mode, not a separate map view that forces the camera.
+- Storm Scope controls must stay available at broad zoom; they should not be gated behind local NEXRAD zoom.
+- Storm Scope defaults to the broad national radar mosaic, and single-site NEXRAD products are opt-in.
 - Zooming back out from local radar should return to the broad national mosaic.
 
 Zoom controls should only change camera zoom. They should not recenter the map, lock the user to a radar site, or keep snapping back to the active location.
@@ -1937,8 +1939,8 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- App version: `1.1.145`.
-- Android version code: `10162`.
+- App version: `1.1.146`.
+- Android version code: `10163`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
