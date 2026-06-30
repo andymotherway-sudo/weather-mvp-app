@@ -89,7 +89,7 @@ const RFC_QPE_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const AUTO_NEXRAD_MIN_ZOOM = 8.6;
+const AUTO_NEXRAD_MIN_ZOOM = 8.05;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -1378,7 +1378,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
+  const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
 
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
@@ -1406,8 +1406,9 @@ export default function MapsScreen() {
     !manualStationRadarMode &&
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
+  const stormStationRadarMode = stormMode && localRadarAvailable && mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+  const stationRadarMode = (stormStationRadarMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
+  const showAdvancedRadarControls = (stormStationRadarMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1431,7 +1432,7 @@ export default function MapsScreen() {
     : stationRadarMode
       ? 'N0B'
       : 'N0Q';
-  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider = stationRadarMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&

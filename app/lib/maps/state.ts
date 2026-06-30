@@ -115,11 +115,27 @@ export function createInitialMapState(opts?: {
 export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntimeState {
   switch (action.type) {
     case 'SET_VIEW': {
+      const requestedStormScope = action.viewId === 'storm';
       const next = createInitialMapState({
-        viewId: action.viewId,
+        viewId: requestedStormScope ? 'radar' : action.viewId,
         nerdy: state.nerdy,
         viewport: state.viewport,
       });
+
+      if (requestedStormScope) {
+        const stormView = MAP_VIEWS.find((view) => view.id === 'storm');
+        if (stormView) {
+          for (const id of stormView.presetEnabledLayers) {
+            if (next.layers[id]) next.layers[id].enabled = true;
+          }
+          for (const [id, opacity] of Object.entries(stormView.presetLayerOpacity ?? {})) {
+            const layerId = id as LayerId;
+            if (next.layers[layerId] && typeof opacity === 'number') {
+              next.layers[layerId].opacity = clamp01(opacity);
+            }
+          }
+        }
+      }
 
       // Preserve user opacity overrides across views
       for (const [layerId, layerState] of Object.entries(state.layers) as Array<
@@ -137,9 +153,9 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
       // Preserve radar playback state by default...
       next.radarTime = {
         ...state.radarTime,
-        stormMode: action.viewId === 'storm',
-        frameIndex: action.viewId === 'storm' ? 0 : state.radarTime.frameIndex,
-        playing: action.viewId === 'storm' ? false : state.radarTime.playing,
+        stormMode: requestedStormScope,
+        frameIndex: requestedStormScope ? 0 : state.radarTime.frameIndex,
+        playing: requestedStormScope ? true : state.radarTime.playing,
       };
 
       // ...but if the next view doesn't have radar enabled, pause playing to avoid wasted work.
@@ -193,7 +209,6 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         radarTime: {
           ...state.radarTime,
           stormMode: action.stormMode,
-          playing: action.stormMode ? false : state.radarTime.playing,
         },
       };
 
