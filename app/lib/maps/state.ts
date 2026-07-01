@@ -188,6 +188,7 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         radarTime: {
           ...state.radarTime,
           stormMode: action.stormMode,
+          playing: action.stormMode ? false : state.radarTime.playing,
         },
       };
 

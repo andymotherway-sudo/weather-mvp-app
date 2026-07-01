@@ -89,7 +89,7 @@ const RFC_QPE_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const AUTO_NEXRAD_MIN_ZOOM = 8.05;
+const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -4888,7 +4888,7 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {state.viewId === 'radar' || state.viewId === 'storm' ? (
+                  {state.viewId === 'radar' ? (
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
@@ -4898,14 +4898,6 @@ export default function MapsScreen() {
                             const nextStormMode = !stormMode;
                             if (nextStormMode) {
                               setRadarMode('mosaic');
-                              dispatch({ type: 'SET_VIEW', viewId: 'storm' });
-                            } else {
-                              const mosaicZoom = Math.min(mapZoom, AUTO_NEXRAD_MIN_ZOOM - 0.35);
-                              setRadarMode('mosaic');
-                              setMapZoom(mosaicZoom);
-                              setCameraDebugLabel('storm-scope-off-national-mosaic');
-                              mapCameraRef.current?.zoomTo?.(mosaicZoom, 260);
-                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
                             }
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });

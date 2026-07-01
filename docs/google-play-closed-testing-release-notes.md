@@ -1,19 +1,19 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.149**
-Android version code: **10166**
+Release: **OMNIwx Alpha 1.1.150**
+Android version code: **10167**
 Track: **Closed testing / internal testing candidate**
 Date: **June 30, 2026**
 
 ## Play Console Paste Notes
 
-This build restores the radar behavior testers expected before the zoom-control regression. Zoomed-out radar returns to the national animated mosaic, zooming in hands off to the nearest local NEXRAD with radar rings, and Storm Scope now enters its own local NEXRAD workstation mode instead of masquerading as regular radar state.
+This build restores the radar behavior testers expected before the original zoom-button regression. Zoomed-out radar returns to the national animated mosaic, zooming in hands off to the nearest local NEXRAD with radar rings, and Storm Scope is back to the pre-zoom radar toggle behavior instead of changing the whole map workflow.
 
-Follow-up fix: the broad IEM/RainViewer mosaic handoff has its original zoom allowance restored, and turning Storm Scope off explicitly returns the map to regular radar/national mosaic behavior.
+Follow-up fix: the close-zoom NEXRAD threshold is back to the pre-button value, Storm Scope no longer switches into a separate map view, and radar playback state now matches the known-good baseline from before the zoom buttons were added.
 
 ## Tester Notes
 
-Please focus testing on Maps radar behavior. The important expectation is that broad zoom shows the national mosaic, close zoom shows the nearest local NEXRAD/radar rings, Storm Scope on shows the local NEXRAD product selector immediately, and Storm Scope off returns to national mosaic without forcing the user back to the saved/current location.
+Please focus testing on Maps radar behavior. The important expectation is that broad zoom shows the national mosaic, close zoom shows the nearest local NEXRAD/radar rings, Storm Scope on shows the local NEXRAD product selector immediately, and Storm Scope off returns to regular radar without forcing the user back to the saved/current location.
 
 ### What Changed
 
@@ -21,8 +21,9 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Restored automatic close-zoom handoff to nearest local NEXRAD with radar rings.
 - Restored Storm Scope as the local NEXRAD workstation: base reflectivity, velocity, storm total precip, echo tops, and hail tracks.
 - Removed the accidental `National Radar` entry from the station product selector.
-- Fixed sticky Storm Scope state by restoring Storm Scope as a real map mode instead of a redirected radar flag.
-- Made Storm Scope off return to national mosaic zoom without recentering the map.
+- Fixed sticky Storm Scope state by restoring the pre-zoom radar toggle behavior.
+- Removed the separate Storm Scope view-switch path that was disrupting mosaic/local radar handoff.
+- Restored the pre-zoom automatic NEXRAD handoff threshold.
 - Restored the national mosaic zoom cap so broad radar does not disappear during handoff.
 - Restored RainViewer mosaic visibility while overzooming between broad mosaic and local NEXRAD modes.
 
@@ -49,8 +50,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.149`
-- Android version code: `10166`
+- App version: `1.1.150`
+- Android version code: `10167`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`
