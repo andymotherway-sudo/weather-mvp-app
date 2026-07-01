@@ -3097,6 +3097,25 @@ export default function MapsScreen() {
     setCameraDebugLabel('locate-unavailable');
   };
 
+  const zoomMapBy = useCallback((delta: number) => {
+    const anchorRegion = region ?? effectiveRegion ?? stableInitialRegion;
+    const latitude = Number(anchorRegion.latitude);
+    const longitude = Number(anchorRegion.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const currentZoom = Number.isFinite(mapZoom)
+      ? mapZoom
+      : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta ?? stableInitialRegion.longitudeDelta);
+    const nextZoom = clampNumber(currentZoom + delta, 1, 18);
+
+    setMapZoom(nextZoom);
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [longitude, latitude],
+      zoomLevel: nextZoom,
+      animationDuration: 180,
+    });
+  }, [effectiveRegion, mapZoom, region, stableInitialRegion]);
+
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
     : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
@@ -4813,6 +4832,8 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
+              <ZoomButton label="+" onPress={() => zoomMapBy(1)} />
+              <ZoomButton label="-" onPress={() => zoomMapBy(-1)} />
             </View>
           </View>
         )}
@@ -5261,16 +5282,6 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  <View style={styles.animationControlStrip}>
-                    <View style={styles.animationControlSpacer} />
-                    <Pressable
-                      onPress={handleAnimationRecordPress}
-                      disabled={animationExporting}
-                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
-                    >
-                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
-                    </Pressable>
-                  </View>
                   {satelliteTimelineActive ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
@@ -5344,6 +5355,9 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
+                    onRecord={handleAnimationRecordPress}
+                    recordDisabled={animationExporting}
+                    recordBusy={animationExporting}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -5886,9 +5900,7 @@ export default function MapsScreen() {
                         : null,
                     ]}
                   >
-                    <Text style={styles.recordModeButtonText}>
-                      {animationExporting ? 'Saving' : 'Record'}
-                    </Text>
+                    <View style={styles.recordModeDot} />
                   </Pressable>
                 </View>
               </Glass>
@@ -5968,6 +5980,14 @@ function LocationButton(props: { onPress: () => void }) {
       <View style={styles.locationRing}>
         <View style={styles.locationDot} />
       </View>
+    </Pressable>
+  );
+}
+
+function ZoomButton(props: { label: '+' | '-'; onPress: () => void }) {
+  return (
+    <Pressable accessibilityLabel={props.label === '+' ? 'Zoom in' : 'Zoom out'} onPress={props.onPress} style={styles.zoomButton}>
+      <Text style={styles.zoomButtonText}>{props.label}</Text>
     </Pressable>
   );
 }
@@ -6972,6 +6992,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.96)',
   },
+  zoomButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(2,6,23,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonText: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
   actionButton: {
     width: 54,
     minHeight: 54,
@@ -7728,9 +7764,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 7,
   },
-  animationControlSpacer: {
-    flex: 1,
-  },
   windRecordLabel: {
     color: 'rgba(226,232,240,0.82)',
     fontSize: 11,
@@ -7738,23 +7771,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   recordModeButton: {
-    minHeight: 26,
+    width: 36,
+    height: 32,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.54)',
-    backgroundColor: 'rgba(127,29,29,0.42)',
+    borderColor: 'rgba(248,113,113,0.58)',
+    backgroundColor: 'rgba(127,29,29,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 10,
   },
   recordModeButtonDisabled: {
     opacity: 0.62,
   },
-  recordModeButtonText: {
-    color: '#fee2e2',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0,
+  recordModeDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
   },
   recordExitWrap: {
     position: 'absolute',

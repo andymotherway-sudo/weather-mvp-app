@@ -56,3 +56,4 @@ dist/
 build/
 .vscode/
 expo-env.d.ts
+.codex-remote-attachments/
