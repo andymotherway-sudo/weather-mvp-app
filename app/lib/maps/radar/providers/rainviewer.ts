@@ -91,9 +91,10 @@ export function createRainViewerProvider(opts?: {
    *
    * Note: We do NOT need RainViewer host/path here — the Worker fetches by ts.   * cachedHost and cachedPaths are retained for compatibility with existing frame consumers.
    */
-  function workerTileTemplateForTs(ts: number) {
+  function workerTileTemplateForFrame(ts: number, path?: string) {
     const qs =
       `ts=${encodeURIComponent(String(ts))}` +
+      (path ? `&path=${encodeURIComponent(path)}` : '') +
       `&size=${encodeURIComponent(String(tileSize))}` +
       `&color=${encodeURIComponent(color)}` +
       `&smooth=${encodeURIComponent(String(smooth))}` +
@@ -134,12 +135,13 @@ export function createRainViewerProvider(opts?: {
       const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
 
       const ts = cachedFrames[Math.max(0, Math.min(cachedFrames.length - 1, safeIdx))]?.t;
+      const path = cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
 
       if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) {
         throw new Error('RainViewer frame missing valid unix timestamp');
       }
 
-      return workerTileTemplateForTs(ts);
+      return workerTileTemplateForFrame(ts, path);
     },
   };
 }

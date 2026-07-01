@@ -1317,11 +1317,27 @@ export default function MapsScreen() {
       return;
     }
 
+    if (rawView === 'storm') {
+      dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
+      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+      return;
+    }
+
     const valid = MAP_VIEWS.some((view) => view.id === rawView);
     if (!valid) return;
 
     dispatch({ type: 'SET_VIEW', viewId: rawView as any });
   }, [params?.lat, params?.lon, params?.view, router]);
+
+  useEffect(() => {
+    if (state.viewId !== 'storm') return;
+    dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+  }, [state.viewId]);
 
   useEffect(() => {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
@@ -1378,7 +1394,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
+  const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {

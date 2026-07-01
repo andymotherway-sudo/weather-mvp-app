@@ -9717,10 +9717,40 @@ export default {
       const smooth = url.searchParams.get("smooth") ?? "1";
       const snow = url.searchParams.get("snow") ?? "1";
 
-      const upstreamUrl = `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
+      const requestedPath = url.searchParams.get("path");
+      const isRainViewerPath = (value: string | null): value is string =>
+        !!value && /^\/v2\/radar\/[A-Za-z0-9_-]+$/.test(value);
+
+      let framePath = isRainViewerPath(requestedPath) ? requestedPath : null;
+      if (!framePath) {
+        try {
+          const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
+            cf: { cacheEverything: true, cacheTtl: 60 },
+            headers: { "User-Agent": "omniwx-worker/1.0" },
+          } as any);
+          if (timelineRes.ok) {
+            const timeline = (await timelineRes.json()) as {
+              radar?: {
+                past?: Array<{ time?: number; path?: string }>;
+                nowcast?: Array<{ time?: number; path?: string }>;
+              };
+            };
+            const frames = [...(timeline.radar?.past ?? []), ...(timeline.radar?.nowcast ?? [])];
+            const match = frames.find((frame) => String(frame.time ?? "") === ts && isRainViewerPath(frame.path ?? null));
+            framePath = match?.path ?? null;
+          }
+        } catch {
+          framePath = null;
+        }
+      }
+
+      const upstreamUrl = framePath
+        ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
+        : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
+      const frameKey = framePath ? framePath.replace("/v2/radar/", "") : ts;
 
       const k = new URL(request.url);
-      k.pathname = `/__cache__/radar/rainviewer/${ts}/${size}/${z}/${x}/${y}.png`;
+      k.pathname = `/__cache__/radar/rainviewer/${frameKey}/${size}/${z}/${x}/${y}.png`;
       k.search = `?color=${color}&smooth=${smooth}&snow=${snow}`;
       const cacheKey = new Request(k.toString(), { method: "GET" });
 
