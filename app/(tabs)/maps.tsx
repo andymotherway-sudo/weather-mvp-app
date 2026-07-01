@@ -3126,6 +3126,19 @@ export default function MapsScreen() {
     setCameraDebugLabel('locate-unavailable');
   };
 
+  const exitStormScope = useCallback(() => {
+    setRadarMode('mosaic');
+    setManualRadarSiteId3(null);
+    setForceMosaicRadar(true);
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+
+    if (String(params?.view ?? '').toLowerCase() === 'storm') {
+      router.setParams({ view: 'radar' } as any);
+    }
+  }, [dispatch, params?.view, router]);
+
   const zoomMapBy = useCallback((delta: number) => {
     const anchorRegion = region ?? effectiveRegion ?? stableInitialRegion;
 
@@ -3135,12 +3148,15 @@ export default function MapsScreen() {
     const nextZoom = clampNumber(currentZoom + delta, 1, 18);
 
     setForceMosaicRadar(false);
+    if (stormMode && nextZoom < AUTO_NEXRAD_MIN_ZOOM) {
+      exitStormScope();
+    }
     setMapZoom(nextZoom);
     mapCameraRef.current?.setCamera?.({
       zoomLevel: nextZoom,
       animationDuration: 180,
     });
-  }, [effectiveRegion, mapZoom, region, stableInitialRegion]);
+  }, [effectiveRegion, exitStormScope, mapZoom, region, stableInitialRegion, stormMode]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -3771,6 +3787,9 @@ export default function MapsScreen() {
                 : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
             setMapZoom(zFloat);
+            if (stormMode && zFloat < AUTO_NEXRAD_MIN_ZOOM) {
+              exitStormScope();
+            }
 
             radarCtl.refreshLocalIfNeeded();
           }}
@@ -4949,6 +4968,10 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
+                            if (!nextStormMode) {
+                              exitStormScope();
+                              return;
+                            }
                             setRadarMode('mosaic');
                             setManualRadarSiteId3(null);
                             setForceMosaicRadar(!nextStormMode);
