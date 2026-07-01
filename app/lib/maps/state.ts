@@ -134,8 +134,13 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         }
       }
 
-      // Preserve radar playback state by default...
-      next.radarTime = state.radarTime;
+      // Preserve radar playback state by default, but do not carry Storm Scope
+      // into normal map modes. Storm Scope is a radar sub-mode, and preserving
+      // this bit across a standard view switch can make the toggle appear stuck.
+      next.radarTime =
+        action.viewId === 'storm'
+          ? state.radarTime
+          : { ...state.radarTime, stormMode: false };
 
       // ...but if the next view doesn't have radar enabled, pause playing to avoid wasted work.
       const radarEnabled = !!next.layers?.['radar.reflectivity' as LayerId]?.enabled;

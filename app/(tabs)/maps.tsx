@@ -5977,7 +5977,7 @@ export default function MapsScreen() {
           }}
           onOpenStandardMap={() => {
             setLayersSheetOpen(false);
-            dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+            exitStormScope();
           }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);
