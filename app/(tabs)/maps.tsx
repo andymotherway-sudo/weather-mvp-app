@@ -1393,6 +1393,7 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
+  const [forceMosaicRadar, setForceMosaicRadar] = useState(false);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
@@ -1419,6 +1420,7 @@ export default function MapsScreen() {
     state.viewId === 'radar' &&
     !stormMode &&
     !manualStationRadarMode &&
+    !forceMosaicRadar &&
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
   const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
@@ -3099,18 +3101,15 @@ export default function MapsScreen() {
 
   const zoomMapBy = useCallback((delta: number) => {
     const anchorRegion = region ?? effectiveRegion ?? stableInitialRegion;
-    const latitude = Number(anchorRegion.latitude);
-    const longitude = Number(anchorRegion.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
 
     const currentZoom = Number.isFinite(mapZoom)
       ? mapZoom
       : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta ?? stableInitialRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 1, 18);
 
+    setForceMosaicRadar(false);
     setMapZoom(nextZoom);
     mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [longitude, latitude],
       zoomLevel: nextZoom,
       animationDuration: 180,
     });
@@ -3729,6 +3728,7 @@ export default function MapsScreen() {
             onMapPress={handleMapPress}
               onPanDrag={() => {
                 locateRequestIdRef.current += 1;
+                setForceMosaicRadar(false);
               const now = Date.now();
               if (now - lastPanMarkRef.current > 450) {
                 lastPanMarkRef.current = now;
@@ -4922,7 +4922,9 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
-                            if (nextStormMode) setRadarMode('mosaic');
+                            setRadarMode('mosaic');
+                            setManualRadarSiteId3(null);
+                            setForceMosaicRadar(!nextStormMode);
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
                             dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });

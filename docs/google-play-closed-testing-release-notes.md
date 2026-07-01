@@ -1,13 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.153**
-Android version code: **10170**
+Release: **OMNIwx Alpha 1.1.154**
+Android version code: **10171**
 Track: **Closed testing / internal testing candidate**
 Date: **July 1, 2026**
 
 ## Play Console Paste Notes
 
-This build keeps the restored RainViewer national radar mosaic and adds careful map controls around it. Zoom buttons now only zoom the map camera in or out; they do not recenter, force Storm Scope, select a radar site, or change radar products. The map recorder is now an old-school red record dot placed beside play, rewind, and fast-forward in the radar/satellite timeline controls.
+This build keeps the restored RainViewer national radar mosaic and tightens the new map controls around it. Zoom buttons now only change camera zoom; they do not pass a location back to the map camera, recenter to the saved/current place, force Storm Scope, select a radar site, or change radar products. Storm Scope is now a true toggle: first press enters the local NEXRAD workstation, second press clears station selection and returns to the national mosaic path without snapping the camera.
+
+The map recorder remains an old-school red record dot placed beside play, rewind, and fast-forward in the radar/satellite timeline controls.
 
 The prior RainViewer worker fix remains in place: the worker supports both exact RainViewer frame paths and older timestamp-only app requests, and this app build continues to send explicit frame paths for the broad mosaic.
 
@@ -22,6 +24,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Added app-side RainViewer frame-path forwarding so future builds request exact mosaic frames.
 - Added worker backward compatibility for older timestamp-only RainViewer tile requests.
 - Added map zoom-in and zoom-out buttons that only change camera zoom.
+- Removed the zoom-button camera anchor that could snap users back to a location.
+- Made a second Storm Scope press explicitly return to the national mosaic path.
 - Moved map recording into the playback controls as a red record-dot button.
 - Removed the separate text-based `Record` pill above the radar/satellite timeline.
 - Restored automatic close-zoom handoff to nearest local NEXRAD with radar rings.
@@ -57,8 +61,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.153`
-- Android version code: `10170`
+- App version: `1.1.154`
+- Android version code: `10171`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`
