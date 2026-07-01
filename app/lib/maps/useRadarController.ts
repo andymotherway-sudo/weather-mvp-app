@@ -666,6 +666,7 @@ export function useRadarController(args: {
 
   const pendingFramesRef = useRef<Array<{ iso: string }> | null>(null);
   const pendingTemplatesRef = useRef<Array<string | null> | null>(null);
+  const holdingPreviousDuringHandoffRef = useRef(false);
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
@@ -683,11 +684,22 @@ export function useRadarController(args: {
   );
 
   useEffect(() => {
-    setPlayFrames([]);
-    setPlayTemplates([]);
+    const hasRenderableRadar = playTemplates.some(Boolean);
+    const shouldHoldPreviousRadar =
+      hasRenderableRadar &&
+      !stormMode &&
+      !usingLocalImage;
+
+    if (!shouldHoldPreviousRadar) {
+      setPlayFrames([]);
+      setPlayTemplates([]);
+    }
+    holdingPreviousDuringHandoffRef.current = shouldHoldPreviousRadar;
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
-    slotHoldRef.current = [null, null, null];
+    if (!shouldHoldPreviousRadar) {
+      slotHoldRef.current = [null, null, null];
+    }
     setPreloadTo(null);
     setXfade({ from: 0, to: 0, t: 1 });
     dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
@@ -719,6 +731,16 @@ export function useRadarController(args: {
     if (!state.radarTime.playing) {
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
+      holdingPreviousDuringHandoffRef.current = false;
+      pendingFramesRef.current = null;
+      pendingTemplatesRef.current = null;
+      return;
+    }
+
+    if (holdingPreviousDuringHandoffRef.current) {
+      setPlayFrames(liveFrames);
+      setPlayTemplates(liveTemplates);
+      holdingPreviousDuringHandoffRef.current = false;
       pendingFramesRef.current = null;
       pendingTemplatesRef.current = null;
       return;

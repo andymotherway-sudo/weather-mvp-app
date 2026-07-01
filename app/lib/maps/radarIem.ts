@@ -76,7 +76,7 @@ function canonicalRidgeProduct(product: RadarProductId): RadarProductId {
 }
 
 function supportsLatestRidgeTile(product: RadarProductId) {
-  return ['N0Q', 'N0B', 'N0Z', 'N0U', 'N0S'].includes(product);
+  return ['N0Q', 'N0B', 'N0Z', 'N0U', 'N0S', 'NET'].includes(product);
 }
 
 export function normalizeRadarSiteId(siteId: string) {

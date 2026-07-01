@@ -236,32 +236,11 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-storm-relative-velocity',
   },
   {
-    id: 'CC',
-    label: 'Correlation Coef',
-    subtitle: 'Live source needed',
-    enabled: false,
-    learnTopicId: 'radar-correlation-coefficient',
-  },
-  {
-    id: 'ZDR',
-    label: 'Differential Refl',
-    subtitle: 'Live source needed',
-    enabled: false,
-    learnTopicId: 'radar-differential-reflectivity',
-  },
-  {
     id: 'EET',
     label: 'Echo Tops',
     subtitle: 'Echo top height latest',
     enabled: true,
     learnTopicId: 'radar-echo-tops',
-  },
-  {
-    id: 'VIL',
-    label: 'VIL',
-    subtitle: 'Live source needed',
-    enabled: false,
-    learnTopicId: 'radar-vil',
   },
 ];
 
