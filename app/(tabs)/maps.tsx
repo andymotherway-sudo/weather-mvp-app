@@ -1320,7 +1320,8 @@ export default function MapsScreen() {
     if (rawView === 'storm') {
       dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
       dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
       return;
     }
@@ -1335,7 +1336,8 @@ export default function MapsScreen() {
     if (state.viewId !== 'storm') return;
     dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, [state.viewId]);
 
@@ -2024,7 +2026,7 @@ export default function MapsScreen() {
                 : null;
   const animationCompositorKind = animationRecordMode ? activeAnimationKind : null;
   const bufferedRadarActive =
-    preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
+    !stormMode && preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
   const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
     !animationRecordMode && isFocused
       ? trueColorUsingCatalog
@@ -3123,6 +3125,16 @@ export default function MapsScreen() {
     }
     setCameraDebugLabel('locate-unavailable');
   };
+
+  const enterStormScope = useCallback(() => {
+    setRadarMode('mosaic');
+    setManualRadarSiteId3(null);
+    dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+  }, [dispatch]);
 
   const exitStormScope = useCallback(() => {
     setRadarMode('mosaic');
@@ -4949,16 +4961,24 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {state.viewId === 'radar' && showAdvancedRadarControls ? (
+                  {state.viewId === 'radar' ? (
                     <View style={styles.radarModeHeader}>
-                      <View style={styles.radarModeRow} />
-                      <Pressable
-                        onPress={() => setStationPanelCollapsed(true)}
-                        style={styles.panelIconButton}
-                        accessibilityLabel="Minimize station radar panel"
-                      >
-                        <Text style={styles.panelIconButtonText}>-</Text>
-                      </Pressable>
+                      <View style={styles.radarModeRow}>
+                        <MiniToggle
+                          label="Storm Scope"
+                          active={stormMode}
+                          onPress={stormMode ? exitStormScope : enterStormScope}
+                        />
+                      </View>
+                      {showAdvancedRadarControls ? (
+                        <Pressable
+                          onPress={() => setStationPanelCollapsed(true)}
+                          style={styles.panelIconButton}
+                          accessibilityLabel="Minimize station radar panel"
+                        >
+                          <Text style={styles.panelIconButtonText}>-</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   ) : null}
                   <RadarLegend
