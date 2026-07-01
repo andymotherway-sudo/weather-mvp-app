@@ -1,15 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.148**
-Android version code: **10165**
+Release: **OMNIwx Alpha 1.1.149**
+Android version code: **10166**
 Track: **Closed testing / internal testing candidate**
 Date: **June 30, 2026**
 
 ## Play Console Paste Notes
 
-This build restores the radar behavior testers expected before the zoom-control regression. Zoomed-out radar returns to the national animated mosaic, zooming in hands off to the nearest local NEXRAD with radar rings and product controls, and Storm Scope now acts as a local NEXRAD workstation toggle instead of trapping or recentering the map.
+This build restores the radar behavior testers expected before the zoom-control regression. Zoomed-out radar returns to the national animated mosaic, zooming in hands off to the nearest local NEXRAD with radar rings, and Storm Scope now enters its own local NEXRAD workstation mode instead of masquerading as regular radar state.
 
-Follow-up fix: broad radar tiles are no longer hidden while the map is overzoomed, so the national mosaic should remain visible until the local NEXRAD handoff takes over.
+Follow-up fix: the broad IEM/RainViewer mosaic handoff has its original zoom allowance restored, and turning Storm Scope off explicitly returns the map to regular radar/national mosaic behavior.
 
 ## Tester Notes
 
@@ -21,9 +21,9 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Restored automatic close-zoom handoff to nearest local NEXRAD with radar rings.
 - Restored Storm Scope as the local NEXRAD workstation: base reflectivity, velocity, storm total precip, echo tops, and hail tracks.
 - Removed the accidental `National Radar` entry from the station product selector.
-- Fixed sticky Storm Scope state by making the Storm Scope toggle the single source of truth.
+- Fixed sticky Storm Scope state by restoring Storm Scope as a real map mode instead of a redirected radar flag.
 - Made Storm Scope off return to national mosaic zoom without recentering the map.
-- Capped IEM mosaic tile requests so provider "Zoom Level Not Supported" tiles do not appear.
+- Restored the national mosaic zoom cap so broad radar does not disappear during handoff.
 - Restored RainViewer mosaic visibility while overzooming between broad mosaic and local NEXRAD modes.
 
 ### What To Test
@@ -49,8 +49,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.148`
-- Android version code: `10165`
+- App version: `1.1.149`
+- Android version code: `10166`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

@@ -40,9 +40,10 @@ type ResolveFramesOpts = {
 
 const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 
-// The national mosaic is the broad view. Past this zoom, switch to local RIDGE
-// scans so the map never requests unsupported high-zoom mosaic tiles.
-const MOSAIC_MAX_Z = 8;
+// Mosaic is inherently coarse, but keep the source available through higher
+// map zooms so the broad national view does not disappear during handoff.
+// RIDGE remains the detailed single-site path.
+const MOSAIC_MAX_Z = 14;
 const RIDGE_MAX_Z = 8;
 
 const DEFAULT_MOSAIC_MINUTES = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];

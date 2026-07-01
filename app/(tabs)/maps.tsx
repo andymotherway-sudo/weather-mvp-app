@@ -1378,7 +1378,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
+  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
 
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
@@ -1407,8 +1407,7 @@ export default function MapsScreen() {
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
   const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const productRadarMode = stationRadarMode;
-  const showAdvancedRadarControls = (manualStationRadarMode || autoNearestRadarMode || stormMode) && localRadarAvailable;
+  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1423,18 +1422,18 @@ export default function MapsScreen() {
     return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
   }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(productRadarMode ? selectedRadarSite : null), [
-    productRadarMode,
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(stationRadarMode ? selectedRadarSite : null), [
+    stationRadarMode,
     selectedRadarSite,
   ]);
   const product: RadarProductId = showAdvancedRadarControls ? stationProduct : stationRadarMode ? 'N0B' : 'N0Q';
-  const effectiveRadarProvider = productRadarMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&
     radarEnabled &&
     effectiveRadarProvider !== 'rainviewer' &&
-    !productRadarMode &&
+    !stationRadarMode &&
     !stormMode &&
     mapZoom <= 8.5;
   const radarBufferedReadyCount = radarPlaybackBufferStatus?.ready ?? 0;
@@ -1929,10 +1928,10 @@ export default function MapsScreen() {
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
   const centerForRadar = useMemo(() => {
-    if (productRadarMode && selectedRadarSite) return { lat: selectedRadarSite.lat, lon: selectedRadarSite.lon };
+    if (stationRadarMode && selectedRadarSite) return { lat: selectedRadarSite.lat, lon: selectedRadarSite.lon };
     if (region) return { lat: region.latitude, lon: region.longitude };
     return { lat: 39.5, lon: -98.35 };
-  }, [productRadarMode, region, selectedRadarSite]);
+  }, [region, selectedRadarSite, stationRadarMode]);
 
   const radarCtl = useRadarController({
     state,
@@ -1943,10 +1942,10 @@ export default function MapsScreen() {
     product,
     rawMode,
     region,
-    stationMode: productRadarMode,
+    stationMode: stationRadarMode,
     radarSiteId3: selectedRadarId3,
-    localMinZoom: 12,
-    ridgeMinZoom: productRadarMode ? 2 : 8.6,
+    localMinZoom: stormMode ? 10.5 : 12,
+    ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
     playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
@@ -1958,8 +1957,8 @@ export default function MapsScreen() {
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
-  const stationProductLoading = productRadarMode && radarCtl.iemLoading;
-  const stationProductUnavailable = productRadarMode && !stationProductLoading && frameCount <= 0;
+  const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
+  const stationProductUnavailable = stationRadarMode && !stationProductLoading && frameCount <= 0;
   const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
   const stationProductSourceLabel =
     product === 'EET' || product === 'NET'
@@ -3960,7 +3959,7 @@ export default function MapsScreen() {
             onPress={handleWeatherAlertPress}
           />
 
-          {productRadarMode && selectedRadarSite ? (
+          {stationRadarMode && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
               <MapLibreGL.LineLayer
                 id="radar-station-rings"
@@ -4821,7 +4820,7 @@ export default function MapsScreen() {
           </View>
         )}
 
-        {!animationRecordMode && productRadarMode ? (
+        {!animationRecordMode && stationRadarMode ? (
           <View pointerEvents="none" style={styles.stationProductBadgeWrap}>
             <View
               style={[
@@ -4889,7 +4888,7 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {state.viewId === 'radar' ? (
+                  {state.viewId === 'radar' || state.viewId === 'storm' ? (
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
@@ -4899,12 +4898,14 @@ export default function MapsScreen() {
                             const nextStormMode = !stormMode;
                             if (nextStormMode) {
                               setRadarMode('mosaic');
+                              dispatch({ type: 'SET_VIEW', viewId: 'storm' });
                             } else {
                               const mosaicZoom = Math.min(mapZoom, AUTO_NEXRAD_MIN_ZOOM - 0.35);
                               setRadarMode('mosaic');
                               setMapZoom(mosaicZoom);
                               setCameraDebugLabel('storm-scope-off-national-mosaic');
                               mapCameraRef.current?.zoomTo?.(mosaicZoom, 260);
+                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
                             }
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
