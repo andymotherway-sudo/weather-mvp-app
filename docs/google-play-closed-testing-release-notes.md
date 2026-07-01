@@ -1,13 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.147**
-Android version code: **10164**
+Release: **OMNIwx Alpha 1.1.148**
+Android version code: **10165**
 Track: **Closed testing / internal testing candidate**
 Date: **June 30, 2026**
 
 ## Play Console Paste Notes
 
 This build restores the radar behavior testers expected before the zoom-control regression. Zoomed-out radar returns to the national animated mosaic, zooming in hands off to the nearest local NEXRAD with radar rings and product controls, and Storm Scope now acts as a local NEXRAD workstation toggle instead of trapping or recentering the map.
+
+Follow-up fix: broad radar tiles are no longer hidden while the map is overzoomed, so the national mosaic should remain visible until the local NEXRAD handoff takes over.
 
 ## Tester Notes
 
@@ -22,6 +24,7 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Fixed sticky Storm Scope state by making the Storm Scope toggle the single source of truth.
 - Made Storm Scope off return to national mosaic zoom without recentering the map.
 - Capped IEM mosaic tile requests so provider "Zoom Level Not Supported" tiles do not appear.
+- Restored RainViewer mosaic visibility while overzooming between broad mosaic and local NEXRAD modes.
 
 ### What To Test
 
@@ -46,8 +49,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.147`
-- Android version code: `10164`
+- App version: `1.1.148`
+- Android version code: `10165`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

@@ -463,10 +463,6 @@ export function MapRenderer(props: MapRendererProps) {
   }, [radar.tileMaxZ]);
 
   const layerMaxZ = 24;
-  const shouldSuppressUnsupportedRadarTemplate = (tpl?: string | null) => {
-    if (!tpl) return false;
-    return liveZoom > requestMaxZ + 0.25 && tpl.includes('/radar/rainviewer/');
-  };
   const radarResampling: 'linear' | 'nearest' = liveZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
 
   // Temporarily 0 while diagnosing jumps. If this fixes the feel,  // Keep touch throttling conservative so map gestures remain responsive on midrange phones.
@@ -539,7 +535,6 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              if (shouldSuppressUnsupportedRadarTemplate(tpl)) return null;
               const srcId = `radar-warm-src-${slotIdx}`;
               const lyrId = `radar-warm-lyr-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
@@ -566,7 +561,6 @@ export function MapRenderer(props: MapRendererProps) {
         {!useLocalImage && radar.enabled
           ? radarTemplates.map((tpl, slotIdx) => {
               if (!tpl) return null;
-              if (shouldSuppressUnsupportedRadarTemplate(tpl)) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
               const srcId = `radar-src-${slotIdx}`;
