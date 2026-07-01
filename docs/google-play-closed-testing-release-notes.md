@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.150**
-Android version code: **10167**
+Release: **OMNIwx Alpha 1.1.151**
+Android version code: **10168**
 Track: **Closed testing / internal testing candidate**
 Date: **June 30, 2026**
 
@@ -50,8 +50,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.150`
-- Android version code: `10167`
+- App version: `1.1.151`
+- Android version code: `10168`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

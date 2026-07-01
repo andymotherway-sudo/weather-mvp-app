@@ -1379,7 +1379,6 @@ export default function MapsScreen() {
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
-
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {
@@ -1426,7 +1425,11 @@ export default function MapsScreen() {
     stationRadarMode,
     selectedRadarSite,
   ]);
-  const product: RadarProductId = showAdvancedRadarControls ? stationProduct : stationRadarMode ? 'N0B' : 'N0Q';
+  const product: RadarProductId = showAdvancedRadarControls
+    ? stationProduct
+    : stationRadarMode
+      ? 'N0B'
+      : 'N0Q';
   const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
@@ -1970,20 +1973,6 @@ export default function MapsScreen() {
         : stationProductUnavailable
           ? 'source unavailable'
           : 'loading station scans';
-  const radarProductPanelEyebrow = stormMode ? 'STORM SCOPE' : autoNearestRadarMode ? 'NEAREST NEXRAD' : 'RADAR PRODUCT';
-  const radarProductPanelTitle = selectedRadarSite
-    ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
-    : 'Selecting nearest radar';
-  const radarProductPanelMeta = `${selectedRadarDistanceMi != null ? `${Math.round(selectedRadarDistanceMi)} mi from map center` : 'Distance pending'} / ${
-    stationProductLoading ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans` : stationProductSourceLabel
-  }`;
-  const radarProductPanelStatus = stationProductLoading
-    ? `Loading ${radarProductMeta.summaryLabel}`
-    : activeFrameIso
-      ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
-      : stationProductUnavailable
-        ? 'No recent scans'
-        : 'Latest';
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -3092,11 +3081,6 @@ export default function MapsScreen() {
     setCameraDebugLabel('locate-unavailable');
   };
 
-  const zoomBy = useCallback((delta: number) => {
-    mapCameraRef.current?.zoomBy?.(delta, 180);
-    setCameraDebugLabel(`user-zoom:${delta > 0 ? 'in' : 'out'}`);
-  }, []);
-
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
     : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
@@ -3659,7 +3643,6 @@ export default function MapsScreen() {
     }
 
     try {
-      // Keep export display-neutral: no brightness or wake-lock APIs should be used here.
       const placeLabel = activePlace?.name ?? 'Current map';
       const { width, height } = animationExportSize;
       const result = await exportAnimationVideo({
@@ -4814,8 +4797,6 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
-              <ZoomButton label="+" accessibilityLabel="Zoom in" onPress={() => zoomBy(1)} />
-              <ZoomButton label="-" accessibilityLabel="Zoom out" onPress={() => zoomBy(-1)} />
             </View>
           </View>
         )}
@@ -4868,14 +4849,22 @@ export default function MapsScreen() {
               {showAdvancedRadarControls && stationPanelCollapsed ? (
                 <View style={styles.stationCollapsedPanel}>
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.stationCollapsedEyebrow}>{radarProductPanelEyebrow}</Text>
+                    <Text style={styles.stationCollapsedEyebrow}>STORM SCOPE</Text>
                     <Text style={styles.stationCollapsedTitle} numberOfLines={1}>
                       {selectedRadarSite
-                          ? `${getStationDisplayId(selectedRadarSite)} - ${radarProductMeta.legendTitle}`
-                          : radarProductMeta.legendTitle}
+                        ? `${getStationDisplayId(selectedRadarSite)} - ${radarProductMeta.legendTitle}`
+                        : radarProductMeta.legendTitle}
                     </Text>
                     <Text style={styles.stationCollapsedMeta} numberOfLines={1}>
-                      {radarProductPanelStatus}
+                      {stationProductLoading
+                        ? `Loading ${radarProductMeta.summaryLabel.toLowerCase()}`
+                        : activeFrameIso
+                          ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                          : stationProductUnavailable
+                            ? `${radarProductMeta.summaryLabel} unavailable`
+                          : selectedRadarDistanceMi != null
+                            ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
+                            : 'Latest scan'}
                     </Text>
                   </View>
                   <Pressable
@@ -4896,9 +4885,7 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
-                            if (nextStormMode) {
-                              setRadarMode('mosaic');
-                            }
+                            if (nextStormMode) setRadarMode('mosaic');
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
                             dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
@@ -4929,23 +4916,41 @@ export default function MapsScreen() {
                     {autoNearestRadarMode && selectedRadarSite
                       ? `Nearest radar site ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
                       : effectiveRadarProvider === 'iem'
-                        ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
-                        : 'RainViewer colors vary slightly by provider frame.'}
+                      ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
+                      : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>
                   {showAdvancedRadarControls ? (
                     <View style={styles.stationPanel}>
                       <View style={styles.stationHeader}>
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={styles.stationEyebrow}>{radarProductPanelEyebrow}</Text>
+                          <Text style={styles.stationEyebrow}>STORM SCOPE</Text>
                           <Text style={styles.stationTitle} numberOfLines={1}>
-                            {radarProductPanelTitle}
+                            {selectedRadarSite
+                              ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
+                              : 'Selecting nearest radar'}
                           </Text>
                         </View>
                         <View style={styles.agePill}>
-                          <Text style={styles.agePillText}>{radarProductPanelStatus}</Text>
+                          <Text style={styles.agePillText}>
+                            {stationProductLoading
+                              ? `Loading ${radarProductMeta.summaryLabel}`
+                              : activeFrameIso
+                                ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
+                                : stationProductUnavailable
+                                  ? 'No recent scans'
+                                : 'Latest'}
+                          </Text>
                         </View>
                       </View>
-                      <Text style={styles.stationMeta}>{radarProductPanelMeta}</Text>
+                      <Text style={styles.stationMeta}>
+                        {selectedRadarDistanceMi != null
+                          ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
+                          : 'Distance pending'}
+                        {' / '}
+                        {stationProductLoading
+                          ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
+                          : stationProductSourceLabel}
+                      </Text>
 
                       <View style={styles.stationProductGrid}>
                         {STATION_RADAR_PRODUCTS.map((item) => {
@@ -5240,6 +5245,16 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
+                  <View style={styles.animationControlStrip}>
+                    <View style={styles.animationControlSpacer} />
+                    <Pressable
+                      onPress={handleAnimationRecordPress}
+                      disabled={animationExporting}
+                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
+                    >
+                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
+                    </Pressable>
+                  </View>
                   {satelliteTimelineActive ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
@@ -5313,9 +5328,6 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
-                    onRecord={handleAnimationRecordPress}
-                    recordDisabled={animationExporting}
-                    recordBusy={animationExporting}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -6570,14 +6582,6 @@ function MiniToggle(props: { label: string; active?: boolean; onPress: () => voi
   );
 }
 
-function ZoomButton(props: { label: string; accessibilityLabel: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityLabel={props.accessibilityLabel} onPress={props.onPress} style={styles.zoomButton}>
-      <Text style={styles.zoomButtonText}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
 function HeatRiskLegend(props: { tropicalActive?: boolean }) {
   return (
     <View style={styles.productLegendBody}>
@@ -6936,22 +6940,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(2,6,23,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  zoomButton: {
-    width: 48,
-    height: 38,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(2,6,23,0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  zoomButtonText: {
-    color: 'rgba(255,255,255,0.96)',
-    fontSize: 22,
-    fontWeight: '900',
-    lineHeight: 24,
   },
   locationRing: {
     width: 22,
@@ -7723,6 +7711,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 4,
     paddingBottom: 7,
+  },
+  animationControlSpacer: {
+    flex: 1,
   },
   windRecordLabel: {
     color: 'rgba(226,232,240,0.82)',
