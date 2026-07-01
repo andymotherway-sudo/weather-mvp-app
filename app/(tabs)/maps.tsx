@@ -2055,17 +2055,43 @@ export default function MapsScreen() {
     setSatelliteSecondaryBufferStatus(null);
   }, [bufferedSatelliteKind]);
 
+  const emptyMapRadar = {
+    enabled: false,
+    templates: [null, null, null] as [string | null, string | null, string | null],
+    opacities: [0, 0, 0] as [number, number, number],
+    tileMaxZ: 0,
+    localImage: null,
+  };
+  const isStormScopeRadarTemplate = (template: string | null | undefined) => {
+    if (!template) return false;
+    const lower = template.toLowerCase();
+    if (lower.includes('rainviewer')) return false;
+    if (lower.includes('/nexrad-')) return false;
+    return lower.includes('ridge::') || lower.includes('/v1/radar/iem/ridge/');
+  };
+
   const mapRadar = useMemo(() => {
     if (
       !isFocused ||
       animationCompositorKind === 'radar' ||
       (bufferedRadarActive && radarBufferedPlaybackReady)
     ) {
+      return emptyMapRadar;
+    }
+
+    if (stormMode) {
+      const stormTemplates = radarCtl.radar.templates.map((template) =>
+        isStormScopeRadarTemplate(template) ? template : null,
+      ) as [string | null, string | null, string | null];
+      const hasStormTemplate = stormTemplates.some(Boolean);
+
       return {
-        enabled: false,
-        templates: [null, null, null],
-        opacities: [0, 0, 0],
-        tileMaxZ: 0,
+        ...radarCtl.radar,
+        enabled: radarCtl.radar.enabled && hasStormTemplate,
+        templates: stormTemplates,
+        opacities: hasStormTemplate ? radarCtl.radar.opacities : emptyMapRadar.opacities,
+        warmTemplates: radarCtl.radar.warmTemplates?.filter(isStormScopeRadarTemplate) ?? [],
+        tileMaxZ: radarTileMaxZ,
         localImage: null,
       };
     }
@@ -2081,6 +2107,7 @@ export default function MapsScreen() {
     isFocused,
     radarCtl.radar,
     radarTileMaxZ,
+    stormMode,
   ]);
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {

@@ -246,7 +246,7 @@ export type RadarControllerSheetValue = {
 };
 
 function getStormMode(state: any) {
-  return state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
+  return state?.radarTime?.stormMode === true;
 }
 
 function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
