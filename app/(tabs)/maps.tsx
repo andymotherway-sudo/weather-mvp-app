@@ -1320,7 +1320,7 @@ export default function MapsScreen() {
     if (rawView === 'storm') {
       dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
       dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
       return;
     }
@@ -1335,7 +1335,7 @@ export default function MapsScreen() {
     if (state.viewId !== 'storm') return;
     dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, [state.viewId]);
 
@@ -1393,7 +1393,6 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
-  const [forceMosaicRadar, setForceMosaicRadar] = useState(false);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
@@ -1420,11 +1419,10 @@ export default function MapsScreen() {
     state.viewId === 'radar' &&
     !stormMode &&
     !manualStationRadarMode &&
-    !forceMosaicRadar &&
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
   const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
+  const showAdvancedRadarControls = stationRadarMode && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -3129,7 +3127,6 @@ export default function MapsScreen() {
   const exitStormScope = useCallback(() => {
     setRadarMode('mosaic');
     setManualRadarSiteId3(null);
-    setForceMosaicRadar(true);
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
     dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
@@ -3147,16 +3144,12 @@ export default function MapsScreen() {
       : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta ?? stableInitialRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 1, 18);
 
-    setForceMosaicRadar(false);
-    if (stormMode && nextZoom < AUTO_NEXRAD_MIN_ZOOM) {
-      exitStormScope();
-    }
     setMapZoom(nextZoom);
     mapCameraRef.current?.setCamera?.({
       zoomLevel: nextZoom,
       animationDuration: 180,
     });
-  }, [effectiveRegion, exitStormScope, mapZoom, region, stableInitialRegion, stormMode]);
+  }, [effectiveRegion, mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -3771,7 +3764,6 @@ export default function MapsScreen() {
             onMapPress={handleMapPress}
               onPanDrag={() => {
                 locateRequestIdRef.current += 1;
-                setForceMosaicRadar(false);
               const now = Date.now();
               if (now - lastPanMarkRef.current > 450) {
                 lastPanMarkRef.current = now;
@@ -3787,9 +3779,6 @@ export default function MapsScreen() {
                 : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
             setMapZoom(zFloat);
-            if (stormMode && zFloat < AUTO_NEXRAD_MIN_ZOOM) {
-              exitStormScope();
-            }
 
             radarCtl.refreshLocalIfNeeded();
           }}
@@ -4960,37 +4949,16 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {state.viewId === 'radar' ? (
+                  {state.viewId === 'radar' && showAdvancedRadarControls ? (
                     <View style={styles.radarModeHeader}>
-                      <View style={styles.radarModeRow}>
-                        <MiniToggle
-                          label="Storm Scope"
-                          active={stormMode}
-                          onPress={() => {
-                            const nextStormMode = !stormMode;
-                            if (!nextStormMode) {
-                              exitStormScope();
-                              return;
-                            }
-                            setRadarMode('mosaic');
-                            setManualRadarSiteId3(null);
-                            setForceMosaicRadar(!nextStormMode);
-                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
-                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                          }}
-                        />
-                      </View>
-                      {showAdvancedRadarControls ? (
-                        <Pressable
-                          onPress={() => setStationPanelCollapsed(true)}
-                          style={styles.panelIconButton}
-                          accessibilityLabel="Minimize station radar panel"
-                        >
-                          <Text style={styles.panelIconButtonText}>-</Text>
-                        </Pressable>
-                      ) : null}
+                      <View style={styles.radarModeRow} />
+                      <Pressable
+                        onPress={() => setStationPanelCollapsed(true)}
+                        style={styles.panelIconButton}
+                        accessibilityLabel="Minimize station radar panel"
+                      >
+                        <Text style={styles.panelIconButtonText}>-</Text>
+                      </Pressable>
                     </View>
                   ) : null}
                   <RadarLegend
