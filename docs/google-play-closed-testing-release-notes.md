@@ -1,13 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.154**
-Android version code: **10171**
+Release: **OMNIwx Alpha 1.1.155**
+Android version code: **10172**
 Track: **Closed testing / internal testing candidate**
 Date: **July 1, 2026**
 
 ## Play Console Paste Notes
 
 This build keeps the restored RainViewer national radar mosaic and tightens the new map controls around it. Zoom buttons now only change camera zoom; they do not pass a location back to the map camera, recenter to the saved/current place, force Storm Scope, select a radar site, or change radar products. Storm Scope is now a true toggle: first press enters the local NEXRAD workstation, second press clears station selection and returns to the national mosaic path without snapping the camera.
+
+Storm Scope also now suppresses the hyperlocal WMS image fallback that could draw giant provider error rasters over the map. When Storm Scope is active, it should show tiled single-site radar products and range rings, not the broad mosaic or "Zoom Level Not Supported" image tiles.
 
 The map recorder remains an old-school red record dot placed beside play, rewind, and fast-forward in the radar/satellite timeline controls.
 
@@ -26,6 +28,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Added map zoom-in and zoom-out buttons that only change camera zoom.
 - Removed the zoom-button camera anchor that could snap users back to a location.
 - Made a second Storm Scope press explicitly return to the national mosaic path.
+- Prevented Storm Scope from rendering the hyperlocal WMS image fallback that could show giant provider error text over the local radar view.
+- Clear stale local WMS images when that fallback path is disabled.
 - Moved map recording into the playback controls as a red record-dot button.
 - Removed the separate text-based `Record` pill above the radar/satellite timeline.
 - Restored automatic close-zoom handoff to nearest local NEXRAD with radar rings.
@@ -46,6 +50,7 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 - Zoom back out and confirm the broad RainViewer national radar mosaic returns.
 - Use the `+` and `-` buttons and confirm they only zoom the current map view without recentering or changing radar mode.
 - Toggle Storm Scope on and confirm local NEXRAD, radar rings, and the product selector appear immediately.
+- Pause Storm Scope playback and confirm it still does not show giant "Zoom Level Not Supported" mosaic/image tiles.
 - Toggle Storm Scope off and confirm the broad national mosaic returns without recentering to the saved/current location.
 - In Storm Scope, choose base reflectivity, velocity, storm total precip, echo tops, and hail tracks and confirm single-site products appear when available.
 - Confirm the map never displays a large "Zoom Level Not Supported" radar tile.
@@ -61,8 +66,8 @@ Please focus testing on Maps radar behavior. The important expectation is that b
 
 ## Internal Release Checklist
 
-- App version: `1.1.154`
-- Android version code: `10171`
+- App version: `1.1.155`
+- Android version code: `10172`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

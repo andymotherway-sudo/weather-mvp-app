@@ -365,14 +365,15 @@ export function useRadarController(args: {
   /* =========================================================================
    * Hyperlocal WMS image mode
    * ========================================================================= */
-  // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
-  // also allow the alternate reflectivity product for sharper single-site inspection.
+  // Keep Storm Scope on tiled single-site radar. The WMS image fallback can return
+  // large provider error rasters, which should never appear inside the storm workbench.
   const usingLocalImage =
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
     !state.radarTime.playing &&
     !stationMode &&
-    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
+    !stormMode &&
+    product === 'N0Q' &&
     mapZoom >= localMinZoom;
 
   const windowSize = Dimensions.get('window');
@@ -508,6 +509,15 @@ export function useRadarController(args: {
     debouncedRefreshLocal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs, stormMode]);
+
+  useEffect(() => {
+    if (usingLocalImage) return;
+    if (localDebounceRef.current) clearTimeout(localDebounceRef.current);
+    lastLocalUrlRef.current = null;
+    lastCoordsKeyRef.current = null;
+    setLocalImageUrl(null);
+    setLocalImageCoords(null);
+  }, [usingLocalImage]);
 
   /* =========================================================================
    * IEM unified frames
