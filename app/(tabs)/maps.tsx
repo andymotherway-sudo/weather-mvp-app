@@ -1300,7 +1300,6 @@ export default function MapsScreen() {
       dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
       dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
       dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
       return;
     }
@@ -1316,7 +1315,6 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, [state.viewId]);
 
@@ -1432,7 +1430,7 @@ export default function MapsScreen() {
     isFocused &&
     !animationRecordMode &&
     radarEnabled &&
-    effectiveRadarProvider !== 'rainviewer' &&
+    effectiveRadarProvider === 'rainviewer' &&
     !stationRadarMode &&
     !stormMode &&
     mapZoom <= 8.5;
@@ -1446,7 +1444,6 @@ export default function MapsScreen() {
   useEffect(() => {
     setManualRadarSiteId3(null);
     lastCenteredRadarSiteRef.current = null;
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
   }, [radarAnchorKey]);
 
   const handleMapPress = useCallback((e: any) => mapPressHandlerRef.current(e), []);
@@ -2005,7 +2002,11 @@ export default function MapsScreen() {
                 : null;
   const animationCompositorKind = animationRecordMode ? activeAnimationKind : null;
   const bufferedRadarActive =
-    !stormMode && preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
+    effectiveRadarProvider === 'rainviewer' &&
+    !stormMode &&
+    preferBufferedWideRadar &&
+    !radarCtl.usingLocalImage &&
+    frameCount > 1;
   const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
     !animationRecordMode && isFocused
       ? trueColorUsingCatalog
@@ -3111,7 +3112,6 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, [dispatch]);
 
@@ -3119,7 +3119,6 @@ export default function MapsScreen() {
     setRadarMode('mosaic');
     setManualRadarSiteId3(null);
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
 
     if (String(params?.view ?? '').toLowerCase() === 'storm') {

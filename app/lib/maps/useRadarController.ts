@@ -687,25 +687,20 @@ export function useRadarController(args: {
       ].join('|'),
     [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
   );
-  const playlistContextKey = useMemo(
-    () =>
-      [
-        providerContextKey,
-        usingRainViewer ? framesSignature : '',
-      ].join('|'),
-    [providerContextKey, usingRainViewer, framesSignature],
-  );
+  const playlistContextKey = providerContextKey;
   const previousProviderContextKeyRef = useRef(providerContextKey);
 
   useEffect(() => {
-    const providerContextChanged = previousProviderContextKeyRef.current !== providerContextKey;
+    const previousProviderContextKey = previousProviderContextKeyRef.current;
+    const providerContextChanged = previousProviderContextKey !== providerContextKey;
     previousProviderContextKeyRef.current = providerContextKey;
-    const rainViewerTimelineRefresh = usingRainViewer && !providerContextChanged;
     const hasRenderableRadar = playTemplates.some(Boolean);
+    const switchingToRainViewer = providerContextChanged && usingRainViewer;
     const shouldHoldPreviousRadar =
       hasRenderableRadar &&
       !stormMode &&
-      !usingLocalImage;
+      !usingLocalImage &&
+      !switchingToRainViewer;
 
     if (!shouldHoldPreviousRadar) {
       setPlayFrames([]);
@@ -717,10 +712,8 @@ export function useRadarController(args: {
     if (!shouldHoldPreviousRadar) {
       slotHoldRef.current = [null, null, null];
     }
-    if (!rainViewerTimelineRefresh) {
-      setPreloadTo(null);
-      setXfade({ from: 0, to: 0, t: 1 });
-    }
+    setPreloadTo(null);
+    setXfade({ from: 0, to: 0, t: 1 });
     if (!usingRainViewer) {
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     }

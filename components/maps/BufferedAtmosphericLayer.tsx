@@ -97,6 +97,10 @@ export function BufferedAtmosphericLayer(props: Props) {
   }, [opacity]);
 
   const viewportKey = coordinateKey(coordinates);
+  const framesKey = useMemo(
+    () => frames.map((frame) => `${frame.id}:${frame.iso}:${frame.rasterId ?? ''}`).join('|'),
+    [frames],
+  );
   const requests = useMemo(
     () => {
       // The URL builder closes over the viewport. Reading the key here makes
@@ -111,7 +115,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         };
       });
     },
-    [frames, imageHeight, imageWidth, viewportKey],
+    [framesKey, imageHeight, imageWidth, viewportKey],
   );
 
   const [cachedUris, setCachedUris] = useState<Map<string, string>>(() => new Map());
@@ -164,8 +168,22 @@ export function BufferedAtmosphericLayer(props: Props) {
     const heldFront = frontSlotRef.current;
     slotOpacityRefs.current[heldFront].setValue(Math.max(0, Math.min(1, opacityRef.current)));
     slotOpacityRefs.current[heldFront === 0 ? 1 : 0].setValue(0);
-    setCachedUris(new Map());
-    setFailedIds(new Set());
+
+    const activeRequestIds = new Set(requests.map((request) => request.requestId));
+    setCachedUris((current) => {
+      const next = new Map<string, string>();
+      current.forEach((localUri, requestId) => {
+        if (activeRequestIds.has(requestId)) next.set(requestId, localUri);
+      });
+      return next;
+    });
+    setFailedIds((current) => {
+      const next = new Set<string>();
+      current.forEach((requestId) => {
+        if (activeRequestIds.has(requestId)) next.add(requestId);
+      });
+      return next;
+    });
     onBufferStatusRef.current?.({
       ready: 0,
       total: requests.length,
@@ -214,13 +232,21 @@ export function BufferedAtmosphericLayer(props: Props) {
   }, [enabled, requests]);
 
   useEffect(() => {
-    const ready = cachedUris.size;
+    const requestIds = new Set(requests.map((request) => request.requestId));
+    let ready = 0;
+    cachedUris.forEach((_, requestId) => {
+      if (requestIds.has(requestId)) ready += 1;
+    });
+    let failed = 0;
+    failedIds.forEach((requestId) => {
+      if (requestIds.has(requestId)) failed += 1;
+    });
     const total = requests.length;
     onBufferStatusRef.current?.({
       ready,
       total,
-      buffering: enabled && ready + failedIds.size < total,
-      failed: failedIds.size,
+      buffering: enabled && ready + failed < total,
+      failed,
     });
   }, [cachedUris, enabled, failedIds, requests]);
 
