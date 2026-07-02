@@ -1296,27 +1296,11 @@ export default function MapsScreen() {
       return;
     }
 
-    if (rawView === 'storm') {
-      dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
-      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-      return;
-    }
-
     const valid = MAP_VIEWS.some((view) => view.id === rawView);
     if (!valid) return;
 
     dispatch({ type: 'SET_VIEW', viewId: rawView as any });
   }, [params?.lat, params?.lon, params?.view, router]);
-
-  useEffect(() => {
-    if (state.viewId !== 'storm') return;
-    dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
-    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, [state.viewId]);
 
   useEffect(() => {
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
@@ -1373,7 +1357,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = state.viewId === 'radar' && state.radarTime.stormMode === true;
+  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {
@@ -1444,6 +1428,7 @@ export default function MapsScreen() {
   useEffect(() => {
     setManualRadarSiteId3(null);
     lastCenteredRadarSiteRef.current = null;
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
   }, [radarAnchorKey]);
 
   const handleMapPress = useCallback((e: any) => mapPressHandlerRef.current(e), []);
@@ -3074,26 +3059,6 @@ export default function MapsScreen() {
     }
     setCameraDebugLabel('locate-unavailable');
   };
-
-  const enterStormScope = useCallback(() => {
-    setRadarMode('mosaic');
-    setManualRadarSiteId3(null);
-    dispatch({ type: 'SET_VIEW', viewId: 'radar' as any });
-    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, [dispatch]);
-
-  const exitStormScope = useCallback(() => {
-    setRadarMode('mosaic');
-    setManualRadarSiteId3(null);
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-
-    if (String(params?.view ?? '').toLowerCase() === 'storm') {
-      router.setParams({ view: 'radar' } as any);
-    }
-  }, [dispatch, params?.view, router]);
 
   const zoomMapBy = useCallback((delta: number) => {
     const anchorRegion = region ?? effectiveRegion ?? stableInitialRegion;
@@ -4914,7 +4879,14 @@ export default function MapsScreen() {
                         <MiniToggle
                           label="Storm Scope"
                           active={stormMode}
-                          onPress={stormMode ? exitStormScope : enterStormScope}
+                          onPress={() => {
+                            const nextStormMode = !stormMode;
+                            if (nextStormMode) setRadarMode('mosaic');
+                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                          }}
                         />
                       </View>
                       {showAdvancedRadarControls ? (
@@ -5912,7 +5884,7 @@ export default function MapsScreen() {
           }}
           onOpenStandardMap={() => {
             setLayersSheetOpen(false);
-            exitStormScope();
+            dispatch({ type: 'SET_VIEW', viewId: 'radar' });
           }}
           onOpenAstroMap={() => {
             setLayersSheetOpen(false);

@@ -246,7 +246,7 @@ export type RadarControllerSheetValue = {
 };
 
 function getStormMode(state: any) {
-  return state?.radarTime?.stormMode === true;
+  return state?.viewId === 'storm' || state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
 }
 
 function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
@@ -334,11 +334,6 @@ export function useRadarController(args: {
 
   const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
   const [rvError, setRvError] = useState<string | null>(null);
-  const rvFramesRef = useRef<RadarFrame[] | null>(null);
-
-  useEffect(() => {
-    rvFramesRef.current = rvFrames;
-  }, [rvFrames]);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,7 +349,7 @@ export function useRadarController(args: {
         setRvFrames(frames);
       } catch (e: any) {
         if (cancelled) return;
-        if (!rvFramesRef.current?.length) setRvFrames(null);
+        setRvFrames(null);
         setRvError(String(e?.message ?? e ?? 'RainViewer failed'));
       }
     }
@@ -370,15 +365,14 @@ export function useRadarController(args: {
   /* =========================================================================
    * Hyperlocal WMS image mode
    * ========================================================================= */
-  // Keep Storm Scope on tiled single-site radar. The WMS image fallback can return
-  // large provider error rasters, which should never appear inside the storm workbench.
+  // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
+  // also allow the alternate reflectivity product for sharper single-site inspection.
   const usingLocalImage =
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
     !state.radarTime.playing &&
     !stationMode &&
-    !stormMode &&
-    product === 'N0Q' &&
+    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
     mapZoom >= localMinZoom;
 
   const windowSize = Dimensions.get('window');
