@@ -1,15 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.165**
-Android version code: **10182**
+Release: **OMNIwx Alpha 1.1.166**
+Android version code: **10183**
 Track: **Closed testing / internal testing candidate**
-Date: **July 1, 2026**
+Date: **July 2, 2026**
 
 ## Play Console Paste Notes
 
-This build restores the known-good radar architecture: broad radar uses the RainViewer national mosaic path, while Storm Scope and local NEXRAD use the station radar path.
+This build keeps the radar restoration work focused. The old `MapRenderer` was compared with the current renderer and matched, confirming that the remaining radar issue is in radar orchestration rather than the map renderer.
 
-Storm Scope remains a toggle, but leaving it no longer keeps station radar in the broad mosaic workflow. The radar controller now clears provider handoffs directly again, reducing stale NEXRAD imagery, stuck mosaic playback, and provider cross-contamination.
+The release keeps RainViewer as the broad mosaic path and local NEXRAD for Storm Scope / close-range radar. It also preserves the latest Storm Scope toggle and provider handoff cleanup work for continued tester validation.
 
 ## Tester Notes
 
@@ -17,10 +17,10 @@ Please focus testing on Maps radar. The expected behavior is: broad zoom shows t
 
 ### What Changed
 
-- Restore RainViewer as the broad mosaic path.
-- Stop routing RainViewer through the buffered radar compositor.
-- Restore direct radar playlist clearing on provider handoff.
-- Keep advanced product controls limited to Storm Scope/manual station mode.
+- Confirm current map renderer matches the older working renderer.
+- Keep RainViewer as the broad mosaic path.
+- Keep local NEXRAD isolated to Storm Scope / close-range radar.
+- Continue validating Storm Scope toggle and provider handoff behavior.
 
 ### What To Test
 
@@ -37,8 +37,8 @@ Please focus testing on Maps radar. The expected behavior is: broad zoom shows t
 
 ## Internal Release Checklist
 
-- App version: `1.1.165`
-- Android version code: `10182`
+- App version: `1.1.166`
+- Android version code: `10183`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`
