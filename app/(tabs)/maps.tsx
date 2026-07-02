@@ -1401,7 +1401,7 @@ export default function MapsScreen() {
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
   const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = stationRadarMode && localRadarAvailable;
+  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1430,7 +1430,7 @@ export default function MapsScreen() {
     isFocused &&
     !animationRecordMode &&
     radarEnabled &&
-    effectiveRadarProvider === 'rainviewer' &&
+    effectiveRadarProvider !== 'rainviewer' &&
     !stationRadarMode &&
     !stormMode &&
     mapZoom <= 8.5;
@@ -2002,11 +2002,7 @@ export default function MapsScreen() {
                 : null;
   const animationCompositorKind = animationRecordMode ? activeAnimationKind : null;
   const bufferedRadarActive =
-    effectiveRadarProvider === 'rainviewer' &&
-    !stormMode &&
-    preferBufferedWideRadar &&
-    !radarCtl.usingLocalImage &&
-    frameCount > 1;
+    preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
   const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
     !animationRecordMode && isFocused
       ? trueColorUsingCatalog
@@ -2035,43 +2031,17 @@ export default function MapsScreen() {
     setSatelliteSecondaryBufferStatus(null);
   }, [bufferedSatelliteKind]);
 
-  const emptyMapRadar = {
-    enabled: false,
-    templates: [null, null, null] as [string | null, string | null, string | null],
-    opacities: [0, 0, 0] as [number, number, number],
-    tileMaxZ: 0,
-    localImage: null,
-  };
-  const isStormScopeRadarTemplate = (template: string | null | undefined) => {
-    if (!template) return false;
-    const lower = template.toLowerCase();
-    if (lower.includes('rainviewer')) return false;
-    if (lower.includes('/nexrad-')) return false;
-    return lower.includes('ridge::') || lower.includes('/v1/radar/iem/ridge/');
-  };
-
   const mapRadar = useMemo(() => {
     if (
       !isFocused ||
       animationCompositorKind === 'radar' ||
       (bufferedRadarActive && radarBufferedPlaybackReady)
     ) {
-      return emptyMapRadar;
-    }
-
-    if (stormMode) {
-      const stormTemplates = radarCtl.radar.templates.map((template) =>
-        isStormScopeRadarTemplate(template) ? template : null,
-      ) as [string | null, string | null, string | null];
-      const hasStormTemplate = stormTemplates.some(Boolean);
-
       return {
-        ...radarCtl.radar,
-        enabled: radarCtl.radar.enabled && hasStormTemplate,
-        templates: stormTemplates,
-        opacities: hasStormTemplate ? radarCtl.radar.opacities : emptyMapRadar.opacities,
-        warmTemplates: radarCtl.radar.warmTemplates?.filter(isStormScopeRadarTemplate) ?? [],
-        tileMaxZ: radarTileMaxZ,
+        enabled: false,
+        templates: [null, null, null],
+        opacities: [0, 0, 0],
+        tileMaxZ: 0,
         localImage: null,
       };
     }
@@ -2087,7 +2057,6 @@ export default function MapsScreen() {
     isFocused,
     radarCtl.radar,
     radarTileMaxZ,
-    stormMode,
   ]);
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {

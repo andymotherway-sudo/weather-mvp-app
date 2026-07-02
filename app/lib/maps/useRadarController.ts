@@ -671,11 +671,10 @@ export function useRadarController(args: {
 
   const pendingFramesRef = useRef<Array<{ iso: string }> | null>(null);
   const pendingTemplatesRef = useRef<Array<string | null> | null>(null);
-  const holdingPreviousDuringHandoffRef = useRef(false);
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
-  const providerContextKey = useMemo(
+  const playlistContextKey = useMemo(
     () =>
       [
         sheetValue.radarProvider,
@@ -687,36 +686,16 @@ export function useRadarController(args: {
       ].join('|'),
     [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
   );
-  const playlistContextKey = providerContextKey;
-  const previousProviderContextKeyRef = useRef(providerContextKey);
 
   useEffect(() => {
-    const previousProviderContextKey = previousProviderContextKeyRef.current;
-    const providerContextChanged = previousProviderContextKey !== providerContextKey;
-    previousProviderContextKeyRef.current = providerContextKey;
-    const hasRenderableRadar = playTemplates.some(Boolean);
-    const switchingToRainViewer = providerContextChanged && usingRainViewer;
-    const shouldHoldPreviousRadar =
-      hasRenderableRadar &&
-      !stormMode &&
-      !usingLocalImage &&
-      !switchingToRainViewer;
-
-    if (!shouldHoldPreviousRadar) {
-      setPlayFrames([]);
-      setPlayTemplates([]);
-    }
-    holdingPreviousDuringHandoffRef.current = shouldHoldPreviousRadar;
+    setPlayFrames([]);
+    setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
-    if (!shouldHoldPreviousRadar) {
-      slotHoldRef.current = [null, null, null];
-    }
+    slotHoldRef.current = [null, null, null];
     setPreloadTo(null);
     setXfade({ from: 0, to: 0, t: 1 });
-    if (!usingRainViewer) {
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
-    }
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlistContextKey]);
 
@@ -745,21 +724,8 @@ export function useRadarController(args: {
     if (!state.radarTime.playing) {
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
-      holdingPreviousDuringHandoffRef.current = false;
       pendingFramesRef.current = null;
       pendingTemplatesRef.current = null;
-      return;
-    }
-
-    if (holdingPreviousDuringHandoffRef.current) {
-      const currentIso = lastDisplayedIsoRef.current;
-      const mappedIndex = findNearestFrameIndex(liveFrames, currentIso);
-      setPlayFrames(liveFrames);
-      setPlayTemplates(liveTemplates);
-      holdingPreviousDuringHandoffRef.current = false;
-      pendingFramesRef.current = null;
-      pendingTemplatesRef.current = null;
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
       return;
     }
 

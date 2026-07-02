@@ -1,26 +1,26 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.164**
-Android version code: **10181**
+Release: **OMNIwx Alpha 1.1.165**
+Android version code: **10182**
 Track: **Closed testing / internal testing candidate**
 Date: **July 1, 2026**
 
 ## Play Console Paste Notes
 
-This build tightens radar handoff between the RainViewer national mosaic and local NEXRAD Storm Scope. Turning Storm Scope off now clears the local radar handoff cleanly instead of leaving NEXRAD imagery behind the national mosaic.
+This build restores the known-good radar architecture: broad radar uses the RainViewer national mosaic path, while Storm Scope and local NEXRAD use the station radar path.
 
-Radar playback also avoids unnecessary frame-one resets during Storm Scope toggles, location changes, and normal RainViewer timeline refreshes. The buffered mosaic layer now keeps its visible frame while refreshed frames download, reducing flashing and jumpy playback.
+Storm Scope remains a toggle, but leaving it no longer keeps station radar in the broad mosaic workflow. The radar controller now clears provider handoffs directly again, reducing stale NEXRAD imagery, stuck mosaic playback, and provider cross-contamination.
 
 ## Tester Notes
 
-Please focus testing on Maps radar. The important expectation is that mosaic and local NEXRAD never remain visible at the same time after leaving Storm Scope, and that radar animation keeps advancing without repeatedly jumping back to frame one.
+Please focus testing on Maps radar. The expected behavior is: broad zoom shows the RainViewer mosaic, close/storm use local NEXRAD, and Storm Scope can be turned on/off without leaving stale station imagery behind.
 
 ### What Changed
 
-- Clear stale NEXRAD playback when returning to the RainViewer mosaic.
-- Avoid frame-zero resets during Storm Scope toggles and radar anchor updates.
-- Keep the visible buffered mosaic frame on screen while refreshed frames download.
-- Restore RainViewer buffered playback as the broad radar path.
+- Restore RainViewer as the broad mosaic path.
+- Stop routing RainViewer through the buffered radar compositor.
+- Restore direct radar playlist clearing on provider handoff.
+- Keep advanced product controls limited to Storm Scope/manual station mode.
 
 ### What To Test
 
@@ -37,8 +37,8 @@ Please focus testing on Maps radar. The important expectation is that mosaic and
 
 ## Internal Release Checklist
 
-- App version: `1.1.164`
-- Android version code: `10181`
+- App version: `1.1.165`
+- Android version code: `10182`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`
