@@ -607,8 +607,8 @@ export function useRadarController(args: {
   const liveFrames: Array<{ iso: string }> = useMemo(() => {
     let out: Array<{ iso: string }> = [];
 
-    if (usingRainViewer && rvFrames) {
-      out = rvFrames.map((f) => ({ iso: f.iso }));
+    if (sheetValue.radarProvider === 'rainviewer') {
+      out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
     } else {
       const frames = iemUnified?.frames;
       if (frames?.length) out = frames.map((f) => ({ iso: f.iso }));
@@ -616,13 +616,14 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
+  }, [sheetValue.radarProvider, rvFrames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];
     if (usingLocalImage) return [];
 
-    if (usingRainViewer && rvFrames?.length) {
+    if (sheetValue.radarProvider === 'rainviewer') {
+      if (!rvFrames?.length) return [];
       return rvFrames
         .map((f) => {
           if (!f?.t || !f?.iso) return null;
@@ -655,7 +656,7 @@ export function useRadarController(args: {
     return [...iemFramesFallback]
       .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
       .map(() => null);
-  }, [radarEnabled, usingLocalImage, usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
+  }, [radarEnabled, usingLocalImage, sheetValue.radarProvider, rvFrames, iemUnified, iemFramesFallback]);
 
   /* =========================================================================
    * Stable playback playlist
@@ -682,14 +683,39 @@ export function useRadarController(args: {
   );
 
   useEffect(() => {
-    setPlayFrames([]);
-    setPlayTemplates([]);
+    const currentIso =
+      lastDisplayedIsoRef.current ??
+      playFrames[clampIndex(state.radarTime.frameIndex, playFrames.length)]?.iso ??
+      liveFrames[clampIndex(state.radarTime.frameIndex, liveFrames.length)]?.iso ??
+      null;
+
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
     slotHoldRef.current = [null, null, null];
+
+    if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
+    preloadTimerRef.current = null;
+    if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
+    xfadeTimerRef.current = null;
+
     setPreloadTo(null);
-    setXfade({ from: 0, to: 0, t: 1 });
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+
+    if (!liveFrames.length) {
+      setPlayFrames([]);
+      setPlayTemplates([]);
+      prevFrameRef.current = 0;
+      setXfade({ from: 0, to: 0, t: 1 });
+      return;
+    }
+
+    const mappedIndex = findNearestFrameIndex(liveFrames, currentIso);
+    setPlayFrames(liveFrames);
+    setPlayTemplates(liveTemplates);
+    prevFrameRef.current = mappedIndex;
+    setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
+    if (state.radarTime.frameIndex !== mappedIndex) {
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlistContextKey]);
 
@@ -706,11 +732,19 @@ export function useRadarController(args: {
 
   useEffect(() => {
     if (!liveFrames.length) return;
-    if (!playFrames.length) {
+    const currentHasTemplates = playTemplates.some(Boolean);
+    const nextHasTemplates = liveTemplates.some(Boolean);
+    if (!playFrames.length || (!currentHasTemplates && nextHasTemplates)) {
+      const mappedIndex = findNearestFrameIndex(liveFrames, lastDisplayedIsoRef.current);
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
+      prevFrameRef.current = mappedIndex;
+      setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
+      if (state.radarTime.frameIndex !== mappedIndex) {
+        dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
+      }
     }
-  }, [liveFrames, liveTemplates, playFrames.length]);
+  }, [liveFrames, liveTemplates, playFrames.length, playTemplates, state.radarTime.frameIndex, dispatch]);
 
   useEffect(() => {
     if (!liveFrames.length) return;

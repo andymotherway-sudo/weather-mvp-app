@@ -1,33 +1,30 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.167**
-Android version code: **10184**
+Release: **OMNIwx Alpha 1.1.168**
+Android version code: **10185**
 Track: **Closed testing / internal testing candidate**
 Date: **July 2, 2026**
 
 ## Play Console Paste Notes
 
-This build restores more of the older working radar orchestration. Storm Scope no longer uses the sticky route/effect path that could re-enable station radar after being turned off.
-
-The radar controller now matches the older RainViewer and Storm Scope behavior more closely: broad radar stays on the RainViewer mosaic path, while close-range / Storm Scope radar uses the local NEXRAD path with cleaner frame resets.
+Radar stability pass for Maps. Broad radar remains on the RainViewer mosaic path, while close-range and Storm Scope radar use the local NEXRAD path. Provider, product, zoom, and Storm Scope transitions now preserve the nearest radar timestamp instead of snapping back to the first frame. This also prevents RainViewer frames from falling back into NEXRAD/IEM frame lists while RainViewer data is loading.
 
 ## Tester Notes
 
-Please focus testing on Maps radar. The expected behavior is: broad zoom shows the RainViewer mosaic, close/storm use local NEXRAD, and Storm Scope can be turned on/off without leaving stale station imagery behind.
+Please focus testing on Maps radar. Broad zoom should show the RainViewer mosaic, close zoom / Storm Scope should show local NEXRAD, and transitions should not flash or restart at frame one.
 
 ### What Changed
 
-- Remove sticky Storm Scope route/effect reactivation.
-- Restore the older direct Storm Scope toggle behavior.
-- Restore radar frame reset when the radar anchor changes.
-- Restore older RainViewer frame clearing and Storm Scope detection.
+- Preserve radar playback position by timestamp during provider and product handoffs.
+- Keep RainViewer and NEXRAD/IEM frame lists separated.
+- Remove remaining UI actions that forced radar playback back to frame one.
 
 ### What To Test
 
 - Open Maps at national scale and confirm the RainViewer national mosaic appears and animates.
 - Toggle Storm Scope on and confirm local NEXRAD appears without national mosaic clutter underneath.
 - Toggle Storm Scope off and confirm the RainViewer mosaic returns without stale local radar imagery.
-- Let both radar modes play and confirm they do not repeatedly jump back to frame one.
+- Let both radar modes play and confirm transitions do not repeatedly jump back to frame one.
 
 ### Known Watch Areas
 
@@ -37,8 +34,8 @@ Please focus testing on Maps radar. The expected behavior is: broad zoom shows t
 
 ## Internal Release Checklist
 
-- App version: `1.1.167`
-- Android version code: `10184`
+- App version: `1.1.168`
+- Android version code: `10185`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

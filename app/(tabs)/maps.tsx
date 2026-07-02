@@ -1428,7 +1428,6 @@ export default function MapsScreen() {
   useEffect(() => {
     setManualRadarSiteId3(null);
     lastCenteredRadarSiteRef.current = null;
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
   }, [radarAnchorKey]);
 
   const handleMapPress = useCallback((e: any) => mapPressHandlerRef.current(e), []);
@@ -4884,7 +4883,6 @@ export default function MapsScreen() {
                             if (nextStormMode) setRadarMode('mosaic');
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
-                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
                             dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />
@@ -4962,7 +4960,6 @@ export default function MapsScreen() {
                                   return;
                                 }
                                 setStationProduct(item.id as RadarProductId);
-                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
                               }}
                               style={[
                                 styles.stationProductButton,
