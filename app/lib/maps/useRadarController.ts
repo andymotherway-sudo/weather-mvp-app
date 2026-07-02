@@ -246,7 +246,7 @@ export type RadarControllerSheetValue = {
 };
 
 function getStormMode(state: any) {
-  return state?.viewId === 'storm' || state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
+  return state?.radarTime?.stormMode === true;
 }
 
 function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
@@ -367,13 +367,7 @@ export function useRadarController(args: {
    * ========================================================================= */
   // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
   // also allow the alternate reflectivity product for sharper single-site inspection.
-  const usingLocalImage =
-    sheetValue.radarProvider === 'iem' &&
-    radarEnabled &&
-    !state.radarTime.playing &&
-    !stationMode &&
-    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
-    mapZoom >= localMinZoom;
+  const usingLocalImage = false;
 
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();

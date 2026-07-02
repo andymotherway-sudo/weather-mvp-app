@@ -1357,7 +1357,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
+  const stormMode = state.radarTime.stormMode === true;
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {
@@ -4880,6 +4880,10 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
+                            if (!nextStormMode && state.viewId === 'storm') {
+                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+                              return;
+                            }
                             if (nextStormMode) setRadarMode('mosaic');
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });

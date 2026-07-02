@@ -1939,12 +1939,14 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.168`, Android version code `10185`.
+- Current release example: app version `1.1.169`, Android version code `10186`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
 
 Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Do not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` from UI controls unless the user explicitly scrubbed to the first frame.
+
+Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Avoid using `viewId === 'storm'` as an always-on radar provider condition without also giving the toggle a clean path back to the normal radar view.
 
 Map-control release note: zoom buttons are intentionally camera-only controls. They should never recenter the map, switch Storm Scope, select a radar station, alter layers, or change radar products. Recording animated map loops belongs in the timeline control cluster as a red record-dot button beside playback controls, not as a separate text pill.
 

@@ -1,23 +1,23 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.168**
-Android version code: **10185**
+Release: **OMNIwx Alpha 1.1.169**
+Android version code: **10186**
 Track: **Closed testing / internal testing candidate**
 Date: **July 2, 2026**
 
 ## Play Console Paste Notes
 
-Radar stability pass for Maps. Broad radar remains on the RainViewer mosaic path, while close-range and Storm Scope radar use the local NEXRAD path. Provider, product, zoom, and Storm Scope transitions now preserve the nearest radar timestamp instead of snapping back to the first frame. This also prevents RainViewer frames from falling back into NEXRAD/IEM frame lists while RainViewer data is loading.
+Radar correction for Maps. Storm Scope now has one source of truth and can turn off cleanly. Broad radar stays on the RainViewer mosaic path, while close-range and Storm Scope radar stay on the animated NEXRAD tile path. The static WMS image fallback that could show giant "Zoom Level Not Supported" text has been removed from normal radar playback.
 
 ## Tester Notes
 
-Please focus testing on Maps radar. Broad zoom should show the RainViewer mosaic, close zoom / Storm Scope should show local NEXRAD, and transitions should not flash or restart at frame one.
+Please focus testing on Maps radar. Broad zoom should show RainViewer mosaic, close zoom / Storm Scope should show local NEXRAD, and Storm Scope should toggle off reliably.
 
 ### What Changed
 
-- Preserve radar playback position by timestamp during provider and product handoffs.
-- Keep RainViewer and NEXRAD/IEM frame lists separated.
-- Remove remaining UI actions that forced radar playback back to frame one.
+- Make Storm Scope use `radarTime.stormMode` as the single source of truth.
+- Turn Storm view off by returning to normal radar view.
+- Disable the static WMS radar image path that could leave stale or unsupported imagery.
 
 ### What To Test
 
@@ -34,8 +34,8 @@ Please focus testing on Maps radar. Broad zoom should show the RainViewer mosaic
 
 ## Internal Release Checklist
 
-- App version: `1.1.168`
-- Android version code: `10185`
+- App version: `1.1.169`
+- Android version code: `10186`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

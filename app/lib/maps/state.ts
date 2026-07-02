@@ -139,7 +139,7 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
       // this bit across a standard view switch can make the toggle appear stuck.
       next.radarTime =
         action.viewId === 'storm'
-          ? state.radarTime
+          ? { ...state.radarTime, stormMode: true }
           : { ...state.radarTime, stormMode: false };
 
       // ...but if the next view doesn't have radar enabled, pause playing to avoid wasted work.
