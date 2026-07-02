@@ -1,40 +1,36 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.162**
-Android version code: **10179**
+Release: **OMNIwx Alpha 1.1.163**
+Android version code: **10180**
 Track: **Closed testing / internal testing candidate**
 Date: **July 1, 2026**
 
 ## Play Console Paste Notes
 
-This build improves Maps radar handoff and Storm Scope product reliability. Radar now holds the last valid frame while switching between broad RainViewer mosaic and local NEXRAD, reducing blank/loading gaps during zoom and provider transitions. Storm Scope still blocks the national mosaic underneath local radar, so users should not see both products stacked together.
+This build focuses on RainViewer national mosaic playback stability. The mosaic now keeps the last good RainViewer frame list if a timeline refresh fails, so transient provider/network errors should no longer make the radar layer flash away.
 
-The Storm Scope product selector now shows only products OMNIwx can render with the current source: base reflectivity, base velocity, legacy velocity, storm-relative velocity, and echo tops. Echo tops now use the IEM NET latest-tile fallback when scan timelines are unavailable.
+RainViewer timeline refreshes also preserve the nearest currently displayed timestamp instead of resetting playback to the first frame. Crossfade slots are no longer reset during normal RainViewer timeline refreshes, which should reduce blinking and make the mosaic animation advance more naturally.
 
-Zoom buttons remain zoom-only and should not recenter the map.
+Storm Scope behavior is unchanged in this build: local radar products should still block the national mosaic underneath them, while normal broad radar views use the RainViewer mosaic.
 
 ## Tester Notes
 
-Please focus testing on radar transitions and Storm Scope products. The important expectation is that broad zoom shows the RainViewer national mosaic, close zooms can hand off to local NEXRAD without a blank gap, Storm Scope does not show the national mosaic underneath local products, and zoom buttons never pull the camera back to the saved/current location.
+Please focus testing on broad RainViewer mosaic animation. The important expectation is that the national mosaic keeps animating forward, does not jump back to the first frame during timeline refresh, and does not flash away when RainViewer has a short fetch hiccup.
 
 ### What Changed
 
-- Held the last valid radar frame during normal mosaic/NEXRAD handoff until replacement frames are ready.
-- Swapped to new radar provider/product frames as soon as they load.
-- Kept Storm Scope clearing behavior so the broad mosaic cannot remain underneath local storm products.
-- Added the IEM `NET` latest-tile fallback for Echo Tops when scan timelines are unavailable.
-- Removed inactive `CC`, `ZDR`, and `VIL` placeholders from the active Storm Scope product selector.
-- Kept the selector focused on currently renderable products: base reflectivity, base velocity, legacy velocity, storm-relative velocity, and echo tops.
+- Preserve the last good RainViewer frame list when a refresh fails.
+- Preserve the nearest displayed RainViewer timestamp when the timeline updates.
+- Avoid resetting RainViewer crossfade slots during normal timeline refresh.
+- Keep Storm Scope/local radar behavior unchanged.
 
 ### What To Test
 
-- Open Maps at national scale and confirm the RainViewer national radar mosaic appears and animates.
-- Zoom toward a local area and confirm local NEXRAD/radar rings appear without a blank handoff.
-- Zoom back out and confirm the broad RainViewer national radar mosaic returns.
-- Toggle Storm Scope on and confirm the broad mosaic is not visible underneath local radar.
-- Try every visible Storm Scope product: Base Reflectivity, Base Velocity, Legacy Velocity, Storm Relative Velocity, and Echo Tops.
-- Use the `+` and `-` buttons and confirm they only zoom the current map view without recentering or changing radar mode.
-- Confirm the map never displays a large "Zoom Level Not Supported" radar tile.
+- Open Maps at national scale and confirm the RainViewer national radar mosaic appears.
+- Let the mosaic play through multiple frames and confirm it advances instead of repeatedly jumping to frame one.
+- Watch for several minutes and confirm the mosaic does not flash away during provider refresh.
+- Toggle Storm Scope on and confirm the broad mosaic is still not visible underneath local radar.
+- Toggle Storm Scope off and confirm the broad RainViewer mosaic returns.
 
 ### Known Watch Areas
 
@@ -44,8 +40,8 @@ Please focus testing on radar transitions and Storm Scope products. The importan
 
 ## Internal Release Checklist
 
-- App version: `1.1.162`
-- Android version code: `10179`
+- App version: `1.1.163`
+- Android version code: `10180`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

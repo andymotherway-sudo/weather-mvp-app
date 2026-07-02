@@ -334,6 +334,11 @@ export function useRadarController(args: {
 
   const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
   const [rvError, setRvError] = useState<string | null>(null);
+  const rvFramesRef = useRef<RadarFrame[] | null>(null);
+
+  useEffect(() => {
+    rvFramesRef.current = rvFrames;
+  }, [rvFrames]);
 
   useEffect(() => {
     let cancelled = false;
@@ -349,7 +354,7 @@ export function useRadarController(args: {
         setRvFrames(frames);
       } catch (e: any) {
         if (cancelled) return;
-        setRvFrames(null);
+        if (!rvFramesRef.current?.length) setRvFrames(null);
         setRvError(String(e?.message ?? e ?? 'RainViewer failed'));
       }
     }
@@ -670,7 +675,7 @@ export function useRadarController(args: {
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
-  const playlistContextKey = useMemo(
+  const providerContextKey = useMemo(
     () =>
       [
         sheetValue.radarProvider,
@@ -682,8 +687,20 @@ export function useRadarController(args: {
       ].join('|'),
     [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
   );
+  const playlistContextKey = useMemo(
+    () =>
+      [
+        providerContextKey,
+        usingRainViewer ? framesSignature : '',
+      ].join('|'),
+    [providerContextKey, usingRainViewer, framesSignature],
+  );
+  const previousProviderContextKeyRef = useRef(providerContextKey);
 
   useEffect(() => {
+    const providerContextChanged = previousProviderContextKeyRef.current !== providerContextKey;
+    previousProviderContextKeyRef.current = providerContextKey;
+    const rainViewerTimelineRefresh = usingRainViewer && !providerContextChanged;
     const hasRenderableRadar = playTemplates.some(Boolean);
     const shouldHoldPreviousRadar =
       hasRenderableRadar &&
@@ -700,9 +717,13 @@ export function useRadarController(args: {
     if (!shouldHoldPreviousRadar) {
       slotHoldRef.current = [null, null, null];
     }
-    setPreloadTo(null);
-    setXfade({ from: 0, to: 0, t: 1 });
-    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    if (!rainViewerTimelineRefresh) {
+      setPreloadTo(null);
+      setXfade({ from: 0, to: 0, t: 1 });
+    }
+    if (!usingRainViewer) {
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlistContextKey]);
 
@@ -738,11 +759,14 @@ export function useRadarController(args: {
     }
 
     if (holdingPreviousDuringHandoffRef.current) {
+      const currentIso = lastDisplayedIsoRef.current;
+      const mappedIndex = findNearestFrameIndex(liveFrames, currentIso);
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
       holdingPreviousDuringHandoffRef.current = false;
       pendingFramesRef.current = null;
       pendingTemplatesRef.current = null;
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
       return;
     }
 
