@@ -67,6 +67,23 @@ function findNearestFrameIndex(frames: Array<{ iso: string }>, targetIso?: strin
   return bestIdx;
 }
 
+function stableMappedFrameIndex(
+  frames: Array<{ iso: string }>,
+  targetIso: string | null | undefined,
+  currentFrameIndex: number,
+) {
+  if (!frames.length) return 0;
+  const mappedIndex = findNearestFrameIndex(frames, targetIso);
+  const currentIndex = clampIndex(currentFrameIndex, frames.length);
+
+  // A provider refresh can make the old timestamp fall before the new playlist.
+  // In that case nearest-index mapping becomes 0, which looks like the radar
+  // animation jumped back to the first frame. Keep the user's current loop
+  // position unless they were already at the beginning.
+  if (mappedIndex === 0 && currentIndex > 0) return currentIndex;
+  return mappedIndex;
+}
+
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
@@ -700,7 +717,7 @@ export function useRadarController(args: {
       return;
     }
 
-    const mappedIndex = findNearestFrameIndex(liveFrames, currentIso);
+    const mappedIndex = stableMappedFrameIndex(liveFrames, currentIso, state.radarTime.frameIndex);
     setPlayFrames(liveFrames);
     setPlayTemplates(liveTemplates);
     prevFrameRef.current = mappedIndex;
@@ -727,7 +744,7 @@ export function useRadarController(args: {
     const currentHasTemplates = playTemplates.some(Boolean);
     const nextHasTemplates = liveTemplates.some(Boolean);
     if (!playFrames.length || (!currentHasTemplates && nextHasTemplates)) {
-      const mappedIndex = findNearestFrameIndex(liveFrames, lastDisplayedIsoRef.current);
+      const mappedIndex = stableMappedFrameIndex(liveFrames, lastDisplayedIsoRef.current, state.radarTime.frameIndex);
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
       prevFrameRef.current = mappedIndex;
@@ -1115,7 +1132,7 @@ export function useRadarController(args: {
         pendingTemplatesRef.current = null;
 
         const currentIso = lastDisplayedIsoRef.current;
-        const mappedIndex = findNearestFrameIndex(nextFrames, currentIso);
+        const mappedIndex = stableMappedFrameIndex(nextFrames, currentIso, safeFrameIndexRef.current);
 
         setPlayFrames(nextFrames);
         setPlayTemplates(nextTemplates);

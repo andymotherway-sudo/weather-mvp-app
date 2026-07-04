@@ -57,7 +57,8 @@ export type MapAction =
   | { type: 'SET_VIEWPORT'; viewport: MapViewport }
   | { type: 'SET_RADAR_FRAME'; frameIndex: number }
   | { type: 'SET_RADAR_PLAYING'; playing: boolean }
-  | { type: 'SET_RADAR_STORM_MODE'; stormMode: boolean };
+  | { type: 'SET_RADAR_STORM_MODE'; stormMode: boolean }
+  | { type: 'TOGGLE_RADAR_STORM_MODE' };
 
 function buildDefaultLayers(): Record<LayerId, LayerRuntimeState> {
   return Object.fromEntries(
@@ -193,6 +194,15 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         radarTime: {
           ...state.radarTime,
           stormMode: action.stormMode,
+        },
+      };
+
+    case 'TOGGLE_RADAR_STORM_MODE':
+      return {
+        ...state,
+        radarTime: {
+          ...state.radarTime,
+          stormMode: !state.radarTime.stormMode,
         },
       };
 

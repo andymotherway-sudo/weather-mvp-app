@@ -1941,14 +1941,16 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.170`, Android version code `10187`.
+- Current release example: app version `1.1.171`, Android version code `10188`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
 
 Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Do not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` from UI controls unless the user explicitly scrubbed to the first frame.
 
-Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Normal radar owns the automatic RainViewer-to-NEXRAD zoom handoff; Storm Scope is an explicit chaser/workstation tool layered on top of that workflow.
+Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Any legacy `storm` route/view should normalize back through the standard radar view with Storm Scope enabled so the visible chip remains the single on/off control. Normal radar owns the automatic RainViewer-to-NEXRAD zoom handoff; Storm Scope is an explicit chaser/workstation tool layered on top of that workflow.
+
+Radar playlist note: when provider frames refresh, map the new playlist to the displayed timestamp, but do not snap to frame `0` just because the old timestamp falls before the new frame list. Preserve the user's current loop position unless the user actually scrubbed to the first frame.
 
 Radar handoff note: broad zoom should use the RainViewer mosaic, close zoom should latch into nearest local NEXRAD with hysteresis, and MapLibre radar source IDs should include the active radar mode so stale provider tiles cannot remain behind after a provider switch.
 
