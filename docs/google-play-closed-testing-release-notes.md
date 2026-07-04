@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.172**
-Android version code: **10189**
+Release: **OMNIwx Alpha 1.1.173**
+Android version code: **10190**
 Track: **Closed testing / internal testing candidate**
 Date: **July 4, 2026**
 
@@ -35,8 +35,8 @@ Please focus testing on Maps radar. Toggle Storm Scope repeatedly at broad and c
 
 ## Internal Release Checklist
 
-- App version: `1.1.172`
-- Android version code: `10189`
+- App version: `1.1.173`
+- Android version code: `10190`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`
