@@ -67,23 +67,6 @@ function findNearestFrameIndex(frames: Array<{ iso: string }>, targetIso?: strin
   return bestIdx;
 }
 
-function stableMappedFrameIndex(
-  frames: Array<{ iso: string }>,
-  targetIso: string | null | undefined,
-  currentFrameIndex: number,
-) {
-  if (!frames.length) return 0;
-  const mappedIndex = findNearestFrameIndex(frames, targetIso);
-  const currentIndex = clampIndex(currentFrameIndex, frames.length);
-
-  // A provider refresh can make the old timestamp fall before the new playlist.
-  // In that case nearest-index mapping becomes 0, which looks like the radar
-  // animation jumped back to the first frame. Keep the user's current loop
-  // position unless they were already at the beginning.
-  if (mappedIndex === 0 && currentIndex > 0) return currentIndex;
-  return mappedIndex;
-}
-
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
@@ -263,7 +246,7 @@ export type RadarControllerSheetValue = {
 };
 
 function getStormMode(state: any) {
-  return state?.radarTime?.stormMode === true;
+  return state?.viewId === 'storm' || state?.radarTime?.stormMode === true || state?.layers?.['radar.storm']?.enabled === true;
 }
 
 function getRadarProductStyle(product: RadarProductId): RadarOverlay['productStyle'] {
@@ -283,7 +266,6 @@ export function useRadarController(args: {
   region: Region | null;
   stationMode?: boolean;
   radarSiteId3?: string | null;
-  stationMinZoom?: number;
   localMinZoom?: number;
   ridgeMinZoom?: number;
   animationQuality?: AnimationQuality;
@@ -295,8 +277,6 @@ export function useRadarController(args: {
   const suspendRasterTransitions = args.suspendRasterTransitions === true;
   const playbackBlocked = args.playbackBlocked === true;
   const stationMode = args.stationMode === true;
-  const stationMinZoom = args.stationMinZoom ?? 9.75;
-  const stationModeAllowed = stationMode && mapZoom >= stationMinZoom;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
@@ -347,8 +327,7 @@ export function useRadarController(args: {
       ttlMs: 60_000,
       includeNowcast: false,
       maxFrames: 24,
-      maxZoom: 8,
-      tileSize: 512,
+      maxZoom: 7,
     }),
   );
 
@@ -369,6 +348,7 @@ export function useRadarController(args: {
         setRvFrames(frames);
       } catch (e: any) {
         if (cancelled) return;
+        setRvFrames(null);
         setRvError(String(e?.message ?? e ?? 'RainViewer failed'));
       }
     }
@@ -386,7 +366,13 @@ export function useRadarController(args: {
    * ========================================================================= */
   // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
   // also allow the alternate reflectivity product for sharper single-site inspection.
-  const usingLocalImage = false;
+  const usingLocalImage =
+    sheetValue.radarProvider === 'iem' &&
+    radarEnabled &&
+    !state.radarTime.playing &&
+    !stationMode &&
+    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
+    mapZoom >= localMinZoom;
 
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();
@@ -522,15 +508,6 @@ export function useRadarController(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usingLocalImage, product, imageW, imageH, drivingIso, localImageProfile.dpr, localImageProfile.debounceMs, stormMode]);
 
-  useEffect(() => {
-    if (usingLocalImage) return;
-    if (localDebounceRef.current) clearTimeout(localDebounceRef.current);
-    lastLocalUrlRef.current = null;
-    lastCoordsKeyRef.current = null;
-    setLocalImageUrl(null);
-    setLocalImageCoords(null);
-  }, [usingLocalImage]);
-
   /* =========================================================================
    * IEM unified frames
    * ========================================================================= */
@@ -566,13 +543,13 @@ export function useRadarController(args: {
             zoom: mapZoom,
             product,
             mosaicMaxZoom: 9,
-            ridgeMinZoom: stationModeAllowed ? 2 : effectiveRidgeMinZoom,
+            ridgeMinZoom: stationMode ? 2 : effectiveRidgeMinZoom,
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
-            maxLocalDistanceKm: stationModeAllowed ? 5000 : stormMode ? 260 : 350,
-            allowMosaicFallback: !stormMode && (!stationModeAllowed || product === 'EET'),
-            force: stationModeAllowed ? 'ridge' : undefined,
-            forceRadarId3: stationModeAllowed ? radarSiteId3 : null,
+            maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
+            allowMosaicFallback: !stormMode && (!stationMode || product === 'EET'),
+            force: stormMode || stationMode ? 'ridge' : undefined,
+            forceRadarId3: stationMode ? radarSiteId3 : null,
           },
         });
 
@@ -581,6 +558,7 @@ export function useRadarController(args: {
         setIemLoading(false);
       } catch (e: any) {
         if (cancelled) return;
+        setIemUnified(null);
         setIemError(String(e?.message ?? e ?? 'IEM frames failed'));
         setIemLoading(false);
       }
@@ -594,7 +572,7 @@ export function useRadarController(args: {
     sheetValue.radarProvider,
     radarEnabled,
     usingLocalImage,
-    stationModeAllowed,
+    stationMode,
     radarSiteId3,
     stormMode,
     centerForRadar.lat,
@@ -619,8 +597,8 @@ export function useRadarController(args: {
   const liveFrames: Array<{ iso: string }> = useMemo(() => {
     let out: Array<{ iso: string }> = [];
 
-    if (sheetValue.radarProvider === 'rainviewer') {
-      out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
+    if (usingRainViewer && rvFrames) {
+      out = rvFrames.map((f) => ({ iso: f.iso }));
     } else {
       const frames = iemUnified?.frames;
       if (frames?.length) out = frames.map((f) => ({ iso: f.iso }));
@@ -628,14 +606,13 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [sheetValue.radarProvider, rvFrames, iemUnified, iemFramesFallback]);
+  }, [usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];
     if (usingLocalImage) return [];
 
-    if (sheetValue.radarProvider === 'rainviewer') {
-      if (!rvFrames?.length) return [];
+    if (usingRainViewer && rvFrames?.length) {
       return rvFrames
         .map((f) => {
           if (!f?.t || !f?.iso) return null;
@@ -668,7 +645,7 @@ export function useRadarController(args: {
     return [...iemFramesFallback]
       .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
       .map(() => null);
-  }, [radarEnabled, usingLocalImage, sheetValue.radarProvider, rvFrames, iemUnified, iemFramesFallback]);
+  }, [radarEnabled, usingLocalImage, usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
 
   /* =========================================================================
    * Stable playback playlist
@@ -685,94 +662,45 @@ export function useRadarController(args: {
     () =>
       [
         sheetValue.radarProvider,
-        stationModeAllowed ? 'station' : 'wide',
+        stationMode ? 'station' : 'wide',
         stormMode ? 'storm' : 'standard',
         radarSiteId3 ?? 'auto',
         product,
         usingLocalImage ? 'image' : 'tiles',
       ].join('|'),
-    [sheetValue.radarProvider, stationModeAllowed, stormMode, radarSiteId3, product, usingLocalImage],
+    [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
   );
 
   useEffect(() => {
-    const currentIso =
-      lastDisplayedIsoRef.current ??
-      playFrames[clampIndex(state.radarTime.frameIndex, playFrames.length)]?.iso ??
-      liveFrames[clampIndex(state.radarTime.frameIndex, liveFrames.length)]?.iso ??
-      null;
-
+    setPlayFrames([]);
+    setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
-    if (stationModeAllowed) {
-      slotHoldRef.current = [null, null, null];
-    }
-
-    if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
-    preloadTimerRef.current = null;
-    if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
-    xfadeTimerRef.current = null;
-
+    slotHoldRef.current = [null, null, null];
     setPreloadTo(null);
-
-    if (!liveFrames.length) {
-      if (stationModeAllowed || !playFrames.length) {
-        setPlayFrames([]);
-        setPlayTemplates([]);
-        prevFrameRef.current = 0;
-        setXfade({ from: 0, to: 0, t: 1 });
-      }
-      return;
-    }
-
-    if (state.radarTime.playing && playFrames.length) {
-      pendingFramesRef.current = liveFrames;
-      pendingTemplatesRef.current = liveTemplates;
-      return;
-    }
-
-    const mappedIndex = stableMappedFrameIndex(liveFrames, currentIso, state.radarTime.frameIndex);
-    setPlayFrames(liveFrames);
-    setPlayTemplates(liveTemplates);
-    prevFrameRef.current = mappedIndex;
-    setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
-    if (state.radarTime.frameIndex !== mappedIndex) {
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
-    }
+    setXfade({ from: 0, to: 0, t: 1 });
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playlistContextKey]);
 
   useEffect(() => {
     if (liveFrames.length) return;
-    if (!stationModeAllowed) return;
+    if (!stormMode && !stationMode) return;
 
     setPlayFrames([]);
     setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
     slotHoldRef.current = [null, null, null];
-  }, [liveFrames.length, stationModeAllowed]);
+  }, [liveFrames.length, stationMode, stormMode]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
-    const currentHasTemplates = playTemplates.some(Boolean);
-    const nextHasTemplates = liveTemplates.some(Boolean);
-    if (!playFrames.length || (!currentHasTemplates && nextHasTemplates)) {
-      if (state.radarTime.playing && playFrames.length) {
-        pendingFramesRef.current = liveFrames;
-        pendingTemplatesRef.current = liveTemplates;
-        return;
-      }
-
-      const mappedIndex = stableMappedFrameIndex(liveFrames, lastDisplayedIsoRef.current, state.radarTime.frameIndex);
+    if (!playFrames.length) {
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
-      prevFrameRef.current = mappedIndex;
-      setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
-      if (state.radarTime.frameIndex !== mappedIndex) {
-        dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
-      }
     }
-  }, [liveFrames, liveTemplates, playFrames.length, playTemplates, state.radarTime.frameIndex, dispatch]);
+  }, [liveFrames, liveTemplates, playFrames.length]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
@@ -871,17 +799,7 @@ export function useRadarController(args: {
 
     setPreloadTo(next);
 
-    const preloadMs = usingRainViewer
-      ? mapZoom <= 5
-        ? 700
-        : mapZoom <= 8
-          ? 560
-          : 440
-      : mapZoom <= 5
-        ? 440
-        : mapZoom <= 8
-          ? 360
-          : 280;
+    const preloadMs = mapZoom <= 5 ? 360 : mapZoom <= 8 ? 300 : 240;
 
     preloadTimerRef.current = setTimeout(() => {
       const start = Date.now();
@@ -920,7 +838,6 @@ export function useRadarController(args: {
     effectiveTemplates,
     effectiveTemplates.length,
     suspendRasterTransitions,
-    usingRainViewer,
   ]);
 
   const perFrameOpacities = useMemo(() => {
@@ -938,9 +855,9 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.96 ? radarOpacity * 0.42 : 0;
+    const oldFrameFloor = t < 0.92 ? radarOpacity * 0.28 : 0;
     out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
-    out[to] = Math.max(radarOpacity * t, t > 0 ? radarOpacity * 0.08 : 0);
+    out[to] = radarOpacity * t;
 
     if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
       const back = clampIndex(to - 1, n);
@@ -979,7 +896,7 @@ export function useRadarController(args: {
     }
 
     if (!n) {
-      if (stationModeAllowed) {
+      if (stormMode || stationMode) {
         slotHoldRef.current = [null, null, null];
         return { templates: outTemplates, opacities: outOpacities, warmTemplates };
       }
@@ -1064,7 +981,7 @@ export function useRadarController(args: {
     radarOpacity,
     preloadTo,
     mapZoom,
-    stationModeAllowed,
+    stationMode,
     stormMode,
   ]);
 
@@ -1073,12 +990,6 @@ export function useRadarController(args: {
    * ========================================================================= */
   const PLAY_TICK_MS = 120;
   const END_HOLD_MULTIPLIER = 1.8;
-  const shouldAnimate =
-    radarEnabled &&
-    state.radarTime.playing &&
-    !playbackBlocked &&
-    !stationModeAllowed &&
-    !usingLocalImage;
 
   const playingRef = useRef<boolean>(state.radarTime.playing);
   const frameCountRef = useRef<number>(frameCount);
@@ -1133,7 +1044,8 @@ export function useRadarController(args: {
     if (playTimerRef.current) clearInterval(playTimerRef.current);
     playTimerRef.current = null;
 
-    if (!shouldAnimate) return;
+    if (usingLocalImage) return;
+    if (!state.radarTime.playing) return;
 
     if (frameCount < 2) {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
@@ -1150,9 +1062,11 @@ export function useRadarController(args: {
       const cur = safeFrameIndexRef.current;
       const baseDwell = minDwellRef.current;
 
+      const atStart = cur <= 0;
       const atEnd = cur >= fc - 1;
+      const atEdge = atStart || atEnd;
 
-      if (atEnd && pendingFramesRef.current && pendingTemplatesRef.current) {
+      if (atEdge && pendingFramesRef.current && pendingTemplatesRef.current) {
         const nextFrames = pendingFramesRef.current;
         const nextTemplates = pendingTemplatesRef.current;
 
@@ -1160,16 +1074,10 @@ export function useRadarController(args: {
         pendingTemplatesRef.current = null;
 
         const currentIso = lastDisplayedIsoRef.current;
-        let mappedIndex = stableMappedFrameIndex(nextFrames, currentIso, safeFrameIndexRef.current);
-        if (mappedIndex <= 0 && nextFrames.length > 1 && safeFrameIndexRef.current > 0) {
-          mappedIndex = nextFrames.length - 1;
-        }
+        const mappedIndex = findNearestFrameIndex(nextFrames, currentIso);
 
         setPlayFrames(nextFrames);
         setPlayTemplates(nextTemplates);
-        prevFrameRef.current = mappedIndex;
-        setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
-        setPreloadTo(null);
 
         lastAdvanceRef.current = Date.now();
 
@@ -1177,7 +1085,7 @@ export function useRadarController(args: {
         return;
       }
 
-      const dwellNow = atEnd ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
+      const dwellNow = atEdge ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
       if (Date.now() - lastAdvanceRef.current < dwellNow) return;
 
       const next = cur >= fc - 1 ? 0 : cur + 1;
@@ -1194,7 +1102,7 @@ export function useRadarController(args: {
       playTimerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldAnimate, frameCount]);
+  }, [usingLocalImage, state.radarTime.playing, frameCount]);
 
   /* =========================================================================
    * tileMaxZ selection
@@ -1209,15 +1117,6 @@ export function useRadarController(args: {
     return 9;
   }, [usingRainViewer, usingLocalImage, iemUnified]);
 
-  const visibleTemplate = useMemo(
-    () => activeRadar.templates.find((_, i) => (activeRadar.opacities[i] ?? 0) > 0.05) ?? '',
-    [activeRadar.opacities, activeRadar.templates],
-  );
-  const radarSourceKey = useMemo(
-    () => `${playlistContextKey}|frame:${safeFrameIndex}|template:${visibleTemplate}`,
-    [playlistContextKey, safeFrameIndex, visibleTemplate],
-  );
-
   /* =========================================================================
    * Final switch: localImage vs templates
    * ========================================================================= */
@@ -1225,15 +1124,7 @@ export function useRadarController(args: {
     const productStyle = getRadarProductStyle(product);
 
     if (!radarEnabled) {
-      return {
-        enabled: false,
-        templates: [],
-        opacities: [],
-        sourceKey: playlistContextKey,
-        tileMaxZ: radarTileMaxZ,
-        productStyle,
-        localImage: null,
-      };
+      return { enabled: false, templates: [], opacities: [], tileMaxZ: radarTileMaxZ, productStyle, localImage: null };
     }
 
     if (usingLocalImage && localImageUrl && localImageCoords) {
@@ -1241,7 +1132,6 @@ export function useRadarController(args: {
         enabled: true,
         templates: [],
         opacities: [],
-        sourceKey: playlistContextKey,
         tileMaxZ: radarTileMaxZ,
         productStyle,
         localImage: { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity },
@@ -1253,7 +1143,6 @@ export function useRadarController(args: {
       templates: activeRadar.templates,
       opacities: activeRadar.opacities,
       warmTemplates: activeRadar.warmTemplates,
-      sourceKey: radarSourceKey,
       tileMaxZ: radarTileMaxZ,
       productStyle,
       localImage: null,
@@ -1269,7 +1158,6 @@ export function useRadarController(args: {
     activeRadar.templates,
     activeRadar.opacities,
     activeRadar.warmTemplates,
-    radarSourceKey,
   ]);
 
   return {

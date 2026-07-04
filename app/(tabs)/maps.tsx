@@ -54,7 +54,6 @@ import { normalizeRadarSiteId } from '../lib/maps/radarIem';
 import { resolveNearestRadar } from '../lib/maps/resolveNearestRadar';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useAlertMapLayer } from '../lib/maps/useAlertMapLayer';
-import { useLightningMapData } from '../lib/maps/useLightningMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
@@ -68,29 +67,11 @@ import { useSettings } from '../context/SettingsContext';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const WPC_PRECIP_HAZARDS_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/vector/rest/services/hazards/wpc_precip_hazards/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const NHC_TROPICAL_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const NHC_TROPICAL_OUTLOOK_LAYERS = '0,1,2,3,398,399';
-const NHC_ACTIVE_CONE_LAYERS = '8,34,60,86,112,138,164,190,216,242,268,294,320,346,372';
-const NHC_ACTIVE_TRACK_LAYERS =
-  '6,7,11,12,32,33,37,38,58,59,63,64,84,85,89,90,110,111,115,116,136,137,141,142,162,163,167,168,188,189,193,194,214,215,219,220,240,241,245,246,266,267,271,272,292,293,297,298,318,319,323,324,344,345,349,350,370,371,375,376';
-const NHC_ACTIVE_WATCH_WARNING_LAYERS = '9,35,61,87,113,139,165,191,217,243,269,295,321,347,373';
-const NHC_ACTIVE_WIND_RADII_LAYERS =
-  '16,42,68,94,120,146,172,198,224,250,276,302,328,354,380';
-const NHC_ACTIVE_ARRIVAL_LAYERS =
-  '19,20,45,46,71,72,97,98,123,124,149,150,175,176,201,202,227,228,253,254,279,280,305,306,331,332,357,358,383,384';
-const NWPS_RIVER_GAUGES_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/eventdriven/rest/services/water/riv_gauges/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const RFC_QPE_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/raster/rest/services/obs/rfc_qpe/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const STORM_SCOPE_MIN_ZOOM = 9.75;
-const STORM_SCOPE_FORCE_EXIT_ZOOM = 8.75;
+const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -237,11 +218,32 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-storm-relative-velocity',
   },
   {
+    id: 'CC',
+    label: 'Correlation Coef',
+    subtitle: 'Live source needed',
+    enabled: false,
+    learnTopicId: 'radar-correlation-coefficient',
+  },
+  {
+    id: 'ZDR',
+    label: 'Differential Refl',
+    subtitle: 'Live source needed',
+    enabled: false,
+    learnTopicId: 'radar-differential-reflectivity',
+  },
+  {
     id: 'EET',
     label: 'Echo Tops',
     subtitle: 'Echo top height latest',
     enabled: true,
     learnTopicId: 'radar-echo-tops',
+  },
+  {
+    id: 'VIL',
+    label: 'VIL',
+    subtitle: 'Live source needed',
+    enabled: false,
+    learnTopicId: 'radar-vil',
   },
 ];
 
@@ -332,8 +334,6 @@ const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
   'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
-const NWS_HEATRISK_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
@@ -823,14 +823,6 @@ function isRadarPrimaryView(viewId: string) {
   return viewId === 'radar' || viewId === 'wildfire' || viewId === 'storm' || viewId === 'aviation';
 }
 
-const HEATRISK_LEGEND_STOPS = [
-  { label: 'Little', color: '#f7f4a3' },
-  { label: 'Minor', color: '#f4cf4c' },
-  { label: 'Moderate', color: '#e5843e' },
-  { label: 'Major', color: '#c74444' },
-  { label: 'Extreme', color: '#7b2f8f' },
-];
-
 function getSimpleStatus(args: {
   viewId: string;
   fireRestrictionsEnabled: boolean;
@@ -838,13 +830,6 @@ function getSimpleStatus(args: {
   frontsDay1Enabled: boolean;
   frontsDay2Enabled: boolean;
   frontsDay3Enabled: boolean;
-  excessiveRainDay1Enabled: boolean;
-  excessiveRainDay2Enabled: boolean;
-  riverStagesEnabled: boolean;
-  qpeLast24hEnabled: boolean;
-  heatRiskEnabled: boolean;
-  tropicsOutlookEnabled: boolean;
-  tropicsTracksEnabled: boolean;
   cloudsEnabled: boolean;
   wildfireHotspotsEnabled: boolean;
   wildfireSmokeEnabled: boolean;
@@ -866,13 +851,6 @@ function getSimpleStatus(args: {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
-    excessiveRainDay1Enabled,
-    excessiveRainDay2Enabled,
-    riverStagesEnabled,
-    qpeLast24hEnabled,
-    heatRiskEnabled,
-    tropicsOutlookEnabled,
-    tropicsTracksEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
@@ -898,15 +876,6 @@ function getSimpleStatus(args: {
   if (frontsDay1Enabled) return 'WPC Day 1 fronts active';
   if (frontsDay2Enabled) return 'WPC Day 2 fronts active';
   if (frontsDay3Enabled) return 'WPC Day 3 fronts active';
-  if (excessiveRainDay1Enabled) return 'WPC Day 1 excessive rain active';
-  if (excessiveRainDay2Enabled) return 'WPC Day 2 excessive rain active';
-  if (riverStagesEnabled) return 'NWPS river stages active';
-  if (qpeLast24hEnabled) return 'RFC 24h rainfall estimate active';
-  if (heatRiskEnabled && (tropicsOutlookEnabled || tropicsTracksEnabled)) return 'HeatRisk + NHC tropics active';
-  if (heatRiskEnabled) return 'NWS HeatRisk impact map active';
-  if (tropicsOutlookEnabled && tropicsTracksEnabled) return 'NHC outlook + active storm tracks';
-  if (tropicsOutlookEnabled) return 'NHC tropical development outlook';
-  if (tropicsTracksEnabled) return 'NHC active storm tracks/cones';
 
   if (viewId === 'clouds') {
     return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
@@ -1235,7 +1204,6 @@ export default function MapsScreen() {
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
-  const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
@@ -1277,9 +1245,6 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
-  const suppressAutoNearestRef = useRef(false);
-  const stormScopeBusyRef = useRef(false);
-  const stormScopeBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
@@ -1303,14 +1268,6 @@ export default function MapsScreen() {
 
     const valid = MAP_VIEWS.some((view) => view.id === rawView);
     if (!valid) return;
-
-    if (rawView === 'storm') {
-      dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-      dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-      dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-      return;
-    }
 
     dispatch({ type: 'SET_VIEW', viewId: rawView as any });
   }, [params?.lat, params?.lon, params?.view, router]);
@@ -1360,13 +1317,6 @@ export default function MapsScreen() {
     AsyncStorage.setItem(STATION_PRODUCT_STORAGE_KEY, stationProduct).catch(() => {});
   }, [stationProduct]);
 
-  useEffect(
-    () => () => {
-      if (stormScopeBusyTimerRef.current) clearTimeout(stormScopeBusyTimerRef.current);
-    },
-    [],
-  );
-
   const lastPanMarkRef = useRef<number>(0);
   const locateRequestIdRef = useRef(0);
   const wildfireLookupRef = useRef<{ incidents: any; perimeters: any; symbols: any }>({
@@ -1377,8 +1327,7 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const radarViewActive = state.viewId === 'radar' || state.viewId === 'storm';
-  const stormMode = radarViewActive && state.radarTime.stormMode === true;
+  const stormMode = (state.viewId === 'radar' && state.radarTime.stormMode === true) || state.viewId === 'storm';
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {
@@ -1398,10 +1347,15 @@ export default function MapsScreen() {
     [radarAnchor.lat, radarAnchor.lon],
   );
   const localRadarAvailable = !!autoNearestRadar?.site;
-  const [autoNearestRadarLatched, setAutoNearestRadarLatched] = useState(false);
-  const stationRadarMode = stormMode && localRadarAvailable && mapZoom >= STORM_SCOPE_MIN_ZOOM;
-  const showStormScopeRadar = radarEnabled && stationRadarMode;
-  const showAdvancedRadarControls = showStormScopeRadar;
+  const autoNearestRadarMode =
+    radarEnabled &&
+    state.viewId === 'radar' &&
+    !stormMode &&
+    !manualStationRadarMode &&
+    localRadarAvailable &&
+    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
+  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1416,22 +1370,20 @@ export default function MapsScreen() {
     return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
   }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(showStormScopeRadar ? selectedRadarSite : null), [
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(stationRadarMode ? selectedRadarSite : null), [
+    stationRadarMode,
     selectedRadarSite,
-    showStormScopeRadar,
   ]);
-  const displayedStationProduct = pendingStationProduct ?? stationProduct;
   const product: RadarProductId = showAdvancedRadarControls
-    ? displayedStationProduct
+    ? stationProduct
     : stationRadarMode
       ? 'N0B'
       : 'N0Q';
-  const effectiveRadarProvider = stationRadarMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&
     radarEnabled &&
-    effectiveRadarProvider !== 'rainviewer' &&
     !stationRadarMode &&
     !stormMode &&
     mapZoom <= 8.5;
@@ -1443,22 +1395,9 @@ export default function MapsScreen() {
       radarBufferedReadyCount >= Math.min(2, radarBufferedTotal || 2));
 
   useEffect(() => {
-    if (!stormMode) return;
-    if (mapZoom >= STORM_SCOPE_FORCE_EXIT_ZOOM) return;
-
-    suppressAutoNearestRef.current = true;
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-    setStationPanelCollapsed(true);
-    setAutoNearestRadarLatched(false);
-    setManualRadarSiteId3(null);
-    setRadarMode('mosaic');
-    lastCenteredRadarSiteRef.current = null;
-    radarStationSeedRegionRef.current = null;
-  }, [stormMode, mapZoom, dispatch]);
-
-  useEffect(() => {
     setManualRadarSiteId3(null);
     lastCenteredRadarSiteRef.current = null;
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
   }, [radarAnchorKey]);
 
   const handleMapPress = useCallback((e: any) => mapPressHandlerRef.current(e), []);
@@ -1471,20 +1410,12 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
-  const lightningEnabled = !!state.layers?.['lightning.strikes']?.enabled;
   const windParticlesEnabled = !!state.layers?.['wx.wind.particles']?.enabled;
   const windLayerEnabled = windParticlesEnabled;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
   const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
-  const excessiveRainDay1Enabled = !!state.layers?.['wpc.excessiveRain.day1']?.enabled;
-  const excessiveRainDay2Enabled = !!state.layers?.['wpc.excessiveRain.day2']?.enabled;
-  const riverStagesEnabled = !!state.layers?.['flood.riverStages']?.enabled;
-  const qpeLast24hEnabled = !!state.layers?.['flood.qpe.last24h']?.enabled;
-  const heatRiskEnabled = !!state.layers?.['heat.nwsHeatRisk']?.enabled;
-  const tropicsOutlookEnabled = !!state.layers?.['tropics.nhcOutlook']?.enabled;
-  const tropicsTracksEnabled = !!state.layers?.['tropics.nhcTracks']?.enabled;
   const aviationModeActive = state.viewId === 'aviation';
   const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
   const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
@@ -1757,27 +1688,6 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
-  const excessiveRainDay1Opacity = Number.isFinite(state.layers?.['wpc.excessiveRain.day1']?.opacity)
-    ? state.layers['wpc.excessiveRain.day1'].opacity
-    : 0.62;
-  const excessiveRainDay2Opacity = Number.isFinite(state.layers?.['wpc.excessiveRain.day2']?.opacity)
-    ? state.layers['wpc.excessiveRain.day2'].opacity
-    : 0.58;
-  const riverStagesOpacity = Number.isFinite(state.layers?.['flood.riverStages']?.opacity)
-    ? state.layers['flood.riverStages'].opacity
-    : 0.9;
-  const qpeLast24hOpacity = Number.isFinite(state.layers?.['flood.qpe.last24h']?.opacity)
-    ? state.layers['flood.qpe.last24h'].opacity
-    : 0.5;
-  const heatRiskOpacity = Number.isFinite(state.layers?.['heat.nwsHeatRisk']?.opacity)
-    ? state.layers['heat.nwsHeatRisk'].opacity
-    : 0.56;
-  const tropicsOutlookOpacity = Number.isFinite(state.layers?.['tropics.nhcOutlook']?.opacity)
-    ? state.layers['tropics.nhcOutlook'].opacity
-    : 0.72;
-  const tropicsTracksOpacity = Number.isFinite(state.layers?.['tropics.nhcTracks']?.opacity)
-    ? state.layers['tropics.nhcTracks'].opacity
-    : 0.82;
   const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
     ? state.layers['wx.wind.particles'].opacity
     : 0.72;
@@ -1793,9 +1703,6 @@ export default function MapsScreen() {
   const alertsOpacity = Number.isFinite(state.layers?.['alerts.polygons']?.opacity)
     ? state.layers['alerts.polygons'].opacity
     : 0.95;
-  const lightningOpacity = Number.isFinite(state.layers?.['lightning.strikes']?.opacity)
-    ? state.layers['lightning.strikes'].opacity
-    : 0.78;
 
   const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
@@ -1955,13 +1862,12 @@ export default function MapsScreen() {
     rawMode,
     region,
     stationMode: stationRadarMode,
-    stationMinZoom: STORM_SCOPE_MIN_ZOOM,
     radarSiteId3: selectedRadarId3,
     localMinZoom: stormMode ? 10.5 : 12,
     ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
-    playbackBlocked: stationRadarMode || (preferBufferedWideRadar && !radarBufferedLeadReady),
+    playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -1972,11 +1878,6 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
   const stationProductUnavailable = stationRadarMode && !stationProductLoading && frameCount <= 0;
-  useEffect(() => {
-    if (!pendingStationProduct) return;
-    if (stationProductLoading || stationProductUnavailable) return;
-    setPendingStationProduct(null);
-  }, [pendingStationProduct, stationProductLoading, stationProductUnavailable]);
   const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
   const stationProductSourceLabel =
     product === 'EET' || product === 'NET'
@@ -2366,149 +2267,6 @@ export default function MapsScreen() {
       });
     }
 
-    if (excessiveRainDay1Enabled) {
-      list.push({
-        id: 'wpc-excessive-rain-day1',
-        tileUrlTemplates: [`${WPC_PRECIP_HAZARDS_EXPORT_URL}&layers=show:0`],
-        opacity: Math.max(0, Math.min(1, Number(excessiveRainDay1Opacity))),
-        zIndex: 111,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-    }
-
-    if (excessiveRainDay2Enabled) {
-      list.push({
-        id: 'wpc-excessive-rain-day2',
-        tileUrlTemplates: [`${WPC_PRECIP_HAZARDS_EXPORT_URL}&layers=show:1`],
-        opacity: Math.max(0, Math.min(1, Number(excessiveRainDay2Opacity))),
-        zIndex: 110,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-    }
-
-    if (qpeLast24hEnabled) {
-      list.push({
-        id: 'rfc-qpe-last24h',
-        tileUrlTemplates: [`${RFC_QPE_EXPORT_URL}&layers=show:25,26,27,28`],
-        opacity: Math.max(0, Math.min(1, Number(qpeLast24hOpacity))),
-        zIndex: 103,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-    }
-
-    if (heatRiskEnabled) {
-      list.push({
-        id: 'nws-heatrisk',
-        tileUrlTemplates: [arcGisImageServerTileTemplate(NWS_HEATRISK_EXPORT_URL, null, 512)],
-        opacity: Math.max(0, Math.min(1, Number(heatRiskOpacity))),
-        zIndex: 104,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'nearest',
-      });
-    }
-
-    if (riverStagesEnabled) {
-      list.push({
-        id: 'nwps-river-stages',
-        tileUrlTemplates: [`${NWPS_RIVER_GAUGES_EXPORT_URL}&layers=show:0,15`],
-        opacity: Math.max(0, Math.min(1, Number(riverStagesOpacity))),
-        zIndex: 126,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 11,
-        fadeDurationMs: 120,
-        resampling: 'nearest',
-      });
-    }
-
-    if (tropicsOutlookEnabled) {
-      list.push({
-        id: 'nhc-tropics-outlook',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_TROPICAL_OUTLOOK_LAYERS}`],
-        opacity: Math.max(0, Math.min(1, Number(tropicsOutlookOpacity))),
-        zIndex: 116,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-    }
-
-    if (tropicsTracksEnabled) {
-      const activeOpacity = Math.max(0, Math.min(1, Number(tropicsTracksOpacity)));
-      list.push({
-        id: 'nhc-tropics-cones',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_CONE_LAYERS}`],
-        opacity: activeOpacity * 0.68,
-        zIndex: 117,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-      list.push({
-        id: 'nhc-tropics-wind-radii',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_WIND_RADII_LAYERS}`],
-        opacity: activeOpacity * 0.72,
-        zIndex: 118,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-      list.push({
-        id: 'nhc-tropics-arrival',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_ARRIVAL_LAYERS}`],
-        opacity: activeOpacity * 0.46,
-        zIndex: 119,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 8,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-      list.push({
-        id: 'nhc-tropics-track',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_TRACK_LAYERS}`],
-        opacity: activeOpacity,
-        zIndex: 120,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 10,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-      list.push({
-        id: 'nhc-tropics-watch-warning',
-        tileUrlTemplates: [`${NHC_TROPICAL_EXPORT_URL}&layers=show:${NHC_ACTIVE_WATCH_WARNING_LAYERS}`],
-        opacity: activeOpacity,
-        zIndex: 121,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 10,
-        fadeDurationMs: 120,
-        resampling: 'linear',
-      });
-    }
-
     if (wildfireFireWxEnabled) {
       list.push({
         id: 'wildfire-firewx',
@@ -2568,20 +2326,6 @@ export default function MapsScreen() {
     frontsDay2Opacity,
     frontsDay3Enabled,
     frontsDay3Opacity,
-    excessiveRainDay1Enabled,
-    excessiveRainDay1Opacity,
-    excessiveRainDay2Enabled,
-    excessiveRainDay2Opacity,
-    qpeLast24hEnabled,
-    qpeLast24hOpacity,
-    heatRiskEnabled,
-    heatRiskOpacity,
-    riverStagesEnabled,
-    riverStagesOpacity,
-    tropicsOutlookEnabled,
-    tropicsOutlookOpacity,
-    tropicsTracksEnabled,
-    tropicsTracksOpacity,
     wildfireFireWxEnabled,
     wildfireFireWxOpacity,
     goesTrueColorEnabled,
@@ -2770,10 +2514,6 @@ export default function MapsScreen() {
     mapZoom,
     region: effectiveRegion,
     units: tempUnit === 'C' ? 'metric' : 'imperial',
-  });
-  const lightningLayer = useLightningMapData(lightningEnabled, {
-    focused: isFocused,
-    windowMinutes: 15,
   });
 
   mapPressHandlerRef.current = async (e: any) => {
@@ -3096,87 +2836,11 @@ export default function MapsScreen() {
     setCameraDebugLabel('locate-unavailable');
   };
 
-  const zoomMapBy = useCallback((delta: number) => {
-    const anchorRegion = region ?? effectiveRegion ?? stableInitialRegion;
-
-    const currentZoom = Number.isFinite(mapZoom)
-      ? mapZoom
-      : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta ?? stableInitialRegion.longitudeDelta);
-    const nextZoom = clampNumber(currentZoom + delta, 1, 18);
-
-    setMapZoom(nextZoom);
-    mapCameraRef.current?.setCamera?.({
-      zoomLevel: nextZoom,
-      animationDuration: 180,
-    });
-  }, [effectiveRegion, mapZoom, region, stableInitialRegion]);
-
-  const armStormScopeDebounce = useCallback(() => {
-    stormScopeBusyRef.current = true;
-    if (stormScopeBusyTimerRef.current) clearTimeout(stormScopeBusyTimerRef.current);
-    stormScopeBusyTimerRef.current = setTimeout(() => {
-      stormScopeBusyRef.current = false;
-      stormScopeBusyTimerRef.current = null;
-    }, 420);
-  }, []);
-
-  const turnStormScopeOff = useCallback(() => {
-    if (stormScopeBusyRef.current) return;
-    armStormScopeDebounce();
-    suppressAutoNearestRef.current = true;
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-    setStationPanelCollapsed(true);
-    setAutoNearestRadarLatched(false);
-    setManualRadarSiteId3(null);
-    setRadarMode('mosaic');
-    lastCenteredRadarSiteRef.current = null;
-    radarStationSeedRegionRef.current = null;
-    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, [armStormScopeDebounce, dispatch]);
-
-  const turnStormScopeOn = useCallback(() => {
-    if (stormScopeBusyRef.current) return;
-    armStormScopeDebounce();
-    setStationPanelCollapsed(false);
-    setAutoNearestRadarLatched(false);
-    setManualRadarSiteId3(null);
-    lastCenteredRadarSiteRef.current = null;
-    radarStationSeedRegionRef.current = null;
-
-    if (state.viewId !== 'radar') {
-      dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-    }
-    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-
-    if (mapZoom < STORM_SCOPE_MIN_ZOOM) {
-      const nextZoom = STORM_SCOPE_MIN_ZOOM;
-      setMapZoom(nextZoom);
-      mapCameraRef.current?.setCamera?.({
-        zoomLevel: nextZoom,
-        animationDuration: 260,
-      });
-    }
-  }, [armStormScopeDebounce, dispatch, mapZoom, state.viewId]);
-
-  const handleStormScopePress = useCallback(() => {
-    if (stormMode) {
-      turnStormScopeOff();
-      return;
-    }
-    turnStormScopeOn();
-  }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
-
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
     : (MAP_VIEWS.find((view) => view.id === state.viewId)?.title ?? 'Maps');
 
-  const showHeatRiskLegend = isFocused && heatRiskEnabled;
-  const showTropicsLegend = isFocused && (tropicsOutlookEnabled || tropicsTracksEnabled);
-  const showProductLegend = showHeatRiskLegend || showTropicsLegend;
-  const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId)) && !showProductLegend;
+  const showRadarLegend = isFocused && radarEnabled && isRadarPrimaryView(String(state.viewId));
 
   const simpleStatus = getSimpleStatus({
     viewId: String(state.viewId),
@@ -3185,13 +2849,6 @@ export default function MapsScreen() {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
-    excessiveRainDay1Enabled,
-    excessiveRainDay2Enabled,
-    riverStagesEnabled,
-    qpeLast24hEnabled,
-    heatRiskEnabled,
-    tropicsOutlookEnabled,
-    tropicsTracksEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
@@ -3811,7 +3468,7 @@ export default function MapsScreen() {
               frameIndex={state.radarTime.frameIndex}
               coordinates={bufferedPlaybackCoordinates}
               opacity={radarCtl.radarOpacity}
-              blendMs={300}
+              blendMs={420}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl('radar', frame, width, height)
               }
@@ -4030,7 +3687,7 @@ export default function MapsScreen() {
             onPress={handleWeatherAlertPress}
           />
 
-          {showStormScopeRadar && selectedRadarSite ? (
+          {stationRadarMode && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
               <MapLibreGL.LineLayer
                 id="radar-station-rings"
@@ -4172,39 +3829,6 @@ export default function MapsScreen() {
             waterStationsOpacity={waterStationsOpacity}
             layerBudget={marineLayerBudget}
           />
-          {lightningEnabled && lightningLayer.geojson?.features?.length ? (
-            <MapLibreGL.ShapeSource id="opc-lightning-density-source" shape={lightningLayer.geojson as any}>
-              <MapLibreGL.FillLayer
-                id="opc-lightning-density-fill"
-                style={{
-                  fillColor: ['coalesce', ['get', 'fillColor'], '#38bdf8'] as any,
-                  fillOpacity: Math.max(0.08, Math.min(0.42, lightningOpacity * 0.34)),
-                }}
-              />
-              <MapLibreGL.LineLayer
-                id="opc-lightning-density-line"
-                style={{
-                  lineColor: ['coalesce', ['get', 'strokeColor'], '#7dd3fc'] as any,
-                  lineOpacity: Math.max(0.18, Math.min(0.88, lightningOpacity * 0.85)),
-                  lineWidth: ['interpolate', ['linear'], ['zoom'], 2, 0.55, 6, 1.0, 10, 1.35] as any,
-                }}
-              />
-              <MapLibreGL.SymbolLayer
-                id="opc-lightning-density-label"
-                minZoomLevel={5.2}
-                style={{
-                  textField: ['to-string', ['get', 'maxDensity']] as any,
-                  textSize: ['interpolate', ['linear'], ['zoom'], 5.2, 9, 8, 10.5, 11, 12] as any,
-                  textFont: ['Open Sans Bold'],
-                  textColor: '#fefce8',
-                  textHaloColor: 'rgba(2,6,23,0.92)',
-                  textHaloWidth: 1.2,
-                  textAllowOverlap: false,
-                  textOptional: true,
-                }}
-              />
-            </MapLibreGL.ShapeSource>
-          ) : null}
           {aviationTurbEnabled ? (
             <MapLibreGL.ShapeSource
               id="aviation-turbulence-source"
@@ -4885,8 +4509,6 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
-              <ZoomButton label="+" onPress={() => zoomMapBy(1)} />
-              <ZoomButton label="-" onPress={() => zoomMapBy(-1)} />
             </View>
           </View>
         )}
@@ -4908,22 +4530,6 @@ export default function MapsScreen() {
               </Text>
               <Text style={styles.stationProductBadgeTitle}>{radarProductMeta.legendTitle}</Text>
             </View>
-          </View>
-        ) : null}
-
-        {!animationRecordMode && showHeatRiskLegend ? (
-          <View style={[styles.legendWrap, styles.topLegendWrap]}>
-            <Glass style={[styles.legendCard, styles.productLegendCard]}>
-              <HeatRiskLegend tropicalActive={showTropicsLegend} />
-            </Glass>
-          </View>
-        ) : null}
-
-        {!animationRecordMode && !showHeatRiskLegend && showTropicsLegend ? (
-          <View style={[styles.legendWrap, styles.topLegendWrap]}>
-            <Glass style={[styles.legendCard, styles.productLegendCard]}>
-              <TropicalLegend outlookEnabled={tropicsOutlookEnabled} tracksEnabled={tropicsTracksEnabled} />
-            </Glass>
           </View>
         ) : null}
 
@@ -4967,13 +4573,20 @@ export default function MapsScreen() {
                 </View>
               ) : (
                 <>
-                  {radarViewActive ? (
+                  {state.viewId === 'radar' ? (
                     <View style={styles.radarModeHeader}>
                       <View style={styles.radarModeRow}>
                         <MiniToggle
                           label="Storm Scope"
                           active={stormMode}
-                          onPress={handleStormScopePress}
+                          onPress={() => {
+                            const nextStormMode = !stormMode;
+                            if (nextStormMode) setRadarMode('mosaic');
+                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
+                            dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                          }}
                         />
                       </View>
                       {showAdvancedRadarControls ? (
@@ -4996,7 +4609,9 @@ export default function MapsScreen() {
                     compact
                   />
                   <Text style={styles.legendCardMeta}>
-                    {effectiveRadarProvider === 'iem'
+                    {autoNearestRadarMode && selectedRadarSite
+                      ? `Nearest radar site ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
+                      : effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
                       : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>
@@ -5035,7 +4650,7 @@ export default function MapsScreen() {
 
                       <View style={styles.stationProductGrid}>
                         {STATION_RADAR_PRODUCTS.map((item) => {
-                          const active = displayedStationProduct === item.id;
+                          const active = product === item.id;
                           const loading = active && stationProductLoading;
                           return (
                             <Pressable
@@ -5046,14 +4661,8 @@ export default function MapsScreen() {
                                   setLearnOpen(true);
                                   return;
                                 }
-                                const nextProduct = item.id as RadarProductId;
-                                setPendingStationProduct(nextProduct);
-                                setStationProduct(nextProduct);
-                                dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 9999 });
-                                requestAnimationFrame(() => {
-                                  dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                                });
+                                setStationProduct(item.id as RadarProductId);
+                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
                               }}
                               style={[
                                 styles.stationProductButton,
@@ -5332,6 +4941,16 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
+                  <View style={styles.animationControlStrip}>
+                    <View style={styles.animationControlSpacer} />
+                    <Pressable
+                      onPress={handleAnimationRecordPress}
+                      disabled={animationExporting}
+                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
+                    >
+                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
+                    </Pressable>
+                  </View>
                   {satelliteTimelineActive ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
@@ -5405,9 +5024,6 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
-                    onRecord={handleAnimationRecordPress}
-                    recordDisabled={animationExporting}
-                    recordBusy={animationExporting}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -5950,7 +5566,9 @@ export default function MapsScreen() {
                         : null,
                     ]}
                   >
-                    <View style={styles.recordModeDot} />
+                    <Text style={styles.recordModeButtonText}>
+                      {animationExporting ? 'Saving' : 'Record'}
+                    </Text>
                   </Pressable>
                 </View>
               </Glass>
@@ -6030,14 +5648,6 @@ function LocationButton(props: { onPress: () => void }) {
       <View style={styles.locationRing}>
         <View style={styles.locationDot} />
       </View>
-    </Pressable>
-  );
-}
-
-function ZoomButton(props: { label: '+' | '-'; onPress: () => void }) {
-  return (
-    <Pressable accessibilityLabel={props.label === '+' ? 'Zoom in' : 'Zoom out'} onPress={props.onPress} style={styles.zoomButton}>
-      <Text style={styles.zoomButtonText}>{props.label}</Text>
     </Pressable>
   );
 }
@@ -6668,101 +6278,6 @@ function MiniToggle(props: { label: string; active?: boolean; onPress: () => voi
   );
 }
 
-function HeatRiskLegend(props: { tropicalActive?: boolean }) {
-  return (
-    <View style={styles.productLegendBody}>
-      <View style={styles.productLegendHeader}>
-        <View>
-          <Text style={styles.productLegendEyebrow}>NWS HEATRISK</Text>
-          <Text style={styles.productLegendTitle}>Heat impact risk</Text>
-        </View>
-        <View style={styles.productLegendChip}>
-          <Text style={styles.productLegendChipText}>Not radar</Text>
-        </View>
-      </View>
-      <View style={styles.heatRiskRamp}>
-        {HEATRISK_LEGEND_STOPS.map((stop, index) => (
-          <View
-            key={stop.label}
-            style={[
-              styles.heatRiskRampStop,
-              {
-                backgroundColor: stop.color,
-                borderTopLeftRadius: index === 0 ? 999 : 0,
-                borderBottomLeftRadius: index === 0 ? 999 : 0,
-                borderTopRightRadius: index === HEATRISK_LEGEND_STOPS.length - 1 ? 999 : 0,
-                borderBottomRightRadius: index === HEATRISK_LEGEND_STOPS.length - 1 ? 999 : 0,
-              },
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.productLegendLabels}>
-        {HEATRISK_LEGEND_STOPS.map((stop) => (
-          <Text key={stop.label} style={styles.productLegendScaleLabel} numberOfLines={1}>
-            {stop.label}
-          </Text>
-        ))}
-      </View>
-      <Text style={styles.productLegendNote}>
-        Potential heat-related impacts. Use official alerts for watches, warnings, and advisories.
-      </Text>
-      {props.tropicalActive ? (
-        <View style={styles.productLegendDivider}>
-          <TropicalLegend outlookEnabled tracksEnabled compact />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function TropicalLegend(props: { outlookEnabled?: boolean; tracksEnabled?: boolean; compact?: boolean }) {
-  const parts = [
-    props.outlookEnabled ? 'development outlook' : null,
-    props.tracksEnabled ? 'active storm tracks' : null,
-  ].filter(Boolean);
-
-  return (
-    <View style={styles.productLegendBody}>
-      <View style={styles.productLegendHeader}>
-        <View>
-          <Text style={styles.productLegendEyebrow}>NHC TROPICS</Text>
-          <Text style={styles.productLegendTitle}>{parts.length ? parts.join(' + ') : 'Official tropical guidance'}</Text>
-        </View>
-      </View>
-      <View style={styles.tropicalLegendRows}>
-        {props.outlookEnabled ? (
-          <>
-            <View style={styles.tropicalLegendRow}>
-              <View style={styles.tropicalHatchedSample}>
-                <View style={[styles.tropicalHatchLine, { left: 3 }]} />
-                <View style={[styles.tropicalHatchLine, { left: 10 }]} />
-                <View style={[styles.tropicalHatchLine, { left: 17 }]} />
-              </View>
-              <Text style={styles.tropicalLegendText}>Hatched area: possible development area</Text>
-            </View>
-            <View style={styles.tropicalLegendRow}>
-              <Text style={styles.tropicalMarkerSample}>X</Text>
-              <Text style={styles.tropicalLegendText}>Marker: system center or outlook point</Text>
-            </View>
-          </>
-        ) : null}
-        {props.tracksEnabled ? (
-          <View style={styles.tropicalLegendRow}>
-            <View style={styles.tropicalTrackSample} />
-            <Text style={styles.tropicalLegendText}>Line/cone: official active storm forecast</Text>
-          </View>
-        ) : null}
-      </View>
-      {!props.compact ? (
-        <Text style={styles.productLegendNote}>
-          Probabilities and symbols come directly from NOAA NHC/CPHC; tap the layer source for the official product.
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 function AstroMetric(props: { label: string; value: string }) {
   return (
     <View style={styles.astroMetric}>
@@ -7041,22 +6556,6 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.96)',
-  },
-  zoomButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(2,6,23,0.88)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  zoomButtonText: {
-    color: 'rgba(255,255,255,0.96)',
-    fontSize: 24,
-    lineHeight: 28,
-    fontWeight: '900',
   },
   actionButton: {
     width: 54,
@@ -7344,132 +6843,6 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
     gap: 6,
-  },
-  productLegendCard: {
-    width: 284,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  productLegendBody: {
-    gap: 5,
-  },
-  productLegendHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  productLegendEyebrow: {
-    color: '#8bdcff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  productLegendTitle: {
-    color: 'rgba(255,255,255,0.94)',
-    fontSize: 12,
-    lineHeight: 15,
-    fontWeight: '900',
-    textTransform: 'capitalize',
-  },
-  productLegendChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(139,220,255,0.28)',
-    backgroundColor: 'rgba(139,220,255,0.12)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  productLegendChipText: {
-    color: '#c7efff',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  heatRiskRamp: {
-    height: 12,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-  },
-  heatRiskRampStop: {
-    flex: 1,
-  },
-  productLegendLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  productLegendScaleLabel: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.76)',
-    fontSize: 9,
-    lineHeight: 11,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  productLegendNote: {
-    color: 'rgba(255,255,255,0.66)',
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: '700',
-  },
-  productLegendDivider: {
-    marginTop: 2,
-    paddingTop: 5,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.12)',
-  },
-  tropicalLegendRows: {
-    gap: 5,
-  },
-  tropicalLegendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tropicalLegendText: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 9,
-    lineHeight: 12,
-    fontWeight: '800',
-  },
-  tropicalHatchedSample: {
-    width: 26,
-    height: 18,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,214,80,0.82)',
-    backgroundColor: 'rgba(255,214,80,0.18)',
-    overflow: 'hidden',
-  },
-  tropicalHatchLine: {
-    position: 'absolute',
-    top: -5,
-    width: 2,
-    height: 30,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,214,80,0.42)',
-    transform: [{ rotate: '42deg' }],
-  },
-  tropicalMarkerSample: {
-    width: 26,
-    color: '#f7d94d',
-    fontSize: 18,
-    lineHeight: 18,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  tropicalTrackSample: {
-    width: 26,
-    height: 3,
-    borderRadius: 999,
-    backgroundColor: '#f7d94d',
-    shadowColor: '#f7d94d',
-    shadowOpacity: 0.42,
-    shadowRadius: 4,
   },
   wildfireLegendCard: {
     width: 304,
@@ -7814,6 +7187,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 7,
   },
+  animationControlSpacer: {
+    flex: 1,
+  },
   windRecordLabel: {
     color: 'rgba(226,232,240,0.82)',
     fontSize: 11,
@@ -7821,27 +7197,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   recordModeButton: {
-    width: 36,
-    height: 32,
+    minHeight: 26,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.58)',
-    backgroundColor: 'rgba(127,29,29,0.28)',
+    borderColor: 'rgba(248,113,113,0.54)',
+    backgroundColor: 'rgba(127,29,29,0.42)',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 10,
   },
   recordModeButtonDisabled: {
     opacity: 0.62,
   },
-  recordModeDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 999,
-    backgroundColor: '#ef4444',
-    shadowColor: '#ef4444',
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
+  recordModeButtonText: {
+    color: '#fee2e2',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0,
   },
   recordExitWrap: {
     position: 'absolute',
