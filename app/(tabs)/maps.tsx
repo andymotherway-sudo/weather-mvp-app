@@ -1367,7 +1367,7 @@ export default function MapsScreen() {
   const [mapZoom, setMapZoom] = useState<number>(4);
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const radarViewActive = state.viewId === 'radar' || state.viewId === 'storm';
-  const stormMode = radarViewActive && (state.viewId === 'storm' || state.radarTime.stormMode === true);
+  const stormMode = radarViewActive && state.radarTime.stormMode === true;
   const manualStationRadarMode = state.viewId === 'radar' && radarMode === 'station';
   const radarAnchor = useMemo(
     () => {
@@ -4898,16 +4898,16 @@ export default function MapsScreen() {
                           label="Storm Scope"
                           active={stormMode}
                           onPress={() => {
+                            const nextStormMode = !stormMode;
                             setRadarMode('mosaic');
                             if (state.viewId !== 'radar') {
                               dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-                              dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-                              dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                              return;
                             }
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'TOGGLE_RADAR_STORM_MODE' });
+                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
+                            if (!nextStormMode) {
+                              setAutoNearestRadarLatched(false);
+                            }
                             dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />

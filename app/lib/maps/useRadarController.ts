@@ -700,7 +700,9 @@ export function useRadarController(args: {
 
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
-    slotHoldRef.current = [null, null, null];
+    if (stormMode || stationMode) {
+      slotHoldRef.current = [null, null, null];
+    }
 
     if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
     preloadTimerRef.current = null;
@@ -710,10 +712,12 @@ export function useRadarController(args: {
     setPreloadTo(null);
 
     if (!liveFrames.length) {
-      setPlayFrames([]);
-      setPlayTemplates([]);
-      prevFrameRef.current = 0;
-      setXfade({ from: 0, to: 0, t: 1 });
+      if (stormMode || stationMode || !playFrames.length) {
+        setPlayFrames([]);
+        setPlayTemplates([]);
+        prevFrameRef.current = 0;
+        setXfade({ from: 0, to: 0, t: 1 });
+      }
       return;
     }
 
@@ -960,7 +964,13 @@ export function useRadarController(args: {
     }
 
     if (!n) {
-      slotHoldRef.current = [null, null, null];
+      if (stormMode || stationMode) {
+        slotHoldRef.current = [null, null, null];
+        return { templates: outTemplates, opacities: outOpacities, warmTemplates };
+      }
+      outTemplates[0] = slotHoldRef.current[0];
+      outTemplates[1] = slotHoldRef.current[1];
+      outTemplates[2] = slotHoldRef.current[2];
       return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
