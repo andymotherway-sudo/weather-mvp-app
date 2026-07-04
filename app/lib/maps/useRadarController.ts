@@ -1201,6 +1201,15 @@ export function useRadarController(args: {
     return 9;
   }, [usingRainViewer, usingLocalImage, iemUnified]);
 
+  const visibleTemplate = useMemo(
+    () => activeRadar.templates.find((_, i) => (activeRadar.opacities[i] ?? 0) > 0.05) ?? '',
+    [activeRadar.opacities, activeRadar.templates],
+  );
+  const radarSourceKey = useMemo(
+    () => `${playlistContextKey}|frame:${safeFrameIndex}|template:${visibleTemplate}`,
+    [playlistContextKey, safeFrameIndex, visibleTemplate],
+  );
+
   /* =========================================================================
    * Final switch: localImage vs templates
    * ========================================================================= */
@@ -1236,7 +1245,7 @@ export function useRadarController(args: {
       templates: activeRadar.templates,
       opacities: activeRadar.opacities,
       warmTemplates: activeRadar.warmTemplates,
-      sourceKey: playlistContextKey,
+      sourceKey: radarSourceKey,
       tileMaxZ: radarTileMaxZ,
       productStyle,
       localImage: null,
@@ -1252,7 +1261,7 @@ export function useRadarController(args: {
     activeRadar.templates,
     activeRadar.opacities,
     activeRadar.warmTemplates,
-    playlistContextKey,
+    radarSourceKey,
   ]);
 
   return {

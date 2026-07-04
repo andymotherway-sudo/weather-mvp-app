@@ -1409,9 +1409,9 @@ export default function MapsScreen() {
       return current;
     });
   }, [autoNearestPrereqs, mapZoom]);
-  const autoNearestRadarMode = autoNearestPrereqs && autoNearestRadarLatched;
-  const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
-  const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
+  const showStormScopeRadar = radarEnabled && localRadarAvailable && (stormMode || manualStationRadarMode);
+  const stationRadarMode = showStormScopeRadar;
+  const showAdvancedRadarControls = showStormScopeRadar;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
@@ -1426,10 +1426,9 @@ export default function MapsScreen() {
     return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
   }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const showRadarRings = radarEnabled && !!selectedRadarSite && (stormMode || manualStationRadarMode);
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(showRadarRings ? selectedRadarSite : null), [
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(showStormScopeRadar ? selectedRadarSite : null), [
     selectedRadarSite,
-    showRadarRings,
+    showStormScopeRadar,
   ]);
   const product: RadarProductId = showAdvancedRadarControls
     ? stationProduct
@@ -3962,7 +3961,7 @@ export default function MapsScreen() {
             onPress={handleWeatherAlertPress}
           />
 
-          {showRadarRings && selectedRadarSite ? (
+          {showStormScopeRadar && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
               <MapLibreGL.LineLayer
                 id="radar-station-rings"
@@ -4906,26 +4905,35 @@ export default function MapsScreen() {
                           label="Storm Scope"
                           active={stormMode}
                           onPress={() => {
-                            const nextStormMode = !stormMode;
-                            if (state.viewId !== 'radar') {
-                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-                            }
+                            const turningOn = !stormMode;
 
-                            if (nextStormMode) {
-                              setRadarMode('mosaic');
-                              dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-                              dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                            } else {
-                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+                            if (turningOn) {
                               setRadarMode('mosaic');
                               setManualRadarSiteId3(null);
-                              suppressAutoNearestRef.current = true;
                               setAutoNearestRadarLatched(false);
                               lastCenteredRadarSiteRef.current = null;
                               radarStationSeedRegionRef.current = null;
-                              dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
+
+                              if (state.viewId !== 'radar') {
+                                dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+                              }
+
+                              dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+                              dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                              return;
                             }
+
+                            setRadarMode('mosaic');
+                            setManualRadarSiteId3(null);
+                            suppressAutoNearestRef.current = true;
+                            setAutoNearestRadarLatched(false);
+                            lastCenteredRadarSiteRef.current = null;
+                            radarStationSeedRegionRef.current = null;
+
+                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />
                       </View>
@@ -4949,9 +4957,7 @@ export default function MapsScreen() {
                     compact
                   />
                   <Text style={styles.legendCardMeta}>
-                    {autoNearestRadarMode && selectedRadarSite
-                      ? `Nearest radar site ${getStationDisplayId(selectedRadarSite)} selected automatically at this zoom.`
-                      : effectiveRadarProvider === 'iem'
+                    {effectiveRadarProvider === 'iem'
                       ? `${radarProductMeta.legendTitle} - ${radarProductMeta.legendNote}`
                       : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>

@@ -1941,7 +1941,7 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.175`, Android version code `10192`.
+- Current release example: app version `1.1.176`, Android version code `10193`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
@@ -1953,6 +1953,10 @@ Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, n
 Radar playlist note: when provider frames refresh, map the new playlist to the displayed timestamp, but do not snap to frame `0` just because the old timestamp falls before the new frame list. Preserve the user's current loop position unless the user actually scrubbed to the first frame.
 
 Radar handoff note: broad zoom should use the RainViewer mosaic, close zoom should latch into nearest local NEXRAD with hysteresis, and MapLibre radar source IDs should include the active radar mode so stale provider tiles cannot remain behind after a provider switch.
+
+Radar source-key note: animated tiled radar sources must include the visible frame/template, not only the playlist context. If the scrubber timestamp advances but the raster stays visually frozen, check the radar overlay source key before changing timer logic.
+
+Storm Scope toggle note: the Storm Scope chip is a true on/off control. Turning it on enables station/NEXRAD tools and range rings; turning it off clears manual station state, suppresses immediate auto-nearest relatching, and returns to standard animated mosaic radar.
 
 Map-control release note: zoom buttons are intentionally camera-only controls. They should never recenter the map, switch Storm Scope, select a radar station, alter layers, or change radar products. Recording animated map loops belongs in the timeline control cluster as a red record-dot button beside playback controls, not as a separate text pill.
 
