@@ -25,6 +25,7 @@ export type RadarOverlay = {
   opacities: number[];
   warmTemplates?: (string | null)[];
   tileMaxZ: number;
+  sourceKey?: string;
   productStyle?: 'reflectivity' | 'velocity' | 'echoTops';
   localImage?: RadarLocalImage | null;
 };
@@ -68,6 +69,11 @@ function radarTileSizeForTemplate(template?: string | null) {
   } catch {
     return template.includes('size=512') ? 512 : 256;
   }
+}
+
+function safeMapSourceKey(value?: string | null) {
+  const raw = value?.trim() || 'default';
+  return raw.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 72) || 'default';
 }
 
 function regionFromBounds(bounds: any): Region | null {
@@ -397,6 +403,7 @@ export function MapRenderer(props: MapRendererProps) {
 
   const localImage = radar.localImage ?? null;
   const useLocalImage = radar.enabled && !!localImage?.url && !!localImage?.coordinates?.length;
+  const radarSourceKey = useMemo(() => safeMapSourceKey(radar.sourceKey), [radar.sourceKey]);
 
   const maxSlots = useMemo(() => {
     if (isDegraded) return 1;
@@ -487,8 +494,8 @@ export function MapRenderer(props: MapRendererProps) {
               const coords = localImage!.coordinates;
               const opacity = clamp(Number(localImage!.opacity ?? 1), 0, 1);
 
-              const srcId = 'radar-img-src';
-              const lyrId = 'radar-img-lyr';
+              const srcId = `radar-img-src-${radarSourceKey}`;
+              const lyrId = `radar-img-lyr-${radarSourceKey}`;
 
               return (
                 <MapLibreGL.ImageSource id={srcId} key={srcId} url={url} coordinates={coords}>
@@ -505,8 +512,8 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              const srcId = `radar-warm-src-${slotIdx}`;
-              const lyrId = `radar-warm-lyr-${slotIdx}`;
+              const srcId = `radar-warm-src-${radarSourceKey}-${slotIdx}`;
+              const lyrId = `radar-warm-lyr-${radarSourceKey}-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
@@ -533,8 +540,8 @@ export function MapRenderer(props: MapRendererProps) {
               if (!tpl) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
-              const srcId = `radar-src-${slotIdx}`;
-              const lyrId = `radar-lyr-${slotIdx}`;
+              const srcId = `radar-src-${radarSourceKey}-${slotIdx}`;
+              const lyrId = `radar-lyr-${radarSourceKey}-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (

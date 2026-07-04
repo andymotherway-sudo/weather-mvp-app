@@ -349,7 +349,6 @@ export function useRadarController(args: {
         setRvFrames(frames);
       } catch (e: any) {
         if (cancelled) return;
-        setRvFrames(null);
         setRvError(String(e?.message ?? e ?? 'RainViewer failed'));
       }
     }
@@ -562,7 +561,6 @@ export function useRadarController(args: {
         setIemLoading(false);
       } catch (e: any) {
         if (cancelled) return;
-        setIemUnified(null);
         setIemError(String(e?.message ?? e ?? 'IEM frames failed'));
         setIemLoading(false);
       }
@@ -904,9 +902,9 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.92 ? radarOpacity * 0.28 : 0;
+    const oldFrameFloor = t < 0.96 ? radarOpacity * 0.42 : 0;
     out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
-    out[to] = radarOpacity * t;
+    out[to] = Math.max(radarOpacity * t, t > 0 ? radarOpacity * 0.08 : 0);
 
     if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
       const back = clampIndex(to - 1, n);
@@ -945,13 +943,7 @@ export function useRadarController(args: {
     }
 
     if (!n) {
-      if (stormMode || stationMode) {
-        slotHoldRef.current = [null, null, null];
-        return { templates: outTemplates, opacities: outOpacities, warmTemplates };
-      }
-      outTemplates[0] = slotHoldRef.current[0];
-      outTemplates[1] = slotHoldRef.current[1];
-      outTemplates[2] = slotHoldRef.current[2];
+      slotHoldRef.current = [null, null, null];
       return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
@@ -1173,7 +1165,15 @@ export function useRadarController(args: {
     const productStyle = getRadarProductStyle(product);
 
     if (!radarEnabled) {
-      return { enabled: false, templates: [], opacities: [], tileMaxZ: radarTileMaxZ, productStyle, localImage: null };
+      return {
+        enabled: false,
+        templates: [],
+        opacities: [],
+        sourceKey: playlistContextKey,
+        tileMaxZ: radarTileMaxZ,
+        productStyle,
+        localImage: null,
+      };
     }
 
     if (usingLocalImage && localImageUrl && localImageCoords) {
@@ -1181,6 +1181,7 @@ export function useRadarController(args: {
         enabled: true,
         templates: [],
         opacities: [],
+        sourceKey: playlistContextKey,
         tileMaxZ: radarTileMaxZ,
         productStyle,
         localImage: { url: localImageUrl, coordinates: localImageCoords, opacity: radarOpacity },
@@ -1192,6 +1193,7 @@ export function useRadarController(args: {
       templates: activeRadar.templates,
       opacities: activeRadar.opacities,
       warmTemplates: activeRadar.warmTemplates,
+      sourceKey: playlistContextKey,
       tileMaxZ: radarTileMaxZ,
       productStyle,
       localImage: null,
@@ -1207,6 +1209,7 @@ export function useRadarController(args: {
     activeRadar.templates,
     activeRadar.opacities,
     activeRadar.warmTemplates,
+    playlistContextKey,
   ]);
 
   return {

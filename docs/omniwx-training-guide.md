@@ -935,7 +935,7 @@ It handles:
 - IEM/NEXRAD frames.
 - Radar animation timing.
 - Crossfading between frames.
-- Local high-zoom image mode.
+- Mode-specific tile handoff between broad mosaic and local NEXRAD.
 - Frame labels and timeline state.
 - Tile URL generation.
 
@@ -953,11 +953,13 @@ The app needs to:
 6. Avoid expensive requests when zoomed in.
 7. Keep the map responsive.
 
-### Tile Mode vs Local Image Mode
+### Mosaic, NEXRAD, and Storm Scope
 
-At broader zoom levels, radar is usually rendered as map tiles.
+At broader zoom levels, normal radar should use the RainViewer mosaic. This is the national/broad-view product.
 
-At high zoom levels, the app can switch to a generated local image/WMS-style overlay. That can improve detail and reduce tile churn.
+At close zoom levels, normal radar can automatically latch into the nearest NEXRAD site. The handoff should use hysteresis so a tiny zoom jitter does not rapidly switch providers.
+
+Storm Scope is the explicit chaser/workstation tool. It should turn on local NEXRAD/product controls while it is active, then fully return to normal radar behavior when it is turned off.
 
 ### Radar Mode Invariants
 
@@ -967,7 +969,7 @@ Radar should preserve three user-facing behaviors:
 - Local zoom and station contexts can use the nearest NEXRAD site and expose station products.
 - Storm Scope is an in-place radar mode, not a separate map view that forces the camera.
 - Storm Scope controls must stay available at broad zoom; they should not be gated behind local NEXRAD zoom.
-- Storm Scope defaults to the broad national radar mosaic, and single-site NEXRAD products are opt-in.
+- Normal radar defaults to the broad RainViewer mosaic and automatically hands off to nearest NEXRAD at close zoom. Storm Scope is an explicit tool for local NEXRAD, product selection, and chaser-style inspection.
 - Zooming back out from local radar should return to the broad national mosaic.
 
 Zoom controls should only change camera zoom. They should not recenter the map, lock the user to a radar site, or keep snapping back to the active location.
@@ -1939,14 +1941,16 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.169`, Android version code `10186`.
+- Current release example: app version `1.1.170`, Android version code `10187`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
 
 Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Do not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` from UI controls unless the user explicitly scrubbed to the first frame.
 
-Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Avoid using `viewId === 'storm'` as an always-on radar provider condition without also giving the toggle a clean path back to the normal radar view.
+Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Normal radar owns the automatic RainViewer-to-NEXRAD zoom handoff; Storm Scope is an explicit chaser/workstation tool layered on top of that workflow.
+
+Radar handoff note: broad zoom should use the RainViewer mosaic, close zoom should latch into nearest local NEXRAD with hysteresis, and MapLibre radar source IDs should include the active radar mode so stale provider tiles cannot remain behind after a provider switch.
 
 Map-control release note: zoom buttons are intentionally camera-only controls. They should never recenter the map, switch Storm Scope, select a radar station, alter layers, or change radar products. Recording animated map loops belongs in the timeline control cluster as a red record-dot button beside playback controls, not as a separate text pill.
 

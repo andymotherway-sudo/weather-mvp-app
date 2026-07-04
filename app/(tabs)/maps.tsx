@@ -89,7 +89,8 @@ const RFC_QPE_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const AUTO_NEXRAD_MIN_ZOOM = 8.6;
+const AUTO_NEXRAD_ON_ZOOM = 8.9;
+const AUTO_NEXRAD_OFF_ZOOM = 8.15;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -1377,13 +1378,22 @@ export default function MapsScreen() {
     [radarAnchor.lat, radarAnchor.lon],
   );
   const localRadarAvailable = !!autoNearestRadar?.site;
-  const autoNearestRadarMode =
+  const autoNearestPrereqs =
     radarEnabled &&
     state.viewId === 'radar' &&
     !stormMode &&
     !manualStationRadarMode &&
-    localRadarAvailable &&
-    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
+    localRadarAvailable;
+  const [autoNearestRadarLatched, setAutoNearestRadarLatched] = useState(false);
+  useEffect(() => {
+    setAutoNearestRadarLatched((current) => {
+      if (!autoNearestPrereqs) return false;
+      if (mapZoom >= AUTO_NEXRAD_ON_ZOOM) return true;
+      if (mapZoom <= AUTO_NEXRAD_OFF_ZOOM) return false;
+      return current;
+    });
+  }, [autoNearestPrereqs, mapZoom]);
+  const autoNearestRadarMode = autoNearestPrereqs && autoNearestRadarLatched;
   const stationRadarMode = (stormMode || manualStationRadarMode || autoNearestRadarMode) && localRadarAvailable;
   const showAdvancedRadarControls = (stormMode || manualStationRadarMode) && localRadarAvailable;
   const nearbyRadarSites = useMemo(
@@ -4880,11 +4890,7 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
-                            if (!nextStormMode && state.viewId === 'storm') {
-                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-                              return;
-                            }
-                            if (nextStormMode) setRadarMode('mosaic');
+                            setRadarMode('mosaic');
                             dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
                             dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
                             dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
