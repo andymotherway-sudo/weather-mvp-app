@@ -283,6 +283,7 @@ export function useRadarController(args: {
   region: Region | null;
   stationMode?: boolean;
   radarSiteId3?: string | null;
+  stationMinZoom?: number;
   localMinZoom?: number;
   ridgeMinZoom?: number;
   animationQuality?: AnimationQuality;
@@ -294,6 +295,8 @@ export function useRadarController(args: {
   const suspendRasterTransitions = args.suspendRasterTransitions === true;
   const playbackBlocked = args.playbackBlocked === true;
   const stationMode = args.stationMode === true;
+  const stationMinZoom = args.stationMinZoom ?? 9.75;
+  const stationModeAllowed = stationMode && mapZoom >= stationMinZoom;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
@@ -563,13 +566,13 @@ export function useRadarController(args: {
             zoom: mapZoom,
             product,
             mosaicMaxZoom: 9,
-            ridgeMinZoom: stationMode ? 2 : effectiveRidgeMinZoom,
+            ridgeMinZoom: stationModeAllowed ? 2 : effectiveRidgeMinZoom,
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
-            maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
-            allowMosaicFallback: !stormMode && (!stationMode || product === 'EET'),
-            force: stormMode || stationMode ? 'ridge' : undefined,
-            forceRadarId3: stationMode ? radarSiteId3 : null,
+            maxLocalDistanceKm: stationModeAllowed ? 5000 : stormMode ? 260 : 350,
+            allowMosaicFallback: !stormMode && (!stationModeAllowed || product === 'EET'),
+            force: stationModeAllowed ? 'ridge' : undefined,
+            forceRadarId3: stationModeAllowed ? radarSiteId3 : null,
           },
         });
 
@@ -591,7 +594,7 @@ export function useRadarController(args: {
     sheetValue.radarProvider,
     radarEnabled,
     usingLocalImage,
-    stationMode,
+    stationModeAllowed,
     radarSiteId3,
     stormMode,
     centerForRadar.lat,
@@ -682,13 +685,13 @@ export function useRadarController(args: {
     () =>
       [
         sheetValue.radarProvider,
-        stationMode ? 'station' : 'wide',
+        stationModeAllowed ? 'station' : 'wide',
         stormMode ? 'storm' : 'standard',
         radarSiteId3 ?? 'auto',
         product,
         usingLocalImage ? 'image' : 'tiles',
       ].join('|'),
-    [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
+    [sheetValue.radarProvider, stationModeAllowed, stormMode, radarSiteId3, product, usingLocalImage],
   );
 
   useEffect(() => {
@@ -700,7 +703,7 @@ export function useRadarController(args: {
 
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
-    if (stormMode || stationMode) {
+    if (stationModeAllowed) {
       slotHoldRef.current = [null, null, null];
     }
 
@@ -712,7 +715,7 @@ export function useRadarController(args: {
     setPreloadTo(null);
 
     if (!liveFrames.length) {
-      if (stormMode || stationMode || !playFrames.length) {
+      if (stationModeAllowed || !playFrames.length) {
         setPlayFrames([]);
         setPlayTemplates([]);
         prevFrameRef.current = 0;
@@ -740,14 +743,14 @@ export function useRadarController(args: {
 
   useEffect(() => {
     if (liveFrames.length) return;
-    if (!stormMode && !stationMode) return;
+    if (!stationModeAllowed) return;
 
     setPlayFrames([]);
     setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
     slotHoldRef.current = [null, null, null];
-  }, [liveFrames.length, stationMode, stormMode]);
+  }, [liveFrames.length, stationModeAllowed]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
@@ -976,7 +979,7 @@ export function useRadarController(args: {
     }
 
     if (!n) {
-      if (stormMode || stationMode) {
+      if (stationModeAllowed) {
         slotHoldRef.current = [null, null, null];
         return { templates: outTemplates, opacities: outOpacities, warmTemplates };
       }
@@ -1061,7 +1064,7 @@ export function useRadarController(args: {
     radarOpacity,
     preloadTo,
     mapZoom,
-    stationMode,
+    stationModeAllowed,
     stormMode,
   ]);
 
@@ -1070,6 +1073,12 @@ export function useRadarController(args: {
    * ========================================================================= */
   const PLAY_TICK_MS = 120;
   const END_HOLD_MULTIPLIER = 1.8;
+  const shouldAnimate =
+    radarEnabled &&
+    state.radarTime.playing &&
+    !playbackBlocked &&
+    !stationModeAllowed &&
+    !usingLocalImage;
 
   const playingRef = useRef<boolean>(state.radarTime.playing);
   const frameCountRef = useRef<number>(frameCount);
@@ -1124,8 +1133,7 @@ export function useRadarController(args: {
     if (playTimerRef.current) clearInterval(playTimerRef.current);
     playTimerRef.current = null;
 
-    if (usingLocalImage) return;
-    if (!state.radarTime.playing) return;
+    if (!shouldAnimate) return;
 
     if (frameCount < 2) {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
@@ -1186,7 +1194,7 @@ export function useRadarController(args: {
       playTimerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, state.radarTime.playing, frameCount]);
+  }, [shouldAnimate, frameCount]);
 
   /* =========================================================================
    * tileMaxZ selection

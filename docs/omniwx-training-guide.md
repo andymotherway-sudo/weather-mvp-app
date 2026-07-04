@@ -1941,7 +1941,7 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.176`, Android version code `10193`.
+- Current release example: app version `1.1.177`, Android version code `10194`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
@@ -1957,6 +1957,8 @@ Radar handoff note: broad zoom should use the RainViewer mosaic, close zoom shou
 Radar source-key note: animated tiled radar sources must include the visible frame/template, not only the playlist context. If the scrubber timestamp advances but the raster stays visually frozen, check the radar overlay source key before changing timer logic.
 
 Storm Scope toggle note: the Storm Scope chip is a true on/off control. Turning it on enables station/NEXRAD tools and range rings; turning it off clears manual station state, suppresses immediate auto-nearest relatching, and returns to standard animated mosaic radar.
+
+Storm Scope architecture note: normal radar and Storm Scope are separate modes. Normal radar should render the RainViewer mosaic. Storm Scope should render station/NEXRAD products only when the user explicitly turns it on and the map is zoomed in far enough. Do not reintroduce auto-nearest NEXRAD as an implicit normal-radar mode until the state/render split is stable.
 
 Map-control release note: zoom buttons are intentionally camera-only controls. They should never recenter the map, switch Storm Scope, select a radar station, alter layers, or change radar products. Recording animated map loops belongs in the timeline control cluster as a red record-dot button beside playback controls, not as a separate text pill.
 

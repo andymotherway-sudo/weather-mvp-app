@@ -1,46 +1,46 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.176**
-Android version code: **10193**
+Release: **OMNIwx Alpha 1.1.177**
+Android version code: **10194**
 Track: **Closed testing / internal testing candidate**
 Date: **July 4, 2026**
 
 ## Play Console Paste Notes
 
-Maps radar playback and Storm Scope reliability update. Animated mosaic tiles now refresh with the visible frame, so the timeline and raster should advance together. Storm Scope now uses explicit on/off state: one tap opens station/NEXRAD tools and rings, the next tap returns to standard animated mosaic without immediately relatching auto-nearest radar.
+Maps radar mode separation update. Normal radar now stays on the animated RainViewer mosaic, while Storm Scope is a deliberate close-zoom NEXRAD inspection mode. Zooming out hard-exits Storm Scope so single-site radar disks, range rings, and station controls do not remain over the mosaic. Station product buttons now respond optimistically while scans load.
 
 ## Tester Notes
 
-Please focus testing on Maps radar. Let mosaic and NEXRAD loops run, then toggle Storm Scope on/off repeatedly at broad and close zoom.
+Please focus testing on Maps radar. Test mosaic playback, Storm Scope on/off, zooming out of Storm Scope, and station product switching.
 
 ### What Changed
 
-- Promote refreshed radar playlists only at loop end.
-- Preserve visible radar timestamp/index during playlist promotion.
-- Reset radar crossfade state when a pending playlist is promoted.
-- Key radar tile sources by visible frame/template so mosaic images advance.
-- Keep auto-nearest out of Storm Scope station mode when Storm Scope is off.
-- Clear station state, rings, and auto-nearest latch on Storm Scope shutoff.
+- Separate normal mosaic radar from Storm Scope station radar.
+- Disable auto-nearest NEXRAD rendering while the architecture settles.
+- Hard-exit Storm Scope below close radar zoom.
+- Make Storm Scope on/off handlers explicit and debounced.
+- Optimistically update selected station radar product buttons.
+- Block station radar from running the normal mosaic animation loop.
 
 ### What To Test
 
 - Toggle Storm Scope on/off repeatedly without closing Maps.
-- Enter Maps from any route and confirm Storm Scope does not get stuck active.
-- Watch RainViewer and NEXRAD loops for frame-zero jumps during refresh.
-- Confirm mosaic imagery changes as the timestamp advances.
-- Confirm range rings disappear when Storm Scope turns off.
+- Zoom out of Storm Scope and confirm single-site radar disappears.
+- Confirm broad zoom uses mosaic only.
+- Confirm station product buttons visibly select immediately.
+- Confirm range rings and station controls only show in close Storm Scope.
 - Confirm zooming/panning remains user-controlled.
 
 ### Known Watch Areas
 
-- Radar providers can still return stale or missing frames; the app should hold the current loop until a clean loop-end swap.
-- Storm Scope remains a local NEXRAD workstation toggle, not a forced camera view or map recenter.
+- Radar providers can still return stale or missing frames; the app should keep normal mosaic and Storm Scope visually separate.
+- Storm Scope may zoom in when first opened so station products can render, but zooming out should return to mosaic.
 - Android Auto still reports upstream AndroidX Car App deprecation warnings during native compile; this build does not change that API surface.
 
 ## Internal Release Checklist
 
-- App version: `1.1.176`
-- Android version code: `10193`
+- App version: `1.1.177`
+- Android version code: `10194`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

@@ -89,8 +89,8 @@ const RFC_QPE_EXPORT_URL =
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
-const AUTO_NEXRAD_ON_ZOOM = 8.9;
-const AUTO_NEXRAD_OFF_ZOOM = 8.15;
+const STORM_SCOPE_MIN_ZOOM = 9.75;
+const STORM_SCOPE_FORCE_EXIT_ZOOM = 8.75;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -1235,6 +1235,7 @@ export default function MapsScreen() {
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
+  const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
@@ -1277,6 +1278,8 @@ export default function MapsScreen() {
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
   const suppressAutoNearestRef = useRef(false);
+  const stormScopeBusyRef = useRef(false);
+  const stormScopeBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
@@ -1357,6 +1360,13 @@ export default function MapsScreen() {
     AsyncStorage.setItem(STATION_PRODUCT_STORAGE_KEY, stationProduct).catch(() => {});
   }, [stationProduct]);
 
+  useEffect(
+    () => () => {
+      if (stormScopeBusyTimerRef.current) clearTimeout(stormScopeBusyTimerRef.current);
+    },
+    [],
+  );
+
   const lastPanMarkRef = useRef<number>(0);
   const locateRequestIdRef = useRef(0);
   const wildfireLookupRef = useRef<{ incidents: any; perimeters: any; symbols: any }>({
@@ -1388,29 +1398,9 @@ export default function MapsScreen() {
     [radarAnchor.lat, radarAnchor.lon],
   );
   const localRadarAvailable = !!autoNearestRadar?.site;
-  const autoNearestPrereqs =
-    radarEnabled &&
-    radarViewActive &&
-    !stormMode &&
-    !manualStationRadarMode &&
-    localRadarAvailable;
   const [autoNearestRadarLatched, setAutoNearestRadarLatched] = useState(false);
-  useEffect(() => {
-    if (suppressAutoNearestRef.current) {
-      suppressAutoNearestRef.current = false;
-      setAutoNearestRadarLatched(false);
-      return;
-    }
-
-    setAutoNearestRadarLatched((current) => {
-      if (!autoNearestPrereqs) return false;
-      if (mapZoom >= AUTO_NEXRAD_ON_ZOOM) return true;
-      if (mapZoom <= AUTO_NEXRAD_OFF_ZOOM) return false;
-      return current;
-    });
-  }, [autoNearestPrereqs, mapZoom]);
-  const showStormScopeRadar = radarEnabled && localRadarAvailable && (stormMode || manualStationRadarMode);
-  const stationRadarMode = showStormScopeRadar;
+  const stationRadarMode = stormMode && localRadarAvailable && mapZoom >= STORM_SCOPE_MIN_ZOOM;
+  const showStormScopeRadar = radarEnabled && stationRadarMode;
   const showAdvancedRadarControls = showStormScopeRadar;
   const nearbyRadarSites = useMemo(
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
@@ -1430,12 +1420,13 @@ export default function MapsScreen() {
     selectedRadarSite,
     showStormScopeRadar,
   ]);
+  const displayedStationProduct = pendingStationProduct ?? stationProduct;
   const product: RadarProductId = showAdvancedRadarControls
-    ? stationProduct
+    ? displayedStationProduct
     : stationRadarMode
       ? 'N0B'
       : 'N0Q';
-  const effectiveRadarProvider = stationRadarMode || stormMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider = stationRadarMode ? 'iem' : 'rainviewer';
   const preferBufferedWideRadar =
     isFocused &&
     !animationRecordMode &&
@@ -1450,6 +1441,20 @@ export default function MapsScreen() {
     radarBufferedReadyCount >= Math.min(3, radarBufferedTotal || 3) ||
     (radarPlaybackBufferStatus?.buffering === false &&
       radarBufferedReadyCount >= Math.min(2, radarBufferedTotal || 2));
+
+  useEffect(() => {
+    if (!stormMode) return;
+    if (mapZoom >= STORM_SCOPE_FORCE_EXIT_ZOOM) return;
+
+    suppressAutoNearestRef.current = true;
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+    setStationPanelCollapsed(true);
+    setAutoNearestRadarLatched(false);
+    setManualRadarSiteId3(null);
+    setRadarMode('mosaic');
+    lastCenteredRadarSiteRef.current = null;
+    radarStationSeedRegionRef.current = null;
+  }, [stormMode, mapZoom, dispatch]);
 
   useEffect(() => {
     setManualRadarSiteId3(null);
@@ -1950,12 +1955,13 @@ export default function MapsScreen() {
     rawMode,
     region,
     stationMode: stationRadarMode,
+    stationMinZoom: STORM_SCOPE_MIN_ZOOM,
     radarSiteId3: selectedRadarId3,
     localMinZoom: stormMode ? 10.5 : 12,
     ridgeMinZoom: stationRadarMode ? 2 : stormMode ? 7.4 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
-    playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
+    playbackBlocked: stationRadarMode || (preferBufferedWideRadar && !radarBufferedLeadReady),
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -1966,6 +1972,11 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const stationProductLoading = stationRadarMode && radarCtl.iemLoading;
   const stationProductUnavailable = stationRadarMode && !stationProductLoading && frameCount <= 0;
+  useEffect(() => {
+    if (!pendingStationProduct) return;
+    if (stationProductLoading || stationProductUnavailable) return;
+    setPendingStationProduct(null);
+  }, [pendingStationProduct, stationProductLoading, stationProductUnavailable]);
   const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
   const stationProductSourceLabel =
     product === 'EET' || product === 'NET'
@@ -3099,6 +3110,64 @@ export default function MapsScreen() {
       animationDuration: 180,
     });
   }, [effectiveRegion, mapZoom, region, stableInitialRegion]);
+
+  const armStormScopeDebounce = useCallback(() => {
+    stormScopeBusyRef.current = true;
+    if (stormScopeBusyTimerRef.current) clearTimeout(stormScopeBusyTimerRef.current);
+    stormScopeBusyTimerRef.current = setTimeout(() => {
+      stormScopeBusyRef.current = false;
+      stormScopeBusyTimerRef.current = null;
+    }, 420);
+  }, []);
+
+  const turnStormScopeOff = useCallback(() => {
+    if (stormScopeBusyRef.current) return;
+    armStormScopeDebounce();
+    suppressAutoNearestRef.current = true;
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+    setStationPanelCollapsed(true);
+    setAutoNearestRadarLatched(false);
+    setManualRadarSiteId3(null);
+    setRadarMode('mosaic');
+    lastCenteredRadarSiteRef.current = null;
+    radarStationSeedRegionRef.current = null;
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+  }, [armStormScopeDebounce, dispatch]);
+
+  const turnStormScopeOn = useCallback(() => {
+    if (stormScopeBusyRef.current) return;
+    armStormScopeDebounce();
+    setStationPanelCollapsed(false);
+    setAutoNearestRadarLatched(false);
+    setManualRadarSiteId3(null);
+    lastCenteredRadarSiteRef.current = null;
+    radarStationSeedRegionRef.current = null;
+
+    if (state.viewId !== 'radar') {
+      dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+    }
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+
+    if (mapZoom < STORM_SCOPE_MIN_ZOOM) {
+      const nextZoom = STORM_SCOPE_MIN_ZOOM;
+      setMapZoom(nextZoom);
+      mapCameraRef.current?.setCamera?.({
+        zoomLevel: nextZoom,
+        animationDuration: 260,
+      });
+    }
+  }, [armStormScopeDebounce, dispatch, mapZoom, state.viewId]);
+
+  const handleStormScopePress = useCallback(() => {
+    if (stormMode) {
+      turnStormScopeOff();
+      return;
+    }
+    turnStormScopeOn();
+  }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -4904,37 +4973,7 @@ export default function MapsScreen() {
                         <MiniToggle
                           label="Storm Scope"
                           active={stormMode}
-                          onPress={() => {
-                            const turningOn = !stormMode;
-
-                            if (turningOn) {
-                              setRadarMode('mosaic');
-                              setManualRadarSiteId3(null);
-                              setAutoNearestRadarLatched(false);
-                              lastCenteredRadarSiteRef.current = null;
-                              radarStationSeedRegionRef.current = null;
-
-                              if (state.viewId !== 'radar') {
-                                dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-                              }
-
-                              dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
-                              dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                              return;
-                            }
-
-                            setRadarMode('mosaic');
-                            setManualRadarSiteId3(null);
-                            suppressAutoNearestRef.current = true;
-                            setAutoNearestRadarLatched(false);
-                            lastCenteredRadarSiteRef.current = null;
-                            radarStationSeedRegionRef.current = null;
-
-                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
-                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                          }}
+                          onPress={handleStormScopePress}
                         />
                       </View>
                       {showAdvancedRadarControls ? (
@@ -4996,7 +5035,7 @@ export default function MapsScreen() {
 
                       <View style={styles.stationProductGrid}>
                         {STATION_RADAR_PRODUCTS.map((item) => {
-                          const active = product === item.id;
+                          const active = displayedStationProduct === item.id;
                           const loading = active && stationProductLoading;
                           return (
                             <Pressable
@@ -5007,7 +5046,14 @@ export default function MapsScreen() {
                                   setLearnOpen(true);
                                   return;
                                 }
-                                setStationProduct(item.id as RadarProductId);
+                                const nextProduct = item.id as RadarProductId;
+                                setPendingStationProduct(nextProduct);
+                                setStationProduct(nextProduct);
+                                dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
+                                dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 9999 });
+                                requestAnimationFrame(() => {
+                                  dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                                });
                               }}
                               style={[
                                 styles.stationProductButton,
