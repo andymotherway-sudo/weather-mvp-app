@@ -1276,6 +1276,7 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
+  const suppressAutoNearestRef = useRef(false);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
@@ -1395,6 +1396,12 @@ export default function MapsScreen() {
     localRadarAvailable;
   const [autoNearestRadarLatched, setAutoNearestRadarLatched] = useState(false);
   useEffect(() => {
+    if (suppressAutoNearestRef.current) {
+      suppressAutoNearestRef.current = false;
+      setAutoNearestRadarLatched(false);
+      return;
+    }
+
     setAutoNearestRadarLatched((current) => {
       if (!autoNearestPrereqs) return false;
       if (mapZoom >= AUTO_NEXRAD_ON_ZOOM) return true;
@@ -1419,9 +1426,10 @@ export default function MapsScreen() {
     return haversineMiles(radarAnchor.lat, radarAnchor.lon, selectedRadarSite.lat, selectedRadarSite.lon);
   }, [radarAnchor.lat, radarAnchor.lon, selectedRadarSite]);
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
-  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(stationRadarMode ? selectedRadarSite : null), [
-    stationRadarMode,
+  const showRadarRings = radarEnabled && !!selectedRadarSite && (stormMode || manualStationRadarMode);
+  const stationRangeRings = useMemo(() => buildRadarStationGeoJson(showRadarRings ? selectedRadarSite : null), [
     selectedRadarSite,
+    showRadarRings,
   ]);
   const product: RadarProductId = showAdvancedRadarControls
     ? stationProduct
@@ -3954,7 +3962,7 @@ export default function MapsScreen() {
             onPress={handleWeatherAlertPress}
           />
 
-          {stationRadarMode && selectedRadarSite ? (
+          {showRadarRings && selectedRadarSite ? (
             <MapLibreGL.ShapeSource id="radar-station-range-source" shape={stationRangeRings as any}>
               <MapLibreGL.LineLayer
                 id="radar-station-rings"
@@ -4899,16 +4907,25 @@ export default function MapsScreen() {
                           active={stormMode}
                           onPress={() => {
                             const nextStormMode = !stormMode;
-                            setRadarMode('mosaic');
                             if (state.viewId !== 'radar') {
                               dispatch({ type: 'SET_VIEW', viewId: 'radar' });
                             }
-                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
-                            if (!nextStormMode) {
+
+                            if (nextStormMode) {
+                              setRadarMode('mosaic');
+                              dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+                              dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+                            } else {
+                              dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+                              setRadarMode('mosaic');
+                              setManualRadarSiteId3(null);
+                              suppressAutoNearestRef.current = true;
                               setAutoNearestRadarLatched(false);
+                              lastCenteredRadarSiteRef.current = null;
+                              radarStationSeedRegionRef.current = null;
+                              dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
                             }
-                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
                           }}
                         />
                       </View>

@@ -721,6 +721,12 @@ export function useRadarController(args: {
       return;
     }
 
+    if (state.radarTime.playing && playFrames.length) {
+      pendingFramesRef.current = liveFrames;
+      pendingTemplatesRef.current = liveTemplates;
+      return;
+    }
+
     const mappedIndex = stableMappedFrameIndex(liveFrames, currentIso, state.radarTime.frameIndex);
     setPlayFrames(liveFrames);
     setPlayTemplates(liveTemplates);
@@ -748,6 +754,12 @@ export function useRadarController(args: {
     const currentHasTemplates = playTemplates.some(Boolean);
     const nextHasTemplates = liveTemplates.some(Boolean);
     if (!playFrames.length || (!currentHasTemplates && nextHasTemplates)) {
+      if (state.radarTime.playing && playFrames.length) {
+        pendingFramesRef.current = liveFrames;
+        pendingTemplatesRef.current = liveTemplates;
+        return;
+      }
+
       const mappedIndex = stableMappedFrameIndex(liveFrames, lastDisplayedIsoRef.current, state.radarTime.frameIndex);
       setPlayFrames(liveFrames);
       setPlayTemplates(liveTemplates);
@@ -1130,11 +1142,9 @@ export function useRadarController(args: {
       const cur = safeFrameIndexRef.current;
       const baseDwell = minDwellRef.current;
 
-      const atStart = cur <= 0;
       const atEnd = cur >= fc - 1;
-      const atEdge = atStart || atEnd;
 
-      if (atEdge && pendingFramesRef.current && pendingTemplatesRef.current) {
+      if (atEnd && pendingFramesRef.current && pendingTemplatesRef.current) {
         const nextFrames = pendingFramesRef.current;
         const nextTemplates = pendingTemplatesRef.current;
 
@@ -1142,10 +1152,16 @@ export function useRadarController(args: {
         pendingTemplatesRef.current = null;
 
         const currentIso = lastDisplayedIsoRef.current;
-        const mappedIndex = stableMappedFrameIndex(nextFrames, currentIso, safeFrameIndexRef.current);
+        let mappedIndex = stableMappedFrameIndex(nextFrames, currentIso, safeFrameIndexRef.current);
+        if (mappedIndex <= 0 && nextFrames.length > 1 && safeFrameIndexRef.current > 0) {
+          mappedIndex = nextFrames.length - 1;
+        }
 
         setPlayFrames(nextFrames);
         setPlayTemplates(nextTemplates);
+        prevFrameRef.current = mappedIndex;
+        setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
+        setPreloadTo(null);
 
         lastAdvanceRef.current = Date.now();
 
@@ -1153,7 +1169,7 @@ export function useRadarController(args: {
         return;
       }
 
-      const dwellNow = atEdge ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
+      const dwellNow = atEnd ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
       if (Date.now() - lastAdvanceRef.current < dwellNow) return;
 
       const next = cur >= fc - 1 ? 0 : cur + 1;
