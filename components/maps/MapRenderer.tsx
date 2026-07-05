@@ -512,8 +512,8 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              const srcId = `radar-warm-src-${radarSourceKey}-${slotIdx}`;
-              const lyrId = `radar-warm-lyr-${radarSourceKey}-${slotIdx}`;
+              const srcId = `radar-warm-src-${slotIdx}`;
+              const lyrId = `radar-warm-lyr-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
@@ -540,8 +540,8 @@ export function MapRenderer(props: MapRendererProps) {
               if (!tpl) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
-              const srcId = `radar-src-${radarSourceKey}-${slotIdx}`;
-              const lyrId = `radar-lyr-${radarSourceKey}-${slotIdx}`;
+              const srcId = `radar-src-${slotIdx}`;
+              const lyrId = `radar-lyr-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (

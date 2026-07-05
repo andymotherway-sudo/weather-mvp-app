@@ -2,7 +2,7 @@
   "expo": {
     "name": "OMNIwx Alpha",
     "slug": "weather-app",
-    "version": "1.1.178",
+    "version": "1.1.180",
     "owner": "andymotherway",
     "orientation": "default",
     "icon": "./assets/brand/icon-alpha.png",
@@ -10,7 +10,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.omniwx.app",
-      "buildNumber": "10195",
+      "buildNumber": "10197",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "OMNIwx uses your location to show local weather, radar, and marine conditions for your current area."
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "versionCode": 10195,
+      "versionCode": 10197,
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#020617",
