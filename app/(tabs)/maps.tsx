@@ -1213,6 +1213,7 @@ export default function MapsScreen() {
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
   const radarPrefsHydratedRef = useRef(false);
+  const stormScopeToggleBusyRef = useRef(false);
 
   useEffect(() => {
     if (animationRecordMode) return;
@@ -1362,8 +1363,9 @@ export default function MapsScreen() {
 
   const localRadarAvailable = !!autoNearestRadar?.site;
 
-  // No surprise NEXRAD outside Storm Scope. Storm Scope still auto-selects the
-  // nearest radar from the current free-moving map center.
+  // Normal radar can hand off from the national mosaic to nearest-site NEXRAD,
+  // but Storm Scope is the only path that may expose station rings and product
+  // controls. Keep that boundary sharp so the common map stays quiet.
 
   const selectedRadarSite = useMemo(() => {
     const id3 =
@@ -1423,11 +1425,10 @@ export default function MapsScreen() {
     localRadarAvailable &&
     mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
 
-  const stationRadarMode =
-    stormScopeNexradVisible || autoNearestRadarMode;
+  const stationRadarMode = stormScopeNexradVisible || autoNearestRadarMode;
 
   const showRadarRings =
-    stationRadarMode &&
+    stormScopeNexradVisible &&
     !!selectedRadarSite &&
     mapZoom >= STORM_SCOPE_RINGS_MIN_ZOOM;
 
@@ -1957,10 +1958,10 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
 
   const stationProductLoading =
-    stationRadarMode && radarCtl.iemLoading;
+    stormScopeNexradVisible && radarCtl.iemLoading;
 
   const stationProductUnavailable =
-    stationRadarMode && !stationProductLoading && frameCount <= 0;
+    stormScopeNexradVisible && !stationProductLoading && frameCount <= 0;
 
   const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
 
@@ -1985,6 +1986,58 @@ export default function MapsScreen() {
 
     setPendingStationProduct(null);
   }, [pendingStationProduct, stationProductLoading]);
+
+  const armStormScopeToggleGuard = useCallback(() => {
+    if (stormScopeToggleBusyRef.current) return false;
+    stormScopeToggleBusyRef.current = true;
+    setTimeout(() => {
+      stormScopeToggleBusyRef.current = false;
+    }, 350);
+    return true;
+  }, []);
+
+  const turnStormScopeOn = useCallback(() => {
+    if (!armStormScopeToggleGuard()) return;
+
+    setRadarMode('mosaic');
+    setStationPanelCollapsed(false);
+    setManualRadarSiteId3(null);
+    setPendingStationProduct(null);
+    lastCenteredRadarSiteRef.current = null;
+    radarStationSeedRegionRef.current = null;
+
+    if (state.viewId !== 'radar') {
+      dispatch({ type: 'SET_VIEW', viewId: 'radar' });
+    }
+
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+  }, [armStormScopeToggleGuard, dispatch, state.viewId]);
+
+  const turnStormScopeOff = useCallback(() => {
+    if (!armStormScopeToggleGuard()) return;
+
+    setRadarMode('mosaic');
+    setStationPanelCollapsed(true);
+    setManualRadarSiteId3(null);
+    setPendingStationProduct(null);
+    lastCenteredRadarSiteRef.current = null;
+    radarStationSeedRegionRef.current = null;
+
+    dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: false });
+    dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
+    dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+  }, [armStormScopeToggleGuard, dispatch]);
+
+  const handleStormScopePress = useCallback(() => {
+    if (stormMode) {
+      turnStormScopeOff();
+      return;
+    }
+
+    turnStormScopeOn();
+  }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -4673,26 +4726,7 @@ export default function MapsScreen() {
                         <MiniToggle
                           label="Storm Scope"
                           active={stormMode}
-                          onPress={() => {
-                            const nextStormMode = !stormMode;
-
-                            setRadarMode('mosaic');
-                            setStationPanelCollapsed(false);
-                            setManualRadarSiteId3(null);
-                            setPendingStationProduct(null);
-                            lastCenteredRadarSiteRef.current = null;
-                            radarStationSeedRegionRef.current = null;
-
-                            if (state.viewId !== 'radar') {
-                              dispatch({ type: 'SET_VIEW', viewId: 'radar' });
-                            }
-
-                            dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
-                            dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: nextStormMode });
-
-                            // Keep the RainViewer loop alive. Do not reset frameIndex here.
-                            dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-                          }}
+                          onPress={handleStormScopePress}
                         />
                       </View>
                       {showAdvancedRadarControls ? (

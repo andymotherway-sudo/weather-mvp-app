@@ -2579,6 +2579,8 @@ function SimpleDailyOverview({
   uvIndex,
   airQualityLabel,
   airQualityIndex,
+  pressureHpa,
+  pressureTrend,
   daily,
   hourly,
   moonDays,
@@ -2596,6 +2598,8 @@ function SimpleDailyOverview({
   uvIndex: number | null;
   airQualityLabel: string | null;
   airQualityIndex: number | null;
+  pressureHpa: number | null;
+  pressureTrend: { arrow: string; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   daily: any[];
   hourly: any[];
   moonDays?: Array<{
@@ -2651,13 +2655,14 @@ function SimpleDailyOverview({
   const currentAqiSub = airQualityLabel?.replace(/^AQI\s*:?\s*/i, '').trim() || undefined;
   const todayWindSub = gustMph != null ? `Gust ${Math.round(gustMph)} mph` : '—';
   const tonightWindSub = todaySplit.night.gust != null ? `Gust ${Math.round(todaySplit.night.gust)} mph` : '—';
+  const pressureMbValue = pressureHpa != null ? `${Math.round(pressureHpa)} mb` : '—';
   const currentMetrics = [
-    { value: precipChancePct != null ? `${Math.round(precipChancePct)}%` : '—', label: 'Precip chance' },
-    { value: windMph != null ? `${Math.round(windMph)} mph` : '—', label: 'Wind', sub: todayWindSub.replace('???', '—') },
     { value: humidityPct != null ? `${Math.round(humidityPct)}%` : '—', label: 'RH' },
+    { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'DP' },
     { value: uvIndex != null ? `${Math.round(uvIndex)}` : '—', label: 'UV index' },
+    { value: pressureMbValue, label: 'Baro', sub: pressureTrend.label },
+    { value: windMph != null ? `${Math.round(windMph)} mph` : '—', label: 'Wind', sub: todayWindSub.replace('???', '—') },
     { value: currentAqiValue.replace('???', '—'), label: 'AQI', sub: currentAqiSub },
-    { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'Dew point' },
   ];
   const dailyCurrentSummaryText =
     [todayNarrative, todayPop != null ? `${Math.round(todayPop)}% precip chance` : null]
@@ -2730,7 +2735,9 @@ function SimpleDailyOverview({
           <View style={styles.dailyTempRangeLegend}>
             <View style={styles.dailyTempRangeLegendItem}>
               <View style={styles.dailyTempRangeActualSwatch} />
-              <Text style={styles.dailyTempRangeNow}>Actual</Text>
+              <Text style={styles.dailyTempRangeNow}>
+                Actual {tempF != null ? `${Math.round(tempF)}°` : '—'}
+              </Text>
             </View>
             {feelsLikeF != null ? (
               <View style={styles.dailyTempRangeLegendItem}>
@@ -5249,6 +5256,8 @@ function LandWeatherWithCoords({
           uvIndex={uvIndex}
           airQualityLabel={airQualityLabel}
           airQualityIndex={airQualityIndex}
+          pressureHpa={pressureHpa}
+          pressureTrend={pressureTrend}
           daily={daily}
           hourly={hourly}
           moonDays={astroData?.moonDays}

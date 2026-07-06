@@ -74,6 +74,15 @@ if (uploadKeystorePropertiesFile.exists()) {
     uploadKeystoreProperties.load(new FileInputStream(uploadKeystorePropertiesFile))
 }
 def hasUploadKeystore = uploadKeystoreProperties['storeFile'] && uploadKeystoreProperties['storePassword'] && uploadKeystoreProperties['keyAlias'] && uploadKeystoreProperties['keyPassword']
+def releaseSigningRequested = gradle.startParameter.taskNames.any { taskName ->
+    def normalizedTaskName = taskName.toLowerCase()
+    normalizedTaskName.contains("bundlerelease") ||
+        normalizedTaskName.contains("assemblerelease") ||
+        normalizedTaskName.contains("packagerelease")
+}
+if (releaseSigningRequested && !hasUploadKeystore) {
+    throw new GradleException("Release signing is missing. Create android/signing/upload.properties with storeFile, storePassword, keyAlias, and keyPassword before building a release AAB/APK.")
+}
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -99,8 +108,8 @@ android {
         applicationId 'com.anonymous.weatherapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10197
-        versionName "1.1.180"
+        versionCode 10198
+        versionName "1.1.181"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

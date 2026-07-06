@@ -4,6 +4,12 @@ node_modules/
 # Environment
 .env
 
+# Android signing secrets
+*.jks
+*.keystore
+android/signing/
+credentials.json
+
 # Expo
 .expo/
 .expo-shared/
