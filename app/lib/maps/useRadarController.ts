@@ -125,6 +125,13 @@ function buildWorkerWmsUrl(args: {
   return u.toString();
 }
 
+function localWmsProductForRadar(product: RadarProductId): 'N0Q' | 'N0B' | 'N0Z' | null {
+  if (product === 'N0B') return 'N0B';
+  if (product === 'N0Z' || product === 'N0U') return 'N0Z';
+  if (product === 'N0Q') return 'N0Q';
+  return null;
+}
+
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -366,13 +373,15 @@ export function useRadarController(args: {
    * ========================================================================= */
   // The hyperlocal WMS image path is reliable for primary reflectivity. In Storm Mode,
   // also allow the alternate reflectivity product for sharper single-site inspection.
+  const localWmsProduct = localWmsProductForRadar(product);
   const usingLocalImage =
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
-    !state.radarTime.playing &&
-    !stationMode &&
-    (product === 'N0Q' || (stormMode && product === 'N0B')) &&
-    mapZoom >= localMinZoom;
+    !!localWmsProduct &&
+    (
+      (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
+      (stormMode && stationMode && mapZoom > 8)
+    );
 
   const windowSize = Dimensions.get('window');
   const deviceDpr = PixelRatio.get();
@@ -465,7 +474,8 @@ export function useRadarController(args: {
       try {
         setLocalError(null);
 
-        const wmsProduct = product === 'N0B' ? 'N0B' : 'N0Q';
+        const wmsProduct = localWmsProduct;
+        if (!wmsProduct) return;
         const url = buildWorkerWmsUrl({
           product: wmsProduct,
           region: r,

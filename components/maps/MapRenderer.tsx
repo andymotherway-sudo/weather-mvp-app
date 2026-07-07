@@ -73,7 +73,13 @@ function radarTileSizeForTemplate(template?: string | null) {
 
 function safeMapSourceKey(value?: string | null) {
   const raw = value?.trim() || 'default';
-  return raw.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 72) || 'default';
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) | 0;
+  }
+  const suffix = Math.abs(hash).toString(36);
+  const cleaned = raw.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 56) || 'default';
+  return `${cleaned}-${suffix}`;
 }
 
 function regionFromBounds(bounds: any): Region | null {
@@ -512,8 +518,8 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              const srcId = `radar-warm-src-${slotIdx}`;
-              const lyrId = `radar-warm-lyr-${slotIdx}`;
+              const srcId = `radar-warm-src-${radarSourceKey}-${slotIdx}`;
+              const lyrId = `radar-warm-lyr-${radarSourceKey}-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
@@ -540,8 +546,8 @@ export function MapRenderer(props: MapRendererProps) {
               if (!tpl) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
-              const srcId = `radar-src-${slotIdx}`;
-              const lyrId = `radar-lyr-${slotIdx}`;
+              const srcId = `radar-src-${radarSourceKey}-${slotIdx}`;
+              const lyrId = `radar-lyr-${radarSourceKey}-${slotIdx}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (

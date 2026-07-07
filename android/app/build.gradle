@@ -108,8 +108,8 @@ android {
         applicationId 'com.anonymous.weatherapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10198
-        versionName "1.1.181"
+        versionCode 10201
+        versionName "1.1.184"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -122,7 +122,7 @@ android {
         }
         release {
             if (hasUploadKeystore) {
-                storeFile file(uploadKeystoreProperties['storeFile'])
+                storeFile rootProject.file(uploadKeystoreProperties['storeFile'])
                 storePassword uploadKeystoreProperties['storePassword']
                 keyAlias uploadKeystoreProperties['keyAlias']
                 keyPassword uploadKeystoreProperties['keyPassword']
