@@ -1097,10 +1097,7 @@ export function useRadarController(args: {
     if (usingLocalImage) return;
     if (!state.radarTime.playing) return;
 
-    if (frameCount < 2) {
-      dispatch({ type: 'SET_RADAR_PLAYING', playing: false });
-      return;
-    }
+    if (frameCount < 2) return;
 
     playTimerRef.current = setInterval(() => {
       if (!playingRef.current) return;

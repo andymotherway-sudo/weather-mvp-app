@@ -1278,6 +1278,7 @@ export default function MapsScreen() {
   }, [params?.lat, params?.lon, params?.view, router]);
 
   useEffect(() => {
+    dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
   }, []);
 
@@ -1947,7 +1948,8 @@ export default function MapsScreen() {
     ridgeMinZoom: stationRadarMode ? 2 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
     suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
-    playbackBlocked: preferBufferedWideRadar && !radarBufferedLeadReady,
+    // Keep the base mosaic playlist moving while optional buffered frames warm in the background.
+    playbackBlocked: false,
   });
 
   const uiFrames = radarCtl.uiFrames;

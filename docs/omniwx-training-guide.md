@@ -1941,12 +1941,12 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.184`, Android version code `10201`.
+- Current release example: app version `1.1.185`, Android version code `10202`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
 
-Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Do not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` from UI controls unless the user explicitly scrubbed to the first frame.
+Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Initial map entry may arm playback from frame `0`, but provider refreshes and UI controls should not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` unless the user explicitly scrubbed to the first frame.
 
 Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Any legacy `storm` route/view should normalize back through the standard radar view with Storm Scope enabled so the visible chip remains the single on/off control. Normal radar owns the automatic RainViewer-to-NEXRAD zoom handoff; Storm Scope is an explicit chaser/workstation tool layered on top of that workflow.
 
@@ -1955,6 +1955,8 @@ Radar playlist note: when provider frames refresh, map the new playlist to the d
 Radar handoff note: broad zoom should use the RainViewer mosaic and close zoom can latch into nearest local NEXRAD with hysteresis. MapLibre tiled radar source IDs should remain stable during playback so frame changes update tile URLs and opacity without remount flashes.
 
 Radar source-key note: animated tiled radar should not remount the MapLibre source on every frame. If the scrubber timestamp advances but the raster stays visually frozen, check that the renderer receives new tile URL templates while keeping source IDs stable.
+
+Radar preload note: optional buffered radar frames should warm in the background, but they must not block the base RainViewer mosaic timer. If the mosaic timeline is armed before frames arrive, keep playback true so animation begins as soon as the playlist is ready.
 
 Radar raster refresh note: when MapLibre refuses to repaint changed tile URL templates, include a compact hashed frame/template key in the raster source IDs. Keep the key short enough for MapLibre, but make sure the frame-specific part survives sanitizing/truncation.
 
