@@ -250,6 +250,8 @@ Maps supports:
 
 Animated atmospheric imagery uses a shared buffered playback engine. Radar, GOES true color, infrared, water vapor, and east/west visible-cloud frames are downloaded into a bounded local cache before display. The map keeps the last complete frame visible while the next frame or a newly panned viewport is prepared, then crossfades persistent front/back image slots instead of exposing a blank source between frames. Radar and satellite imagery can buffer independently when both are enabled.
 
+Radar playback also keeps a warm next-frame raster slot mounted when a follow-up frame is available, including at close zooms, so normal mosaic playback can begin as soon as the playlist is ready and fade between frames instead of waiting for a manual frame step.
+
 ### Animation Export
 
 On Android, OMNIwx can export animated map loops as MP4 files through the native video export module. Recording preserves the visible animated weather stack, including radar, visible clouds, GOES true color, infrared, water vapor, and animated wind flow when those layers are enabled. Wind flow can also be recorded by itself. Export uses prepared animation frames, preserves the recording region, and saves through Android media APIs.

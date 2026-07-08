@@ -665,6 +665,7 @@ export function useRadarController(args: {
 
   const pendingFramesRef = useRef<Array<{ iso: string }> | null>(null);
   const pendingTemplatesRef = useRef<Array<string | null> | null>(null);
+  const autoStartedContextRef = useRef<string | null>(null);
 
   const framesSignature = useMemo(() => liveFrames.map((f) => f.iso).join('|'), [liveFrames]);
   const templatesSignature = useMemo(() => liveTemplates.join('|'), [liveTemplates]);
@@ -773,6 +774,31 @@ export function useRadarController(args: {
   const frameCount = effectiveFrames.length;
   const safeFrameIndex = clampIndex(state.radarTime.frameIndex, frameCount);
 
+  useEffect(() => {
+    if (!radarEnabled || usingLocalImage || frameCount < 2) {
+      if (!radarEnabled) autoStartedContextRef.current = null;
+      return;
+    }
+
+    if (autoStartedContextRef.current === playlistContextKey) return;
+    autoStartedContextRef.current = playlistContextKey;
+
+    if (state.radarTime.frameIndex !== 0) {
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    }
+    if (!state.radarTime.playing) {
+      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+    }
+  }, [
+    dispatch,
+    frameCount,
+    playlistContextKey,
+    radarEnabled,
+    state.radarTime.frameIndex,
+    state.radarTime.playing,
+    usingLocalImage,
+  ]);
+
   const lastDisplayedIsoRef = useRef<string | null>(null);
   useEffect(() => {
     lastDisplayedIsoRef.current = effectiveFrames[safeFrameIndex]?.iso ?? null;
@@ -849,7 +875,7 @@ export function useRadarController(args: {
 
     setPreloadTo(next);
 
-    const preloadMs = mapZoom <= 5 ? 460 : mapZoom <= 8 ? 380 : 300;
+    const preloadMs = mapZoom <= 5 ? 760 : mapZoom <= 8 ? 620 : 520;
 
     preloadTimerRef.current = setTimeout(() => {
       const start = Date.now();
@@ -905,7 +931,7 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.94 ? radarOpacity * 0.38 : 0;
+    const oldFrameFloor = t < 0.98 ? radarOpacity * 0.68 : 0;
     out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
     out[to] = radarOpacity * t;
 

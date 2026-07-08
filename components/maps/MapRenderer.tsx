@@ -422,11 +422,13 @@ export function MapRenderer(props: MapRendererProps) {
 
   const maxSlots = useMemo(() => {
     if (isDegraded) return 1;
+    const hasPreloadSlot = !!radar.templates?.[1];
     const activeRadarSlots = (radar.templates ?? []).filter((tpl, idx) => {
       const opacity = radar.opacities?.[idx] ?? 0;
       return !!tpl && opacity > 0.001;
     }).length;
     if (activeRadarSlots >= 2) return 2;
+    if (hasPreloadSlot) return 2;
     if (liveZoom >= 8.5) return 1;
     return 2;
   }, [isDegraded, liveZoom, radar.opacities, radar.templates]);

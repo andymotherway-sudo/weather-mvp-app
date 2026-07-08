@@ -1941,7 +1941,7 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.188`, Android version code `10205`.
+- Current release example: app version `1.1.189`, Android version code `10206`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
@@ -1957,6 +1957,8 @@ Radar handoff note: broad zoom should use the RainViewer mosaic and close zoom c
 Radar source-key note: animated tiled radar should not remount the MapLibre source on every frame. If the scrubber timestamp advances but the raster stays visually frozen, check that the renderer receives new tile URL templates while keeping source IDs stable.
 
 Radar preload note: optional buffered radar frames should warm in the background, but they must not block the base RainViewer mosaic timer. If the mosaic timeline is armed before frames arrive, keep playback true so animation begins as soon as the playlist is ready.
+
+Radar startup note: the map can auto-arm radar playback once per playlist context when at least two frames are available. Keep the first visible frame stable, preload the next tile slot in the renderer, and avoid requiring a fast-forward tap just to start mosaic motion.
 
 Radar raster refresh note: when MapLibre refuses to repaint changed tile URL templates, include a compact hashed frame/template key in the raster source IDs. Keep the key short enough for MapLibre, but make sure the frame-specific part survives sanitizing/truncation.
 
