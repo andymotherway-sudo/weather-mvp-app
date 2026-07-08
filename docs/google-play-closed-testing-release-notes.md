@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.185**
-Android version code: **10202**
+Release: **OMNIwx Alpha 1.1.186**
+Android version code: **10203**
 Track: **Closed testing / internal testing candidate**
 Date: **July 7, 2026**
 
 ## Play Console Paste Notes
 
-Maps radar playback polish. The broad RainViewer mosaic now stays armed while frames load, starts playback from the first frame when Maps opens, and no longer waits for optional buffered imagery before advancing. Storm Scope behavior is unchanged from the prior working build.
+Maps control polish. Restores camera-only zoom buttons that only zoom the current map view, with no forced recentering or radar-mode changes. Restores the old-school red record-dot control beside the playback buttons for radar, satellite, and animated map loops. Keeps the latest radar mosaic playback path unchanged from the previous build.
 
 ## Tester Notes
 
@@ -15,15 +15,15 @@ Please focus testing on Maps radar, Storm Scope, and broad mosaic playback.
 
 ### What Changed
 
-- Keep mosaic playback active while provider frames load.
-- Start Maps radar playback from the first frame.
-- Let buffered radar frames warm in the background without freezing the visible mosaic.
+- Restore map zoom in/out buttons as camera-only controls.
+- Move map recording back into the playback row as a red record-dot button.
+- Preserve the existing radar mosaic playback behavior from the previous build.
 
 ### What To Test
 
-- Confirm the RainViewer mosaic visibly animates as the timestamp advances.
-- Open Maps fresh and confirm radar begins playing from the first frame.
-- Confirm Storm Scope still toggles cleanly.
+- Tap zoom in/out and confirm the map zooms without snapping to a location.
+- Confirm the red record button opens the MP4 export workflow.
+- Confirm RainViewer mosaic and Storm Scope behavior match the previous build.
 
 ### Known Watch Areas
 
@@ -33,8 +33,8 @@ Please focus testing on Maps radar, Storm Scope, and broad mosaic playback.
 
 ## Internal Release Checklist
 
-- App version: `1.1.185`
-- Android version code: `10202`
+- App version: `1.1.186`
+- Android version code: `10203`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

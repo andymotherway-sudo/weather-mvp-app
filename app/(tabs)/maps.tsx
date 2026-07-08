@@ -658,6 +658,10 @@ function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
 }
 
+function longitudeDeltaFromZoom(zoom: number) {
+  return 360 / Math.pow(2, zoom);
+}
+
 function isNexradSite(site: NexradSite) {
   return String(site.ownerType ?? '').toUpperCase() === 'NEXRAD';
 }
@@ -1453,20 +1457,7 @@ export default function MapsScreen() {
     [radarAnchor.lat, radarAnchor.lon],
   );
 
-  const preferBufferedWideRadar =
-    isFocused &&
-    !animationRecordMode &&
-    radarEnabled &&
-    effectiveRadarProvider === 'rainviewer' &&
-    !stationRadarMode &&
-    mapZoom <= 8.5;
-
-  const radarBufferedReadyCount = radarPlaybackBufferStatus?.ready ?? 0;
-  const radarBufferedTotal = radarPlaybackBufferStatus?.total ?? 0;
-  const radarBufferedLeadReady =
-    radarBufferedReadyCount >= Math.min(3, radarBufferedTotal || 3) ||
-    (radarPlaybackBufferStatus?.buffering === false &&
-      radarBufferedReadyCount >= Math.min(2, radarBufferedTotal || 2));
+  const preferBufferedWideRadar = false;
 
   // When the user pans, update nearest radar context, but do NOT reset the
   // RainViewer animation to frame 0.
@@ -1947,7 +1938,7 @@ export default function MapsScreen() {
     localMinZoom: 12,
     ridgeMinZoom: stationRadarMode ? 2 : 8.6,
     animationQuality: BEST_ANIMATION_QUALITY,
-    suspendRasterTransitions: preferBufferedWideRadar && radarBufferedPlaybackReady,
+    suspendRasterTransitions: false,
     // Keep the base mosaic playlist moving while optional buffered frames warm in the background.
     playbackBlocked: false,
   });
@@ -2986,6 +2977,39 @@ export default function MapsScreen() {
     }
     setCameraDebugLabel('locate-unavailable');
   };
+
+  const handleMapZoomButton = useCallback((delta: number) => {
+    const anchorRegion = region ?? effectiveRegion;
+    const currentZoom =
+      Number.isFinite(mapZoom)
+        ? mapZoom
+        : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta);
+    const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
+    const currentLonDelta =
+      Number.isFinite(anchorRegion.longitudeDelta) && anchorRegion.longitudeDelta > 0
+        ? anchorRegion.longitudeDelta
+        : longitudeDeltaFromZoom(currentZoom);
+    const nextLonDelta = longitudeDeltaFromZoom(nextZoom);
+    const aspect =
+      Number.isFinite(anchorRegion.latitudeDelta) && anchorRegion.latitudeDelta > 0
+        ? clampNumber(anchorRegion.latitudeDelta / currentLonDelta, 0.35, 1.4)
+        : 0.72;
+    const nextRegion = {
+      ...anchorRegion,
+      latitudeDelta: nextLonDelta * aspect,
+      longitudeDelta: nextLonDelta,
+      zoom: nextZoom,
+    };
+
+    setRegion(nextRegion);
+    setMapZoom(nextZoom);
+
+    mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [anchorRegion.longitude, anchorRegion.latitude],
+      zoomLevel: nextZoom,
+      animationDuration: 180,
+    });
+  }, [effectiveRegion, mapZoom, region]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -4660,6 +4684,7 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
+              <ZoomButtons onZoomIn={() => handleMapZoomButton(1)} onZoomOut={() => handleMapZoomButton(-1)} />
             </View>
           </View>
         )}
@@ -5104,16 +5129,6 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  <View style={styles.animationControlStrip}>
-                    <View style={styles.animationControlSpacer} />
-                    <Pressable
-                      onPress={handleAnimationRecordPress}
-                      disabled={animationExporting}
-                      style={[styles.recordModeButton, animationExporting ? styles.recordModeButtonDisabled : null]}
-                    >
-                      <Text style={styles.recordModeButtonText}>{animationExporting ? 'Saving' : 'Record'}</Text>
-                    </Pressable>
-                  </View>
                   {satelliteTimelineActive ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
@@ -5187,6 +5202,9 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
+                    onRecord={handleAnimationRecordPress}
+                    recordBusy={animationExporting}
+                    recordDisabled={animationExporting || animationExportFrames.length < 2}
                     onSetFrame={(frameIndex) => {
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
@@ -5812,6 +5830,19 @@ function LocationButton(props: { onPress: () => void }) {
         <View style={styles.locationDot} />
       </View>
     </Pressable>
+  );
+}
+
+function ZoomButtons(props: { onZoomIn: () => void; onZoomOut: () => void }) {
+  return (
+    <View style={styles.zoomButtonStack}>
+      <Pressable onPress={props.onZoomIn} style={styles.zoomButton} accessibilityLabel="Zoom map in">
+        <Text style={styles.zoomButtonText}>+</Text>
+      </Pressable>
+      <Pressable onPress={props.onZoomOut} style={styles.zoomButton} accessibilityLabel="Zoom map out">
+        <Text style={styles.zoomButtonText}>-</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -6719,6 +6750,26 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  zoomButtonStack: {
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  zoomButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(2,6,23,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonText: {
+    color: 'rgba(255,255,255,0.98)',
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 30,
   },
   actionButton: {
     width: 54,
