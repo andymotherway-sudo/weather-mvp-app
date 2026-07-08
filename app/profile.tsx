@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { LearnMoreModal } from '../components/common/LearnMoreModal';
 import { usePlace, type Place } from './context/PlaceContext';
 import { useSettings } from './context/SettingsContext';
 import { formatCompactLocation } from './lib/locations/formats';
@@ -63,6 +64,8 @@ export default function ProfileScreen() {
   const [solarCaptureEnabled, setSolarCaptureEnabled] = useState(false);
   const [solarCaptureLoading, setSolarCaptureLoading] = useState(true);
   const [solarCaptureBusy, setSolarCaptureBusy] = useState(false);
+  const [learnOpen, setLearnOpen] = useState(false);
+  const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
 
   const leaveSettings = () => {
     if (router.canGoBack()) {
@@ -126,6 +129,11 @@ export default function ProfileScreen() {
     } finally {
       setSolarCaptureBusy(false);
     }
+  };
+
+  const openLearnTopic = (topicId?: string) => {
+    setLearnTopicId(topicId ?? undefined);
+    setLearnOpen(true);
   };
 
   const activeLabel =
@@ -293,7 +301,12 @@ export default function ProfileScreen() {
 
           <View style={{ height: 14 }} />
 
-          <Text style={styles.label}>Forecast Model</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.label}>Forecast Model</Text>
+            <Pressable style={styles.learnPill} onPress={() => openLearnTopic('forecast-models')}>
+              <Text style={styles.learnPillText}>wxLearn</Text>
+            </Pressable>
+          </View>
           <Text style={styles.helperText}>Used by wxLab and forecast views. Best match remains the safest default.</Text>
           <View style={styles.optionGrid}>
             {FORECAST_MODEL_OPTIONS.map((option) => (
@@ -457,6 +470,7 @@ export default function ProfileScreen() {
           <Text style={styles.secondaryButtonText}>Done</Text>
         </Pressable>
       </ScrollView>
+      <LearnMoreModal visible={learnOpen} onClose={() => setLearnOpen(false)} initialTopicId={learnTopicId} />
     </View>
   );
 }
@@ -520,6 +534,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   label: { color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
   value: { color: 'white', fontSize: 15, fontWeight: '900', marginTop: 5 },
   helperText: { color: 'rgba(255,255,255,0.62)', fontSize: 11, lineHeight: 16, marginTop: 5, marginBottom: 9 },
@@ -548,6 +563,17 @@ const styles = StyleSheet.create({
   optionPillHalf: { flexGrow: 1, flexBasis: '46%', minWidth: 118 },
   compactPill: { flexGrow: 1, flexShrink: 1, flexBasis: '44%', minWidth: 104 },
   appearancePill: { flexGrow: 1, flexBasis: '46%', minWidth: 132 },
+  learnPill: {
+    minHeight: 30,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.13)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.28)',
+  },
+  learnPillText: { color: 'rgba(224,242,254,0.94)', fontWeight: '900', fontSize: 11 },
   miniActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   miniPill: { minHeight: 34, paddingVertical: 6, paddingHorizontal: 12, flexGrow: 1, flexBasis: '30%', minWidth: 76 },
   miniPillText: { color: 'white', fontWeight: '900', fontSize: 12, textAlign: 'center' },

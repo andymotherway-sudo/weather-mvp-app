@@ -1,6 +1,6 @@
 # OMNIwx Feature Guide
 
-Last updated: June 24, 2026
+Last updated: July 8, 2026
 
 This guide explains the user-facing screens and major features currently present in OMNIwx. It is written as a product walkthrough rather than a code tutorial. For architecture details, see `docs/how-omniwx-works.md` and `docs/omniwx-training-guide.md`.
 
@@ -51,6 +51,8 @@ Several screens use a Simple/wxLab split:
 
 The setting "Always use WxLab" can make supported screens open in the advanced mode by default.
 
+Forecast model selection is available in Settings. The selected model drives wxLab and forecast views that use Open-Meteo forecast data, while official alerts, observations, radar, and specialty feeds keep their own source chains.
+
 ### wxLearn and Explain Modals
 
 The app includes educational modal surfaces that are now treated as a first-class learning library:
@@ -59,6 +61,7 @@ The app includes educational modal surfaces that are now treated as a first-clas
 - Learn more topics explain concepts such as dew point, humidity, AQI, pollutant drivers, heat index, wind chill, wind, pressure, alerts, radar products, satellite layers, marine zones, water stations, aviation products, space-weather scales, Kp, solar wind, twilight, Earth terminator imagery, and Sky Score.
 - Explain modals summarize how a metric was computed or why a condition matters.
 - Search includes topic titles, summaries, units, references, tags, and category context.
+- Settings includes a wxLearn entry beside Forecast Model so users can understand Best match, NOAA GFS, ECMWF, and DWD ICON before changing guidance.
 
 These are used across Land, Hourly, Nautical, Aviation, Space, and map details.
 

@@ -2,8 +2,8 @@
 
 OMNIwx is an Android-first weather workstation that brings daily forecasts, radar and satellite maps, marine weather, aviation weather, space weather, climatology, and educational wxLearn topics into one app.
 
-Current release line: **OMNIwx Alpha 1.1.186**
-Current Android version code: **10203**
+Current release line: **OMNIwx Alpha 1.1.187**
+Current Android version code: **10204**
 
 ## Product Shape
 

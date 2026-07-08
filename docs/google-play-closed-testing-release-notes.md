@@ -1,29 +1,33 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.186**
-Android version code: **10203**
+Release: **OMNIwx Alpha 1.1.187**
+Android version code: **10204**
 Track: **Closed testing / internal testing candidate**
-Date: **July 7, 2026**
+Date: **July 8, 2026**
 
 ## Play Console Paste Notes
 
-Maps control polish. Restores camera-only zoom buttons that only zoom the current map view, with no forced recentering or radar-mode changes. Restores the old-school red record-dot control beside the playback buttons for radar, satellite, and animated map loops. Keeps the latest radar mosaic playback path unchanged from the previous build.
+Radar, wxLab, and settings polish. Improves radar frame blending to reduce flashing between frames, keeps Storm Scope station products isolated from normal mosaic playback, restores UV fallback handling, moves the Land wxLab daily graph above Sun/Moon detail, removes the duplicate wxLab hourly graph, and adds a wxLearn topic in Settings explaining forecast model choices.
 
 ## Tester Notes
 
-Please focus testing on Maps radar, Storm Scope, and broad mosaic playback.
+Please focus testing on Maps radar, Storm Scope products, Land wxLab, UV values, and the Settings forecast model selector.
 
 ### What Changed
 
-- Restore map zoom in/out buttons as camera-only controls.
-- Move map recording back into the playback row as a red record-dot button.
-- Preserve the existing radar mosaic playback behavior from the previous build.
+- Reduce visible radar flashing between frames.
+- Keep Storm Scope station products from falling back to mosaic tiles.
+- Add UV fallback handling for Open-Meteo field variants.
+- Move Land wxLab daily graph above Sun/Moon detail.
+- Remove the duplicate wxLab hourly graph from Land.
+- Add wxLearn guidance for forecast model choices in Settings.
 
 ### What To Test
 
-- Tap zoom in/out and confirm the map zooms without snapping to a location.
-- Confirm the red record button opens the MP4 export workflow.
-- Confirm RainViewer mosaic and Storm Scope behavior match the previous build.
+- Confirm RainViewer mosaic and Storm Scope still animate cleanly.
+- Confirm Storm Scope products do not show mosaic fallback tiles.
+- Confirm UV index appears when upstream fields are available.
+- Confirm Settings > Forecast Model opens the new wxLearn explanation.
 
 ### Known Watch Areas
 
@@ -33,8 +37,8 @@ Please focus testing on Maps radar, Storm Scope, and broad mosaic playback.
 
 ## Internal Release Checklist
 
-- App version: `1.1.186`
-- Android version code: `10203`
+- App version: `1.1.187`
+- Android version code: `10204`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

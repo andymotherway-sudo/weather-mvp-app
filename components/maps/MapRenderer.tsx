@@ -82,6 +82,15 @@ function safeMapSourceKey(value?: string | null) {
   return `${cleaned}-${suffix}`;
 }
 
+function radarTemplateKey(template?: string | null) {
+  if (!template) return 'empty';
+  let hash = 0;
+  for (let i = 0; i < template.length; i += 1) {
+    hash = (hash * 33 + template.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
 function regionFromBounds(bounds: any): Region | null {
   if (Array.isArray(bounds) && bounds.length >= 2 && Array.isArray(bounds[0]) && Array.isArray(bounds[1])) {
     const west = Number(bounds[0][0]);
@@ -447,9 +456,7 @@ export function MapRenderer(props: MapRendererProps) {
   const layerMaxZ = 24;
   const radarResampling: 'linear' | 'nearest' = liveZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
 
-  // Temporarily 0 while diagnosing jumps. If this fixes the feel,
-  // you can later try 60-90 instead of 120.
-  const rasterFadeDuration = 0;
+  const rasterFadeDuration = liveZoom >= 8.5 ? 70 : 100;
 
   const radarRasterStyle = (opacity: number) => {
     const safeOpacity = clamp(opacity, 0, 1);
@@ -518,8 +525,9 @@ export function MapRenderer(props: MapRendererProps) {
 
         {!useLocalImage && radar.enabled && warmRadarTemplates.length
           ? warmRadarTemplates.map((tpl, slotIdx) => {
-              const srcId = `radar-warm-src-${radarSourceKey}-${slotIdx}`;
-              const lyrId = `radar-warm-lyr-${radarSourceKey}-${slotIdx}`;
+              const tplKey = radarTemplateKey(tpl);
+              const srcId = `radar-warm-src-${radarSourceKey}-${slotIdx}-${tplKey}`;
+              const lyrId = `radar-warm-lyr-${radarSourceKey}-${slotIdx}-${tplKey}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (
@@ -546,8 +554,9 @@ export function MapRenderer(props: MapRendererProps) {
               if (!tpl) return null;
 
               const opacity = Number.isFinite(radarOpacities[slotIdx]) ? radarOpacities[slotIdx] : 0;
-              const srcId = `radar-src-${radarSourceKey}-${slotIdx}`;
-              const lyrId = `radar-lyr-${radarSourceKey}-${slotIdx}`;
+              const tplKey = radarTemplateKey(tpl);
+              const srcId = `radar-src-${radarSourceKey}-${slotIdx}-${tplKey}`;
+              const lyrId = `radar-lyr-${radarSourceKey}-${slotIdx}-${tplKey}`;
               const tileSize = radarTileSizeForTemplate(tpl);
 
               return (

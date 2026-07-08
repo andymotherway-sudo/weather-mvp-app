@@ -51,7 +51,6 @@ import { AlertBanner } from '../../components/alerts/AlertBanner';
 import { useNwsAlerts } from '../lib/alerts/useNwsAlerts';
 
 import { DailyRangeChart } from '../../components/land/DailyRangeChart';
-import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 import { PremiumMoonIcon, PremiumWeatherIcon } from '../../components/weather/PremiumWeatherIcon';
 
 import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
@@ -3231,19 +3230,9 @@ function NerdyDeepDive({
   pressureHpa,
   pressureInHg,
   pressureTrend,
-  astro,
-  sunrise,
-  sunset,
-  moonrise,
-  moonset,
-  moonIlluminationPct,
-  moonPhaseDegrees,
-  moonPhaseLabel,
-  dayLengthSec,
   feelsDriverLabel,
   feelsDriverValue,
   feelsDriverTopicId,
-  timeZone,
   onOpenLearnTopic,
 }: {
   condition: string;
@@ -3267,33 +3256,10 @@ function NerdyDeepDive({
   visibilityMi: number | null;
   pressureHpa: number | null;
   pressureInHg: number | null;
-  astro?: {
-    civilDusk?: string | null;
-    nauticalDusk?: string | null;
-    astronomicalDusk?: string | null;
-    civilDawn?: string | null;
-    nauticalDawn?: string | null;
-    astronomicalDawn?: string | null;
-    nightStartTime?: string | null;
-    nightEndTime?: string | null;
-    trueDarkStartTime?: string | null;
-    trueDarkEndTime?: string | null;
-    bestStartTime?: string | null;
-    bestEndTime?: string | null;
-  } | null;
-  sunrise?: string | null;
-  sunset?: string | null;
-  moonrise?: string | null;
-  moonset?: string | null;
-  moonIlluminationPct?: number | null;
-  moonPhaseDegrees?: number | null;
-  moonPhaseLabel?: string | null;
-  dayLengthSec?: number | null;
   pressureTrend: { arrow: '\u2191' | '\u2193' | '\u2192'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   feelsDriverLabel: string;
   feelsDriverValue: string;
   feelsDriverTopicId: string;
-  timeZone?: string | null;
   onOpenLearnTopic: (topicId?: string) => void;
 }) {
   const dir = dirToCompass(windDirDeg);
@@ -3311,13 +3277,6 @@ function NerdyDeepDive({
     ? pressureTrend.label
     : `${pressureTrend.label} ${pressureTrend.deltaHpa >= 0 ? '+' : ''}${pressureTrend.deltaHpa.toFixed(1)} hPa`;
   const cloudBarPct = cloudCoverPct == null ? 0 : Math.max(0, Math.min(100, Math.round(cloudCoverPct)));
-  const moonFullLabel = moonIlluminationPct != null && Number.isFinite(moonIlluminationPct) ? `${Math.round(moonIlluminationPct)}% full` : 'Phase pending';
-  const summaryCards = [
-    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime, timeZone), topicId: astroLearnTopicId('night') },
-    { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime, timeZone), topicId: astroLearnTopicId('best') },
-    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime, timeZone), topicId: astroLearnTopicId('true-dark') },
-    { label: 'Day Length', value: formatDayLength(dayLengthSec), topicId: astroLearnTopicId('sunrise') },
-  ];
   const quickChips = [moistureState, windState, cloudState, pressureState];
 
   return (
@@ -3485,30 +3444,83 @@ function NerdyDeepDive({
           </View>
         </View>
 
-        <View style={nd.panelFull}>
-          <Text style={nd.panelTitle}>Sun & Moon</Text>
-          <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon embedded timeZone={timeZone} />
+      </View>
+    </View>
+  );
+}
 
-          <View style={nd.moonSummaryRow}>
-            <Pressable style={nd.moonPhaseCard} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
-              <PremiumMoonIcon size={46} illuminationPct={moonIlluminationPct} phaseDegrees={moonPhaseDegrees} />
-              <View style={nd.moonPhaseCopy}>
-                <Text style={nd.timelineNodeLabel}>Moon Phase</Text>
-                <Text style={[nd.moonPhaseText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonPhaseLabel ?? 'Moon phase'}</Text>
-                <Text style={[nd.moonFullText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonFullLabel}</Text>
-              </View>
-            </Pressable>
-          </View>
+function NerdySunMoonPanel({
+  astro,
+  sunrise,
+  sunset,
+  moonrise,
+  moonset,
+  moonIlluminationPct,
+  moonPhaseDegrees,
+  moonPhaseLabel,
+  dayLengthSec,
+  timeZone,
+  onOpenLearnTopic,
+}: {
+  astro?: {
+    civilDusk?: string | null;
+    nauticalDusk?: string | null;
+    astronomicalDusk?: string | null;
+    civilDawn?: string | null;
+    nauticalDawn?: string | null;
+    astronomicalDawn?: string | null;
+    nightStartTime?: string | null;
+    nightEndTime?: string | null;
+    trueDarkStartTime?: string | null;
+    trueDarkEndTime?: string | null;
+    bestStartTime?: string | null;
+    bestEndTime?: string | null;
+  } | null;
+  sunrise?: string | null;
+  sunset?: string | null;
+  moonrise?: string | null;
+  moonset?: string | null;
+  moonIlluminationPct?: number | null;
+  moonPhaseDegrees?: number | null;
+  moonPhaseLabel?: string | null;
+  dayLengthSec?: number | null;
+  timeZone?: string | null;
+  onOpenLearnTopic: (topicId?: string) => void;
+}) {
+  const moonFullLabel =
+    moonIlluminationPct != null && Number.isFinite(moonIlluminationPct)
+      ? `${Math.round(moonIlluminationPct)}% full`
+      : 'Phase pending';
+  const summaryCards = [
+    { label: 'Night Window', value: formatWindow(astro?.nightStartTime, astro?.nightEndTime, timeZone), topicId: astroLearnTopicId('night') },
+    { label: 'Best Window', value: formatWindow(astro?.bestStartTime, astro?.bestEndTime, timeZone), topicId: astroLearnTopicId('best') },
+    { label: 'True Dark', value: formatWindow(astro?.trueDarkStartTime, astro?.trueDarkEndTime, timeZone), topicId: astroLearnTopicId('true-dark') },
+    { label: 'Day Length', value: formatDayLength(dayLengthSec), topicId: astroLearnTopicId('sunrise') },
+  ];
 
-          <View style={nd.metricGrid4}>
-            {summaryCards.map((item) => (
-              <Pressable key={item.label} style={nd.summaryCard} onPress={() => onOpenLearnTopic(item.topicId)}>
-                <Text style={nd.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
-                <Text style={nd.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.value}</Text>
-              </Pressable>
-            ))}
+  return (
+    <View style={nd.panelFull}>
+      <Text style={nd.panelTitle}>Sun & Moon</Text>
+      <DayMoonArc sunrise={sunrise} sunset={sunset} moonrise={moonrise} moonset={moonset} showMoon embedded timeZone={timeZone} />
+
+      <View style={nd.moonSummaryRow}>
+        <Pressable style={nd.moonPhaseCard} onPress={() => onOpenLearnTopic(astroLearnTopicId('moonrise'))}>
+          <PremiumMoonIcon size={46} illuminationPct={moonIlluminationPct} phaseDegrees={moonPhaseDegrees} />
+          <View style={nd.moonPhaseCopy}>
+            <Text style={nd.timelineNodeLabel}>Moon Phase</Text>
+            <Text style={[nd.moonPhaseText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonPhaseLabel ?? 'Moon phase'}</Text>
+            <Text style={[nd.moonFullText, nd.moonPhaseTextWide]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76} allowFontScaling={false}>{moonFullLabel}</Text>
           </View>
-        </View>
+        </Pressable>
+      </View>
+
+      <View style={nd.metricGrid4}>
+        {summaryCards.map((item) => (
+          <Pressable key={item.label} style={nd.summaryCard} onPress={() => onOpenLearnTopic(item.topicId)}>
+            <Text style={nd.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.label}</Text>
+            <Text style={nd.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} allowFontScaling={false}>{item.value}</Text>
+          </Pressable>
+        ))}
       </View>
     </View>
   );
@@ -4802,7 +4814,7 @@ function LandWeatherWithCoords({
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height && width >= 640;
   const landscapeChartHeight = Math.max(250, Math.min(height - 96, 360));
-  const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily' | 'hourly'>('daily');
+  const [landscapeGraphMode, setLandscapeGraphMode] = useState<'daily'>('daily');
   const lastNativeWidgetMirrorRef = useRef<string | null>(null);
   const { forecastModel, tempUnit } = useSettings();
   const { primary, alerts } = useNwsAlerts({
@@ -4965,10 +4977,17 @@ function LandWeatherWithCoords({
         safeNum(h.pressure_hpa) ??
         safeNum(h.pressure) ??
         null;
+      const uvIndexLocal =
+        safeNum(h.uvIndex) ??
+        safeNum(h.uv_index) ??
+        safeNum(h.uv) ??
+        safeNum(h.uv_index_clear_sky) ??
+        null;
 
       return {
         ...h,
         pressureHpa: pressureHpaLocal,
+        uvIndex: uvIndexLocal,
       };
     });
   }, [hourlyRaw]);
@@ -5049,7 +5068,11 @@ function LandWeatherWithCoords({
     return safeNum(nearestHourly?.uvIndex ?? nearestHourly?.uv_index ?? nearestHourly?.uv);
   })();
 
-  const uvIndexFromDailyMax = safeNum(forecastData?.daily?.[0]?.uvIndexMax);
+  const uvIndexFromDailyMax =
+    safeNum(todayDaily?.uvIndexMax) ??
+    safeNum((todayDaily as any)?.uv_index_max) ??
+    safeNum((todayDaily as any)?.uv_index) ??
+    null;
 
   const uvIndex =
     safeNum(wx.uvIndex ?? wx.uv_index ?? wx.uv) ??
@@ -5216,8 +5239,7 @@ function LandWeatherWithCoords({
 
   useEffect(() => {
     if (!isLandscape || !wxLab) return;
-    if (landscapeGraphMode === 'hourly' && !hourly.length && daily.length) setLandscapeGraphMode('daily');
-    if (landscapeGraphMode === 'daily' && !daily.length && hourly.length) setLandscapeGraphMode('hourly');
+    if (landscapeGraphMode !== 'daily') setLandscapeGraphMode('daily');
   }, [daily.length, hourly.length, isLandscape, landscapeGraphMode, wxLab]);
 
   if (!wxLab) {
@@ -5376,6 +5398,24 @@ function LandWeatherWithCoords({
           pressureHpa={pressureHpa}
           pressureInHg={pressureInHg}
           pressureTrend={pressureTrend}
+          feelsDriverLabel={feelsDriver.label}
+          feelsDriverValue={feelsDriver.value}
+          feelsDriverTopicId={feelsDriver.topicId}
+          onOpenLearnTopic={openLearnTopic}
+        />
+      )}
+
+      {wxLab && daily.length > 0 && !isLandscape ? (
+        <Card style={styles.forecastCard}>
+          <Text style={styles.cardTitle}>Daily Forecast</Text>
+          <DailyRangeChart daily={daily} />
+          <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
+          <Text style={styles.updatedText}>Source: Open-Meteo</Text>
+        </Card>
+      ) : null}
+
+      {wxLab ? (
+        <NerdySunMoonPanel
           astro={astroData}
           sunrise={todaySunrise}
           sunset={todaySunset}
@@ -5385,13 +5425,10 @@ function LandWeatherWithCoords({
           moonPhaseDegrees={safeNum(todayMoonDay?.moonPhaseDegrees)}
           moonPhaseLabel={typeof todayMoonDay?.moonPhaseLabel === 'string' ? todayMoonDay.moonPhaseLabel : null}
           dayLengthSec={todayDayLengthSec}
-          feelsDriverLabel={feelsDriver.label}
-          feelsDriverValue={feelsDriver.value}
-          feelsDriverTopicId={feelsDriver.topicId}
           timeZone={forecastTimeZone}
           onOpenLearnTopic={openLearnTopic}
         />
-      )}
+      ) : null}
 
       {wxLab ? (
         <NwsDeskCard
@@ -5427,7 +5464,7 @@ function LandWeatherWithCoords({
         />
       ) : null}
 
-      {wxLab && isLandscape && (daily.length > 0 || hourly.length > 0) ? (
+      {wxLab && isLandscape && daily.length > 0 ? (
         <>
           <Card style={styles.landscapeGraphPlaceholder}>
             <Text style={styles.landscapeGraphPlaceholderText}>Land wxLab graph is open full screen</Text>
@@ -5437,9 +5474,7 @@ function LandWeatherWithCoords({
               <View style={styles.landscapeGraphShell}>
                 <View style={styles.landscapeGraphHeader}>
                   <View>
-                    <Text style={styles.cardTitle}>
-                      {landscapeGraphMode === 'daily' ? 'Daily Forecast' : 'Next 72 Hours'}
-                    </Text>
+                    <Text style={styles.cardTitle}>Daily Forecast</Text>
                     <Text style={styles.landscapeGraphSubtitle}>Horizontal graph view</Text>
                   </View>
                   <View style={styles.landscapeGraphToggle}>
@@ -5461,48 +5496,15 @@ function LandWeatherWithCoords({
                         Daily
                       </Text>
                     </Pressable>
-                    <Pressable
-                      onPress={() => setLandscapeGraphMode('hourly')}
-                      disabled={!hourly.length}
-                      style={[
-                        styles.landscapeGraphToggleButton,
-                        landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleButtonActive : null,
-                        !hourly.length ? styles.landscapeGraphToggleButtonDisabled : null,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.landscapeGraphToggleText,
-                          landscapeGraphMode === 'hourly' ? styles.landscapeGraphToggleTextActive : null,
-                        ]}
-                      >
-                        Hourly
-                      </Text>
-                    </Pressable>
                   </View>
                 </View>
 
                 <View style={styles.landscapeGraphBody}>
-                  {landscapeGraphMode === 'daily' && daily.length > 0 ? (
-                    <DailyRangeChart daily={daily} landscape chartHeight={landscapeChartHeight} />
-                  ) : null}
-                  {landscapeGraphMode === 'hourly' && hourly.length > 0 ? (
-                    <HourlyCharts72h
-                      hours={hourly}
-                      maxHours={72}
-                      units={units}
-                      initialPanel="range"
-                      timeZone={forecastTimeZone ?? undefined}
-                      landscapePresentation="content"
-                      chartHeight={landscapeChartHeight}
-                    />
-                  ) : null}
+                  <DailyRangeChart daily={daily} landscape chartHeight={landscapeChartHeight} />
                 </View>
 
                 <Text style={styles.landscapeGraphSource}>
-                  {landscapeGraphMode === 'daily'
-                    ? `Model: ${forecastModelLabel(forecastModel)}`
-                    : 'Source: Open-Meteo (hourly)'}
+                  Model: {forecastModelLabel(forecastModel)}
                 </Text>
               </View>
             </SafeAreaView>
@@ -5510,22 +5512,18 @@ function LandWeatherWithCoords({
         </>
       ) : null}
 
-      {daily.length > 0 && (!wxLab || !isLandscape) ? (
+      {daily.length > 0 && !wxLab ? (
         <Card style={styles.forecastCard}>
-          <Text style={styles.cardTitle}>{wxLab ? 'Daily Forecast' : '15-Day Forecast'}</Text>
+          <Text style={styles.cardTitle}>15-Day Forecast</Text>
 
-          {wxLab ? (
-            <DailyRangeChart daily={daily} />
-          ) : (
-            <DailyForecastList
-              daily={daily}
-              hourly={hourly}
-              moonrise={todayMoonrise}
-              moonset={todayMoonset}
-              moonDays={astroData?.moonDays}
-              maxDays={15}
-            />
-          )}
+          <DailyForecastList
+            daily={daily}
+            hourly={hourly}
+            moonrise={todayMoonrise}
+            moonset={todayMoonset}
+            moonDays={astroData?.moonDays}
+            maxDays={15}
+          />
 
           <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
           <Text style={styles.updatedText}>Source: Open-Meteo</Text>
@@ -5545,24 +5543,6 @@ function LandWeatherWithCoords({
             setLearnOpen(true);
           }}
         />
-      ) : null}
-
-      {wxLab && hourly.length && !isLandscape ? (
-        <View style={styles.hourlyCard}>
-          <View style={styles.hourlyHeaderRow}>
-            <Text style={styles.cardTitle}>Next 72 hours</Text>
-          </View>
-
-          <HourlyCharts72h
-            hours={hourly}
-            maxHours={72}
-            units={units}
-            initialPanel="range"
-            timeZone={forecastTimeZone ?? undefined}
-          />
-
-          <Text style={styles.updatedText}>Source: Open-Meteo (hourly)</Text>
-        </View>
       ) : null}
 
       {wxLab && daily.length > 0 ? (

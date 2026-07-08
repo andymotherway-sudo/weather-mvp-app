@@ -1411,17 +1411,10 @@ export default function MapsScreen() {
 
   const displayedStationProduct = pendingStationProduct ?? stationProduct;
 
-  const stationProductNeedsMosaicFallback =
-    displayedStationProduct === 'EET' || displayedStationProduct === 'NET';
-
   const stormScopeLocalZoom =
     stormScopeContextVisible && mapZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
 
-  const stormScopeProductFallback =
-    stormScopeLocalZoom && stationProductNeedsMosaicFallback;
-
-  const stormScopeNexradVisible =
-    stormScopeLocalZoom && !stationProductNeedsMosaicFallback;
+  const stormScopeNexradVisible = stormScopeLocalZoom;
 
   const autoNearestRadarMode =
     radarEnabled &&
@@ -1951,19 +1944,17 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
 
   const stationProductLoading =
-    stormScopeNexradVisible && radarCtl.iemLoading;
+    stormScopeLocalZoom && radarCtl.iemLoading;
 
   const stationProductUnavailable =
-    stormScopeNexradVisible && !stationProductLoading && frameCount <= 0;
+    stormScopeLocalZoom && !stationProductLoading && frameCount <= 0;
 
   const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
 
   const stationProductSourceLabel =
     !stormScopeEnabled
       ? 'Storm Scope off'
-      : stormScopeProductFallback
-        ? 'echo tops hidden: provider zoom tile unsupported'
-        : !stormScopeLocalZoom
+      : !stormScopeLocalZoom
           ? 'zoom in for local NEXRAD products'
           : stationProductLatestOnly
             ? 'single-site latest tile'
@@ -4779,9 +4770,7 @@ export default function MapsScreen() {
                     {stormScopeEnabled && selectedRadarSite
                       ? stormScopeNexradVisible
                         ? `${getStationDisplayId(selectedRadarSite)} local NEXRAD / ${radarProductMeta.legendNote}`
-                        : stormScopeProductFallback
-                          ? `${radarProductMeta.legendTitle} is not rendered as a single-site tile here.`
-                          : `Storm Scope tracking ${getStationDisplayId(selectedRadarSite)} from map center. Zoom in for local NEXRAD products.`
+                        : `Storm Scope tracking ${getStationDisplayId(selectedRadarSite)} from map center. Zoom in for local NEXRAD products.`
                       : 'RainViewer colors vary slightly by provider frame.'}
                   </Text>
                   {showAdvancedRadarControls ? (

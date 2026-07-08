@@ -2029,6 +2029,44 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'LSRs are the storm logbook. They are excellent for recap and verification, but they are not a substitute for warnings or radar.',
   },
   {
+    id: 'forecast-models',
+    title: 'Forecast Models',
+    category: 'data',
+    tags: ['forecast', 'models', 'open-meteo', 'gfs', 'ecmwf', 'icon'],
+    summary:
+      'Forecast models are computer simulations of the atmosphere. OMNIwx lets you choose which Open-Meteo forecast model drives wxLab and forecast views.',
+    references: [
+      { label: 'Best match', value: 'Open-Meteo selects the model it expects to perform best for the location' },
+      { label: 'NOAA GFS', value: 'Global Forecast System, broad global coverage from NOAA' },
+      { label: 'ECMWF', value: 'European global model, often strong for large-scale patterns' },
+      { label: 'DWD ICON', value: 'German Weather Service model with strong regional detail where available' },
+    ],
+    bullets: [
+      'Best match is the safest default because availability and skill vary by region.',
+      'A single model can be very good at the broad pattern and still miss local timing, terrain, clouds, or storms.',
+      'Switching models is useful when you want to compare temperature, wind, cloud, and precipitation timing against the default.',
+      'Model choice affects forecast and wxLab views that use Open-Meteo forecast data. Official alerts and observations still come from their own sources.',
+    ],
+    sections: [
+      {
+        title: 'How to read model differences',
+        body:
+          'If two models agree, confidence is usually higher. If they disagree on timing, temperature, wind, or precipitation, the forecast is more conditional. That disagreement is often more useful than any one number by itself.',
+      },
+      {
+        title: 'When to change models',
+        bullets: [
+          'Use Best match for everyday forecasting.',
+          'Try GFS for a broad global baseline.',
+          'Try ECMWF when you want another global perspective on the larger pattern.',
+          'Try ICON where regional detail may help, especially if Best match looks suspicious.',
+        ],
+      },
+    ],
+    insight:
+      'A model is guidance, not truth. The best forecast combines model guidance, observations, radar, alerts, and local forecaster reasoning.',
+  },
+  {
     id: 'forecast-confidence',
     title: 'Forecast Confidence',
     category: 'data',

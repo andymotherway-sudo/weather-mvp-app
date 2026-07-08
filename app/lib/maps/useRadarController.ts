@@ -557,7 +557,7 @@ export function useRadarController(args: {
             maxFrames: fetchProfile.maxFrames,
             lookbackMinutes: fetchProfile.lookbackMinutes,
             maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
-            allowMosaicFallback: !stormMode && (!stationMode || product === 'EET'),
+            allowMosaicFallback: !stormMode && !stationMode,
             force: stormMode || stationMode ? 'ridge' : undefined,
             forceRadarId3: stationMode ? radarSiteId3 : null,
           },
@@ -849,7 +849,7 @@ export function useRadarController(args: {
 
     setPreloadTo(next);
 
-    const preloadMs = mapZoom <= 5 ? 360 : mapZoom <= 8 ? 300 : 240;
+    const preloadMs = mapZoom <= 5 ? 460 : mapZoom <= 8 ? 380 : 300;
 
     preloadTimerRef.current = setTimeout(() => {
       const start = Date.now();
@@ -905,7 +905,7 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.92 ? radarOpacity * 0.28 : 0;
+    const oldFrameFloor = t < 0.94 ? radarOpacity * 0.38 : 0;
     out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
     out[to] = radarOpacity * t;
 
@@ -1176,14 +1176,7 @@ export function useRadarController(args: {
   const radarOverlay: RadarOverlay = useMemo(() => {
     const productStyle = getRadarProductStyle(product);
 
-    const visibleTemplateKey = activeRadar.templates
-      .map((template, index) => `${index}:${template ?? 'none'}`)
-      .join('|');
-
-    const tileSourceKey = [
-      playlistContextKey,
-      `slots:${visibleTemplateKey}`,
-    ].join('|');
+    const tileSourceKey = playlistContextKey;
 
     const localImageSourceKey = [
       playlistContextKey,
