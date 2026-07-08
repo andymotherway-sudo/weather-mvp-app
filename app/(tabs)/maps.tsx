@@ -67,6 +67,9 @@ import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const NWS_HEATRISK_IMAGE_SERVER_URL =
+  'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
+const NWS_HEATRISK_RENDERING_RULE = JSON.stringify({ rasterFunction: 'heatrisk.rft' });
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
@@ -352,12 +355,23 @@ function arcGisLockedRasterParam(rasterId?: number | null) {
   )}`;
 }
 
-function arcGisImageServerTileTemplate(baseUrl: string, iso?: string | null, tileSize = 512, rasterId?: number | null) {
+function arcGisImageServerTileTemplate(
+  baseUrl: string,
+  iso?: string | null,
+  tileSize = 512,
+  rasterId?: number | null,
+  extraParams?: Record<string, string>,
+) {
   const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
   const mosaicParam = arcGisLockedRasterParam(rasterId);
+  const extraParamString = extraParams
+    ? Object.entries(extraParams)
+        .map(([key, value]) => `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join('')
+    : '';
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
+  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}${extraParamString}&f=image`;
 }
 
 function isoDateDaysAgo(daysAgo: number, now = new Date()) {
@@ -658,10 +672,6 @@ function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
 }
 
-function longitudeDeltaFromZoom(zoom: number) {
-  return 360 / Math.pow(2, zoom);
-}
-
 function isNexradSite(site: NexradSite) {
   return String(site.ownerType ?? '').toUpperCase() === 'NEXRAD';
 }
@@ -837,6 +847,7 @@ function getSimpleStatus(args: {
   frontsDay1Enabled: boolean;
   frontsDay2Enabled: boolean;
   frontsDay3Enabled: boolean;
+  heatRiskEnabled: boolean;
   cloudsEnabled: boolean;
   wildfireHotspotsEnabled: boolean;
   wildfireSmokeEnabled: boolean;
@@ -858,6 +869,7 @@ function getSimpleStatus(args: {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
+    heatRiskEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,
@@ -883,6 +895,7 @@ function getSimpleStatus(args: {
   if (frontsDay1Enabled) return 'WPC Day 1 fronts active';
   if (frontsDay2Enabled) return 'WPC Day 2 fronts active';
   if (frontsDay3Enabled) return 'WPC Day 3 fronts active';
+  if (heatRiskEnabled) return 'NWS HeatRisk active';
 
   if (viewId === 'clouds') {
     return cloudsEnabled ? 'Cloud layer active' : 'Cloud layer off';
@@ -1475,6 +1488,7 @@ export default function MapsScreen() {
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
   const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
+  const heatRiskEnabled = !!state.layers?.['heat.nwsHeatRisk']?.enabled;
   const aviationModeActive = state.viewId === 'aviation';
   const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
   const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
@@ -1747,6 +1761,9 @@ export default function MapsScreen() {
   const frontsDay3Opacity = Number.isFinite(state.layers?.['wx.fronts.day3']?.opacity)
     ? state.layers['wx.fronts.day3'].opacity
     : 0.88;
+  const heatRiskOpacity = Number.isFinite(state.layers?.['heat.nwsHeatRisk']?.opacity)
+    ? state.layers['heat.nwsHeatRisk'].opacity
+    : 0.56;
   const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
     ? state.layers['wx.wind.particles'].opacity
     : 0.72;
@@ -2400,6 +2417,24 @@ export default function MapsScreen() {
       });
     }
 
+    if (heatRiskEnabled) {
+      list.push({
+        id: 'nws-heatrisk',
+        tileUrlTemplates: [
+          arcGisImageServerTileTemplate(NWS_HEATRISK_IMAGE_SERVER_URL, null, 512, null, {
+            renderingRule: NWS_HEATRISK_RENDERING_RULE,
+          }),
+        ],
+        opacity: Math.max(0, Math.min(1, Number(heatRiskOpacity))),
+        zIndex: 104,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 120,
+        resampling: 'nearest',
+      });
+    }
+
     if (wildfireFireWxEnabled) {
       list.push({
         id: 'wildfire-firewx',
@@ -2459,6 +2494,8 @@ export default function MapsScreen() {
     frontsDay2Opacity,
     frontsDay3Enabled,
     frontsDay3Opacity,
+    heatRiskEnabled,
+    heatRiskOpacity,
     wildfireFireWxEnabled,
     wildfireFireWxOpacity,
     goesTrueColorEnabled,
@@ -2970,37 +3007,18 @@ export default function MapsScreen() {
   };
 
   const handleMapZoomButton = useCallback((delta: number) => {
-    const anchorRegion = region ?? effectiveRegion;
     const currentZoom =
       Number.isFinite(mapZoom)
         ? mapZoom
-        : approxZoomFromLongitudeDelta(anchorRegion.longitudeDelta);
+        : approxZoomFromLongitudeDelta((region ?? stableInitialRegion).longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
-    const currentLonDelta =
-      Number.isFinite(anchorRegion.longitudeDelta) && anchorRegion.longitudeDelta > 0
-        ? anchorRegion.longitudeDelta
-        : longitudeDeltaFromZoom(currentZoom);
-    const nextLonDelta = longitudeDeltaFromZoom(nextZoom);
-    const aspect =
-      Number.isFinite(anchorRegion.latitudeDelta) && anchorRegion.latitudeDelta > 0
-        ? clampNumber(anchorRegion.latitudeDelta / currentLonDelta, 0.35, 1.4)
-        : 0.72;
-    const nextRegion = {
-      ...anchorRegion,
-      latitudeDelta: nextLonDelta * aspect,
-      longitudeDelta: nextLonDelta,
-      zoom: nextZoom,
-    };
-
-    setRegion(nextRegion);
     setMapZoom(nextZoom);
 
     mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [anchorRegion.longitude, anchorRegion.latitude],
       zoomLevel: nextZoom,
       animationDuration: 180,
     });
-  }, [effectiveRegion, mapZoom, region]);
+  }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -3015,6 +3033,7 @@ export default function MapsScreen() {
     frontsDay1Enabled,
     frontsDay2Enabled,
     frontsDay3Enabled,
+    heatRiskEnabled,
     cloudsEnabled,
     wildfireHotspotsEnabled,
     wildfireSmokeEnabled,

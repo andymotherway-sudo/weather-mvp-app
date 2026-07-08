@@ -259,6 +259,7 @@ On Android, OMNIwx can export animated map loops as MP4 files through the native
 Maps can show:
 
 - Alert detail cards with official alert text.
+- NWS HeatRisk impact-risk tiles for heat-health context.
 - Marine feature selections for buoy and zone details.
 - Aviation feature inspectors.
 - Wildfire incident details.
