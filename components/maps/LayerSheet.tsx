@@ -119,6 +119,174 @@ function ActionPill(props: { label: string; onPress: () => void }) {
   );
 }
 
+function previewKind(layer: LayerCatalogItem) {
+  const id = String(layer.id);
+  const text = `${layer.title} ${layer.subtitle ?? ''}`.toLowerCase();
+  if (id.includes('radar') || text.includes('radar')) return 'radar';
+  if (id.includes('sat') || text.includes('cloud') || text.includes('infrared') || text.includes('vapor')) return 'satellite';
+  if (id.includes('wind')) return 'wind';
+  if (id.includes('marine') || id.includes('water') || text.includes('tide') || text.includes('buoy')) return 'marine';
+  if (id.includes('aviation') || text.includes('airport') || text.includes('flight')) return 'aviation';
+  if (id.includes('fire') || text.includes('smoke') || text.includes('fire')) return 'fire';
+  if (id.includes('air') || text.includes('aqi')) return 'air';
+  if (id.includes('astro') || id.includes('space') || text.includes('sky')) return 'astro';
+  if (id.includes('front') || text.includes('front')) return 'fronts';
+  if (id.includes('rain') || text.includes('rain') || text.includes('precip')) return 'rain';
+  if (id.includes('tropic') || text.includes('hurricane')) return 'tropical';
+  return 'default';
+}
+
+function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
+  const kind = previewKind(props.layer);
+  const activeOpacity = props.enabled ? 1 : 0.56;
+
+  const shellStyle = {
+    width: 58,
+    height: 46,
+    borderRadius: 14,
+    overflow: 'hidden' as const,
+    borderWidth: 1,
+    borderColor: props.enabled ? 'rgba(125,211,252,0.42)' : 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    opacity: activeOpacity,
+  };
+
+  if (kind === 'radar') {
+    const colors = ['#2563eb', '#38bdf8', '#34d399', '#fde047', '#fb923c', '#ef4444'];
+    return (
+      <View style={shellStyle}>
+        <View style={{ flex: 1, justifyContent: 'center', gap: 3, padding: 7 }}>
+          {colors.map((color, index) => (
+            <View
+              key={color}
+              style={{
+                width: `${34 + index * 9}%`,
+                height: 4,
+                borderRadius: 999,
+                backgroundColor: color,
+                opacity: 0.82,
+              }}
+            />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (kind === 'satellite') {
+    return (
+      <View style={shellStyle}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.64)' }}>
+          {[0, 1, 2, 3].map((i) => (
+            <View
+              key={i}
+              style={{
+                position: 'absolute',
+                left: 6 + i * 10,
+                top: 8 + (i % 2) * 10,
+                width: 30,
+                height: 10,
+                borderRadius: 999,
+                backgroundColor: 'rgba(226,232,240,0.48)',
+              }}
+            />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (kind === 'wind') {
+    return (
+      <View style={shellStyle}>
+        {[0, 1, 2, 3].map((i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: 7 + i * 8,
+              top: 8 + i * 7,
+              width: 34,
+              height: 2,
+              borderRadius: 999,
+              transform: [{ rotate: '-16deg' }],
+              backgroundColor: i % 2 ? 'rgba(125,211,252,0.78)' : 'rgba(255,255,255,0.72)',
+            }}
+          />
+        ))}
+      </View>
+    );
+  }
+
+  if (kind === 'marine') {
+    return (
+      <View style={shellStyle}>
+        {[0, 1, 2].map((i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: -6 + i * 3,
+              right: -6,
+              top: 14 + i * 8,
+              height: 2,
+              borderRadius: 999,
+              backgroundColor: i === 1 ? 'rgba(34,211,238,0.78)' : 'rgba(45,212,191,0.44)',
+            }}
+          />
+        ))}
+        <View style={{ position: 'absolute', right: 10, top: 9, width: 10, height: 10, borderRadius: 999, backgroundColor: '#38bdf8' }} />
+      </View>
+    );
+  }
+
+  if (kind === 'aviation') {
+    return (
+      <View style={shellStyle}>
+        <View style={{ position: 'absolute', left: 8, right: 8, top: 22, height: 2, backgroundColor: 'rgba(147,197,253,0.50)', transform: [{ rotate: '-20deg' }] }} />
+        <View style={{ position: 'absolute', left: 22, top: 14, width: 14, height: 4, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.86)', transform: [{ rotate: '-20deg' }] }} />
+        <View style={{ position: 'absolute', left: 26, top: 10, width: 5, height: 12, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.60)', transform: [{ rotate: '-20deg' }] }} />
+      </View>
+    );
+  }
+
+  if (kind === 'fire') {
+    return (
+      <View style={shellStyle}>
+        <View style={{ position: 'absolute', left: 7, bottom: 7, width: 18, height: 18, borderRadius: 999, backgroundColor: 'rgba(239,68,68,0.72)' }} />
+        <View style={{ position: 'absolute', right: 8, top: 8, width: 32, height: 10, borderRadius: 999, backgroundColor: 'rgba(148,163,184,0.42)' }} />
+        <View style={{ position: 'absolute', right: 14, top: 21, width: 24, height: 8, borderRadius: 999, backgroundColor: 'rgba(148,163,184,0.28)' }} />
+      </View>
+    );
+  }
+
+  if (kind === 'air') {
+    return (
+      <View style={shellStyle}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 4, padding: 8 }}>
+          {['#22c55e', '#eab308', '#f97316', '#ef4444'].map((color, i) => (
+            <View key={color} style={{ width: 7, height: 10 + i * 6, borderRadius: 999, backgroundColor: color, opacity: 0.78 }} />
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  const tint =
+    kind === 'astro' ? 'rgba(129,140,248,0.78)' :
+    kind === 'fronts' ? 'rgba(96,165,250,0.78)' :
+    kind === 'rain' ? 'rgba(56,189,248,0.78)' :
+    kind === 'tropical' ? 'rgba(251,191,36,0.78)' :
+    'rgba(125,211,252,0.72)';
+
+  return (
+    <View style={shellStyle}>
+      <View style={{ position: 'absolute', left: 10, top: 10, width: 16, height: 16, borderRadius: 999, backgroundColor: tint }} />
+      <View style={{ position: 'absolute', right: 9, bottom: 9, width: 24, height: 2, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.40)' }} />
+    </View>
+  );
+}
+
 export function LayerSheet(props: Props) {
   const state = props?.state;
   const isNerdy = !!state?.nerdy;
@@ -214,6 +382,7 @@ export function LayerSheet(props: Props) {
                       gap: 10,
                     }}
                   >
+                    <LayerPreview layer={layer} enabled={enabled} />
                     <Pressable
                       onPress={() => {
                         if (hasExpandableContent) toggleExpanded(layer.id);

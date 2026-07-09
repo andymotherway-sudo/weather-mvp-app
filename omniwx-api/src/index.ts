@@ -1057,7 +1057,7 @@ const DONKI_TTL_SECONDS = 15 * 60;
 const DONKI_STALE_SECONDS = 24 * 3600;
 const SPACE_WEATHER_TTL_SECONDS = 5 * 60;
 const SPACE_WEATHER_STALE_SECONDS = 6 * 3600;
-const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v2";
+const SPACE_WEATHER_CACHE_VERSION = "swpc-summary-v3";
 const SPACE_WEATHER_TIMEOUT_MS = 9000;
 const NWS_DESK_TTL_SECONDS = 20 * 60;
 const NWS_DESK_STALE_SECONDS = 6 * 3600;
@@ -3694,11 +3694,13 @@ const SWPC_PLASMA_FALLBACKS = [
   "https://services.swpc.noaa.gov/products/solar-wind/plasma-2-hour.json",
   "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json",
 ];
+const SWPC_RTSW_PLASMA = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json";
 const SWPC_MAG_PRIMARY = "https://services.swpc.noaa.gov/products/solar-wind/mag-5-minute.json";
 const SWPC_MAG_FALLBACKS = [
   "https://services.swpc.noaa.gov/products/solar-wind/mag-2-hour.json",
   "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json",
 ];
+const SWPC_RTSW_MAG = "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json";
 const SWPC_KP_PRIMARY = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json";
 const SWPC_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json";
 const SWPC_NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json";
@@ -3795,6 +3797,37 @@ async function loadSwpcPlasma() {
       lastErr = err;
     }
   }
+  try {
+    const rows = await fetchSwpcJson<any[]>(SWPC_RTSW_PLASMA, "SWPC RTSW plasma");
+    if (!Array.isArray(rows) || !rows.length) throw new Error("RTSW plasma malformed");
+    const row = rows.find((item) => item?.active === true) ?? rows[0];
+    const observedAt = noaaTableTimeToIso(row?.time_tag);
+    const density = safeNum(row?.proton_density);
+    const speed = safeNum(row?.proton_speed);
+    const temperature = safeNum(row?.proton_temperature);
+    if (!observedAt || density == null || speed == null || temperature == null) throw new Error("bad RTSW plasma row");
+    const sourceName = row?.source;
+    const history = rows
+      .filter((item) => item?.active === true || (sourceName && item?.source === sourceName))
+      .slice(0, 12)
+      .reverse()
+      .map((item) => {
+        const t = noaaTableTimeToIso(item?.time_tag);
+        const s = safeNum(item?.proton_speed);
+        return t && s != null ? { time: t, speed: s } : null;
+      })
+      .filter(Boolean);
+    return {
+      speed,
+      density,
+      temperature,
+      observedAt,
+      history: history.length ? history : [{ time: observedAt, speed }],
+      source: swpcSource("solar-wind-plasma", "L1 solar wind plasma", observedAt, SWPC_RTSW_PLASMA),
+    };
+  } catch (err) {
+    lastErr = err;
+  }
   throw lastErr ?? new Error("SWPC plasma unavailable");
 }
 
@@ -3818,6 +3851,23 @@ async function loadSwpcMag() {
     } catch (err) {
       lastErr = err;
     }
+  }
+  try {
+    const rows = await fetchSwpcJson<any[]>(SWPC_RTSW_MAG, "SWPC RTSW magnetic field");
+    if (!Array.isArray(rows) || !rows.length) throw new Error("RTSW magnetic field malformed");
+    const row = rows.find((item) => item?.active === true) ?? rows[0];
+    const observedAt = noaaTableTimeToIso(row?.time_tag);
+    const bz = safeNum(row?.bz_gsm);
+    const bt = safeNum(row?.bt);
+    if (!observedAt || bz == null || bt == null) throw new Error("bad RTSW magnetic field row");
+    return {
+      observedAt,
+      bzGsmNt: bz,
+      btNt: bt,
+      source: swpcSource("solar-wind-mag", "L1 magnetic field", observedAt, SWPC_RTSW_MAG),
+    };
+  } catch (err) {
+    lastErr = err;
   }
   throw lastErr ?? new Error("SWPC magnetic field unavailable");
 }

@@ -512,15 +512,22 @@ const styles = StyleSheet.create({
   backButtonText: { color: 'white', fontWeight: '800', fontSize: 12 },
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 
-  logoWrap: { width: 56, height: 56, justifyContent: 'center', alignItems: 'center' },
+  logoWrap: {
+    width: 74,
+    height: 78,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'visible',
+    backgroundColor: 'transparent',
+  },
   logoGlow: {
     position: 'absolute',
-    width: 76,
-    height: 76,
-    borderRadius: 76,
-    backgroundColor: 'rgba(80,200,255,0.14)',
+    width: 70,
+    height: 70,
+    borderRadius: 70,
+    backgroundColor: 'rgba(80,200,255,0.10)',
   },
-  logo: { width: 52, height: 62 },
+  logo: { width: 72, height: 82 },
 
   title: { color: 'white', fontSize: 28, fontWeight: '900' },
   subtitle: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 13 },

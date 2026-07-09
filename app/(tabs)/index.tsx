@@ -5864,7 +5864,7 @@ export default function LandWeatherScreen() {
                           : 'rgba(160,220,255,0.10)',
                       opacity: glowAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0.55, 0.85],
+                        outputRange: [0.16, 0.30],
                       }),
                     },
                   ]}
@@ -6090,12 +6090,12 @@ const styles = StyleSheet.create({
   heroCard: { marginBottom: theme.spacing.lg, overflow: 'hidden' },
   heroBgSoftGlow: {
     position: 'absolute',
-    left: -80,
-    top: -80,
-    width: 220,
-    height: 220,
+    left: -38,
+    top: -42,
+    width: 132,
+    height: 132,
     borderRadius: 999,
-    backgroundColor: 'rgba(160,220,255,0.10)',
+    backgroundColor: 'rgba(160,220,255,0.08)',
   },
 
   

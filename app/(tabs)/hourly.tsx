@@ -1108,7 +1108,7 @@ export default function HourlyTab() {
                           : 'rgba(160,220,255,0.10)',
                       opacity: glowAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [0.55, 0.85],
+                        outputRange: [0.16, 0.30],
                       }),
                     },
                   ]}
@@ -1256,12 +1256,12 @@ const styles = StyleSheet.create({
 
   cardGlow: {
     position: 'absolute',
-    left: -72,
-    top: -94,
-    width: 220,
-    height: 220,
+    left: -46,
+    top: -54,
+    width: 136,
+    height: 136,
     borderRadius: 999,
-    backgroundColor: 'rgba(160,220,255,0.06)',
+    backgroundColor: 'rgba(160,220,255,0.045)',
   },
 
   heroHaze: {
@@ -1701,12 +1701,12 @@ const styles = StyleSheet.create({
 
   heroBgSoftGlow: {
     position: 'absolute',
-    left: -80,
-    top: -80,
-    width: 220,
-    height: 220,
+    left: -38,
+    top: -42,
+    width: 132,
+    height: 132,
     borderRadius: 999,
-    backgroundColor: 'rgba(160,220,255,0.10)',
+    backgroundColor: 'rgba(160,220,255,0.08)',
   },
 
   center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },

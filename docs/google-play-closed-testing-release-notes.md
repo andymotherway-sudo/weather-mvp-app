@@ -1,40 +1,43 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.189**
-Android version code: **10206**
+Release: **OMNIwx Alpha 1.1.190**
+Android version code: **10207**
 Track: **Closed testing / internal testing candidate**
-Date: **July 8, 2026**
+Date: **July 9, 2026**
 
 ## Play Console Paste Notes
 
-Radar playback polish. Radar now auto-starts when a valid mosaic playlist is ready, keeps a warm next-frame tile mounted during close-zoom playback, and uses a softer crossfade so animated radar should no longer require a frame-step tap before it starts.
+Space Weather and map polish. Solar wind now falls back to NOAA RTSW feeds when older SWPC tables fail, restoring Solar Wx panels. Map layers now include visual previews, page header glows are calmer, and the Settings logo alignment is cleaner.
 
 ## Tester Notes
 
-Please focus testing on normal radar mosaic playback, Storm Scope playback, and frame-to-frame flashing.
+Please focus testing on the Solar Wx section, live solar imagery, Earth disk imagery, map layer sheet previews, and Settings/logo alignment.
 
 ### What Changed
 
-- Auto-start radar playback when the playlist becomes usable.
-- Keep the next radar frame pre-mounted so close-zoom playback can crossfade instead of blanking.
-- Hold more of the prior frame during crossfade to reduce visible flashing.
+- Added NOAA RTSW fallback data for solar wind plasma and magnetic field.
+- Updated the Cloudflare Worker space-weather cache version and deployed the worker.
+- Added compact visual previews to map layer rows.
+- Reduced overly strong page-header glow circles on Land and Hourly.
+- Cleaned up Settings logo sizing and centering.
 
 ### What To Test
 
-- Open Maps and confirm radar begins animating without pressing fast-forward.
-- Let the radar run for several loops and confirm it advances frames without pulsing or blanking.
-- Enter and leave Storm Scope and confirm standard radar still plays afterward.
+- Open Space and confirm Solar Wx loads without the plasma 404 error.
+- Confirm Solar Disk, Earth disk, and Mars archive panels still render.
+- Open Maps > Layers and confirm layer previews are readable and not distracting.
+- Open Settings and confirm the logo is centered and not clipped.
 
 ### Known Watch Areas
 
-- Radar providers can still return stale or missing frames; playback should remain armed until valid frames arrive.
-- Echo tops and less common station products depend on upstream support and may be hidden or unavailable.
+- NOAA/SWPC and NASA image feeds may still be temporarily stale or unavailable upstream.
+- The worker is deployed, but app installs may still show cached data briefly.
 - Android Auto still reports upstream AndroidX Car App deprecation warnings during native compile; this build does not change that API surface.
 
 ## Internal Release Checklist
 
-- App version: `1.1.189`
-- Android version code: `10206`
+- App version: `1.1.190`
+- Android version code: `10207`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Kotlin check: `cd android && .\gradlew.bat :app:compileReleaseKotlin --console=plain`

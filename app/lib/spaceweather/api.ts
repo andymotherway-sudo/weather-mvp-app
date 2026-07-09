@@ -23,6 +23,8 @@ const PLASMA_FALLBACKS: string[] = [
   'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json',
 ];
 
+const RTSW_PLASMA_URL = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json';
+
 const MAG_PRIMARY =
   'https://services.swpc.noaa.gov/products/solar-wind/mag-5-minute.json';
 
@@ -30,6 +32,8 @@ const MAG_FALLBACKS: string[] = [
   'https://services.swpc.noaa.gov/products/solar-wind/mag-2-hour.json',
   'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json',
 ];
+
+const RTSW_MAG_URL = 'https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json';
 
 const KP_PRIMARY =
   'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json';
@@ -107,6 +111,19 @@ function nowMs() {
   return Date.now();
 }
 
+function parseNoaaIso(timeRaw: unknown) {
+  const value = String(timeRaw ?? '').trim();
+  if (!value) return null;
+  const withZone = value.includes('Z') ? value : `${value.replace(' ', 'T')}Z`;
+  const parsed = new Date(withZone);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function newestActiveRow(rows: any[]) {
+  const active = rows.find((row) => row?.active === true);
+  return active ?? rows[0] ?? null;
+}
+
 // ---------- Plasma with fallbacks + history ----------
 
 type PlasmaData = {
@@ -159,6 +176,38 @@ async function loadPlasmaWithFallbacks(): Promise<PlasmaData> {
     }
   }
 
+  try {
+    const rows = await fetchJson<any[]>(RTSW_PLASMA_URL, 'Plasma');
+    if (!Array.isArray(rows) || !rows.length) throw new Error('RTSW plasma response was empty');
+    const last = newestActiveRow(rows);
+    const timeRaw = String(last?.time_tag ?? '');
+    const density = Number(last?.proton_density);
+    const speed = Number(last?.proton_speed);
+    const temperature = Number(last?.proton_temperature);
+    if (!timeRaw || [density, speed, temperature].some((v) => !Number.isFinite(v))) {
+      throw new Error('RTSW plasma row contained invalid numbers');
+    }
+    const history = rows
+      .filter((row) => row?.active === true || row?.source === last?.source)
+      .slice(0, 12)
+      .reverse()
+      .map((row) => {
+        const time = parseNoaaIso(row?.time_tag);
+        const rowSpeed = Number(row?.proton_speed);
+        return time && Number.isFinite(rowSpeed) ? { time, speed: rowSpeed } : null;
+      })
+      .filter(Boolean) as SolarWindSample[];
+    return {
+      speed,
+      density,
+      temperature,
+      time: parseNoaaIso(timeRaw) ?? timeRaw,
+      history: history.length ? history : [{ time: parseNoaaIso(timeRaw) ?? new Date().toISOString(), speed }],
+    };
+  } catch (err) {
+    lastError = err;
+  }
+
   throw lastError ?? new Error('All plasma sources failed');
 }
 
@@ -194,6 +243,21 @@ async function loadMagWithFallbacks(): Promise<MagData> {
     } catch (err) {
       lastError = err;
     }
+  }
+
+  try {
+    const rows = await fetchJson<any[]>(RTSW_MAG_URL, 'Mag');
+    if (!Array.isArray(rows) || !rows.length) throw new Error('RTSW mag response was empty');
+    const last = newestActiveRow(rows);
+    const timeRaw = String(last?.time_tag ?? '');
+    const bz = Number(last?.bz_gsm);
+    const bt = Number(last?.bt);
+    if (!timeRaw || [bz, bt].some((v) => !Number.isFinite(v))) {
+      throw new Error('RTSW mag row contained invalid numbers');
+    }
+    return { time: parseNoaaIso(timeRaw) ?? timeRaw, bzGsmNt: bz, btNt: bt };
+  } catch (err) {
+    lastError = err;
   }
 
   throw lastError ?? new Error('All mag sources failed');

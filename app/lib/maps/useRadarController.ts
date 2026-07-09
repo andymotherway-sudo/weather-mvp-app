@@ -379,6 +379,7 @@ export function useRadarController(args: {
     radarEnabled &&
     !!localWmsProduct &&
     (
+      (stationMode && stormMode) ||
       (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
       (stormMode && stationMode && mapZoom > 8)
     );
@@ -1117,6 +1118,11 @@ export function useRadarController(args: {
   }, [state.radarTime.playing]);
 
   useEffect(() => {
+    if (!radarEnabled || usingLocalImage || !state.radarTime.playing || frameCount < 2) return;
+    lastAdvanceRef.current = Date.now() - minDwellRef.current;
+  }, [frameCount, playlistContextKey, radarEnabled, state.radarTime.playing, usingLocalImage]);
+
+  useEffect(() => {
     if (playTimerRef.current) clearInterval(playTimerRef.current);
     playTimerRef.current = null;
 
@@ -1202,7 +1208,13 @@ export function useRadarController(args: {
   const radarOverlay: RadarOverlay = useMemo(() => {
     const productStyle = getRadarProductStyle(product);
 
-    const tileSourceKey = playlistContextKey;
+    const visibleTemplate =
+      activeRadar.templates.find((tpl, index) => !!tpl && (activeRadar.opacities[index] ?? 0) > 0.05) ?? '';
+    const tileSourceKey = [
+      playlistContextKey,
+      `frame:${safeFrameIndex}`,
+      `template:${visibleTemplate}`,
+    ].join('|');
 
     const localImageSourceKey = [
       playlistContextKey,
@@ -1262,6 +1274,7 @@ export function useRadarController(args: {
     activeRadar.opacities,
     activeRadar.warmTemplates,
     playlistContextKey,
+    safeFrameIndex,
   ]);
 
   return {

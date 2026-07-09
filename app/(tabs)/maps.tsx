@@ -75,8 +75,9 @@ const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
-const STORM_SCOPE_NEXRAD_MIN_ZOOM = 6.75;
-const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 6.75;
+const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
+const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
+const STORM_SCOPE_STATION_SWITCH_RADIUS_KM = 16;
 const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
@@ -2000,9 +2001,11 @@ export default function MapsScreen() {
   const turnStormScopeOn = useCallback(() => {
     if (!armStormScopeToggleGuard()) return;
 
+    const nearestId3 = autoNearestRadar?.site ? normalizeRadarSiteId(autoNearestRadar.site.id) : null;
+
     setRadarMode('mosaic');
     setStationPanelCollapsed(false);
-    setManualRadarSiteId3(null);
+    setManualRadarSiteId3(nearestId3);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
     radarStationSeedRegionRef.current = null;
@@ -2014,7 +2017,7 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, [armStormScopeToggleGuard, dispatch, state.viewId]);
+  }, [armStormScopeToggleGuard, autoNearestRadar?.site, dispatch, state.viewId]);
 
   const turnStormScopeOff = useCallback(() => {
     if (!armStormScopeToggleGuard()) return;
@@ -2039,6 +2042,19 @@ export default function MapsScreen() {
 
     turnStormScopeOn();
   }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
+
+  useEffect(() => {
+    if (!stormMode || !region) return;
+
+    const centeredSite = resolveNearestRadar(region.latitude, region.longitude, {
+      filter: isNexradSite,
+      maxDistanceKm: STORM_SCOPE_STATION_SWITCH_RADIUS_KM,
+    })?.site;
+    if (!centeredSite) return;
+
+    const centeredId3 = normalizeRadarSiteId(centeredSite.id);
+    setManualRadarSiteId3((current) => (current === centeredId3 ? current : centeredId3));
+  }, [region?.latitude, region?.longitude, stormMode]);
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -2449,12 +2465,23 @@ export default function MapsScreen() {
       });
     }
 
-    if (goesEastIrEnabled) {
+    if (goesEastIrEnabled && infraredUsingCatalog) {
       addAnimatedArcGisImageServer({
         id: 'goes-abi13-ir',
         url: NESDIS_ABI13_ARCHIVE_EXPORT_URL,
         opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
         zIndex: 63,
+      });
+    } else if (goesEastIrEnabled) {
+      addAnimatedSatelliteWms({
+        id: 'goes-east-ir',
+        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        layers: 'conus_ch13',
+        opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
+        zIndex: 63,
+        fadeDurationMs: 0,
+        warmNextFrame: false,
+        lightweight: true,
       });
     }
 
@@ -2502,6 +2529,7 @@ export default function MapsScreen() {
     goesTrueColorOpacity,
     goesEastIrEnabled,
     goesEastIrOpacity,
+    infraredUsingCatalog,
     goesEastWvEnabled,
     goesEastWvOpacity,
     goesWestWvEnabled,
@@ -2532,7 +2560,11 @@ export default function MapsScreen() {
       return overlays.filter((overlay) => !overlay.id.startsWith('goes-truecolor'));
     }
     if (hiddenAnimationKind === 'ir') {
-      return overlays.filter((overlay) => !overlay.id.startsWith('goes-abi13-ir'));
+      return overlays.filter(
+        (overlay) =>
+          !overlay.id.startsWith('goes-abi13-ir') &&
+          !overlay.id.startsWith('goes-east-ir'),
+      );
     }
     if (hiddenAnimationKind === 'wv-east') {
       return overlays.filter((overlay) => !overlay.id.startsWith('goes-east-wv'));
@@ -3007,14 +3039,15 @@ export default function MapsScreen() {
   };
 
   const handleMapZoomButton = useCallback((delta: number) => {
+    const targetRegion = region ?? stableInitialRegion;
     const currentZoom =
       Number.isFinite(mapZoom)
         ? mapZoom
-        : approxZoomFromLongitudeDelta((region ?? stableInitialRegion).longitudeDelta);
+        : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
-    setMapZoom(nextZoom);
 
     mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
       zoomLevel: nextZoom,
       animationDuration: 180,
     });
@@ -3353,7 +3386,7 @@ export default function MapsScreen() {
           height,
         });
       }
-      if (source === 'goes-east-ir') {
+      if (source === 'goes-east-ir' && infraredUsingCatalog) {
         return buildArcGisImageExportUrl({
           baseUrl: NESDIS_ABI13_ARCHIVE_EXPORT_URL,
           region: animationExportRegion,
@@ -3380,7 +3413,7 @@ export default function MapsScreen() {
         height,
       });
     },
-    [animationExportRegion, product, stormMode],
+    [animationExportRegion, infraredUsingCatalog, product, stormMode],
   );
 
   const animationProductLabel = useMemo(() => {
