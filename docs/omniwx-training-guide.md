@@ -1941,7 +1941,7 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.190`, Android version code `10207`.
+- Current release example: app version `1.1.191`, Android version code `10208`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
@@ -1963,6 +1963,8 @@ Radar startup note: the map can auto-arm radar playback once per playlist contex
 Radar raster refresh note: when MapLibre refuses to repaint changed tile URL templates, include a compact hashed frame/template key in the raster source IDs. Keep the key short enough for MapLibre, but make sure the frame-specific part survives sanitizing/truncation.
 
 Storm Scope unsupported-tile note: Storm Scope must not show provider "Zoom Not Supported" tiles behind station products. Prefer the Worker WMS image path for close-range supported products and hide unsupported station products rather than falling back to a bad mosaic tile.
+
+Storm Scope product-integrity note: station products must not silently render a different radar product when the selected product is unavailable. Echo Tops should use real IEM `EET`/`NET` scans only; if the station has no recent Echo Tops scans, show an unavailable state instead of falling back to reflectivity or velocity.
 
 Storm Scope toggle note: the Storm Scope chip is a true on/off control. Turning it on enables station/NEXRAD tools and range rings; turning it off clears manual station state, suppresses immediate auto-nearest relatching, and returns to standard animated mosaic radar.
 

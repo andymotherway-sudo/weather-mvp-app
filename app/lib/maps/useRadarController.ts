@@ -127,7 +127,7 @@ function buildWorkerWmsUrl(args: {
 
 function localWmsProductForRadar(product: RadarProductId): 'N0Q' | 'N0B' | 'N0Z' | null {
   if (product === 'N0B') return 'N0B';
-  if (product === 'N0Z' || product === 'N0U') return 'N0Z';
+  if (product === 'N0Z') return 'N0Z';
   if (product === 'N0Q') return 'N0Q';
   return null;
 }
@@ -378,6 +378,7 @@ export function useRadarController(args: {
     sheetValue.radarProvider === 'iem' &&
     radarEnabled &&
     !!localWmsProduct &&
+    !state.radarTime.playing &&
     (
       (stationMode && stormMode) ||
       (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
@@ -612,7 +613,7 @@ export function useRadarController(args: {
       out = rvFrames.map((f) => ({ iso: f.iso }));
     } else {
       const frames = iemUnified?.frames;
-      if (frames?.length) out = frames.map((f) => ({ iso: f.iso }));
+      if (iemUnified) out = frames?.map((f) => ({ iso: f.iso })) ?? [];
       else out = iemFramesFallback.map((f) => ({ iso: f.iso }));
     }
 
@@ -647,8 +648,8 @@ export function useRadarController(args: {
     }
 
     const frames = iemUnified?.frames;
-    if (frames?.length) {
-      return [...frames]
+    if (iemUnified) {
+      return [...(frames ?? [])]
         .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
         .map((f) => f.template ?? null);
     }
@@ -776,7 +777,7 @@ export function useRadarController(args: {
   const safeFrameIndex = clampIndex(state.radarTime.frameIndex, frameCount);
 
   useEffect(() => {
-    if (!radarEnabled || usingLocalImage || frameCount < 2) {
+    if (!radarEnabled || frameCount < 2) {
       if (!radarEnabled) autoStartedContextRef.current = null;
       return;
     }
@@ -797,7 +798,6 @@ export function useRadarController(args: {
     radarEnabled,
     state.radarTime.frameIndex,
     state.radarTime.playing,
-    usingLocalImage,
   ]);
 
   const lastDisplayedIsoRef = useRef<string | null>(null);
@@ -1118,15 +1118,14 @@ export function useRadarController(args: {
   }, [state.radarTime.playing]);
 
   useEffect(() => {
-    if (!radarEnabled || usingLocalImage || !state.radarTime.playing || frameCount < 2) return;
+    if (!radarEnabled || !state.radarTime.playing || frameCount < 2) return;
     lastAdvanceRef.current = Date.now() - minDwellRef.current;
-  }, [frameCount, playlistContextKey, radarEnabled, state.radarTime.playing, usingLocalImage]);
+  }, [frameCount, playlistContextKey, radarEnabled, state.radarTime.playing]);
 
   useEffect(() => {
     if (playTimerRef.current) clearInterval(playTimerRef.current);
     playTimerRef.current = null;
 
-    if (usingLocalImage) return;
     if (!state.radarTime.playing) return;
 
     if (frameCount < 2) return;
@@ -1175,7 +1174,7 @@ export function useRadarController(args: {
       const next = cur >= fc - 1 ? 0 : cur + 1;
 
       const nextTemplate = templatesRef.current[next];
-      if (!nextTemplate) return;
+      if (!usingLocalImage && !nextTemplate) return;
 
       lastAdvanceRef.current = Date.now();
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });

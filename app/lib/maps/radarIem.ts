@@ -70,13 +70,11 @@ function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: str
 }
 
 function canonicalRidgeProduct(product: RadarProductId): RadarProductId {
-  // IEM's live latest-tile path renders NET for echo tops; EET returned upstream
-  // errors in current product probes.
-  return product === 'EET' ? 'NET' : product;
+  return product;
 }
 
 function supportsLatestRidgeTile(product: RadarProductId) {
-  return ['N0Q', 'N0B', 'N0Z', 'N0U', 'N0S', 'NET'].includes(product);
+  return ['N0Q', 'N0B', 'N0Z', 'N0U', 'N0S'].includes(product);
 }
 
 export function normalizeRadarSiteId(siteId: string) {
@@ -284,7 +282,7 @@ async function fetchRidgeWithProductFallback(args: {
           : preferred === 'N0S'
             ? ['N0S']
           : preferred === 'EET'
-            ? ['NET']
+            ? ['EET', 'NET']
             : preferred === 'NET'
               ? ['NET']
               : ['N0Z', 'N0Q', 'N0B'];
