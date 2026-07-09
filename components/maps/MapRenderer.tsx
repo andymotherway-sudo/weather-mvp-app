@@ -544,7 +544,7 @@ export function MapRenderer(props: MapRendererProps) {
                     id={lyrId}
                     sourceID={srcId}
                     maxZoomLevel={layerMaxZ}
-                    style={radarRasterStyle(0.01)}
+                    style={radarRasterStyle(0.02)}
                   />
                 </MapLibreGL.RasterSource>
               );

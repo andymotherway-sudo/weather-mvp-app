@@ -992,7 +992,7 @@ export function useRadarController(args: {
 
       if (pre !== cur) {
         outTemplates[1] = effectiveTemplates[pre] ?? null;
-        outOpacities[1] = 0;
+        outOpacities[1] = radarOpacity * 0.02;
       }
 
       if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
