@@ -932,7 +932,7 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.98 ? radarOpacity * 0.68 : 0;
+    const oldFrameFloor = t < 0.98 ? radarOpacity * 0.84 : 0;
     out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
     out[to] = radarOpacity * t;
 
@@ -1207,13 +1207,7 @@ export function useRadarController(args: {
   const radarOverlay: RadarOverlay = useMemo(() => {
     const productStyle = getRadarProductStyle(product);
 
-    const visibleTemplate =
-      activeRadar.templates.find((tpl, index) => !!tpl && (activeRadar.opacities[index] ?? 0) > 0.05) ?? '';
-    const tileSourceKey = [
-      playlistContextKey,
-      `frame:${safeFrameIndex}`,
-      `template:${visibleTemplate}`,
-    ].join('|');
+    const tileSourceKey = playlistContextKey;
 
     const localImageSourceKey = [
       playlistContextKey,
@@ -1273,7 +1267,6 @@ export function useRadarController(args: {
     activeRadar.opacities,
     activeRadar.warmTemplates,
     playlistContextKey,
-    safeFrameIndex,
   ]);
 
   return {
