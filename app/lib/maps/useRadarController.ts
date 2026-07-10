@@ -932,15 +932,14 @@ export function useRadarController(args: {
       return out;
     }
 
-    const oldFrameFloor = t < 0.98 ? radarOpacity * 0.84 : 0;
-    out[from] = Math.max(radarOpacity * (1 - t), oldFrameFloor);
+    out[from] = radarOpacity * (1 - t);
     out[to] = radarOpacity * t;
 
     if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
       const back = clampIndex(to - 1, n);
       if (back !== to) {
-        const tailMax = 0.08;
-        const tail = Math.min(tailMax, radarOpacity * 0.14 * (1 - t));
+        const tailMax = 0.025;
+        const tail = Math.min(tailMax, radarOpacity * 0.05 * (1 - t));
         out[back] = Math.max(out[back], tail);
       }
     }
@@ -992,7 +991,7 @@ export function useRadarController(args: {
 
       if (pre !== cur) {
         outTemplates[1] = effectiveTemplates[pre] ?? null;
-        outOpacities[1] = radarOpacity * 0.02;
+        outOpacities[1] = radarOpacity * 0.004;
       }
 
       if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
@@ -1074,7 +1073,6 @@ export function useRadarController(args: {
   const templatesRef = useRef<Array<string | null>>(effectiveTemplates);
   const minDwellRef = useRef<number>(profile.dwellMs);
   const radarEnabledRef = useRef<boolean>(radarEnabled);
-  const preloadRef = useRef<number | null>(preloadTo);
   const playbackBlockedRef = useRef(playbackBlocked);
   useEffect(() => {
     playingRef.current = state.radarTime.playing;
@@ -1099,10 +1097,6 @@ export function useRadarController(args: {
   useEffect(() => {
     radarEnabledRef.current = radarEnabled;
   }, [radarEnabled]);
-
-  useEffect(() => {
-    preloadRef.current = preloadTo;
-  }, [preloadTo]);
 
   useEffect(() => {
     playbackBlockedRef.current = playbackBlocked;
@@ -1134,7 +1128,6 @@ export function useRadarController(args: {
       if (!playingRef.current) return;
       if (!radarEnabledRef.current) return;
       if (playbackBlockedRef.current) return;
-      if (preloadRef.current !== null) return;
 
       const fc = frameCountRef.current;
       const cur = safeFrameIndexRef.current;
