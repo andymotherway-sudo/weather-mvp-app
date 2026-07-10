@@ -5,17 +5,19 @@ import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
+import { withErrorBoundary } from "./middleware/errorHandler";
+import { createRequestContext } from "./middleware/requestId";
+import { handleHealthRoute } from "./routes/health";
+import { handleUserRoute } from "./routes/user";
+import { publicCorsHeaders } from "./security/cors";
 import { Buffer } from "node:buffer";
 import { JpxImage } from "jpeg2000";
+import type { RequestContext } from "./types/api";
+import type { OmniwxEnv } from "./types/env";
 
 const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
 
-export interface Env {
-  NOAA_NCEI_TOKEN: string;
-  NASA_API_KEY: string;
-  NASA_FIRMS_MAP_KEY?: string;
-  RADAR_IEM_WMS_BASE?: string;
-}
+export interface Env extends OmniwxEnv {}
 
 type Unit = "F" | "C";
 type Units = "imperial" | "metric";
@@ -770,11 +772,7 @@ type AstroInspectPayload = {
  * ============================================================================= */
 
 function corsHeaders() {
-  return {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,OPTIONS",
-    "access-control-allow-headers": "content-type",
-  };
+  return publicCorsHeaders();
 }
 
 function withCors(headers: Record<string, string>) {
@@ -9297,13 +9295,23 @@ function roundBboxKey(b: { minx: number; miny: number; maxx: number; maxy: numbe
  * Worker main
  * ============================================================================= */
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleWorkerRequest(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  requestContext: RequestContext,
+): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: withCors({}) });
     }
+
+    const healthResponse = handleHealthRoute(url, requestContext);
+    if (healthResponse) return healthResponse;
+
+    const userResponse = await handleUserRoute(request, url, requestContext);
+    if (userResponse) return userResponse;
 
     if (url.pathname === "/v1/radar/info") {
       return new Response(
@@ -11368,5 +11376,11 @@ export default {
       }),
       { headers: withCors({ "content-type": "application/json" }) },
     );
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const requestContext = createRequestContext(request);
+    return withErrorBoundary(requestContext, () => handleWorkerRequest(request, env, ctx, requestContext));
   },
 };

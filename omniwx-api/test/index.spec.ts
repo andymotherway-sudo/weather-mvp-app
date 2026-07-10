@@ -1,5 +1,5 @@
+import { SELF } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import worker from '../src/index';
 
 function geometryRings(geometry: any): any[][][] {
   if (geometry?.type === 'Polygon') return geometry.coordinates ?? [];
@@ -8,15 +8,45 @@ function geometryRings(geometry: any): any[][][] {
 }
 
 describe('worker module', () => {
-  it('exports a fetch handler', () => {
-    expect(typeof worker.fetch).toBe('function');
+  it('responds through the Cloudflare Worker runtime', async () => {
+    const res = await SELF.fetch(new Request('https://omniwx.test/health'));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('returns health with request safety headers', async () => {
+    const res = await SELF.fetch(
+      new Request('https://omniwx.test/v1/health', {
+        headers: { 'x-request-id': 'paid-users-foundation-test' },
+      }),
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-request-id')).toBe('paid-users-foundation-test');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(json.success).toBe(true);
+    expect(json.requestId).toBe('paid-users-foundation-test');
+  });
+
+  it('reserves future account routes behind the auth placeholder', async () => {
+    const res = await SELF.fetch(
+      new Request('https://omniwx.test/v1/user/me', {
+        headers: { 'x-request-id': 'account-placeholder-test' },
+      }),
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(501);
+    expect(res.headers.get('x-request-id')).toBe('account-placeholder-test');
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('NOT_IMPLEMENTED');
+    expect(json.error.requestId).toBe('account-placeholder-test');
   });
 
   it('returns global capabilities contract', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/global/capabilities'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -37,10 +67,8 @@ describe('worker module', () => {
   });
 
   it('returns marine source registry', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/sources'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -55,10 +83,8 @@ describe('worker module', () => {
   });
 
   it('returns official marine zones by default', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/areas?west=-136&south=48&east=-122&north=55&zoom=5'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -85,10 +111,8 @@ describe('worker module', () => {
   }, 15000);
 
   it('handles marine area viewports that cross the dateline', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/areas?west=150&south=15&east=-130&north=65&zoom=3&includeContext=1'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -100,10 +124,8 @@ describe('worker module', () => {
   });
 
   it('returns official Australian marine zones by default', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/areas?west=112&south=-44&east=154&north=-10&zoom=4'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -115,10 +137,8 @@ describe('worker module', () => {
   });
 
   it('returns official-derived UK shipping forecast zones by default', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/areas?west=-16&south=47&east=8&north=62&zoom=4'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
@@ -130,10 +150,8 @@ describe('worker module', () => {
   });
 
   it('returns a focused Met Office shipping forecast for UK sea areas', async () => {
-    const res = await worker.fetch(
+    const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/official-forecast?id=metoffice-shipping-irish-sea'),
-      {} as any,
-      { waitUntil: () => undefined, passThroughOnException: () => undefined } as any,
     );
     const json = await res.json() as any;
 
