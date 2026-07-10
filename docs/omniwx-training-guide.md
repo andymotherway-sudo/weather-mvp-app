@@ -1941,7 +1941,7 @@ The current Android/Expo app identity is split across several files:
 
 Current closed-test build identity:
 
-- Current release example: app version `1.1.195`, Android version code `10212`.
+- Current release example: app version `1.1.196`, Android version code `10213`.
 - Play release note file: `docs/google-play-closed-testing-release-notes.md`.
 
 Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
@@ -1963,6 +1963,8 @@ Radar startup note: the map can auto-arm radar playback once per playlist contex
 Radar preload note: MapLibre may not fetch a raster source mounted at true zero opacity. Keep buffered/preload radar slots at a tiny nonzero opacity so the next frame actually downloads before the crossfade begins.
 
 Radar raster refresh note: when MapLibre refuses to repaint changed tile URL templates, include a compact hashed frame/template key in the raster source IDs. Keep the key short enough for MapLibre, but make sure the frame-specific part survives sanitizing/truncation.
+
+Radar startup note: first radar entry should start on the first usable raster template rather than blindly frame `0`. If playback says it is running but no mosaic appears, verify that the controller is not pinned to an empty first frame and that the renderer source key changes with the visible frame/template.
 
 Storm Scope unsupported-tile note: Storm Scope must not show provider "Zoom Not Supported" tiles behind station products. Prefer the Worker WMS image path for close-range supported products and hide unsupported station products rather than falling back to a bad mosaic tile.
 

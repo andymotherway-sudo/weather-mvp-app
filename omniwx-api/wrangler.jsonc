@@ -12,7 +12,25 @@
 	},
 	"compatibility_flags": [
 		"nodejs_compat"
-	]
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "omniwx-dev",
+			"database_id": "1e1056e5-440d-4960-a0b1-3a0626d711d8"
+		}
+	],
+	"env": {
+		"production": {
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "omniwx-prod",
+					"database_id": "e5cddd0e-f307-4077-bc1a-fcc317a51cce"
+				}
+			]
+		}
+	}
 	/**
 	 * Smart Placement
 	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

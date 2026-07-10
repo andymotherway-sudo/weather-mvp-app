@@ -785,17 +785,23 @@ export function useRadarController(args: {
     if (autoStartedContextRef.current === playlistContextKey) return;
     autoStartedContextRef.current = playlistContextKey;
 
-    if (state.radarTime.frameIndex !== 0) {
-      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: 0 });
+    const firstUsableIndex = effectiveTemplates.findIndex((template) => !!template);
+    const startIndex = firstUsableIndex >= 0 ? firstUsableIndex : safeFrameIndex;
+    if (state.radarTime.frameIndex !== startIndex) {
+      prevFrameRef.current = startIndex;
+      setXfade({ from: startIndex, to: startIndex, t: 1 });
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: startIndex });
     }
     if (!state.radarTime.playing) {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
     }
   }, [
     dispatch,
+    effectiveTemplates,
     frameCount,
     playlistContextKey,
     radarEnabled,
+    safeFrameIndex,
     state.radarTime.frameIndex,
     state.radarTime.playing,
   ]);
@@ -1166,8 +1172,17 @@ export function useRadarController(args: {
 
       const next = cur >= fc - 1 ? 0 : cur + 1;
 
-      const nextTemplate = templatesRef.current[next];
-      if (!usingLocalImage && !nextTemplate) return;
+      if (!usingLocalImage) {
+        const templates = templatesRef.current;
+        if (!templates[next]) {
+          const fallbackNext = templates.findIndex((template, index) => index !== cur && !!template);
+          if (fallbackNext < 0) return;
+
+          lastAdvanceRef.current = Date.now();
+          dispatch({ type: 'SET_RADAR_FRAME', frameIndex: fallbackNext });
+          return;
+        }
+      }
 
       lastAdvanceRef.current = Date.now();
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });
@@ -1200,7 +1215,15 @@ export function useRadarController(args: {
   const radarOverlay: RadarOverlay = useMemo(() => {
     const productStyle = getRadarProductStyle(product);
 
-    const tileSourceKey = playlistContextKey;
+    const visibleTemplate =
+      activeRadar.templates.find((template, index) => !!template && (activeRadar.opacities[index] ?? 0) > 0.05) ??
+      activeRadar.templates.find((template): template is string => !!template) ??
+      '';
+    const tileSourceKey = [
+      playlistContextKey,
+      `frame:${safeFrameIndex}`,
+      `template:${visibleTemplate}`,
+    ].join('|');
 
     const localImageSourceKey = [
       playlistContextKey,
@@ -1260,6 +1283,7 @@ export function useRadarController(args: {
     activeRadar.opacities,
     activeRadar.warmTemplates,
     playlistContextKey,
+    safeFrameIndex,
   ]);
 
   return {

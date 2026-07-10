@@ -28,9 +28,21 @@ The following are not active:
 - RevenueCat or Play Billing entitlement sync.
 - Cross-device saved locations.
 - Server-side user preference storage.
-- A production D1 binding.
+- Live account routes that read or write D1 data.
 
 Reserved account routes currently return a structured `NOT_IMPLEMENTED` response until real auth is connected.
+
+## D1 Provisioning
+
+D1 is now provisioned and bound, but it is not yet serving live account behavior.
+
+- Development database: `omniwx-dev`
+- Production database: `omniwx-prod`
+- Worker binding name: `DB`
+- Default Wrangler binding points to `omniwx-dev`.
+- `env.production` binding points to `omniwx-prod`.
+
+Both databases have the current schema from `omniwx-api/src/database/schema.sql`.
 
 ## Verification Status
 
@@ -65,25 +77,24 @@ The Worker is still served by `omniwx-api/src/index.ts`, but new paid-user infra
 - `src/database/schema.sql` defines the future D1 schema.
 - `src/database/queries.ts` keeps SQL parameterized.
 
-## Future D1 Binding
-
-When accounts are ready, create a D1 database and add a binding to `omniwx-api/wrangler.jsonc`, for example:
+## D1 Binding
 
 ```jsonc
 "d1_databases": [
   {
-    "binding": "OMNIWX_DB",
-    "database_name": "omniwx-users",
-    "database_id": "replace-with-cloudflare-id"
+    "binding": "DB",
+    "database_name": "omniwx-dev",
+    "database_id": "configured-in-wrangler-jsonc"
   }
 ]
 ```
 
-Apply the schema from:
+Apply or refresh the schema from:
 
 ```sh
 cd omniwx-api
-npx wrangler d1 execute omniwx-users --file=./src/database/schema.sql
+npx wrangler d1 execute omniwx-dev --remote --file=./src/database/schema.sql
+npx wrangler d1 execute omniwx-prod --remote --file=./src/database/schema.sql
 ```
 
 ## Secrets
