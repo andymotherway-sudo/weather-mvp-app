@@ -354,7 +354,7 @@ object OmniwxWidgetData {
         "&timezone=auto" +
         "&forecast_days=1"
 
-    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    val root = fetchJsonObject(url, "OMNIwx Android Widget")
     val current = root.getJSONObject("current")
     val daily = root.optJSONObject("daily")
 
@@ -383,7 +383,7 @@ object OmniwxWidgetData {
         "&lon=${place.lon}" +
         "&units=imperial"
 
-    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    val root = fetchJsonObject(url, "OMNIwx Android Widget")
     if (!root.optBoolean("ok", false)) {
       throw IllegalStateException(root.optString("error", "worker current failed"))
     }
@@ -525,7 +525,7 @@ object OmniwxWidgetData {
     val place = readPlace(context) ?: return null
     readSkyScoreCache(context, place)?.let { return it }
     val url = "$OMNIWX_API_BASE/api/astro/inspect?lat=${place.lat}&lon=${place.lon}&hour=0"
-    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    val root = fetchJsonObject(url, "OMNIwx Android Widget")
     return skyScoreFromInspectJson(root)?.copy(aurora = "Updated ${nowLabel()}")
   }
 
@@ -540,7 +540,7 @@ object OmniwxWidgetData {
       val east = (place.lon + delta).coerceAtMost(180.0)
       val bbox = "$south,$west,$north,$east"
       val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&bbox=$bbox"
-      val array = runCatching { fetchJsonArray(url, "OMNIwx Alpha Android Widget") }.getOrNull() ?: continue
+      val array = runCatching { fetchJsonArray(url, "OMNIwx Android Widget") }.getOrNull() ?: continue
       val nearest = nearestMetarJson(place, array) ?: continue
       return metarFromJson(nearest)
     }
@@ -660,7 +660,7 @@ object OmniwxWidgetData {
     val normalized = station.trim().uppercase(Locale.US)
     if (normalized.isBlank()) return null
     val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&ids=$normalized"
-    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    val array = fetchJsonArray(url, "OMNIwx Android Widget")
     if (array.length() == 0) return null
     return metarFromJson(array.optJSONObject(0) ?: return null)
   }
@@ -669,7 +669,7 @@ object OmniwxWidgetData {
     val normalized = station.trim().uppercase(Locale.US)
     if (normalized.isBlank()) return null
     val url = "https://aviationweather.gov/api/data/taf?format=json&hours=8&ids=$normalized"
-    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    val array = fetchJsonArray(url, "OMNIwx Android Widget")
     val item = array.optJSONObject(0) ?: return null
     return item.optString("rawTAF", "").ifBlank { item.optString("raw_text", "").ifBlank { item.optString("raw", "") } }.ifBlank { null }
   }
@@ -739,7 +739,7 @@ object OmniwxWidgetData {
 
     val ids = candidates.take(6).joinToString(",") { it.id }
     val url = "https://aviationweather.gov/api/data/metar?format=json&hours=2&ids=$ids"
-    val array = fetchJsonArray(url, "OMNIwx Alpha Android Widget")
+    val array = fetchJsonArray(url, "OMNIwx Android Widget")
     if (array.length() == 0) return null
     val nearest = nearestMetarJson(place, array) ?: array.optJSONObject(0) ?: return null
     return metarFromJson(nearest)
@@ -755,7 +755,7 @@ object OmniwxWidgetData {
     if (cached != null) return cached.withRecords(records)
 
     val url = "$OMNIWX_API_BASE/api/almanac/climo?lat=${place.lat}&lon=${place.lon}"
-    val root = fetchJsonObject(url, "OMNIwx Alpha Android Widget")
+    val root = fetchJsonObject(url, "OMNIwx Android Widget")
     return climoFromJson(place, root)?.withRecords(records)
   }
 
@@ -1229,7 +1229,7 @@ object OmniwxWidgetData {
         connectTimeout = 4500
         readTimeout = 4500
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "OMNIwx Alpha Android Widget")
+        setRequestProperty("User-Agent", "OMNIwx Android Widget")
         setRequestProperty("Accept", "application/json")
       }
       if (connection.responseCode !in 200..299) return 0L
@@ -1369,7 +1369,7 @@ object OmniwxWidgetData {
         connectTimeout = 4500
         readTimeout = 4500
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "OMNIwx Alpha Android Widget")
+        setRequestProperty("User-Agent", "OMNIwx Android Widget")
       }
       if (connection.responseCode !in 200..299) return null
       connection.inputStream.use { stream -> BitmapFactory.decodeStream(stream) }

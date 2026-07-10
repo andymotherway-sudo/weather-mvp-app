@@ -1037,7 +1037,7 @@ private fun latestRainViewerTimestamp(): Long {
     connectTimeout = 7000
     readTimeout = 7000
     requestMethod = "GET"
-    setRequestProperty("User-Agent", "OMNIwx Alpha Android Auto")
+    setRequestProperty("User-Agent", "OMNIwx Android Auto")
     setRequestProperty("Accept", "application/json")
   }
 
@@ -1089,7 +1089,7 @@ private fun fetchRadarTileBitmap(zoom: Int, x: Int, y: Int, timestamp: Long): Bi
     connectTimeout = 8000
     readTimeout = 8000
     requestMethod = "GET"
-    setRequestProperty("User-Agent", "OMNIwx Alpha Android Auto")
+    setRequestProperty("User-Agent", "OMNIwx Android Auto")
     setRequestProperty("Accept", "image/png")
   }
   return try {
@@ -1280,7 +1280,7 @@ private fun fetchWeatherAlert(place: CarPlace): CarWeatherAlert? {
     connectTimeout = 7000
     readTimeout = 7000
     requestMethod = "GET"
-    setRequestProperty("User-Agent", "OMNIwx Alpha Android Auto")
+    setRequestProperty("User-Agent", "OMNIwx Android Auto")
     setRequestProperty("Accept", "application/geo+json")
   }
 

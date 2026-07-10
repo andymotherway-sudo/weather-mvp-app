@@ -692,7 +692,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         connectTimeout = connectTimeoutMs
         readTimeout = readTimeoutMs
         requestMethod = "GET"
-        setRequestProperty("User-Agent", "OMNIwx Alpha Video Export")
+        setRequestProperty("User-Agent", "OMNIwx Video Export")
         setRequestProperty("Accept", "image/png,image/jpeg,image/*")
       }
       if (conn.responseCode !in 200..299) return null

@@ -67,6 +67,18 @@ function stableMappedFrameIndex(
   return mappedIndex;
 }
 
+function nextRenderableTileFrameIndex(templates: Array<string | null>, currentFrameIndex: number) {
+  if (!templates.length) return currentFrameIndex;
+
+  const currentIndex = clampIndex(currentFrameIndex, templates.length);
+  for (let step = 1; step <= templates.length; step++) {
+    const index = (currentIndex + step) % templates.length;
+    if (templates[index]) return index;
+  }
+
+  return currentIndex;
+}
+
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
@@ -1070,77 +1082,23 @@ export function useRadarController(args: {
   /* =========================================================================
    * Playback (tiles only) - forward loop + edge playlist promotion
    * ========================================================================= */
-  const PLAY_TICK_MS = 120;
   const END_HOLD_MULTIPLIER = 1.8;
-
-  const playingRef = useRef<boolean>(state.radarTime.playing);
-  const frameCountRef = useRef<number>(frameCount);
-  const safeFrameIndexRef = useRef<number>(safeFrameIndex);
-  const templatesRef = useRef<Array<string | null>>(effectiveTemplates);
-  const minDwellRef = useRef<number>(profile.dwellMs);
-  const radarEnabledRef = useRef<boolean>(radarEnabled);
-  const playbackBlockedRef = useRef(playbackBlocked);
-  useEffect(() => {
-    playingRef.current = state.radarTime.playing;
-  }, [state.radarTime.playing]);
+  const STARTUP_ADVANCE_MS = 350;
+  const autoAdvancePrimedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    frameCountRef.current = frameCount;
-  }, [frameCount]);
-
-  useEffect(() => {
-    safeFrameIndexRef.current = safeFrameIndex;
-  }, [safeFrameIndex]);
-
-  useEffect(() => {
-    templatesRef.current = effectiveTemplates;
-  }, [effectiveTemplates]);
-
-  useEffect(() => {
-    minDwellRef.current = profile.dwellMs;
-  }, [profile.dwellMs]);
-
-  useEffect(() => {
-    radarEnabledRef.current = radarEnabled;
-  }, [radarEnabled]);
-
-  useEffect(() => {
-    playbackBlockedRef.current = playbackBlocked;
-  }, [playbackBlocked]);
-
-  const playTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastAdvanceRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (state.radarTime.playing) {
-      lastAdvanceRef.current = Date.now();
-    }
-  }, [state.radarTime.playing]);
-
-  useEffect(() => {
-    if (!radarEnabled || !state.radarTime.playing || frameCount < 2) return;
-    lastAdvanceRef.current = Date.now() - minDwellRef.current;
-  }, [frameCount, playlistContextKey, radarEnabled, state.radarTime.playing]);
-
-  useEffect(() => {
-    if (playTimerRef.current) clearInterval(playTimerRef.current);
-    playTimerRef.current = null;
-
+    if (!radarEnabled) return;
     if (!state.radarTime.playing) return;
-
     if (frameCount < 2) return;
+    if (playbackBlocked) return;
 
-    playTimerRef.current = setInterval(() => {
-      if (!playingRef.current) return;
-      if (!radarEnabledRef.current) return;
-      if (playbackBlockedRef.current) return;
+    const atEnd = safeFrameIndex >= frameCount - 1;
+    const advanceKey = `${playlistContextKey}|${frameCount}`;
+    const firstAdvanceForPlaylist = autoAdvancePrimedRef.current !== advanceKey;
+    const dwellNow = atEnd ? Math.round(profile.dwellMs * END_HOLD_MULTIPLIER) : profile.dwellMs;
+    const delayMs = firstAdvanceForPlaylist ? Math.min(STARTUP_ADVANCE_MS, dwellNow) : dwellNow;
 
-      const fc = frameCountRef.current;
-      const cur = safeFrameIndexRef.current;
-      const baseDwell = minDwellRef.current;
-
-      const atEnd = cur >= fc - 1;
-
+    const timer = setTimeout(() => {
       // Only promote provider refreshes at the END of a completed loop. Never
       // promote at frame 0, because that looks like a jump back.
       if (atEnd && pendingFramesRef.current && pendingTemplatesRef.current) {
@@ -1153,7 +1111,7 @@ export function useRadarController(args: {
         const mappedIndex = stableMappedFrameIndex(
           nextFrames,
           lastDisplayedIsoRef.current,
-          safeFrameIndexRef.current,
+          safeFrameIndex,
         );
 
         setPlayFrames(nextFrames);
@@ -1162,38 +1120,35 @@ export function useRadarController(args: {
         prevFrameRef.current = mappedIndex;
         setXfade({ from: mappedIndex, to: mappedIndex, t: 1 });
 
-        lastAdvanceRef.current = Date.now();
+        autoAdvancePrimedRef.current = advanceKey;
         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: mappedIndex });
         return;
       }
 
-      const dwellNow = atEnd ? Math.round(baseDwell * END_HOLD_MULTIPLIER) : baseDwell;
-      if (Date.now() - lastAdvanceRef.current < dwellNow) return;
-
-      const next = cur >= fc - 1 ? 0 : cur + 1;
+      let next = safeFrameIndex >= frameCount - 1 ? 0 : safeFrameIndex + 1;
 
       if (!usingLocalImage) {
-        const templates = templatesRef.current;
-        if (!templates[next]) {
-          const fallbackNext = templates.findIndex((template, index) => index !== cur && !!template);
-          if (fallbackNext < 0) return;
-
-          lastAdvanceRef.current = Date.now();
-          dispatch({ type: 'SET_RADAR_FRAME', frameIndex: fallbackNext });
-          return;
-        }
+        next = effectiveTemplates[next] ? next : nextRenderableTileFrameIndex(effectiveTemplates, safeFrameIndex);
+        if (next === safeFrameIndex) return;
       }
 
-      lastAdvanceRef.current = Date.now();
+      autoAdvancePrimedRef.current = advanceKey;
       dispatch({ type: 'SET_RADAR_FRAME', frameIndex: next });
-    }, PLAY_TICK_MS);
+    }, delayMs);
 
-    return () => {
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
-      playTimerRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingLocalImage, state.radarTime.playing, frameCount]);
+    return () => clearTimeout(timer);
+  }, [
+    dispatch,
+    effectiveTemplates,
+    frameCount,
+    playbackBlocked,
+    playlistContextKey,
+    profile.dwellMs,
+    radarEnabled,
+    safeFrameIndex,
+    state.radarTime.playing,
+    usingLocalImage,
+  ]);
 
   /* =========================================================================
    * tileMaxZ selection

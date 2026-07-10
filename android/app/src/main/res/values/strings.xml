@@ -1,5 +1,5 @@
 <resources>
-  <string name="app_name">OMNIwx Alpha</string>
+  <string name="app_name">OMNIwx</string>
   <string name="widget_current_description">OMNIwx current conditions</string>
   <string name="widget_current_radar_description">OMNIwx current conditions and radar snapshot</string>
   <string name="widget_sky_score_description">OMNIwx SkyScore</string>

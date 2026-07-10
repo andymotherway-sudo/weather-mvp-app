@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "OMNIwx Alpha",
+    "name": "OMNIwx",
     "slug": "weather-app",
-    "version": "1.1.196",
+    "version": "1.1.197",
     "owner": "andymotherway",
     "orientation": "default",
-    "icon": "./assets/brand/icon-alpha.png",
+    "icon": "./assets/brand/icon.png",
     "scheme": "weatherapp",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.omniwx.app",
-      "buildNumber": "10213",
+      "buildNumber": "10214",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "OMNIwx uses your location to show local weather, radar, and marine conditions for your current area."
@@ -18,11 +18,11 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "versionCode": 10213,
+      "versionCode": 10214,
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#020617",
-        "foregroundImage": "./assets/brand/android-foreground-alpha.png"
+        "foregroundImage": "./assets/brand/android-foreground.png"
       }
     },
     "web": {
@@ -34,7 +34,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/brand/splash-alpha.png",
+          "image": "./assets/brand/splash.png",
           "imageWidth": 320,
           "resizeMode": "contain",
           "backgroundColor": "#020617",
@@ -57,7 +57,7 @@
       "apiBaseUrl": "https://omniwx-api.omniwx.workers.dev",
       "supportUrl": "https://www.omni-wx.com/support",
       "privacyPolicyUrl": "https://www.omni-wx.com/privacy",
-      "buildLabel": "internal-test-aab-10213",
+      "buildLabel": "internal-test-aab-10214",
       "eas": {
         "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3",
         "almanacSafeMode": true

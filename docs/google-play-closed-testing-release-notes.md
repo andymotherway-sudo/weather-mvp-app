@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx Alpha 1.1.196**
-Android version code: **10213**
+Release: **OMNIwx 1.1.197**
+Android version code: **10214**
 Track: **Closed testing / internal testing candidate**
 Date: **July 10, 2026**
 
 ## Play Console Paste Notes
 
-Radar startup refinement. Mosaic radar now starts on the first usable frame, skips empty frame slots instead of stalling, and refreshes the rendered raster source as the visible frame changes. This should make the standard radar loop appear and autoplay more reliably when opening Maps.
+Radar startup refinement. Mosaic radar now starts on the first usable frame, advances with a frame-driven scheduler, skips empty frame slots instead of stalling, and refreshes the rendered raster source as the visible frame changes.
 
 ## Tester Notes
 
@@ -20,8 +20,8 @@ Please focus testing on Maps radar playback:
 
 ## Internal Release Checklist
 
-- App version: `1.1.196`
-- Android version code: `10213`
+- App version: `1.1.197`
+- Android version code: `10214`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
