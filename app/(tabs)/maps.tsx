@@ -3276,8 +3276,8 @@ export default function MapsScreen() {
     [wildfireData.perimeters]
   );
   const visibleWildfireIncidents = useMemo(
-    () => filterVisibleWildfirePerimeters(wildfireData.incidents),
-    [wildfireData.incidents]
+    () => filterVisibleWildfireIncidents(wildfireData.incidents, visibleWildfirePerimeters, mapZoom),
+    [mapZoom, visibleWildfirePerimeters, wildfireData.incidents]
   );
   const wildfireSymbolData = useMemo(
     () => buildWildfireSymbolFeatureCollection(visibleWildfirePerimeters, visibleWildfireIncidents),
@@ -5045,7 +5045,7 @@ export default function MapsScreen() {
                 id="wildfire-incident-label"
                 minZoomLevel={5.8}
                 style={{
-                  textField: ['get', 'incidentName'],
+                  textField: ['case', ['==', ['get', 'showLabel'], true], ['get', 'incidentName'], ''],
                   textSize: 11,
                   textFont: ['Open Sans Bold'],
                   textColor: 'rgba(255,245,245,0.96)',
@@ -5409,7 +5409,7 @@ export default function MapsScreen() {
               <View style={styles.wildfireLegendHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.legendCardTitle}>Wildfire legend</Text>
-                  <Text style={styles.restrictionLegendTitle}>Polygons stay on map; dots show incident size</Text>
+                  <Text style={styles.restrictionLegendTitle}>Boundaries first; priority dots fill gaps</Text>
                 </View>
                 <Pressable
                   onPress={() => setWildfireLegendExpanded((current) => !current)}
@@ -5458,7 +5458,7 @@ export default function MapsScreen() {
                     </View>
                   </View>
                   <Text style={styles.wildfireLegendNote}>
-                    Dots without polygons usually mean the incident feed has a location before a current perimeter is published, or the perimeter is outside the current map window.
+                    Official perimeters are shown when published. Low-confidence local agency records stay hidden until close zoom so active fire boundaries stay readable.
                   </Text>
                 </View>
               ) : null}
@@ -6612,6 +6612,39 @@ function normalizedFireNameKey(name: string) {
     .trim();
 }
 
+function wildfireFeatureName(feature: any) {
+  const props = feature?.properties ?? {};
+  return firstString(props.incidentName, props.IncidentName, props.poly_IncidentName, props.Label, props.ComplexName, props.FireName);
+}
+
+function wildfireFeatureAcres(feature: any) {
+  const props = feature?.properties ?? {};
+  return firstNumber(
+    props.acres,
+    props.poly_GISAcres,
+    props.GISAcres,
+    props.DailyAcres,
+    props.CalculatedAcres,
+    props.attr_IncidentSize,
+    props.IncidentSize
+  );
+}
+
+function isAgencyCodeLikeWildfireName(name: string | null) {
+  if (!name) return false;
+  const compact = name.trim().toUpperCase();
+  return /^[A-Z]{2,6}-\d{3,}$/.test(compact) || /^[A-Z]{2,6}\/[A-Z0-9./-]{2,}$/.test(compact);
+}
+
+function perimeterNameKeys(perimeters: any) {
+  const keys = new Set<string>();
+  (Array.isArray(perimeters?.features) ? perimeters.features : []).forEach((feature: any) => {
+    const name = wildfireFeatureName(feature);
+    if (name) keys.add(normalizedFireNameKey(name));
+  });
+  return keys;
+}
+
 function wildfireFeatureUpdatedMs(props: any) {
   const raw =
     props?.attr_ModifiedOnDateTime_dt ??
@@ -6641,10 +6674,34 @@ function filterVisibleWildfirePerimeters(perimeters: any) {
   return { type: 'FeatureCollection', features };
 }
 
+function filterVisibleWildfireIncidents(incidents: any, perimeters: any, zoom: number) {
+  const perimeterKeys = perimeterNameKeys(perimeters);
+  const features = (Array.isArray(incidents?.features) ? incidents.features : []).filter((feature: any) => {
+    if (isStaleContainedWildfireFeature(feature)) return false;
+
+    const props = feature?.properties ?? {};
+    const name = wildfireFeatureName(feature);
+    const acres = wildfireFeatureAcres(feature);
+    const key = name ? normalizedFireNameKey(name) : null;
+    const codeLike = isAgencyCodeLikeWildfireName(name);
+    const isHotspot = props.isHotspot === true;
+
+    if (key && perimeterKeys.has(key)) return false;
+
+    if (isHotspot) return zoom >= 8.5;
+    if (acres == null) return zoom >= 10.5 && !codeLike;
+    if (acres >= 1000) return true;
+    if (acres >= 100) return zoom >= 6.5;
+    if (acres >= 10) return zoom >= 8;
+    return zoom >= 10 && !codeLike;
+  });
+  return { type: 'FeatureCollection', features };
+}
+
 function buildWildfireSymbolFeatureCollection(perimeters: any, incidents?: any) {
   const features: any[] = [];
   const seen = new Set<string>();
-  const addPoint = (feature: any, fallbackId: string) => {
+  const addPoint = (feature: any, fallbackId: string, sourceKind: 'perimeter' | 'incident') => {
     const geometry = feature?.geometry;
     const props = feature?.properties ?? {};
     const point =
@@ -6656,10 +6713,12 @@ function buildWildfireSymbolFeatureCollection(perimeters: any, incidents?: any) 
     const lon = safeNum(coords[0]);
     const lat = safeNum(coords[1]);
     if (lat == null || lon == null) return;
-    const name = firstString(props.incidentName, props.IncidentName, props.poly_IncidentName, props.Label, props.FireName) ?? fallbackId;
+    const name = wildfireFeatureName(feature) ?? fallbackId;
     const key = normalizedFireNameKey(name);
     if (seen.has(key)) return;
     seen.add(key);
+    const acres = wildfireFeatureAcres(feature);
+    const codeLike = isAgencyCodeLikeWildfireName(name);
     features.push({
       type: 'Feature',
       id: feature?.id ?? fallbackId,
@@ -6672,15 +6731,16 @@ function buildWildfireSymbolFeatureCollection(perimeters: any, incidents?: any) 
         markerRadius: props.markerRadius ?? 9,
         markerHaloRadius: props.markerHaloRadius ?? 19,
         geometrySource: props.geometrySource ?? props.GeometrySource ?? props.poly_Source ?? 'Current perimeter feed',
+        showLabel: sourceKind === 'perimeter' || (acres != null && acres >= 100) || (!codeLike && acres != null && acres >= 10),
       },
     });
   };
 
   (Array.isArray(perimeters?.features) ? perimeters.features : []).forEach((feature: any, idx: number) =>
-    addPoint(feature, `perimeter-${idx}`)
+    addPoint(feature, `perimeter-${idx}`, 'perimeter')
   );
   (Array.isArray(incidents?.features) ? incidents.features : []).forEach((feature: any, idx: number) =>
-    addPoint(feature, `incident-${idx}`)
+    addPoint(feature, `incident-${idx}`, 'incident')
   );
 
   return { type: 'FeatureCollection', features };

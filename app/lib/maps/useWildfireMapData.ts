@@ -37,6 +37,8 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
 
 const CURRENT_WILDFIRE_INCIDENTS_QUERY_URL =
   'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query';
+const USA_WILDFIRES_CURRENT_PERIMETERS_QUERY_URL =
+  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/1/query';
 const CURRENT_WILDFIRE_PERIMETERS_QUERY_URL =
   'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
 const NOAA_HMS_SMOKE_QUERY_URL =
@@ -313,10 +315,55 @@ function normalizeWildfirePerimeters(features: any[]) {
           ...(attrs ?? {}),
           incidentName,
           acres,
+          hasPerimeter: true,
         },
       };
     })
   );
+}
+
+function perimeterDedupKey(feature: any) {
+  const props = feature?.properties ?? {};
+  const rawName =
+    asString(props?.incidentName) ??
+    asString(props?.IncidentName) ??
+    asString(props?.poly_IncidentName) ??
+    asString(props?.Label);
+  const name = rawName
+    ? rawName
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\b(fire|wildfire|incident)\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : null;
+  const geom = feature?.geometry;
+  const firstRing =
+    geom?.type === 'Polygon'
+      ? geom.coordinates?.[0]
+      : geom?.type === 'MultiPolygon'
+        ? geom.coordinates?.[0]?.[0]
+        : null;
+  const firstCoord = Array.isArray(firstRing) ? firstRing[0] : null;
+  const coordKey =
+    Array.isArray(firstCoord) && firstCoord.length >= 2
+      ? `${Number(firstCoord[0]).toFixed(3)},${Number(firstCoord[1]).toFixed(3)}`
+      : String(feature?.id ?? '');
+  return `${name ?? 'unnamed'}|${coordKey}`;
+}
+
+function mergePerimeterCollections(...collections: GeoJsonFeatureCollection[]) {
+  const seen = new Set<string>();
+  const features: any[] = [];
+  for (const collection of collections) {
+    for (const feature of collection.features ?? []) {
+      const key = perimeterDedupKey(feature);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      features.push(feature);
+    }
+  }
+  return asFeatureCollection(features);
 }
 
 function normalizeWildfireIncidents(features: any[]) {
@@ -417,7 +464,7 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
       } satisfies Record<string, string>;
 
       try {
-        const [smokeRes, perimetersRes, incidentsRes, hotspotsRes] = await Promise.allSettled([
+        const [smokeRes, wfigsPerimetersRes, usaPerimetersRes, incidentsRes, hotspotsRes] = await Promise.allSettled([
           fetchArcGisFeatures(
             NOAA_HMS_SMOKE_QUERY_URL,
             {
@@ -428,6 +475,14 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
           ),
           fetchArcGisFeatures(
             CURRENT_WILDFIRE_PERIMETERS_QUERY_URL,
+            {
+              ...shared,
+              outFields: '*',
+            },
+            controller.signal
+          ),
+          fetchArcGisFeatures(
+            USA_WILDFIRES_CURRENT_PERIMETERS_QUERY_URL,
             {
               ...shared,
               outFields: '*',
@@ -448,17 +503,26 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
         if (cancelled) return;
 
         setSmoke(smokeRes.status === 'fulfilled' ? normalizeWildfireSmoke(smokeRes.value) : EMPTY_FC);
-        setPerimeters(
-          perimetersRes.status === 'fulfilled' ? normalizeWildfirePerimeters(perimetersRes.value) : EMPTY_FC
-        );
+        const wfigsPerimeters =
+          wfigsPerimetersRes.status === 'fulfilled'
+            ? normalizeWildfirePerimeters(wfigsPerimetersRes.value)
+            : EMPTY_FC;
+        const usaPerimeters =
+          usaPerimetersRes.status === 'fulfilled'
+            ? normalizeWildfirePerimeters(usaPerimetersRes.value)
+            : EMPTY_FC;
+        setPerimeters(mergePerimeterCollections(usaPerimeters, wfigsPerimeters));
         const incidentsFc = incidentsRes.status === 'fulfilled' ? normalizeWildfireIncidents(incidentsRes.value) : EMPTY_FC;
         const hotspotsFc = hotspotsRes.status === 'fulfilled' ? hotspotsRes.value : EMPTY_FC;
         setIncidents(asFeatureCollection([...incidentsFc.features, ...hotspotsFc.features]));
 
         const failures = [
           smokeRes.status === 'rejected' ? `Smoke: ${String(smokeRes.reason?.message ?? smokeRes.reason)}` : null,
-          perimetersRes.status === 'rejected'
-            ? `Perimeters: ${String(perimetersRes.reason?.message ?? perimetersRes.reason)}`
+          wfigsPerimetersRes.status === 'rejected'
+            ? `WFIGS perimeters: ${String(wfigsPerimetersRes.reason?.message ?? wfigsPerimetersRes.reason)}`
+            : null,
+          usaPerimetersRes.status === 'rejected'
+            ? `USA perimeters: ${String(usaPerimetersRes.reason?.message ?? usaPerimetersRes.reason)}`
             : null,
           incidentsRes.status === 'rejected'
             ? `Incidents: ${String(incidentsRes.reason?.message ?? incidentsRes.reason)}`

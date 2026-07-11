@@ -416,8 +416,9 @@ export const LAYER_CATALOG = [
     zIndex: 85,
     legendKey: 'perimeters',
     source: {
-      name: 'NIFC / WFIGS',
-      details: 'Current interagency wildfire perimeters with active incident point markers sourced from WFIGS and USA Wildfires current incidents.',
+      name: 'USA Wildfires / WFIGS',
+      details:
+        'Current wildfire perimeters from USA Wildfires and WFIGS, with filtered active incident markers where a current boundary is not available.',
       url: 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer',
     },
     supportsOpacity: true,

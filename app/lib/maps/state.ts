@@ -28,20 +28,6 @@ const FIRE_LAYER_IDS: LayerId[] = [
 
 const MARINE_LAYER_IDS: LayerId[] = ['marine.conditions'];
 
-const WEATHER_RASTER_LAYER_IDS: LayerId[] = [
-  'radar.reflectivity',
-  'sat.clouds',
-  'sat.goesEast.geocolor',
-  'sat.goesWest.geocolor',
-  'sat.goes.truecolor',
-  'sat.goesEast.ir',
-  'sat.goesWest.ir',
-  'sat.goesEast.wv',
-  'sat.goesWest.wv',
-  'sat.global.truecolor',
-  'sat.global.precip',
-];
-
 const EXCLUSIVE_DOMAIN_GROUPS: LayerId[][] = [
   FIRE_LAYER_IDS,
   AVIATION_LAYER_IDS,
@@ -218,10 +204,6 @@ function enforceExclusiveControlSurfaces(
   const nextLayers = { ...state.layers };
   const changedLayerIsOn =
     changedLayerId != null && nextLayers[changedLayerId] && nextLayers[changedLayerId].enabled;
-
-  if (changedLayerIsOn && WEATHER_RASTER_LAYER_IDS.includes(changedLayerId)) {
-    disableLayers(nextLayers, WEATHER_RASTER_LAYER_IDS.filter((id) => id !== changedLayerId));
-  }
 
   const activeDomainGroup = pickActiveDomainGroup(state.viewId, changedLayerId, changedLayerIsOn);
   if (activeDomainGroup) {
