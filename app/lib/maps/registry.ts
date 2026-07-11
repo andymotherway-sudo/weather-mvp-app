@@ -112,7 +112,7 @@ export const LAYERS: LayerDefinition[] = [
   },
   {
     id: 'tropics.nhcTracks',
-    title: 'NHC Active Storm Tracks',
+    title: 'Tropical Cyclone Cones',
     kind: 'tile',
     visibility: 'nerdy',
     defaultOpacity: 0.82,

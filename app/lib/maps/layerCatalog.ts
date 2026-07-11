@@ -662,17 +662,17 @@ export const LAYER_CATALOG = [
   {
     id: 'tropics.nhcTracks',
     group: 'weather',
-    title: 'NHC Active Storm Cones',
-    subtitle: 'Cone, track, watches',
+    title: 'Tropical Cyclone Cones',
+    subtitle: 'Cones, tracks, wind fields',
     visibility: 'nerdy',
     timestampMode: 'latest_snapshot',
     defaultOpacity: 0.82,
     zIndex: 117,
     source: {
-      name: 'NOAA NHC / CPHC',
+      name: 'NOAA NHC / CPHC + global cyclone feed',
       details:
-        'Active tropical cyclone forecast cone, official forecast track, watch/warning coastline, wind-radii, and wind-arrival context when an official storm is active.',
-      url: 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer',
+        'Active tropical cyclone forecast cones, forecast tracks, observed tracks, watch/warning coastlines, and wind-radii where available. NHC/CPHC basins use official NOAA products; western Pacific systems are included through the global active cyclone feed.',
+      url: 'https://www.arcgis.com/home/item.html?id=248e7b5827a34b248647afb012c58787',
     },
     supportsLegend: true,
     supportsOpacity: true,

@@ -58,6 +58,7 @@ import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
+import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
@@ -70,6 +71,8 @@ const WPC_FRONTS_EXPORT_URL =
 const NWS_HEATRISK_IMAGE_SERVER_URL =
   'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
 const NWS_HEATRISK_RENDERING_RULE = JSON.stringify({ rasterFunction: 'heatrisk.rft' });
+const NHC_TROPICAL_WEATHER_EXPORT_URL =
+  'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
@@ -1241,6 +1244,7 @@ export default function MapsScreen() {
   }, [animationRecordMode]);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
+  const [selectedTropicalFeature, setSelectedTropicalFeature] = useState<any | null>(null);
   const [selectedAviationProducts, setSelectedAviationProducts] = useState<AviationProductType[]>([
     'gairmet',
     'sigmet',
@@ -1490,6 +1494,8 @@ export default function MapsScreen() {
   const frontsDay2Enabled = !!state.layers?.['wx.fronts.day2']?.enabled;
   const frontsDay3Enabled = !!state.layers?.['wx.fronts.day3']?.enabled;
   const heatRiskEnabled = !!state.layers?.['heat.nwsHeatRisk']?.enabled;
+  const tropicalOutlookEnabled = !!state.layers?.['tropics.nhcOutlook']?.enabled;
+  const tropicalTracksEnabled = !!state.layers?.['tropics.nhcTracks']?.enabled;
   const aviationModeActive = state.viewId === 'aviation';
   const aviationTurbEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.turb']?.enabled;
   const aviationIceEnabled = !aviationModeActive && !!state.layers?.['aviation.gairmet.ice']?.enabled;
@@ -1765,6 +1771,12 @@ export default function MapsScreen() {
   const heatRiskOpacity = Number.isFinite(state.layers?.['heat.nwsHeatRisk']?.opacity)
     ? state.layers['heat.nwsHeatRisk'].opacity
     : 0.56;
+  const tropicalOutlookOpacity = Number.isFinite(state.layers?.['tropics.nhcOutlook']?.opacity)
+    ? state.layers['tropics.nhcOutlook'].opacity
+    : 0.72;
+  const tropicalTracksOpacity = Number.isFinite(state.layers?.['tropics.nhcTracks']?.opacity)
+    ? state.layers['tropics.nhcTracks'].opacity
+    : 0.82;
   const windParticlesOpacity = Number.isFinite(state.layers?.['wx.wind.particles']?.opacity)
     ? state.layers['wx.wind.particles'].opacity
     : 0.72;
@@ -1960,6 +1972,79 @@ export default function MapsScreen() {
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
+  const radarPlaybackWatchRef = useRef({
+    frameIndex: -1,
+    changedAt: 0,
+    playlistKey: '',
+  });
+
+  const radarPlaylistKey = useMemo(() => {
+    if (!radarEnabled || frameCount < 2) return 'none';
+    const firstIso = uiFrames[0]?.iso ?? 'start';
+    const lastIso = uiFrames[frameCount - 1]?.iso ?? 'end';
+    return `${effectiveRadarProvider}:${stationRadarMode ? 'station' : 'mosaic'}:${frameCount}:${firstIso}:${lastIso}`;
+  }, [effectiveRadarProvider, frameCount, radarEnabled, stationRadarMode, uiFrames]);
+
+  useEffect(() => {
+    const currentFrame = clampIndex(state.radarTime.frameIndex, frameCount);
+    const watch = radarPlaybackWatchRef.current;
+
+    if (watch.playlistKey !== radarPlaylistKey) {
+      radarPlaybackWatchRef.current = {
+        frameIndex: currentFrame,
+        changedAt: Date.now(),
+        playlistKey: radarPlaylistKey,
+      };
+      return;
+    }
+
+    if (watch.frameIndex !== currentFrame) {
+      watch.frameIndex = currentFrame;
+      watch.changedAt = Date.now();
+    }
+  }, [frameCount, radarPlaylistKey, state.radarTime.frameIndex]);
+
+  useEffect(() => {
+    if (!radarEnabled) return;
+    if (!radarViewActive) return;
+    if (stationRadarMode) return;
+    if (!state.radarTime.playing) return;
+    if (frameCount < 2) return;
+
+    const timer = setInterval(() => {
+      const watch = radarPlaybackWatchRef.current;
+      if (watch.playlistKey !== radarPlaylistKey) return;
+      if (Date.now() - watch.changedAt < 1800) return;
+
+      const currentFrame = clampIndex(watch.frameIndex, frameCount);
+      let nextFrame = currentFrame;
+      for (let step = 1; step <= frameCount; step++) {
+        const candidate = (currentFrame + step) % frameCount;
+        if (uiTemplates[candidate]) {
+          nextFrame = candidate;
+          break;
+        }
+      }
+
+      if (nextFrame === currentFrame) return;
+
+      watch.frameIndex = nextFrame;
+      watch.changedAt = Date.now();
+      dispatch({ type: 'SET_RADAR_FRAME', frameIndex: nextFrame });
+      dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
+    }, 650);
+
+    return () => clearInterval(timer);
+  }, [
+    dispatch,
+    frameCount,
+    radarEnabled,
+    radarPlaylistKey,
+    radarViewActive,
+    state.radarTime.playing,
+    stationRadarMode,
+    uiTemplates,
+  ]);
 
   const stationProductLoading =
     stormScopeLocalZoom && radarCtl.iemLoading;
@@ -2451,6 +2536,20 @@ export default function MapsScreen() {
       });
     }
 
+    if (tropicalOutlookEnabled) {
+      list.push({
+        id: 'nhc-development-outlook',
+        tileUrlTemplates: [`${NHC_TROPICAL_WEATHER_EXPORT_URL}&layers=show:1,2,3`],
+        opacity: Math.max(0, Math.min(1, Number(tropicalOutlookOpacity))),
+        zIndex: 116,
+        enabled: true,
+        tileSize: 512,
+        maxZoomLevel: 9,
+        fadeDurationMs: 140,
+        resampling: 'linear',
+      });
+    }
+
     if (wildfireFireWxEnabled) {
       list.push({
         id: 'wildfire-firewx',
@@ -2523,6 +2622,8 @@ export default function MapsScreen() {
     frontsDay3Opacity,
     heatRiskEnabled,
     heatRiskOpacity,
+    tropicalOutlookEnabled,
+    tropicalOutlookOpacity,
     wildfireFireWxEnabled,
     wildfireFireWxOpacity,
     goesTrueColorEnabled,
@@ -2932,6 +3033,7 @@ export default function MapsScreen() {
     state.viewId === 'wildfire' || wildfireSmokeEnabled || wildfireEnabled || wildfireHotspotsEnabled;
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
   const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
+  const tropicalData = useTropicalCycloneLayer(isFocused && tropicalTracksEnabled, effectiveRegion);
   const visibleWildfirePerimeters = useMemo(
     () => filterVisibleWildfirePerimeters(wildfireData.perimeters),
     [wildfireData.perimeters]
@@ -2971,6 +3073,12 @@ export default function MapsScreen() {
     if (detail) {
       setWildfireDetailLoading(false);
       setSelectedWildfire(detail);
+    }
+  }, []);
+  const handleTropicalFeaturePress = useCallback((e: any) => {
+    const feature = e?.features?.[0] ?? e?.feature ?? null;
+    if (feature?.properties) {
+      setSelectedTropicalFeature(feature);
     }
   }, []);
   const wildfireFireContext = useFireContext({
@@ -4286,6 +4394,128 @@ export default function MapsScreen() {
                   textColor: ['coalesce', ['get', 'iconTextColor'], '#020617'],
                   textAllowOverlap: true,
                   textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.windRadii.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-wind-radii-source" shape={tropicalData.windRadii as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.FillLayer
+                id="tropical-wind-radii-fill"
+                style={{
+                  fillColor: ['match', ['to-string', ['get', 'radii']], '64', '#ef4444', '50', '#f59e0b', '#38bdf8'] as any,
+                  fillOpacity: Math.max(0.05, Math.min(0.22, tropicalTracksOpacity * 0.16)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="tropical-wind-radii-line"
+                style={{
+                  lineColor: ['match', ['to-string', ['get', 'radii']], '64', '#fecaca', '50', '#fde68a', '#bae6fd'] as any,
+                  lineOpacity: Math.max(0.26, Math.min(0.72, tropicalTracksOpacity * 0.65)),
+                  lineWidth: 1.4,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.cones.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-cone-source" shape={tropicalData.cones as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.FillLayer
+                id="tropical-cone-fill"
+                style={{
+                  fillColor: '#e0f2fe',
+                  fillOpacity: Math.max(0.1, Math.min(0.34, tropicalTracksOpacity * 0.28)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="tropical-cone-line"
+                style={{
+                  lineColor: '#f8fafc',
+                  lineOpacity: Math.max(0.55, Math.min(0.95, tropicalTracksOpacity)),
+                  lineWidth: 2.2,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="tropical-cone-label"
+                style={{
+                  textField: ['get', 'omniStormLabel'],
+                  symbolPlacement: 'point',
+                  textSize: 12,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#f8fafc',
+                  textHaloColor: '#020617',
+                  textHaloWidth: 2,
+                  textAllowOverlap: false,
+                  textIgnorePlacement: false,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.forecastTrack.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-forecast-track-source" shape={tropicalData.forecastTrack as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.LineLayer
+                id="tropical-forecast-track-line"
+                style={{
+                  lineColor: '#ffffff',
+                  lineOpacity: Math.max(0.65, Math.min(1, tropicalTracksOpacity)),
+                  lineWidth: 3,
+                  lineDasharray: [1.2, 1.1],
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.observedTrack.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-observed-track-source" shape={tropicalData.observedTrack as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.LineLayer
+                id="tropical-observed-track-line"
+                style={{
+                  lineColor: '#38bdf8',
+                  lineOpacity: Math.max(0.55, Math.min(0.9, tropicalTracksOpacity)),
+                  lineWidth: 2.2,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.watches.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-watch-warning-source" shape={tropicalData.watches as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.LineLayer
+                id="tropical-watch-warning-line"
+                style={{
+                  lineColor: ['case', ['in', 'Warning', ['coalesce', ['get', 'tcww'], '']], '#ef4444', ['in', 'Watch', ['coalesce', ['get', 'tcww'], '']], '#f59e0b', '#facc15'] as any,
+                  lineOpacity: Math.max(0.6, Math.min(1, tropicalTracksOpacity)),
+                  lineWidth: 4,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {tropicalTracksEnabled && tropicalData.forecastPoints.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-forecast-points-source" shape={tropicalData.forecastPoints as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.CircleLayer
+                id="tropical-forecast-points-dot"
+                style={{
+                  circleColor: '#f8fafc',
+                  circleOpacity: Math.max(0.75, Math.min(1, tropicalTracksOpacity)),
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 3.5, 8, 6.5, 12, 9] as any,
+                  circleStrokeColor: '#0369a1',
+                  circleStrokeWidth: 2,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="tropical-forecast-points-label"
+                style={{
+                  textField: ['coalesce', ['get', 'DATELBL'], ['get', 'VALIDTIME'], ''],
+                  textSize: ['interpolate', ['linear'], ['zoom'], 4, 0, 6, 9, 10, 11] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#e0f2fe',
+                  textHaloColor: '#020617',
+                  textHaloWidth: 2,
+                  textOffset: [0, 1.35],
+                  textAllowOverlap: false,
                 }}
               />
             </MapLibreGL.ShapeSource>
@@ -5759,6 +5989,78 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
+        {!animationRecordMode && tropicalTracksEnabled && selectedTropicalFeature ? (
+          <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
+            <Glass style={styles.alertDetailCard}>
+              <View style={styles.fireDetailHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.marineDetailEyebrow}>TROPICAL CYCLONE</Text>
+                  <Text style={styles.fireDetailTitle} numberOfLines={2}>
+                    {formatTropicalStormTitle(selectedTropicalFeature)}
+                  </Text>
+                </View>
+                <Pressable onPress={() => setSelectedTropicalFeature(null)} style={styles.fireDetailClose}>
+                  <Text style={styles.fireDetailCloseText}>Close</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.fireDetailPills}>
+                <HudBadge label={formatTropicalBasin(selectedTropicalFeature)} strong />
+                <HudBadge label={formatTropicalFeatureKind(selectedTropicalFeature)} />
+                {formatTropicalCategory(selectedTropicalFeature) ? (
+                  <HudBadge label={formatTropicalCategory(selectedTropicalFeature)!} />
+                ) : null}
+              </View>
+
+              <Text style={styles.fireDetailMeta} numberOfLines={3}>
+                Active tropical cyclone feed with forecast cones, tracks, wind fields, and watches where available.
+                NHC/CPHC basins use official NOAA products; western Pacific storms such as Bavi come through the
+                global active cyclone service.
+              </Text>
+
+              <View style={styles.fireDetailRows}>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Max wind</Text>
+                  <Text style={styles.fireDetailValue}>{formatTropicalWind(selectedTropicalFeature)}</Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Gust</Text>
+                  <Text style={styles.fireDetailValue}>{formatTropicalGust(selectedTropicalFeature)}</Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Pressure</Text>
+                  <Text style={styles.fireDetailValue}>{formatTropicalPressure(selectedTropicalFeature)}</Text>
+                </View>
+                <View style={styles.fireDetailRow}>
+                  <Text style={styles.fireDetailLabel}>Valid</Text>
+                  <Text style={styles.fireDetailValue} numberOfLines={2}>
+                    {formatTropicalValidTime(selectedTropicalFeature)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.marineDetailActionRow}>
+                <Pressable
+                  style={[styles.fireDetailClose, styles.marineDetailPrimary]}
+                  onPress={() => Linking.openURL('https://www.nhc.noaa.gov/').catch(() => undefined)}
+                >
+                  <Text style={styles.fireDetailCloseText}>Open NHC</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.fireDetailClose}
+                  onPress={() =>
+                    Linking.openURL(
+                      'https://www.arcgis.com/home/item.html?id=248e7b5827a34b248647afb012c58787',
+                    ).catch(() => undefined)
+                  }
+                >
+                  <Text style={styles.fireDetailCloseText}>Global feed</Text>
+                </Pressable>
+              </View>
+            </Glass>
+          </View>
+        ) : null}
+
         {!animationRecordMode && selectedWeatherAlert ? (
           <AlertDetailCard
             alert={selectedWeatherAlert}
@@ -6487,6 +6789,86 @@ function AviationDetailRow(props: { label: string; value?: any }) {
       </Text>
     </View>
   );
+}
+
+function tropicalProperties(feature: any) {
+  return feature?.properties ?? {};
+}
+
+function formatTropicalStormTitle(feature: any) {
+  const props = tropicalProperties(feature);
+  const name = String(props.omniStormLabel ?? props.STORMNAME ?? props.NAME ?? 'Tropical cyclone').trim();
+  const type = String(props.TCDVLP ?? props.STORMTYPE ?? '').trim();
+  if (!type || type.toLowerCase() === name.toLowerCase()) return name;
+  return `${name} ${type}`;
+}
+
+function formatTropicalBasin(feature: any) {
+  const basin = String(tropicalProperties(feature).omniBasin ?? tropicalProperties(feature).BASIN ?? '').toUpperCase();
+  const names: Record<string, string> = {
+    AL: 'Atlantic',
+    AT: 'Atlantic',
+    CP: 'Central Pacific',
+    EP: 'Eastern Pacific',
+    IO: 'North Indian',
+    SH: 'Southern Hemisphere',
+    WP: 'Western Pacific',
+  };
+  return names[basin] ?? (basin ? `Basin ${basin}` : 'Global basin');
+}
+
+function formatTropicalFeatureKind(feature: any) {
+  const kind = String(tropicalProperties(feature).omniKind ?? '');
+  switch (kind) {
+    case 'cone':
+      return 'Forecast cone';
+    case 'forecast-track':
+      return 'Forecast track';
+    case 'observed-track':
+      return 'Observed track';
+    case 'forecast-point':
+      return 'Forecast point';
+    case 'observed-point':
+      return 'Observed point';
+    case 'watch-warning':
+      return 'Watch / warning';
+    case 'wind-radii':
+      return 'Wind field';
+    default:
+      return 'Storm detail';
+  }
+}
+
+function formatTropicalCategory(feature: any) {
+  const props = tropicalProperties(feature);
+  const category = Number(props.omniCategory ?? props.SSNUM ?? props.SS);
+  if (Number.isFinite(category) && category > 0) return `Cat ${Math.round(category)}`;
+  const development = String(props.TCDVLP ?? '').trim();
+  return development || null;
+}
+
+function formatTropicalWind(feature: any) {
+  const props = tropicalProperties(feature);
+  const wind = Number(props.omniMaxWindKt ?? props.MAXWIND ?? props.INTENSITY);
+  return Number.isFinite(wind) && wind > 0 ? `${Math.round(wind)} kt` : 'Unavailable';
+}
+
+function formatTropicalGust(feature: any) {
+  const gust = Number(tropicalProperties(feature).omniGustKt ?? tropicalProperties(feature).GUST);
+  return Number.isFinite(gust) && gust > 0 ? `${Math.round(gust)} kt` : 'Unavailable';
+}
+
+function formatTropicalPressure(feature: any) {
+  const pressure = Number(tropicalProperties(feature).omniPressureMb ?? tropicalProperties(feature).MSLP);
+  return Number.isFinite(pressure) && pressure > 0 ? `${Math.round(pressure)} mb` : 'Unavailable';
+}
+
+function formatTropicalValidTime(feature: any) {
+  const props = tropicalProperties(feature);
+  const label = String(props.omniValidLabel ?? props.FLDATELBL ?? props.DATELBL ?? props.VALIDTIME ?? '').trim();
+  if (label) return label;
+  const updatedMs = Number(props.omniUpdatedMs ?? props.ADVDATE);
+  return Number.isFinite(updatedMs) && updatedMs > 0 ? new Date(updatedMs).toLocaleString() : 'Latest advisory';
 }
 
 function HudBadge(props: { label: string; strong?: boolean }) {

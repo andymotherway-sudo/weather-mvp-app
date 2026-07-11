@@ -1,27 +1,27 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.197**
-Android version code: **10214**
+Release: **OMNIwx 1.1.198**
+Android version code: **10215**
 Track: **Closed testing / internal testing candidate**
 Date: **July 10, 2026**
 
 ## Play Console Paste Notes
 
-Radar startup refinement. Mosaic radar now starts on the first usable frame, advances with a frame-driven scheduler, skips empty frame slots instead of stalling, and refreshes the rendered raster source as the visible frame changes.
+Adds Weather Channel-style tropical cyclone cones, tracks, forecast points, wind fields, and tap details for active storms. The tropics layer now uses NHC/CPHC outlooks plus a global active cyclone feed so western Pacific systems such as Bavi can appear with useful storm context. Also includes the latest radar playback refinement work.
 
 ## Tester Notes
 
-Please focus testing on Maps radar playback:
+Please focus testing on Maps:
 
-- Open Maps with radar enabled and confirm the mosaic loop starts on its own.
-- Press play/pause and confirm playback resumes without needing rewind or fast-forward.
-- Watch frame transitions for reduced flashing.
-- Confirm Storm Scope still opens and closes normally.
+- Enable Tropical Cyclone Cones and confirm active storms show cone/track/wind-field geometry.
+- Tap cone, track, point, or wind-field features and confirm the storm detail card opens.
+- Confirm NHC Development Outlook remains available as the broad 2/7-day development layer.
+- Recheck radar autoplay, play/pause, and Storm Scope open/close behavior.
 
 ## Internal Release Checklist
 
-- App version: `1.1.197`
-- Android version code: `10214`
+- App version: `1.1.198`
+- Android version code: `10215`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
