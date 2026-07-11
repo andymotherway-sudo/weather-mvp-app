@@ -1993,6 +1993,62 @@ export default function MapsScreen() {
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
+  const synchronizedSatelliteFrameIndex = useMemo(() => {
+    if (radarEnabled && activeFrameIso && satellitePlaybackFrameCount > 0) {
+      const nearestIndex = nearestFrameIndexByIso(satellitePlaybackFrames, activeFrameIso);
+      if (nearestIndex >= 0) return nearestIndex;
+    }
+
+    return clampIndex(satelliteFrameIndex, satellitePlaybackFrameCount);
+  }, [
+    activeFrameIso,
+    radarEnabled,
+    satelliteFrameIndex,
+    satellitePlaybackFrameCount,
+    satellitePlaybackFrames,
+  ]);
+  const synchronizedSatelliteBlend = useMemo(() => {
+    const fallback = {
+      from: clampIndex(satelliteBlend.from, satellitePlaybackFrameCount),
+      to: clampIndex(satelliteBlend.to, satellitePlaybackFrameCount),
+      t: satelliteBlend.t,
+    };
+
+    if (!radarEnabled || satellitePlaybackFrameCount < 2) return fallback;
+
+    const radarBlend = radarCtl.debug?.xfade;
+    if (!radarBlend || !uiFrames.length) {
+      return {
+        from: synchronizedSatelliteFrameIndex,
+        to: synchronizedSatelliteFrameIndex,
+        t: 1,
+      };
+    }
+
+    const radarFromIso = uiFrames[clampIndex(radarBlend.from, uiFrames.length)]?.iso ?? activeFrameIso;
+    const radarToIso = uiFrames[clampIndex(radarBlend.to, uiFrames.length)]?.iso ?? activeFrameIso;
+    const fromIndex = nearestFrameIndexByIso(satellitePlaybackFrames, radarFromIso);
+    const toIndex = nearestFrameIndexByIso(satellitePlaybackFrames, radarToIso);
+    const from = fromIndex >= 0 ? fromIndex : synchronizedSatelliteFrameIndex;
+    const to = toIndex >= 0 ? toIndex : synchronizedSatelliteFrameIndex;
+
+    return {
+      from,
+      to,
+      t: Math.max(0, Math.min(1, radarBlend.t)),
+    };
+  }, [
+    activeFrameIso,
+    radarCtl.debug?.xfade,
+    radarEnabled,
+    satelliteBlend.from,
+    satelliteBlend.t,
+    satelliteBlend.to,
+    satellitePlaybackFrameCount,
+    satellitePlaybackFrames,
+    synchronizedSatelliteFrameIndex,
+    uiFrames,
+  ]);
   const radarPlaybackWatchRef = useRef({
     frameIndex: -1,
     changedAt: 0,
@@ -2255,14 +2311,14 @@ export default function MapsScreen() {
 
   const overlays = useMemo<WmsOverlayConfig[]>(() => {
     const list: WmsOverlayConfig[] = [];
-    const satelliteFromFrame = satellitePlaybackFrames[clampIndex(satelliteBlend.from, satellitePlaybackFrames.length)] ?? null;
-    const satelliteToFrame = satellitePlaybackFrames[clampIndex(satelliteBlend.to, satellitePlaybackFrames.length)] ?? null;
-    const satelliteCurrentFrame = satellitePlaybackFrames[clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length)] ?? null;
+    const satelliteFromFrame = satellitePlaybackFrames[clampIndex(synchronizedSatelliteBlend.from, satellitePlaybackFrames.length)] ?? null;
+    const satelliteToFrame = satellitePlaybackFrames[clampIndex(synchronizedSatelliteBlend.to, satellitePlaybackFrames.length)] ?? null;
+    const satelliteCurrentFrame = satellitePlaybackFrames[clampIndex(synchronizedSatelliteFrameIndex, satellitePlaybackFrames.length)] ?? null;
     const satelliteWarmFrame =
       satellitePlaybackFrames.length > 1
-        ? satellitePlaybackFrames[(clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length) + 1) % satellitePlaybackFrames.length]
+        ? satellitePlaybackFrames[(clampIndex(synchronizedSatelliteFrameIndex, satellitePlaybackFrames.length) + 1) % satellitePlaybackFrames.length]
         : null;
-    const satelliteFade = Math.max(0, Math.min(1, satelliteBlend.t));
+    const satelliteFade = Math.max(0, Math.min(1, synchronizedSatelliteBlend.t));
     const satelliteQuality = satelliteQualityForZoom(mapZoom);
     const goesWmsQuality = goesWmsQualityForZoom(mapZoom);
     const gibsDailyDate = latestGibsDailyDate();
@@ -2368,11 +2424,19 @@ export default function MapsScreen() {
       url: string;
       opacity: number;
       zIndex: number;
+      frames?: SatelliteFrame[];
     }) => {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
-      const fromFrame = satelliteFromFrame ?? satelliteCurrentFrame;
-      const toFrame = satelliteToFrame ?? satelliteCurrentFrame;
-      const currentFrame = satelliteCurrentFrame ?? toFrame;
+      const productFrames = args.frames && args.frames.length > 1 ? args.frames : satellitePlaybackFrames;
+      const alignFrame = (driverFrame: SatelliteFrame | null | undefined) => {
+        if (!driverFrame) return null;
+        const productIndex = nearestFrameIndexByIso(productFrames, driverFrame.iso);
+        return productIndex >= 0 ? productFrames[productIndex] : driverFrame;
+      };
+      const fromFrame = alignFrame(satelliteFromFrame) ?? alignFrame(satelliteCurrentFrame);
+      const toFrame = alignFrame(satelliteToFrame) ?? alignFrame(satelliteCurrentFrame);
+      const currentFrame = alignFrame(satelliteCurrentFrame) ?? toFrame;
+      const warmFrame = alignFrame(satelliteWarmFrame);
       const sameFrame =
         !fromFrame?.iso ||
         !toFrame?.iso ||
@@ -2407,11 +2471,11 @@ export default function MapsScreen() {
       };
 
       if (
-        satelliteWarmFrame?.iso &&
-        satelliteWarmFrame.iso !== currentFrame?.iso &&
-        satelliteWarmFrame.iso !== toFrame?.iso
+        warmFrame?.iso &&
+        warmFrame.iso !== currentFrame?.iso &&
+        warmFrame.iso !== toFrame?.iso
       ) {
-        pushFrame('-warm', satelliteWarmFrame, Math.min(opacity, SATELLITE_WARM_OPACITY), -0.02);
+        pushFrame('-warm', warmFrame, Math.min(opacity, SATELLITE_WARM_OPACITY), -0.02);
       }
 
       if (!sameFrame) {
@@ -2471,6 +2535,7 @@ export default function MapsScreen() {
         url: NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL,
         opacity: Math.max(0, Math.min(1, Number(goesTrueColorOpacity))),
         zIndex: 62,
+        frames: trueColorFrames,
       });
     }
 
@@ -2591,6 +2656,7 @@ export default function MapsScreen() {
         url: NESDIS_ABI13_ARCHIVE_EXPORT_URL,
         opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
         zIndex: 63,
+        frames: infraredFrames,
       });
     } else if (goesEastIrEnabled) {
       addAnimatedSatelliteWms({
@@ -2652,6 +2718,7 @@ export default function MapsScreen() {
     goesEastIrEnabled,
     goesEastIrOpacity,
     infraredUsingCatalog,
+    infraredFrames,
     goesEastWvEnabled,
     goesEastWvOpacity,
     goesWestWvEnabled,
@@ -2662,11 +2729,12 @@ export default function MapsScreen() {
     globalTrueColorOpacity,
     isFocused,
     mapZoom,
-    satelliteBlend.from,
-    satelliteBlend.t,
-    satelliteBlend.to,
-    satelliteFrameIndex,
     satellitePlaybackFrames,
+    synchronizedSatelliteBlend.from,
+    synchronizedSatelliteBlend.t,
+    synchronizedSatelliteBlend.to,
+    synchronizedSatelliteFrameIndex,
+    trueColorFrames,
   ]);
 
   const renderedOverlays = useMemo(() => {
@@ -3976,7 +4044,7 @@ export default function MapsScreen() {
               id={`playback-${bufferedSatelliteKind}`}
               enabled
               frames={satelliteCompositorFrames}
-              frameIndex={satelliteFrameIndex}
+              frameIndex={synchronizedSatelliteFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
               opacity={bufferedSatelliteOpacity}
               blendMs={bufferedSatelliteKind === 'truecolor' ? 680 : 460}
@@ -4005,7 +4073,7 @@ export default function MapsScreen() {
               id="playback-clouds-west"
               enabled
               frames={satelliteCompositorFrames}
-              frameIndex={satelliteFrameIndex}
+              frameIndex={synchronizedSatelliteFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
               opacity={bufferedSatelliteOpacity}
               blendMs={460}
