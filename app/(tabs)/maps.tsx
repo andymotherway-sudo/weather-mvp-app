@@ -2811,6 +2811,11 @@ export default function MapsScreen() {
     const visibleTemplateIndex = radarOpacities.reduce((bestIndex, opacity, index) => {
       return opacity > (radarOpacities[bestIndex] ?? -1) ? index : bestIndex;
     }, 0);
+    const activeFrameTemplate = radarCtl.debug?.activeFrameTemplate ?? uiTemplates[radarCtl.safeFrameIndex] ?? null;
+    const dominantTemplate = radarTemplates[visibleTemplateIndex] ?? null;
+    const activeFrameTemplateHash = shortDiagnosticHash(activeFrameTemplate);
+    const dominantTemplateHash = shortDiagnosticHash(dominantTemplate);
+    const sourceKeyUsesActiveFrame = !!activeFrameTemplate && !!radarCtl.radar.sourceKey?.includes(activeFrameTemplate);
 
     const payload = {
       capturedAt: new Date().toISOString(),
@@ -2867,6 +2872,9 @@ export default function MapsScreen() {
         iemError: radarCtl.iemError,
         iemLoading: radarCtl.iemLoading,
         iemDebugLabel: radarCtl.iemDebugLabel,
+        xfade: radarCtl.debug?.xfade ?? null,
+        dominantSlot: radarCtl.debug?.dominantSlot ?? visibleTemplateIndex,
+        pendingProviderPlaylist: radarCtl.debug?.pendingProviderPlaylist ?? null,
       },
       renderedOverlay: {
         enabled: radarCtl.radar.enabled,
@@ -2881,7 +2889,11 @@ export default function MapsScreen() {
             }
           : null,
         visibleTemplateIndex,
-        visibleTemplateHash: shortDiagnosticHash(radarTemplates[visibleTemplateIndex]),
+        visibleTemplateHash: dominantTemplateHash,
+        activeFrameTemplateHash,
+        sourceKeyUsesActiveFrame,
+        activeFrameMatchesDominantTemplate:
+          !!activeFrameTemplateHash && activeFrameTemplateHash === dominantTemplateHash,
         opacities: radarOpacities.map((opacity) => Number(opacity.toFixed(3))),
         templates: radarTemplates.map(summarizeTemplate),
         warmTemplates: (radarCtl.radar.warmTemplates ?? []).map(summarizeTemplate),

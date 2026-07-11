@@ -722,13 +722,8 @@ export function useRadarController(args: {
       slotHoldRef.current = [null, null, null];
     }
 
-    if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
-    preloadTimerRef.current = null;
-
     if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
     xfadeTimerRef.current = null;
-
-    setPreloadTo(null);
 
     if (!liveFrames.length) {
       if (stormMode || stationMode || !playFrames.length) {
@@ -853,13 +848,10 @@ export function useRadarController(args: {
   /* =========================================================================
    * Crossfade + preload (tile mode only)
    * ========================================================================= */
-  const [preloadTo, setPreloadTo] = useState<number | null>(null);
-
   type XFadeState = { from: number; to: number; t: number };
   const [xfade, setXfade] = useState<XFadeState>({ from: safeFrameIndex, to: safeFrameIndex, t: 1 });
 
   const prevFrameRef = useRef<number>(safeFrameIndex);
-  const preloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const xfadeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -871,7 +863,6 @@ export function useRadarController(args: {
 
     if (suspendRasterTransitions) {
       prevFrameRef.current = next;
-      setPreloadTo(null);
       setXfade({ from: next, to: next, t: 1 });
       return;
     }
@@ -881,7 +872,6 @@ export function useRadarController(args: {
 
     if (prevTpl && nextTpl && prevTpl === nextTpl) {
       prevFrameRef.current = next;
-      setPreloadTo(null);
       setXfade({ from: next, to: next, t: 1 });
       return;
     }
@@ -892,47 +882,33 @@ export function useRadarController(args: {
       clearInterval(xfadeTimerRef.current);
       xfadeTimerRef.current = null;
     }
-    if (preloadTimerRef.current) {
-      clearTimeout(preloadTimerRef.current);
-      preloadTimerRef.current = null;
-    }
 
     if (profile.blendMs <= 0) {
-      setPreloadTo(null);
       setXfade({ from: next, to: next, t: 1 });
       return;
     }
 
-    setPreloadTo(next);
+    const start = Date.now();
+    const duration = profile.blendMs;
 
-    const preloadMs = mapZoom <= 5 ? 760 : mapZoom <= 8 ? 620 : 520;
+    setXfade({ from: prev, to: next, t: 0 });
 
-    preloadTimerRef.current = setTimeout(() => {
-      const start = Date.now();
-      const duration = profile.blendMs;
+    xfadeTimerRef.current = setInterval(() => {
+      const rawT = (Date.now() - start) / duration;
 
-      setPreloadTo(null);
-      setXfade({ from: prev, to: next, t: 0 });
+      if (rawT >= 1) {
+        if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
+        xfadeTimerRef.current = null;
 
-      xfadeTimerRef.current = setInterval(() => {
-        const rawT = (Date.now() - start) / duration;
+        setXfade({ from: next, to: next, t: 1 });
+        return;
+      }
 
-        if (rawT >= 1) {
-          if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
-          xfadeTimerRef.current = null;
-
-          setXfade({ from: next, to: next, t: 1 });
-          return;
-        }
-
-        const t = easeInOutCubic(Math.max(0, Math.min(1, rawT)));
-        setXfade({ from: prev, to: next, t });
-      }, 24);
-    }, preloadMs);
+      const t = easeInOutCubic(Math.max(0, Math.min(1, rawT)));
+      setXfade({ from: prev, to: next, t });
+    }, 24);
 
     return () => {
-      if (preloadTimerRef.current) clearTimeout(preloadTimerRef.current);
-      preloadTimerRef.current = null;
       if (xfadeTimerRef.current) clearInterval(xfadeTimerRef.current);
       xfadeTimerRef.current = null;
     };
@@ -1011,28 +987,6 @@ export function useRadarController(args: {
       return { templates: outTemplates, opacities: outOpacities, warmTemplates };
     }
 
-    if (preloadTo !== null) {
-      const cur = clampIndex(xfade.from, n);
-      const pre = clampIndex(preloadTo, n);
-
-      outTemplates[0] = effectiveTemplates[cur] ?? slotHoldRef.current[0];
-      outOpacities[0] = radarOpacity;
-
-      if (pre !== cur) {
-        outTemplates[1] = effectiveTemplates[pre] ?? null;
-        outOpacities[1] = radarOpacity * 0.004;
-      }
-
-      if (outTemplates[0]) slotHoldRef.current[0] = outTemplates[0];
-      slotHoldRef.current[1] = outTemplates[1];
-      slotHoldRef.current[2] = null;
-
-      addWarm(pre + 1);
-      addWarm(pre + 2);
-
-      return { templates: outTemplates, opacities: outOpacities, warmTemplates };
-    }
-
     const from = clampIndex(xfade.from, n);
     const to = clampIndex(xfade.to, n);
     const back = clampIndex(to - 1, n);
@@ -1084,7 +1038,6 @@ export function useRadarController(args: {
     profile.enableTemporal3,
     profile.blendMs,
     radarOpacity,
-    preloadTo,
     mapZoom,
     stationMode,
     stormMode,
@@ -1181,9 +1134,11 @@ export function useRadarController(args: {
   const radarOverlay: RadarOverlay = useMemo(() => {
     const productStyle = getRadarProductStyle(product);
 
+    const activeFrameTemplate = effectiveTemplates[safeFrameIndex] ?? '';
     const visibleTemplate =
-      activeRadar.templates.find((template, index) => !!template && (activeRadar.opacities[index] ?? 0) > 0.05) ??
-      activeRadar.templates.find((template): template is string => !!template) ??
+      activeFrameTemplate ||
+      activeRadar.templates.find((template, index) => !!template && (activeRadar.opacities[index] ?? 0) > 0.05) ||
+      activeRadar.templates.find((template): template is string => !!template) ||
       '';
     const tileSourceKey = [
       playlistContextKey,
@@ -1302,6 +1257,19 @@ export function useRadarController(args: {
     radar: radarOverlay,
     uiFrames: effectiveFrames,
     uiTemplates: effectiveTemplates,
+    debug: {
+      activeFrameTemplate: effectiveTemplates[safeFrameIndex] ?? null,
+      xfade: {
+        from: clampIndex(xfade.from, effectiveFrames.length),
+        to: clampIndex(xfade.to, effectiveFrames.length),
+        t: Number(Math.max(0, Math.min(1, xfade.t)).toFixed(3)),
+      },
+      dominantSlot: activeRadar.opacities.reduce(
+        (best, opacity, index) => (opacity > (activeRadar.opacities[best] ?? -1) ? index : best),
+        0,
+      ),
+      pendingProviderPlaylist: !!pendingFramesRef.current,
+    },
     frameCount,
     safeFrameIndex,
     activeFrameIso: effectiveFrames[safeFrameIndex]?.iso ?? null,
