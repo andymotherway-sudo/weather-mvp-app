@@ -352,13 +352,14 @@ export function useRadarController(args: {
 
   const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
   const [rvError, setRvError] = useState<string | null>(null);
+  const rainViewerSelected = sheetValue.radarProvider === 'rainviewer';
 
   useEffect(() => {
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     async function run() {
-      if (sheetValue.radarProvider !== 'rainviewer') return;
-      if (!radarEnabled) return;
+      if (!rainViewerSelected || !radarEnabled) return;
 
       try {
         setRvError(null);
@@ -373,12 +374,19 @@ export function useRadarController(args: {
     }
 
     run();
+    if (rainViewerSelected && radarEnabled) {
+      interval = setInterval(run, 60_000);
+    } else {
+      setRvFrames(null);
+    }
+
     return () => {
       cancelled = true;
+      if (interval) clearInterval(interval);
     };
-  }, [sheetValue.radarProvider, radarEnabled]);
+  }, [rainViewerSelected, radarEnabled]);
 
-  const usingRainViewer = sheetValue.radarProvider === 'rainviewer' && !!rvFrames?.length;
+  const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
 
   /* =========================================================================
    * Hyperlocal WMS image mode
@@ -463,10 +471,10 @@ export function useRadarController(args: {
     Math.max(localImageProfile.minDimension, Math.floor(windowSize.height * Math.min(deviceDpr, localImageProfile.dpr))),
   );
 
-  const frameCountBase = usingRainViewer && rvFrames ? rvFrames.length : iemFramesFallback.length;
+  const frameCountBase = rainViewerSelected ? (rvFrames?.length ?? 0) : iemFramesFallback.length;
   const safeBaseIndex = clampIndex(state.radarTime.frameIndex, frameCountBase);
   const drivingIso =
-    usingRainViewer && rvFrames ? rvFrames[safeBaseIndex]?.iso : iemFramesFallback[safeBaseIndex]?.iso;
+    rainViewerSelected ? rvFrames?.[safeBaseIndex]?.iso : iemFramesFallback[safeBaseIndex]?.iso;
 
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
   const [localImageCoords, setLocalImageCoords] = useState<
@@ -621,8 +629,8 @@ export function useRadarController(args: {
   const liveFrames: Array<{ iso: string }> = useMemo(() => {
     let out: Array<{ iso: string }> = [];
 
-    if (usingRainViewer && rvFrames) {
-      out = rvFrames.map((f) => ({ iso: f.iso }));
+    if (rainViewerSelected) {
+      out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
     } else {
       const frames = iemUnified?.frames;
       if (iemUnified) out = frames?.map((f) => ({ iso: f.iso })) ?? [];
@@ -630,13 +638,14 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
+  }, [rainViewerSelected, rvFrames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];
     if (usingLocalImage) return [];
 
-    if (usingRainViewer && rvFrames?.length) {
+    if (rainViewerSelected) {
+      if (!rvFrames?.length) return [];
       return rvFrames
         .map((f) => {
           if (!f?.t || !f?.iso) return null;
@@ -669,7 +678,7 @@ export function useRadarController(args: {
     return [...iemFramesFallback]
       .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
       .map(() => null);
-  }, [radarEnabled, usingLocalImage, usingRainViewer, rvFrames, iemUnified, iemFramesFallback]);
+  }, [radarEnabled, usingLocalImage, rainViewerSelected, rvFrames, iemUnified, iemFramesFallback]);
 
   /* =========================================================================
    * Stable playback playlist
@@ -794,10 +803,12 @@ export function useRadarController(args: {
       return;
     }
 
+    const firstUsableIndex = effectiveTemplates.findIndex((template) => !!template);
+    if (!usingLocalImage && firstUsableIndex < 0) return;
+
     if (autoStartedContextRef.current === playlistContextKey) return;
     autoStartedContextRef.current = playlistContextKey;
 
-    const firstUsableIndex = effectiveTemplates.findIndex((template) => !!template);
     const startIndex = firstUsableIndex >= 0 ? firstUsableIndex : safeFrameIndex;
     if (state.radarTime.frameIndex !== startIndex) {
       prevFrameRef.current = startIndex;

@@ -458,11 +458,7 @@ export function MapRenderer(props: MapRendererProps) {
   const layerMaxZ = 24;
   const radarResampling: 'linear' | 'nearest' = liveZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
 
-  const rasterFadeDuration = useMemo(() => {
-    if (!radar.enabled) return 0;
-    if (useLocalImage) return 0;
-    return liveZoom >= RADAR_CRISP_MIN_ZOOM ? 120 : 180;
-  }, [liveZoom, radar.enabled, useLocalImage]);
+  const rasterFadeDuration = 0;
 
   const radarRasterStyle = (opacity: number) => {
     const safeOpacity = clamp(opacity, 0, 1);
