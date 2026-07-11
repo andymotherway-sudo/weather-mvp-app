@@ -1252,6 +1252,52 @@ export function useRadarController(args: {
     safeFrameIndex,
   ]);
 
+  useEffect(() => {
+    if (!__DEV__ || !radarEnabled) return;
+
+    const visibleSlot = activeRadar.opacities.reduce(
+      (best, opacity, index) => (opacity > (activeRadar.opacities[best] ?? -1) ? index : best),
+      0,
+    );
+    const visibleTemplate = activeRadar.templates[visibleSlot] ?? null;
+    const activeIso = effectiveFrames[safeFrameIndex]?.iso ?? null;
+    const previousIso = effectiveFrames[clampIndex(xfade.from, effectiveFrames.length)]?.iso ?? null;
+    const nextIso = effectiveFrames[clampIndex(xfade.to, effectiveFrames.length)]?.iso ?? null;
+
+    console.debug('[radar:controller]', {
+      frameIndex: safeFrameIndex,
+      observationTimestamp: activeIso,
+      source: usingRainViewer ? 'rainviewer' : sheetValue.radarProvider,
+      product: stationMode ? product : 'mosaic',
+      frameIdentifier: visibleTemplate,
+      previousFrame: {
+        index: clampIndex(xfade.from, effectiveFrames.length),
+        timestamp: previousIso,
+      },
+      targetFrame: {
+        index: clampIndex(xfade.to, effectiveFrames.length),
+        timestamp: nextIso,
+      },
+      visibleSlot,
+      opacityValues: activeRadar.opacities.map((opacity) => Number(opacity.toFixed(3))),
+      complete: !!visibleTemplate,
+      pendingPlaylist: !!pendingFramesRef.current,
+      skippedReason: visibleTemplate ? null : 'no renderable tile template for active frame',
+    });
+  }, [
+    activeRadar.opacities,
+    activeRadar.templates,
+    effectiveFrames,
+    radarEnabled,
+    safeFrameIndex,
+    sheetValue.radarProvider,
+    stationMode,
+    product,
+    usingRainViewer,
+    xfade.from,
+    xfade.to,
+  ]);
+
   return {
     radar: radarOverlay,
     uiFrames: effectiveFrames,

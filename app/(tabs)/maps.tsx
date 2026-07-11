@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Glass } from '../../components/common/Glass';
@@ -295,6 +296,25 @@ function nearestFrameIndexByIso(frames: Array<{ iso?: string | null }>, iso?: st
 
 function clampNumber(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function shortDiagnosticHash(value?: string | null) {
+  if (!value) return null;
+
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+
+  return Math.abs(hash).toString(36);
+}
+
+function redactDiagnosticUrl(value?: string | null) {
+  if (!value) return null;
+
+  return value
+    .replace(/([?&](?:key|api_key|token|access_token|apikey)=)[^&]+/gi, '$1<redacted>')
+    .slice(0, 700);
 }
 
 function formatAstroHourLabel(hourOffset: number) {
@@ -1229,6 +1249,7 @@ export default function MapsScreen() {
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
+  const [radarDiagnosticsCopied, setRadarDiagnosticsCopied] = useState(false);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
@@ -2776,6 +2797,142 @@ export default function MapsScreen() {
   }, [routeFocusTarget, router]);
 
   const effectiveRegion = region ?? stableInitialRegion;
+
+  const handleCopyRadarDiagnostics = useCallback(async () => {
+    const summarizeTemplate = (template: string | null | undefined, index: number) => ({
+      index,
+      present: !!template,
+      hash: shortDiagnosticHash(template),
+      url: redactDiagnosticUrl(template),
+    });
+
+    const radarTemplates = radarCtl.radar.templates ?? [];
+    const radarOpacities = radarCtl.radar.opacities ?? [];
+    const visibleTemplateIndex = radarOpacities.reduce((bestIndex, opacity, index) => {
+      return opacity > (radarOpacities[bestIndex] ?? -1) ? index : bestIndex;
+    }, 0);
+
+    const payload = {
+      capturedAt: new Date().toISOString(),
+      app: {
+        screen: 'maps',
+        viewId: state.viewId,
+        radarMode,
+        mapZoom,
+        region: effectiveRegion,
+        cameraDebugLabel,
+      },
+      radarState: {
+        radarEnabled,
+        radarViewActive,
+        stormMode,
+        stormScopeEnabled,
+        stormScopeLocalZoom,
+        stormScopeNexradVisible,
+        autoNearestRadarMode,
+        stationRadarMode,
+        showRadarRings,
+        showAdvancedRadarControls,
+        provider: effectiveRadarProvider,
+        selectedProduct: product,
+        stationProduct,
+        displayedStationProduct,
+        pendingStationProduct,
+        radarTime: state.radarTime,
+      },
+      selectedRadarSite: selectedRadarSite
+        ? {
+            id: selectedRadarSite.id,
+            displayId: getStationDisplayId(selectedRadarSite),
+            name: selectedRadarSite.name,
+            ownerType: selectedRadarSite.ownerType,
+            lat: selectedRadarSite.lat,
+            lon: selectedRadarSite.lon,
+            distanceMi: selectedRadarDistanceMi,
+          }
+        : null,
+      controller: {
+        usingRainViewer: radarCtl.usingRainViewer,
+        usingLocalImage: radarCtl.usingLocalImage,
+        usingIemRidgeAnimated: radarCtl.usingIemRidgeAnimated,
+        frameCount: radarCtl.frameCount,
+        safeFrameIndex: radarCtl.safeFrameIndex,
+        activeFrameIso: radarCtl.activeFrameIso,
+        timestampLabel: radarCtl.timestampLabel,
+        radarOpacity: radarCtl.radarOpacity,
+        radarTileMaxZ: radarCtl.radarTileMaxZ,
+        profileLabel: radarCtl.profileLabel,
+        rvError: radarCtl.rvError,
+        localError: radarCtl.localError,
+        iemError: radarCtl.iemError,
+        iemLoading: radarCtl.iemLoading,
+        iemDebugLabel: radarCtl.iemDebugLabel,
+      },
+      renderedOverlay: {
+        enabled: radarCtl.radar.enabled,
+        sourceKey: radarCtl.radar.sourceKey,
+        tileMaxZ: radarCtl.radar.tileMaxZ,
+        productStyle: radarCtl.radar.productStyle,
+        localImage: radarCtl.radar.localImage
+          ? {
+              url: redactDiagnosticUrl(radarCtl.radar.localImage.url),
+              coordinates: radarCtl.radar.localImage.coordinates,
+              opacity: radarCtl.radar.localImage.opacity,
+            }
+          : null,
+        visibleTemplateIndex,
+        visibleTemplateHash: shortDiagnosticHash(radarTemplates[visibleTemplateIndex]),
+        opacities: radarOpacities.map((opacity) => Number(opacity.toFixed(3))),
+        templates: radarTemplates.map(summarizeTemplate),
+        warmTemplates: (radarCtl.radar.warmTemplates ?? []).map(summarizeTemplate),
+      },
+      frames: uiFrames.map((frame, index) => ({
+        index,
+        iso: frame.iso,
+        templatePresent: !!uiTemplates[index],
+        templateHash: shortDiagnosticHash(uiTemplates[index]),
+      })),
+    };
+
+    try {
+      await Clipboard.setStringAsync(JSON.stringify(payload, null, 2));
+      setRadarDiagnosticsCopied(true);
+      setTimeout(() => setRadarDiagnosticsCopied(false), 2500);
+    } catch (error) {
+      Alert.alert(
+        'Radar diagnostics',
+        error instanceof Error ? error.message : 'Could not copy radar diagnostics.',
+      );
+    }
+  }, [
+    autoNearestRadarMode,
+    cameraDebugLabel,
+    displayedStationProduct,
+    effectiveRadarProvider,
+    effectiveRegion,
+    mapZoom,
+    pendingStationProduct,
+    product,
+    radarCtl,
+    radarEnabled,
+    radarMode,
+    radarViewActive,
+    selectedRadarDistanceMi,
+    selectedRadarSite,
+    showAdvancedRadarControls,
+    showRadarRings,
+    state.radarTime,
+    state.viewId,
+    stationProduct,
+    stationRadarMode,
+    stormMode,
+    stormScopeEnabled,
+    stormScopeLocalZoom,
+    stormScopeNexradVisible,
+    uiFrames,
+    uiTemplates,
+  ]);
+
   const {
     globalMarineAreasFc,
     marineBuoys,
@@ -5473,6 +5630,8 @@ export default function MapsScreen() {
                     playing={timelinePlaying}
                     frames={timelineFrames as any}
                     modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
+                    onCopyDiagnostics={radarEnabled ? handleCopyRadarDiagnostics : undefined}
+                    diagnosticsCopied={radarDiagnosticsCopied}
                     onRecord={handleAnimationRecordPress}
                     recordBusy={animationExporting}
                     recordDisabled={animationExporting || animationExportFrames.length < 2}

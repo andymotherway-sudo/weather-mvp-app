@@ -69,6 +69,8 @@ type TimelineScrubberProps = {
   playing: boolean;
   frames?: FrameLike[];
   modeLabel?: string;
+  onCopyDiagnostics?: () => void;
+  diagnosticsCopied?: boolean;
   onRecord?: () => void;
   recordDisabled?: boolean;
   recordBusy?: boolean;
@@ -82,6 +84,8 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
     playing,
     frames = [],
     modeLabel,
+    onCopyDiagnostics,
+    diagnosticsCopied,
     onRecord,
     recordDisabled,
     recordBusy,
@@ -229,6 +233,15 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
               <View style={styles.recordDot} />
             </Pressable>
           ) : null}
+          {onCopyDiagnostics ? (
+            <Pressable
+              accessibilityLabel="Copy radar diagnostics"
+              onPress={onCopyDiagnostics}
+              style={styles.diagnosticsButton}
+            >
+              <Text style={styles.diagnosticsButtonText}>{diagnosticsCopied ? 'Copied' : 'Diag'}</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.labelCard}>
@@ -326,6 +339,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.45,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },
+  },
+  diagnosticsButton: {
+    minWidth: 44,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.28)',
+    backgroundColor: 'rgba(14,116,144,0.20)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diagnosticsButtonText: {
+    color: 'rgba(224,242,254,0.96)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.2,
   },
   disabled: {
     opacity: 0.45,
