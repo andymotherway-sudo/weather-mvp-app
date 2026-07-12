@@ -63,8 +63,8 @@ function roundCoord(value: number, step = 0.1) {
 }
 
 function buildViewportEnvelope(region: RegionLike) {
-  const halfLat = clamp(region.latitudeDelta * 0.68, 0.25, 8);
-  const halfLon = clamp(region.longitudeDelta * 0.68, 0.25, 8);
+  const halfLat = clamp(region.latitudeDelta * 0.9, 0.75, 8);
+  const halfLon = clamp(region.longitudeDelta * 0.9, 0.75, 8);
   const north = clamp(region.latitude + halfLat, -85, 85);
   const south = clamp(region.latitude - halfLat, -85, 85);
   const east = clamp(region.longitude + halfLon, -179.5, 179.5);

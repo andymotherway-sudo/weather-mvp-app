@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mode, ModeToggle } from '../../components/common/ModeToggle';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
@@ -650,6 +651,7 @@ function explainFor(key: ExplainKey) {
 // -------------------------------------------------------------------
 
 export default function NauticalScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     areaId?: string;
     zoneId?: string;
@@ -1137,7 +1139,10 @@ export default function NauticalScreen() {
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + theme.spacing.sm },
+        ]}
         keyboardShouldPersistTaps="always"
         refreshControl={
           <RefreshControl refreshing={!!refreshing} onRefresh={refresh} />

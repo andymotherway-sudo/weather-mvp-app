@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Canvas, Circle, Path } from '@shopify/react-native-skia';
+import { Canvas, Path } from '@shopify/react-native-skia';
+import { useSharedValue } from 'react-native-reanimated';
 
 import type { Region } from './MapRenderer';
 
@@ -74,7 +75,6 @@ type ParticlePaths = {
   headSlow: string;
   headBreezy: string;
   headFast: string;
-  heads: Array<{ x: number; y: number; speed: number }>;
 };
 
 export type WindParticleExportSegment = {
@@ -86,11 +86,20 @@ export type WindParticleExportSegment = {
   intensity: number;
 };
 
-const MAX_PARTICLES = 620;
-const FRAME_MS = 33;
-const FIELD_CELL_PX = 46;
-const MIN_TRAIL_POINTS = 11;
-const MAX_TRAIL_POINTS = 26;
+const MAX_PARTICLES = 1600;
+const TARGET_FRAME_MS = 34;
+const FIELD_CELL_PX = 28;
+const MIN_TRAIL_POINTS = 13;
+const MAX_TRAIL_POINTS = 32;
+const EMPTY_PARTICLE_PATHS: ParticlePaths = {
+  tail: '',
+  bodySlow: '',
+  bodyBreezy: '',
+  bodyFast: '',
+  headSlow: '',
+  headBreezy: '',
+  headFast: '',
+};
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -192,8 +201,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
 
   if (!samples.length) return null;
 
-  const cols = Math.max(8, Math.min(34, Math.ceil(width / FIELD_CELL_PX) + 2));
-  const rows = Math.max(8, Math.min(42, Math.ceil(height / FIELD_CELL_PX) + 2));
+  const cols = Math.max(12, Math.min(58, Math.ceil(width / FIELD_CELL_PX) + 3));
+  const rows = Math.max(12, Math.min(72, Math.ceil(height / FIELD_CELL_PX) + 3));
   const cellW = width / Math.max(1, cols - 1);
   const cellH = height / Math.max(1, rows - 1);
   const cells: WindCell[] = [];
@@ -206,8 +215,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
 
   const area = Math.max(1, width * height);
   const geographicSpan = Math.max(0.08, Math.sqrt(region.latitudeDelta * region.longitudeDelta));
-  const zoomDensity = clamp(3.2 / geographicSpan, 0.9, 1.65);
-  const particleCount = Math.min(MAX_PARTICLES, Math.max(220, Math.round((area / 2100) * zoomDensity)));
+  const zoomDensity = clamp(4.2 / geographicSpan, 1.1, 2.35);
+  const particleCount = Math.min(MAX_PARTICLES, Math.max(620, Math.round((area / 1050) * zoomDensity)));
   const particles: ParticleSeed[] = [];
 
   for (let i = 0; i < particleCount; i += 1) {
@@ -320,7 +329,6 @@ function advanceParticlePaths(
     headSlow: '',
     headBreezy: '',
     headFast: '',
-    heads: [],
   };
   if (!field || !particles.length) return empty;
   const tailPaths: string[] = [];
@@ -330,7 +338,6 @@ function advanceParticlePaths(
   const headSlowPaths: string[] = [];
   const headBreezyPaths: string[] = [];
   const headFastPaths: string[] = [];
-  const heads: ParticlePaths['heads'] = [];
 
   for (const particle of field.particles) {
     const runtime = particles[particle.id];
@@ -398,7 +405,6 @@ function advanceParticlePaths(
       if (body) bodySlowPaths.push(body);
       if (head) headSlowPaths.push(head);
     }
-    heads.push({ x: runtime.x, y: runtime.y, speed });
   }
 
   return {
@@ -409,7 +415,6 @@ function advanceParticlePaths(
     headSlow: headSlowPaths.join(' '),
     headBreezy: headBreezyPaths.join(' '),
     headFast: headFastPaths.join(' '),
-    heads,
   };
 }
 
@@ -467,120 +472,101 @@ export function buildWindParticleExportFrames({
 export function WindParticleOverlay({ enabled, geojson, height, isFocused, opacity, region, width }: Props) {
   const field = useMemo(() => buildWindField(geojson, region, width, height), [geojson, height, region, width]);
   const particleRuntimeRef = React.useRef<ParticleRuntime[]>([]);
-  const [paths, setPaths] = useState<ParticlePaths>({
-    tail: '',
-    bodySlow: '',
-    bodyBreezy: '',
-    bodyFast: '',
-    headSlow: '',
-    headBreezy: '',
-    headFast: '',
-    heads: [],
-  });
+  const tailPath = useSharedValue('');
+  const bodySlowPath = useSharedValue('');
+  const bodyBreezyPath = useSharedValue('');
+  const bodyFastPath = useSharedValue('');
+  const headSlowPath = useSharedValue('');
+  const headBreezyPath = useSharedValue('');
+  const headFastPath = useSharedValue('');
+
+  const applyParticlePaths = React.useCallback(
+    (next: ParticlePaths) => {
+      tailPath.value = next.tail;
+      bodySlowPath.value = next.bodySlow;
+      bodyBreezyPath.value = next.bodyBreezy;
+      bodyFastPath.value = next.bodyFast;
+      headSlowPath.value = next.headSlow;
+      headBreezyPath.value = next.headBreezy;
+      headFastPath.value = next.headFast;
+    },
+    [bodyBreezyPath, bodyFastPath, bodySlowPath, headBreezyPath, headFastPath, headSlowPath, tailPath],
+  );
 
   useEffect(() => {
-    particleRuntimeRef.current = initializeParticleRuntime(field);
-    setPaths({
-      tail: '',
-      bodySlow: '',
-      bodyBreezy: '',
-      bodyFast: '',
-      headSlow: '',
-      headBreezy: '',
-      headFast: '',
-      heads: [],
-    });
-  }, [field]);
+    const runtime = initializeParticleRuntime(field);
+    if (field) {
+      for (let step = 0; step < 14; step += 1) {
+        advanceParticlePaths(field, runtime, 0.08, width, height);
+      }
+      applyParticlePaths(advanceParticlePaths(field, runtime, 0.08, width, height));
+    } else {
+      applyParticlePaths(EMPTY_PARTICLE_PATHS);
+    }
+    particleRuntimeRef.current = runtime;
+  }, [applyParticlePaths, field, height, width]);
+
+  useEffect(() => {
+    if (enabled) {
+      if (field) {
+        applyParticlePaths(advanceParticlePaths(field, particleRuntimeRef.current, 0.08, width, height));
+      }
+      return;
+    }
+    applyParticlePaths(EMPTY_PARTICLE_PATHS);
+  }, [applyParticlePaths, enabled, field, height, width]);
 
   useEffect(() => {
     if (!enabled || !isFocused || !field) return;
     let active = true;
-    let last = Date.now();
-    const timer = setInterval(() => {
+    let frame = 0;
+    let last = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const tick = () => {
       if (!active) return;
-      const now = Date.now();
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - last < TARGET_FRAME_MS) {
+        frame = requestAnimationFrame(tick);
+        return;
+      }
       const elapsedSeconds = Math.min(0.12, Math.max(0.016, (now - last) / 1000));
       last = now;
-      setPaths(advanceParticlePaths(field, particleRuntimeRef.current, elapsedSeconds, width, height));
-    }, FRAME_MS);
+      applyParticlePaths(advanceParticlePaths(field, particleRuntimeRef.current, elapsedSeconds, width, height));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
     return () => {
       active = false;
-      clearInterval(timer);
+      cancelAnimationFrame(frame);
     };
-  }, [enabled, field, height, isFocused, width]);
+  }, [applyParticlePaths, enabled, field, height, isFocused, width]);
 
-  const hasPath = !!(
-    paths.tail ||
-    paths.bodySlow ||
-    paths.bodyBreezy ||
-    paths.bodyFast ||
-    paths.headSlow ||
-    paths.headBreezy ||
-    paths.headFast
-  );
-
-  if (!enabled || !isFocused || !hasPath) return null;
+  if (!enabled || !isFocused || !field) return null;
 
   const layerOpacity = clamp(opacity, 0.08, 0.95);
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <Canvas style={StyleSheet.absoluteFill}>
-        {paths.tail ? (
-          <Path
-            path={paths.tail}
-            color={`rgba(125, 211, 252, ${0.16 * layerOpacity})`}
-            style="stroke"
-            strokeWidth={0.8}
-            strokeCap="round"
-            strokeJoin="round"
-          />
-        ) : null}
-        {paths.bodySlow ? (
-          <>
-            <Path path={paths.bodySlow} color={`rgba(8, 13, 24, ${0.12 * layerOpacity})`} style="stroke" strokeWidth={2.8} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.bodySlow} color={`rgba(147, 197, 253, ${0.34 * layerOpacity})`} style="stroke" strokeWidth={1.05} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.bodyBreezy ? (
-          <>
-            <Path path={paths.bodyBreezy} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.0} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.bodyBreezy} color={`rgba(103, 232, 249, ${0.46 * layerOpacity})`} style="stroke" strokeWidth={1.22} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.bodyFast ? (
-          <>
-            <Path path={paths.bodyFast} color={`rgba(8, 13, 24, ${0.20 * layerOpacity})`} style="stroke" strokeWidth={3.3} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.bodyFast} color={`rgba(252, 211, 77, ${0.50 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.headSlow ? (
-          <>
-            <Path path={paths.headSlow} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.2} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.headSlow} color={`rgba(219, 234, 254, ${0.58 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.headBreezy ? (
-          <>
-            <Path path={paths.headBreezy} color={`rgba(8, 13, 24, ${0.20 * layerOpacity})`} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.headBreezy} color={`rgba(240, 249, 255, ${0.74 * layerOpacity})`} style="stroke" strokeWidth={1.55} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.headFast ? (
-          <>
-            <Path path={paths.headFast} color={`rgba(8, 13, 24, ${0.24 * layerOpacity})`} style="stroke" strokeWidth={3.8} strokeCap="round" strokeJoin="round" />
-            <Path path={paths.headFast} color={`rgba(254, 240, 138, ${0.84 * layerOpacity})`} style="stroke" strokeWidth={1.72} strokeCap="round" strokeJoin="round" />
-          </>
-        ) : null}
-        {paths.heads.map((head, index) => (
-          <Circle
-            key={index}
-            cx={head.x}
-            cy={head.y}
-            r={head.speed >= 13 ? 1.65 : head.speed >= 7 ? 1.35 : 1.05}
-            color={`rgba(255, 255, 255, ${0.72 * layerOpacity})`}
-          />
-        ))}
+        <Path
+          path={tailPath as any}
+          color={`rgba(125, 211, 252, ${0.16 * layerOpacity})`}
+          style="stroke"
+          strokeWidth={0.8}
+          strokeCap="round"
+          strokeJoin="round"
+        />
+        <Path path={bodySlowPath as any} color={`rgba(8, 13, 24, ${0.12 * layerOpacity})`} style="stroke" strokeWidth={2.8} strokeCap="round" strokeJoin="round" />
+        <Path path={bodySlowPath as any} color={`rgba(147, 197, 253, ${0.34 * layerOpacity})`} style="stroke" strokeWidth={1.05} strokeCap="round" strokeJoin="round" />
+        <Path path={bodyBreezyPath as any} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3} strokeCap="round" strokeJoin="round" />
+        <Path path={bodyBreezyPath as any} color={`rgba(103, 232, 249, ${0.46 * layerOpacity})`} style="stroke" strokeWidth={1.22} strokeCap="round" strokeJoin="round" />
+        <Path path={bodyFastPath as any} color={`rgba(8, 13, 24, ${0.2 * layerOpacity})`} style="stroke" strokeWidth={3.3} strokeCap="round" strokeJoin="round" />
+        <Path path={bodyFastPath as any} color={`rgba(252, 211, 77, ${0.5 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
+        <Path path={headSlowPath as any} color={`rgba(8, 13, 24, ${0.16 * layerOpacity})`} style="stroke" strokeWidth={3.2} strokeCap="round" strokeJoin="round" />
+        <Path path={headSlowPath as any} color={`rgba(219, 234, 254, ${0.58 * layerOpacity})`} style="stroke" strokeWidth={1.35} strokeCap="round" strokeJoin="round" />
+        <Path path={headBreezyPath as any} color={`rgba(8, 13, 24, ${0.2 * layerOpacity})`} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" />
+        <Path path={headBreezyPath as any} color={`rgba(240, 249, 255, ${0.74 * layerOpacity})`} style="stroke" strokeWidth={1.55} strokeCap="round" strokeJoin="round" />
+        <Path path={headFastPath as any} color={`rgba(8, 13, 24, ${0.24 * layerOpacity})`} style="stroke" strokeWidth={3.8} strokeCap="round" strokeJoin="round" />
+        <Path path={headFastPath as any} color={`rgba(254, 240, 138, ${0.84 * layerOpacity})`} style="stroke" strokeWidth={1.72} strokeCap="round" strokeJoin="round" />
       </Canvas>
     </View>
   );

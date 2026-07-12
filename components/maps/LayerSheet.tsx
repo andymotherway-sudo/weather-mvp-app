@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import {
   LAYER_CATALOG,
@@ -7,6 +7,7 @@ import {
   type LayerCatalogItem,
   type LayerGroupId,
 } from '../../app/lib/maps/layerCatalog';
+import { LAYER_THUMBNAILS, LAYER_THUMBNAIL_SIZE } from '../../app/lib/maps/layerThumbnails';
 import type { LayerId, MapRuntimeState } from '../../app/lib/maps/types';
 
 type Props = {
@@ -141,15 +142,24 @@ function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
   const activeOpacity = props.enabled ? 1 : 0.56;
 
   const shellStyle = {
-    width: 58,
-    height: 46,
-    borderRadius: 14,
+    width: LAYER_THUMBNAIL_SIZE.width,
+    height: LAYER_THUMBNAIL_SIZE.height,
+    borderRadius: LAYER_THUMBNAIL_SIZE.radius,
     overflow: 'hidden' as const,
     borderWidth: 1,
     borderColor: props.enabled ? 'rgba(125,211,252,0.42)' : 'rgba(255,255,255,0.10)',
     backgroundColor: 'rgba(15,23,42,0.72)',
     opacity: activeOpacity,
   };
+
+  const thumbnail = LAYER_THUMBNAILS[props.layer.id];
+  if (thumbnail) {
+    return (
+      <View style={shellStyle}>
+        <Image source={thumbnail} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+      </View>
+    );
+  }
 
   if (kind === 'radar') {
     const colors = ['#2563eb', '#38bdf8', '#34d399', '#fde047', '#fb923c', '#ef4444'];

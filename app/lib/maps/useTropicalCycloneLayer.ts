@@ -72,19 +72,33 @@ function normalizeStormLabel(props: any) {
   return `${name}`;
 }
 
-function decorateFeatureCollection(fc: GeoJsonFeatureCollection, kind: string): GeoJsonFeatureCollection {
+function tropicalBasin(props: any) {
+  return String(props?.BASIN ?? props?.basin ?? '').trim().toUpperCase();
+}
+
+function classifyTropicalConeFeature(props: any) {
+  const basin = tropicalBasin(props);
+  if (basin === 'AL' || basin === 'AT' || basin === 'EP' || basin === 'CP') return 'cone';
+  return 'danger-area';
+}
+
+function decorateFeatureCollection(
+  fc: GeoJsonFeatureCollection,
+  kind: string | ((props: any) => string),
+): GeoJsonFeatureCollection {
   return {
     type: 'FeatureCollection',
     features: fc.features.map((feature, index) => {
       const props = feature?.properties ?? {};
+      const omniKind = typeof kind === 'function' ? kind(props) : kind;
       return {
         ...feature,
-        id: feature.id ?? `${kind}-${props.OBJECTID ?? index}`,
+        id: feature.id ?? `${omniKind}-${props.OBJECTID ?? index}`,
         properties: {
           ...props,
-          omniKind: kind,
+          omniKind,
           omniStormLabel: normalizeStormLabel(props),
-          omniBasin: props.BASIN ?? props.basin ?? null,
+          omniBasin: tropicalBasin(props) || null,
           omniMaxWindKt: Number.isFinite(Number(props.MAXWIND ?? props.INTENSITY))
             ? Number(props.MAXWIND ?? props.INTENSITY)
             : null,
@@ -170,7 +184,7 @@ export function useTropicalCycloneLayer(enabled: boolean, _region: RegionLike | 
     ])
       .then(([cones, forecastTrack, observedTrack, forecastPoints, observedPoints, watches, wind34, wind50, wind64]) => {
         const normalized = {
-          cones: decorateFeatureCollection(cones, 'cone'),
+          cones: decorateFeatureCollection(cones, classifyTropicalConeFeature),
           forecastTrack: decorateFeatureCollection(forecastTrack, 'forecast-track'),
           observedTrack: decorateFeatureCollection(observedTrack, 'observed-track'),
           forecastPoints: decorateFeatureCollection(forecastPoints, 'forecast-point'),
@@ -196,4 +210,3 @@ export function useTropicalCycloneLayer(enabled: boolean, _region: RegionLike | 
 
   return useMemo(() => data, [data]);
 }
-

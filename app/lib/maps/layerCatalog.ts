@@ -643,8 +643,8 @@ export const LAYER_CATALOG = [
   {
     id: 'tropics.nhcOutlook',
     group: 'weather',
-    title: 'NHC Development Outlook',
-    subtitle: '2/7 day tropical areas',
+    title: 'Tropical Development Outlook',
+    subtitle: 'Potential formation areas',
     visibility: 'both',
     timestampMode: 'latest_snapshot',
     defaultOpacity: 0.72,
@@ -652,7 +652,7 @@ export const LAYER_CATALOG = [
     source: {
       name: 'NOAA NHC / CPHC',
       details:
-        'National Hurricane Center and Central Pacific Hurricane Center graphical tropical weather outlook areas.',
+        'National Hurricane Center and Central Pacific Hurricane Center graphical tropical weather outlook areas. These hatched areas mark possible development, not active-storm forecast cones.',
       url: 'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer',
     },
     supportsLegend: true,
@@ -663,16 +663,16 @@ export const LAYER_CATALOG = [
   {
     id: 'tropics.nhcTracks',
     group: 'weather',
-    title: 'Tropical Cyclone Cones',
+    title: 'Active Tropical Cyclones',
     subtitle: 'Cones, tracks, wind fields',
     visibility: 'nerdy',
     timestampMode: 'latest_snapshot',
     defaultOpacity: 0.82,
     zIndex: 117,
     source: {
-      name: 'NOAA NHC / CPHC + global cyclone feed',
+      name: 'NOAA / Esri Active Hurricanes',
       details:
-        'Active tropical cyclone forecast cones, forecast tracks, observed tracks, watch/warning coastlines, and wind-radii where available. NHC/CPHC basins use official NOAA products; western Pacific systems are included through the global active cyclone feed.',
+        'Active cyclone tracks, forecast points, wind fields, watch/warning coastlines, and forecast cones or basin-specific danger areas where available. NHC/CPHC basins use traditional forecast cones; western Pacific systems may provide tracks and danger areas instead.',
       url: 'https://www.arcgis.com/home/item.html?id=248e7b5827a34b248647afb012c58787',
     },
     supportsLegend: true,

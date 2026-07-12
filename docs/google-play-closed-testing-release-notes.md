@@ -1,30 +1,28 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.203**
-Android version code: **10220**
+Release: **OMNIwx 1.1.204**
+Android version code: **10221**
 Track: **Closed testing / internal testing candidate**
 Date: **July 11, 2026**
 
 ## Play Console Paste Notes
 
-Improves Maps compositing and wildfire clarity. Radar, infrared, true color, water vapor, cloud, and precipitation overlays can now stay active together and animate from the shared map timeline instead of disabling each other. Wildfire mode now prefers current official perimeter geometry where available, filters agency-code clutter, and keeps incident dots focused on meaningful active fires.
+Improves the Maps overlay selector with visual layer thumbnails so testers can understand radar, satellite, marine, wildfire, fronts, alerts, water, and wind layers before enabling them. Keeps recent Maps work intact: radar and satellite overlays can remain active together, wildfire perimeters are clearer, and incident clutter is reduced.
 
 ## Tester Notes
 
 Please focus testing on Maps:
 
-- Open radar before touching controls. It should autoplay and show mosaic data.
-- If mosaic is blank or starts only after FF/Rewind, tap `Diag` before pressing anything else.
-- If frames flash, jump, or show the wrong timestamp, tap `Diag` immediately after the bad transition.
-- In copied diagnostics, check `activeFrameMatchesDominantTemplate` and `sourceKeyUsesActiveFrame`.
+- Open the Layers sheet and verify recognizable thumbnail previews appear for known layers.
+- Enable radar plus infrared/true color/cloud layers and confirm overlays can remain active together.
 - Recheck Storm Scope open/close behavior and product selection.
-- Enable radar plus infrared/true color/cloud layers and confirm the overlays can remain active together.
 - Check wildfire mode near active fires for cleaner incident labels and more perimeter outlines.
+- Spot-check marine, water station, wind particle, alert, and fronts thumbnails for clear meaning.
 
 ## Internal Release Checklist
 
-- App version: `1.1.203`
-- Android version code: `10220`
+- App version: `1.1.204`
+- Android version code: `10221`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

@@ -17,6 +17,10 @@ const EMPTY_GEOJSON = {
   features: [],
 };
 
+const WIND_VECTOR_CACHE_TTL_MS = 10 * 60 * 1000;
+const WIND_VECTOR_VIEWPORT_PADDING = 0.45;
+const windVectorCache = new Map<string, { geojson: any; updatedAt: string | null; ts: number }>();
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -26,8 +30,10 @@ function roundTo(n: number, step: number) {
 }
 
 function bboxFromRegion(region: WindVectorRegion) {
-  const halfLat = Math.max(0.01, region.latitudeDelta / 2);
-  const halfLon = Math.max(0.01, region.longitudeDelta / 2);
+  const paddedLatDelta = region.latitudeDelta * (1 + WIND_VECTOR_VIEWPORT_PADDING);
+  const paddedLonDelta = region.longitudeDelta * (1 + WIND_VECTOR_VIEWPORT_PADDING);
+  const halfLat = Math.max(0.01, paddedLatDelta / 2);
+  const halfLon = Math.max(0.01, paddedLonDelta / 2);
   return {
     west: clamp(region.longitude - halfLon, -180, 180),
     south: clamp(region.latitude - halfLat, -80, 80),
@@ -40,7 +46,7 @@ function requestKeyFor(region: WindVectorRegion, zoom: number, units: WindVector
   const bbox = bboxFromRegion(region);
   if (bbox.west >= bbox.east || bbox.south >= bbox.north) return null;
 
-  const step = zoom < 5 ? 0.5 : zoom < 8 ? 0.25 : 0.12;
+  const step = zoom < 5 ? 0.75 : zoom < 8 ? 0.35 : 0.18;
   const roundedZoom = Math.round(zoom * 2) / 2;
   return {
     key: [
@@ -80,8 +86,15 @@ export function useWindVectorLayer({
   useEffect(() => {
     if (!enabled || !isFocused || !request) return;
 
+    const cached = windVectorCache.get(request.key);
+    if (cached && Date.now() - cached.ts < WIND_VECTOR_CACHE_TTL_MS) {
+      setGeojson(cached.geojson);
+      setUpdatedAt(cached.updatedAt);
+      setError(null);
+    }
+
     const ac = new AbortController();
-    setLoading(true);
+    setLoading(!cached);
     setError(null);
 
     const params = new URLSearchParams({
@@ -100,11 +113,18 @@ export function useWindVectorLayer({
       })
       .then((json) => {
         if (ac.signal.aborted) return;
-        setGeojson(json?.geojson?.type === 'FeatureCollection' ? json.geojson : EMPTY_GEOJSON);
-        setUpdatedAt(typeof json?.fetchedAt === 'string' ? json.fetchedAt : null);
+        const nextGeojson = json?.geojson?.type === 'FeatureCollection' ? json.geojson : EMPTY_GEOJSON;
+        const nextUpdatedAt = typeof json?.fetchedAt === 'string' ? json.fetchedAt : null;
+        windVectorCache.set(request.key, { geojson: nextGeojson, updatedAt: nextUpdatedAt, ts: Date.now() });
+        setGeojson(nextGeojson);
+        setUpdatedAt(nextUpdatedAt);
       })
       .catch((err) => {
         if (ac.signal.aborted) return;
+        if (cached) {
+          setGeojson(cached.geojson);
+          setUpdatedAt(cached.updatedAt);
+        }
         setError(err instanceof Error ? err.message : 'Wind vectors unavailable');
       })
       .finally(() => {

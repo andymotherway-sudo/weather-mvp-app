@@ -4740,7 +4740,7 @@ function buildOmHourlyCacheKey(reqUrl: URL, lats: string[], lons: string[], unit
 
 const WIND_VECTOR_TTL_SECONDS = 10 * 60;
 const WIND_VECTOR_STALE_SECONDS = 30 * 60;
-const WIND_VECTOR_VERSION = "wind-vectors-v1";
+const WIND_VECTOR_VERSION = "wind-vectors-v2";
 
 type WindVectorBbox = { west: number; south: number; east: number; north: number };
 
@@ -4771,9 +4771,9 @@ function buildWindVectorPoints(bbox: WindVectorBbox, zoom: number) {
   const lonSpan = Math.max(0.01, bbox.east - bbox.west);
   const latSpan = Math.max(0.01, bbox.north - bbox.south);
   const aspect = Math.max(0.65, Math.min(2.4, lonSpan / latSpan));
-  const base = zoom < 4 ? 4 : zoom < 6 ? 5 : zoom < 8 ? 6 : 7;
-  const nx = Math.max(4, Math.min(11, Math.round(base * aspect)));
-  const ny = Math.max(3, Math.min(8, Math.round(base / Math.sqrt(aspect))));
+  const base = zoom < 4 ? 7 : zoom < 6 ? 9 : zoom < 8 ? 12 : 15;
+  const nx = Math.max(7, Math.min(22, Math.round(base * aspect)));
+  const ny = Math.max(6, Math.min(17, Math.round(base / Math.sqrt(aspect))));
   const points: Array<{ lat: number; lon: number }> = [];
 
   for (let y = 0; y < ny; y += 1) {
@@ -4787,7 +4787,7 @@ function buildWindVectorPoints(bbox: WindVectorBbox, zoom: number) {
     }
   }
 
-  return points.slice(0, 80);
+  return points.slice(0, 220);
 }
 
 function buildWindVectorCacheKey(reqUrl: URL, bbox: WindVectorBbox, zoom: number, units: Units) {
