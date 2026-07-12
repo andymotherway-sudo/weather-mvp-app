@@ -1980,6 +1980,8 @@ Map-control release note: zoom buttons are camera-only controls. They adjust the
 
 Map-control release note: zoom buttons are intentionally camera-only controls. They should never recenter the map, switch Storm Scope, select a radar station, alter layers, or change radar products. Recording animated map loops belongs in the timeline control cluster as a red record-dot button beside playback controls, not as a separate text pill.
 
+Radar regression guardrail: commit `9d1d977` is the known-good reference for Storm Scope toggle behavior. Storm Scope should not seed `manualRadarSiteId3` from the nearest radar on open, and it should not run a region-follow effect that keeps replacing the manual station while the user pans. Zoom buttons should call the camera with only a zoom-level change, not a center coordinate.
+
 When Google Play says a version code has already been used, the number that matters most is Android `versionCode`. The public-looking version string is `versionName`, but Play Console uniqueness is driven by `versionCode`.
 
 Practical release rule:

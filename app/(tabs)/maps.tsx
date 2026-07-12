@@ -80,7 +80,6 @@ const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S',
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
-const STORM_SCOPE_STATION_SWITCH_RADIUS_KM = 16;
 const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
@@ -2142,11 +2141,9 @@ export default function MapsScreen() {
   const turnStormScopeOn = useCallback(() => {
     if (!armStormScopeToggleGuard()) return;
 
-    const nearestId3 = autoNearestRadar?.site ? normalizeRadarSiteId(autoNearestRadar.site.id) : null;
-
     setRadarMode('mosaic');
     setStationPanelCollapsed(false);
-    setManualRadarSiteId3(nearestId3);
+    setManualRadarSiteId3(null);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
     radarStationSeedRegionRef.current = null;
@@ -2158,7 +2155,7 @@ export default function MapsScreen() {
     dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'radar.reflectivity', enabled: true });
     dispatch({ type: 'SET_RADAR_STORM_MODE', stormMode: true });
     dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
-  }, [armStormScopeToggleGuard, autoNearestRadar?.site, dispatch, state.viewId]);
+  }, [armStormScopeToggleGuard, dispatch, state.viewId]);
 
   const turnStormScopeOff = useCallback(() => {
     if (!armStormScopeToggleGuard()) return;
@@ -2183,19 +2180,6 @@ export default function MapsScreen() {
 
     turnStormScopeOn();
   }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
-
-  useEffect(() => {
-    if (!stormMode || !region) return;
-
-    const centeredSite = resolveNearestRadar(region.latitude, region.longitude, {
-      filter: isNexradSite,
-      maxDistanceKm: STORM_SCOPE_STATION_SWITCH_RADIUS_KM,
-    })?.site;
-    if (!centeredSite) return;
-
-    const centeredId3 = normalizeRadarSiteId(centeredSite.id);
-    setManualRadarSiteId3((current) => (current === centeredId3 ? current : centeredId3));
-  }, [region?.latitude, region?.longitude, stormMode]);
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -3224,7 +3208,6 @@ export default function MapsScreen() {
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
     mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
       zoomLevel: nextZoom,
       animationDuration: 180,
     });

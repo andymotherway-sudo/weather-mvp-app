@@ -1,28 +1,27 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.204**
-Android version code: **10221**
+Release: **OMNIwx 1.1.205**
+Android version code: **10222**
 Track: **Closed testing / internal testing candidate**
-Date: **July 11, 2026**
+Date: **July 12, 2026**
 
 ## Play Console Paste Notes
 
-Improves the Maps overlay selector with visual layer thumbnails so testers can understand radar, satellite, marine, wildfire, fronts, alerts, water, and wind layers before enabling them. Keeps recent Maps work intact: radar and satellite overlays can remain active together, wildfire perimeters are clearer, and incident clutter is reduced.
+Fixes a Maps regression where Storm Scope could latch to a radar station and resist turning off. Zoom buttons are restored as camera-only controls: they zoom the current map view without recentering the user, changing radar sites, or forcing Storm Scope state.
 
 ## Tester Notes
 
 Please focus testing on Maps:
 
-- Open the Layers sheet and verify recognizable thumbnail previews appear for known layers.
-- Enable radar plus infrared/true color/cloud layers and confirm overlays can remain active together.
-- Recheck Storm Scope open/close behavior and product selection.
-- Check wildfire mode near active fires for cleaner incident labels and more perimeter outlines.
-- Spot-check marine, water station, wind particle, alert, and fronts thumbnails for clear meaning.
+- Turn Storm Scope on and off repeatedly; it should not stick on.
+- Use zoom buttons and pinch gestures; the map should never snap back to the active location.
+- Confirm the current smooth RainViewer mosaic behavior remains intact.
+- Zoom into station radar and back out; station controls should not appear unless Storm Scope is active.
 
 ## Internal Release Checklist
 
-- App version: `1.1.204`
-- Android version code: `10221`
+- App version: `1.1.205`
+- Android version code: `10222`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
