@@ -18,7 +18,7 @@ const EMPTY_GEOJSON = {
 };
 
 const WIND_VECTOR_CACHE_TTL_MS = 10 * 60 * 1000;
-const WIND_VECTOR_VIEWPORT_PADDING = 0.45;
+const WIND_VECTOR_VIEWPORT_PADDING = 0.6;
 const windVectorCache = new Map<string, { geojson: any; updatedAt: string | null; ts: number }>();
 
 function clamp(n: number, min: number, max: number) {
@@ -46,7 +46,7 @@ function requestKeyFor(region: WindVectorRegion, zoom: number, units: WindVector
   const bbox = bboxFromRegion(region);
   if (bbox.west >= bbox.east || bbox.south >= bbox.north) return null;
 
-  const step = zoom < 5 ? 0.75 : zoom < 8 ? 0.35 : 0.18;
+  const step = zoom < 5 ? 0.7 : zoom < 8 ? 0.32 : 0.18;
   const roundedZoom = Math.round(zoom * 2) / 2;
   return {
     key: [
@@ -106,7 +106,7 @@ export function useWindVectorLayer({
       units,
     });
 
-    fetchWithTimeout(apiUrl(`/api/wind/vectors?${params.toString()}`), 12000, { signal: ac.signal })
+    fetchWithTimeout(apiUrl(`/api/wind/vectors?${params.toString()}`), 15000, { signal: ac.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Wind vectors unavailable (${res.status})`);
         return res.json();

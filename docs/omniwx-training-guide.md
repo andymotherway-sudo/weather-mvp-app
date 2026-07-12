@@ -2719,3 +2719,12 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 - a major bug reveals an architectural trap
 
 If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
+
+## 45. Release Notes - OMNIwx 1.1.206 / 10223
+
+This release tightened the wind stream layer and refreshed the map overlay selector thumbnails.
+
+- Wind particles are denser and more continuous, but still capped to avoid runaway CPU/GPU work.
+- The particle overlay no longer advances hidden animation work while disabled; it only prewarms enough path state to make re-enabling feel immediate.
+- Wind vectors request a slightly padded field so panning feels less sparse at the viewport edge.
+- Overlay thumbnails remain 174 x 138 PNG assets in `assets/map-layer-thumbnails/` and render at 58 x 46 in the layer sheet. Replace those files to refresh the visuals without changing code.

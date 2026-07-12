@@ -1,27 +1,26 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.205**
-Android version code: **10222**
+Release: **OMNIwx 1.1.206**
+Android version code: **10223**
 Track: **Closed testing / internal testing candidate**
 Date: **July 12, 2026**
 
 ## Play Console Paste Notes
 
-Fixes a Maps regression where Storm Scope could latch to a radar station and resist turning off. Zoom buttons are restored as camera-only controls: they zoom the current map view without recentering the user, changing radar sites, or forcing Storm Scope state.
+Improves Maps overlay polish. Wind Particles now render denser, smoother streamlines while staying capped for performance, with warmed paths so enabling the layer feels immediate without running hidden animation work while off. The overlay selector also has refreshed visual thumbnails for radar, satellite, wildfire, fronts, marine, water stations, alerts, and wind particles so testers can understand each layer before enabling it.
 
 ## Tester Notes
 
 Please focus testing on Maps:
 
-- Turn Storm Scope on and off repeatedly; it should not stick on.
-- Use zoom buttons and pinch gestures; the map should never snap back to the active location.
-- Confirm the current smooth RainViewer mosaic behavior remains intact.
-- Zoom into station radar and back out; station controls should not appear unless Storm Scope is active.
+- Turn Wind Particles on and off; panning and zooming should remain responsive.
+- Confirm overlay thumbnails match the layers they describe.
+- Verify radar and satellite layer behavior is unchanged.
 
 ## Internal Release Checklist
 
-- App version: `1.1.205`
-- Android version code: `10222`
+- App version: `1.1.206`
+- Android version code: `10223`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

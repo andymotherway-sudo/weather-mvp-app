@@ -86,11 +86,11 @@ export type WindParticleExportSegment = {
   intensity: number;
 };
 
-const MAX_PARTICLES = 1600;
-const TARGET_FRAME_MS = 34;
-const FIELD_CELL_PX = 28;
-const MIN_TRAIL_POINTS = 13;
-const MAX_TRAIL_POINTS = 32;
+const MAX_PARTICLES = 1800;
+const TARGET_FRAME_MS = 38;
+const FIELD_CELL_PX = 26;
+const MIN_TRAIL_POINTS = 15;
+const MAX_TRAIL_POINTS = 36;
 const EMPTY_PARTICLE_PATHS: ParticlePaths = {
   tail: '',
   bodySlow: '',
@@ -201,8 +201,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
 
   if (!samples.length) return null;
 
-  const cols = Math.max(12, Math.min(58, Math.ceil(width / FIELD_CELL_PX) + 3));
-  const rows = Math.max(12, Math.min(72, Math.ceil(height / FIELD_CELL_PX) + 3));
+  const cols = Math.max(14, Math.min(64, Math.ceil(width / FIELD_CELL_PX) + 4));
+  const rows = Math.max(14, Math.min(82, Math.ceil(height / FIELD_CELL_PX) + 4));
   const cellW = width / Math.max(1, cols - 1);
   const cellH = height / Math.max(1, rows - 1);
   const cells: WindCell[] = [];
@@ -215,8 +215,8 @@ function buildWindField(geojson: any, region: Region | null, width: number, heig
 
   const area = Math.max(1, width * height);
   const geographicSpan = Math.max(0.08, Math.sqrt(region.latitudeDelta * region.longitudeDelta));
-  const zoomDensity = clamp(4.2 / geographicSpan, 1.1, 2.35);
-  const particleCount = Math.min(MAX_PARTICLES, Math.max(620, Math.round((area / 1050) * zoomDensity)));
+  const zoomDensity = clamp(4.4 / geographicSpan, 1.12, 2.45);
+  const particleCount = Math.min(MAX_PARTICLES, Math.max(700, Math.round((area / 1000) * zoomDensity)));
   const particles: ParticleSeed[] = [];
 
   for (let i = 0; i < particleCount; i += 1) {
@@ -459,7 +459,7 @@ export function buildWindParticleExportFrames({
 
   // Warm the deterministic particle field before capturing so the first
   // exported frame already contains developed trails.
-  for (let step = 0; step < 10; step += 1) {
+  for (let step = 0; step < 14; step += 1) {
     advanceParticlePaths(field, particles, 0.1, width, height);
   }
 
@@ -496,7 +496,7 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
   useEffect(() => {
     const runtime = initializeParticleRuntime(field);
     if (field) {
-      for (let step = 0; step < 14; step += 1) {
+      for (let step = 0; step < 18; step += 1) {
         advanceParticlePaths(field, runtime, 0.08, width, height);
       }
       applyParticlePaths(advanceParticlePaths(field, runtime, 0.08, width, height));
@@ -507,13 +507,14 @@ export function WindParticleOverlay({ enabled, geojson, height, isFocused, opaci
   }, [applyParticlePaths, field, height, width]);
 
   useEffect(() => {
-    if (enabled) {
-      if (field) {
-        applyParticlePaths(advanceParticlePaths(field, particleRuntimeRef.current, 0.08, width, height));
-      }
+    if (!field) {
+      applyParticlePaths(EMPTY_PARTICLE_PATHS);
       return;
     }
-    applyParticlePaths(EMPTY_PARTICLE_PATHS);
+
+    if (!enabled) return;
+
+    applyParticlePaths(advanceParticlePaths(field, particleRuntimeRef.current, 0.08, width, height));
   }, [applyParticlePaths, enabled, field, height, width]);
 
   useEffect(() => {
