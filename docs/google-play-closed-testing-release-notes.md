@@ -1,26 +1,26 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.207**
-Android version code: **10224**
+Release: **OMNIwx 1.1.208**
+Android version code: **10225**
 Track: **Closed testing / internal testing candidate**
-Date: **July 12, 2026**
+Date: **July 13, 2026**
 
 ## Play Console Paste Notes
 
-Stabilizes Maps after the recent radar work. This build keeps the working mosaic autoplay path intact, removes the ordinary zoom path that was slipping back into station radar, and keeps Storm Scope's zoom-out auto-exit behavior unchanged. Wind Particles stay disabled for now so map performance and radar playback remain the priority.
+This build packages the current radar baseline for hands-on testing. The focus is still Maps: mosaic playback, Storm Scope handoff, and the zoom-button interaction path. Wind Particles remain disabled so testing stays centered on radar behavior and general map responsiveness.
 
 ## Tester Notes
 
 Please focus testing on Maps:
 
-- Verify standard radar mosaic resumes cleanly after turning Storm Scope off.
-- Confirm zoom buttons no longer pin the map into a forced station-radar state.
-- Confirm zooming far enough out still exits Storm Scope on its own.
+- Verify standard radar mosaic behavior on first open.
+- Confirm Storm Scope can still be entered and exited cleanly.
+- Confirm zoom buttons behave like simple zoom controls during normal map use.
 
 ## Internal Release Checklist
 
-- App version: `1.1.207`
-- Android version code: `10224`
+- App version: `1.1.208`
+- Android version code: `10225`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

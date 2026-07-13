@@ -2720,7 +2720,7 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 
 If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
 
-## 45. Release Notes - OMNIwx 1.1.207 / 10224
+## 45. Release Notes - OMNIwx 1.1.208 / 10225
 
 This release tightened the wind stream layer and refreshed the map overlay selector thumbnails.
 
