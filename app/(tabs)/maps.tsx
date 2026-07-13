@@ -80,7 +80,6 @@ const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S',
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
-const AUTO_NEXRAD_MIN_ZOOM = 8.6;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -1433,14 +1432,7 @@ export default function MapsScreen() {
 
   const stormScopeNexradVisible = stormScopeLocalZoom;
 
-  const autoNearestRadarMode =
-    radarEnabled &&
-    radarViewActive &&
-    !stormMode &&
-    localRadarAvailable &&
-    mapZoom >= AUTO_NEXRAD_MIN_ZOOM;
-
-  const stationRadarMode = stormScopeNexradVisible || autoNearestRadarMode;
+  const stationRadarMode = stormScopeNexradVisible;
 
   const showRadarRings =
     stormScopeNexradVisible &&
@@ -1486,7 +1478,7 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
-  const windParticlesEnabled = !!state.layers?.['wx.wind.particles']?.enabled;
+  const windParticlesEnabled = false;
   const windFieldPreloadEnabled = isFocused && !!region;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
   const frontsDay1Enabled = !!state.layers?.['wx.fronts.day1']?.enabled;

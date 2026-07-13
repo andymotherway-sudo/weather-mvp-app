@@ -53,7 +53,6 @@ export const MAP_VIEWS: MapViewDefinition[] = [
       'lightning.strikes',
       'wx.fronts.day1',
       'wpc.excessiveRain.day1',
-      'wx.wind.particles',
     ],
     presetLayerOpacity: {
       'radar.reflectivity': 0.9,
@@ -61,7 +60,6 @@ export const MAP_VIEWS: MapViewDefinition[] = [
       'lightning.strikes': 0.78,
       'wx.fronts.day1': 0.96,
       'wpc.excessiveRain.day1': 0.62,
-      'wx.wind.particles': 0.7,
     },
     timelineDriverLayer: 'radar.reflectivity',
   },

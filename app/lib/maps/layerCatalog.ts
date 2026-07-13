@@ -74,25 +74,6 @@ export const LAYER_CATALOG = [
   },
 
   {
-    id: 'wx.wind.particles',
-    group: 'weather',
-    title: 'Wind Particles',
-    subtitle: 'Animated 10 m flow',
-    visibility: 'both',
-    timestampMode: 'latest_snapshot',
-    defaultOpacity: 0.72,
-    zIndex: 113,
-    source: {
-      name: 'Open-Meteo via OMNIwx',
-      details: 'Animated surface 10 m wind particles sampled from a lightweight viewport wind field.',
-      url: 'https://open-meteo.com/',
-    },
-    supportsLegend: false,
-    supportsOpacity: true,
-    supportsSourceInfo: true,
-  },
-
-  {
     id: 'wx.fronts.day1',
     group: 'weather',
     title: 'Fronts',
