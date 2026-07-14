@@ -3200,8 +3200,9 @@ export default function MapsScreen() {
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
     mapCameraRef.current?.setCamera?.({
+      centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
       zoomLevel: nextZoom,
-      animationDuration: 180,
+      animationDuration: 0,
     });
   }, [mapZoom, region, stableInitialRegion]);
 

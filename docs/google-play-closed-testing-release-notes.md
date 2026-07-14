@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.208**
-Android version code: **10225**
+Release: **OMNIwx 1.1.209**
+Android version code: **10226**
 Track: **Closed testing / internal testing candidate**
 Date: **July 13, 2026**
 
 ## Play Console Paste Notes
 
-This build packages the current radar baseline for hands-on testing. The focus is still Maps: mosaic playback, Storm Scope handoff, and the zoom-button interaction path. Wind Particles remain disabled so testing stays centered on radar behavior and general map responsiveness.
+This build packages the current radar baseline for hands-on testing. The focus is still Maps: mosaic playback, Storm Scope handoff, and the zoom-button interaction path. This release specifically includes the camera-only zoom-button fix so zoom controls stop fighting pinch-and-pan behavior. Wind Particles remain disabled so testing stays centered on radar behavior and general map responsiveness.
 
 ## Tester Notes
 
@@ -19,8 +19,8 @@ Please focus testing on Maps:
 
 ## Internal Release Checklist
 
-- App version: `1.1.208`
-- Android version code: `10225`
+- App version: `1.1.209`
+- Android version code: `10226`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
