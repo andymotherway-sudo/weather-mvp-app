@@ -3200,13 +3200,11 @@ export default function MapsScreen() {
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
     setMapZoom(nextZoom);
-    mapCameraRef.current?.zoomTo?.(nextZoom, 0);
-    if (!mapCameraRef.current?.zoomTo) {
-      mapCameraRef.current?.setCamera?.({
-        zoomLevel: nextZoom,
-        animationDuration: 0,
-      });
-    }
+    mapCameraRef.current?.setCamera?.({
+      zoomLevel: nextZoom,
+      animationDuration: 0,
+      animationMode: 'moveTo',
+    });
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers

@@ -523,7 +523,6 @@ export function MapRenderer(props: MapRendererProps) {
           ref={cameraRef}
           defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
           followUserLocation={false}
-          animationDuration={0}
         />
 
         {overlays?.length ? <OverlayEngine overlays={overlays} /> : null}

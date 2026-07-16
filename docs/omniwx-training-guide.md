@@ -2720,10 +2720,10 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 
 If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
 
-## 45. Release Notes - OMNIwx 1.1.210 / 10227
+## 45. Release Notes - OMNIwx 1.1.211 / 10228
 
-This release fixes the map zoom-button interaction so the buttons stop pinning the camera and leaving pinch-and-pan stuck afterward.
+This release tightens the follow-up map zoom-button fix so button taps stop fighting immediate pinch-and-pan gestures.
 
-- Zoom buttons now change only zoom level, so they behave like simple zoom controls instead of re-centering the map every tap.
+- Zoom buttons now use a non-flying camera stop instead of the previous zoom transition helper.
 - Manual map interaction should remain available immediately after using the zoom buttons, including pinch zoom and drag.
 - Radar behavior is intentionally unchanged in this release; the fix is scoped to the camera interaction path.
