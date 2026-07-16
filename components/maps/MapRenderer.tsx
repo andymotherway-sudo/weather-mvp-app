@@ -512,6 +512,10 @@ export function MapRenderer(props: MapRendererProps) {
         mapStyle={mapStyleUrl}
         logoEnabled={false}
         attributionEnabled={false}
+        scrollEnabled
+        zoomEnabled
+        pitchEnabled
+        rotateEnabled
         onRegionDidChange={handleRegionDidChange}
         onPress={onMapPress}
       >

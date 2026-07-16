@@ -2720,11 +2720,10 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 
 If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
 
-## 45. Release Notes - OMNIwx 1.1.209 / 10226
+## 45. Release Notes - OMNIwx 1.1.210 / 10227
 
-This release tightened the wind stream layer and refreshed the map overlay selector thumbnails.
+This release fixes the map zoom-button interaction so the buttons stop pinning the camera and leaving pinch-and-pan stuck afterward.
 
-- Wind particles are denser and more continuous, but still capped to avoid runaway CPU/GPU work.
-- The particle overlay no longer advances hidden animation work while disabled; it only prewarms enough path state to make re-enabling feel immediate.
-- Wind vectors request a slightly padded field so panning feels less sparse at the viewport edge.
-- Overlay thumbnails remain 174 x 138 PNG assets in `assets/map-layer-thumbnails/` and render at 58 x 46 in the layer sheet. Replace those files to refresh the visuals without changing code.
+- Zoom buttons now change only zoom level, so they behave like simple zoom controls instead of re-centering the map every tap.
+- Manual map interaction should remain available immediately after using the zoom buttons, including pinch zoom and drag.
+- Radar behavior is intentionally unchanged in this release; the fix is scoped to the camera interaction path.

@@ -3199,11 +3199,14 @@ export default function MapsScreen() {
         : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
-    mapCameraRef.current?.setCamera?.({
-      centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
-      zoomLevel: nextZoom,
-      animationDuration: 0,
-    });
+    setMapZoom(nextZoom);
+    mapCameraRef.current?.zoomTo?.(nextZoom, 0);
+    if (!mapCameraRef.current?.zoomTo) {
+      mapCameraRef.current?.setCamera?.({
+        zoomLevel: nextZoom,
+        animationDuration: 0,
+      });
+    }
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
