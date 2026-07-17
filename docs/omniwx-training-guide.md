@@ -2720,10 +2720,10 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 
 If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
 
-## 45. Release Notes - OMNIwx 1.1.211 / 10228
+## 45. Release Notes - OMNIwx 1.1.212 / 10229
 
-This release tightens the follow-up map zoom-button fix so button taps stop fighting immediate pinch-and-pan gestures.
+This release shifts map region updates to settle-only behavior so pinch gestures stop fighting parent state churn.
 
-- Zoom buttons now use a non-flying camera stop instead of the previous zoom transition helper.
-- Manual map interaction should remain available immediately after using the zoom buttons, including pinch zoom and drag.
+- The map now waits for camera movement to settle before pushing `region` and `mapZoom` back into parent React state.
+- Manual pinch zoom and drag should stay stable instead of bouncing while map-dependent overlays refresh.
 - Radar behavior is intentionally unchanged in this release; the fix is scoped to the camera interaction path.

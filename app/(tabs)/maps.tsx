@@ -3799,6 +3799,7 @@ export default function MapsScreen() {
           <MapRenderer
             key={`map-${mapResetKey}`}
             engine="maplibre"
+            regionEventMode="settled"
             initialRegion={
               routeFocusSeedRegionRef.current ??
               locateSeedRegionRef.current ??
