@@ -3197,11 +3197,7 @@ export default function MapsScreen() {
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
-    mapCameraRef.current?.setCamera?.({
-      zoomLevel: nextZoom,
-      animationDuration: 0,
-      animationMode: 'moveTo',
-    });
+    mapCameraRef.current?.zoomTo?.(nextZoom, 0);
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers

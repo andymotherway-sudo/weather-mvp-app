@@ -4968,10 +4968,10 @@ function LandWeatherWithCoords({
 
   const currentCloudCoverPct = safeNum(wx.cloudCoverPct ?? wx.cloud_cover ?? wx.cloudCover ?? wx.cloudCoverPct);
 
-  const daily = (forecastData?.daily ?? []).slice(0, 15);
+  const forecastDailyRaw = (forecastData?.daily ?? []).slice(0, 15);
   const forecastTimeZone =
     typeof forecastData?.timezone === 'string' && forecastData.timezone.trim() ? forecastData.timezone.trim() : null;
-  const todayDaily = daily[0] ?? null;
+  const todayDaily = forecastDailyRaw[0] ?? null;
   const todaySunrise = typeof todayDaily?.sunrise === 'string' ? todayDaily.sunrise : null;
   const todaySunset = typeof todayDaily?.sunset === 'string' ? todayDaily.sunset : null;
   const todayDayLengthSec = safeNum(todayDaily?.daylightDurationSec) ?? null;
@@ -5103,6 +5103,30 @@ function LandWeatherWithCoords({
     (typeof astroData?.aerosols?.label === 'string' ? astroData.aerosols.label : null) ??
     null;
   const airQualityIndex = safeNum(astroData?.aerosols?.airQualityIndex);
+  const daily = useMemo(() => {
+    if (!forecastDailyRaw.length) return forecastDailyRaw;
+    if (airQualityIndex == null) return forecastDailyRaw;
+
+    const current = forecastDailyRaw[0];
+    if (!current) return forecastDailyRaw;
+
+    const forecastAqi =
+      safeNum(current?.airQualityUsAqiMax ?? (current as any)?.airQualityIndexMax ?? (current as any)?.airQualityUsAqi ?? (current as any)?.aqiMax) ??
+      null;
+    const nextAqi = forecastAqi == null ? airQualityIndex : Math.max(forecastAqi, airQualityIndex);
+    if (forecastAqi != null && Math.abs(nextAqi - forecastAqi) < 0.001 && current.airQualityLabel === airQualityLabel) {
+      return forecastDailyRaw;
+    }
+
+    return [
+      {
+        ...current,
+        airQualityUsAqiMax: nextAqi,
+        airQualityLabel: airQualityLabel ?? current.airQualityLabel ?? null,
+      },
+      ...forecastDailyRaw.slice(1),
+    ];
+  }, [airQualityIndex, airQualityLabel, forecastDailyRaw]);
 
   const pressureHpa =
     safeNum(wx.pressureHpa ?? wx.pressure_hpa ?? wx.pressure) ??
