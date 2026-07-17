@@ -1234,6 +1234,7 @@ export default function MapsScreen() {
   const radarPrefsHydratedRef = useRef(false);
   const stormScopeToggleBusyRef = useRef(false);
   const pendingButtonZoomRef = useRef<number | null>(null);
+  const buttonZoomCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (animationRecordMode) return;
@@ -1241,6 +1242,12 @@ export default function MapsScreen() {
     setAnimationBufferStatus(null);
     setAnimationExportStatus(null);
   }, [animationRecordMode]);
+
+  useEffect(() => {
+    return () => {
+      if (buttonZoomCommitTimerRef.current) clearTimeout(buttonZoomCommitTimerRef.current);
+    };
+  }, []);
   const [selectedWildfire, setSelectedWildfire] = useState<WildfireIncidentDetails | null>(null);
   const [selectedAviationFeature, setSelectedAviationFeature] = useState<AviationFeature | null>(null);
   const [selectedTropicalFeature, setSelectedTropicalFeature] = useState<any | null>(null);
@@ -3203,6 +3210,7 @@ export default function MapsScreen() {
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
+    if (buttonZoomCommitTimerRef.current) clearTimeout(buttonZoomCommitTimerRef.current);
     pendingButtonZoomRef.current = nextZoom;
     mapCameraRef.current?.setCamera?.({
       zoomLevel: nextZoom,
@@ -3815,6 +3823,9 @@ export default function MapsScreen() {
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
               onPanDrag={() => {
+                if (buttonZoomCommitTimerRef.current) clearTimeout(buttonZoomCommitTimerRef.current);
+                buttonZoomCommitTimerRef.current = null;
+                pendingButtonZoomRef.current = null;
                 locateRequestIdRef.current += 1;
               const now = Date.now();
               if (now - lastPanMarkRef.current > 450) {
@@ -3823,14 +3834,24 @@ export default function MapsScreen() {
               }
           }}
           onRegionChangeComplete={(nextRegion: Region) => {
-            setRegion(nextRegion);
-
             const zFloat =
               typeof (nextRegion as any).zoom === 'number' && Number.isFinite((nextRegion as any).zoom)
                 ? (nextRegion as any).zoom
                 : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
-            pendingButtonZoomRef.current = null;
+            if (pendingButtonZoomRef.current != null) {
+              if (buttonZoomCommitTimerRef.current) clearTimeout(buttonZoomCommitTimerRef.current);
+              buttonZoomCommitTimerRef.current = setTimeout(() => {
+                pendingButtonZoomRef.current = null;
+                buttonZoomCommitTimerRef.current = null;
+                setRegion(nextRegion);
+                setMapZoom(zFloat);
+                radarCtl.refreshLocalIfNeeded();
+              }, 320);
+              return;
+            }
+
+            setRegion(nextRegion);
             setMapZoom(zFloat);
 
             radarCtl.refreshLocalIfNeeded();
