@@ -1,6 +1,6 @@
 // components/maps/MapRenderer.tsx
 import MapLibreGL from '@maplibre/maplibre-react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { OverlayEngine, type WmsOverlayConfig } from './overlays/OverlayEngine';
@@ -337,6 +337,16 @@ export function MapRenderer(props: MapRendererProps) {
   const userActiveRef = useRef(false);
   const userEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const beginUserGesture = useCallback(() => {
+    if (userEndTimerRef.current) {
+      clearTimeout(userEndTimerRef.current);
+      userEndTimerRef.current = null;
+    }
+    if (userActiveRef.current) return;
+    userActiveRef.current = true;
+    onPanDrag?.();
+  }, [onPanDrag]);
+
   useEffect(() => {
     return () => {
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
@@ -352,8 +362,14 @@ export function MapRenderer(props: MapRendererProps) {
     onRegionChangeComplete(lastRegionRef.current);
   };
 
+  const handleRegionWillChange = (e: any) => {
+    if (!!e?.properties?.isUserInteraction) beginUserGesture();
+  };
+
   const handleRegionDidChange = (e: any) => {
     const isUser = !!e?.properties?.isUserInteraction;
+    if (isUser) beginUserGesture();
+    else if (userActiveRef.current) return;
 
     const zRaw = e?.properties?.zoomLevel;
     const zoom = typeof zRaw === 'number' && Number.isFinite(zRaw) ? clamp(zRaw, 1, 20) : null;
@@ -403,11 +419,6 @@ export function MapRenderer(props: MapRendererProps) {
     }
 
     if (nextRegion) lastRegionRef.current = nextRegion;
-
-    if (isUser && !userActiveRef.current) {
-      userActiveRef.current = true;
-      onPanDrag?.();
-    }
 
     if (regionEventMode === 'continuous') {
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
@@ -532,6 +543,7 @@ export function MapRenderer(props: MapRendererProps) {
         zoomEnabled
         pitchEnabled
         rotateEnabled
+        onRegionWillChange={handleRegionWillChange}
         onRegionDidChange={handleRegionDidChange}
         onPress={onMapPress}
       >
