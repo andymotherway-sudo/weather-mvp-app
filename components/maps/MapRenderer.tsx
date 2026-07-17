@@ -411,9 +411,6 @@ export function MapRenderer(props: MapRendererProps) {
       emitRegion();
     }, isUser ? 250 : 80);
 
-    if (!isUser && regionEventMode !== 'continuous') {
-      emitRegion();
-    }
   };
 
   const localImage = radar.localImage ?? null;

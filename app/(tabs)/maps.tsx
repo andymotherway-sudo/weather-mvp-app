@@ -1233,6 +1233,7 @@ export default function MapsScreen() {
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
   const radarPrefsHydratedRef = useRef(false);
   const stormScopeToggleBusyRef = useRef(false);
+  const pendingButtonZoomRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (animationRecordMode) return;
@@ -3193,13 +3194,16 @@ export default function MapsScreen() {
 
   const handleMapZoomButton = useCallback((delta: number) => {
     const targetRegion = region ?? stableInitialRegion;
-    const currentZoom =
-      Number.isFinite(mapZoom)
+    const requestedZoom =
+      Number.isFinite(pendingButtonZoomRef.current)
+        ? pendingButtonZoomRef.current
+        : Number.isFinite(mapZoom)
         ? mapZoom
         : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
+    const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
 
-    setMapZoom(nextZoom);
+    pendingButtonZoomRef.current = nextZoom;
     mapCameraRef.current?.setCamera?.({
       zoomLevel: nextZoom,
       animationDuration: 0,
@@ -3826,6 +3830,7 @@ export default function MapsScreen() {
                 ? (nextRegion as any).zoom
                 : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
+            pendingButtonZoomRef.current = null;
             setMapZoom(zFloat);
 
             radarCtl.refreshLocalIfNeeded();
