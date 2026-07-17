@@ -1,30 +1,28 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.213**
-Android version code: **10230**
+Release: **OMNIwx 1.1.214**
+Android version code: **10231**
 Track: **Closed testing / internal testing candidate**
 Date: **July 17, 2026**
 
 ## Play Console Paste Notes
 
-This build packages the follow-up map interaction fix for hands-on testing. The focus is still Maps: radar baseline behavior, Storm Scope handoff, and the button-to-pinch zoom handoff. This release specifically makes zoom buttons act like one-shot camera zoom commands without immediately feeding optimistic zoom state or non-user region updates back through React, so the next pinch can take over cleanly. Wind Particles remain disabled so testing stays centered on radar behavior and general map responsiveness.
+This build shifts the focus away from maps and tightens two forecast details that were easy to spot in normal use. Current air quality can now prefer AirNow observations when the worker has a configured AirNow key, which should better reflect active U.S. smoke and pollution events than the prior model-only snapshot path. The compact daily forecast tiles also now show relative humidity and dew point before expansion, so high-moisture and muggy setups are easier to scan at a glance.
 
 ## Tester Notes
 
-Please focus testing on Maps:
+Please focus testing on forecast and air-quality behavior:
 
-- Verify standard radar mosaic behavior on first open.
-- Confirm Storm Scope can still be entered and exited cleanly.
-- Confirm zoom buttons behave like simple zoom controls during normal map use.
-- Confirm pinch zoom and map dragging still work right after using the zoom buttons.
-- Confirm repeated button taps followed by an immediate pinch or drag still feels natural.
-- Confirm a pure two-finger pinch no longer jumps between zoom levels or shifts position unexpectedly.
-- Confirm using `+` or `-` and then immediately pinching does not cause the map to freak out or fight the gesture.
+- Verify the current AQI card better reflects active U.S. air-quality events in smoke-heavy areas.
+- Confirm AQI still loads cleanly when AirNow is unavailable and falls back gracefully.
+- Confirm the compact daily tiles show both `RH` and `DP` without needing expansion.
+- Confirm expanded daily details still match the compact tile values for humidity and dew point.
+- Spot check a few different cities to make sure daily tile layout still holds on shorter and longer condition labels.
 
 ## Internal Release Checklist
 
-- App version: `1.1.213`
-- Android version code: `10230`
+- App version: `1.1.214`
+- Android version code: `10231`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

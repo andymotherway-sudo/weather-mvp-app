@@ -3524,11 +3524,61 @@ function airQualityLabelForUsAqi(aqi: number | null) {
   return "Hazardous";
 }
 
-async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string): Promise<AerosolSnapshot> {
+async function fetchAirNowCurrentAqi(lat: number, lon: number, apiKey: string): Promise<AerosolSnapshot | null> {
+  const key = apiKey.trim();
+  if (!key) return null;
+
+  const params = new URLSearchParams({
+    format: "application/json",
+    latitude: String(lat),
+    longitude: String(lon),
+    distance: "30",
+    API_KEY: key,
+  });
+  const url = `https://www.airnowapi.org/aq/observation/latLong/current/?${params.toString()}`;
+
+  try {
+    const json: any = await fetchJsonWithHeaders(url, { accept: "application/json" });
+    const rows = Array.isArray(json) ? json : [];
+    if (!rows.length) return null;
+
+    const best = rows.reduce((winner: any | null, row: any) => {
+      const aqi = safeNum(row?.AQI);
+      if (aqi == null) return winner;
+      if (!winner) return row;
+      const winnerAqi = safeNum(winner?.AQI);
+      return winnerAqi == null || aqi > winnerAqi ? row : winner;
+    }, null);
+    const usAqi = safeNum(best?.AQI);
+    if (usAqi == null) return null;
+
+    return {
+      index: normalizeAerosolIndex({ usAqi }),
+      label: airQualityLabelForUsAqi(usAqi),
+      source: "AirNow current observations",
+      airQualityIndex: usAqi,
+      airQualityLabel:
+        typeof best?.Category?.Name === "string" && best.Category.Name.trim()
+          ? best.Category.Name.trim()
+          : airQualityLabelForUsAqi(usAqi),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string, env?: Env): Promise<AerosolSnapshot> {
+  const airNowKey = typeof env?.AIRNOW_API_KEY === "string" ? env.AIRNOW_API_KEY.trim() : "";
+  if (airNowKey) {
+    const airNowSnapshot = await fetchAirNowCurrentAqi(lat, lon, airNowKey);
+    if (airNowSnapshot) return airNowSnapshot;
+  }
+
   const url =
     `https://air-quality-api.open-meteo.com/v1/air-quality` +
     `?latitude=${encodeURIComponent(String(lat))}` +
     `&longitude=${encodeURIComponent(String(lon))}` +
+    `&current=us_aqi,pm2_5,pm10,ozone,aerosol_optical_depth,dust` +
     `&hourly=aerosol_optical_depth,pm2_5,pm10,dust,us_aqi,ozone` +
     `&forecast_hours=24` +
     `&past_hours=3` +
@@ -3536,28 +3586,30 @@ async function fetchAerosolSnapshot(lat: number, lon: number, timezone: string):
 
   try {
     const json: any = await fetchJsonWithHeaders(url);
+    const current = json?.current ?? {};
+    const currentTime = typeof current?.time === "string" ? current.time : null;
     const hourly = json?.hourly ?? {};
     const times: string[] = Array.isArray(hourly?.time) ? hourly.time : [];
-    if (!times.length) {
+    if (
+      currentTime == null &&
+      !times.length
+    ) {
       return { index: null, label: null, source: "Open-Meteo air quality", airQualityIndex: null, airQualityLabel: null };
     }
 
-    const now = Date.now();
-    let bestIdx = 0;
-    let bestDt = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < times.length; i++) {
-      const t = new Date(times[i]).getTime();
-      if (!Number.isFinite(t)) continue;
-      const dt = Math.abs(t - now);
-      if (dt < bestDt) {
-        bestDt = dt;
-        bestIdx = i;
-      }
+    let bestIdx = currentTime != null ? times.indexOf(currentTime) : -1;
+    if (bestIdx < 0 && times.length) {
+      bestIdx = Math.max(0, Math.min(times.length - 1, Math.floor(times.length / 2)));
     }
 
-    const pick = (name: string) => {
+    const pickHourly = (name: string) => {
       const arr = hourly?.[name];
-      return Array.isArray(arr) ? safeNum(arr[bestIdx]) : null;
+      return bestIdx >= 0 && Array.isArray(arr) ? safeNum(arr[bestIdx]) : null;
+    };
+    const pickCurrent = (name: string) => safeNum(current?.[name]);
+    const pick = (name: string) => {
+      const currentValue = pickCurrent(name);
+      return currentValue != null ? currentValue : pickHourly(name);
     };
 
     const usAqi = pick("us_aqi");
@@ -9583,7 +9635,7 @@ async function handleWorkerRequest(
             [moonDays, sunDays, aerosolSnapshot] = await Promise.all([
               Promise.all(astroDates.map((date) => fetchMoonDay(lat, lon, date, offset))),
               Promise.all(astroDates.map((date) => fetchSunDay(lat, lon, date, offset))),
-              fetchAerosolSnapshot(lat, lon, timezone),
+              fetchAerosolSnapshot(lat, lon, timezone, env),
             ]);
           } catch (error: any) {
             return new Response(

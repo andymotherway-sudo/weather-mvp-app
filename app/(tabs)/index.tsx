@@ -2823,10 +2823,13 @@ function SimpleDailyOverview({
             safeNum(day?.daylightDurationSec ?? day?.daylight_duration ?? day?.daylightDuration) ?? null;
           const uvMax =
             safeNum(day?.uvIndexMax ?? day?.uv_index_max ?? day?.uvMax ?? day?.uv) ?? uvIndex ?? null;
+          const dewPointValue =
+            safeNum(day?.dewPointMaxF ?? day?.dewpointMaxF ?? day?.dewPointF ?? day?.dewpointF) ?? null;
           const humidityText =
             safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct) != null
               ? `${Math.round(safeNum(day?.humidityMaxPct ?? day?.relativeHumidityMaxPct ?? day?.humidityPct) ?? 0)}%`
               : '—';
+          const dewPointText = dewPointValue != null ? `${Math.round(dewPointValue)}°` : '—';
           const pressureText =
             safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) != null
               ? `${Math.round(safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) ?? 0)} hPa`
@@ -2888,6 +2891,13 @@ function SimpleDailyOverview({
                   <Text style={styles.dailyForecastSummary} numberOfLines={expanded ? 2 : 1}>
                     {summaryLine}
                   </Text>
+                  {!expanded ? (
+                    <View style={styles.dailyCompactMetaRow}>
+                      <Text style={styles.dailyCompactMetaText}>RH {humidityText}</Text>
+                      <Text style={styles.dailyCompactMetaDot}>•</Text>
+                      <Text style={styles.dailyCompactMetaText}>DP {dewPointText}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <View style={styles.dailyForecastSide}>
                   <Text style={styles.dailyForecastSideValue}>{pop != null ? `${Math.round(pop)}%` : '—'}</Text>
@@ -3073,6 +3083,13 @@ function DailyForecastList({
                 <Text style={styles.dailyForecastSummary} numberOfLines={expanded ? 2 : 1}>
                   {summaryLine || narrative.charAt(0).toUpperCase() + narrative.slice(1)}
                 </Text>
+                {!expanded ? (
+                  <View style={styles.dailyCompactMetaRow}>
+                    <Text style={styles.dailyCompactMetaText}>RH {humidity != null ? `${Math.round(humidity)}%` : '—'}</Text>
+                    <Text style={styles.dailyCompactMetaDot}>•</Text>
+                    <Text style={styles.dailyCompactMetaText}>DP {dewPoint != null ? `${Math.round(dewPoint)}°` : '—'}</Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.dailyForecastSide}>
@@ -7106,6 +7123,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     lineHeight: 17,
+  },
+  dailyCompactMetaRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  dailyCompactMetaText: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  dailyCompactMetaDot: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 11,
+    fontWeight: '900',
   },
 
   dailyForecastSide: {
