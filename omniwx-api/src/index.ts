@@ -3532,7 +3532,7 @@ async function fetchAirNowCurrentAqi(lat: number, lon: number, apiKey: string): 
     format: "application/json",
     latitude: String(lat),
     longitude: String(lon),
-    distance: "30",
+    distance: "50",
     API_KEY: key,
   });
   const url = `https://www.airnowapi.org/aq/observation/latLong/current/?${params.toString()}`;
@@ -5474,7 +5474,7 @@ function extractMoonPhaseDegrees(props: any): number | null {
 
 function buildAstroLocationCacheKey(reqUrl: URL, lat: number, lon: number) {
   const keyUrl = new URL(reqUrl.toString());
-  keyUrl.pathname = "/__cache__/astro/location/v6";
+  keyUrl.pathname = "/__cache__/astro/location/v7";
   keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.02)));
   keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.02)));
   const placeName = reqUrl.searchParams.get("placeName");
