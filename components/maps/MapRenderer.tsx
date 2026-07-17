@@ -291,6 +291,7 @@ export function MapRenderer(props: MapRendererProps) {
   const initialCamera = mountInitialCameraRef.current;
 
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
+  const liveZoomRef = useRef<number>(initialCamera.zoomLevel);
   const lastRegionRef = useRef<Region>(mountInitialRegionRef.current);
 
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
@@ -344,6 +345,10 @@ export function MapRenderer(props: MapRendererProps) {
   }, []);
 
   const emitRegion = () => {
+    const nextZoom = liveZoomRef.current;
+    if (Number.isFinite(nextZoom) && Math.abs(nextZoom - liveZoom) > 0.001) {
+      setLiveZoom(nextZoom);
+    }
     onRegionChangeComplete(lastRegionRef.current);
   };
 
@@ -352,7 +357,10 @@ export function MapRenderer(props: MapRendererProps) {
 
     const zRaw = e?.properties?.zoomLevel;
     const zoom = typeof zRaw === 'number' && Number.isFinite(zRaw) ? clamp(zRaw, 1, 20) : null;
-    if (zoom !== null) setLiveZoom(zoom);
+    if (zoom !== null) {
+      liveZoomRef.current = zoom;
+      if (!isUser && Math.abs(zoom - liveZoom) > 0.001) setLiveZoom(zoom);
+    }
 
     const coords = e?.geometry?.coordinates?.[0];
     const polyRegion = regionFromBoundsPolygon(coords);
@@ -388,7 +396,8 @@ export function MapRenderer(props: MapRendererProps) {
       const r = regionFromBounds(bounds);
       if (r) {
         const z2 = zoom ?? approxZoomFromLongitudeDelta(r.longitudeDelta);
-        setLiveZoom(z2);
+        liveZoomRef.current = z2;
+        if (!isUser && Math.abs(z2 - liveZoom) > 0.001) setLiveZoom(z2);
         nextRegion = { ...r, zoom: z2 };
       }
     }
