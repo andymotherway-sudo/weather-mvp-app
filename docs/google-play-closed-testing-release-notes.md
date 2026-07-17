@@ -1,28 +1,28 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.215**
-Android version code: **10232**
+Release: **OMNIwx 1.1.216**
+Android version code: **10233**
 Track: **Closed testing / internal testing candidate**
 Date: **July 17, 2026**
 
 ## Play Console Paste Notes
 
-This build folds in the follow-up fixes from live field testing. The map zoom buttons are now truly one-shot camera zoom commands with no delayed region writeback left behind to interfere with the next pinch gesture. On the forecast side, the current AQI path now forces a fresh astro cache generation after the AirNow rollout and uses a wider AirNow reporting-area search so smoke-heavy northern Minnesota locations stop getting stuck on stale model-only values.
+This build keeps chasing the remaining two issues called out in live use. The map wrapper now tightens when it emits a settled region after user interaction so a pinch gesture is less likely to get an early state writeback while it is still in flight. The daily forecast path also stops reusing the current AQI value across every daily tile and instead uses each day’s own AQI enrichment value.
 
 ## Tester Notes
 
-Please focus testing on maps and current air quality:
+Please focus testing on pinch zoom and forecast AQI:
 
-- Confirm pinch zoom stays smooth after using the `+` or `-` buttons.
-- Confirm repeated zoom-button taps no longer leave the map fighting the next pinch or drag.
-- Verify current AQI for northern Minnesota locations refreshes off the stale value path and better tracks active smoke conditions.
-- Spot check Bemidji and Brainerd specifically for more realistic current AQI behavior.
-- Confirm daily tiles still show `RH` and `DP` correctly in the collapsed state.
+- Confirm a pure two-finger pinch no longer gets a premature camera/state snap while zooming.
+- Confirm pinch zoom still works cleanly after using the `+` or `-` buttons first.
+- Verify daily AQI values are no longer identical across every day unless the source data really matches.
+- Spot check hourly and daily AQI together to make sure the daily rollup now differs by day when hourly values differ.
+- Confirm current AQI for smoke-heavy northern Minnesota locations still loads and updates normally.
 
 ## Internal Release Checklist
 
-- App version: `1.1.215`
-- Android version code: `10232`
+- App version: `1.1.216`
+- Android version code: `10233`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

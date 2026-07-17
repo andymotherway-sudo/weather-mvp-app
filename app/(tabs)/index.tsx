@@ -2834,7 +2834,9 @@ function SimpleDailyOverview({
             safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) != null
               ? `${Math.round(safeNum(day?.pressureHpa ?? day?.pressure_hpa ?? day?.surfacePressureHpa) ?? 0)} hPa`
               : '—';
-          const aqiText = airQualityIndex != null ? `${Math.round(airQualityIndex)}` : '—';
+          const dailyAqi =
+            safeNum(day?.airQualityUsAqiMax ?? day?.airQualityIndexMax ?? day?.airQualityUsAqi ?? day?.aqiMax) ?? null;
+          const aqiText = dailyAqi != null ? `${Math.round(dailyAqi)}` : '—';
           const label = formatDailyLabel(day?.date ?? day?.time ?? day?.datetime);
           const emoji = weatherCodeToEmoji(code);
           const conditionLabel = weatherCodeToLabel(code);
@@ -2857,7 +2859,7 @@ function SimpleDailyOverview({
             { label: 'RH', value: humidityText.replace('???', '—'), ratio: humidityValue != null ? Math.max(0, Math.min(1, humidityValue / 100)) : 0 },
             { label: 'Precip chance', value: pop != null ? `${Math.round(pop)}%` : '—', ratio: pop != null ? Math.max(0, Math.min(1, pop / 100)) : 0 },
             { label: 'Pressure', value: pressureText.replace('???', '—'), ratio: pressureValue != null ? Math.max(0, Math.min(1, (pressureValue - 980) / 60)) : 0 },
-            { label: 'Air quality', value: aqiText.replace('???', '—'), ratio: airQualityIndex != null ? Math.max(0, Math.min(1, airQualityIndex / 150)) : 0 },
+            { label: 'Air quality', value: aqiText.replace('???', '—'), ratio: dailyAqi != null ? Math.max(0, Math.min(1, dailyAqi / 150)) : 0 },
           ].filter((row) => row.value !== '???' && row.value !== '—');
 
           return (

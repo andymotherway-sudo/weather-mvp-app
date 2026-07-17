@@ -406,10 +406,20 @@ export function MapRenderer(props: MapRendererProps) {
     }
 
     if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
-    userEndTimerRef.current = setTimeout(() => {
-      userActiveRef.current = false;
-      emitRegion();
-    }, isUser ? 250 : 80);
+
+    if (isUser) {
+      userEndTimerRef.current = setTimeout(() => {
+        userActiveRef.current = false;
+        emitRegion();
+      }, 250);
+      return;
+    }
+
+    if (!userActiveRef.current) {
+      userEndTimerRef.current = setTimeout(() => {
+        emitRegion();
+      }, 80);
+    }
 
   };
 
