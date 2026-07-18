@@ -48,7 +48,6 @@ export type MapRendererProps = {
 
   cameraRef?: React.RefObject<any>;
   onMapPress?: (e: any) => void;
-  onDiagnosticEvent?: (label: string, details?: Record<string, unknown> | null) => void;
 };
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
@@ -275,7 +274,6 @@ export function MapRenderer(props: MapRendererProps) {
     overlays,
     children,
     onMapPress,
-    onDiagnosticEvent,
   } = props;
 
   const internalCameraRef = useRef<any>(null);
@@ -348,11 +346,8 @@ export function MapRenderer(props: MapRendererProps) {
     }
     if (userActiveRef.current) return;
     userActiveRef.current = true;
-    onDiagnosticEvent?.('renderer:beginUserGesture', {
-      liveZoom: Number.isFinite(liveZoomRef.current) ? Number(liveZoomRef.current.toFixed(3)) : null,
-    });
     onPanDrag?.();
-  }, [onDiagnosticEvent, onPanDrag]);
+  }, [onPanDrag]);
 
   useEffect(() => {
     return () => {
@@ -366,34 +361,10 @@ export function MapRenderer(props: MapRendererProps) {
     if (Number.isFinite(nextZoom) && Math.abs(nextZoom - liveZoom) > 0.001) {
       setLiveZoom(nextZoom);
     }
-    onDiagnosticEvent?.('renderer:emitRegion', {
-      isUserInteraction,
-      liveZoom: Number.isFinite(nextZoom) ? Number(nextZoom.toFixed(3)) : null,
-      userGestureActive: userActiveRef.current,
-      center: lastRegionRef.current
-        ? {
-            lat: Number(lastRegionRef.current.latitude.toFixed(4)),
-            lon: Number(lastRegionRef.current.longitude.toFixed(4)),
-          }
-        : null,
-    });
     onRegionChangeComplete(lastRegionRef.current, { isUserInteraction });
   };
 
   const handleRegionWillChange = (e: any) => {
-    const zoom = typeof e?.properties?.zoomLevel === 'number' && Number.isFinite(e?.properties?.zoomLevel)
-      ? Number(e.properties.zoomLevel.toFixed(3))
-      : null;
-    const centerRaw = e?.properties?.centerCoordinate ?? e?.properties?.center;
-    const eventCenter = Array.isArray(centerRaw) && centerRaw.length >= 2
-      ? { lon: Number(Number(centerRaw[0]).toFixed(4)), lat: Number(Number(centerRaw[1]).toFixed(4)) }
-      : null;
-    onDiagnosticEvent?.('renderer:regionWillChange', {
-      isUserInteraction: !!e?.properties?.isUserInteraction,
-      zoom,
-      center: eventCenter,
-      userGestureActive: userActiveRef.current,
-    });
     if (!!e?.properties?.isUserInteraction) beginUserGesture();
   };
 
@@ -471,18 +442,6 @@ export function MapRenderer(props: MapRendererProps) {
         emitRegion(false);
       }, 80);
     }
-
-    const eventCenterRaw = e?.properties?.centerCoordinate ?? e?.properties?.center;
-    const eventCenter = Array.isArray(eventCenterRaw) && eventCenterRaw.length >= 2
-      ? { lon: Number(Number(eventCenterRaw[0]).toFixed(4)), lat: Number(Number(eventCenterRaw[1]).toFixed(4)) }
-      : null;
-    onDiagnosticEvent?.('renderer:regionDidChange', {
-      isUserInteraction: isUser,
-      zoom: zoom !== null ? Number(zoom.toFixed(3)) : null,
-      center: eventCenter,
-      userGestureActive: userActiveRef.current,
-      hasRegion: !!nextRegion,
-    });
 
   };
 

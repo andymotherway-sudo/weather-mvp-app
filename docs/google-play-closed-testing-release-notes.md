@@ -1,30 +1,31 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.223**
-Android version code: **10240**
+Release: **OMNIwx 1.1.224**
+Android version code: **10241**
 Track: **Closed testing / internal testing candidate**
 Date: **July 18, 2026**
 
 ## Play Console Paste Notes
 
-This build adds an on-screen map diagnostics recorder so we can capture exactly what changes between a normal pinch, a zoom-button tap, and the next pinch attempt. It is intended to expose whether MapLibre gesture state, settled region callbacks, or another camera signal changes only after the zoom buttons are used.
+This build removes the temporary map diagnostics UI and keeps the zoom-button fix only. The `+` and `-` controls now reset the map the same way the `My Location` action was restoring pinch control, but they stay anchored to the current map center and only apply the requested zoom step.
 
 ## Tester Notes
 
-Please focus testing on the pinch-versus-zoom-button handoff:
+Please focus testing on post-button pinch behavior:
 
-- Tap the new `REC` chip on the map, reproduce the issue, tap `Copy`, and paste the diagnostics log back into the bug thread.
-- Confirm pinch zoom still feels normal before any zoom-button tap.
-- Confirm tapping `+` or `-` still changes only camera zoom and does not wake Storm Scope, radar refresh, or other radar-scope behavior by itself.
-- Confirm whether the first pinch after a zoom-button tap still feels like the map is reacting to each finger separately instead of treating the motion as a single pinch gesture.
-- Confirm whether any force-centering, snap-back, or drift appears after the zoom-button tap.
+- Confirm the temporary diagnostics controls are no longer visible on the map screen.
+- Confirm tapping `+` or `-` still zooms the map smoothly and stays centered on the current view.
+- Confirm pinch zoom still feels normal before using the zoom buttons.
+- Confirm pinch zoom still feels normal after using the zoom buttons once or multiple times.
+- Confirm the map no longer behaves like it is trying to follow both fingers separately after a button zoom.
+- Confirm the `My Location` button still works normally and does not introduce any new map reset oddities.
 - Confirm ordinary one-finger panning still feels normal before and after button zooms.
-- Confirm no new regressions were introduced in ordinary map taps or button zoom behavior.
+- Confirm Storm Scope and radar behavior remain unchanged aside from the zoom-button handoff fix.
 
 ## Internal Release Checklist
 
-- App version: `1.1.223`
-- Android version code: `10240`
+- App version: `1.1.224`
+- Android version code: `10241`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

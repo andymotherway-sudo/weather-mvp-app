@@ -4,7 +4,6 @@ import {
   Alert,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -15,7 +14,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
-import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Glass } from '../../components/common/Glass';
@@ -295,15 +293,6 @@ function nearestFrameIndexByIso(frames: Array<{ iso?: string | null }>, iso?: st
 
 function clampNumber(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
-}
-
-function formatDiagnosticNumber(value: number | null | undefined, digits = 4) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : 'na';
-}
-
-function formatDiagnosticRegion(region: Region | null | undefined) {
-  if (!region) return 'region=none';
-  return `lat=${formatDiagnosticNumber(region.latitude)} lon=${formatDiagnosticNumber(region.longitude)} latDelta=${formatDiagnosticNumber(region.latitudeDelta)} lonDelta=${formatDiagnosticNumber(region.longitudeDelta)} zoom=${formatDiagnosticNumber(region.zoom ?? null, 3)}`;
 }
 
 function formatAstroHourLabel(hourOffset: number) {
@@ -683,6 +672,10 @@ async function fetchNesdisAbi13Frames(minutesBack: number): Promise<SatelliteFra
 
 function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
+}
+
+function lonDeltaFromZoomLevel(zoom: number) {
+  return 360 / Math.pow(2, zoom);
 }
 
 function isNexradSite(site: NexradSite) {
@@ -1242,61 +1235,8 @@ export default function MapsScreen() {
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
-  const [mapDiagnosticsEnabled, setMapDiagnosticsEnabled] = useState(false);
-  const [mapDiagnosticsOpen, setMapDiagnosticsOpen] = useState(false);
-  const [mapDiagnosticsCopied, setMapDiagnosticsCopied] = useState(false);
-  const [mapDiagnosticsRevision, setMapDiagnosticsRevision] = useState(0);
   const radarPrefsHydratedRef = useRef(false);
   const stormScopeToggleBusyRef = useRef(false);
-  const mapDiagnosticsStartedAtRef = useRef<number | null>(null);
-  const mapDiagnosticsLogRef = useRef<string[]>([]);
-
-  const appendMapDiagnostic = useCallback((label: string, details?: Record<string, unknown> | null) => {
-    if (!mapDiagnosticsEnabled) return;
-    const now = Date.now();
-    if (mapDiagnosticsStartedAtRef.current == null) mapDiagnosticsStartedAtRef.current = now;
-    const elapsedMs = now - mapDiagnosticsStartedAtRef.current;
-    const extras = details
-      ? Object.entries(details)
-          .filter(([, value]) => value != null)
-          .map(([key, value]) => `${key}=${typeof value === 'string' ? value : JSON.stringify(value)}`)
-          .join(' ')
-      : '';
-    const line = `${elapsedMs.toString().padStart(5, '0')}ms ${label}${extras ? ` ${extras}` : ''}`;
-    mapDiagnosticsLogRef.current = [...mapDiagnosticsLogRef.current.slice(-119), line];
-    setMapDiagnosticsRevision((value) => value + 1);
-  }, [mapDiagnosticsEnabled]);
-
-  const mapDiagnosticsText = useMemo(() => {
-    if (!mapDiagnosticsLogRef.current.length) return 'No diagnostics captured yet.';
-    return mapDiagnosticsLogRef.current.join('\n');
-  }, [mapDiagnosticsRevision]);
-
-  const handleMapDiagnosticsToggle = useCallback(() => {
-    setMapDiagnosticsCopied(false);
-    setMapDiagnosticsEnabled((current) => {
-      if (current) {
-        mapDiagnosticsStartedAtRef.current = null;
-        mapDiagnosticsLogRef.current = [];
-        setMapDiagnosticsRevision((value) => value + 1);
-        setMapDiagnosticsOpen(false);
-        return false;
-      }
-
-      mapDiagnosticsStartedAtRef.current = Date.now();
-      mapDiagnosticsLogRef.current = [];
-      setMapDiagnosticsRevision((value) => value + 1);
-      setMapDiagnosticsOpen(true);
-      return true;
-    });
-  }, []);
-
-  const handleMapDiagnosticsClear = useCallback(() => {
-    mapDiagnosticsStartedAtRef.current = Date.now();
-    mapDiagnosticsLogRef.current = [];
-    setMapDiagnosticsCopied(false);
-    setMapDiagnosticsRevision((value) => value + 1);
-  }, []);
 
   useEffect(() => {
     if (animationRecordMode) return;
@@ -1331,6 +1271,7 @@ export default function MapsScreen() {
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
+  const zoomButtonSeedRegionRef = useRef<Region | null>(null);
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
@@ -1417,21 +1358,6 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const [radarBehaviorZoom, setRadarBehaviorZoom] = useState<number>(4);
-
-  const handleMapDiagnosticsCopy = useCallback(async () => {
-    const header = [
-      'OMNIwx map diagnostics',
-      `capturedAt=${new Date().toISOString()}`,
-      `cameraDebugLabel=${cameraDebugLabel}`,
-      `mapZoom=${formatDiagnosticNumber(mapZoom, 3)}`,
-      `radarBehaviorZoom=${formatDiagnosticNumber(radarBehaviorZoom, 3)}`,
-      formatDiagnosticRegion(region),
-      `mapResetKey=${mapResetKey}`,
-      '',
-    ].join('\n');
-    await Clipboard.setStringAsync(`${header}${mapDiagnosticsText}`);
-    setMapDiagnosticsCopied(true);
-  }, [cameraDebugLabel, mapDiagnosticsText, mapResetKey, mapZoom, radarBehaviorZoom, region]);
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const radarViewActive = state.viewId === 'radar' || state.viewId === 'storm';
@@ -3280,16 +3206,25 @@ export default function MapsScreen() {
     const requestedZoom = Number.isFinite(mapZoom) ? mapZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
+    const nextLongitudeDelta = lonDeltaFromZoomLevel(nextZoom);
+    const nextLatitudeDelta = Math.max(0.0001, nextLongitudeDelta * 0.6);
+    const nextRegion: Region = {
+      latitude: targetRegion.latitude,
+      longitude: targetRegion.longitude,
+      latitudeDelta: nextLatitudeDelta,
+      longitudeDelta: nextLongitudeDelta,
+      zoom: nextZoom,
+    };
 
-    appendMapDiagnostic('zoom-button', {
-      delta,
-      currentZoom: Number(currentZoom.toFixed(3)),
-      nextZoom: Number(nextZoom.toFixed(3)),
-      region: formatDiagnosticRegion(targetRegion),
-      radarBehaviorZoom: Number.isFinite(radarBehaviorZoom) ? Number(radarBehaviorZoom.toFixed(3)) : null,
+    zoomButtonSeedRegionRef.current = nextRegion;
+    setRegion(nextRegion);
+    setMapZoom(nextZoom);
+    setCameraDebugLabel(`zoom-reset:${nextZoom.toFixed(2)}`);
+    setMapResetKey((value) => value + 1);
+    requestAnimationFrame(() => {
+      zoomButtonSeedRegionRef.current = null;
     });
-    mapCameraRef.current?.zoomTo?.(nextZoom, 0);
-  }, [appendMapDiagnostic, mapZoom, radarBehaviorZoom, region, stableInitialRegion]);
+  }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -3886,6 +3821,7 @@ export default function MapsScreen() {
             regionEventMode="settled"
             initialRegion={
               routeFocusSeedRegionRef.current ??
+              zoomButtonSeedRegionRef.current ??
               locateSeedRegionRef.current ??
               radarStationSeedRegionRef.current ??
               stableInitialRegion
@@ -3895,7 +3831,6 @@ export default function MapsScreen() {
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
-            onDiagnosticEvent={appendMapDiagnostic}
               onPanDrag={() => {
                 locateRequestIdRef.current += 1;
               const now = Date.now();
@@ -3903,11 +3838,6 @@ export default function MapsScreen() {
                 lastPanMarkRef.current = now;
                 setCameraDebugLabel('user-pan');
               }
-              appendMapDiagnostic('maps:onPanDrag', {
-                cameraDebugLabel,
-                mapZoom: Number.isFinite(mapZoom) ? Number(mapZoom.toFixed(3)) : null,
-                radarBehaviorZoom: Number.isFinite(radarBehaviorZoom) ? Number(radarBehaviorZoom.toFixed(3)) : null,
-              });
           }}
           onRegionChangeComplete={(nextRegion: Region, meta?: { isUserInteraction: boolean }) => {
             const zFloat =
@@ -3919,12 +3849,6 @@ export default function MapsScreen() {
             setMapZoom(zFloat);
             if (meta?.isUserInteraction) setRadarBehaviorZoom(zFloat);
             if (meta?.isUserInteraction) radarCtl.refreshLocalIfNeeded();
-            appendMapDiagnostic('maps:onRegionChangeComplete', {
-              isUserInteraction: !!meta?.isUserInteraction,
-              nextZoom: Number(zFloat.toFixed(3)),
-              nextRegion: formatDiagnosticRegion(nextRegion),
-              cameraDebugLabel,
-            });
           }}
           radar={mapRadar}
           overlays={renderedOverlays}
@@ -5116,22 +5040,6 @@ export default function MapsScreen() {
           </View>
         ) : (
           <View pointerEvents="box-none" style={styles.topChrome}>
-            <View style={styles.diagnosticDock}>
-              <Pressable
-                onPress={handleMapDiagnosticsToggle}
-                style={[styles.diagnosticChip, mapDiagnosticsEnabled ? styles.diagnosticChipActive : null]}
-              >
-                <Text style={styles.diagnosticChipText}>{mapDiagnosticsEnabled ? 'REC ON' : 'REC'}</Text>
-              </Pressable>
-              {mapDiagnosticsEnabled ? (
-                <Pressable
-                  onPress={() => setMapDiagnosticsOpen((value) => !value)}
-                  style={styles.diagnosticMiniChip}
-                >
-                  <Text style={styles.diagnosticMiniChipText}>{mapDiagnosticsOpen ? 'Hide' : 'View'}</Text>
-                </Pressable>
-              ) : null}
-            </View>
             <View style={styles.topChromeSpacer} />
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
@@ -5140,33 +5048,6 @@ export default function MapsScreen() {
             </View>
           </View>
         )}
-
-        {!animationRecordMode && mapDiagnosticsEnabled && mapDiagnosticsOpen ? (
-          <View style={[styles.diagnosticPanelWrap, { top: 72 + insets.top }]}>
-            <View style={styles.diagnosticPanel}>
-              <Text style={styles.diagnosticPanelTitle}>Map diagnostics</Text>
-              <Text style={styles.diagnosticPanelHint}>
-                Start recording, pinch normally, tap a zoom button, pinch again, then copy and paste here.
-              </Text>
-              <View style={styles.diagnosticPanelActions}>
-                <Pressable onPress={handleMapDiagnosticsCopy} style={styles.diagnosticPanelButton}>
-                  <Text style={styles.diagnosticPanelButtonText}>{mapDiagnosticsCopied ? 'Copied' : 'Copy'}</Text>
-                </Pressable>
-                <Pressable onPress={handleMapDiagnosticsClear} style={styles.diagnosticPanelButton}>
-                  <Text style={styles.diagnosticPanelButtonText}>Clear</Text>
-                </Pressable>
-                <Pressable onPress={() => setMapDiagnosticsOpen(false)} style={styles.diagnosticPanelButton}>
-                  <Text style={styles.diagnosticPanelButtonText}>Close</Text>
-                </Pressable>
-              </View>
-              <ScrollView style={styles.diagnosticScroll} contentContainerStyle={styles.diagnosticScrollContent}>
-                <Text selectable style={styles.diagnosticText}>
-                  {mapDiagnosticsText}
-                </Text>
-              </ScrollView>
-            </View>
-          </View>
-        ) : null}
 
         {!animationRecordMode && stormScopeNexradVisible ? (
           <View pointerEvents="none" style={styles.stationProductBadgeWrap}>
@@ -7227,101 +7108,6 @@ const styles = StyleSheet.create({
   },
   topChromeSpacer: {
     flex: 1,
-  },
-  diagnosticDock: {
-    width: 74,
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  diagnosticChip: {
-    minWidth: 56,
-    height: 30,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(248,250,252,0.24)',
-    backgroundColor: 'rgba(2,6,23,0.76)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-  diagnosticChipActive: {
-    borderColor: 'rgba(248,113,113,0.44)',
-    backgroundColor: 'rgba(127,29,29,0.72)',
-  },
-  diagnosticChipText: {
-    color: '#f8fafc',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  diagnosticMiniChip: {
-    minWidth: 46,
-    height: 24,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.24)',
-    backgroundColor: 'rgba(15,23,42,0.74)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  diagnosticMiniChipText: {
-    color: 'rgba(226,232,240,0.86)',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  diagnosticPanelWrap: {
-    position: 'absolute',
-    left: 12,
-    right: 80,
-  },
-  diagnosticPanel: {
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.26)',
-    backgroundColor: 'rgba(2,6,23,0.94)',
-    padding: 12,
-    gap: 10,
-  },
-  diagnosticPanelTitle: {
-    color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  diagnosticPanelHint: {
-    color: 'rgba(226,232,240,0.78)',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  diagnosticPanelActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  diagnosticPanelButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.26)',
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  diagnosticPanelButtonText: {
-    color: '#f8fafc',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  diagnosticScroll: {
-    maxHeight: 180,
-  },
-  diagnosticScrollContent: {
-    paddingBottom: 4,
-  },
-  diagnosticText: {
-    color: 'rgba(226,232,240,0.92)',
-    fontSize: 10,
-    fontWeight: '700',
-    lineHeight: 14,
   },
   stationProductBadgeWrap: {
     position: 'absolute',
