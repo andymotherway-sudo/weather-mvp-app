@@ -291,6 +291,22 @@ function nearestFrameIndexByIso(frames: Array<{ iso?: string | null }>, iso?: st
   return bestIndex;
 }
 
+function buildMasterTimelineFrames(...groups: Array<Array<{ iso?: string | null }>>): Array<{ iso: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ iso: string }> = [];
+  groups.forEach((frames) => {
+    frames.forEach((frame) => {
+      const iso = typeof frame?.iso === 'string' ? frame.iso : '';
+      if (!iso || seen.has(iso)) return;
+      const time = new Date(iso).getTime();
+      if (!Number.isFinite(time)) return;
+      seen.add(iso);
+      out.push({ iso });
+    });
+  });
+  return out.sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime());
+}
+
 function clampNumber(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -1519,7 +1535,8 @@ export default function MapsScreen() {
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
   const satelliteFrameStepMinutes = goesWmsSatelliteOnly ? GOES_WMS_FRAME_STEP_MINUTES : SATELLITE_FRAME_STEP_MINUTES;
-  const satellitePlayIntervalMs = SATELLITE_PLAY_INTERVAL_MS;
+  const playbackRate = Math.max(0.5, Math.min(2, state.radarTime.playbackRate ?? 1));
+  const satellitePlayIntervalMs = Math.max(300, Math.round(SATELLITE_PLAY_INTERVAL_MS / playbackRate));
   const [satelliteFrames, setSatelliteFrames] = useState<SatelliteFrame[]>(() =>
     buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
   );
@@ -1961,6 +1978,7 @@ export default function MapsScreen() {
     suspendRasterTransitions: false,
     // Keep the base mosaic playlist moving while optional buffered frames warm in the background.
     playbackBlocked: false,
+    playbackRate,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -1969,6 +1987,24 @@ export default function MapsScreen() {
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
   const radarProductMeta = RADAR_PRODUCT_META[product];
+  const atmosphericTimelineFrames = useMemo(
+    () => buildMasterTimelineFrames(radarEnabled ? uiFrames : [], animatedSatelliteEnabled ? satellitePlaybackFrames : []),
+    [animatedSatelliteEnabled, radarEnabled, satellitePlaybackFrames, uiFrames],
+  );
+  const atmosphericTimelineActive = radarEnabled && animatedSatelliteEnabled && atmosphericTimelineFrames.length > 1;
+  const atmosphericTimelineFrameIndex = useMemo(() => {
+    const fallbackIso =
+      activeFrameIso ?? satellitePlaybackFrames[clampIndex(satelliteFrameIndex, satellitePlaybackFrameCount)]?.iso ?? null;
+    const nearestIndex = nearestFrameIndexByIso(atmosphericTimelineFrames, fallbackIso);
+    return nearestIndex >= 0 ? nearestIndex : clampIndex(state.radarTime.frameIndex, atmosphericTimelineFrames.length);
+  }, [
+    activeFrameIso,
+    atmosphericTimelineFrames,
+    satelliteFrameIndex,
+    satellitePlaybackFrameCount,
+    satellitePlaybackFrames,
+    state.radarTime.frameIndex,
+  ]);
   const synchronizedSatelliteFrameIndex = useMemo(() => {
     if (radarEnabled && activeFrameIso && satellitePlaybackFrameCount > 0) {
       const nearestIndex = nearestFrameIndexByIso(satellitePlaybackFrames, activeFrameIso);
@@ -2181,9 +2217,6 @@ export default function MapsScreen() {
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
-    const nearestIndex = nearestFrameIndexByIso(satellitePlaybackFrames, activeFrameIso);
-    if (nearestIndex < 0) return;
-    setSatelliteFrameIndex((current) => (current === nearestIndex ? current : nearestIndex));
     setSatellitePlaying(state.radarTime.playing);
   }, [
     activeFrameIso,
@@ -3257,8 +3290,39 @@ export default function MapsScreen() {
 
   const satelliteFrameCount = satellitePlaybackFrames.length;
   const satelliteTimelineActive = !radarEnabled && animatedSatelliteEnabled && satelliteFrameCount > 1;
-  const timelineFrames = radarEnabled ? uiFrames : satellitePlaybackFrames;
-  const timelineFrameIndex = radarEnabled ? state.radarTime.frameIndex : satelliteFrameIndex;
+  const setAtmosphericFrameByIso = useCallback((iso: string | null) => {
+    if (!iso) return;
+
+    if (radarEnabled && frameCount > 0) {
+      const radarIndex = nearestFrameIndexByIso(uiFrames, iso);
+      if (radarIndex >= 0) {
+        dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(radarIndex, frameCount) });
+      }
+    }
+
+    if (animatedSatelliteEnabled && satelliteFrameCount > 0) {
+      const satelliteIndex = nearestFrameIndexByIso(satellitePlaybackFrames, iso);
+      if (satelliteIndex >= 0) {
+        setSatelliteFrameIndex((current) =>
+          current === satelliteIndex ? current : clampIndex(satelliteIndex, satelliteFrameCount),
+        );
+      }
+    }
+  }, [
+    animatedSatelliteEnabled,
+    dispatch,
+    frameCount,
+    radarEnabled,
+    satelliteFrameCount,
+    satellitePlaybackFrames,
+    uiFrames,
+  ]);
+  const timelineFrames = atmosphericTimelineActive ? atmosphericTimelineFrames : radarEnabled ? uiFrames : satellitePlaybackFrames;
+  const timelineFrameIndex = atmosphericTimelineActive
+    ? atmosphericTimelineFrameIndex
+    : radarEnabled
+      ? state.radarTime.frameIndex
+      : satelliteFrameIndex;
   const timelinePlaying = radarEnabled ? state.radarTime.playing : satellitePlaying;
   const showTimeline = isFocused && !animationRecordMode && ((radarEnabled && frameCount > 1) || satelliteTimelineActive);
   const satelliteLoadStatus = useMemo(() => {
@@ -3482,9 +3546,10 @@ export default function MapsScreen() {
             ? goesWestWvOpacity
             : cloudsOpacity;
   const animationCompositorInterval =
-    activeAnimationKind === 'truecolor'
-      ? 1050
-      : 900;
+    Math.max(
+      300,
+      Math.round((activeAnimationKind === 'truecolor' ? 1050 : 900) / playbackRate),
+    );
   const animationCompositorBlend =
     activeAnimationKind === 'truecolor'
       ? 680
@@ -5558,12 +5623,19 @@ export default function MapsScreen() {
                   <TimelineScrubber
                     frameIndex={timelineFrameIndex}
                     playing={timelinePlaying}
+                    playbackRate={playbackRate}
                     frames={timelineFrames as any}
-                    modeLabel={radarEnabled ? 'Radar loop' : 'Satellite loop'}
+                    modeLabel={atmosphericTimelineActive ? 'Atmospheric loop' : radarEnabled ? 'Radar loop' : 'Satellite loop'}
                     onRecord={handleAnimationRecordPress}
                     recordBusy={animationExporting}
                     recordDisabled={animationExporting || animationExportFrames.length < 2}
                     onSetFrame={(frameIndex) => {
+                      if (atmosphericTimelineActive) {
+                        const targetIso = timelineFrames[clampIndex(frameIndex, timelineFrames.length)]?.iso ?? null;
+                        setAtmosphericFrameByIso(targetIso);
+                        return;
+                      }
+
                       if (radarEnabled) {
                         dispatch({ type: 'SET_RADAR_FRAME', frameIndex: clampIndex(frameIndex, frameCount) });
                         return;
@@ -5588,6 +5660,9 @@ export default function MapsScreen() {
                       }
 
                       setSatellitePlaying(playing);
+                    }}
+                    onSetPlaybackRate={(nextRate) => {
+                      dispatch({ type: 'SET_RADAR_PLAYBACK_RATE', playbackRate: nextRate });
                     }}
                   />
                 </Glass>
@@ -6193,7 +6268,6 @@ export default function MapsScreen() {
           onClose={() => setLayersSheetOpen(false)}
           state={state}
           nerdy={state.nerdy}
-          allowedGroups={['weather', 'fireAir', 'marine']}
           onToggleLayer={(layerId, enabled) => dispatch({ type: 'SET_LAYER_ENABLED', layerId, enabled })}
           onSetOpacity={(layerId, opacity) => dispatch({ type: 'SET_LAYER_OPACITY', layerId, opacity })}
           onOpenSourceInfo={(layerId) => {
@@ -6203,7 +6277,6 @@ export default function MapsScreen() {
             }
           }}
           onOpenStandardMap={() => {
-            setLayersSheetOpen(false);
             dispatch({ type: 'SET_VIEW', viewId: 'radar' });
           }}
           onOpenAstroMap={() => {
@@ -6216,12 +6289,7 @@ export default function MapsScreen() {
               },
             } as any);
           }}
-          onOpenNauticalMap={() => {
-            setLayersSheetOpen(false);
-            dispatch({ type: 'SET_VIEW', viewId: 'mariner' });
-          }}
           onOpenAviationMap={() => {
-            setLayersSheetOpen(false);
             dispatch({ type: 'SET_VIEW', viewId: 'aviation' });
           }}
           />

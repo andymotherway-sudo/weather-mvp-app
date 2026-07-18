@@ -20,6 +20,7 @@ export function LayerDrawer(props: {
       <View style={{ padding: 0 }}>
         <LayerSheet
           state={state}
+          mode="standard"
           onToggleLayer={onToggleLayer}
           onSetOpacity={onSetOpacity}
           onOpenLegend={onOpenLegend}

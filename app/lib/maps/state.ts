@@ -44,6 +44,7 @@ export type MapAction =
   | { type: 'SET_RADAR_FRAME'; frameIndex: number }
   | { type: 'SET_RADAR_PLAYING'; playing: boolean }
   | { type: 'SET_RADAR_STORM_MODE'; stormMode: boolean }
+  | { type: 'SET_RADAR_PLAYBACK_RATE'; playbackRate: number }
   | { type: 'TOGGLE_RADAR_STORM_MODE' };
 
 function buildDefaultLayers(): Record<LayerId, LayerRuntimeState> {
@@ -95,7 +96,7 @@ export function createInitialMapState(opts?: {
     nerdy,
     viewport,
     layers,
-    radarTime: { frameIndex: 0, playing: false, stormMode: false },
+    radarTime: { frameIndex: 0, playing: false, stormMode: false, playbackRate: 1 },
   };
 }
 
@@ -180,6 +181,15 @@ export function mapReducer(state: MapRuntimeState, action: MapAction): MapRuntim
         radarTime: {
           ...state.radarTime,
           stormMode: action.stormMode,
+        },
+      };
+
+    case 'SET_RADAR_PLAYBACK_RATE':
+      return {
+        ...state,
+        radarTime: {
+          ...state.radarTime,
+          playbackRate: Math.max(0.5, Math.min(2, action.playbackRate)),
         },
       };
 

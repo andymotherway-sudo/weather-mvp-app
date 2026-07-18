@@ -1,34 +1,26 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../common/Glass';
-import { LayerSheet } from './LayerSheet';
+import { LayerSheet, type LayerSheetMode } from './LayerSheet';
 
 import {
   LAYER_CATALOG,
-  type LayerGroupId,
 } from '../../app/lib/maps/layerCatalog';
 import type { LayerId, MapRuntimeState } from '../../app/lib/maps/types';
-
-export type LayerSheetValue = {
-  baseMapStyle: 'dark' | 'light';
-  radarProvider: 'iem' | 'rainviewer';
-};
 
 export function LayerSheetModal(props: {
   visible: boolean;
   onClose: () => void;
   state: MapRuntimeState;
   nerdy: boolean;
-  allowedGroups?: LayerGroupId[];
   onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
   onSetOpacity: (layerId: LayerId, opacity: number) => void;
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
   onOpenStandardMap?: () => void;
   onOpenAstroMap?: () => void;
-  onOpenNauticalMap?: () => void;
   onOpenAviationMap?: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -36,25 +28,45 @@ export function LayerSheetModal(props: {
     visible,
     onClose,
     state,
-    allowedGroups,
     onToggleLayer,
     onSetOpacity,
     onOpenLegend,
     onOpenSourceInfo,
     onOpenStandardMap,
     onOpenAstroMap,
-    onOpenNauticalMap,
     onOpenAviationMap,
   } = props;
 
+  const [mode, setMode] = useState<LayerSheetMode>('standard');
+
+  useEffect(() => {
+    setMode(state.viewId === 'aviation' ? 'aviation' : 'standard');
+  }, [state.viewId, visible]);
+
   const activeCount = useMemo(() => {
+    const activeGroups = mode === 'aviation'
+      ? new Set(['aviation'])
+      : new Set(['weather', 'fireAir', 'marine', 'reference']);
+
     return Object.entries(state.layers ?? {})
       .filter(([, runtime]) => runtime?.enabled)
       .filter(([layerId]) => {
-        const catalog = LAYER_CATALOG.find((l) => l.id === layerId);
-        return catalog ? !allowedGroups?.length || allowedGroups.includes(catalog.group) : false;
+        const catalog = LAYER_CATALOG.find((layer) => layer.id === layerId);
+        return catalog ? activeGroups.has(catalog.group) : false;
       }).length;
-  }, [allowedGroups, state.layers]);
+  }, [mode, state.layers]);
+
+  const handleSelectMode = (nextMode: 'standard' | 'aviation' | 'astronomy') => {
+    if (nextMode === 'astronomy') {
+      onClose();
+      onOpenAstroMap?.();
+      return;
+    }
+
+    setMode(nextMode);
+    if (nextMode === 'standard') onOpenStandardMap?.();
+    if (nextMode === 'aviation') onOpenAviationMap?.();
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -71,72 +83,82 @@ export function LayerSheetModal(props: {
             style={{
               flex: 1,
               borderRadius: 28,
-              paddingHorizontal: 14,
-              paddingTop: 14,
-              paddingBottom: 0,
               overflow: 'hidden',
             }}
           >
+            <View style={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <Pill label="MAP LAYERS" />
+                    {activeCount ? <Pill label={`${activeCount} active`} subtle /> : null}
+                  </View>
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <Pill label="OVERLAYS" />
-                  {activeCount ? <Pill label={`${activeCount} active`} subtle /> : null}
+                  <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }}>Overlay selector</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 4, lineHeight: 18 }}>
+                    Layers apply live as you toggle them. Use the grouped sections below to move faster.
+                  </Text>
                 </View>
 
-                <Text style={{ color: 'white', fontWeight: '900', fontSize: 22 }}>Overlay selector</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.68)', marginTop: 4, lineHeight: 18 }}>
-                  Toggle map layers directly, then close this menu when you are done.
-                </Text>
+                <Pressable
+                  onPress={onClose}
+                  hitSlop={8}
+                  style={{
+                    paddingVertical: 9,
+                    paddingHorizontal: 13,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.12)',
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: '900' }}>Done</Text>
+                </Pressable>
               </View>
-
-              <Pressable
-                onPress={onClose}
-                hitSlop={8}
-                style={{
-                  paddingVertical: 9,
-                  paddingHorizontal: 13,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.12)',
-                  backgroundColor: 'rgba(255,255,255,0.05)',
-                }}
-              >
-                <Text style={{ color: 'white', fontWeight: '900' }}>Done</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView
-              style={{ flex: 1, marginTop: 14 }}
-              contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}
-              nestedScrollEnabled
-              bounces
-              alwaysBounceVertical
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator
-            >
-              <Section title="Map modes" subtitle="Switch between focused weather, flight, nautical, and sky views">
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                  <QuickCard title="Weather Mode" subtitle="Radar and storms" onPress={onOpenStandardMap} />
-                  <QuickCard title="Aviation Mode" subtitle="Flight weather" onPress={onOpenAviationMap} />
-                  <QuickCard title="Nautical Mode" subtitle="Marine view" onPress={onOpenNauticalMap} />
-                  <QuickCard title="Astronomy Mode" subtitle="Sky conditions" onPress={onOpenAstroMap} />
-                </View>
-              </Section>
 
               <View
                 style={{
-                  height: 1,
-                  backgroundColor: 'rgba(255,255,255,0.10)',
-                  marginTop: 16,
-                  marginBottom: 14,
+                  marginTop: 14,
+                  padding: 4,
+                  borderRadius: 18,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.10)',
+                  backgroundColor: 'rgba(255,255,255,0.04)',
+                  flexDirection: 'row',
+                  gap: 4,
                 }}
-              />
+              >
+                <SegmentButton
+                  label="Standard"
+                  active={mode === 'standard'}
+                  onPress={() => handleSelectMode('standard')}
+                />
+                <SegmentButton
+                  label="Aviation"
+                  active={mode === 'aviation'}
+                  onPress={() => handleSelectMode('aviation')}
+                />
+                <SegmentButton
+                  label="Astronomy"
+                  active={false}
+                  onPress={() => handleSelectMode('astronomy')}
+                />
+              </View>
+            </View>
 
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 24 + insets.bottom }}
+              nestedScrollEnabled
+              bounces
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
               <LayerSheet
                 state={state}
-                allowedGroups={allowedGroups}
+                mode={mode}
                 onToggleLayer={onToggleLayer}
                 onSetOpacity={onSetOpacity}
                 onOpenLegend={onOpenLegend}
@@ -150,59 +172,24 @@ export function LayerSheetModal(props: {
   );
 }
 
-function Section(props: {
-  title: string;
-  subtitle?: string;
-  badge?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={{ marginTop: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.86)', fontWeight: '900', fontSize: 15 }}>{props.title}</Text>
-          {props.subtitle ? (
-            <Text style={{ color: 'rgba(255,255,255,0.60)', marginTop: 3, fontSize: 12, lineHeight: 17 }}>
-              {props.subtitle}
-            </Text>
-          ) : null}
-        </View>
-
-        {props.badge ? <Pill label={props.badge} subtle /> : null}
-      </View>
-
-      <View
-        style={{
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.10)',
-          backgroundColor: 'rgba(255,255,255,0.04)',
-          borderRadius: 20,
-          padding: 12,
-        }}
-      >
-        {props.children}
-      </View>
-    </View>
-  );
-}
-
-function QuickCard(props: { title: string; subtitle: string; onPress?: () => void }) {
+function SegmentButton(props: { label: string; active: boolean; onPress: () => void }) {
   return (
     <Pressable
       onPress={props.onPress}
       style={{
-        minWidth: 132,
-        paddingVertical: 12,
-        paddingHorizontal: 13,
-        borderRadius: 18,
+        flex: 1,
+        minHeight: 38,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
-        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderColor: props.active ? 'rgba(125,211,252,0.24)' : 'transparent',
+        backgroundColor: props.active ? 'rgba(96,165,250,0.16)' : 'transparent',
       }}
     >
-      <Text style={{ color: 'white', fontWeight: '900', fontSize: 13 }}>{props.title}</Text>
-      <Text style={{ color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 11, marginTop: 2 }}>
-        {props.subtitle}
+      <Text style={{ color: props.active ? 'white' : 'rgba(255,255,255,0.76)', fontSize: 12, fontWeight: '900' }}>
+        {props.label}
       </Text>
     </Pressable>
   );

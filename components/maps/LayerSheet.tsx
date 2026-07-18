@@ -1,54 +1,64 @@
-import { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 
 import {
   LAYER_CATALOG,
-  LAYER_GROUPS,
   type LayerCatalogItem,
-  type LayerGroupId,
 } from '../../app/lib/maps/layerCatalog';
 import { LAYER_THUMBNAILS, LAYER_THUMBNAIL_SIZE } from '../../app/lib/maps/layerThumbnails';
 import type { LayerId, MapRuntimeState } from '../../app/lib/maps/types';
 
+export type LayerSheetMode = 'standard' | 'aviation';
+
 type Props = {
   state: MapRuntimeState;
-  allowedGroups?: LayerGroupId[];
-
+  mode: LayerSheetMode;
   onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
   onSetOpacity: (layerId: LayerId, opacity: number) => void;
-
   onOpenLegend?: (layerId: LayerId) => void;
   onOpenSourceInfo?: (layerId: LayerId) => void;
 };
 
-function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
-  const steps = [0.25, 0.4, 0.55, 0.7, 0.85, 1] as const;
+type StandardCategoryId = 'alertsHazards' | 'radarSatellite' | 'fireAir' | 'marine';
+type CategoryId = StandardCategoryId | 'aviation';
 
-  return (
-    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-      {steps.map((s) => {
-        const active = Math.abs(props.value - s) < 0.01;
-        return (
-          <Pressable
-            key={s}
-            onPress={() => props.onChange(s)}
-            style={{
-              paddingVertical: 7,
-              paddingHorizontal: 11,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.12)',
-              backgroundColor: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.04)',
-            }}
-          >
-            <Text style={{ fontWeight: active ? '900' : '800', color: 'white' }}>
-              {Math.round(s * 100)}%
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
+type CategoryDefinition = {
+  id: CategoryId;
+  title: string;
+  subtitle: string;
+};
+
+const STANDARD_CATEGORIES: CategoryDefinition[] = [
+  {
+    id: 'alertsHazards',
+    title: 'Alerts & Forecast Hazards',
+    subtitle: 'Warnings, fronts, outlooks, flood, heat, lightning, and tropical context.',
+  },
+  {
+    id: 'radarSatellite',
+    title: 'Radar & Satellite',
+    subtitle: 'Reflectivity, clouds, true color, infrared, and water vapor.',
+  },
+  {
+    id: 'fireAir',
+    title: 'Fire & Air',
+    subtitle: 'Restrictions, smoke, perimeters, hotspots, and fire weather.',
+  },
+  {
+    id: 'marine',
+    title: 'Marine',
+    subtitle: 'Marine zones, buoy conditions, and water temperatures.',
+  },
+] as const;
+
+const AVIATION_CATEGORY: CategoryDefinition = {
+  id: 'aviation',
+  title: 'Aviation',
+  subtitle: 'Flight-focused hazards and reports.',
+};
+
+function clampOpacity(value: number) {
+  return Math.max(0.25, Math.min(1, value));
 }
 
 function resolveSupports(layer: LayerCatalogItem) {
@@ -56,68 +66,6 @@ function resolveSupports(layer: LayerCatalogItem) {
   const supportsLegend = layer.supportsLegend ?? !!layer.legendKey;
   const supportsSourceInfo = layer.supportsSourceInfo ?? !!layer.source;
   return { supportsOpacity, supportsLegend, supportsSourceInfo };
-}
-
-function emptyGrouped(): Record<LayerGroupId, LayerCatalogItem[]> {
-  return {
-    weather: [],
-    fireAir: [],
-    aviation: [],
-    marine: [],
-    astronomy: [],
-    reference: [],
-  };
-}
-
-function Switch(props: { enabled: boolean; onPress: () => void }) {
-  const { enabled, onPress } = props;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={8}
-      style={{
-        width: 52,
-        height: 30,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: enabled ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.14)',
-        backgroundColor: enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
-        alignItems: enabled ? 'flex-end' : 'flex-start',
-        justifyContent: 'center',
-        paddingHorizontal: 4,
-      }}
-    >
-      <View
-        style={{
-          width: 22,
-          height: 22,
-          borderRadius: 999,
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.18)',
-          backgroundColor: enabled ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
-        }}
-      />
-    </Pressable>
-  );
-}
-
-function ActionPill(props: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={props.onPress}
-      style={{
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.14)',
-        backgroundColor: 'rgba(255,255,255,0.05)',
-      }}
-    >
-      <Text style={{ fontWeight: '900', color: 'white' }}>{props.label}</Text>
-    </Pressable>
-  );
 }
 
 function previewKind(layer: LayerCatalogItem) {
@@ -128,7 +76,7 @@ function previewKind(layer: LayerCatalogItem) {
   if (id.includes('wind')) return 'wind';
   if (id.includes('marine') || id.includes('water') || text.includes('tide') || text.includes('buoy')) return 'marine';
   if (id.includes('aviation') || text.includes('airport') || text.includes('flight')) return 'aviation';
-  if (id.includes('fire') || text.includes('smoke') || text.includes('fire')) return 'fire';
+  if (id.includes('fire') || text.includes('smoke')) return 'fire';
   if (id.includes('air') || text.includes('aqi')) return 'air';
   if (id.includes('astro') || id.includes('space') || text.includes('sky')) return 'astro';
   if (id.includes('front') || text.includes('front')) return 'fronts';
@@ -137,17 +85,44 @@ function previewKind(layer: LayerCatalogItem) {
   return 'default';
 }
 
+function stateLabel(layer: LayerCatalogItem, enabled: boolean, opacity: number) {
+  if (!enabled) return layer.subtitle ?? '';
+  const base = layer.subtitle?.trim() ? layer.subtitle.trim() : 'Active';
+  return `${base} · ${Math.round(clampOpacity(opacity) * 100)}%`;
+}
+
+function standardCategoryForLayer(layer: LayerCatalogItem): StandardCategoryId {
+  if (layer.group === 'marine') return 'marine';
+  if (layer.group === 'fireAir') return 'fireAir';
+  if (layer.id === 'radar.reflectivity' || String(layer.id).startsWith('sat.')) return 'radarSatellite';
+  return 'alertsHazards';
+}
+
+function compactStateLabel(layer: LayerCatalogItem, enabled: boolean, opacity: number) {
+  if (!enabled) return layer.subtitle ?? '';
+  const base = layer.subtitle?.trim() ? layer.subtitle.trim() : 'Active';
+  return `${base} - ${Math.round(clampOpacity(opacity) * 100)}%`;
+}
+
+function visibleLayersForMode(state: MapRuntimeState, mode: LayerSheetMode) {
+  const isNerdy = !!state.nerdy;
+  return LAYER_CATALOG.filter((layer) => {
+    if (layer.visibility === 'nerdy' && !isNerdy) return false;
+    if (mode === 'aviation') return layer.group === 'aviation';
+    return ['weather', 'fireAir', 'marine', 'reference'].includes(layer.group);
+  }).sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
+}
+
 function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
   const kind = previewKind(props.layer);
-  const activeOpacity = props.enabled ? 1 : 0.56;
-
+  const activeOpacity = props.enabled ? 1 : 0.58;
   const shellStyle = {
     width: LAYER_THUMBNAIL_SIZE.width,
     height: LAYER_THUMBNAIL_SIZE.height,
     borderRadius: LAYER_THUMBNAIL_SIZE.radius,
     overflow: 'hidden' as const,
     borderWidth: 1,
-    borderColor: props.enabled ? 'rgba(125,211,252,0.42)' : 'rgba(255,255,255,0.10)',
+    borderColor: props.enabled ? 'rgba(125,211,252,0.36)' : 'rgba(255,255,255,0.10)',
     backgroundColor: 'rgba(15,23,42,0.72)',
     opacity: activeOpacity,
   };
@@ -206,28 +181,6 @@ function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
     );
   }
 
-  if (kind === 'wind') {
-    return (
-      <View style={shellStyle}>
-        {[0, 1, 2, 3].map((i) => (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: 7 + i * 8,
-              top: 8 + i * 7,
-              width: 34,
-              height: 2,
-              borderRadius: 999,
-              transform: [{ rotate: '-16deg' }],
-              backgroundColor: i % 2 ? 'rgba(125,211,252,0.78)' : 'rgba(255,255,255,0.72)',
-            }}
-          />
-        ))}
-      </View>
-    );
-  }
-
   if (kind === 'marine') {
     return (
       <View style={shellStyle}>
@@ -270,18 +223,6 @@ function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
     );
   }
 
-  if (kind === 'air') {
-    return (
-      <View style={shellStyle}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 4, padding: 8 }}>
-          {['#22c55e', '#eab308', '#f97316', '#ef4444'].map((color, i) => (
-            <View key={color} style={{ width: 7, height: 10 + i * 6, borderRadius: 999, backgroundColor: color, opacity: 0.78 }} />
-          ))}
-        </View>
-      </View>
-    );
-  }
-
   const tint =
     kind === 'astro' ? 'rgba(129,140,248,0.78)' :
     kind === 'fronts' ? 'rgba(96,165,250,0.78)' :
@@ -297,234 +238,415 @@ function LayerPreview(props: { layer: LayerCatalogItem; enabled: boolean }) {
   );
 }
 
+function Switch(props: { enabled: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      hitSlop={8}
+      style={{
+        width: 52,
+        height: 30,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: props.enabled ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.14)',
+        backgroundColor: props.enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+        alignItems: props.enabled ? 'flex-end' : 'flex-start',
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 999,
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.18)',
+          backgroundColor: props.enabled ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
+        }}
+      />
+    </Pressable>
+  );
+}
+
+function SmallIconButton(props: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      hitSlop={6}
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: 999,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.12)',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+      }}
+    >
+      <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '900' }}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+function OpacityRow(props: { value: number; onChange: (v: number) => void }) {
+  const steps = [0.25, 0.4, 0.55, 0.7, 0.85, 1] as const;
+  return (
+    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+      {steps.map((step) => {
+        const active = Math.abs(props.value - step) < 0.01;
+        return (
+          <Pressable
+            key={step}
+            onPress={() => props.onChange(step)}
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.10)',
+              backgroundColor: active ? 'rgba(96,165,250,0.16)' : 'rgba(255,255,255,0.04)',
+            }}
+          >
+            <Text style={{ color: 'white', fontSize: 11, fontWeight: active ? '900' : '800' }}>{Math.round(step * 100)}%</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ActionChip(props: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={props.onPress}
+      style={{
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+      }}
+    >
+      <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 11, fontWeight: '900' }}>{props.label}</Text>
+    </Pressable>
+  );
+}
+
+function DetailBlock(props: {
+  layer: LayerCatalogItem;
+  opacity: number;
+  onSetOpacity: (opacity: number) => void;
+  onOpenLegend?: () => void;
+  onOpenSourceInfo?: () => void;
+}) {
+  const { supportsOpacity, supportsLegend, supportsSourceInfo } = resolveSupports(props.layer);
+  const canLegend = supportsLegend && !!props.layer.legendKey;
+  const canSource = supportsSourceInfo && !!props.layer.source;
+
+  return (
+    <View
+      style={{
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.08)',
+        gap: 10,
+      }}
+    >
+      {supportsOpacity ? (
+        <View>
+          <Text style={{ color: 'rgba(255,255,255,0.74)', fontSize: 11, fontWeight: '900', letterSpacing: 0.4 }}>
+            OPACITY
+          </Text>
+          <OpacityRow value={props.opacity} onChange={props.onSetOpacity} />
+        </View>
+      ) : null}
+
+      {canLegend || canSource ? (
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          {canLegend ? <ActionChip label="Legend" onPress={() => props.onOpenLegend?.()} /> : null}
+          {canSource ? <ActionChip label="Source" onPress={() => props.onOpenSourceInfo?.()} /> : null}
+        </View>
+      ) : null}
+
+      {canSource && props.layer.source?.details ? (
+        <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, lineHeight: 16 }}>
+          {props.layer.source.details}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function LayerRow(props: {
+  layer: LayerCatalogItem;
+  state: MapRuntimeState;
+  expanded: boolean;
+  forceDetails?: boolean;
+  onToggleExpanded: () => void;
+  onToggleLayer: (enabled: boolean) => void;
+  onSetOpacity: (opacity: number) => void;
+  onOpenLegend?: () => void;
+  onOpenSourceInfo?: () => void;
+}) {
+  const runtime = props.state.layers?.[props.layer.id];
+  const enabled = runtime?.enabled ?? false;
+  const opacity = runtime?.opacity ?? props.layer.defaultOpacity ?? 1;
+  const { supportsOpacity, supportsLegend, supportsSourceInfo } = resolveSupports(props.layer);
+  const canExpand = supportsOpacity || supportsLegend || supportsSourceInfo;
+  const showDetails = props.forceDetails || props.expanded;
+
+  return (
+    <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
+      <View
+        style={{
+          minHeight: 68,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <LayerPreview layer={props.layer} enabled={enabled} />
+
+        <Pressable
+          onPress={() => {
+            if (canExpand) props.onToggleExpanded();
+          }}
+          style={{ flex: 1, minWidth: 0, justifyContent: 'center' }}
+        >
+          <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }} numberOfLines={1}>
+            {props.layer.title}
+          </Text>
+          <Text style={{ color: enabled ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
+            {compactStateLabel(props.layer, enabled, opacity)}
+          </Text>
+        </Pressable>
+
+        {canExpand ? (
+          <SmallIconButton label={showDetails ? 'v' : '>'} onPress={props.onToggleExpanded} />
+        ) : null}
+
+        <Switch enabled={enabled} onPress={() => props.onToggleLayer(!enabled)} />
+      </View>
+
+      {showDetails ? (
+        <DetailBlock
+          layer={props.layer}
+          opacity={opacity}
+          onSetOpacity={props.onSetOpacity}
+          onOpenLegend={props.onOpenLegend}
+          onOpenSourceInfo={props.onOpenSourceInfo}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function CategorySection(props: {
+  category: CategoryDefinition;
+  items: LayerCatalogItem[];
+  state: MapRuntimeState;
+  expanded: boolean;
+  activeCount: number;
+  expandedLayers: Partial<Record<LayerId, boolean>>;
+  onToggleCategory: () => void;
+  onToggleLayerExpanded: (layerId: LayerId) => void;
+  onToggleLayer: (layerId: LayerId, enabled: boolean) => void;
+  onSetOpacity: (layerId: LayerId, opacity: number) => void;
+  onOpenLegend?: (layerId: LayerId) => void;
+  onOpenSourceInfo?: (layerId: LayerId) => void;
+}) {
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderRadius: 22,
+        overflow: 'hidden',
+      }}
+    >
+      <Pressable
+        onPress={props.onToggleCategory}
+        style={{
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }}>{props.category.title}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '700', marginTop: 2 }} numberOfLines={2}>
+            {props.category.subtitle}
+          </Text>
+        </View>
+
+        {props.activeCount > 0 ? (
+          <View
+            style={{
+              paddingHorizontal: 8,
+              paddingVertical: 5,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: 'rgba(125,211,252,0.22)',
+              backgroundColor: 'rgba(96,165,250,0.14)',
+            }}
+          >
+            <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 11, fontWeight: '900' }}>{props.activeCount} active</Text>
+          </View>
+        ) : null}
+
+        <SmallIconButton label={props.expanded ? 'v' : '>'} onPress={props.onToggleCategory} />
+      </Pressable>
+
+      {props.expanded ? (
+        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' }}>
+          {props.items.map((layer, index) => (
+            <View key={layer.id}>
+              {index > 0 ? <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 }} /> : null}
+              <LayerRow
+                layer={layer}
+                state={props.state}
+                expanded={!!props.expandedLayers[layer.id]}
+                onToggleExpanded={() => props.onToggleLayerExpanded(layer.id)}
+                onToggleLayer={(enabled) => props.onToggleLayer(layer.id, enabled)}
+                onSetOpacity={(opacity) => props.onSetOpacity(layer.id, opacity)}
+                onOpenLegend={props.onOpenLegend ? () => props.onOpenLegend?.(layer.id) : undefined}
+                onOpenSourceInfo={props.onOpenSourceInfo ? () => props.onOpenSourceInfo?.(layer.id) : undefined}
+              />
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function LayerSheet(props: Props) {
-  const state = props?.state;
-  const isNerdy = !!state?.nerdy;
+  const [expandedLayers, setExpandedLayers] = useState<Partial<Record<LayerId, boolean>>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Partial<Record<CategoryId, boolean>>>({});
 
-  const [expanded, setExpanded] = useState<Partial<Record<LayerId, boolean>>>({});
+  const visibleLayers = useMemo(() => visibleLayersForMode(props.state, props.mode), [props.mode, props.state]);
 
-  const grouped = useMemo(() => {
-    if (!state) return emptyGrouped();
+  const categoryMap = useMemo(() => {
+    const map: Record<CategoryId, LayerCatalogItem[]> = {
+      alertsHazards: [],
+      radarSatellite: [],
+      fireAir: [],
+      marine: [],
+      aviation: [],
+    };
 
-    const visible = LAYER_CATALOG.filter((layer) => {
-      if (layer.visibility === 'nerdy' && !isNerdy) return false;
-      if (props.allowedGroups?.length && !props.allowedGroups.includes(layer.group)) return false;
-      return true;
-    });
-
-    const map = emptyGrouped();
-
-    for (const item of visible) {
-      map[item.group].push(item);
-    }
-
-    (Object.keys(map) as LayerGroupId[]).forEach((k) => {
-      map[k] = [...map[k]].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
+    visibleLayers.forEach((layer) => {
+      if (props.mode === 'aviation') {
+        map.aviation.push(layer);
+        return;
+      }
+      map[standardCategoryForLayer(layer)].push(layer);
     });
 
     return map;
-  }, [state, isNerdy, props.allowedGroups]);
+  }, [props.mode, visibleLayers]);
 
-  const visibleGroupOrder = useMemo(() => {
-    if (!props.allowedGroups?.length) return LAYER_GROUPS;
-    return LAYER_GROUPS.filter((g) => props.allowedGroups?.includes(g.id));
-  }, [props.allowedGroups]);
+  const categories = props.mode === 'aviation' ? [AVIATION_CATEGORY] : STANDARD_CATEGORIES;
 
-  const toggleExpanded = (id: LayerId) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  const activeLayers = useMemo(
+    () => visibleLayers.filter((layer) => props.state.layers?.[layer.id]?.enabled),
+    [props.state.layers, visibleLayers],
+  );
+
+  const activeCounts = useMemo(() => {
+    const counts: Partial<Record<CategoryId, number>> = {};
+    categories.forEach((category) => {
+      counts[category.id] = (categoryMap[category.id] ?? []).filter((layer) => props.state.layers?.[layer.id]?.enabled).length;
+    });
+    return counts;
+  }, [categories, categoryMap, props.state.layers]);
+
+  useEffect(() => {
+    setExpandedCategories((current) => {
+      const next = { ...current };
+      categories.forEach((category) => {
+        if ((activeCounts[category.id] ?? 0) > 0) next[category.id] = true;
+        else if (next[category.id] == null) next[category.id] = true;
+      });
+      return next;
+    });
+  }, [activeCounts, categories]);
+
+  const toggleLayerExpanded = (layerId: LayerId) => {
+    setExpandedLayers((current) => ({ ...current, [layerId]: !current[layerId] }));
   };
 
-  if (!state) {
-    return (
-      <View style={{ padding: 12 }}>
-        <Text style={{ fontWeight: '900', color: 'white' }}>Overlays</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.70)', marginTop: 6 }}>Loading map state…</Text>
-      </View>
-    );
-  }
+  const toggleCategoryExpanded = (categoryId: CategoryId) => {
+    setExpandedCategories((current) => ({ ...current, [categoryId]: !current[categoryId] }));
+  };
 
   return (
-    <View style={{ paddingHorizontal: 2, paddingTop: 2, paddingBottom: 6, gap: 16 }}>
-      {visibleGroupOrder.map((group) => {
-        const items = grouped[group.id] ?? [];
+    <View style={{ gap: 14, paddingBottom: 8 }}>
+      {activeLayers.length ? (
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: 'rgba(125,211,252,0.22)',
+            backgroundColor: 'rgba(96,165,250,0.08)',
+            borderRadius: 22,
+            overflow: 'hidden',
+          }}
+        >
+          <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>
+            <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }}>Active Layers</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
+              Quick access to layers that are already on.
+            </Text>
+          </View>
+
+          <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' }}>
+            {activeLayers.map((layer, index) => (
+              <View key={`active-${layer.id}`}>
+                {index > 0 ? <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 }} /> : null}
+                <LayerRow
+                  layer={layer}
+                  state={props.state}
+                  expanded
+                  forceDetails
+                  onToggleExpanded={() => {}}
+                  onToggleLayer={(enabled) => props.onToggleLayer(layer.id, enabled)}
+                  onSetOpacity={(opacity) => props.onSetOpacity(layer.id, opacity)}
+                  onOpenLegend={props.onOpenLegend ? () => props.onOpenLegend?.(layer.id) : undefined}
+                  onOpenSourceInfo={props.onOpenSourceInfo ? () => props.onOpenSourceInfo?.(layer.id) : undefined}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {categories.map((category) => {
+        const items = categoryMap[category.id] ?? [];
         if (!items.length) return null;
 
         return (
-          <View key={group.id} style={{ gap: 10 }}>
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '900',
-                color: 'rgba(255,255,255,0.82)',
-                paddingHorizontal: 2,
-              }}
-            >
-              {group.title}
-            </Text>
-
-            {items.map((layer) => {
-              const runtime = state.layers?.[layer.id];
-              const enabled = runtime?.enabled ?? false;
-              const opacity = runtime?.opacity ?? layer.defaultOpacity ?? 1;
-
-              const { supportsOpacity, supportsLegend, supportsSourceInfo } = resolveSupports(layer);
-              const canLegend = supportsLegend && !!layer.legendKey;
-              const canSource = supportsSourceInfo && !!layer.source;
-              const hasExpandableContent = supportsOpacity || canLegend || canSource;
-              const isExpanded = !!expanded[layer.id];
-
-              return (
-                <View
-                  key={layer.id}
-                  style={{
-                    borderWidth: 1,
-                    borderRadius: 18,
-                    padding: 12,
-                    borderColor: enabled ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.08)',
-                    backgroundColor: enabled ? 'rgba(2,6,23,0.52)' : 'rgba(2,6,23,0.34)',
-                  }}
-                >
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: 10,
-                    }}
-                  >
-                    <LayerPreview layer={layer} enabled={enabled} />
-                    <Pressable
-                      onPress={() => {
-                        if (hasExpandableContent) toggleExpanded(layer.id);
-                      }}
-                      style={{ flex: 1 }}
-                    >
-                      <View style={{ paddingRight: 4 }}>
-                        <Text
-                          style={{
-                            fontWeight: '900',
-                            fontSize: 15,
-                            color: 'white',
-                            opacity: enabled ? 1 : 0.92,
-                          }}
-                        >
-                          {layer.title}
-                        </Text>
-
-                        {layer.subtitle ? (
-                          <Text
-                            style={{
-                              color: 'rgba(255,255,255,0.68)',
-                              marginTop: 3,
-                              lineHeight: 18,
-                            }}
-                          >
-                            {layer.subtitle}
-                          </Text>
-                        ) : null}
-
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginTop: 8,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color: enabled ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.55)',
-                              fontWeight: '700',
-                            }}
-                          >
-                            {enabled ? `On · ${Math.round(opacity * 100)}%` : 'Off'}
-                          </Text>
-
-                          {hasExpandableContent ? (
-                            <Text
-                              style={{
-                                color: 'rgba(255,255,255,0.50)',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              {isExpanded ? 'Hide details' : 'Show details'}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    </Pressable>
-
-                    <Switch
-                      enabled={enabled}
-                      onPress={() => props.onToggleLayer(layer.id, !enabled)}
-                    />
-                  </View>
-
-                  {isExpanded ? (
-                    <View
-                      style={{
-                        marginTop: 12,
-                        paddingTop: 12,
-                        borderTopWidth: 1,
-                        borderTopColor: 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      {supportsOpacity ? (
-                        <View>
-                          <Text style={{ fontWeight: '900', color: 'rgba(255,255,255,0.85)' }}>
-                            Opacity
-                          </Text>
-                          <OpacityRow
-                            value={opacity}
-                            onChange={(v) => props.onSetOpacity(layer.id, v)}
-                          />
-                        </View>
-                      ) : null}
-
-                      {canLegend || canSource ? (
-                        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-                          {canLegend ? (
-                            <ActionPill
-                              label="Legend"
-                              onPress={() => props.onOpenLegend?.(layer.id)}
-                            />
-                          ) : null}
-
-                          {canSource ? (
-                            <ActionPill
-                              label="Source"
-                              onPress={() => props.onOpenSourceInfo?.(layer.id)}
-                            />
-                          ) : null}
-                        </View>
-                      ) : null}
-
-                      {canSource && layer.source ? (
-                        <View style={{ marginTop: 12 }}>
-                          <Text style={{ fontWeight: '900', color: 'white' }}>
-                            {layer.source.name}
-                          </Text>
-                          {layer.source.details ? (
-                            <Text
-                              style={{
-                                color: 'rgba(255,255,255,0.68)',
-                                marginTop: 3,
-                                lineHeight: 18,
-                              }}
-                            >
-                              {layer.source.details}
-                            </Text>
-                          ) : null}
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
+          <CategorySection
+            key={category.id}
+            category={category}
+            items={items}
+            state={props.state}
+            expanded={expandedCategories[category.id] !== false}
+            activeCount={activeCounts[category.id] ?? 0}
+            expandedLayers={expandedLayers}
+            onToggleCategory={() => toggleCategoryExpanded(category.id)}
+            onToggleLayerExpanded={toggleLayerExpanded}
+            onToggleLayer={props.onToggleLayer}
+            onSetOpacity={props.onSetOpacity}
+            onOpenLegend={props.onOpenLegend}
+            onOpenSourceInfo={props.onOpenSourceInfo}
+          />
         );
       })}
     </View>

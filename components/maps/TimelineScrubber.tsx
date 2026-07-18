@@ -67,6 +67,7 @@ function ControlButton(props: { label: string; onPress: () => void; disabled?: b
 type TimelineScrubberProps = {
   frameIndex: number;
   playing: boolean;
+  playbackRate?: number;
   frames?: FrameLike[];
   modeLabel?: string;
   onRecord?: () => void;
@@ -74,12 +75,14 @@ type TimelineScrubberProps = {
   recordBusy?: boolean;
   onSetFrame: (frameIndex: number) => void;
   onSetPlaying: (playing: boolean) => void;
+  onSetPlaybackRate?: (playbackRate: number) => void;
 };
 
 function TimelineScrubberInner(props: TimelineScrubberProps) {
   const {
     frameIndex,
     playing,
+    playbackRate = 1,
     frames = [],
     modeLabel,
     onRecord,
@@ -87,6 +90,7 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
     recordBusy,
     onSetFrame,
     onSetPlaying,
+    onSetPlaybackRate,
   } = props;
 
   const fallbackFrames = useMemo(() => buildFallbackFrames({ minutesBack: 120, stepMinutes: 5 }), []);
@@ -246,6 +250,19 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
         </View>
       </View>
 
+      {onSetPlaybackRate ? (
+        <View style={styles.rateRow}>
+          {[0.5, 1, 1.5, 2].map((rate) => (
+            <ControlButton
+              key={rate}
+              label={`${rate}x`}
+              onPress={() => onSetPlaybackRate(rate)}
+              active={Math.abs(playbackRate - rate) < 0.01}
+            />
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.trackWrap}>
         <View onLayout={onTrackLayout} {...panResponder.panHandlers} style={styles.track}>
           {tickPositions.map((left, index) => (
@@ -372,6 +389,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.92)',
     fontSize: 9,
     fontWeight: '900',
+  },
+  rateRow: {
+    flexDirection: 'row',
+    gap: 6,
   },
   trackWrap: {
     gap: 6,

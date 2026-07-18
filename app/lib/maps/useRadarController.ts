@@ -236,8 +236,8 @@ function getRadarFetchProfile(
     }
     if (quality === 'presentation') {
       return {
-        maxFrames: Math.min(30, Math.round(profile.maxFrames * 1.25)),
-        lookbackMinutes: Math.min(180, Math.round(profile.lookbackMinutes * 1.35)),
+        maxFrames: Math.min(36, Math.round(profile.maxFrames * 1.25)),
+        lookbackMinutes: Math.min(240, Math.round(profile.lookbackMinutes * 1.4)),
       };
     }
     return profile;
@@ -250,14 +250,14 @@ function getRadarFetchProfile(
   }
 
   if (stormMode) {
-    if (z <= 6) return tune({ maxFrames: 18, lookbackMinutes: 90 });
-    if (z <= 9) return tune({ maxFrames: 14, lookbackMinutes: 75 });
-    return tune({ maxFrames: 10, lookbackMinutes: 55 });
+    if (z <= 6) return tune({ maxFrames: 24, lookbackMinutes: 120 });
+    if (z <= 9) return tune({ maxFrames: 20, lookbackMinutes: 100 });
+    return tune({ maxFrames: 16, lookbackMinutes: 80 });
   }
 
-  if (z <= 5) return tune({ maxFrames: 24, lookbackMinutes: 120 });
-  if (z <= 8) return tune({ maxFrames: 22, lookbackMinutes: 110 });
-  return tune({ maxFrames: 18, lookbackMinutes: 90 });
+  if (z <= 5) return tune({ maxFrames: 30, lookbackMinutes: 150 });
+  if (z <= 8) return tune({ maxFrames: 28, lookbackMinutes: 140 });
+  return tune({ maxFrames: 24, lookbackMinutes: 120 });
 }
 
 export type RadarControllerSheetValue = {
@@ -290,11 +290,13 @@ export function useRadarController(args: {
   animationQuality?: AnimationQuality;
   suspendRasterTransitions?: boolean;
   playbackBlocked?: boolean;
+  playbackRate?: number;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
   const animationQuality = args.animationQuality ?? 'cinematic';
   const suspendRasterTransitions = args.suspendRasterTransitions === true;
   const playbackBlocked = args.playbackBlocked === true;
+  const playbackRate = Math.max(0.5, Math.min(2, args.playbackRate ?? 1));
   const stationMode = args.stationMode === true;
   const radarSiteId3 = args.radarSiteId3 ?? null;
 
@@ -1059,7 +1061,8 @@ export function useRadarController(args: {
     const atEnd = safeFrameIndex >= frameCount - 1;
     const advanceKey = `${playlistContextKey}|${frameCount}`;
     const firstAdvanceForPlaylist = autoAdvancePrimedRef.current !== advanceKey;
-    const dwellNow = atEnd ? Math.round(profile.dwellMs * END_HOLD_MULTIPLIER) : profile.dwellMs;
+    const baseDwell = atEnd ? Math.round(profile.dwellMs * END_HOLD_MULTIPLIER) : profile.dwellMs;
+    const dwellNow = Math.max(180, Math.round(baseDwell / playbackRate));
     const delayMs = firstAdvanceForPlaylist ? Math.min(STARTUP_ADVANCE_MS, dwellNow) : dwellNow;
 
     const timer = setTimeout(() => {
@@ -1107,6 +1110,7 @@ export function useRadarController(args: {
     frameCount,
     playbackBlocked,
     playlistContextKey,
+    playbackRate,
     profile.dwellMs,
     radarEnabled,
     safeFrameIndex,

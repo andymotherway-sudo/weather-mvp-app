@@ -46,7 +46,7 @@ const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0
 const MOSAIC_MAX_Z = 14;
 const RIDGE_MAX_Z = 8;
 
-const DEFAULT_MOSAIC_MINUTES = [50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
+const DEFAULT_MOSAIC_MINUTES = Array.from({ length: 24 }, (_, index) => (23 - index) * 5);
 
 function minutesToStamp(minutesAgo: number) {
   if (minutesAgo <= 0) return '900913';
@@ -381,8 +381,8 @@ export async function resolveIemFrames(args: {
   const { lat, lon, opts } = args;
 
   const zoom = Number.isFinite(opts.zoom) ? opts.zoom : 4;
-  const maxFrames = clampInt(opts.maxFrames, 4, 30);
-  const lookbackMinutes = clampInt(opts.lookbackMinutes, 20, 180);
+  const maxFrames = clampInt(opts.maxFrames, 4, 36);
+  const lookbackMinutes = clampInt(opts.lookbackMinutes, 20, 240);
   const allowMosaicFallback = opts.allowMosaicFallback !== false;
 
   const stamps = iemNationalMosaicTimestamps();
