@@ -3837,6 +3837,45 @@ export default function MapsScreen() {
     [animationExportRegion, infraredUsingCatalog, product, stormMode],
   );
 
+  const buildSatelliteLayerUrls = useCallback(
+    (
+      frame: { iso: string; rasterId?: number },
+      width: number,
+      height: number,
+      options?: { exclude?: AnimationCompositorKind | null },
+    ) => {
+      const exclude = options?.exclude ?? null;
+      const urls: string[] = [];
+
+      if (cloudsEnabled && exclude !== 'clouds') {
+        urls.push(buildAnimationUrl('goes-east-visible', frame, width, height));
+        urls.push(buildAnimationUrl('goes-west-visible', frame, width, height));
+      }
+      if (goesTrueColorEnabled && exclude !== 'truecolor') {
+        urls.push(buildAnimationUrl('geocolor', frame, width, height));
+      }
+      if (goesEastIrEnabled && exclude !== 'ir') {
+        urls.push(buildAnimationUrl('goes-east-ir', frame, width, height));
+      }
+      if (goesEastWvEnabled && exclude !== 'wv-east') {
+        urls.push(buildAnimationUrl('goes-east-wv', frame, width, height));
+      }
+      if (goesWestWvEnabled && exclude !== 'wv-west') {
+        urls.push(buildAnimationUrl('goes-west-wv', frame, width, height));
+      }
+
+      return urls;
+    },
+    [
+      buildAnimationUrl,
+      cloudsEnabled,
+      goesEastIrEnabled,
+      goesEastWvEnabled,
+      goesTrueColorEnabled,
+      goesWestWvEnabled,
+    ],
+  );
+
   const animationProductLabel = useMemo(() => {
     let label = 'Weather loop';
     if (activeAnimationKind === 'radar') {
@@ -3850,11 +3889,20 @@ export default function MapsScreen() {
       if (windParticlesEnabled) layers.push('wind flow');
       return layers.join(' + ');
     }
-    if (activeAnimationKind === 'truecolor') label = 'True color';
-    if (activeAnimationKind === 'ir') label = 'Infrared';
-    if (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west') label = 'Water vapor';
-    if (activeAnimationKind === 'clouds') label = 'Visible cloud loop';
-    if (!activeAnimationKind && windParticlesEnabled) return '10 m wind flow';
+    const layers: string[] = [];
+    if (cloudsEnabled) layers.push('visible clouds');
+    if (goesTrueColorEnabled) layers.push('true color');
+    if (goesEastIrEnabled) layers.push('infrared');
+    if (goesEastWvEnabled) layers.push('East water vapor');
+    if (goesWestWvEnabled) layers.push('West water vapor');
+    if (!layers.length && activeAnimationKind === 'truecolor') layers.push('true color');
+    if (!layers.length && activeAnimationKind === 'ir') layers.push('infrared');
+    if (!layers.length && (activeAnimationKind === 'wv-east' || activeAnimationKind === 'wv-west')) {
+      layers.push('water vapor');
+    }
+    if (!layers.length && activeAnimationKind === 'clouds') layers.push('visible cloud loop');
+    if (!layers.length && windParticlesEnabled) return '10 m wind flow';
+    label = layers.join(' + ') || label;
     return windParticlesEnabled ? `${label} + wind flow` : label;
   }, [
     activeAnimationKind,
@@ -3893,28 +3941,7 @@ export default function MapsScreen() {
         const tileTemplate = idx >= 0 ? uiTemplates[idx] : null;
         const satelliteIndex = nearestFrameIndexByIso(satellitePlaybackFrames, frame.iso);
         const satelliteFrame = satelliteIndex >= 0 ? satellitePlaybackFrames[satelliteIndex] : null;
-        const underlayUrls = satelliteFrame
-          ? [
-              ...(cloudsEnabled
-                ? [
-                    buildAnimationUrl('goes-east-visible', satelliteFrame, width, height),
-                    buildAnimationUrl('goes-west-visible', satelliteFrame, width, height),
-                  ]
-                : []),
-              ...(goesTrueColorEnabled
-                ? [buildAnimationUrl('geocolor', satelliteFrame, width, height)]
-                : []),
-              ...(goesEastIrEnabled
-                ? [buildAnimationUrl('goes-east-ir', satelliteFrame, width, height)]
-                : []),
-              ...(goesEastWvEnabled
-                ? [buildAnimationUrl('goes-east-wv', satelliteFrame, width, height)]
-                : []),
-              ...(goesWestWvEnabled
-                ? [buildAnimationUrl('goes-west-wv', satelliteFrame, width, height)]
-                : []),
-            ]
-          : [];
+        const underlayUrls = satelliteFrame ? buildSatelliteLayerUrls(satelliteFrame, width, height) : [];
         return {
           label,
           urls: tileTemplate ? [] : [buildAnimationUrl('radar', frame, width, height)],
@@ -3931,7 +3958,10 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'truecolor') {
         return {
           label,
-          urls: [buildAnimationUrl('geocolor', frame, width, height)],
+          urls: [
+            buildAnimationUrl('geocolor', frame, width, height),
+            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'truecolor' }),
+          ],
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -3942,7 +3972,10 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'ir') {
         return {
           label,
-          urls: [buildAnimationUrl('goes-east-ir', frame, width, height)],
+          urls: [
+            buildAnimationUrl('goes-east-ir', frame, width, height),
+            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'ir' }),
+          ],
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -3953,7 +3986,10 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'wv-west') {
         return {
           label,
-          urls: [buildAnimationUrl('goes-west-wv', frame, width, height)],
+          urls: [
+            buildAnimationUrl('goes-west-wv', frame, width, height),
+            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-west' }),
+          ],
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -3964,7 +4000,10 @@ export default function MapsScreen() {
       if (activeAnimationKind === 'wv-east') {
         return {
           label,
-          urls: [buildAnimationUrl('goes-east-wv', frame, width, height)],
+          urls: [
+            buildAnimationUrl('goes-east-wv', frame, width, height),
+            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-east' }),
+          ],
           basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
@@ -3977,6 +4016,7 @@ export default function MapsScreen() {
         urls: [
           buildAnimationUrl('goes-east-visible', frame, width, height),
           buildAnimationUrl('goes-west-visible', frame, width, height),
+          ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'clouds' }),
         ],
         basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
         region: animationExportRegion,
@@ -3991,6 +4031,7 @@ export default function MapsScreen() {
     animationExportRegion,
     animationExportSize,
     buildAnimationUrl,
+    buildSatelliteLayerUrls,
     cloudsEnabled,
     goesEastWvEnabled,
     mapZoom,
@@ -5634,7 +5675,7 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  {satelliteTimelineActive ? (
+                  {animatedSatelliteEnabled ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>Loop</Text>
                       <View style={styles.satelliteLoopChips}>

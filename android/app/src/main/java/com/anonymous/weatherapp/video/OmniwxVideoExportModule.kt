@@ -449,7 +449,13 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     alpha: Int,
   ) {
     if (tileTemplate.isNullOrBlank() || region == null) return
-    val z = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 12)
+    val isLabelOverlay = tileTemplate.contains("only_labels", ignoreCase = true)
+    val zBase = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt()
+    // Exported place labels look softer and larger than the live map if we
+    // render them at the exact same tile zoom and then scale the bitmap up.
+    // Bias label-only overlays one zoom step higher so the text starts from a
+    // denser raster, then draw without bitmap filtering to keep edges sharper.
+    val z = (zBase + if (isLabelOverlay) 1 else 0).coerceIn(1, 13)
     val tileSize = 256
     val center = lonLatToWorldPixel(region.longitude, region.latitude, z, tileSize)
     val west = region.longitude - region.longitudeDelta / 2.0
@@ -471,7 +477,10 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val maxTileX = floor(rightWorld / tileSize).toInt() + 1
     val minTileY = max(0, floor(topWorld / tileSize).toInt() - 1)
     val maxTileY = min((1 shl z) - 1, floor(bottomWorld / tileSize).toInt() + 1)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG).apply {
+    val paintFlags =
+      if (isLabelOverlay) Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG
+      else Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG
+    val paint = Paint(paintFlags).apply {
       this.alpha = alpha.coerceIn(0, 255)
     }
 
