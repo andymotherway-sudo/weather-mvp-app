@@ -39,7 +39,7 @@ export type MapRendererProps = {
   customMapStyle?: any[];
   boundaryReliefTone?: 'teal' | 'orange' | null;
   regionEventMode?: 'continuous' | 'settled';
-  onRegionChangeComplete: (r: Region) => void;
+  onRegionChangeComplete: (r: Region, meta?: { isUserInteraction: boolean }) => void;
   onPanDrag?: () => void;
   radar: RadarOverlay;
   children?: React.ReactNode;
@@ -354,12 +354,12 @@ export function MapRenderer(props: MapRendererProps) {
     };
   }, []);
 
-  const emitRegion = () => {
+  const emitRegion = (isUserInteraction: boolean) => {
     const nextZoom = liveZoomRef.current;
     if (Number.isFinite(nextZoom) && Math.abs(nextZoom - liveZoom) > 0.001) {
       setLiveZoom(nextZoom);
     }
-    onRegionChangeComplete(lastRegionRef.current);
+    onRegionChangeComplete(lastRegionRef.current, { isUserInteraction });
   };
 
   const handleRegionWillChange = (e: any) => {
@@ -422,7 +422,7 @@ export function MapRenderer(props: MapRendererProps) {
 
     if (regionEventMode === 'continuous') {
       if (regionDebounceRef.current) clearTimeout(regionDebounceRef.current);
-      regionDebounceRef.current = setTimeout(() => emitRegion(), 200);
+      regionDebounceRef.current = setTimeout(() => emitRegion(userActiveRef.current), 200);
     }
 
     if (userEndTimerRef.current) clearTimeout(userEndTimerRef.current);
@@ -430,14 +430,14 @@ export function MapRenderer(props: MapRendererProps) {
     if (isUser) {
       userEndTimerRef.current = setTimeout(() => {
         userActiveRef.current = false;
-        emitRegion();
+        emitRegion(true);
       }, 250);
       return;
     }
 
     if (!userActiveRef.current) {
       userEndTimerRef.current = setTimeout(() => {
-        emitRegion();
+        emitRegion(false);
       }, 80);
     }
 

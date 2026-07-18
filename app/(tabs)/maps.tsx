@@ -1352,6 +1352,7 @@ export default function MapsScreen() {
   });
 
   const [mapZoom, setMapZoom] = useState<number>(4);
+  const [radarBehaviorZoom, setRadarBehaviorZoom] = useState<number>(4);
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const radarViewActive = state.viewId === 'radar' || state.viewId === 'storm';
@@ -1428,7 +1429,7 @@ export default function MapsScreen() {
   const displayedStationProduct = pendingStationProduct ?? stationProduct;
 
   const stormScopeLocalZoom =
-    stormScopeContextVisible && mapZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
+    stormScopeContextVisible && radarBehaviorZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
 
   const stormScopeNexradVisible = stormScopeLocalZoom;
 
@@ -1437,7 +1438,7 @@ export default function MapsScreen() {
   const showRadarRings =
     stormScopeNexradVisible &&
     !!selectedRadarSite &&
-    mapZoom >= STORM_SCOPE_RINGS_MIN_ZOOM;
+    radarBehaviorZoom >= STORM_SCOPE_RINGS_MIN_ZOOM;
 
   const showAdvancedRadarControls = stormScopeContextVisible;
 
@@ -1943,7 +1944,7 @@ export default function MapsScreen() {
     dispatch,
     sheetValue: { radarProvider: effectiveRadarProvider },
     centerForRadar,
-    mapZoom,
+    mapZoom: radarBehaviorZoom,
     product,
     rawMode,
     region,
@@ -2802,7 +2803,9 @@ export default function MapsScreen() {
     setCameraDebugLabel(`route-focus:${routeFocusTarget.lat.toFixed(2)},${routeFocusTarget.lon.toFixed(2)}`);
     routeFocusSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
-    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+    const nextZoom = nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
+    setMapZoom(nextZoom);
+    setRadarBehaviorZoom(nextZoom);
     setMapResetKey((value) => value + 1);
     setConsumedRouteFocusKey(routeFocusTarget.key);
 
@@ -3022,7 +3025,9 @@ export default function MapsScreen() {
     radarStationSeedRegionRef.current = nextRegion;
     setCameraDebugLabel(`radar-station:${getStationDisplayId(selectedRadarSite)}`);
     setRegion(nextRegion);
-    setMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+    const nextZoom = nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
+    setMapZoom(nextZoom);
+    setRadarBehaviorZoom(nextZoom);
     setMapResetKey((value) => value + 1);
 
     requestAnimationFrame(() => {
@@ -3811,7 +3816,7 @@ export default function MapsScreen() {
                 setCameraDebugLabel('user-pan');
               }
           }}
-          onRegionChangeComplete={(nextRegion: Region) => {
+          onRegionChangeComplete={(nextRegion: Region, meta?: { isUserInteraction: boolean }) => {
             const zFloat =
               typeof (nextRegion as any).zoom === 'number' && Number.isFinite((nextRegion as any).zoom)
                 ? (nextRegion as any).zoom
@@ -3819,6 +3824,7 @@ export default function MapsScreen() {
 
             setRegion(nextRegion);
             setMapZoom(zFloat);
+            if (meta?.isUserInteraction) setRadarBehaviorZoom(zFloat);
 
             radarCtl.refreshLocalIfNeeded();
           }}
@@ -5156,7 +5162,7 @@ export default function MapsScreen() {
                           const needsZoom =
                             stormScopeEnabled &&
                             !stormScopeLocalZoom &&
-                            mapZoom < STORM_SCOPE_PRODUCTS_MIN_ZOOM;
+                            radarBehaviorZoom < STORM_SCOPE_PRODUCTS_MIN_ZOOM;
 
                           return (
                             <Pressable
