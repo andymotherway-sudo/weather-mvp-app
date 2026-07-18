@@ -117,6 +117,18 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
     return formatRadarFrameLabel(frame.iso);
   }, [effectiveFrames, idxForUI, frameCount]);
 
+  const latestIndex = Math.max(0, frameCount - 1);
+  const activeFrameAge = useMemo(() => {
+    if (frameCount === 0) return 'No frames';
+    return formatRelativeFrameAge(effectiveFrames[idxForUI]?.iso ?? '') || 'Now';
+  }, [effectiveFrames, frameCount, idxForUI]);
+
+  const statusBadgeLabel = useMemo(() => {
+    if (scrubbing) return 'SCRUB';
+    if (idxForUI === latestIndex) return 'LIVE';
+    return 'HISTORY';
+  }, [idxForUI, latestIndex, scrubbing]);
+
   const oldestLabel = useMemo(() => {
     if (frameCount === 0) return 'Past';
     return formatRadarFrameLabel(effectiveFrames[0]?.iso ?? '');
@@ -240,12 +252,15 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
             <Text style={styles.primaryLabel}>{label}</Text>
             <View style={[styles.modeBadge, playing ? styles.modeBadgeLive : scrubbing ? styles.modeBadgeScrub : null]}>
               <Text style={styles.modeBadgeText}>
-                {scrubbing ? 'Scrubbing' : playing ? (modeLabel ?? 'Live loop') : 'Paused'}
+                {statusBadgeLabel}
               </Text>
             </View>
           </View>
           <Text style={styles.secondaryLabel}>
-            {frameCount > 0 ? `${idxForUI + 1} of ${frameCount}` : 'No frames'}
+            {frameCount > 0 ? `Frame ${idxForUI + 1} of ${frameCount} · ${activeFrameAge}` : 'No frames'}
+          </Text>
+          <Text style={styles.tertiaryLabel}>
+            {scrubbing ? 'Scrubbing timeline' : playing ? (modeLabel ?? 'Loop active') : 'Playback paused'}
           </Text>
         </View>
       </View>
@@ -365,6 +380,12 @@ const styles = StyleSheet.create({
   },
   secondaryLabel: {
     color: 'rgba(255,255,255,0.62)',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  tertiaryLabel: {
+    color: 'rgba(255,255,255,0.46)',
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,

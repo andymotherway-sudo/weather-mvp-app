@@ -28,6 +28,7 @@ import { MapRenderer } from '../../components/maps/MapRenderer';
 import { MarineMapLayers } from '../../components/maps/MarineMapLayers';
 import { RadarLegend } from '../../components/maps/RadarLegend';
 import { TimelineScrubber } from '../../components/maps/TimelineScrubber';
+import { StormScopeController } from '../../components/maps/storm-scope/StormScopeController';
 import {
   buildWindParticleExportFrames,
   WindParticleOverlay,
@@ -76,7 +77,7 @@ const NHC_TROPICAL_WEATHER_EXPORT_URL =
 
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
-const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET', 'NET']);
+const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
@@ -121,9 +122,9 @@ const RADAR_PRODUCT_META: Record<
     summaryLabel: 'Reflectivity',
     legendStyle: 'reflectivity',
     legendTitle: 'Reflectivity',
-    legendLeft: 'Light',
-    legendMid: 'Moderate',
-    legendRight: 'Severe',
+    legendLeft: '5 dBZ',
+    legendMid: '40 dBZ',
+    legendRight: '75+',
     legendNote: 'Shows precipitation intensity and storm structure.',
   },
   N0B: {
@@ -131,20 +132,20 @@ const RADAR_PRODUCT_META: Record<
     summaryLabel: 'High-res reflectivity',
     legendStyle: 'reflectivity',
     legendTitle: 'High-res Reflectivity',
-    legendLeft: 'Light',
-    legendMid: 'Moderate',
-    legendRight: 'Severe',
+    legendLeft: '5 dBZ',
+    legendMid: '40 dBZ',
+    legendRight: '75+',
     legendNote: 'Single-site high-resolution reflectivity for storm structure.',
   },
   N0Z: {
-    chipLabel: 'Velocity',
-    summaryLabel: 'Velocity',
+    chipLabel: 'Legacy Velocity',
+    summaryLabel: 'Legacy velocity',
     legendStyle: 'velocity',
-    legendTitle: 'Velocity',
+    legendTitle: 'Legacy Velocity',
     legendLeft: 'Away',
     legendMid: 'Neutral',
     legendRight: 'Toward',
-    legendNote: 'Shows wind motion relative to the radar, not rain intensity.',
+    legendNote: 'Legacy radial-velocity rendering for compatibility checks and older scan behavior.',
   },
   N0U: {
     chipLabel: 'N0U Vel',
@@ -190,6 +191,7 @@ const RADAR_PRODUCT_META: Record<
 
 type StationRadarProduct = {
   id: RadarProductId | string;
+  shortLabel: string;
   label: string;
   subtitle: string;
   enabled: boolean;
@@ -199,6 +201,7 @@ type StationRadarProduct = {
 const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   {
     id: 'N0B',
+    shortLabel: 'REFL',
     label: 'Base Reflectivity',
     subtitle: 'Precip intensity',
     enabled: true,
@@ -206,6 +209,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'N0U',
+    shortLabel: 'VEL',
     label: 'Base Velocity',
     subtitle: 'Radial wind latest',
     enabled: true,
@@ -213,6 +217,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'N0Z',
+    shortLabel: 'LVEL',
     label: 'Legacy Velocity',
     subtitle: 'Radial wind latest',
     enabled: true,
@@ -220,6 +225,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'N0S',
+    shortLabel: 'SRV',
     label: 'Storm Relative Velocity',
     subtitle: 'Storm-scale wind',
     enabled: true,
@@ -227,6 +233,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'CC',
+    shortLabel: 'CC',
     label: 'Correlation Coef',
     subtitle: 'Live source needed',
     enabled: false,
@@ -234,6 +241,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'ZDR',
+    shortLabel: 'ZDR',
     label: 'Differential Refl',
     subtitle: 'Live source needed',
     enabled: false,
@@ -241,6 +249,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'EET',
+    shortLabel: 'ET',
     label: 'Echo Tops',
     subtitle: 'Echo top height latest',
     enabled: true,
@@ -248,6 +257,7 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   },
   {
     id: 'VIL',
+    shortLabel: 'VIL',
     label: 'VIL',
     subtitle: 'Live source needed',
     enabled: false,
@@ -773,6 +783,32 @@ function buildRadarStationGeoJson(site: NexradSite | null) {
   return { type: 'FeatureCollection', features };
 }
 
+function buildNearbyRadarSitesGeoJson(
+  nearbySites: Array<{ site: NexradSite; distanceMi: number }>,
+  selectedRadarId3: string | null,
+) {
+  return {
+    type: 'FeatureCollection',
+    features: nearbySites.map(({ site, distanceMi }) => {
+      const id3 = normalizeRadarSiteId(site.id);
+      const selected = !!selectedRadarId3 && id3 === selectedRadarId3;
+
+      return {
+        type: 'Feature',
+        properties: {
+          kind: 'nearby-site',
+          id3,
+          selected,
+          label: getStationDisplayId(site),
+          subtitle: site.name,
+          distanceLabel: `${Math.round(distanceMi)} mi`,
+        },
+        geometry: { type: 'Point', coordinates: [site.lon, site.lat] },
+      };
+    }),
+  };
+}
+
 function circlePolygonFeature(args: {
   id: string;
   lat: number;
@@ -1248,6 +1284,9 @@ export default function MapsScreen() {
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
+  const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
+  const [stormScopeRangeRingsEnabled, setStormScopeRangeRingsEnabled] = useState(true);
+  const [stormScopeSitesVisible, setStormScopeSitesVisible] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [manualRadarSiteId3, setManualRadarSiteId3] = useState<string | null>(null);
   const [cameraDebugLabel, setCameraDebugLabel] = useState('idle');
@@ -1438,25 +1477,29 @@ export default function MapsScreen() {
 
   const selectedRadarId3 = selectedRadarSite ? normalizeRadarSiteId(selectedRadarSite.id) : null;
 
-  const stormScopeEnabled =
+  const stormScopeActive =
     radarEnabled &&
     radarViewActive &&
-    stormMode &&
+    stormMode;
+
+  const stormScopeEnabled =
+    stormScopeActive &&
     localRadarAvailable &&
     !!selectedRadarSite;
 
-  const stormScopeContextVisible = stormScopeEnabled;
+  const stormScopeContextVisible = stormScopeActive;
 
   const displayedStationProduct = pendingStationProduct ?? stationProduct;
 
   const stormScopeLocalZoom =
-    stormScopeContextVisible && radarBehaviorZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
+    stormScopeEnabled && radarBehaviorZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
 
   const stormScopeNexradVisible = stormScopeLocalZoom;
 
   const stationRadarMode = stormScopeNexradVisible;
 
   const showRadarRings =
+    stormScopeRangeRingsEnabled &&
     stormScopeNexradVisible &&
     !!selectedRadarSite &&
     radarBehaviorZoom >= STORM_SCOPE_RINGS_MIN_ZOOM;
@@ -1480,6 +1523,10 @@ export default function MapsScreen() {
     () => nearestRadarSites(radarAnchor.lat, radarAnchor.lon, 8),
     [radarAnchor.lat, radarAnchor.lon],
   );
+  const nearbyRadarSitesGeojson = useMemo(
+    () => buildNearbyRadarSitesGeoJson(nearbyRadarSites, selectedRadarId3),
+    [nearbyRadarSites, selectedRadarId3],
+  );
 
   const preferBufferedWideRadar = false;
 
@@ -1500,6 +1547,7 @@ export default function MapsScreen() {
   const showWildfireLegend =
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
+  const lightningEnabled = !!state.layers?.['lightning.strikes']?.enabled;
   const windParticlesEnabled = false;
   const windFieldPreloadEnabled = isFocused && !!region;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
@@ -2153,8 +2201,136 @@ export default function MapsScreen() {
             : radarCtl.usingIemRidgeAnimated
               ? 'single-site RIDGE'
               : stationProductUnavailable
-                ? 'source unavailable'
+              ? 'source unavailable'
                 : 'loading station scans';
+
+  const stormScopeMode: 'mosaic' | 'local' = stormScopeLocalZoom ? 'local' : 'mosaic';
+  const stormScopeStatusLabel = stormScopeLocalZoom ? 'Local' : 'Mosaic';
+  const stormScopeDistanceLabel =
+    selectedRadarDistanceMi != null
+      ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
+      : 'Distance pending';
+  const stormScopeTiltLabel =
+    stormScopeLocalZoom && product !== 'EET' && product !== 'NET'
+      ? '0.5° tilt'
+      : null;
+  const stormScopeSiteTitle = stormScopeLocalZoom && selectedRadarSite
+    ? `${getStationDisplayId(selectedRadarSite)} · ${selectedRadarSite.name}`
+    : 'Mosaic Overview';
+  const stormScopeProductLine = stormScopeLocalZoom
+    ? `${radarProductMeta.legendTitle} · ${stationProductLoading ? 'Loading...' : activeFrameIso ? formatFrameAge(activeFrameIso) : stationProductUnavailable ? 'Temporarily unavailable' : 'Latest scan'}`
+    : `Reflectivity · ${activeFrameIso ? formatFrameAge(activeFrameIso) : 'Latest scan'}`;
+  const stormScopeMetadataLine = stormScopeLocalZoom
+    ? [stormScopeStatusLabel, stormScopeTiltLabel, stormScopeDistanceLabel].filter(Boolean).join('   ')
+    : 'Local products available when zoomed closer';
+  const stormScopeWarningMessage =
+    radarCtl.iemError && stormScopeLocalZoom
+      ? `${radarProductMeta.legendTitle} unavailable: ${radarCtl.iemError}`
+      : stationProductUnavailable
+      ? `${radarProductMeta.legendTitle} temporarily unavailable`
+      : !stormScopeLocalZoom
+        ? 'Zoom closer for local radar products.'
+        : null;
+  const pendingProductMeta =
+    pendingStationProduct
+      ? RADAR_PRODUCT_META[pendingStationProduct as RadarProductId]
+      : null;
+  const stormScopeLoadingMessage = stationProductLoading
+    ? pendingStationProduct && pendingStationProduct !== stationProduct
+      ? `Loading ${pendingProductMeta?.summaryLabel?.toLowerCase() ?? 'requested product'} while keeping ${RADAR_PRODUCT_META[stationProduct].summaryLabel.toLowerCase()} visible...`
+      : `Loading ${radarProductMeta.summaryLabel.toLowerCase()}...`
+    : null;
+  const stormScopeIsStale = !!activeFrameIso && Math.round((Date.now() - new Date(activeFrameIso).getTime()) / 60000) >= 15;
+  const stormScopeProductOptions = useMemo(() => {
+    return STATION_RADAR_PRODUCTS.map((item) => {
+      const available =
+        stormScopeLocalZoom
+          ? item.enabled
+          : item.id === 'N0B';
+      const active = stormScopeLocalZoom
+        ? displayedStationProduct === item.id
+        : item.id === 'N0B';
+      const readyLabel =
+        item.id === 'N0U'
+          ? 'Latest velocity'
+          : item.id === 'N0Z'
+            ? 'Legacy velocity'
+            : item.id === 'N0S'
+              ? 'Storm-relative wind'
+              : item.id === 'EET'
+                ? 'Latest echo tops'
+                : 'Animated local scans';
+      const unavailableReason =
+        !stormScopeLocalZoom && item.id !== 'N0B'
+          ? 'Zoom closer for local radar coverage.'
+          : !item.enabled
+            ? 'Not wired into the current radar source yet.'
+            : null;
+      const loading =
+        active && (pendingStationProduct === item.id || stationProductLoading);
+
+      return {
+        id: String(item.id),
+        shortLabel: item.shortLabel,
+        title: item.label,
+        subtitle: available ? readyLabel : item.subtitle,
+        available,
+        unavailableReason,
+        active,
+        loading,
+        statusLabel: loading
+          ? pendingStationProduct && pendingStationProduct !== stationProduct
+            ? 'Switching...'
+            : 'Loading...'
+          : available
+            ? 'Ready'
+            : 'Unavailable',
+      };
+    });
+  }, [displayedStationProduct, pendingStationProduct, stationProduct, stationProductLoading, stormScopeLocalZoom]);
+  const stormScopeQuickToggles = useMemo(() => ([
+    {
+      id: 'warnings',
+      label: 'Warnings',
+      active: alertsEnabled,
+      onPress: () => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'alerts.polygons', enabled: !alertsEnabled }),
+    },
+    {
+      id: 'rings',
+      label: 'Rings',
+      active: stormScopeRangeRingsEnabled,
+      onPress: () => setStormScopeRangeRingsEnabled((current) => !current),
+    },
+    {
+      id: 'sites',
+      label: 'Sites',
+      active: stormScopeSitesVisible,
+      onPress: () => setStormScopeSitesVisible((current) => !current),
+    },
+    {
+      id: 'lightning',
+      label: 'Lightning',
+      active: lightningEnabled,
+      onPress: () => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'lightning.strikes', enabled: !lightningEnabled }),
+    },
+  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeRangeRingsEnabled, stormScopeSitesVisible]);
+  const stormScopeRadarSites = useMemo(() => {
+    return nearbyRadarSites.map(({ site, distanceMi }) => {
+      const id3 = normalizeRadarSiteId(site.id);
+      return {
+        id: id3,
+        title: `${getStationDisplayId(site)} · ${site.name}`,
+        subtitle: id3 === selectedRadarId3 ? 'Current radar' : 'Available nearby radar',
+        distanceLabel: `${Math.round(distanceMi)} mi`,
+        selected: id3 === selectedRadarId3,
+        onUse: () => {
+          setManualRadarSiteId3(id3);
+          setStormScopeConsoleOpen(false);
+          lastCenteredRadarSiteRef.current = null;
+        },
+      };
+    });
+  }, [nearbyRadarSites, selectedRadarId3]);
 
   useEffect(() => {
     if (!pendingStationProduct) return;
@@ -2177,6 +2353,7 @@ export default function MapsScreen() {
 
     setRadarMode('mosaic');
     setStationPanelCollapsed(false);
+    setStormScopeConsoleOpen(false);
     setManualRadarSiteId3(null);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
@@ -2196,6 +2373,7 @@ export default function MapsScreen() {
 
     setRadarMode('mosaic');
     setStationPanelCollapsed(true);
+    setStormScopeConsoleOpen(false);
     setManualRadarSiteId3(null);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
@@ -2214,6 +2392,11 @@ export default function MapsScreen() {
 
     turnStormScopeOn();
   }, [stormMode, turnStormScopeOff, turnStormScopeOn]);
+
+  useEffect(() => {
+    if (stormScopeActive) return;
+    setStormScopeConsoleOpen(false);
+  }, [stormScopeActive]);
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -4186,6 +4369,36 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
+          {stormScopeContextVisible && stormScopeSitesVisible ? (
+            <MapLibreGL.ShapeSource id="storm-scope-nearby-sites-source" shape={nearbyRadarSitesGeojson as any}>
+              <MapLibreGL.CircleLayer
+                id="storm-scope-nearby-sites-dots"
+                style={{
+                  circleColor: ['case', ['boolean', ['get', 'selected'], false], '#e0f2fe', '#0f172a'] as any,
+                  circleStrokeColor: ['case', ['boolean', ['get', 'selected'], false], '#38bdf8', '#bae6fd'] as any,
+                  circleStrokeWidth: ['case', ['boolean', ['get', 'selected'], false], 2.4, 1.4] as any,
+                  circleRadius: ['case', ['boolean', ['get', 'selected'], false], 7.5, 5.5] as any,
+                  circleOpacity: 0.94,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="storm-scope-nearby-sites-labels"
+                minZoomLevel={5}
+                style={{
+                  textField: ['get', 'label'],
+                  textSize: 10,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#f8fafc',
+                  textHaloColor: 'rgba(2,6,23,0.96)',
+                  textHaloWidth: 1.2,
+                  textOffset: [0, 1.25],
+                  textAllowOverlap: false,
+                  textOptional: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
           {skyScoreEnabled ? (
             <MapLibreGL.ShapeSource id="astro-sky-score-source" shape={skyScoreFc as any}>
               <MapLibreGL.FillLayer
@@ -5114,202 +5327,71 @@ export default function MapsScreen() {
           </View>
         )}
 
-        {!animationRecordMode && stormScopeNexradVisible ? (
-          <View pointerEvents="none" style={styles.stationProductBadgeWrap}>
-            <View
-              style={[
-                styles.stationProductBadge,
-                radarProductMeta.legendStyle === 'velocity'
-                    ? styles.stationProductBadgeVelocity
-                    : styles.stationProductBadgeReflectivity,
-              ]}
-            >
-              <Text style={styles.stationProductBadgeKicker}>
-                {radarProductMeta.legendStyle === 'velocity' ? 'WIND PRODUCT' : 'PRECIP PRODUCT'}
-              </Text>
-              <Text style={styles.stationProductBadgeTitle}>{radarProductMeta.legendTitle}</Text>
-            </View>
-          </View>
-        ) : null}
-
         {!animationRecordMode && showRadarLegend ? (
           <View style={[styles.legendWrap, styles.topLegendWrap]}>
-            <Glass
-              style={[
-                styles.legendCard,
-                showAdvancedRadarControls ? styles.stationLegendCard : null,
-                showAdvancedRadarControls && stationPanelCollapsed ? styles.stationLegendCardCollapsed : null,
-              ]}
-            >
-              {showAdvancedRadarControls && stationPanelCollapsed ? (
-                <View style={styles.stationCollapsedPanel}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.stationCollapsedEyebrow}>STORM SCOPE</Text>
-                    <Text style={styles.stationCollapsedTitle} numberOfLines={1}>
-                      {selectedRadarSite
-                        ? `${getStationDisplayId(selectedRadarSite)} - ${radarProductMeta.legendTitle}`
-                        : radarProductMeta.legendTitle}
-                    </Text>
-                    <Text style={styles.stationCollapsedMeta} numberOfLines={1}>
-                      {stationProductLoading
-                        ? `Loading ${radarProductMeta.summaryLabel.toLowerCase()}`
-                        : activeFrameIso
-                          ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
-                          : stationProductUnavailable
-                            ? `${radarProductMeta.summaryLabel} unavailable`
-                          : selectedRadarDistanceMi != null
-                            ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
-                            : 'Latest scan'}
-                    </Text>
+            {stormScopeActive ? (
+              <StormScopeController
+                mode={stormScopeMode}
+                hudMinimized={stationPanelCollapsed}
+                consoleOpen={stormScopeConsoleOpen}
+                onSetHudMinimized={setStationPanelCollapsed}
+                onSetConsoleOpen={setStormScopeConsoleOpen}
+                siteTitle={stormScopeSiteTitle}
+                productLine={stormScopeProductLine}
+                metadataLine={stormScopeMetadataLine}
+                sourceLine={stationProductSourceLabel}
+                loadingMessage={stormScopeLoadingMessage}
+                warningMessage={stormScopeWarningMessage}
+                stale={stormScopeIsStale}
+                legend={{
+                  style: stormScopeNexradVisible ? radarProductMeta.legendStyle : 'reflectivity',
+                  title: stormScopeNexradVisible ? radarProductMeta.legendTitle : 'Reflectivity',
+                  leftLabel: stormScopeNexradVisible ? radarProductMeta.legendLeft : '5 dBZ',
+                  midLabel: stormScopeNexradVisible ? radarProductMeta.legendMid : '40 dBZ',
+                  rightLabel: stormScopeNexradVisible ? radarProductMeta.legendRight : '75+',
+                  note: stormScopeNexradVisible ? radarProductMeta.legendNote : 'National mosaic reflectivity while zoomed out.',
+                }}
+                quickToggles={stormScopeQuickToggles}
+                statusLabel={stormScopeStatusLabel}
+                products={stormScopeProductOptions}
+                radarSites={stormScopeRadarSites}
+                onSelectProduct={(productId) => {
+                  const nextProduct = productId as RadarProductId;
+                  setPendingStationProduct(nextProduct);
+                  setStationProduct(nextProduct);
+                }}
+                onOpenLearn={() => {
+                  const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
+                  setLearnTopicId(topic ?? 'radar-base-reflectivity');
+                  setLearnOpen(true);
+                }}
+              />
+            ) : (
+              <Glass style={[styles.legendCard, { gap: 10 }]}>
+                {radarViewActive ? (
+                  <View style={styles.radarModeHeader}>
+                    <View style={styles.radarModeRow}>
+                      <MiniToggle
+                        label="Storm Scope"
+                        active={stormMode}
+                        onPress={handleStormScopePress}
+                      />
+                    </View>
                   </View>
-                  <Pressable
-                    onPress={() => setStationPanelCollapsed(false)}
-                    style={styles.panelIconButton}
-                    accessibilityLabel="Expand station radar panel"
-                  >
-                    <Text style={styles.panelIconButtonText}>+</Text>
-                  </Pressable>
-                </View>
-              ) : (
-                <>
-                  {radarViewActive ? (
-                    <View style={styles.radarModeHeader}>
-                      <View style={styles.radarModeRow}>
-                        <MiniToggle
-                          label="Storm Scope"
-                          active={stormMode}
-                          onPress={handleStormScopePress}
-                        />
-                      </View>
-                      {showAdvancedRadarControls ? (
-                        <Pressable
-                          onPress={() => setStationPanelCollapsed(true)}
-                          style={styles.panelIconButton}
-                          accessibilityLabel="Minimize station radar panel"
-                        >
-                          <Text style={styles.panelIconButtonText}>-</Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  ) : null}
-                  <RadarLegend
-                    style={stormScopeNexradVisible ? radarProductMeta.legendStyle : 'rainviewer'}
-                    title={radarProductMeta.legendTitle}
-                    leftLabel={radarProductMeta.legendLeft}
-                    midLabel={radarProductMeta.legendMid}
-                    rightLabel={radarProductMeta.legendRight}
-                    compact
-                  />
-                  <Text style={styles.legendCardMeta}>
-                    {stormScopeEnabled && selectedRadarSite
-                      ? stormScopeNexradVisible
-                        ? `${getStationDisplayId(selectedRadarSite)} local NEXRAD / ${radarProductMeta.legendNote}`
-                        : `Storm Scope tracking ${getStationDisplayId(selectedRadarSite)} from map center. Zoom in for local NEXRAD products.`
-                      : 'RainViewer colors vary slightly by provider frame.'}
-                  </Text>
-                  {showAdvancedRadarControls ? (
-                    <View style={styles.stationPanel}>
-                      <View style={styles.stationHeader}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={styles.stationEyebrow}>STORM SCOPE</Text>
-                          <Text style={styles.stationTitle} numberOfLines={1}>
-                            {selectedRadarSite
-                              ? `${getStationDisplayId(selectedRadarSite)} ${selectedRadarSite.name}`
-                              : 'Selecting nearest radar'}
-                          </Text>
-                        </View>
-                        <View style={styles.agePill}>
-                          <Text style={styles.agePillText}>
-                            {stationProductLoading
-                              ? `Loading ${radarProductMeta.summaryLabel}`
-                              : activeFrameIso
-                                ? `${radarProductMeta.summaryLabel} ${formatFrameAge(activeFrameIso)}`
-                                : stationProductUnavailable
-                                  ? 'No recent scans'
-                                : 'Latest'}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={styles.stationMeta}>
-                        {selectedRadarDistanceMi != null
-                          ? `${Math.round(selectedRadarDistanceMi)} mi from map center`
-                          : 'Distance pending'}
-                        {' / '}
-                        {stationProductLoading
-                          ? `loading ${radarProductMeta.summaryLabel.toLowerCase()} scans`
-                          : stationProductSourceLabel}
-                      </Text>
-
-                      <View style={styles.stationProductGrid}>
-                        {STATION_RADAR_PRODUCTS.map((item) => {
-                          const active = displayedStationProduct === item.id;
-                          const loading =
-                            pendingStationProduct === item.id ||
-                            (active && stationProductLoading);
-                          const needsZoom =
-                            stormScopeEnabled &&
-                            !stormScopeLocalZoom &&
-                            radarBehaviorZoom < STORM_SCOPE_PRODUCTS_MIN_ZOOM;
-
-                          return (
-                            <Pressable
-                              key={item.id}
-                              onPress={() => {
-                                if (!item.enabled) {
-                                  setLearnTopicId(item.learnTopicId);
-                                  setLearnOpen(true);
-                                  return;
-                                }
-
-                                const nextProduct = item.id as RadarProductId;
-
-                                setPendingStationProduct(nextProduct);
-                                setStationProduct(nextProduct);
-
-                                // Product changes affect Storm Scope only. Do not reset
-                                // the main RainViewer timeline.
-                              }}
-                              style={[
-                                styles.stationProductButton,
-                                active ? styles.stationProductButtonActive : null,
-                                active && (item.id === 'EET' || item.id === 'NET') ? styles.stationProductButtonEchoActive : null,
-                                active && (item.id === 'N0U' || item.id === 'N0Z' || item.id === 'N0S') ? styles.stationProductButtonVelocityActive : null,
-                                loading ? styles.stationProductButtonLoading : null,
-                                !item.enabled ? styles.stationProductButtonDisabled : null,
-                              ]}
-                            >
-                              <Text style={styles.stationProductLabel} numberOfLines={1}>
-                                {item.label}
-                              </Text>
-                              <Text style={styles.stationProductSub} numberOfLines={1}>
-                                {loading
-                                  ? 'Loading scans...'
-                                  : needsZoom
-                                    ? 'Zoom in for local'
-                                    : active && stationProductUnavailable
-                                      ? 'No recent scans'
-                                      : item.subtitle}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-
-                      <Pressable
-                        onPress={() => {
-                          const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
-                          setLearnTopicId(topic ?? 'radar-base-reflectivity');
-                          setLearnOpen(true);
-                        }}
-                        style={styles.wxLearnButton}
-                      >
-                        <Text style={styles.wxLearnButtonText}>wxLearn: {radarProductMeta.summaryLabel}</Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
-                </>
-              )}
-            </Glass>
+                ) : null}
+                <RadarLegend
+                  style="rainviewer"
+                  title="Reflectivity"
+                  leftLabel="5 dBZ"
+                  midLabel="40 dBZ"
+                  rightLabel="75+"
+                  compact
+                />
+                <Text style={styles.legendCardMeta}>
+                  RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.
+                </Text>
+              </Glass>
+            )}
           </View>
         ) : null}
 

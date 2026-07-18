@@ -1,7 +1,7 @@
 {
   "name": "weather-app",
   "main": "expo-router/entry",
-  "version": "1.1.225",
+  "version": "1.1.226",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
