@@ -21,6 +21,7 @@ import type { AviationFeature } from '../lib/aviation/types';
 import { usePlace } from '../context/PlaceContext';
 import { geocodePlaces } from '../lib/locations/geocode';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
+import { apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 
 type Mode = 'station' | 'flight';
@@ -342,21 +343,45 @@ async function resolveStation(token: string) {
 }
 
 async function fetchWx(lat: number, lon: number): Promise<Wx> {
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&current=temperature_2m,wind_speed_10m,wind_gusts_10m,cloud_cover` +
-    `&hourly=visibility&forecast_days=1&temperature_unit=fahrenheit&windspeed_unit=mph&visibility_unit=mile&timezone=auto`;
+  const hourlyVars = [
+    'temperature_2m',
+    'wind_speed_10m',
+    'wind_gusts_10m',
+    'cloud_cover',
+    'visibility',
+  ].join(',');
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    hourly: hourlyVars,
+    forecast_days: '1',
+    timezone: 'auto',
+    units: 'imperial',
+  });
+  const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
   const r = await fetchWithTimeout(url, 12000);
   if (!r.ok) throw new Error(`Route weather fetch failed (${r.status})`);
   const j = await r.json();
-  const c = j?.current ?? {};
-  const vis = Array.isArray(j?.hourly?.visibility) ? j.hourly.visibility[0] : null;
+  const times = Array.isArray(j?.hourly?.time) ? j.hourly.time : [];
+  const now = Date.now();
+  let idx = 0;
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(String(times[i])).getTime();
+    if (!Number.isFinite(t)) continue;
+    const diff = Math.abs(t - now);
+    if (diff < best) {
+      best = diff;
+      idx = i;
+    }
+  }
+  const pick = (arr: any) => (Array.isArray(arr) && idx >= 0 && idx < arr.length ? arr[idx] : null);
   return {
-    tempF: num(c?.temperature_2m),
-    windMph: num(c?.wind_speed_10m),
-    gustMph: num(c?.wind_gusts_10m),
-    cloudPct: num(c?.cloud_cover),
-    visMi: milesFromMaybeMeters(num(vis)),
+    tempF: num(pick(j?.hourly?.temperature_2m)),
+    windMph: num(pick(j?.hourly?.wind_speed_10m)),
+    gustMph: num(pick(j?.hourly?.wind_gusts_10m)),
+    cloudPct: num(pick(j?.hourly?.cloud_cover)),
+    visMi: milesFromMaybeMeters(num(pick(j?.hourly?.visibility))),
   };
 }
 

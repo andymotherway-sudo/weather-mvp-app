@@ -194,52 +194,26 @@ async function fetchFallbackWindConditions(
   longitude: number,
 ): Promise<WindFallback | null> {
   try {
-    const params = new URLSearchParams({
-      latitude: String(latitude),
-      longitude: String(longitude),
-      hourly: [
-        'wind_speed_10m',
-        'wind_gusts_10m',
-        'wind_direction_10m',
-      ].join(','),
-      length: '1',
-      timezone: 'auto',
-    });
-
-    const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
+    const url = apiUrl(
+      `/api/current?lat=${encodeURIComponent(String(latitude))}&lon=${encodeURIComponent(String(longitude))}&units=metric`,
+    );
     const res = await fetch(url);
 
     if (!res.ok) return null;
 
     const json = await res.json();
-    const hourly = json.hourly;
-    if (!hourly || !hourly.time || hourly.time.length === 0) {
-      return null;
-    }
-
-    const idx = hourly.time.length - 1;
-
-    const get = (arr: any[] | undefined): number | null => {
-      if (!arr || arr.length === 0) return null;
-      const value = arr[idx];
-      return typeof value === 'number' ? value : null;
+    const toKts = (valueKph: unknown): number | null => {
+      const value = typeof valueKph === 'number' ? valueKph : null;
+      return value != null ? value / 1.852 : null;
     };
 
-    const windSpeedMs = get(hourly.wind_speed_10m);
-    const windGustMs = get(hourly.wind_gusts_10m);
-    const windDirDeg = get(hourly.wind_direction_10m);
-
-    const observedAt =
-      typeof hourly.time[idx] === 'string' ? hourly.time[idx] : null;
-
     return {
-      windSpeedKts:
-        windSpeedMs != null ? windSpeedMs * MS_TO_KTS : null,
-      windGustKts:
-        windGustMs != null ? windGustMs * MS_TO_KTS : null,
-      windDirectionDeg: windDirDeg,
-      observedAt,
-      source: 'Open-Meteo Forecast',
+      windSpeedKts: toKts(json?.wind),
+      windGustKts: toKts(json?.windGust),
+      windDirectionDeg:
+        typeof json?.windDir === 'number' ? json.windDir : null,
+      observedAt: typeof json?.time === 'string' ? json.time : null,
+      source: 'Worker current proxy',
     };
   } catch {
     return null;

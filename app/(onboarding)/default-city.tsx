@@ -18,6 +18,7 @@ import {
 import { usePlace, type Place } from '../context/PlaceContext';
 import { primeClimatologyCache } from '../lib/climatology/hook';
 import { formatCompactLocation } from '../lib/locations/formats';
+import { geocodePlaces } from '../lib/locations/geocode';
 import {
   LOCATION_ONBOARDING_KEY,
   LOCATION_ONBOARDING_VERSION,
@@ -210,13 +211,17 @@ export default function DefaultCityScreen() {
     setErr(null);
 
     try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-        trimmed
-      )}&count=12&language=en&format=json`;
-
-      const res = await fetch(url);
-      const data = await res.json();
-      setResults(Array.isArray(data?.results) ? data.results : []);
+      const matches = await geocodePlaces(trimmed);
+      setResults(
+        matches.slice(0, 12).map((item, index) => ({
+          id: index,
+          name: item.name,
+          latitude: item.lat,
+          longitude: item.lon,
+          country: item.country,
+          admin1: item.admin1,
+        }))
+      );
     } catch (e: any) {
       setResults([]);
       setErr(e?.message ?? 'Search failed');

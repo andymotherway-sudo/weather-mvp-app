@@ -1,4 +1,7 @@
 // app/lib/astro/openMeteoAstro.ts
+import { apiUrl } from '../net/apiBase';
+import { fetchWithTimeout } from '../net/fetchWithTimeout';
+
 export type AstroInputs = {
   lat: number;
   lon: number;
@@ -108,15 +111,12 @@ export async function fetchAstroInputsGrid(args: {
     'relative_humidity_2m',
   ].join(',');
 
-  const url =
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(lats)}` +
-    `&longitude=${encodeURIComponent(lons)}` +
-    `&hourly=${encodeURIComponent(hourly)}` +
-    `&wind_speed_unit=ms` +
-    `&timezone=auto`;
+  const url = apiUrl(
+    `/api/openmeteo/hourly?lat=${encodeURIComponent(lats)}&lon=${encodeURIComponent(lons)}` +
+      `&hourly=${encodeURIComponent(hourly)}&timezone=auto&units=metric`
+  );
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, 12000);
   if (!res.ok) {
     throw new Error(`Open-Meteo astro grid failed: ${res.status}`);
   }
@@ -149,8 +149,14 @@ export async function fetchAstroInputsGrid(args: {
       cloudHigh: pick('cloud_cover_high'),
 
       visibilityM: pick('visibility'),
-      windMps: pick('wind_speed_10m'),
-      gustMps: pick('wind_gusts_10m'),
+      windMps: (() => {
+        const kmh = pick('wind_speed_10m');
+        return kmh == null ? null : kmh / 3.6;
+      })(),
+      gustMps: (() => {
+        const kmh = pick('wind_gusts_10m');
+        return kmh == null ? null : kmh / 3.6;
+      })(),
 
       humidityPct: pick('relative_humidity_2m'),
 

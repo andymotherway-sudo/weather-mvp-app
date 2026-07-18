@@ -57,6 +57,7 @@ import type { LayerId } from '../lib/maps/types';
 import { useAlertMapLayer } from '../lib/maps/useAlertMapLayer';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
+import { useLightningMapData } from '../lib/maps/useLightningMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
 import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
@@ -264,6 +265,8 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
 ];
 
 const STATION_RANGE_RINGS_MI = [25, 50, 100, 150];
+const LIGHTNING_UNSUPPORTED_REASON =
+  'Not available from the current IEM/RIDGE radar source. Supported now: REFL, VEL, LVEL, SRV, and ET.';
 const SKY_LEGEND_SWATCHES = [
   'rgba(255,92,92,0.88)',
   'rgba(255,146,82,0.84)',
@@ -1548,6 +1551,9 @@ export default function MapsScreen() {
     wildfireEnabled || wildfireHotspotsEnabled || (state.viewId === 'wildfire' && wildfireSmokeEnabled);
   const alertsEnabled = !!state.layers?.['alerts.polygons']?.enabled;
   const lightningEnabled = !!state.layers?.['lightning.strikes']?.enabled;
+  const lightningOpacity = Number.isFinite(state.layers?.['lightning.strikes']?.opacity)
+    ? Math.max(0.12, Math.min(1, state.layers?.['lightning.strikes']?.opacity ?? 0.78))
+    : 0.78;
   const windParticlesEnabled = false;
   const windFieldPreloadEnabled = isFocused && !!region;
   const cloudsEnabled = !!state.layers?.['sat.clouds']?.enabled;
@@ -2266,7 +2272,7 @@ export default function MapsScreen() {
         !stormScopeLocalZoom && item.id !== 'N0B'
           ? 'Zoom closer for local radar coverage.'
           : !item.enabled
-            ? 'Not wired into the current radar source yet.'
+            ? LIGHTNING_UNSUPPORTED_REASON
             : null;
       const loading =
         active && (pendingStationProduct === item.id || stationProductLoading);
@@ -2286,7 +2292,7 @@ export default function MapsScreen() {
             : 'Loading...'
           : available
             ? 'Ready'
-            : 'Unavailable',
+            : 'Unsupported',
       };
     });
   }, [displayedStationProduct, pendingStationProduct, stationProduct, stationProductLoading, stormScopeLocalZoom]);
@@ -3299,6 +3305,7 @@ export default function MapsScreen() {
   const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
   const tropicalData = useTropicalCycloneLayer(isFocused && tropicalTracksEnabled, effectiveRegion);
   const tropicalOutlookData = useTropicalOutlookLayer(isFocused && tropicalOutlookEnabled);
+  const lightningData = useLightningMapData(lightningEnabled, { windowMinutes: 15, focused: isFocused });
   const visibleWildfirePerimeters = useMemo(
     () => filterVisibleWildfirePerimeters(wildfireData.perimeters),
     [wildfireData.perimeters]
@@ -4775,6 +4782,26 @@ export default function MapsScreen() {
                   textColor: ['coalesce', ['get', 'iconTextColor'], '#020617'],
                   textAllowOverlap: true,
                   textIgnorePlacement: true,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
+          {lightningEnabled && lightningData.featureCount > 0 ? (
+            <MapLibreGL.ShapeSource id="lightning-density-source" shape={lightningData.geojson as any}>
+              <MapLibreGL.FillLayer
+                id="lightning-density-fill"
+                style={{
+                  fillColor: ['coalesce', ['get', 'fillColor'], '#facc15'],
+                  fillOpacity: Math.max(0.1, Math.min(0.62, lightningOpacity * 0.38)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="lightning-density-line"
+                style={{
+                  lineColor: ['coalesce', ['get', 'strokeColor'], '#facc15'],
+                  lineOpacity: Math.max(0.28, Math.min(0.92, lightningOpacity * 0.9)),
+                  lineWidth: 1.2,
                 }}
               />
             </MapLibreGL.ShapeSource>

@@ -1,28 +1,28 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.228**
-Android version code: **10245**
+Release: **OMNIwx 1.1.229**
+Android version code: **10246**
 Track: **Closed testing / internal testing candidate**
 Date: **July 18, 2026**
 
 ## Play Console Paste Notes
 
-Storm Scope now collapses cleanly, the radar timeline has a `2h / 3h / 5h` range selector again, tropical development areas are tappable with details, and Active Tropical Cyclones is now a standard layer so cones and trackers are easier to find.
+This build routes more forecast, geocoding, and sky-map weather traffic through the OMNIwx worker to reduce provider-limit failures, adds lightning density back to Maps, and tightens several current-weather fallback paths so saved places and marine/aviation surfaces stay more resilient.
 
 ## Tester Notes
 
-Please focus testing on the updated map HUD and tropical layers:
+Please focus testing on provider-limit protection and the refreshed map/current paths:
 
-- Confirm Storm Scope minimize collapses the full stack, not just the title card.
-- Confirm the radar playback dock shows `2h`, `3h`, and `5h` again and changes radar history length.
-- Confirm the Storm Scope legend stays compact unless expanded.
-- Confirm tropical development areas can be tapped for 2-day and 7-day details.
-- Confirm Active Tropical Cyclones is easy to find and shows cones, tracks, and wind fields when active storms exist.
+- Confirm city search and onboarding location search still return sensible matches without blank/error states.
+- Confirm land forecasts, saved-place previews, and saved-place extremes still load after repeated refreshes and do not show daily-limit errors during normal use.
+- Confirm aviation and marine fallback weather still populate wind/current conditions when official upstreams are slow.
+- Confirm the Sky map still renders after panning/zooming and does not regress cloud or visibility overlays.
+- Confirm the new lightning density layer renders on Maps and that unsupported station-radar products now explain why they are unavailable.
 
 ## Internal Release Checklist
 
-- App version: `1.1.228`
-- Android version code: `10245`
+- App version: `1.1.229`
+- Android version code: `10246`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`

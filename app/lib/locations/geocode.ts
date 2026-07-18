@@ -1,4 +1,6 @@
 // app/lib/locations/geocode.ts
+import { apiUrl } from '../net/apiBase';
+
 export type GeocodeResult = {
   name: string;
   admin1?: string;
@@ -80,9 +82,7 @@ export async function geocodePlaces(query: string): Promise<GeocodeResult[]> {
   const q = query.trim();
   if (!q) return [];
 
-  const url =
-    `https://geocoding-api.open-meteo.com/v1/search` +
-    `?name=${encodeURIComponent(q)}&count=20&language=en&format=json`;
+  const url = apiUrl(`/api/openmeteo/geocode?q=${encodeURIComponent(q)}&count=20&language=en`);
 
   const res = await fetch(url);
   if (!res.ok) return [];

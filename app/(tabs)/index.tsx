@@ -27,6 +27,7 @@ import { syncNativeWidgetWeather, usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
+import { apiUrl } from '../lib/net/apiBase';
 import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
@@ -1958,15 +1959,16 @@ async function fetchFavoriteWeatherPreview(lat: number, lon: number): Promise<Fa
     return cached.data;
   }
 
-  const url =
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(String(lat))}` +
-    `&longitude=${encodeURIComponent(String(lon))}` +
-    `&current=weather_code` +
-    `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
-    `&forecast_days=1` +
-    `&temperature_unit=fahrenheit` +
-    `&timezone=auto`;
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+    hourly: 'weather_code',
+    forecast_days: '1',
+    timezone: 'auto',
+    units: 'imperial',
+  });
+  const url = apiUrl(`/api/openmeteo/hourly?${params.toString()}`);
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -1980,7 +1982,23 @@ async function fetchFavoriteWeatherPreview(lat: number, lon: number): Promise<Fa
 
   const data = await res.json();
 
-  const currentCode = safeNum(data?.current?.weather_code);
+  const hourlyTimes = Array.isArray(data?.hourly?.time) ? data.hourly.time : [];
+  let currentCode: number | null = null;
+  if (hourlyTimes.length) {
+    const now = Date.now();
+    let bestIdx = 0;
+    let bestDiff = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < hourlyTimes.length; i++) {
+      const ts = new Date(String(hourlyTimes[i])).getTime();
+      if (!Number.isFinite(ts)) continue;
+      const diff = Math.abs(ts - now);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = i;
+      }
+    }
+    currentCode = safeNum(data?.hourly?.weather_code?.[bestIdx]);
+  }
   const dailyCode = safeNum(data?.daily?.weather_code?.[0]);
   const code = currentCode ?? dailyCode ?? null;
 
@@ -4844,19 +4862,6 @@ function LandWeatherWithCoords({
   });
 
   const {
-    data: currentData,
-    loading: currentLoading,
-    error: currentError,
-    refreshing: currentRefreshing,
-    refresh: currentRefresh,
-  } = useCurrentWeather({
-    lat: coords.lat,
-    lon: coords.lon,
-    units: 'imperial',
-    enabled,
-  });
-
-  const {
     data: forecastData,
     loading: forecastLoading,
     error: forecastError,
@@ -4868,6 +4873,21 @@ function LandWeatherWithCoords({
     days: 15,
     model: forecastModel,
     enabled,
+  });
+
+  const currentFallbackEnabled = enabled && !forecastLoading && !forecastData;
+
+  const {
+    data: currentData,
+    loading: currentLoading,
+    error: currentError,
+    refreshing: currentRefreshing,
+    refresh: currentRefresh,
+  } = useCurrentWeather({
+    lat: coords.lat,
+    lon: coords.lon,
+    units: 'imperial',
+    enabled: currentFallbackEnabled,
   });
 
   const {
@@ -4914,7 +4934,7 @@ function LandWeatherWithCoords({
     enabled: enabled && wxLab,
   });
 
-  const loading = currentLoading || (wxLab && forecastLoading);
+  const loading = forecastLoading || currentLoading;
   const refreshing =
     currentRefreshing ||
     forecastRefreshing ||
@@ -4924,8 +4944,8 @@ function LandWeatherWithCoords({
 
   const onRefresh = () => {
     if (!enabled) return;
-    currentRefresh?.();
     forecastRefresh?.();
+    if (currentFallbackEnabled) currentRefresh?.();
     astroRefresh?.();
     fireContextRefresh?.();
     if (wxLab) nwsDeskRefresh?.();
@@ -5273,7 +5293,7 @@ function LandWeatherWithCoords({
     [setLearnOpen, setLearnTopicId]
   );
 
-  const rawWeatherError = currentError || forecastError;
+  const rawWeatherError = forecastError || currentError;
   const hasUsableWeatherData = Boolean(currentData || forecastData || tempF != null || daily.length > 0 || hourly.length > 0);
   const displayWeatherError =
     rawWeatherError && (!hasUsableWeatherData || !isTemporaryWeatherError(rawWeatherError))
@@ -5294,7 +5314,7 @@ function LandWeatherWithCoords({
           </View>
         ) : null}
 
-        {loading && !currentData ? (
+        {loading && !hasUsableWeatherData ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" />
             <Text style={styles.smallText}>Loading weather...</Text>
@@ -5366,7 +5386,7 @@ function LandWeatherWithCoords({
         </View>
       ) : null}
 
-      {loading && !currentData ? (
+      {loading && !hasUsableWeatherData ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.smallText}>Loading weather…</Text>

@@ -27,6 +27,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAllBuoyDetails } from '../lib/buoys/detailHooks';
 import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
+import { apiUrl } from '../lib/net/apiBase';
 import { useMarsInsightWeather } from '../lib/spaceweather/hooks';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
@@ -400,14 +401,10 @@ function formatWindFromKph(kph: number | null, unit: 'F' | 'C') {
 }
 
 async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'): Promise<SavedPlaceExtreme | null> {
-  const url =
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(String(place.lat))}` +
-    `&longitude=${encodeURIComponent(String(place.lon))}` +
-    `&current=temperature_2m,wind_speed_10m` +
-    `&temperature_unit=celsius` +
-    `&wind_speed_unit=kmh` +
-    `&timezone=auto`;
+  const units = unit === 'C' ? 'metric' : 'imperial';
+  const url = apiUrl(
+    `/api/current?lat=${encodeURIComponent(String(place.lat))}&lon=${encodeURIComponent(String(place.lon))}&units=${units}`,
+  );
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6500);
@@ -415,10 +412,16 @@ async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'):
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) return null;
     const json = await res.json();
-    const current = json?.current ?? {};
-    const tempC = safeNum(current.temperature_2m);
-    const windKph = safeNum(current.wind_speed_10m);
-    const updatedAt = typeof current.time === 'string' ? current.time : null;
+    const temp = safeNum(json?.temp);
+    const wind = safeNum(json?.wind);
+    const updatedAt = typeof json?.time === 'string' ? json.time : null;
+    const tempC = temp == null ? null : unit === 'C' ? temp : ((temp - 32) * 5) / 9;
+    const windKph =
+      wind == null
+        ? null
+        : unit === 'C'
+          ? wind
+          : wind * 1.60934;
     const valueText =
       tempC != null
         ? `${formatTemp(tempC, unit)} • ${formatWindFromKph(windKph, unit)}`

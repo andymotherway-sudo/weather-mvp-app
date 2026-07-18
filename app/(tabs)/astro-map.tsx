@@ -22,6 +22,7 @@ import {
   sampleOvationAt,
   type OvationPoint as OvationPointLib,
 } from '../lib/aurora/ovation';
+import { apiUrl } from '../lib/net/apiBase';
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -1224,14 +1225,11 @@ async function fetchOpenMeteoGridChunk(args: {
     'relative_humidity_2m',
   ].join(',');
 
-  const url =
-    `https://api.open-meteo.com/v1/forecast` +
-    `?latitude=${encodeURIComponent(points.map((p) => p.lat.toFixed(4)).join(','))}` +
-    `&longitude=${encodeURIComponent(points.map((p) => p.lon.toFixed(4)).join(','))}` +
-    `&hourly=${encodeURIComponent(hourly)}` +
-    `&forecast_days=2` +
-    `&wind_speed_unit=ms` +
-    `&timezone=GMT`;
+  const url = apiUrl(
+    `/api/openmeteo/hourly?lat=${encodeURIComponent(points.map((p) => p.lat.toFixed(4)).join(','))}` +
+      `&lon=${encodeURIComponent(points.map((p) => p.lon.toFixed(4)).join(','))}` +
+      `&hourly=${encodeURIComponent(hourly)}&forecast_days=2&timezone=GMT&units=metric`
+  );
 
   const json = await fetchJsonWithTimeout<any>(url, OPEN_METEO_TIMEOUT_MS);
   const rows = normalizeMultiResponse(json);
@@ -1254,8 +1252,14 @@ async function fetchOpenMeteoGridChunk(args: {
       cloudMid: pick('cloud_cover_mid'),
       cloudHigh: pick('cloud_cover_high'),
       visibilityM: pick('visibility'),
-      windMps: pick('wind_speed_10m'),
-      gustMps: pick('wind_gusts_10m'),
+      windMps: (() => {
+        const kmh = pick('wind_speed_10m');
+        return kmh == null ? null : kmh / 3.6;
+      })(),
+      gustMps: (() => {
+        const kmh = pick('wind_gusts_10m');
+        return kmh == null ? null : kmh / 3.6;
+      })(),
       humidityPct: pick('relative_humidity_2m'),
     };
   });

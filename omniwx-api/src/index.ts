@@ -966,13 +966,21 @@ async function swrFetchJson(
   }
 
   const txt = await fresh.text().catch(() => "");
-  return new Response(
-    JSON.stringify({ ok: false, error: "Upstream error", status: fresh.status, body: txt.slice(0, 200) }),
-    {
-      status: 502,
-      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-    },
-  );
+  const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8" };
+  const retryAfter = fresh.headers.get("retry-after");
+  if (retryAfter) headers["retry-after"] = retryAfter;
+
+  const upstreamPayload = JSON.stringify({
+    ok: false,
+    error: fresh.status === 429 ? "Upstream rate limit exceeded" : "Upstream error",
+    status: fresh.status,
+    body: txt.slice(0, 200),
+  });
+
+  return new Response(upstreamPayload, {
+    status: fresh.status === 429 ? 429 : 502,
+    headers: withCors(headers),
+  });
 }
 
 function buildDonkiCacheKey(reqUrl: URL, donkiPath: string) {
@@ -1031,6 +1039,8 @@ const CURRENT_STALE_SECONDS = 30 * 60;
 
 const OM_HOURLY_TTL_SECONDS = 600;
 const OM_HOURLY_STALE_SECONDS = 6 * 3600;
+const OM_GEOCODE_TTL_SECONDS = 24 * 3600;
+const OM_GEOCODE_STALE_SECONDS = 7 * 24 * 3600;
 const AIR_QUALITY_TTL_SECONDS = 15 * 60;
 const AIR_QUALITY_STALE_SECONDS = 6 * 3600;
 const AIR_QUALITY_CACHE_VERSION = "aqi-hourly-v1";
@@ -3642,6 +3652,37 @@ function buildAirQualityHourlyCacheKey(url: URL, lat: number, lon: number) {
   keyUrl.searchParams.set("forecast_hours", url.searchParams.get("forecast_hours") || "96");
   keyUrl.searchParams.set("past_hours", url.searchParams.get("past_hours") || "0");
   keyUrl.searchParams.set("v", AIR_QUALITY_CACHE_VERSION);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildOpenMeteoGeocodeRequest(url: URL) {
+  const query = (url.searchParams.get("q") ?? url.searchParams.get("name") ?? "").trim();
+  if (!query) return { ok: false as const, error: "q is required" };
+
+  const countRaw = Number(url.searchParams.get("count") || "20");
+  const count = Math.max(1, Math.min(20, Number.isFinite(countRaw) ? Math.round(countRaw) : 20));
+  const language = (url.searchParams.get("language") || "en").trim() || "en";
+
+  const upstream = new URL("https://geocoding-api.open-meteo.com/v1/search");
+  upstream.searchParams.set("name", query);
+  upstream.searchParams.set("count", String(count));
+  upstream.searchParams.set("language", language);
+  upstream.searchParams.set("format", "json");
+
+  return { ok: true as const, query, count, language, upstreamUrl: upstream.toString() };
+}
+
+function buildOpenMeteoGeocodeCacheKey(
+  url: URL,
+  built: ReturnType<typeof buildOpenMeteoGeocodeRequest> & { ok: true },
+) {
+  const keyUrl = new URL(url.toString());
+  keyUrl.pathname = "/__cache__/openmeteo/geocode";
+  keyUrl.search = "";
+  keyUrl.searchParams.set("q", built.query.toLowerCase());
+  keyUrl.searchParams.set("count", String(built.count));
+  keyUrl.searchParams.set("language", built.language.toLowerCase());
+  keyUrl.searchParams.set("v", "geocode-v1");
   return new Request(keyUrl.toString(), { method: "GET" });
 }
 
@@ -9401,6 +9442,37 @@ async function handleWorkerRequest(
           const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
           try {
             const res = await fetch(built.upstreamUrl, { signal: ctrl.signal });
+            const ct = res.headers.get("content-type") || "application/json; charset=utf-8";
+            const body = await res.arrayBuffer();
+            return new Response(body, { status: res.status, headers: { "content-type": ct } });
+          } finally {
+            clearTimeout(t);
+          }
+        },
+      });
+    }
+
+    if (url.pathname === "/api/openmeteo/geocode" || url.pathname === "/v1/openmeteo/geocode") {
+      const built = buildOpenMeteoGeocodeRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildOpenMeteoGeocodeCacheKey(url, built),
+        ttlSeconds: OM_GEOCODE_TTL_SECONDS,
+        staleSeconds: OM_GEOCODE_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+          try {
+            const res = await fetch(built.upstreamUrl, {
+              signal: ctrl.signal,
+              headers: { accept: "application/json" },
+            });
             const ct = res.headers.get("content-type") || "application/json; charset=utf-8";
             const body = await res.arrayBuffer();
             return new Response(body, { status: res.status, headers: { "content-type": ct } });
