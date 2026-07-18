@@ -1,30 +1,30 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.222**
-Android version code: **10239**
+Release: **OMNIwx 1.1.223**
+Android version code: **10240**
 Track: **Closed testing / internal testing candidate**
 Date: **July 18, 2026**
 
 ## Play Console Paste Notes
 
-This build targets the remaining “force centering” feel after pinch zoom. Radar fetch anchoring now prefers the user’s actual live map region instead of snapping back to the selected radar-site center during Storm Scope behavior. Combined with the earlier zoom-button isolation work, that should stop the map from feeling like it recenters itself after a pinch settles.
+This build adds an on-screen map diagnostics recorder so we can capture exactly what changes between a normal pinch, a zoom-button tap, and the next pinch attempt. It is intended to expose whether MapLibre gesture state, settled region callbacks, or another camera signal changes only after the zoom buttons are used.
 
 ## Tester Notes
 
-Please focus testing on post-pinch recenter behavior:
+Please focus testing on the pinch-versus-zoom-button handoff:
 
-- Confirm pinch zoom still works cleanly after using the `+` or `-` buttons first.
-- Confirm the map no longer feels like it force-centers or snaps back toward the radar site after a pinch zoom settles.
-- Confirm a two-finger pinch remains anchored to the user’s chosen view instead of drifting back toward a selected radar-site center.
+- Tap the new `REC` chip on the map, reproduce the issue, tap `Copy`, and paste the diagnostics log back into the bug thread.
+- Confirm pinch zoom still feels normal before any zoom-button tap.
 - Confirm tapping `+` or `-` still changes only camera zoom and does not wake Storm Scope, radar refresh, or other radar-scope behavior by itself.
+- Confirm whether the first pinch after a zoom-button tap still feels like the map is reacting to each finger separately instead of treating the motion as a single pinch gesture.
+- Confirm whether any force-centering, snap-back, or drift appears after the zoom-button tap.
 - Confirm ordinary one-finger panning still feels normal before and after button zooms.
-- Confirm radar remains visually stable during an active pinch with no obvious snap-back while two fingers are on the screen.
 - Confirm no new regressions were introduced in ordinary map taps or button zoom behavior.
 
 ## Internal Release Checklist
 
-- App version: `1.1.222`
-- Android version code: `10239`
+- App version: `1.1.223`
+- Android version code: `10240`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Android build: `cd android && .\gradlew.bat bundleRelease --console=plain`
