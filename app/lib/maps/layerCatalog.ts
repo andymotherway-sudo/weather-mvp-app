@@ -646,7 +646,7 @@ export const LAYER_CATALOG = [
     group: 'weather',
     title: 'Active Tropical Cyclones',
     subtitle: 'Cones, tracks, wind fields',
-    visibility: 'nerdy',
+    visibility: 'both',
     timestampMode: 'latest_snapshot',
     defaultOpacity: 0.82,
     zIndex: 117,

@@ -65,6 +65,7 @@ export function StormScopeController(props: {
   onOpenLearn: () => void;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
+  const [legendExpanded, setLegendExpanded] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -165,17 +166,19 @@ export function StormScopeController(props: {
           )}
         </Glass>
 
-        <Glass style={{ borderRadius: 20, paddingHorizontal: 10, paddingVertical: 10 }}>
+        {!props.hudMinimized ? (
+          <>
+        <Glass style={{ borderRadius: 18, paddingHorizontal: 9, paddingVertical: 8 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
             {props.products.map((item) => (
               <Pressable
                 key={item.id}
                 onPress={() => handleProductPress(item)}
                 style={{
-                  minWidth: 64,
-                  paddingHorizontal: 10,
-                  paddingVertical: 10,
-                  borderRadius: 16,
+                  minWidth: 62,
+                  paddingHorizontal: 9,
+                  paddingVertical: 8,
+                  borderRadius: 15,
                   borderWidth: 1,
                   borderColor: item.active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
                   backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
@@ -183,10 +186,10 @@ export function StormScopeController(props: {
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '900' }}>{item.shortLabel}</Text>
+                  <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.shortLabel}</Text>
                   {item.loading ? <ActivityIndicator size="small" color="#bae6fd" /> : null}
                 </View>
-                <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '700', marginTop: 3 }} numberOfLines={1}>
+                <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 9, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
                   {item.loading ? item.statusLabel ?? 'Loading...' : item.available ? item.subtitle : item.statusLabel ?? 'Unavailable'}
                 </Text>
               </Pressable>
@@ -210,32 +213,35 @@ export function StormScopeController(props: {
           ) : null}
         </Glass>
 
-        <Glass style={{ borderRadius: 20, paddingHorizontal: 10, paddingVertical: 10 }}>
+        <Glass style={{ borderRadius: 18, paddingHorizontal: 9, paddingVertical: 8 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {props.quickToggles.map((item) => (
               <Pressable
                 key={item.id}
                 onPress={item.onPress}
                 style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 9,
+                  paddingHorizontal: 9,
+                  paddingVertical: 8,
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: item.active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
                   backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
                 }}
               >
-                <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
+                <Text style={{ color: 'white', fontSize: 10, fontWeight: '900' }}>{item.label}</Text>
               </Pressable>
             ))}
             <SmallPill label={props.statusLabel} accent="slate" />
           </View>
         </Glass>
 
-        <Glass style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 10 }}>
+        <Glass style={{ borderRadius: 18, paddingHorizontal: 10, paddingVertical: 8 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
             <Text style={{ color: 'white', fontSize: 12, fontWeight: '900' }}>Legend</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>{props.legend.title}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>{props.legend.title}</Text>
+              <IconButton label={legendExpanded ? '-' : '+'} onPress={() => setLegendExpanded((current) => !current)} />
+            </View>
           </View>
           <RadarLegend
             style={props.legend.style}
@@ -244,10 +250,14 @@ export function StormScopeController(props: {
             rightLabel={props.legend.rightLabel}
             compact
           />
-          <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '700', marginTop: 8 }}>
-            {props.legend.note}
-          </Text>
+          {legendExpanded ? (
+            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '700', marginTop: 8 }}>
+              {props.legend.note}
+            </Text>
+          ) : null}
         </Glass>
+          </>
+        ) : null}
       </View>
 
       <Modal visible={props.consoleOpen} animationType="slide" transparent onRequestClose={() => props.onSetConsoleOpen(false)}>

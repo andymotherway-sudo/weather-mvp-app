@@ -291,6 +291,7 @@ export function useRadarController(args: {
   suspendRasterTransitions?: boolean;
   playbackBlocked?: boolean;
   playbackRate?: number;
+  loopHours?: number;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
   const animationQuality = args.animationQuality ?? 'cinematic';
@@ -299,6 +300,7 @@ export function useRadarController(args: {
   const playbackRate = Math.max(0.5, Math.min(2, args.playbackRate ?? 1));
   const stationMode = args.stationMode === true;
   const radarSiteId3 = args.radarSiteId3 ?? null;
+  const requestedLoopHours = Number.isFinite(args.loopHours as number) ? Math.max(1, Number(args.loopHours)) : null;
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const stormMode = getStormMode(state);
@@ -311,6 +313,16 @@ export function useRadarController(args: {
     () => getRadarFetchProfile(mapZoom, sheetValue.radarProvider, stormMode, animationQuality),
     [mapZoom, sheetValue.radarProvider, stormMode, animationQuality],
   );
+  const effectiveFetchProfile = useMemo(() => {
+    if (!requestedLoopHours) return fetchProfile;
+    const lookbackMinutes = Math.max(fetchProfile.lookbackMinutes, Math.round(requestedLoopHours * 60));
+    const maxFrames = Math.max(fetchProfile.maxFrames, Math.min(60, Math.round(lookbackMinutes / 5) + 1));
+    return {
+      ...fetchProfile,
+      lookbackMinutes,
+      maxFrames,
+    };
+  }, [fetchProfile, requestedLoopHours]);
 
   const radarOpacity = useMemo(() => {
     const configured = state.layers?.['radar.reflectivity']?.opacity ?? 0.9;
@@ -578,8 +590,8 @@ export function useRadarController(args: {
             product,
             mosaicMaxZoom: 9,
             ridgeMinZoom: stationMode ? 2 : effectiveRidgeMinZoom,
-            maxFrames: fetchProfile.maxFrames,
-            lookbackMinutes: fetchProfile.lookbackMinutes,
+            maxFrames: effectiveFetchProfile.maxFrames,
+            lookbackMinutes: effectiveFetchProfile.lookbackMinutes,
             maxLocalDistanceKm: stationMode ? 5000 : stormMode ? 260 : 350,
             allowMosaicFallback: !stormMode && !stationMode,
             force: stormMode || stationMode ? 'ridge' : undefined,
@@ -613,8 +625,8 @@ export function useRadarController(args: {
     centerForRadar.lon,
     mapZoom,
     product,
-    fetchProfile.maxFrames,
-    fetchProfile.lookbackMinutes,
+    effectiveFetchProfile.maxFrames,
+    effectiveFetchProfile.lookbackMinutes,
     ridgeMinZoom,
   ]);
 

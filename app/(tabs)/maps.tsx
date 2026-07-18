@@ -60,6 +60,7 @@ import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapDa
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
 import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
 import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
+import { useTropicalOutlookLayer } from '../lib/maps/useTropicalOutlookLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
@@ -72,9 +73,6 @@ const WPC_FRONTS_EXPORT_URL =
 const NWS_HEATRISK_IMAGE_SERVER_URL =
   'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
 const NWS_HEATRISK_RENDERING_RULE = JSON.stringify({ rasterFunction: 'heatrisk.rft' });
-const NHC_TROPICAL_WEATHER_EXPORT_URL =
-  'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
@@ -361,6 +359,8 @@ const SATELLITE_PLAY_INTERVAL_MS = 1200;
 const SATELLITE_WARM_OPACITY = 0.01;
 const SATELLITE_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type SatelliteLoopHours = (typeof SATELLITE_LOOP_HOUR_OPTIONS)[number];
+const RADAR_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
+type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
 
@@ -1580,6 +1580,7 @@ export default function MapsScreen() {
   const anySatelliteEnabled = animatedSatelliteEnabled || goesTrueColorEnabled || globalTrueColorEnabled || globalPrecipEnabled;
   const goesWmsSatelliteOnly =
     (cloudsEnabled || goesEastWvEnabled || goesWestWvEnabled) && !goesTrueColorEnabled && !goesEastIrEnabled;
+  const [radarLoopHours, setRadarLoopHours] = useState<RadarLoopHours>(2);
   const [satelliteLoopHours, setSatelliteLoopHours] = useState<SatelliteLoopHours>(2);
   const satelliteLoopMinutes = satelliteLoopHours * 60;
   const satelliteFrameStepMinutes = goesWmsSatelliteOnly ? GOES_WMS_FRAME_STEP_MINUTES : SATELLITE_FRAME_STEP_MINUTES;
@@ -2027,6 +2028,7 @@ export default function MapsScreen() {
     // Keep the base mosaic playlist moving while optional buffered frames warm in the background.
     playbackBlocked: false,
     playbackRate,
+    loopHours: radarLoopHours,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -2397,6 +2399,11 @@ export default function MapsScreen() {
     if (stormScopeActive) return;
     setStormScopeConsoleOpen(false);
   }, [stormScopeActive]);
+
+  useEffect(() => {
+    if (tropicalOutlookEnabled || tropicalTracksEnabled) return;
+    setSelectedTropicalFeature(null);
+  }, [tropicalOutlookEnabled, tropicalTracksEnabled]);
 
   useEffect(() => {
     if (!radarEnabled || !animatedSatelliteEnabled || satellitePlaybackFrames.length < 2 || !activeFrameIso) return;
@@ -2796,20 +2803,6 @@ export default function MapsScreen() {
         maxZoomLevel: 9,
         fadeDurationMs: 120,
         resampling: 'nearest',
-      });
-    }
-
-    if (tropicalOutlookEnabled) {
-      list.push({
-        id: 'nhc-development-outlook',
-        tileUrlTemplates: [`${NHC_TROPICAL_WEATHER_EXPORT_URL}&layers=show:1,2,3`],
-        opacity: Math.max(0, Math.min(1, Number(tropicalOutlookOpacity))),
-        zIndex: 116,
-        enabled: true,
-        tileSize: 512,
-        maxZoomLevel: 9,
-        fadeDurationMs: 140,
-        resampling: 'linear',
       });
     }
 
@@ -3305,6 +3298,7 @@ export default function MapsScreen() {
   const fireRestrictionsData = useFireRestrictionsMapData(fireRestrictionsEnabled, effectiveRegion);
   const wildfireData = useWildfireMapData(wildfireVectorEnabled, effectiveRegion);
   const tropicalData = useTropicalCycloneLayer(isFocused && tropicalTracksEnabled, effectiveRegion);
+  const tropicalOutlookData = useTropicalOutlookLayer(isFocused && tropicalOutlookEnabled);
   const visibleWildfirePerimeters = useMemo(
     () => filterVisibleWildfirePerimeters(wildfireData.perimeters),
     [wildfireData.perimeters]
@@ -3473,6 +3467,7 @@ export default function MapsScreen() {
 
   const satelliteFrameCount = satellitePlaybackFrames.length;
   const satelliteTimelineActive = !radarEnabled && animatedSatelliteEnabled && satelliteFrameCount > 1;
+  const timelineLoopHours = radarEnabled ? radarLoopHours : satelliteLoopHours;
   const setAtmosphericFrameByIso = useCallback((iso: string | null) => {
     if (!iso) return;
 
@@ -4785,6 +4780,61 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
+          {tropicalOutlookEnabled && tropicalOutlookData.outlooks.features.length ? (
+            <MapLibreGL.ShapeSource id="tropical-outlook-source" shape={tropicalOutlookData.outlooks as any} onPress={handleTropicalFeaturePress}>
+              <MapLibreGL.FillLayer
+                id="tropical-outlook-fill"
+                style={{
+                  fillColor: [
+                    'match',
+                    ['get', 'omniStyleRank'],
+                    3,
+                    '#ef4444',
+                    2,
+                    '#f59e0b',
+                    1,
+                    '#facc15',
+                    '#fde68a',
+                  ] as any,
+                  fillOpacity: Math.max(0.08, Math.min(0.26, tropicalOutlookOpacity * 0.2)),
+                }}
+              />
+              <MapLibreGL.LineLayer
+                id="tropical-outlook-line"
+                style={{
+                  lineColor: [
+                    'match',
+                    ['get', 'omniStyleRank'],
+                    3,
+                    '#fca5a5',
+                    2,
+                    '#fdba74',
+                    1,
+                    '#fde68a',
+                    '#fef3c7',
+                  ] as any,
+                  lineOpacity: Math.max(0.55, Math.min(0.95, tropicalOutlookOpacity)),
+                  lineWidth: 2.1,
+                }}
+              />
+              <MapLibreGL.SymbolLayer
+                id="tropical-outlook-label"
+                minZoomLevel={3}
+                style={{
+                  textField: ['coalesce', ['get', 'omniLabel'], 'Tropical development'],
+                  symbolPlacement: 'point',
+                  textSize: ['interpolate', ['linear'], ['zoom'], 3, 10, 6, 12, 10, 13] as any,
+                  textFont: ['Open Sans Bold'],
+                  textColor: '#f8fafc',
+                  textHaloColor: '#020617',
+                  textHaloWidth: 2,
+                  textAllowOverlap: false,
+                  textIgnorePlacement: false,
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
+
           {tropicalTracksEnabled && tropicalData.windRadii.features.length ? (
             <MapLibreGL.ShapeSource id="tropical-wind-radii-source" shape={tropicalData.windRadii as any} onPress={handleTropicalFeaturePress}>
               <MapLibreGL.FillLayer
@@ -5675,16 +5725,19 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  {animatedSatelliteEnabled ? (
+                  {((radarEnabled && frameCount > 1) || animatedSatelliteEnabled) ? (
                     <View style={styles.satelliteLoopControls}>
-                      <Text style={styles.satelliteLoopLabel}>Loop</Text>
+                      <Text style={styles.satelliteLoopLabel}>{radarEnabled ? 'Range' : 'Loop'}</Text>
                       <View style={styles.satelliteLoopChips}>
-                        {SATELLITE_LOOP_HOUR_OPTIONS.map((hours) => {
-                          const active = satelliteLoopHours === hours;
+                        {RADAR_LOOP_HOUR_OPTIONS.map((hours) => {
+                          const active = timelineLoopHours === hours;
                           return (
                             <Pressable
                               key={hours}
-                              onPress={() => setSatelliteLoopHours(hours)}
+                              onPress={() => {
+                                setRadarLoopHours(hours);
+                                if (animatedSatelliteEnabled) setSatelliteLoopHours(hours);
+                              }}
                               style={[styles.satelliteLoopChip, active ? styles.satelliteLoopChipActive : null]}
                             >
                               <Text
@@ -5700,20 +5753,23 @@ export default function MapsScreen() {
                         })}
                       </View>
                       <Text style={styles.satelliteLoopMeta}>
-                        {satelliteFrameCount} frames
-                        {goesTrueColorEnabled
-                          ? trueColorUsingCatalog
-                            ? ' / catalog'
-                            : trueColorFrameStatus === 'loading'
-                              ? ' / loading'
-                              : ' / fallback'
-                          : goesEastIrEnabled
-                            ? infraredUsingCatalog
-                              ? ' / catalog'
-                              : infraredFrameStatus === 'loading'
-                                ? ' / loading'
-                                : ' / fallback'
-                          : ''}
+                        {radarEnabled
+                          ? `${frameCount} frames / local radar history`
+                          : `${satelliteFrameCount} frames${
+                              goesTrueColorEnabled
+                                ? trueColorUsingCatalog
+                                  ? ' / catalog'
+                                  : trueColorFrameStatus === 'loading'
+                                    ? ' / loading'
+                                    : ' / fallback'
+                                : goesEastIrEnabled
+                                  ? infraredUsingCatalog
+                                    ? ' / catalog'
+                                    : infraredFrameStatus === 'loading'
+                                      ? ' / loading'
+                                      : ' / fallback'
+                                  : ''
+                            }`}
                       </Text>
                     </View>
                   ) : null}
@@ -6274,12 +6330,14 @@ export default function MapsScreen() {
           </View>
         ) : null}
 
-        {!animationRecordMode && tropicalTracksEnabled && selectedTropicalFeature ? (
+        {!animationRecordMode && (tropicalOutlookEnabled || tropicalTracksEnabled) && selectedTropicalFeature ? (
           <View pointerEvents="box-none" style={[styles.alertDetailWrap, { bottom: 24 + insets.bottom }]}>
             <Glass style={styles.alertDetailCard}>
               <View style={styles.fireDetailHeader}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.marineDetailEyebrow}>TROPICAL CYCLONE</Text>
+                  <Text style={styles.marineDetailEyebrow}>
+                    {isTropicalOutlookFeature(selectedTropicalFeature) ? 'TROPICAL DEVELOPMENT' : 'TROPICAL CYCLONE'}
+                  </Text>
                   <Text style={styles.fireDetailTitle} numberOfLines={2}>
                     {formatTropicalStormTitle(selectedTropicalFeature)}
                   </Text>
@@ -6298,24 +6356,47 @@ export default function MapsScreen() {
               </View>
 
               <Text style={styles.fireDetailMeta} numberOfLines={3}>
-                Active tropical cyclone feed with tracks, forecast points, wind fields, watches, and cones or
-                basin-specific danger areas where available. Western Pacific systems such as Bavi may appear as
-                tracks and danger areas rather than NHC-style cones.
+                {isTropicalOutlookFeature(selectedTropicalFeature)
+                  ? formatTropicalOutlookSummary(selectedTropicalFeature)
+                  : 'Active tropical cyclone feed with tracks, forecast points, wind fields, watches, and cones or basin-specific danger areas where available. Western Pacific systems may appear as tracks and danger areas rather than NHC-style cones.'}
               </Text>
 
               <View style={styles.fireDetailRows}>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Max wind</Text>
-                  <Text style={styles.fireDetailValue}>{formatTropicalWind(selectedTropicalFeature)}</Text>
-                </View>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Gust</Text>
-                  <Text style={styles.fireDetailValue}>{formatTropicalGust(selectedTropicalFeature)}</Text>
-                </View>
-                <View style={styles.fireDetailRow}>
-                  <Text style={styles.fireDetailLabel}>Pressure</Text>
-                  <Text style={styles.fireDetailValue}>{formatTropicalPressure(selectedTropicalFeature)}</Text>
-                </View>
+                {isTropicalOutlookFeature(selectedTropicalFeature) ? (
+                  <>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>2-day chance</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalOutlookProbability(selectedTropicalFeature, '2day')}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>2-day risk</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalOutlookRisk(selectedTropicalFeature, '2day')}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>7-day chance</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalOutlookProbability(selectedTropicalFeature, '7day')}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>7-day risk</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalOutlookRisk(selectedTropicalFeature, '7day')}</Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Max wind</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalWind(selectedTropicalFeature)}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Gust</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalGust(selectedTropicalFeature)}</Text>
+                    </View>
+                    <View style={styles.fireDetailRow}>
+                      <Text style={styles.fireDetailLabel}>Pressure</Text>
+                      <Text style={styles.fireDetailValue}>{formatTropicalPressure(selectedTropicalFeature)}</Text>
+                    </View>
+                  </>
+                )}
                 <View style={styles.fireDetailRow}>
                   <Text style={styles.fireDetailLabel}>Valid</Text>
                   <Text style={styles.fireDetailValue} numberOfLines={2}>
@@ -6725,7 +6806,11 @@ function filterVisibleWildfireIncidents(incidents: any, perimeters: any, zoom: n
     const codeLike = isAgencyCodeLikeWildfireName(name);
     const isHotspot = props.isHotspot === true;
 
-    if (key && perimeterKeys.has(key) && zoom < 9) return false;
+    // Perimeters are the primary representation when we have a current
+    // boundary for a fire. Incident dots should only fill gaps where no
+    // perimeter is available, not reappear and duplicate the same fire label
+    // at close zoom.
+    if (key && perimeterKeys.has(key)) return false;
 
     if (isHotspot) return zoom >= 8.5;
     if (acres == null) return zoom >= 10.5 && !codeLike;
@@ -7134,8 +7219,16 @@ function tropicalProperties(feature: any) {
   return feature?.properties ?? {};
 }
 
+function isTropicalOutlookFeature(feature: any) {
+  return String(tropicalProperties(feature).omniKind ?? '') === 'development-outlook';
+}
+
 function formatTropicalStormTitle(feature: any) {
   const props = tropicalProperties(feature);
+  if (isTropicalOutlookFeature(feature)) {
+    const basin = String(props.omniBasin ?? props.basin ?? 'Tropical').trim();
+    return `${basin} development area`;
+  }
   const name = String(props.omniStormLabel ?? props.STORMNAME ?? props.NAME ?? 'Tropical cyclone').trim();
   const type = String(props.TCDVLP ?? props.STORMTYPE ?? '').trim();
   if (!type || type.toLowerCase() === name.toLowerCase()) return name;
@@ -7143,7 +7236,8 @@ function formatTropicalStormTitle(feature: any) {
 }
 
 function formatTropicalBasin(feature: any) {
-  const basin = String(tropicalProperties(feature).omniBasin ?? tropicalProperties(feature).BASIN ?? '').toUpperCase();
+  const rawBasin = String(tropicalProperties(feature).omniBasin ?? tropicalProperties(feature).BASIN ?? '').trim();
+  const basin = rawBasin.toUpperCase();
   const names: Record<string, string> = {
     AL: 'Atlantic',
     AT: 'Atlantic',
@@ -7153,7 +7247,8 @@ function formatTropicalBasin(feature: any) {
     SH: 'Southern Hemisphere',
     WP: 'Western Pacific',
   };
-  return names[basin] ?? (basin ? `Basin ${basin}` : 'Global basin');
+  if (names[basin]) return names[basin];
+  return rawBasin || 'Global basin';
 }
 
 function formatTropicalFeatureKind(feature: any) {
@@ -7175,6 +7270,8 @@ function formatTropicalFeatureKind(feature: any) {
       return 'Watch / warning';
     case 'wind-radii':
       return 'Wind field';
+    case 'development-outlook':
+      return 'Development outlook';
     default:
       return 'Storm detail';
   }
@@ -7186,6 +7283,30 @@ function formatTropicalCategory(feature: any) {
   if (Number.isFinite(category) && category > 0) return `Cat ${Math.round(category)}`;
   const development = String(props.TCDVLP ?? '').trim();
   return development || null;
+}
+
+function formatTropicalOutlookProbability(feature: any, period: '2day' | '7day') {
+  const props = tropicalProperties(feature);
+  const value =
+    period === '2day'
+      ? props.omniProb2Day ?? props.prob2day
+      : props.omniProb7Day ?? props.prob7day;
+  const text = String(value ?? '').trim();
+  return text || 'Unavailable';
+}
+
+function formatTropicalOutlookRisk(feature: any, period: '2day' | '7day') {
+  const props = tropicalProperties(feature);
+  const value =
+    period === '2day'
+      ? props.omniRisk2Day ?? props.risk2day
+      : props.omniRisk7Day ?? props.risk7day;
+  const text = String(value ?? '').trim();
+  return text || 'Unavailable';
+}
+
+function formatTropicalOutlookSummary(feature: any) {
+  return `Potential tropical development area from the NHC outlook. These polygons show formation chances, not forecast cones or storm-center tracks.`;
 }
 
 function formatTropicalWind(feature: any) {

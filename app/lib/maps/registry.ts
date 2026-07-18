@@ -114,7 +114,7 @@ export const LAYERS: LayerDefinition[] = [
     id: 'tropics.nhcTracks',
     title: 'Tropical Cyclone Cones',
     kind: 'tile',
-    visibility: 'nerdy',
+    visibility: 'both',
     defaultOpacity: 0.82,
     timestampMode: 'latest_snapshot',
     zIndex: 57,
