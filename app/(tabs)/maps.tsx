@@ -1928,13 +1928,13 @@ export default function MapsScreen() {
   const activeLayerSummary = useMemo(() => getActiveLayerSummary(state), [state]);
 
   const centerForRadar = useMemo(() => {
-    // In Storm Scope NEXRAD mode, fetch the selected nearest radar site.
-    // Otherwise, keep RainViewer anchored to the user's free map view.
+    // Keep radar fetches anchored to the user's actual map view so pinch and
+    // pan never appear to recentre the content back to the selected site.
+    if (region) return { lat: region.latitude, lon: region.longitude };
+
     if (stationRadarMode && selectedRadarSite) {
       return { lat: selectedRadarSite.lat, lon: selectedRadarSite.lon };
     }
-
-    if (region) return { lat: region.latitude, lon: region.longitude };
 
     return { lat: 39.5, lon: -98.35 };
   }, [region, selectedRadarSite, stationRadarMode]);
