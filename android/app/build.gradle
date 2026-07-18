@@ -108,8 +108,8 @@ android {
         applicationId 'com.anonymous.weatherapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10237
-        versionName "1.1.220"
+        versionCode 10238
+        versionName "1.1.221"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

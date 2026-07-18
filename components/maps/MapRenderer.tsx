@@ -38,6 +38,7 @@ export type MapRendererProps = {
   mapStyle: 'dark' | 'light';
   customMapStyle?: any[];
   boundaryReliefTone?: 'teal' | 'orange' | null;
+  radarBehaviorZoom?: number | null;
   regionEventMode?: 'continuous' | 'settled';
   onRegionChangeComplete: (r: Region, meta?: { isUserInteraction: boolean }) => void;
   onPanDrag?: () => void;
@@ -265,6 +266,7 @@ export function MapRenderer(props: MapRendererProps) {
     initialRegion,
     mapStyle,
     boundaryReliefTone,
+    radarBehaviorZoom,
     regionEventMode = 'continuous',
     onRegionChangeComplete,
     onPanDrag,
@@ -446,6 +448,10 @@ export function MapRenderer(props: MapRendererProps) {
   const localImage = radar.localImage ?? null;
   const useLocalImage = radar.enabled && !!localImage?.url && !!localImage?.coordinates?.length;
   const radarSourceKey = useMemo(() => safeMapSourceKey(radar.sourceKey), [radar.sourceKey]);
+  const effectiveRadarZoom =
+    typeof radarBehaviorZoom === 'number' && Number.isFinite(radarBehaviorZoom)
+      ? clamp(radarBehaviorZoom, 1, 20)
+      : liveZoom;
 
   const maxSlots = useMemo(() => {
     if (isDegraded) return 1;
@@ -456,14 +462,14 @@ export function MapRenderer(props: MapRendererProps) {
     }).length;
     if (activeRadarSlots >= 2) return 2;
     if (hasPreloadSlot) return 2;
-    if (liveZoom >= 8.5) return 1;
+    if (effectiveRadarZoom >= 8.5) return 1;
     return 2;
-  }, [isDegraded, liveZoom, radar.opacities, radar.templates]);
+  }, [effectiveRadarZoom, isDegraded, radar.opacities, radar.templates]);
 
   const warmRadarTemplates = useMemo(() => {
     if (useLocalImage || isDegraded) return [] as string[];
-    return (radar.warmTemplates ?? []).filter((tpl): tpl is string => !!tpl).slice(0, liveZoom >= 8.5 ? 1 : 2);
-  }, [isDegraded, liveZoom, radar.warmTemplates, useLocalImage]);
+    return (radar.warmTemplates ?? []).filter((tpl): tpl is string => !!tpl).slice(0, effectiveRadarZoom >= 8.5 ? 1 : 2);
+  }, [effectiveRadarZoom, isDegraded, radar.warmTemplates, useLocalImage]);
 
   const radarTemplates = useMemo(() => {
     const base = radar.templates ?? [];
@@ -504,13 +510,13 @@ export function MapRenderer(props: MapRendererProps) {
   }, [radar.tileMaxZ]);
 
   const layerMaxZ = 24;
-  const radarResampling: 'linear' | 'nearest' = liveZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
+  const radarResampling: 'linear' | 'nearest' = effectiveRadarZoom >= RADAR_CRISP_MIN_ZOOM ? 'nearest' : 'linear';
 
   const rasterFadeDuration = 0;
 
   const radarRasterStyle = (opacity: number) => {
     const safeOpacity = clamp(opacity, 0, 1);
-    const zoomSoftener = liveZoom < 9.5 ? 0.85 : liveZoom < 10.5 ? 0.92 : 1.0;
+    const zoomSoftener = effectiveRadarZoom < 9.5 ? 0.85 : effectiveRadarZoom < 10.5 ? 0.92 : 1.0;
     const productStyle = radar.productStyle ?? 'reflectivity';
     const productTuning =
       productStyle === 'velocity'

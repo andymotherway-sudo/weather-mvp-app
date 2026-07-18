@@ -3805,6 +3805,7 @@ export default function MapsScreen() {
               stableInitialRegion
             }
             mapStyle={baseMapStyle}
+            radarBehaviorZoom={radarBehaviorZoom}
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
             onMapPress={handleMapPress}
@@ -3825,8 +3826,7 @@ export default function MapsScreen() {
             setRegion(nextRegion);
             setMapZoom(zFloat);
             if (meta?.isUserInteraction) setRadarBehaviorZoom(zFloat);
-
-            radarCtl.refreshLocalIfNeeded();
+            if (meta?.isUserInteraction) radarCtl.refreshLocalIfNeeded();
           }}
           radar={mapRadar}
           overlays={renderedOverlays}
