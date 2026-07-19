@@ -9827,6 +9827,24 @@ function buildNesdisExportImageRequest(url: URL) {
   };
 }
 
+function buildTropicalOutlookRequest(url: URL) {
+  const upstream = new URL(
+    "https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/3/query",
+  );
+  upstream.searchParams.set("f", "geojson");
+  upstream.searchParams.set("where", "1=1");
+  upstream.searchParams.set("outFields", "*");
+  upstream.searchParams.set("returnGeometry", "true");
+  upstream.searchParams.set("outSR", "4326");
+  upstream.searchParams.set("resultRecordCount", "200");
+
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/tropical-outlook");
+  return {
+    upstreamUrl: upstream.toString(),
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
 function parseNesdisFramesRequest(url: URL) {
   const minutesBack = clampInt(Number(url.searchParams.get("minutesBack") ?? "120"), 30, 360, 120);
   const service = resolveNesdisService(url.pathname);
@@ -10288,6 +10306,27 @@ async function handleWorkerRequest(
           );
 
           const ct = res.headers.get("content-type") || "image/png";
+          const body = await res.arrayBuffer();
+          return new Response(body, { status: res.status, headers: { "content-type": ct } });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/tropical-outlook") {
+      const built = buildTropicalOutlookRequest(url);
+      return swrFetchJson(request, ctx, {
+        cacheKey: built.cacheKey,
+        ttlSeconds: 600,
+        staleSeconds: 1800,
+        fetchUpstream: async () => {
+          const res = await fetch(
+            built.upstreamUrl,
+            {
+              cf: { cacheEverything: true, cacheTtl: 600 },
+              headers: { "User-Agent": "omniwx-worker/1.0", accept: "application/geo+json, application/json" },
+            } as any,
+          );
+          const ct = res.headers.get("content-type") || "application/geo+json; charset=utf-8";
           const body = await res.arrayBuffer();
           return new Response(body, { status: res.status, headers: { "content-type": ct } });
         },

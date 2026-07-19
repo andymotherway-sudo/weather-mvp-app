@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type GeoJsonFeatureCollection = {
@@ -15,9 +16,6 @@ type TropicalOutlookLayerData = {
 };
 
 const EMPTY_FC: GeoJsonFeatureCollection = { type: 'FeatureCollection', features: [] };
-const NHC_TROPICAL_OUTLOOK_QUERY_URL =
-  'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/3/query';
-
 let tropicalOutlookCache: { ts: number; data: Omit<TropicalOutlookLayerData, 'loading' | 'error'> } | null = null;
 
 function asFeatureCollection(input: any): GeoJsonFeatureCollection {
@@ -110,15 +108,7 @@ function latestUpdatedAt(collection: GeoJsonFeatureCollection) {
 }
 
 async function fetchOutlookLayer(signal?: AbortSignal) {
-  const url = new URL(NHC_TROPICAL_OUTLOOK_QUERY_URL);
-  url.searchParams.set('f', 'geojson');
-  url.searchParams.set('where', '1=1');
-  url.searchParams.set('outFields', '*');
-  url.searchParams.set('returnGeometry', 'true');
-  url.searchParams.set('outSR', '4326');
-  url.searchParams.set('resultRecordCount', '200');
-
-  const res = await fetchWithTimeout(url.toString(), 16000, { signal });
+  const res = await fetchWithTimeout(apiUrl('/v1/maps/tropical-outlook'), 16000, { signal });
   if (!res.ok) throw new Error(`Tropical outlook layer failed (${res.status})`);
   return decorateFeatureCollection(asFeatureCollection(await res.json()));
 }
