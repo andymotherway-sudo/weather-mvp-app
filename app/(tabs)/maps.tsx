@@ -84,8 +84,6 @@ const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const WFIGS_CURRENT_PERIMETERS_QUERY_URL =
-  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
 
 type WildfireIncidentDetails = {
   incidentName: string;
@@ -7149,93 +7147,13 @@ function formatAviationChipTime(value: string) {
 }
 
 async function queryWildfireIncidentAtPoint(lat: number, lon: number): Promise<WildfireIncidentDetails | null> {
-  const outFields = [
-    'poly_IncidentName',
-    'poly_GISAcres',
-    'poly_Source',
-    'poly_DateCurrent',
-    'attr_ModifiedOnDateTime_dt',
-    'attr_PercentContained',
-    'attr_IncidentSize',
-    'attr_POOCounty',
-    'attr_POOState',
-    'attr_POOCity',
-    'attr_InitialLatitude',
-    'attr_InitialLongitude',
-    'attr_Source',
-  ].join(',');
-
-  const buildUrl = (geometry: string, geometryType: 'esriGeometryPoint' | 'esriGeometryEnvelope') => {
-    const url = new URL(WFIGS_CURRENT_PERIMETERS_QUERY_URL);
-    url.searchParams.set('f', 'pjson');
-    url.searchParams.set('where', '1=1');
-    url.searchParams.set('geometry', geometry);
-    url.searchParams.set('geometryType', geometryType);
-    url.searchParams.set('inSR', '4326');
-    url.searchParams.set('spatialRel', 'esriSpatialRelIntersects');
-    url.searchParams.set('returnGeometry', 'false');
-    url.searchParams.set('outFields', outFields);
-    return url.toString();
-  };
-
-  const toIncident = (attrs: any): WildfireIncidentDetails | null => {
-    const incidentName =
-      typeof attrs?.poly_IncidentName === 'string' && attrs.poly_IncidentName.trim()
-        ? attrs.poly_IncidentName.trim()
-        : null;
-    if (!incidentName) return null;
-
-    return {
-      incidentName,
-      percentContained: safeNum(attrs?.attr_PercentContained),
-      acres: safeNum(attrs?.poly_GISAcres) ?? safeNum(attrs?.attr_IncidentSize),
-      updatedAt:
-        typeof attrs?.attr_ModifiedOnDateTime_dt === 'string'
-          ? attrs.attr_ModifiedOnDateTime_dt
-          : typeof attrs?.poly_DateCurrent === 'string'
-            ? attrs.poly_DateCurrent
-            : null,
-      source: typeof attrs?.attr_Source === 'string' ? attrs.attr_Source : 'NIFC / WFIGS',
-      county: typeof attrs?.attr_POOCounty === 'string' ? attrs.attr_POOCounty : null,
-      state: typeof attrs?.attr_POOState === 'string' ? attrs.attr_POOState : null,
-      city: typeof attrs?.attr_POOCity === 'string' ? attrs.attr_POOCity : null,
-      geometrySource: typeof attrs?.poly_Source === 'string' ? attrs.poly_Source : null,
-      latitude: safeNum(attrs?.attr_InitialLatitude),
-      longitude: safeNum(attrs?.attr_InitialLongitude),
-    };
-  };
-
-  const pointRes = await fetch(buildUrl(`${lon},${lat}`, 'esriGeometryPoint'));
-  if (!pointRes.ok) throw new Error(`Wildfire query failed (${pointRes.status})`);
-  const pointJson = await pointRes.json();
-  const pointFeatures = Array.isArray(pointJson?.features) ? pointJson.features : [];
-  if (pointFeatures.length) {
-    return toIncident(pointFeatures[0]?.attributes ?? null);
-  }
-
-  const radiusDeg = 0.35;
-  const env = `${lon - radiusDeg},${lat - radiusDeg},${lon + radiusDeg},${lat + radiusDeg}`;
-  const envRes = await fetch(buildUrl(env, 'esriGeometryEnvelope'));
-  if (!envRes.ok) throw new Error(`Wildfire nearby query failed (${envRes.status})`);
-  const envJson = await envRes.json();
-  const envFeatures = Array.isArray(envJson?.features) ? envJson.features : [];
-  if (!envFeatures.length) return null;
-
-  const nearest = envFeatures
-    .map((feature: any) => {
-      const attrs = feature?.attributes ?? {};
-      const fl = safeNum(attrs?.attr_InitialLatitude);
-      const fn = safeNum(attrs?.attr_InitialLongitude);
-      const distanceMi =
-        fl != null && fn != null ? haversineMiles(lat, lon, fl, fn) : Number.POSITIVE_INFINITY;
-      return { attrs, distanceMi };
-    })
-    .sort((a: any, b: any) => {
-      if (a.distanceMi !== b.distanceMi) return a.distanceMi - b.distanceMi;
-      return (safeNum(b.attrs?.poly_GISAcres) ?? 0) - (safeNum(a.attrs?.poly_GISAcres) ?? 0);
-    })[0];
-
-  return toIncident(nearest?.attrs ?? null);
+  const url = apiUrl(
+    `/v1/maps/wildfire/incident?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`,
+  );
+  const res = await fetchWithTimeout(url, 12000);
+  if (!res.ok) throw new Error(`Wildfire query failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  return json?.incident ?? null;
 }
 
 function AviationDetailRow(props: { label: string; value?: any }) {

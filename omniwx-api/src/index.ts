@@ -9983,6 +9983,119 @@ async function fetchWildfireMapsPayload(parsed: { west: number; south: number; e
   };
 }
 
+function parseWildfireIncidentRequest(url: URL) {
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return { ok: false as const, error: "lat and lon are required numbers" };
+  }
+  return { ok: true as const, lat, lon };
+}
+
+function buildWildfireIncidentCacheKey(lat: number, lon: number) {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/wildfire/incident");
+  cacheUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.05)));
+  cacheUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.05)));
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+async function fetchWildfireIncidentPayload(lat: number, lon: number) {
+  const outFields = [
+    "poly_IncidentName",
+    "poly_GISAcres",
+    "poly_Source",
+    "poly_DateCurrent",
+    "attr_ModifiedOnDateTime_dt",
+    "attr_PercentContained",
+    "attr_IncidentSize",
+    "attr_POOCounty",
+    "attr_POOState",
+    "attr_POOCity",
+    "attr_InitialLatitude",
+    "attr_InitialLongitude",
+    "attr_Source",
+  ].join(",");
+
+  const buildQueryUrl = (geometry: string, geometryType: "esriGeometryPoint" | "esriGeometryEnvelope") => {
+    const upstream = new URL(
+      "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query",
+    );
+    upstream.searchParams.set("f", "pjson");
+    upstream.searchParams.set("where", "1=1");
+    upstream.searchParams.set("geometry", geometry);
+    upstream.searchParams.set("geometryType", geometryType);
+    upstream.searchParams.set("inSR", "4326");
+    upstream.searchParams.set("spatialRel", "esriSpatialRelIntersects");
+    upstream.searchParams.set("returnGeometry", "false");
+    upstream.searchParams.set("outFields", outFields);
+    return upstream.toString();
+  };
+
+  const toIncident = (attrs: any) => {
+    const incidentName =
+      typeof attrs?.poly_IncidentName === "string" && attrs.poly_IncidentName.trim()
+        ? attrs.poly_IncidentName.trim()
+        : null;
+    if (!incidentName) return null;
+
+    return {
+      incidentName,
+      percentContained: safeNum(attrs?.attr_PercentContained),
+      acres: safeNum(attrs?.poly_GISAcres) ?? safeNum(attrs?.attr_IncidentSize),
+      updatedAt:
+        typeof attrs?.attr_ModifiedOnDateTime_dt === "string"
+          ? attrs.attr_ModifiedOnDateTime_dt
+          : typeof attrs?.poly_DateCurrent === "string"
+            ? attrs.poly_DateCurrent
+            : null,
+      source: typeof attrs?.attr_Source === "string" ? attrs.attr_Source : "NIFC / WFIGS",
+      county: typeof attrs?.attr_POOCounty === "string" ? attrs.attr_POOCounty : null,
+      state: typeof attrs?.attr_POOState === "string" ? attrs.attr_POOState : null,
+      city: typeof attrs?.attr_POOCity === "string" ? attrs.attr_POOCity : null,
+      geometrySource: typeof attrs?.poly_Source === "string" ? attrs.poly_Source : null,
+      latitude: safeNum(attrs?.attr_InitialLatitude),
+      longitude: safeNum(attrs?.attr_InitialLongitude),
+    };
+  };
+
+  const pointJson = await fetchJsonWithTimeout(buildQueryUrl(`${lon},${lat}`, "esriGeometryPoint"), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/json",
+  });
+  const pointFeatures = Array.isArray(pointJson?.features) ? pointJson.features : [];
+  if (pointFeatures.length) {
+    return { ok: true, incident: toIncident(pointFeatures[0]?.attributes ?? null) };
+  }
+
+  const radiusDeg = 0.35;
+  const env = `${lon - radiusDeg},${lat - radiusDeg},${lon + radiusDeg},${lat + radiusDeg}`;
+  const envJson = await fetchJsonWithTimeout(buildQueryUrl(env, "esriGeometryEnvelope"), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/json",
+  });
+  const envFeatures = Array.isArray(envJson?.features) ? envJson.features : [];
+  if (!envFeatures.length) return { ok: true, incident: null };
+
+  const nearest = envFeatures
+    .map((feature: any) => {
+      const attrs = feature?.attributes ?? {};
+      const featureLat = safeNum(attrs?.attr_InitialLatitude);
+      const featureLon = safeNum(attrs?.attr_InitialLongitude);
+      const distanceMi =
+        featureLat != null && featureLon != null ? haversineMiles(lat, lon, featureLat, featureLon) : Number.POSITIVE_INFINITY;
+      return { attrs, distanceMi };
+    })
+    .sort((a: any, b: any) => {
+      if (a.distanceMi !== b.distanceMi) return a.distanceMi - b.distanceMi;
+      return (safeNum(b.attrs?.poly_GISAcres) ?? 0) - (safeNum(a.attrs?.poly_GISAcres) ?? 0);
+    })[0];
+
+  return {
+    ok: true,
+    incident: toIncident(nearest?.attrs ?? null),
+  };
+}
+
 function buildActiveAlertsCacheKey() {
   const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/active");
   return new Request(cacheUrl.toString(), { method: "GET" });
@@ -10672,6 +10785,29 @@ async function handleWorkerRequest(
         staleSeconds: 900,
         fetchUpstream: async () => {
           const payload = await fetchWildfireMapsPayload(parsed);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/wildfire/incident") {
+      const parsed = parseWildfireIncidentRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildWildfireIncidentCacheKey(parsed.lat, parsed.lon),
+        ttlSeconds: 300,
+        staleSeconds: 900,
+        fetchUpstream: async () => {
+          const payload = await fetchWildfireIncidentPayload(parsed.lat, parsed.lon);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },
