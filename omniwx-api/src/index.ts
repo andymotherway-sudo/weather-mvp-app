@@ -9505,10 +9505,260 @@ function getIemWmsBase(env: Env) {
   return env.RADAR_IEM_WMS_BASE || "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad";
 }
 
+type RadarSourceId = "rainviewer" | "iem-ridge" | "iem-wms";
+
+type RadarSourceDescriptor = {
+  id: RadarSourceId;
+  label: string;
+  role: "mosaic" | "local" | "wms";
+  coverage: string;
+  route: string;
+  source: string;
+  notes?: string[];
+};
+
+function buildRadarSourceDescriptors() {
+  return [
+    {
+      id: "rainviewer",
+      label: "RainViewer tiles",
+      role: "mosaic",
+      coverage: "broad precipitation mosaic",
+      route: "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png",
+      source: "RainViewer tile cache",
+      notes: ["Used for broad radar context and animation-friendly mosaic playback."],
+    },
+    {
+      id: "iem-ridge",
+      label: "IEM RIDGE tiles",
+      role: "local",
+      coverage: "single-site NEXRAD products",
+      route: "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png",
+      source: "IEM RIDGE / NEXRAD",
+      notes: ["Preferred for sharper local radar products when a nearby site is selected."],
+    },
+    {
+      id: "iem-wms",
+      label: "IEM WMS",
+      role: "wms",
+      coverage: "regional render service",
+      route: "/v2/radar/wms",
+      source: "IEM WMS / NEXRAD",
+      notes: ["Used for local storm rendering and image-export style fetches."],
+    },
+  ] satisfies RadarSourceDescriptor[];
+}
+
+function buildRadarInfoPayload(env: Env) {
+  return {
+    ok: true,
+    iemWmsBase: getIemWmsBase(env),
+    routes: {
+      wms_v1: "/v1/radar/wms",
+      wms_v2: "/v2/radar/wms",
+      rainviewer_tiles: "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png",
+      iem_ridge_tiles: "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png",
+    },
+    sources: buildRadarSourceDescriptors(),
+  };
+}
+
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
   if (product === "N0B") return `${base}/n0b.cgi`;
   if (product === "N0Z") return `${base}/n0z.cgi`;
   return `${base}/n0q.cgi`;
+}
+
+function isRainViewerPath(value: string | null): value is string {
+  return !!value && /^\/v2\/radar\/[A-Za-z0-9_-]+$/.test(value);
+}
+
+async function resolveRainViewerFramePath(ts: string, requestedPath: string | null) {
+  let framePath = isRainViewerPath(requestedPath) ? requestedPath : null;
+  if (framePath) return framePath;
+
+  try {
+    const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
+      cf: { cacheEverything: true, cacheTtl: 60 },
+      headers: { "User-Agent": "omniwx-worker/1.0" },
+    } as any);
+    if (!timelineRes.ok) return null;
+
+    const timeline = (await timelineRes.json()) as {
+      radar?: {
+        past?: Array<{ time?: number; path?: string }>;
+        nowcast?: Array<{ time?: number; path?: string }>;
+      };
+    };
+    const frames = [...(timeline.radar?.past ?? []), ...(timeline.radar?.nowcast ?? [])];
+    const match = frames.find((frame) => String(frame.time ?? "") === ts && isRainViewerPath(frame.path ?? null));
+    return match?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildRainViewerTileRequest(url: URL) {
+  const parts = url.pathname.replace("/v1/radar/rainviewer/tiles/", "").split("/");
+  if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
+
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  const ts = url.searchParams.get("ts");
+
+  if (!ts || !/^\d+$/.test(ts)) {
+    return { ok: false as const, error: "ts required (unix seconds)" };
+  }
+
+  const size = url.searchParams.get("size") === "512" ? "512" : "256";
+  const color = url.searchParams.get("color") ?? "2";
+  const smooth = url.searchParams.get("smooth") ?? "1";
+  const snow = url.searchParams.get("snow") ?? "1";
+  const requestedPath = url.searchParams.get("path");
+  const framePath = await resolveRainViewerFramePath(ts, requestedPath);
+  const upstreamUrl = framePath
+    ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
+    : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
+  const frameKey = framePath ? framePath.replace("/v2/radar/", "") : ts;
+
+  const cacheUrl = new URL(url.toString());
+  cacheUrl.pathname = `/__cache__/radar/rainviewer/${frameKey}/${size}/${z}/${x}/${y}.png`;
+  cacheUrl.search = `?color=${color}&smooth=${smooth}&snow=${snow}`;
+
+  return {
+    ok: true as const,
+    upstreamUrl,
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
+function buildIemRidgeTileRequest(url: URL) {
+  const parts = url.pathname.replace("/v1/radar/iem/ridge/tiles/", "").split("/");
+  if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
+
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  const radarRaw = (url.searchParams.get("radar") || "").trim().toUpperCase();
+  const product = (url.searchParams.get("product") || "N0Q").trim().toUpperCase();
+  const ts = (url.searchParams.get("ts") || "0").trim();
+
+  if (!/^[A-Z0-9]{3}$/.test(radarRaw)) {
+    return { ok: false as const, error: "radar must be 3-char site id (e.g. TLX)" };
+  }
+  if (!/^[A-Z0-9]{3}$/.test(product)) {
+    return { ok: false as const, error: "product must be like N0Q, N0B, N0S..." };
+  }
+  if (!(ts === "0" || /^\d{12}$/.test(ts))) {
+    return { ok: false as const, error: "ts must be 0 or YYYYMMDDHHMM" };
+  }
+
+  const service = `ridge::${radarRaw}-${product}-${ts}`;
+  const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
+  const cacheUrl = new URL(url.toString());
+  cacheUrl.pathname = `/__cache__/radar/iem/ridge/${radarRaw}/${product}/${ts}/${z}/${x}/${y}.png`;
+  cacheUrl.search = "";
+
+  return {
+    ok: true as const,
+    upstreamUrl,
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
+function buildRadarWmsRequest(args: {
+  env: Env;
+  url: URL;
+  version: "v1" | "v2";
+}) {
+  const { env, url, version } = args;
+  const product = (url.searchParams.get("product") || "N0Q").toUpperCase() as "N0Q" | "N0B" | "N0Z";
+  const timeIso = url.searchParams.get("time");
+  const base = getIemWmsBase(env);
+  const endpoint = iemWmsEndpointForProduct(base, product);
+  const upstream = new URL(endpoint);
+
+  upstream.searchParams.set("service", "WMS");
+  upstream.searchParams.set("request", "GetMap");
+  upstream.searchParams.set("version", "1.1.1");
+  upstream.searchParams.set(
+    "layers",
+    product === "N0B" ? "nexrad-n0b-900913" : product === "N0Z" ? "nexrad-n0z-900913" : "nexrad-n0q-900913",
+  );
+  upstream.searchParams.set("styles", "");
+  upstream.searchParams.set("format", "image/png");
+  upstream.searchParams.set("transparent", "TRUE");
+  upstream.searchParams.set("srs", "EPSG:3857");
+
+  if (version === "v1") {
+    const width = Math.max(256, Math.min(1536, Math.floor(Number(url.searchParams.get("width") || "1024"))));
+    const height = Math.max(256, Math.min(1536, Math.floor(Number(url.searchParams.get("height") || "1024"))));
+    const bbox = url.searchParams.get("bbox");
+    if (!bbox) return { ok: false as const, error: "bbox is required (EPSG:3857)" };
+
+    upstream.searchParams.set("bbox", bbox);
+    upstream.searchParams.set("width", String(width));
+    upstream.searchParams.set("height", String(height));
+    if (timeIso) upstream.searchParams.set("time", timeIso);
+
+    const cacheUrl = new URL(url.origin + "/__cache__/radar/wms");
+    cacheUrl.searchParams.set("product", product);
+    cacheUrl.searchParams.set("bbox", bbox);
+    cacheUrl.searchParams.set("width", String(width));
+    cacheUrl.searchParams.set("height", String(height));
+    if (timeIso) cacheUrl.searchParams.set("time", timeIso);
+
+    return {
+      ok: true as const,
+      upstreamUrl: upstream.toString(),
+      cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+    };
+  }
+
+  const bboxRaw = url.searchParams.get("bbox");
+  if (!bboxRaw) return { ok: false as const, error: "bbox is required (EPSG:3857)" };
+
+  const parsed = parseBbox3857(bboxRaw);
+  if (!parsed) return { ok: false as const, error: "bbox must be minx,miny,maxx,maxy (EPSG:3857)" };
+
+  const shrink = clampFloat(Number(url.searchParams.get("shrink") || "0.85"), 0.6, 1.0, 0.85);
+  const dpr = clampFloat(Number(url.searchParams.get("dpr") || "2"), 1, 3, 2);
+  const stormMode = url.searchParams.get("storm") === "1";
+  const maxImageDimension = stormMode ? 3072 : 2048;
+  const baseW = clampInt(Number(url.searchParams.get("width") || "1024"), 256, maxImageDimension);
+  const baseH = clampInt(Number(url.searchParams.get("height") || "1024"), 256, maxImageDimension);
+  const width = clampInt(Math.round(baseW * dpr), 256, maxImageDimension);
+  const height = clampInt(Math.round(baseH * dpr), 256, maxImageDimension);
+  const fmt = (url.searchParams.get("fmt") || "png32").toLowerCase();
+  const bgcolor = url.searchParams.get("bgcolor") || "0x00000000";
+  const b2 = shrinkBbox(parsed, shrink);
+  const bbox = `${b2.minx},${b2.miny},${b2.maxx},${b2.maxy}`;
+
+  upstream.searchParams.set("bbox", bbox);
+  upstream.searchParams.set("width", String(width));
+  upstream.searchParams.set("height", String(height));
+  upstream.searchParams.set("bgcolor", bgcolor);
+  if (timeIso) upstream.searchParams.set("time", timeIso);
+
+  const keyB = roundBboxKey(b2, 250);
+  const cacheUrl = new URL(url.origin + "/__cache__/radar/wms/v2");
+  cacheUrl.searchParams.set("product", product);
+  cacheUrl.searchParams.set("bbox", `${keyB.minx},${keyB.miny},${keyB.maxx},${keyB.maxy}`);
+  cacheUrl.searchParams.set("width", String(width));
+  cacheUrl.searchParams.set("height", String(height));
+  cacheUrl.searchParams.set("shrink", String(shrink));
+  cacheUrl.searchParams.set("dpr", String(dpr));
+  cacheUrl.searchParams.set("fmt", fmt);
+  cacheUrl.searchParams.set("bgcolor", bgcolor);
+  if (stormMode) cacheUrl.searchParams.set("storm", "1");
+  if (timeIso) cacheUrl.searchParams.set("time", timeIso);
+
+  return {
+    ok: true as const,
+    upstreamUrl: upstream.toString(),
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
 }
 
 function parseBbox3857(bbox: string) {
@@ -9557,16 +9807,7 @@ async function handleWorkerRequest(
 
     if (url.pathname === "/v1/radar/info") {
       return new Response(
-        JSON.stringify({
-          ok: true,
-          iemWmsBase: getIemWmsBase(env),
-          routes: {
-            wms_v1: "/v1/radar/wms",
-            wms_v2: "/v2/radar/wms",
-            rainviewer_tiles: "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png",
-            iem_ridge_tiles: "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png",
-          },
-        }),
+        JSON.stringify(buildRadarInfoPayload(env)),
         { status: 200, headers: withCors({ "content-type": "application/json; charset=utf-8" }) },
       );
     }
@@ -10023,75 +10264,21 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname.startsWith("/v1/radar/rainviewer/tiles/")) {
-      const parts = url.pathname.replace("/v1/radar/rainviewer/tiles/", "").split("/");
-      if (parts.length < 3) {
-        return new Response(JSON.stringify({ ok: false, error: "bad tile path" }), {
+      const built = await buildRainViewerTileRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
       }
-
-      const z = parts[0];
-      const x = parts[1];
-      const y = parts[2].replace(".png", "");
-
-      const ts = url.searchParams.get("ts");
-      if (!ts || !/^\d+$/.test(ts)) {
-        return new Response(JSON.stringify({ ok: false, error: "ts required (unix seconds)" }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
-
-      const size = url.searchParams.get("size") === "512" ? "512" : "256";
-      const color = url.searchParams.get("color") ?? "2";
-      const smooth = url.searchParams.get("smooth") ?? "1";
-      const snow = url.searchParams.get("snow") ?? "1";
-
-      const requestedPath = url.searchParams.get("path");
-      const isRainViewerPath = (value: string | null): value is string =>
-        !!value && /^\/v2\/radar\/[A-Za-z0-9_-]+$/.test(value);
-
-      let framePath = isRainViewerPath(requestedPath) ? requestedPath : null;
-      if (!framePath) {
-        try {
-          const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
-            cf: { cacheEverything: true, cacheTtl: 60 },
-            headers: { "User-Agent": "omniwx-worker/1.0" },
-          } as any);
-          if (timelineRes.ok) {
-            const timeline = (await timelineRes.json()) as {
-              radar?: {
-                past?: Array<{ time?: number; path?: string }>;
-                nowcast?: Array<{ time?: number; path?: string }>;
-              };
-            };
-            const frames = [...(timeline.radar?.past ?? []), ...(timeline.radar?.nowcast ?? [])];
-            const match = frames.find((frame) => String(frame.time ?? "") === ts && isRainViewerPath(frame.path ?? null));
-            framePath = match?.path ?? null;
-          }
-        } catch {
-          framePath = null;
-        }
-      }
-
-      const upstreamUrl = framePath
-        ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
-        : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
-      const frameKey = framePath ? framePath.replace("/v2/radar/", "") : ts;
-
-      const k = new URL(request.url);
-      k.pathname = `/__cache__/radar/rainviewer/${frameKey}/${size}/${z}/${x}/${y}.png`;
-      k.search = `?color=${color}&smooth=${smooth}&snow=${snow}`;
-      const cacheKey = new Request(k.toString(), { method: "GET" });
 
       return swrFetchJson(request, ctx, {
-        cacheKey,
+        cacheKey: built.cacheKey,
         ttlSeconds: RADAR_TILE_TTL_SECONDS,
         staleSeconds: RADAR_TILE_STALE_SECONDS,
         fetchUpstream: async () => {
           const res = await fetch(
-            upstreamUrl,
+            built.upstreamUrl,
             {
               cf: { cacheEverything: true, cacheTtl: RADAR_TILE_TTL_SECONDS },
               headers: { "User-Agent": "omniwx-worker/1.0" },
@@ -10108,56 +10295,21 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname.startsWith("/v1/radar/iem/ridge/tiles/")) {
-      const parts = url.pathname.replace("/v1/radar/iem/ridge/tiles/", "").split("/");
-      if (parts.length < 3) {
-        return new Response(JSON.stringify({ ok: false, error: "bad tile path" }), {
+      const built = buildIemRidgeTileRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
       }
-
-      const z = parts[0];
-      const x = parts[1];
-      const y = parts[2].replace(".png", "");
-
-      const radarRaw = (url.searchParams.get("radar") || "").trim().toUpperCase();
-      const product = (url.searchParams.get("product") || "N0Q").trim().toUpperCase();
-      const ts = (url.searchParams.get("ts") || "0").trim();
-
-      if (!/^[A-Z0-9]{3}$/.test(radarRaw)) {
-        return new Response(JSON.stringify({ ok: false, error: "radar must be 3-char site id (e.g. TLX)" }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
-      if (!/^[A-Z0-9]{3}$/.test(product)) {
-        return new Response(JSON.stringify({ ok: false, error: "product must be like N0Q, N0B, N0S..." }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
-      if (!(ts === "0" || /^\d{12}$/.test(ts))) {
-        return new Response(JSON.stringify({ ok: false, error: "ts must be 0 or YYYYMMDDHHMM" }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
-
-      const service = `ridge::${radarRaw}-${product}-${ts}`;
-      const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
-
-      const k = new URL(request.url);
-      k.pathname = `/__cache__/radar/iem/ridge/${radarRaw}/${product}/${ts}/${z}/${x}/${y}.png`;
-      k.search = "";
-      const cacheKey = new Request(k.toString(), { method: "GET" });
 
       return swrFetchJson(request, ctx, {
-        cacheKey,
+        cacheKey: built.cacheKey,
         ttlSeconds: RADAR_TILE_TTL_SECONDS,
         staleSeconds: RADAR_TILE_STALE_SECONDS,
         fetchUpstream: async () => {
           const res = await fetch(
-            upstreamUrl,
+            built.upstreamUrl,
             {
               cf: { cacheEverything: true, cacheTtl: RADAR_TILE_TTL_SECONDS },
               headers: { "User-Agent": "omniwx-worker/1.0" },
@@ -10174,55 +10326,21 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname === "/v1/radar/wms") {
-      const product = (url.searchParams.get("product") || "N0Q").toUpperCase() as "N0Q" | "N0B" | "N0Z";
-      const width = Math.max(256, Math.min(1536, Math.floor(Number(url.searchParams.get("width") || "1024"))));
-      const height = Math.max(256, Math.min(1536, Math.floor(Number(url.searchParams.get("height") || "1024"))));
-      const bbox = url.searchParams.get("bbox");
-      const timeIso = url.searchParams.get("time");
-
-      if (!bbox) {
-        return new Response(JSON.stringify({ ok: false, error: "bbox is required (EPSG:3857)" }), {
+      const built = buildRadarWmsRequest({ env, url, version: "v1" });
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
       }
 
-      const base = getIemWmsBase(env);
-      const endpoint = iemWmsEndpointForProduct(base, product);
-
-      const upstream = new URL(endpoint);
-      upstream.searchParams.set("service", "WMS");
-      upstream.searchParams.set("request", "GetMap");
-      upstream.searchParams.set("version", "1.1.1");
-      upstream.searchParams.set(
-        "layers",
-        product === "N0B" ? "nexrad-n0b-900913" : product === "N0Z" ? "nexrad-n0z-900913" : "nexrad-n0q-900913",
-      );
-      upstream.searchParams.set("styles", "");
-      upstream.searchParams.set("format", "image/png");
-      upstream.searchParams.set("transparent", "TRUE");
-      upstream.searchParams.set("srs", "EPSG:3857");
-      upstream.searchParams.set("bbox", bbox);
-      upstream.searchParams.set("width", String(width));
-      upstream.searchParams.set("height", String(height));
-      if (timeIso) upstream.searchParams.set("time", timeIso);
-
-      const k2 = new URL(url.origin + "/__cache__/radar/wms");
-      k2.searchParams.set("product", product);
-      k2.searchParams.set("bbox", bbox);
-      k2.searchParams.set("width", String(width));
-      k2.searchParams.set("height", String(height));
-      if (timeIso) k2.searchParams.set("time", timeIso);
-
-      const cacheKey = new Request(k2.toString(), { method: "GET" });
-
       return swrFetchJson(request, ctx, {
-        cacheKey,
+        cacheKey: built.cacheKey,
         ttlSeconds: WMS_TTL_SECONDS,
         staleSeconds: WMS_STALE_SECONDS,
         fetchUpstream: async () => {
           const res = await fetch(
-            upstream.toString(),
+            built.upstreamUrl,
             {
               cf: { cacheEverything: true, cacheTtl: WMS_TTL_SECONDS },
               headers: { "User-Agent": "omniwx-worker/1.0" },
@@ -10237,87 +10355,21 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname === "/v2/radar/wms") {
-      const product = (url.searchParams.get("product") || "N0Q").toUpperCase() as "N0Q" | "N0B" | "N0Z";
-      const bboxRaw = url.searchParams.get("bbox");
-      const timeIso = url.searchParams.get("time");
-
-      if (!bboxRaw) {
-        return new Response(JSON.stringify({ ok: false, error: "bbox is required (EPSG:3857)" }), {
+      const built = buildRadarWmsRequest({ env, url, version: "v2" });
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
       }
-
-      const parsed = parseBbox3857(bboxRaw);
-      if (!parsed) {
-        return new Response(JSON.stringify({ ok: false, error: "bbox must be minx,miny,maxx,maxy (EPSG:3857)" }), {
-          status: 400,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
-        });
-      }
-
-      const shrink = clampFloat(Number(url.searchParams.get("shrink") || "0.85"), 0.6, 1.0, 0.85);
-      const dpr = clampFloat(Number(url.searchParams.get("dpr") || "2"), 1, 3, 2);
-      const stormMode = url.searchParams.get("storm") === "1";
-      const maxImageDimension = stormMode ? 3072 : 2048;
-
-      const baseW = clampInt(Number(url.searchParams.get("width") || "1024"), 256, maxImageDimension);
-      const baseH = clampInt(Number(url.searchParams.get("height") || "1024"), 256, maxImageDimension);
-
-      const width = clampInt(Math.round(baseW * dpr), 256, maxImageDimension);
-      const height = clampInt(Math.round(baseH * dpr), 256, maxImageDimension);
-
-      const fmt = (url.searchParams.get("fmt") || "png32").toLowerCase();
-      const format = "image/png";
-      const transparent = "TRUE";
-      const bgcolor = url.searchParams.get("bgcolor") || "0x00000000";
-
-      const b2 = shrinkBbox(parsed, shrink);
-      const bbox = `${b2.minx},${b2.miny},${b2.maxx},${b2.maxy}`;
-
-      const base = getIemWmsBase(env);
-      const endpoint = iemWmsEndpointForProduct(base, product);
-
-      const upstream = new URL(endpoint);
-      upstream.searchParams.set("service", "WMS");
-      upstream.searchParams.set("request", "GetMap");
-      upstream.searchParams.set("version", "1.1.1");
-      upstream.searchParams.set(
-        "layers",
-        product === "N0B" ? "nexrad-n0b-900913" : product === "N0Z" ? "nexrad-n0z-900913" : "nexrad-n0q-900913",
-      );
-      upstream.searchParams.set("styles", "");
-      upstream.searchParams.set("format", format);
-      upstream.searchParams.set("transparent", transparent);
-      upstream.searchParams.set("srs", "EPSG:3857");
-      upstream.searchParams.set("bbox", bbox);
-      upstream.searchParams.set("width", String(width));
-      upstream.searchParams.set("height", String(height));
-      upstream.searchParams.set("bgcolor", bgcolor);
-      if (timeIso) upstream.searchParams.set("time", timeIso);
-
-      const keyB = roundBboxKey(b2, 250);
-      const k2 = new URL(url.origin + "/__cache__/radar/wms/v2");
-      k2.searchParams.set("product", product);
-      k2.searchParams.set("bbox", `${keyB.minx},${keyB.miny},${keyB.maxx},${keyB.maxy}`);
-      k2.searchParams.set("width", String(width));
-      k2.searchParams.set("height", String(height));
-      k2.searchParams.set("shrink", String(shrink));
-      k2.searchParams.set("dpr", String(dpr));
-      k2.searchParams.set("fmt", fmt);
-      k2.searchParams.set("bgcolor", bgcolor);
-      if (stormMode) k2.searchParams.set("storm", "1");
-      if (timeIso) k2.searchParams.set("time", timeIso);
-
-      const cacheKey = new Request(k2.toString(), { method: "GET" });
 
       return swrFetchJson(request, ctx, {
-        cacheKey,
+        cacheKey: built.cacheKey,
         ttlSeconds: WMS_TTL_SECONDS,
         staleSeconds: WMS_STALE_SECONDS,
         fetchUpstream: async () => {
           const res = await fetch(
-            upstream.toString(),
+            built.upstreamUrl,
             {
               cf: { cacheEverything: true, cacheTtl: WMS_TTL_SECONDS },
               headers: { "User-Agent": "omniwx-worker/1.0" },
