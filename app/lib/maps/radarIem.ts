@@ -39,6 +39,7 @@ type ResolveFramesOpts = {
 };
 
 const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 // Mosaic is inherently coarse, but keep the source available through higher
 // map zooms so the broad national view does not disappear during handoff.
@@ -114,23 +115,6 @@ function iemTsToIso(ts: string) {
   return d.toISOString();
 }
 
-function roundDownTo5MinUTC(d: Date) {
-  const five = 5 * 60_000;
-  return new Date(Math.floor(d.getTime() / five) * five);
-}
-
-/**
- * IEM radar JSON wants ISO-ish strings (UTC, Z).
- * Example from IEM docs: 2024-07-24T08:00Z
- */
-function toIemIsoParam(d: Date) {
-  // d.toISOString() => 2026-02-27T13:30:00.000Z
-  // IEM examples omit seconds/millis, but they accept ISO strings broadly.
-  // We'll send YYYY-MM-DDTHH:MMZ for cleanliness.
-  const iso = d.toISOString(); // always UTC
-  return iso.slice(0, 16) + 'Z'; // YYYY-MM-DDTHH:MMZ
-}
-
 // --- distance helpers (for multi-radar candidate search) ---
 
 const EARTH_RADIUS_KM = 6371;
@@ -176,6 +160,11 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
   }
 }
 
+type WorkerIemScanListResponse = {
+  ok?: boolean;
+  tsList?: unknown[];
+};
+
 /**
  * Fetch scan list for a radar/product from IEM.
  * IMPORTANT: IEM expects start/end as ISO-8601 timestamps, not YYYYMMDDHHMM.
@@ -193,29 +182,15 @@ async function fetchIemRidgeScanList(args: {
   const now = Date.now();
   if (cached && now - cached.at < RIDGE_LIST_TTL_MS) return cached.tsList;
 
-  const endD = roundDownTo5MinUTC(new Date());
-  const startD = roundDownTo5MinUTC(new Date(Date.now() - lookbackMinutes * 60_000));
-
-  const startParam = toIemIsoParam(startD);
-  const endParam = toIemIsoParam(endD);
-
-  async function fetchOnce(start: string, end: string): Promise<string[]> {
-    // IEM docs show both /json/radar and /json/radar.py; .py works fine.
-    const u = new URL('https://mesonet.agron.iastate.edu/json/radar.py');
-    u.searchParams.set('operation', 'list');
+  async function fetchOnce(): Promise<string[]> {
+    const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/scans`);
     u.searchParams.set('radar', radarId3);
     u.searchParams.set('product', product);
-    u.searchParams.set('start', start);
-    u.searchParams.set('end', end);
+    u.searchParams.set('lookbackMinutes', String(lookbackMinutes));
 
-    const j = await fetchJsonWithTimeout(u.toString(), 4500);
+    const j = (await fetchJsonWithTimeout(u.toString(), 4500)) as WorkerIemScanListResponse;
 
-    const raw: unknown[] =
-      (Array.isArray((j as any)?.scans) && (j as any).scans) ||
-      (Array.isArray((j as any)?.times) && (j as any).times) ||
-      (Array.isArray((j as any)?.data) && (j as any).data) ||
-      (Array.isArray((j as any)?.results) && (j as any).results) ||
-      [];
+    const raw: unknown[] = Array.isArray(j?.tsList) ? j.tsList : [];
 
     function extractIsoOrTs(v: unknown): string | null {
       if (typeof v === 'string') return v;
@@ -253,13 +228,7 @@ async function fetchIemRidgeScanList(args: {
     return tsList;
   }
 
-  let tsList = await fetchOnce(startParam, endParam);
-
-  // Fallback: if wide lookback returns nothing, try last 45 min
-  if (!tsList.length && lookbackMinutes > 45) {
-    const start2 = toIemIsoParam(roundDownTo5MinUTC(new Date(Date.now() - 45 * 60_000)));
-    tsList = await fetchOnce(start2, endParam);
-  }
+  const tsList = await fetchOnce();
 
   ridgeListCache.set(key, { at: now, tsList });
   return tsList;

@@ -9523,6 +9523,14 @@ type RainViewerFrameDescriptor = {
   path: string;
 };
 
+type IemRadarScanListResponse = {
+  ok: true;
+  radarId3: string;
+  product: string;
+  lookbackMinutes: number;
+  tsList: string[];
+};
+
 function buildRadarSourceDescriptors() {
   return [
     {
@@ -9629,6 +9637,113 @@ function parseRainViewerFramesRequest(url: URL) {
   const maxFrames = clampInt(Number(maxFramesParam ?? "12"), 1, 48, 12);
 
   return { includeNowcast, maxFrames };
+}
+
+function normalizeIemRadarSiteId(siteId: string) {
+  const s = (siteId || "").trim().toUpperCase();
+  if (s.length === 4 && s.startsWith("K")) return s.slice(1);
+  if (s.length === 3) return s;
+  return s.slice(-3);
+}
+
+function toIemIsoParam(d: Date) {
+  const iso = d.toISOString();
+  return iso.slice(0, 16) + "Z";
+}
+
+function roundDownTo5MinUtc(d: Date) {
+  const five = 5 * 60_000;
+  return new Date(Math.floor(d.getTime() / five) * five);
+}
+
+function isoToIemTs(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${y}${mo}${da}${hh}${mm}`;
+}
+
+function parseIemRadarScanList(json: any) {
+  const raw: unknown[] =
+    (Array.isArray(json?.scans) && json.scans) ||
+    (Array.isArray(json?.times) && json.times) ||
+    (Array.isArray(json?.data) && json.data) ||
+    (Array.isArray(json?.results) && json.results) ||
+    [];
+
+  function extractIsoOrTs(v: unknown): string | null {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    if (v && typeof v === "object") {
+      const o = v as any;
+      return (
+        (typeof o.ts === "string" && o.ts) ||
+        (typeof o.time === "string" && o.time) ||
+        (typeof o.stamp === "string" && o.stamp) ||
+        (typeof o.valid === "string" && o.valid) ||
+        null
+      );
+    }
+    return null;
+  }
+
+  return raw
+    .map(extractIsoOrTs)
+    .map((s) => {
+      if (!s) return null;
+      const str = String(s).trim();
+      if (/^\d{12}$/.test(str)) return str;
+      const ts = isoToIemTs(str);
+      return ts && /^\d{12}$/.test(ts) ? ts : null;
+    })
+    .filter((s): s is string => !!s && /^\d{12}$/.test(s))
+    .sort();
+}
+
+async function fetchIemRadarScanList(radarId3: string, product: string, lookbackMinutes: number): Promise<IemRadarScanListResponse> {
+  const endD = roundDownTo5MinUtc(new Date());
+  const endParam = toIemIsoParam(endD);
+
+  const fetchOnce = async (start: string, end: string) => {
+    const upstream = new URL("https://mesonet.agron.iastate.edu/json/radar.py");
+    upstream.searchParams.set("operation", "list");
+    upstream.searchParams.set("radar", radarId3);
+    upstream.searchParams.set("product", product);
+    upstream.searchParams.set("start", start);
+    upstream.searchParams.set("end", end);
+
+    const json = await fetchJsonWithTimeout(upstream.toString(), 4500, { "User-Agent": "omniwx-worker/1.0" });
+    return parseIemRadarScanList(json);
+  };
+
+  const startParam = toIemIsoParam(roundDownTo5MinUtc(new Date(Date.now() - lookbackMinutes * 60_000)));
+  let tsList = await fetchOnce(startParam, endParam);
+
+  if (!tsList.length && lookbackMinutes > 45) {
+    const retryStartParam = toIemIsoParam(roundDownTo5MinUtc(new Date(Date.now() - 45 * 60_000)));
+    tsList = await fetchOnce(retryStartParam, endParam);
+  }
+
+  return {
+    ok: true,
+    radarId3,
+    product,
+    lookbackMinutes,
+    tsList,
+  };
+}
+
+function parseIemRadarScansRequest(url: URL) {
+  const radarId3 = normalizeIemRadarSiteId(url.searchParams.get("radar") ?? "");
+  const product = (url.searchParams.get("product") ?? "N0Q").trim().toUpperCase();
+  const lookbackMinutes = clampInt(Number(url.searchParams.get("lookbackMinutes") ?? "90"), 15, 240, 90);
+  if (!/^[A-Z0-9]{3}$/.test(radarId3)) return { ok: false as const, error: "radar required (3-letter id)" };
+  if (!/^[A-Z0-9]{3}$/.test(product)) return { ok: false as const, error: "product required" };
+  return { ok: true as const, radarId3, product, lookbackMinutes };
 }
 
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
@@ -9906,6 +10021,33 @@ async function handleWorkerRequest(
         headers: withCors({
           "content-type": "application/json; charset=utf-8",
           "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/iem/scans") {
+      const parsed = parseIemRadarScansRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheUrl = new URL("https://cache.omniwx.internal/v1/radar/iem/scans");
+      cacheUrl.searchParams.set("radar", parsed.radarId3);
+      cacheUrl.searchParams.set("product", parsed.product);
+      cacheUrl.searchParams.set("lookbackMinutes", String(parsed.lookbackMinutes));
+
+      const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 45, 180, async () =>
+        fetchIemRadarScanList(parsed.radarId3, parsed.product, parsed.lookbackMinutes),
+      );
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=45, stale-while-revalidate=180",
         }),
       });
     }
