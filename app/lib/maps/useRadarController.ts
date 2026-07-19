@@ -358,9 +358,7 @@ export function useRadarController(args: {
   const rvProviderRef = useRef(
     createRainViewerProvider({
       ttlMs: 60_000,
-      includeNowcast: false,
       maxFrames: 24,
-      maxZoom: 7,
     }),
   );
 
@@ -663,19 +661,14 @@ export function useRadarController(args: {
       return rvFrames
         .map((f) => {
           if (!f?.t || !f?.iso) return null;
-          let template: string | null = null;
           try {
-            template = rvProviderRef.current.getTileUrlTemplate(f);
+            return {
+              iso: f.iso,
+              template: rvProviderRef.current.getTileUrlTemplate(f),
+            };
           } catch {
-            template =
-              `${OMNI_WORKER_BASE}/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png` +
-              `?ts=${encodeURIComponent(String(f.t))}` +
-              `&size=512&color=2&smooth=1&snow=1`;
+            return null;
           }
-          return {
-            iso: f.iso,
-            template,
-          };
         })
         .filter(Boolean)
         .sort((a, b) => isoMs(a!.iso) - isoMs(b!.iso))

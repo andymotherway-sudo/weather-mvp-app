@@ -189,23 +189,18 @@ export function createRainViewerProvider(opts?: {
     },
 
     getTileUrlTemplate: (frame) => {
-      // Find matching path by frame time
+      const ts = typeof frame?.t === 'number' && Number.isFinite(frame.t) ? frame.t : null;
+      if (ts == null || ts <= 0) {
+        throw new Error('RainViewer frame missing valid unix timestamp');
+      }
+
       if (!cachedFrames || !cachedPaths || !cachedHost) {
-        // If called before getFrames(), just force the caller to fetch frames first.
-        // Keeps the adapter simple and explicit.
-        throw new Error('RainViewer provider not initialized: call getFrames() first');
+        return workerTileTemplateForFrame(ts);
       }
 
       const idx = cachedFrames.findIndex((f) => f.t === frame.t);
       const safeIdx = idx >= 0 ? idx : cachedFrames.length - 1;
-
-      const ts = cachedFrames[Math.max(0, Math.min(cachedFrames.length - 1, safeIdx))]?.t;
       const path = cachedPaths[Math.max(0, Math.min(cachedPaths.length - 1, safeIdx))];
-
-      if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) {
-        throw new Error('RainViewer frame missing valid unix timestamp');
-      }
-
       return workerTileTemplateForFrame(ts, path);
     },
   };
