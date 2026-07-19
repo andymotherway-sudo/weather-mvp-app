@@ -9505,7 +9505,8 @@ function getIemWmsBase(env: Env) {
   return env.RADAR_IEM_WMS_BASE || "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad";
 }
 
-type RadarSourceId = "rainviewer" | "iem-ridge" | "iem-wms";
+type RadarBackendMode = "external-fallback" | "self-hosted-preferred";
+type RadarSourceId = "rainviewer" | "iem-mosaic" | "iem-ridge" | "iem-wms" | "self-hosted-radar";
 
 type RadarSourceDescriptor = {
   id: RadarSourceId;
@@ -9538,8 +9539,50 @@ type NesdisFrameDescriptor = {
   rasterId?: number;
 };
 
-function buildRadarSourceDescriptors() {
-  return [
+type RadarBackendConfig = {
+  mode: RadarBackendMode;
+  baseUrl: string | null;
+  manifestUrl: string | null;
+  timelineUrl: string | null;
+  mosaicTilesUrl: string | null;
+  ridgeTilesUrl: string | null;
+  wmsUrl: string | null;
+  selfHostedReady: boolean;
+};
+
+function normalizeOptionalUrl(value: string | null | undefined) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, "");
+}
+
+function getRadarBackendConfig(env: Env): RadarBackendConfig {
+  const mode = String(env.RADAR_BACKEND_MODE ?? "").trim().toLowerCase() === "self-hosted-preferred"
+    ? "self-hosted-preferred"
+    : "external-fallback";
+  const baseUrl = normalizeOptionalUrl(env.RADAR_BACKEND_BASE_URL);
+  const manifestUrl = normalizeOptionalUrl(env.RADAR_BACKEND_MANIFEST_URL) ?? (baseUrl ? `${baseUrl}/manifest` : null);
+  const timelineUrl = normalizeOptionalUrl(env.RADAR_BACKEND_TIMELINE_URL) ?? (baseUrl ? `${baseUrl}/timeline` : null);
+  const mosaicTilesUrl = normalizeOptionalUrl(env.RADAR_BACKEND_MOSAIC_TILES_URL) ?? (baseUrl ? `${baseUrl}/tiles/mosaic` : null);
+  const ridgeTilesUrl = normalizeOptionalUrl(env.RADAR_BACKEND_RIDGE_TILES_URL) ?? (baseUrl ? `${baseUrl}/tiles/ridge` : null);
+  const wmsUrl = normalizeOptionalUrl(env.RADAR_BACKEND_WMS_URL) ?? (baseUrl ? `${baseUrl}/wms` : null);
+  const selfHostedReady = !!(manifestUrl || timelineUrl || mosaicTilesUrl || ridgeTilesUrl || wmsUrl);
+
+  return {
+    mode,
+    baseUrl,
+    manifestUrl,
+    timelineUrl,
+    mosaicTilesUrl,
+    ridgeTilesUrl,
+    wmsUrl,
+    selfHostedReady,
+  };
+}
+
+function buildRadarSourceDescriptors(env: Env) {
+  const backend = getRadarBackendConfig(env);
+  const descriptors: RadarSourceDescriptor[] = [
     {
       id: "rainviewer",
       label: "RainViewer tiles",
@@ -9576,13 +9619,42 @@ function buildRadarSourceDescriptors() {
       source: "IEM WMS / NEXRAD",
       notes: ["Used for local storm rendering and image-export style fetches."],
     },
-  ] satisfies RadarSourceDescriptor[];
+  ];
+
+  if (backend.selfHostedReady) {
+    descriptors.unshift({
+      id: "self-hosted-radar",
+      label: "OMNIwx self-hosted radar backend",
+      role: "mosaic",
+      coverage: "owned manifest and tile pipeline",
+      route: backend.manifestUrl ?? "/v1/radar/info",
+      source: "OMNIwx radar backend",
+      notes: [
+        backend.mode === "self-hosted-preferred"
+          ? "Configured as the preferred radar backend for owned ingest and tile generation."
+          : "Configured as a standby radar backend while external providers remain the active source.",
+      ],
+    });
+  }
+
+  return descriptors satisfies RadarSourceDescriptor[];
 }
 
 function buildRadarInfoPayload(env: Env) {
+  const backend = getRadarBackendConfig(env);
   return {
     ok: true,
     iemWmsBase: getIemWmsBase(env),
+    backend: {
+      mode: backend.mode,
+      baseUrl: backend.baseUrl,
+      manifestUrl: backend.manifestUrl,
+      timelineUrl: backend.timelineUrl,
+      mosaicTilesUrl: backend.mosaicTilesUrl,
+      ridgeTilesUrl: backend.ridgeTilesUrl,
+      wmsUrl: backend.wmsUrl,
+      selfHostedReady: backend.selfHostedReady,
+    },
     routes: {
       wms_v1: "/v1/radar/wms",
       wms_v2: "/v2/radar/wms",
@@ -9606,11 +9678,39 @@ function buildRadarInfoPayload(env: Env) {
         supportsRidgeTiles: true,
       },
     },
-    sources: buildRadarSourceDescriptors(),
+    sources: buildRadarSourceDescriptors(env),
   };
 }
 
-async function fetchRainViewerTimeline(includeNowcast: boolean, maxFrames: number) {
+async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFrames: number) {
+  const backend = getRadarBackendConfig(env);
+  if (backend.timelineUrl) {
+    const upstream = new URL(backend.timelineUrl);
+    upstream.searchParams.set("includeNowcast", includeNowcast ? "1" : "0");
+    upstream.searchParams.set("maxFrames", String(maxFrames));
+    const timeline = await fetchJsonWithTimeout(upstream.toString(), 9000, {
+      "User-Agent": "omniwx-worker/1.0",
+      Accept: "application/json",
+    });
+
+    const frames = Array.isArray(timeline?.frames) ? timeline.frames : [];
+    const normalized = frames
+      .map((frame: any) => ({
+        time: Number(frame?.time),
+        iso: typeof frame?.iso === "string" ? frame.iso : new Date(Number(frame?.time) * 1000).toISOString(),
+        path: typeof frame?.path === "string" ? frame.path : "",
+      }))
+      .filter((frame) => Number.isFinite(frame.time) && frame.path.length > 0)
+      .slice(Math.max(0, frames.length - maxFrames));
+
+    if (normalized.length) {
+      return {
+        host: typeof timeline?.host === "string" ? timeline.host : null,
+        frames: normalized satisfies RainViewerFrameDescriptor[],
+      };
+    }
+  }
+
   const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
     cf: { cacheEverything: true, cacheTtl: 60 },
     headers: { "User-Agent": "omniwx-worker/1.0" },
@@ -10264,32 +10364,20 @@ function isRainViewerPath(value: string | null): value is string {
   return !!value && /^\/v2\/radar\/[A-Za-z0-9_-]+$/.test(value);
 }
 
-async function resolveRainViewerFramePath(ts: string, requestedPath: string | null) {
+async function resolveRainViewerFramePath(env: Env, ts: string, requestedPath: string | null) {
   let framePath = isRainViewerPath(requestedPath) ? requestedPath : null;
   if (framePath) return framePath;
 
   try {
-    const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
-      cf: { cacheEverything: true, cacheTtl: 60 },
-      headers: { "User-Agent": "omniwx-worker/1.0" },
-    } as any);
-    if (!timelineRes.ok) return null;
-
-    const timeline = (await timelineRes.json()) as {
-      radar?: {
-        past?: Array<{ time?: number; path?: string }>;
-        nowcast?: Array<{ time?: number; path?: string }>;
-      };
-    };
-    const frames = [...(timeline.radar?.past ?? []), ...(timeline.radar?.nowcast ?? [])];
-    const match = frames.find((frame) => String(frame.time ?? "") === ts && isRainViewerPath(frame.path ?? null));
+    const timeline = await fetchRainViewerTimeline(env, true, 48);
+    const match = timeline.frames.find((frame) => String(frame.time) === ts && isRainViewerPath(frame.path ?? null));
     return match?.path ?? null;
   } catch {
     return null;
   }
 }
 
-async function buildRainViewerTileRequest(url: URL) {
+async function buildRainViewerTileRequest(env: Env, url: URL) {
   const parts = url.pathname.replace("/v1/radar/rainviewer/tiles/", "").split("/");
   if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
 
@@ -10307,10 +10395,13 @@ async function buildRainViewerTileRequest(url: URL) {
   const smooth = url.searchParams.get("smooth") ?? "1";
   const snow = url.searchParams.get("snow") ?? "1";
   const requestedPath = url.searchParams.get("path");
-  const framePath = await resolveRainViewerFramePath(ts, requestedPath);
-  const upstreamUrl = framePath
-    ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
-    : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
+  const backend = getRadarBackendConfig(env);
+  const framePath = await resolveRainViewerFramePath(env, ts, requestedPath);
+  const upstreamUrl = backend.mosaicTilesUrl
+    ? `${backend.mosaicTilesUrl}/${z}/${x}/${y}.png?ts=${encodeURIComponent(ts)}&size=${encodeURIComponent(size)}&color=${encodeURIComponent(color)}&smooth=${encodeURIComponent(smooth)}&snow=${encodeURIComponent(snow)}${framePath ? `&path=${encodeURIComponent(framePath)}` : ""}`
+    : framePath
+      ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
+      : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
   const frameKey = framePath ? framePath.replace("/v2/radar/", "") : ts;
 
   const cacheUrl = new URL(url.toString());
@@ -10324,7 +10415,7 @@ async function buildRainViewerTileRequest(url: URL) {
   };
 }
 
-function buildIemRidgeTileRequest(url: URL) {
+function buildIemRidgeTileRequest(env: Env, url: URL) {
   const parts = url.pathname.replace("/v1/radar/iem/ridge/tiles/", "").split("/");
   if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
 
@@ -10346,7 +10437,10 @@ function buildIemRidgeTileRequest(url: URL) {
   }
 
   const service = `ridge::${radarRaw}-${product}-${ts}`;
-  const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
+  const backend = getRadarBackendConfig(env);
+  const upstreamUrl = backend.ridgeTilesUrl
+    ? `${backend.ridgeTilesUrl}/${z}/${x}/${y}.png?radar=${encodeURIComponent(radarRaw)}&product=${encodeURIComponent(product)}&ts=${encodeURIComponent(ts)}`
+    : `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
   const cacheUrl = new URL(url.toString());
   cacheUrl.pathname = `/__cache__/radar/iem/ridge/${radarRaw}/${product}/${ts}/${z}/${x}/${y}.png`;
   cacheUrl.search = "";
@@ -10358,7 +10452,7 @@ function buildIemRidgeTileRequest(url: URL) {
   };
 }
 
-function buildIemMosaicTileRequest(url: URL) {
+function buildIemMosaicTileRequest(env: Env, url: URL) {
   const parts = url.pathname.replace("/v1/radar/iem/mosaic/tiles/", "").split("/");
   if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
 
@@ -10376,7 +10470,10 @@ function buildIemMosaicTileRequest(url: URL) {
   }
 
   const layer = `nexrad-${product.toLowerCase()}-${stamp}`;
-  const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layer}/${z}/${x}/${y}.png`;
+  const backend = getRadarBackendConfig(env);
+  const upstreamUrl = backend.mosaicTilesUrl
+    ? `${backend.mosaicTilesUrl}/${z}/${x}/${y}.png?product=${encodeURIComponent(product)}&stamp=${encodeURIComponent(stamp)}`
+    : `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layer}/${z}/${x}/${y}.png`;
   const cacheUrl = new URL(url.toString());
   cacheUrl.pathname = `/__cache__/radar/iem/mosaic/${product}/${stamp}/${z}/${x}/${y}.png`;
   cacheUrl.search = "";
@@ -10396,17 +10493,19 @@ function buildRadarWmsRequest(args: {
   const { env, url, version } = args;
   const product = (url.searchParams.get("product") || "N0Q").toUpperCase() as "N0Q" | "N0B" | "N0Z";
   const timeIso = url.searchParams.get("time");
-  const base = getIemWmsBase(env);
-  const endpoint = iemWmsEndpointForProduct(base, product);
+  const backend = getRadarBackendConfig(env);
+  const endpoint = backend.wmsUrl || iemWmsEndpointForProduct(getIemWmsBase(env), product);
   const upstream = new URL(endpoint);
 
   upstream.searchParams.set("service", "WMS");
   upstream.searchParams.set("request", "GetMap");
   upstream.searchParams.set("version", "1.1.1");
-  upstream.searchParams.set(
-    "layers",
-    product === "N0B" ? "nexrad-n0b-900913" : product === "N0Z" ? "nexrad-n0z-900913" : "nexrad-n0q-900913",
-  );
+  if (!backend.wmsUrl) {
+    upstream.searchParams.set(
+      "layers",
+      product === "N0B" ? "nexrad-n0b-900913" : product === "N0Z" ? "nexrad-n0z-900913" : "nexrad-n0q-900913",
+    );
+  }
   upstream.searchParams.set("styles", "");
   upstream.searchParams.set("format", "image/png");
   upstream.searchParams.set("transparent", "TRUE");
@@ -10545,7 +10644,7 @@ async function handleWorkerRequest(
         60,
         300,
         async () => {
-          const timeline = await fetchRainViewerTimeline(parsed.includeNowcast, parsed.maxFrames);
+          const timeline = await fetchRainViewerTimeline(env, parsed.includeNowcast, parsed.maxFrames);
           return {
             ok: true,
             host: timeline.host,
@@ -11268,7 +11367,7 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname.startsWith("/v1/radar/rainviewer/tiles/")) {
-      const built = await buildRainViewerTileRequest(url);
+      const built = await buildRainViewerTileRequest(env, url);
       if (!built.ok) {
         return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
@@ -11299,7 +11398,7 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname.startsWith("/v1/radar/iem/ridge/tiles/")) {
-      const built = buildIemRidgeTileRequest(url);
+      const built = buildIemRidgeTileRequest(env, url);
       if (!built.ok) {
         return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
@@ -11399,7 +11498,7 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname.startsWith("/v1/radar/iem/mosaic/tiles/")) {
-      const built = buildIemMosaicTileRequest(url);
+      const built = buildIemMosaicTileRequest(env, url);
       if (!built.ok) {
         return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,

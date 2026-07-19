@@ -1,0 +1,135 @@
+# Self-Hosted Radar Backend Contract
+
+This is the first owned-radar infrastructure checkpoint for OMNIwx.
+
+The app already talks to the worker for radar. The next step is letting the worker prefer your own radar backend when it exists, while still falling back to IEM and RainViewer until each source is replaced.
+
+## Worker env vars
+
+Set these in the `omniwx-api` Worker when your backend endpoints are ready:
+
+- `RADAR_BACKEND_MODE`
+  - `external-fallback` (default): keep using IEM/RainViewer unless a route explicitly switches over.
+  - `self-hosted-preferred`: prefer your owned backend URLs when present.
+- `RADAR_BACKEND_BASE_URL`
+  - Optional convenience base such as `https://radar.omniwx.com`.
+- `RADAR_BACKEND_MANIFEST_URL`
+  - Optional explicit manifest endpoint.
+- `RADAR_BACKEND_TIMELINE_URL`
+  - Optional explicit frame timeline endpoint.
+- `RADAR_BACKEND_MOSAIC_TILES_URL`
+  - Optional base for national mosaic tile fetches.
+- `RADAR_BACKEND_RIDGE_TILES_URL`
+  - Optional base for single-site radar tile fetches.
+- `RADAR_BACKEND_WMS_URL`
+  - Optional WMS-style render endpoint for storm rendering and exports.
+
+If only `RADAR_BACKEND_BASE_URL` is set, the worker assumes these defaults:
+
+- manifest: `{base}/manifest`
+- timeline: `{base}/timeline`
+- mosaic tiles: `{base}/tiles/mosaic`
+- ridge tiles: `{base}/tiles/ridge`
+- wms: `{base}/wms`
+
+## Expected backend endpoints
+
+### `GET /manifest`
+
+Purpose: tell the worker what the owned radar backend can serve.
+
+Expected shape:
+
+```json
+{
+  "ok": true,
+  "backend": {
+    "name": "omniwx-radar",
+    "mode": "self-hosted"
+  },
+  "capabilities": {
+    "timeline": true,
+    "mosaicTiles": true,
+    "ridgeTiles": true,
+    "wms": true
+  }
+}
+```
+
+### `GET /timeline?includeNowcast=0|1&maxFrames=12`
+
+Purpose: replace RainViewer frame discovery with your own frame manifest.
+
+Expected shape:
+
+```json
+{
+  "ok": true,
+  "host": "https://radar-assets.omniwx.com",
+  "frames": [
+    {
+      "time": 1784400000,
+      "iso": "2026-07-19T00:00:00.000Z",
+      "path": "/radar/conus/20260719/0000"
+    }
+  ]
+}
+```
+
+Notes:
+
+- `path` is currently used like the RainViewer path key.
+- The worker only needs stable `time`, `iso`, and `path`.
+
+### `GET /tiles/mosaic/{z}/{x}/{y}.png`
+
+Purpose: replace national IEM/RainViewer tile fetches.
+
+Expected query params from the worker:
+
+- `product`
+- `stamp`
+- `ts`
+- `size`
+- `color`
+- `smooth`
+- `snow`
+- `path`
+
+Your backend can ignore params it does not use. The worker already normalizes them.
+
+### `GET /tiles/ridge/{z}/{x}/{y}.png`
+
+Purpose: replace IEM RIDGE single-site tiles.
+
+Expected query params:
+
+- `radar`
+- `product`
+- `ts`
+
+### `GET /wms`
+
+Purpose: replace IEM WMS rendering for local storm mode and image export.
+
+Expected query params are the same ones the worker already sends to `/v1/radar/wms` and `/v2/radar/wms`, including:
+
+- `product`
+- `bbox`
+- `width`
+- `height`
+- `time`
+- `storm`
+- `shrink`
+- `dpr`
+- `fmt`
+- `bgcolor`
+
+## Recommended real backend milestone order
+
+1. Own the timeline manifest.
+2. Own national mosaic tiles.
+3. Own single-site ridge tiles.
+4. Own WMS/render export.
+
+That order matches the current OMNIwx radar UX and keeps cutover low-risk.

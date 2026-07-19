@@ -5,4 +5,11 @@ export interface OmniwxEnv {
   AIRNOW_API_KEY?: string;
   NASA_FIRMS_MAP_KEY?: string;
   RADAR_IEM_WMS_BASE?: string;
+  RADAR_BACKEND_MODE?: string;
+  RADAR_BACKEND_BASE_URL?: string;
+  RADAR_BACKEND_MANIFEST_URL?: string;
+  RADAR_BACKEND_TIMELINE_URL?: string;
+  RADAR_BACKEND_MOSAIC_TILES_URL?: string;
+  RADAR_BACKEND_RIDGE_TILES_URL?: string;
+  RADAR_BACKEND_WMS_URL?: string;
 }
