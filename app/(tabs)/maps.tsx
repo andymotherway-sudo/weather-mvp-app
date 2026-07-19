@@ -368,11 +368,9 @@ type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
 
-const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL =
-  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage';
-const NESDIS_ABI13_ARCHIVE_EXPORT_URL =
-  'https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage';
 const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
+const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${OMNI_WORKER_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
+const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${OMNI_WORKER_BASE}/v1/satellite/nesdis/abi13/exportImage`;
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
@@ -653,47 +651,17 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
 }
 
 async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
-  const query = new URL(`${exportUrl.replace(/\/exportImage$/, '')}/query`);
-  query.searchParams.set('f', 'json');
-  query.searchParams.set('where', 'end_time is not null');
-  query.searchParams.set('outFields', 'objectid,name,start_time,end_time');
-  query.searchParams.set('returnGeometry', 'false');
-  query.searchParams.set('orderByFields', 'end_time desc');
-  query.searchParams.set('resultRecordCount', '240');
+  const framesUrl =
+    exportUrl === NESDIS_ABI13_ARCHIVE_EXPORT_URL
+      ? `${OMNI_WORKER_BASE}/v1/satellite/nesdis/abi13/frames`
+      : `${OMNI_WORKER_BASE}/v1/satellite/nesdis/geocolor/frames`;
+  const query = new URL(framesUrl);
+  query.searchParams.set('minutesBack', String(minutesBack));
 
   const res = await fetchWithTimeout(query.toString(), 14000);
   if (!res.ok) throw new Error(`NESDIS catalog returned ${res.status}.`);
   const json = await res.json();
-  const features = Array.isArray(json?.features) ? json.features : [];
-  const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
-  const seen = new Set<string>();
-
-  const frames = features
-    .map((feature: any) => {
-      const attrs = feature?.attributes ?? {};
-      const objectId = Number(attrs.objectid ?? attrs.OBJECTID ?? attrs.ObjectID);
-      const start = Number(attrs.start_time ?? attrs.Start_Time);
-      const end = Number(attrs.end_time ?? attrs.End_Time);
-      const name = String(attrs.name ?? attrs.Name ?? '');
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end < cutoff) return null;
-
-      // Ask ArcGIS for a time inside the raster's valid window instead of a synthetic boundary.
-      const midpoint = start + Math.max(0, Math.min(end - start, 4 * 60_000));
-      const key = name || String(end);
-      if (seen.has(key)) return null;
-      seen.add(key);
-      return {
-        index: 0,
-        iso: new Date(midpoint).toISOString(),
-        sourceName: name || undefined,
-        rasterId: Number.isFinite(objectId) ? objectId : undefined,
-      } satisfies SatelliteFrame;
-    })
-    .filter(Boolean) as SatelliteFrame[];
-
-  return frames
-    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
-    .map((frame: SatelliteFrame, index: number) => ({ ...frame, index }));
+  return Array.isArray(json?.frames) ? (json.frames as SatelliteFrame[]) : [];
 }
 
 async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {

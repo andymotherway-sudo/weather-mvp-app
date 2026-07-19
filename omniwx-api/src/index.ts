@@ -9531,6 +9531,13 @@ type IemRadarScanListResponse = {
   tsList: string[];
 };
 
+type NesdisFrameDescriptor = {
+  index: number;
+  iso: string;
+  sourceName?: string;
+  rasterId?: number;
+};
+
 function buildRadarSourceDescriptors() {
   return [
     {
@@ -9781,6 +9788,91 @@ function buildGoesWmsRequest(url: URL) {
     upstreamUrl: upstream.toString(),
     cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
   };
+}
+
+function resolveNesdisService(pathname: string) {
+  if (pathname.includes("/geocolor/")) {
+    return {
+      exportImageUrl: "https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/exportImage",
+      queryUrl: "https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/MERGEDGC_Last_24hr/ImageServer/query",
+    };
+  }
+  if (pathname.includes("/abi13/")) {
+    return {
+      exportImageUrl: "https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/exportImage",
+      queryUrl: "https://satellitemaps.nesdis.noaa.gov/arcgis/rest/services/ABI13_Last_24hr/ImageServer/query",
+    };
+  }
+  return null;
+}
+
+function buildNesdisExportImageRequest(url: URL) {
+  const service = resolveNesdisService(url.pathname);
+  if (!service) return { ok: false as const, error: "unknown NESDIS export route" };
+
+  const upstream = new URL(service.exportImageUrl);
+  for (const [key, value] of url.searchParams.entries()) {
+    upstream.searchParams.set(key, value);
+  }
+
+  const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
+  for (const [key, value] of url.searchParams.entries()) {
+    cacheUrl.searchParams.set(key, value);
+  }
+
+  return {
+    ok: true as const,
+    upstreamUrl: upstream.toString(),
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
+function parseNesdisFramesRequest(url: URL) {
+  const minutesBack = clampInt(Number(url.searchParams.get("minutesBack") ?? "120"), 30, 360, 120);
+  const service = resolveNesdisService(url.pathname);
+  if (!service) return { ok: false as const, error: "unknown NESDIS frame route" };
+  return { ok: true as const, minutesBack, service };
+}
+
+async function fetchNesdisFrames(queryUrl: string, minutesBack: number) {
+  const query = new URL(queryUrl);
+  query.searchParams.set("f", "json");
+  query.searchParams.set("where", "end_time is not null");
+  query.searchParams.set("outFields", "objectid,name,start_time,end_time");
+  query.searchParams.set("returnGeometry", "false");
+  query.searchParams.set("orderByFields", "end_time desc");
+  query.searchParams.set("resultRecordCount", "240");
+
+  const json = await fetchJsonWithTimeout(query.toString(), 14_000, { "User-Agent": "omniwx-worker/1.0" });
+  const features = Array.isArray(json?.features) ? json.features : [];
+  const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
+  const seen = new Set<string>();
+
+  const frames = features
+    .map((feature: any) => {
+      const attrs = feature?.attributes ?? {};
+      const objectId = Number(attrs.objectid ?? attrs.OBJECTID ?? attrs.ObjectID);
+      const start = Number(attrs.start_time ?? attrs.Start_Time);
+      const end = Number(attrs.end_time ?? attrs.End_Time);
+      const name = String(attrs.name ?? attrs.Name ?? "");
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < cutoff) return null;
+
+      const midpoint = start + Math.max(0, Math.min(end - start, 4 * 60_000));
+      const key = name || String(end);
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        index: 0,
+        iso: new Date(midpoint).toISOString(),
+        sourceName: name || undefined,
+        rasterId: Number.isFinite(objectId) ? objectId : undefined,
+      } satisfies NesdisFrameDescriptor;
+    })
+    .filter(Boolean) as NesdisFrameDescriptor[];
+
+  return frames
+    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
+    .map((frame, index) => ({ ...frame, index }));
 }
 
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
@@ -10121,6 +10213,60 @@ async function handleWorkerRequest(
 
     if (url.pathname === "/v1/satellite/goes/east/wms" || url.pathname === "/v1/satellite/goes/west/wms") {
       const built = buildGoesWmsRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: built.cacheKey,
+        ttlSeconds: WMS_TTL_SECONDS,
+        staleSeconds: WMS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const res = await fetch(
+            built.upstreamUrl,
+            {
+              cf: { cacheEverything: true, cacheTtl: WMS_TTL_SECONDS },
+              headers: { "User-Agent": "omniwx-worker/1.0" },
+            } as any,
+          );
+
+          const ct = res.headers.get("content-type") || "image/png";
+          const body = await res.arrayBuffer();
+          return new Response(body, { status: res.status, headers: { "content-type": ct } });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/satellite/nesdis/geocolor/frames" || url.pathname === "/v1/satellite/nesdis/abi13/frames") {
+      const parsed = parseNesdisFramesRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
+      cacheUrl.searchParams.set("minutesBack", String(parsed.minutesBack));
+      const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 60, 300, async () => ({
+        ok: true,
+        frames: await fetchNesdisFrames(parsed.service.queryUrl, parsed.minutesBack),
+      }));
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        }),
+      });
+    }
+
+    if (url.pathname === "/v1/satellite/nesdis/geocolor/exportImage" || url.pathname === "/v1/satellite/nesdis/abi13/exportImage") {
+      const built = buildNesdisExportImageRequest(url);
       if (!built.ok) {
         return new Response(JSON.stringify({ ok: false, error: built.error }), {
           status: 400,
