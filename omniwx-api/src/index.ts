@@ -9757,6 +9757,136 @@ async function fetchExternalRainViewerTimeline(includeNowcast: boolean, maxFrame
   };
 }
 
+async function fetchCurrentResponseForLocation(lat: number, lon: number, units: Units): Promise<Response> {
+  const upstream = toOpenMeteoUrlCurrentSingle(lat, lon, units);
+  const fallbackUpstream = toOpenMeteoUrlCurrentFallback(lat, lon, units);
+  const failures: string[] = [];
+
+  const fetchOpenMeteoCurrent = async () => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+    try {
+      const res = await fetch(upstream, { signal: ctrl.signal });
+      if (res.ok) {
+        const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
+        const cur = json?.current ?? null;
+
+        const payload: CurrentResponse = {
+          ok: true,
+          source: "open-meteo",
+          time: cur?.time ? String(cur.time) : null,
+          units,
+          temp: cur?.temperature_2m ?? null,
+          feels: cur?.apparent_temperature ?? null,
+          dewPoint: cur?.dew_point_2m ?? null,
+          humidityPct: cur?.relative_humidity_2m ?? null,
+          cloudCoverPct: cur?.cloud_cover ?? null,
+          wind: cur?.wind_speed_10m ?? null,
+          windGust: cur?.wind_gusts_10m ?? null,
+          windDir: cur?.wind_direction_10m ?? null,
+          pressureMb: cur?.pressure_msl ?? null,
+          weatherCode: cur?.weather_code ?? null,
+        };
+
+        return currentJsonResponse(payload, "open-meteo");
+      }
+
+      const txt = await res.text().catch(() => "");
+      failures.push(`open-meteo current HTTP ${res.status}${txt ? ` ${txt.slice(0, 120)}` : ""}`);
+      return null;
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  const fetchOpenMeteoHourlyFallback = async () => {
+    const fbCtrl = new AbortController();
+    const fbTimer = setTimeout(() => fbCtrl.abort(), OPEN_METEO_TIMEOUT_MS);
+
+    try {
+      const fbRes = await fetch(fallbackUpstream, { signal: fbCtrl.signal });
+
+      if (!fbRes.ok) {
+        const fbTxt = await fbRes.text().catch(() => "");
+        failures.push(`open-meteo hourly HTTP ${fbRes.status}${fbTxt ? ` ${fbTxt.slice(0, 120)}` : ""}`);
+        return null;
+      }
+
+      const fbJson = (await fbRes.json()) as OpenMeteoHourlyFallbackResponse;
+      const h = fbJson?.hourly ?? {};
+      const idx = pickClosestHourlyIndex(h.time);
+
+      if (idx < 0) {
+        failures.push("open-meteo hourly missing data");
+        return null;
+      }
+
+      const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
+        Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
+
+      const payload: CurrentResponse = {
+        ok: true,
+        source: "open-meteo",
+        time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
+        units,
+        temp: at(h.temperature_2m, idx),
+        feels: at(h.apparent_temperature, idx),
+        dewPoint: at(h.dew_point_2m, idx),
+        humidityPct: at(h.relative_humidity_2m, idx),
+        cloudCoverPct: at(h.cloud_cover, idx),
+        wind: at(h.wind_speed_10m, idx),
+        windGust: at(h.wind_gusts_10m, idx),
+        windDir: at(h.wind_direction_10m, idx),
+        pressureMb: at(h.pressure_msl, idx),
+        weatherCode: at(h.weather_code, idx),
+      };
+
+      const response = currentJsonResponse(payload, "open-meteo");
+      response.headers.set("X-Omni-Current-Fallback", "open-meteo-hourly");
+      return response;
+    } finally {
+      clearTimeout(fbTimer);
+    }
+  };
+
+  try {
+    const omCurrent = await fetchOpenMeteoCurrent();
+    if (omCurrent) return omCurrent;
+  } catch (err: any) {
+    failures.push(`open-meteo current ${err?.message ?? String(err)}`);
+  }
+
+  try {
+    const omHourly = await fetchOpenMeteoHourlyFallback();
+    if (omHourly) return omHourly;
+  } catch (err: any) {
+    failures.push(`open-meteo hourly ${err?.message ?? String(err)}`);
+  }
+
+  try {
+    const nwsPayload = await fetchNwsCurrentPayload(lat, lon, units);
+    const response = currentJsonResponse(nwsPayload, "nws");
+    response.headers.set("X-Omni-Current-Fallback", "nws");
+    return response;
+  } catch (err: any) {
+    failures.push(`nws ${err?.message ?? String(err)}`);
+  }
+
+  try {
+    const metPayload = await fetchMetNorwayCurrentPayload(lat, lon, units);
+    const response = currentJsonResponse(metPayload, "met-norway");
+    response.headers.set("X-Omni-Current-Fallback", "met-norway");
+    return response;
+  } catch (err: any) {
+    failures.push(`met-norway ${err?.message ?? String(err)}`);
+  }
+
+  return new Response(JSON.stringify({ ok: false, error: "All weather providers failed", providers: failures }), {
+    status: 502,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
 function isRadarManifestIngestEnabled(env: Env) {
   const raw = String(env.RADAR_MANIFEST_INGEST_ENABLED ?? "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
@@ -12244,132 +12374,7 @@ async function handleWorkerRequest(
     cacheKey,
     ttlSeconds: CURRENT_TTL_SECONDS,
     staleSeconds: CURRENT_STALE_SECONDS,
-    fetchUpstream: async () => {
-      const failures: string[] = [];
-
-      const fetchOpenMeteoCurrent = async () => {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
-        try {
-          const res = await fetch(upstream, { signal: ctrl.signal });
-          if (res.ok) {
-            const json = (await res.json()) as OpenMeteoCurrentSingleResponse;
-            const cur = json?.current ?? null;
-
-            const payload: CurrentResponse = {
-              ok: true,
-              source: "open-meteo",
-              time: cur?.time ? String(cur.time) : null,
-              units,
-              temp: cur?.temperature_2m ?? null,
-              feels: cur?.apparent_temperature ?? null,
-              dewPoint: cur?.dew_point_2m ?? null,
-              humidityPct: cur?.relative_humidity_2m ?? null,
-              cloudCoverPct: cur?.cloud_cover ?? null,
-              wind: cur?.wind_speed_10m ?? null,
-              windGust: cur?.wind_gusts_10m ?? null,
-              windDir: cur?.wind_direction_10m ?? null,
-              pressureMb: cur?.pressure_msl ?? null,
-              weatherCode: cur?.weather_code ?? null,
-            };
-
-            return currentJsonResponse(payload, "open-meteo");
-          }
-
-          const txt = await res.text().catch(() => "");
-          failures.push(`open-meteo current HTTP ${res.status}${txt ? ` ${txt.slice(0, 120)}` : ""}`);
-        } finally {
-          clearTimeout(t);
-        }
-      };
-
-      const fetchOpenMeteoHourlyFallback = async () => {
-        const fbCtrl = new AbortController();
-        const fbTimer = setTimeout(() => fbCtrl.abort(), OPEN_METEO_TIMEOUT_MS);
-
-        try {
-          const fbRes = await fetch(fallbackUpstream, { signal: fbCtrl.signal });
-
-          if (!fbRes.ok) {
-            const fbTxt = await fbRes.text().catch(() => "");
-            failures.push(`open-meteo hourly HTTP ${fbRes.status}${fbTxt ? ` ${fbTxt.slice(0, 120)}` : ""}`);
-            return;
-          }
-
-          const fbJson = (await fbRes.json()) as OpenMeteoHourlyFallbackResponse;
-          const h = fbJson?.hourly ?? {};
-          const idx = pickClosestHourlyIndex(h.time);
-
-          if (idx < 0) {
-            failures.push("open-meteo hourly missing data");
-            return;
-          }
-
-          const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
-            Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
-
-          const payload: CurrentResponse = {
-            ok: true,
-            source: "open-meteo",
-            time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
-            units,
-            temp: at(h.temperature_2m, idx),
-            feels: at(h.apparent_temperature, idx),
-            dewPoint: at(h.dew_point_2m, idx),
-            humidityPct: at(h.relative_humidity_2m, idx),
-            cloudCoverPct: at(h.cloud_cover, idx),
-            wind: at(h.wind_speed_10m, idx),
-            windGust: at(h.wind_gusts_10m, idx),
-            windDir: at(h.wind_direction_10m, idx),
-            pressureMb: at(h.pressure_msl, idx),
-            weatherCode: at(h.weather_code, idx),
-          };
-
-          const response = currentJsonResponse(payload, "open-meteo");
-          response.headers.set("X-Omni-Current-Fallback", "open-meteo-hourly");
-          return response;
-        } finally {
-          clearTimeout(fbTimer);
-        }
-      };
-
-      try {
-        const omCurrent = await fetchOpenMeteoCurrent();
-        if (omCurrent) return omCurrent;
-      } catch (err: any) {
-        failures.push(`open-meteo current ${err?.message ?? String(err)}`);
-      }
-
-      try {
-        const omHourly = await fetchOpenMeteoHourlyFallback();
-        if (omHourly) return omHourly;
-      } catch (err: any) {
-        failures.push(`open-meteo hourly ${err?.message ?? String(err)}`);
-      }
-
-      try {
-        const nwsPayload = await fetchNwsCurrentPayload(lat, lon, units);
-        const response = currentJsonResponse(nwsPayload, "nws");
-        response.headers.set("X-Omni-Current-Fallback", "nws");
-        return response;
-      } catch (err: any) {
-        failures.push(`nws ${err?.message ?? String(err)}`);
-      }
-
-      try {
-        const metPayload = await fetchMetNorwayCurrentPayload(lat, lon, units);
-        const response = currentJsonResponse(metPayload, "met-norway");
-        response.headers.set("X-Omni-Current-Fallback", "met-norway");
-        return response;
-      } catch (err: any) {
-        failures.push(`met-norway ${err?.message ?? String(err)}`);
-      }
-
-      return new Response(JSON.stringify({ ok: false, error: "All weather providers failed", providers: failures }), {
-        status: 502,
-        headers: { "content-type": "application/json; charset=utf-8" },
-      });
-    },
+    fetchUpstream: () => fetchCurrentResponseForLocation(lat, lon, units),
   });
 }
 
@@ -12574,15 +12579,12 @@ async function handleWorkerRequest(
     ttlSeconds: 4 * 60,
     staleSeconds: 30 * 60,
     fetchUpstream: async () => {
-      const currentUrl = new URL("/api/current", url.origin);
-      currentUrl.searchParams.set("lat", String(lat));
-      currentUrl.searchParams.set("lon", String(lon));
-      currentUrl.searchParams.set("units", units);
+      const currentRes = await fetchCurrentResponseForLocation(lat, lon, units);
 
-      const forecastUrl = new URL("/api/openmeteo/hourly", url.origin);
-      forecastUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
-      forecastUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
-      forecastUrl.searchParams.set(
+      const forecastRequestUrl = new URL("https://omniwx.internal/api/openmeteo/hourly");
+      forecastRequestUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
+      forecastRequestUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
+      forecastRequestUrl.searchParams.set(
         "daily",
         [
           "temperature_2m_max",
@@ -12603,7 +12605,7 @@ async function handleWorkerRequest(
           "uv_index_max",
         ].join(","),
       );
-      forecastUrl.searchParams.set(
+      forecastRequestUrl.searchParams.set(
         "hourly",
         [
           "temperature_2m",
@@ -12621,24 +12623,56 @@ async function handleWorkerRequest(
           "uv_index",
         ].join(","),
       );
-      forecastUrl.searchParams.set("forecast_days", String(days));
-      forecastUrl.searchParams.set("timezone", "auto");
-      forecastUrl.searchParams.set("units", units);
+      forecastRequestUrl.searchParams.set("forecast_days", String(days));
+      forecastRequestUrl.searchParams.set("timezone", "auto");
+      forecastRequestUrl.searchParams.set("units", units);
       if (requestedModel !== "best_match") {
-        forecastUrl.searchParams.set("model", requestedModel);
+        forecastRequestUrl.searchParams.set("model", requestedModel);
+      }
+      const builtForecast = buildOmHourlyUpstream(forecastRequestUrl);
+      if (!builtForecast.ok) {
+        return new Response(JSON.stringify({ ok: false, error: builtForecast.error }), {
+          status: 400,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
       }
 
       const aqForecastHours = Math.min(168, Math.max(24, days * 24));
-      const airQualityUrl = new URL("/api/air-quality/hourly", url.origin);
-      airQualityUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
-      airQualityUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
-      airQualityUrl.searchParams.set("timezone", "auto");
-      airQualityUrl.searchParams.set("forecast_hours", String(aqForecastHours));
+      const airQualityRequestUrl = new URL("https://omniwx.internal/api/air-quality/hourly");
+      airQualityRequestUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
+      airQualityRequestUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
+      airQualityRequestUrl.searchParams.set("timezone", "auto");
+      airQualityRequestUrl.searchParams.set("forecast_hours", String(aqForecastHours));
+      const builtAirQuality = buildAirQualityHourlyUpstream(airQualityRequestUrl);
+      if (!builtAirQuality.ok) {
+        return new Response(JSON.stringify({ ok: false, error: builtAirQuality.error }), {
+          status: 400,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
+      }
 
-      const [currentRes, forecastRes, airQualityRes] = await Promise.all([
-        fetch(currentUrl.toString(), { headers: { accept: "application/json" } }),
-        fetch(forecastUrl.toString(), { headers: { accept: "application/json" } }),
-        fetch(airQualityUrl.toString(), { headers: { accept: "application/json" } }),
+      const [forecastRes, airQualityRes] = await Promise.all([
+        (async () => {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+          try {
+            const res = await fetch(builtForecast.upstreamUrl, {
+              signal: ctrl.signal,
+              headers: { accept: "application/json" },
+            });
+            if (!res.ok) {
+              const text = await res.text().catch(() => "");
+              return new Response(
+                JSON.stringify({ ok: false, error: "Home summary forecast failed", status: res.status, body: text.slice(0, 200) }),
+                { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+              );
+            }
+            return res;
+          } finally {
+            clearTimeout(t);
+          }
+        })(),
+        fetchAirQualityHourlyResponse(builtAirQuality),
       ]);
 
       if (!currentRes.ok) {
