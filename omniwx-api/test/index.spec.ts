@@ -66,6 +66,43 @@ describe('worker module', () => {
     }
   });
 
+  it('returns radar info with backend readiness metadata', async () => {
+    const res = await SELF.fetch(
+      new Request('https://omniwx.test/v1/radar/info'),
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.backend?.mode).toBe('external-fallback');
+    expect(json.backend?.selfHostedReady).toBe(false);
+    expect(Array.isArray(json.sources)).toBe(true);
+    expect(json.sources.map((source: any) => source.id)).toEqual(
+      expect.arrayContaining(['rainviewer', 'iem-mosaic', 'iem-ridge', 'iem-wms']),
+    );
+  });
+
+  it('returns self-hosted radar backend manifest contract', async () => {
+    const res = await SELF.fetch(
+      new Request('https://omniwx.test/v1/radar/backend/manifest'),
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.backend?.name).toBe('omniwx-radar-backend');
+    expect(json.capabilities).toEqual({
+      timeline: true,
+      mosaicTiles: true,
+      ridgeTiles: true,
+      wms: true,
+    });
+    expect(json.routes?.timeline).toBe('/v1/radar/backend/timeline');
+    expect(json.routes?.mosaicTiles).toBe('/v1/radar/backend/tiles/mosaic/{z}/{x}/{y}.png');
+    expect(json.routes?.ridgeTiles).toBe('/v1/radar/backend/tiles/ridge/{z}/{x}/{y}.png');
+    expect(json.routes?.wms).toBe('/v1/radar/backend/wms');
+  });
+
   it('returns marine source registry', async () => {
     const res = await SELF.fetch(
       new Request('https://omniwx.test/api/marine/sources'),
