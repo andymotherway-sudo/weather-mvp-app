@@ -29,6 +29,7 @@ import type { BuoyDetailData } from '../lib/buoys/noaaTypes';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { apiUrl } from '../lib/net/apiBase';
 import { useMarsInsightWeather } from '../lib/spaceweather/hooks';
+import { fetchCurrentWeatherBatch } from '../lib/weather/batch';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -453,19 +454,15 @@ async function fetchSavedPlaceExtremesBatch(
   if (!favorites.length) return [];
 
   const units = unit === 'C' ? 'metric' : 'imperial';
-  const params = new URLSearchParams({
-    lat: favorites.map((fav) => fav.lat.toFixed(4)).join(','),
-    lon: favorites.map((fav) => fav.lon.toFixed(4)).join(','),
-    units,
-  });
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
-    const res = await fetch(apiUrl(`/api/current/batch?${params.toString()}`), { signal: ctrl.signal });
-    if (!res.ok) throw new Error(`Current batch failed (${res.status})`);
-    const json = await res.json();
-    const items = Array.isArray(json?.items) ? json.items : [];
+    const items = await fetchCurrentWeatherBatch(
+      favorites.map((fav) => ({ lat: fav.lat, lon: fav.lon })),
+      units,
+      ctrl.signal,
+    );
 
     return favorites
       .map((place, idx) => {

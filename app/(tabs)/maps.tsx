@@ -68,6 +68,7 @@ import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame
 import { MAP_VIEWS } from '../lib/maps/views';
 import { apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
+import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 
 const WPC_FRONTS_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -1103,23 +1104,7 @@ async function fetchFavoriteTemperature(
 }
 
 function nearestHourlyIndexForNow(times: unknown): number {
-  if (!Array.isArray(times) || !times.length) return -1;
-
-  const now = Date.now();
-  let bestIdx = -1;
-  let bestDiff = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < times.length; i++) {
-    const ms = new Date(String(times[i])).getTime();
-    if (!Number.isFinite(ms)) continue;
-    const diff = Math.abs(ms - now);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestIdx = i;
-    }
-  }
-
-  return bestIdx;
+  return nearestTimeIndex(times, Date.now());
 }
 
 async function fetchFavoriteTemperaturesBatch(
@@ -1130,20 +1115,14 @@ async function fetchFavoriteTemperaturesBatch(
   if (!places.length) return {};
 
   const units = unit === 'C' ? 'metric' : 'imperial';
-  const params = new URLSearchParams({
-    lat: places.map((place) => place.lat.toFixed(4)).join(','),
-    lon: places.map((place) => place.lon.toFixed(4)).join(','),
+  const rows = await fetchHourlyForecastBatch({
+    points: places.map((place) => ({ lat: place.lat, lon: place.lon })),
     hourly: 'temperature_2m',
-    forecast_days: '1',
+    forecastDays: 1,
     timezone: 'auto',
     units,
+    signal,
   });
-
-  const res = await fetchWithTimeout(apiUrl(`/api/openmeteo/hourly?${params.toString()}`), 12000, { signal });
-  if (!res.ok) throw new Error(`Favorite temperatures failed (${res.status})`);
-
-  const json = await res.json();
-  const rows = Array.isArray(json) ? json : [json];
   const out: Record<string, number | null> = {};
 
   places.forEach((place, idx) => {

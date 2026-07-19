@@ -30,6 +30,7 @@ import { useFireContext } from '../lib/fire/useFireContext';
 import { apiUrl } from '../lib/net/apiBase';
 import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
+import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
@@ -2036,39 +2037,20 @@ async function fetchFavoriteWeatherPreviewsBatch(
 
   if (!uncached.length) return out;
 
-  const params = new URLSearchParams({
-    lat: uncached.map((fav) => fav.lat.toFixed(4)).join(','),
-    lon: uncached.map((fav) => fav.lon.toFixed(4)).join(','),
+  const rows = await fetchHourlyForecastBatch({
+    points: uncached.map((fav) => ({ lat: fav.lat, lon: fav.lon })),
     daily: 'weather_code,temperature_2m_max,temperature_2m_min',
     hourly: 'weather_code',
-    forecast_days: '1',
+    forecastDays: 1,
     timezone: 'auto',
     units: 'imperial',
   });
-  const res = await fetch(apiUrl(`/api/openmeteo/hourly?${params.toString()}`));
-  if (!res.ok) throw new Error(`Favorite previews failed (${res.status})`);
-
-  const json = await res.json();
-  const rows = Array.isArray(json) ? json : [json];
 
   uncached.forEach((fav, idx) => {
     const row = rows[idx] ?? null;
     const hourlyTimes = Array.isArray(row?.hourly?.time) ? row.hourly.time : [];
-    let currentCode: number | null = null;
-    if (hourlyTimes.length) {
-      let bestIdx = 0;
-      let bestDiff = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < hourlyTimes.length; i++) {
-        const ts = new Date(String(hourlyTimes[i])).getTime();
-        if (!Number.isFinite(ts)) continue;
-        const diff = Math.abs(ts - now);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          bestIdx = i;
-        }
-      }
-      currentCode = safeNum(row?.hourly?.weather_code?.[bestIdx]);
-    }
+    const bestIdx = nearestTimeIndex(hourlyTimes, now);
+    const currentCode = bestIdx >= 0 ? safeNum(row?.hourly?.weather_code?.[bestIdx]) : null;
 
     const dailyCode = safeNum(row?.daily?.weather_code?.[0]);
     const code = currentCode ?? dailyCode ?? null;

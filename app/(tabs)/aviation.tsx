@@ -23,6 +23,7 @@ import { geocodePlaces } from '../lib/locations/geocode';
 import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
+import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 
 type Mode = 'station' | 'flight';
 type ReportView = 'decoded' | 'raw';
@@ -383,6 +384,30 @@ async function fetchWx(lat: number, lon: number): Promise<Wx> {
     cloudPct: num(pick(j?.hourly?.cloud_cover)),
     visMi: milesFromMaybeMeters(num(pick(j?.hourly?.visibility))),
   };
+}
+
+async function fetchWxBatch(points: Array<{ lat: number; lon: number }>): Promise<Wx[]> {
+  if (!points.length) return [];
+  const rows = await fetchHourlyForecastBatch({
+    points,
+    hourly: ['temperature_2m', 'wind_speed_10m', 'wind_gusts_10m', 'cloud_cover', 'visibility'].join(','),
+    forecastDays: 1,
+    timezone: 'auto',
+    units: 'imperial',
+  });
+  const now = Date.now();
+
+  return rows.map((row) => {
+    const idx = nearestTimeIndex(row?.hourly?.time, now);
+    const pick = (arr: any) => (Array.isArray(arr) && idx >= 0 && idx < arr.length ? arr[idx] : null);
+    return {
+      tempF: num(pick(row?.hourly?.temperature_2m)),
+      windMph: num(pick(row?.hourly?.wind_speed_10m)),
+      gustMph: num(pick(row?.hourly?.wind_gusts_10m)),
+      cloudPct: num(pick(row?.hourly?.cloud_cover)),
+      visMi: milesFromMaybeMeters(num(pick(row?.hourly?.visibility))),
+    };
+  });
 }
 
 async function fetchProduct(kind: 'metar' | 'taf', code: string) {
@@ -992,7 +1017,12 @@ export default function AviationScreen() {
         };
       });
       const corridor = expand(bounds(pts), 1.2);
-      const wx = await Promise.all(pts.map((p) => fetchWx(p.lat, p.lon)));
+      let wx: Wx[] = [];
+      try {
+        wx = await fetchWxBatch(pts);
+      } catch {
+        wx = await Promise.all(pts.map((p) => fetchWx(p.lat, p.lon)));
+      }
       const samples: Sample[] = pts.map((p, i) => {
         const box = { west: p.lon, east: p.lon, south: p.lat, north: p.lat };
         const productAdvisories = normalizedHazards
