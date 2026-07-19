@@ -9543,6 +9543,15 @@ function buildRadarSourceDescriptors() {
       notes: ["Used for broad radar context and animation-friendly mosaic playback."],
     },
     {
+      id: "iem-mosaic",
+      label: "IEM national mosaic tiles",
+      role: "mosaic",
+      coverage: "national NEXRAD mosaic",
+      route: "/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png",
+      source: "IEM tile cache / NEXRAD mosaic",
+      notes: ["Used for broad CONUS radar playback and national situational awareness."],
+    },
+    {
       id: "iem-ridge",
       label: "IEM RIDGE tiles",
       role: "local",
@@ -9571,6 +9580,7 @@ function buildRadarInfoPayload(env: Env) {
       wms_v1: "/v1/radar/wms",
       wms_v2: "/v2/radar/wms",
       rainviewer_tiles: "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png",
+      iem_mosaic_tiles: "/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png",
       iem_ridge_tiles: "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png",
     },
     providers: {
@@ -9868,6 +9878,36 @@ function buildIemRidgeTileRequest(url: URL) {
   const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
   const cacheUrl = new URL(url.toString());
   cacheUrl.pathname = `/__cache__/radar/iem/ridge/${radarRaw}/${product}/${ts}/${z}/${x}/${y}.png`;
+  cacheUrl.search = "";
+
+  return {
+    ok: true as const,
+    upstreamUrl,
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
+function buildIemMosaicTileRequest(url: URL) {
+  const parts = url.pathname.replace("/v1/radar/iem/mosaic/tiles/", "").split("/");
+  if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
+
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  const product = (url.searchParams.get("product") || "N0Q").trim().toUpperCase();
+  const stamp = (url.searchParams.get("stamp") || "900913").trim();
+
+  if (!/^[A-Z0-9]{3}$/.test(product)) {
+    return { ok: false as const, error: "product must be like N0Q, N0B, N0S..." };
+  }
+  if (!(stamp === "900913" || /^900913-m\d{2}m$/.test(stamp))) {
+    return { ok: false as const, error: "stamp must be 900913 or 900913-mNNm" };
+  }
+
+  const layer = `nexrad-${product.toLowerCase()}-${stamp}`;
+  const upstreamUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layer}/${z}/${x}/${y}.png`;
+  const cacheUrl = new URL(url.toString());
+  cacheUrl.pathname = `/__cache__/radar/iem/mosaic/${product}/${stamp}/${z}/${x}/${y}.png`;
   cacheUrl.search = "";
 
   return {
@@ -10687,6 +10727,37 @@ async function handleWorkerRequest(
           "content-type": "application/json; charset=utf-8",
           "cache-control": "public, max-age=900, stale-while-revalidate=3600",
         }),
+      });
+    }
+
+    if (url.pathname.startsWith("/v1/radar/iem/mosaic/tiles/")) {
+      const built = buildIemMosaicTileRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: built.cacheKey,
+        ttlSeconds: RADAR_TILE_TTL_SECONDS,
+        staleSeconds: RADAR_TILE_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const res = await fetch(
+            built.upstreamUrl,
+            {
+              cf: { cacheEverything: true, cacheTtl: RADAR_TILE_TTL_SECONDS },
+              headers: { "User-Agent": "omniwx-worker/1.0" },
+            } as any,
+          );
+
+          const body = await res.arrayBuffer();
+          return new Response(body, {
+            status: res.status,
+            headers: { "content-type": "image/png" },
+          });
+        },
       });
     }
 

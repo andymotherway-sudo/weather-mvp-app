@@ -3,11 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 type IemFrame = string;
 const IEM_FRAMES: readonly IemFrame[] = ['m50m', 'm45m', 'm40m', 'm35m', 'm30m', 'm25m', 'm20m', 'm15m', 'm10m', 'm05m', 'latest'];
-const IEM_TILE_BASE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
+const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 function iemFrameTemplate(frame: IemFrame) {
   const stamp = frame === 'latest' ? '900913' : `900913-${frame}`;
-  return `${IEM_TILE_BASE}/nexrad-n0q-${stamp}/{z}/{x}/{y}.png`;
+  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
+  u.searchParams.set('product', 'N0Q');
+  u.searchParams.set('stamp', stamp);
+  return u.toString();
 }
 
 export type RadarFront = 'A' | 'B';

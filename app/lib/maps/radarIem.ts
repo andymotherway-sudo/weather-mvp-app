@@ -38,7 +38,6 @@ type ResolveFramesOpts = {
   forceRadarId3?: string | null;
 };
 
-const IEM_TILE_BASE_CACHE = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0';
 const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 // Mosaic is inherently coarse, but keep the source available through higher
@@ -59,15 +58,18 @@ export function iemNationalMosaicTimestamps() {
 }
 
 function iemMosaicTileTemplate(product: RadarProductId, stamp: string) {
-  const p = product.toLowerCase();
-  const layer = `nexrad-${p}-${stamp}`;
-  return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png`;
+  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
+  u.searchParams.set('product', product);
+  u.searchParams.set('stamp', stamp);
+  return u.toString();
 }
 
 function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: string) {
-  const layer = `ridge::${radarId3}-${product}-${ts}`;
-  // Try forcing transparent background (common IEM param pattern)
-  return `${IEM_TILE_BASE_CACHE}/${layer}/{z}/{x}/{y}.png?alpha=1`;
+  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png`);
+  u.searchParams.set('radar', radarId3);
+  u.searchParams.set('product', product);
+  u.searchParams.set('ts', ts);
+  return u.toString();
 }
 
 function canonicalRidgeProduct(product: RadarProductId): RadarProductId {
