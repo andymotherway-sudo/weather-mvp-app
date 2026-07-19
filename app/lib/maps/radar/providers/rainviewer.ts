@@ -1,5 +1,6 @@
 // app/lib/maps/providers/rainviewer.ts
 import type { RadarFrame, RadarProvider } from './types';
+import { API_BASE } from '../../../net/apiBase';
 
 let cachedFrames: RadarFrame[] | null = null;
 let cacheExpiresAt = 0;
@@ -35,9 +36,6 @@ type WorkerRadarInfoResponse = {
   };
 };
 
-// RainViewer tiles are proxied through the Worker for caching and consistent CORS behavior.
-const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
-
 function toFrame(t: number): RadarFrame {
   return { t, iso: new Date(t * 1000).toISOString() };
 }
@@ -72,7 +70,7 @@ export function createRainViewerProvider(opts?: {
   const maxFrames = opts?.maxFrames ?? 12;
   const maxZoomDefault = opts?.maxZoom ?? 8;
 
-  const workerBaseUrl = (opts?.workerBaseUrl ?? OMNIWX_WORKER_BASE).replace(/\/+$/, '');
+  const workerBaseUrl = (opts?.workerBaseUrl ?? API_BASE).replace(/\/+$/, '');
 
   const tileSizeDefault: 256 | 512 = opts?.tileSize === 512 ? 512 : 256;
   const colorDefault = (opts?.color ?? '2').trim() || '2';

@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-
-const OMNIWX_API_BASE =
-  (process.env.EXPO_PUBLIC_OMNIWX_API_BASE ?? process.env.EXPO_PUBLIC_API_BASE ?? '').replace(/\/+$/, '') ||
-  'https://omniwx-api.omniwx.workers.dev';
+import { API_BASE } from '../net/apiBase';
 
 const EMPTY_FEATURE_COLLECTION = {
   type: 'FeatureCollection',
@@ -19,7 +16,7 @@ export function useLightningMapData(enabled: boolean, opts?: { windowMinutes?: 1
   const focused = opts?.focused ?? true;
 
   const url = useMemo(() => {
-    const next = new URL(`${OMNIWX_API_BASE}/api/lightning/opc/geojson`);
+    const next = new URL(`${API_BASE}/api/lightning/opc/geojson`);
     next.searchParams.set('window', String(windowMinutes));
     next.searchParams.set('binDegrees', '0.35');
     next.searchParams.set('threshold', '1');

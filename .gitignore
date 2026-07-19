@@ -48,6 +48,11 @@ builds/
 # Local dev
 .vscode/
 
+# Private/local documentation notes
+docs/private/
+docs/local/
+docs/drafts/private/
+
 # Test artifacts
 rv-test.png
 logcat_cam.txt

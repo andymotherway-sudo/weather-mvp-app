@@ -1,7 +1,7 @@
 {
   "name": "weather-app",
   "main": "expo-router/entry",
-  "version": "1.1.232",
+  "version": "1.1.233",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -9,7 +9,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "build:nexrad-sites": "node scripts/build-nexrad-sites.mjs"
+    "build:nexrad-sites": "node scripts/build-nexrad-sites.mjs",
+    "build:android:dev": "node ./scripts/build-android-bundle.mjs development",
+    "build:android:prod": "node ./scripts/build-android-bundle.mjs production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

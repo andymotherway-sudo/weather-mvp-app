@@ -13,8 +13,7 @@ import {
 } from './radarIem';
 import type { MapAction } from './state';
 import type { MapRuntimeState } from './types';
-
-const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
+import { API_BASE } from '../net/apiBase';
 
 function clampIndex(i: number, n: number) {
   if (n <= 0) return 0;
@@ -122,7 +121,7 @@ function buildWorkerWmsUrl(args: {
   const width = String(Math.max(768, Math.min(3072, Math.floor(widthPx))));
   const height = String(Math.max(768, Math.min(3072, Math.floor(heightPx))));
 
-  const u = new URL(`${OMNI_WORKER_BASE}/v2/radar/wms`);
+  const u = new URL(`${API_BASE}/v2/radar/wms`);
   u.searchParams.set('product', product);
   u.searchParams.set('bbox', bbox);
   u.searchParams.set('width', width);

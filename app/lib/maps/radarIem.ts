@@ -1,6 +1,7 @@
 // app/lib/maps/radarIem.ts
 // IEM radar helpers (mosaic + RIDGE animated scan list).
 
+import { API_BASE } from '../net/apiBase';
 import { NEXRAD_SITES } from './nexradSites';
 
 export type RadarScan = { iso: string; stamp: string };
@@ -38,8 +39,6 @@ type ResolveFramesOpts = {
   forceRadarId3?: string | null;
 };
 
-const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
-
 // Mosaic is inherently coarse, but keep the source available through higher
 // map zooms so the broad national view does not disappear during handoff.
 // RIDGE remains the detailed single-site path.
@@ -58,14 +57,14 @@ export function iemNationalMosaicTimestamps() {
 }
 
 function iemMosaicTileTemplate(product: RadarProductId, stamp: string) {
-  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
+  const u = new URL(`${API_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
   u.searchParams.set('product', product);
   u.searchParams.set('stamp', stamp);
   return u.toString();
 }
 
 function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: string) {
-  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png`);
+  const u = new URL(`${API_BASE}/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png`);
   u.searchParams.set('radar', radarId3);
   u.searchParams.set('product', product);
   u.searchParams.set('ts', ts);
@@ -185,7 +184,7 @@ async function fetchIemRidgeScanList(args: {
   if (cached && now - cached.at < RIDGE_LIST_TTL_MS) return cached.tsList;
 
   async function fetchOnce(): Promise<string[]> {
-    const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/scans`);
+    const u = new URL(`${API_BASE}/v1/radar/iem/scans`);
     u.searchParams.set('radar', radarId3);
     u.searchParams.set('product', product);
     u.searchParams.set('lookbackMinutes', String(lookbackMinutes));

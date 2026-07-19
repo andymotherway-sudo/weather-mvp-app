@@ -319,7 +319,7 @@ export const LAYER_CATALOG = [
     source: {
       name: 'OMNIwx Alerts',
       details: 'Official alert polygons where available, with global forecast-derived hazard outlooks through the OMNIwx worker elsewhere.',
-      url: 'https://omniwx-api.omniwx.workers.dev/api/alerts/global',
+      url: apiUrl('/api/alerts/global'),
     },
     supportsOpacity: true,
     supportsLegend: false,
@@ -340,7 +340,7 @@ export const LAYER_CATALOG = [
       name: 'NOAA/NWS Ocean Prediction Center',
       details:
         'Official OPC lightning density is decoded by the OMNIwx worker from 15-minute GRIB2 grids into compact georeferenced cells. Use it as storm electrification context, not exact ground-strike safety guidance.',
-      url: 'https://omniwx-api.omniwx.workers.dev/api/lightning/opc/geojson?window=15',
+      url: apiUrl('/api/lightning/opc/geojson?window=15'),
     },
     supportsOpacity: true,
     supportsLegend: true,
@@ -685,3 +685,4 @@ export const LAYER_CATALOG = [
 export const LAYER_CATALOG_BY_ID: Record<LayerId, LayerCatalogItem> = Object.fromEntries(
   LAYER_CATALOG.map((x) => [x.id, x]),
 ) as Record<LayerId, LayerCatalogItem>;
+import { apiUrl } from '../net/apiBase';

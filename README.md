@@ -2,8 +2,8 @@
 
 OMNIwx is an Android-first weather workstation that brings daily forecasts, radar and satellite maps, marine weather, aviation weather, space weather, climatology, and educational wxLearn topics into one app.
 
-Current release line: **OMNIwx 1.1.213**
-Current Android version code: **10230**
+Current release line: **OMNIwx 1.1.233**
+Current Android version code: **10250**
 
 ## Product Shape
 
@@ -60,8 +60,7 @@ npx tsc --noEmit
 Build the Android release AAB:
 
 ```powershell
-cd android
-.\gradlew.bat bundleRelease --console=plain
+npm run build:android:prod
 ```
 
 The release bundle is written to:
@@ -69,6 +68,10 @@ The release bundle is written to:
 ```text
 android/app/build/outputs/bundle/release/app-release.aab
 ```
+
+For the full tester-safe backend + app sequence, use:
+
+- [docs/full-release-path.md](C:/Users/andym_au640pp/weather-app/docs/full-release-path.md)
 
 ## Release Versioning
 
@@ -84,6 +87,8 @@ Google Play uniqueness is controlled by Android `versionCode`. Keep these files 
 - `docs/how-omniwx-works.md`: plain-English architecture guide.
 - `docs/omniwx-training-guide.md`: private builder/training guide.
 - `docs/google-play-closed-testing-release-notes.md`: tester-facing release notes for Play Console.
+- `docs/full-release-path.md`: the required dev-to-production release sequence for internal testing.
+- `docs/documentation-guidelines.md`: what docs belong in git versus ignored private notes.
 - `docs/privacy-policy.md`: publishable replacement privacy policy for omni-wx.com.
 
 ## Status

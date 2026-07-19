@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AstroInputs } from './openMeteoAstro';
 import { computeSkyScorePoint, skyScoreLabel, skyScoreSummary } from './skyScore';
-
-const OMNIWX_API_BASE =
-  (process.env.EXPO_PUBLIC_OMNIWX_API_BASE ?? '').replace(/\/$/, '') ||
-  'https://omniwx-api.omniwx.workers.dev';
+import { API_BASE } from '../net/apiBase';
 
 function parseLocalDate(iso?: string | null): Date | null {
   if (!iso) return null;
@@ -623,7 +620,7 @@ async function fetchLocationAstroForecast(args: {
   const { lat, lon, placeName } = args;
 
   const url =
-    `${OMNIWX_API_BASE}/api/astro/location` +
+    `${API_BASE}/api/astro/location` +
     `?lat=${encodeURIComponent(String(lat))}` +
     `&lon=${encodeURIComponent(String(lon))}` +
     `&placeName=${encodeURIComponent(placeName ?? '')}`;

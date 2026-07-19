@@ -66,7 +66,7 @@ import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
-import { apiUrl } from '../lib/net/apiBase';
+import { API_BASE, apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 
@@ -366,9 +366,8 @@ type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
 
-const OMNI_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
-const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${OMNI_WORKER_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
-const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${OMNI_WORKER_BASE}/v1/satellite/nesdis/abi13/exportImage`;
+const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
+const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/exportImage`;
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
@@ -606,7 +605,7 @@ function buildGoesWmsImageUrl(args: {
 }
 
 function goesWmsEndpoint(region: 'east' | 'west') {
-  return `${OMNI_WORKER_BASE}/v1/satellite/goes/${region}/wms`;
+  return `${API_BASE}/v1/satellite/goes/${region}/wms`;
 }
 
 function buildRadarCompositorUrl(args: {
@@ -618,7 +617,7 @@ function buildRadarCompositorUrl(args: {
   stormMode: boolean;
 }) {
   const radarProduct = args.product === 'N0B' ? 'N0B' : args.product === 'N0Z' ? 'N0Z' : 'N0Q';
-  const u = new URL(`${OMNI_WORKER_BASE}/v2/radar/wms`);
+  const u = new URL(`${API_BASE}/v2/radar/wms`);
   u.searchParams.set('product', radarProduct);
   u.searchParams.set('bbox', mercatorBbox(args.region));
   u.searchParams.set('width', String(Math.round(args.width)));
@@ -651,8 +650,8 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
 async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
   const framesUrl =
     exportUrl === NESDIS_ABI13_ARCHIVE_EXPORT_URL
-      ? `${OMNI_WORKER_BASE}/v1/satellite/nesdis/abi13/frames`
-      : `${OMNI_WORKER_BASE}/v1/satellite/nesdis/geocolor/frames`;
+      ? `${API_BASE}/v1/satellite/nesdis/abi13/frames`
+      : `${API_BASE}/v1/satellite/nesdis/geocolor/frames`;
   const query = new URL(framesUrl);
   query.searchParams.set('minutesBack', String(minutesBack));
 

@@ -3,7 +3,7 @@
 // Keeps ranked rows you liked, but adds mode toggle, hero cards, and refresh.
 //
 // DROP-IN REPLACEMENT: Land now pulls from your Cloudflare Worker route:
-//   https://omniwx-api.omniwx.workers.dev/land-extremes?unit=F|C
+//   /land-extremes?unit=F|C
 // This enables scaling to 250–500+ US sites without device fan-out.
 
 import { useRouter } from 'expo-router';
@@ -34,10 +34,6 @@ import { fetchCurrentWeatherBatch } from '../lib/weather/batch';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 const MAX_ROWS = 10;
-
-// Worker endpoint (land extremes)
-const API_BASE = ((process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? 'https://omniwx-api.omniwx.workers.dev').replace(/\/+$/, '');
-const LAND_EXTREMES_WORKER_URL = `${API_BASE}/land-extremes`;
 
 type Severity = 'calm' | 'moderate' | 'rough' | 'extreme';
 type Mode = 'marine' | 'land' | 'space';
@@ -194,7 +190,7 @@ async function fetchWorkerLandExtremes(unit: 'F' | 'C'): Promise<{
   const t = setTimeout(() => ctrl.abort(), 8500);
 
   try {
-    const url = `${LAND_EXTREMES_WORKER_URL}?unit=${encodeURIComponent(unit)}`;
+    const url = apiUrl(`/land-extremes?unit=${encodeURIComponent(unit)}`);
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`land-extremes worker failed (${res.status})`);
 

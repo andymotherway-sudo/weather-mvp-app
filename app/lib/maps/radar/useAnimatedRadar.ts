@@ -1,13 +1,13 @@
 // app/lib/maps/radar/useAnimatedRadar.ts
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { API_BASE } from '../../net/apiBase';
 
 type IemFrame = string;
 const IEM_FRAMES: readonly IemFrame[] = ['m50m', 'm45m', 'm40m', 'm35m', 'm30m', 'm25m', 'm20m', 'm15m', 'm10m', 'm05m', 'latest'];
-const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
 
 function iemFrameTemplate(frame: IemFrame) {
   const stamp = frame === 'latest' ? '900913' : `900913-${frame}`;
-  const u = new URL(`${OMNIWX_WORKER_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
+  const u = new URL(`${API_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
   u.searchParams.set('product', 'N0Q');
   u.searchParams.set('stamp', stamp);
   return u.toString();

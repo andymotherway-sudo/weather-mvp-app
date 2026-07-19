@@ -2,7 +2,6 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { AlphaType, ColorType, Skia } from '@shopify/react-native-skia';
 import { Buffer } from 'buffer';
-import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useIsFocused } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -22,7 +21,7 @@ import {
   sampleOvationAt,
   type OvationPoint as OvationPointLib,
 } from '../lib/aurora/ovation';
-import { apiUrl } from '../lib/net/apiBase';
+import { API_BASE, apiUrl } from '../lib/net/apiBase';
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -90,11 +89,6 @@ function boundsToPolygonFeature(b: { west: number; east: number; south: number; 
     },
   } as const;
 }
-
-const OMNIWX_API_BASE =
-  (Constants.expoConfig?.extra as any)?.apiBaseUrl ??
-  process.env.EXPO_PUBLIC_OMNIWX_API_BASE ??
-  'https://omniwx-api.omniwx.workers.dev';
 
 const OM_BACKOFF = { until: 0, lastStatus: 0, strikes: 0 };
 const SKY_GRID_MEMORY_CACHE = new Map<string, SkyGridPayload>();
@@ -1199,7 +1193,7 @@ async function makeSkyRasterFromGrid(grid: SkyGridPayload, cacheKey: string) {
 
 async function fetchAstroLocation(lat: number, lon: number, placeName?: string, signal?: AbortSignal) {
   const url =
-    `${OMNIWX_API_BASE}/api/astro/location` +
+    `${API_BASE}/api/astro/location` +
     `?lat=${encodeURIComponent(String(lat))}` +
     `&lon=${encodeURIComponent(String(lon))}` +
     (placeName ? `&placeName=${encodeURIComponent(placeName)}` : '');
@@ -1292,7 +1286,7 @@ async function fetchSkyGridPayload(args: {
   } = args;
 
   const url =
-    `${OMNIWX_API_BASE}/api/astro/skyscore-grid` +
+    `${API_BASE}/api/astro/skyscore-grid` +
     `?west=${encodeURIComponent(String(bounds.west))}` +
     `&south=${encodeURIComponent(String(bounds.south))}` +
     `&east=${encodeURIComponent(String(bounds.east))}` +
@@ -1317,7 +1311,7 @@ async function fetchAstroInspect(args: {
   signal?: AbortSignal;
 }): Promise<AstroInspectPayload> {
   const url =
-    `${OMNIWX_API_BASE}/api/astro/inspect` +
+    `${API_BASE}/api/astro/inspect` +
     `?lat=${encodeURIComponent(String(args.lat))}` +
     `&lon=${encodeURIComponent(String(args.lon))}` +
     `&hour=${encodeURIComponent(String(args.hourOffset))}`;
