@@ -16,11 +16,9 @@ let cachedWorkerConfig:
 let workerConfigExpiresAt = 0;
 
 type RainViewerMapsResponse = {
-  host?: string;
-  radar?: {
-    past?: Array<{ time: number; path: string }>;
-    nowcast?: Array<{ time: number; path: string }>;
-  };
+  ok?: boolean;
+  host?: string | null;
+  frames?: Array<{ time?: number; iso?: string; path?: string }>;
 };
 
 type WorkerRadarInfoResponse = {
@@ -36,10 +34,6 @@ type WorkerRadarInfoResponse = {
     };
   };
 };
-
-// RainViewer timeline endpoint. The legacy /public/maps.json endpoint now
-// returns an empty array, while weather-maps.json contains the live radar paths.
-const MAPS_JSON = 'https://api.rainviewer.com/public/weather-maps.json';
 
 // RainViewer tiles are proxied through the Worker for caching and consistent CORS behavior.
 const OMNIWX_WORKER_BASE = 'https://omniwx-api.omniwx.workers.dev';
@@ -116,27 +110,28 @@ export function createRainViewerProvider(opts?: {
   }
 
   async function fetchFrames(includeNowcast: boolean): Promise<{ frames: RadarFrame[]; host: string; paths: string[] }> {
-    const res = await fetch(MAPS_JSON);
-    if (!res.ok) throw new Error(`RainViewer maps.json failed: ${res.status}`);
+    const qs =
+      `includeNowcast=${includeNowcast ? '1' : '0'}` +
+      `&maxFrames=${encodeURIComponent(String(maxFrames))}`;
+    const res = await fetch(`${workerBaseUrl}/v1/radar/rainviewer/frames?${qs}`);
+    if (!res.ok) throw new Error(`RainViewer frames failed: ${res.status}`);
 
     const data = (await res.json()) as RainViewerMapsResponse;
 
     const host = data.host;
     if (!host) throw new Error('RainViewer maps.json missing host');
 
-    const past = (data.radar?.past ?? []).map((p) => ({ time: p.time, path: p.path }));
-    const nowcast = includeNowcast ? (data.radar?.nowcast ?? []).map((p) => ({ time: p.time, path: p.path })) : [];
-
     // Order: oldest -> newest
-    const combined = [...past, ...nowcast]
-      .filter((p) => typeof p.time === 'number' && typeof p.path === 'string' && p.path.length > 3)
+    const combined = (data.frames ?? [])
+      .map((frame) => ({
+        time: typeof frame.time === 'number' ? frame.time : NaN,
+        path: typeof frame.path === 'string' ? frame.path : '',
+      }))
+      .filter((p) => Number.isFinite(p.time) && p.path.length > 3)
       .sort((a, b) => a.time - b.time);
 
-    // Keep last N frames to control tile usage
-    const tail = combined.slice(Math.max(0, combined.length - maxFrames));
-
-    const frames = tail.map((p) => toFrame(p.time));
-    const paths = tail.map((p) => p.path);
+    const frames = combined.map((p) => toFrame(p.time));
+    const paths = combined.map((p) => p.path);
 
     return { frames, host, paths };
   }

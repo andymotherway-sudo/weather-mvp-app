@@ -9517,6 +9517,12 @@ type RadarSourceDescriptor = {
   notes?: string[];
 };
 
+type RainViewerFrameDescriptor = {
+  time: number;
+  iso: string;
+  path: string;
+};
+
 function buildRadarSourceDescriptors() {
   return [
     {
@@ -9577,6 +9583,52 @@ function buildRadarInfoPayload(env: Env) {
     },
     sources: buildRadarSourceDescriptors(),
   };
+}
+
+async function fetchRainViewerTimeline(includeNowcast: boolean, maxFrames: number) {
+  const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
+    cf: { cacheEverything: true, cacheTtl: 60 },
+    headers: { "User-Agent": "omniwx-worker/1.0" },
+  } as any);
+  if (!timelineRes.ok) {
+    throw new Error(`RainViewer timeline failed: ${timelineRes.status}`);
+  }
+
+  const timeline = (await timelineRes.json()) as {
+    host?: string;
+    radar?: {
+      past?: Array<{ time?: number; path?: string }>;
+      nowcast?: Array<{ time?: number; path?: string }>;
+    };
+  };
+
+  const past = timeline.radar?.past ?? [];
+  const nowcast = includeNowcast ? (timeline.radar?.nowcast ?? []) : [];
+  const combined = [...past, ...nowcast]
+    .filter((frame) => typeof frame.time === "number" && isRainViewerPath(frame.path ?? null))
+    .sort((a, b) => Number(a.time ?? 0) - Number(b.time ?? 0));
+  const tail = combined.slice(Math.max(0, combined.length - maxFrames));
+
+  return {
+    host: timeline.host ?? null,
+    frames: tail.map((frame) => ({
+      time: Number(frame.time),
+      iso: new Date(Number(frame.time) * 1000).toISOString(),
+      path: String(frame.path),
+    })) satisfies RainViewerFrameDescriptor[],
+  };
+}
+
+function parseRainViewerFramesRequest(url: URL) {
+  const includeNowcastParam = url.searchParams.get("includeNowcast");
+  const maxFramesParam = url.searchParams.get("maxFrames");
+  const includeNowcast =
+    includeNowcastParam === "1" ||
+    includeNowcastParam === "true" ||
+    includeNowcastParam === "yes";
+  const maxFrames = clampInt(Number(maxFramesParam ?? "12"), 1, 48, 12);
+
+  return { includeNowcast, maxFrames };
 }
 
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
@@ -9826,6 +9878,36 @@ async function handleWorkerRequest(
         JSON.stringify(buildRadarInfoPayload(env)),
         { status: 200, headers: withCors({ "content-type": "application/json; charset=utf-8" }) },
       );
+    }
+
+    if (url.pathname === "/v1/radar/rainviewer/frames") {
+      const parsed = parseRainViewerFramesRequest(url);
+      const cacheUrl = new URL("https://cache.omniwx.internal/v1/radar/rainviewer/frames");
+      cacheUrl.searchParams.set("includeNowcast", parsed.includeNowcast ? "1" : "0");
+      cacheUrl.searchParams.set("maxFrames", String(parsed.maxFrames));
+
+      const payload = await swrFetchObject(
+        ctx,
+        new Request(cacheUrl.toString(), { method: "GET" }),
+        60,
+        300,
+        async () => {
+          const timeline = await fetchRainViewerTimeline(parsed.includeNowcast, parsed.maxFrames);
+          return {
+            ok: true,
+            host: timeline.host,
+            frames: timeline.frames,
+          };
+        },
+      );
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        }),
+      });
     }
 
     if (url.pathname === "/api/openmeteo/hourly" || url.pathname === "/v1/openmeteo/hourly") {
