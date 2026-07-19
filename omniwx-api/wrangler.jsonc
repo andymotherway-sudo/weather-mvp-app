@@ -25,6 +25,28 @@
 			"database_id": "1e1056e5-440d-4960-a0b1-3a0626d711d8"
 		}
 	],
+	"r2_buckets": [
+		{
+			"binding": "RADAR_ASSETS",
+			"bucket_name": "omniwx-radar-assets-dev"
+		}
+	],
+	"vars": {
+		"RADAR_MANIFEST_INGEST_ENABLED": "1",
+		"RADAR_MANIFEST_INGEST_MAX_FRAMES": "60",
+		"RADAR_MANIFEST_INGEST_INCLUDE_NOWCAST": "0",
+		"RADAR_MANIFEST_RETENTION_COUNT": "12",
+		"RADAR_R2_PUBLISH_ENABLED": "1",
+		"RADAR_R2_PUBLISH_KEY": "radar/timeline/latest.json",
+		"RADAR_R2_IMAGE_PUBLISH_ENABLED": "1",
+		"RADAR_R2_IMAGE_HISTORY_FRAMES": "6",
+		"RADAR_R2_IMAGE_MAX_ZOOM": "3",
+		"RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED": "1",
+    "RADAR_R2_LOCAL_SITE_IDS": "IWA",
+		"RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES": "2",
+		"RADAR_R2_LOCAL_IMAGE_MIN_ZOOM": "7",
+		"RADAR_R2_LOCAL_IMAGE_MAX_ZOOM": "8"
+	},
 	"env": {
 		"production": {
 			"d1_databases": [
@@ -33,7 +55,29 @@
 					"database_name": "omniwx-prod",
 					"database_id": "e5cddd0e-f307-4077-bc1a-fcc317a51cce"
 				}
-			]
+			],
+			"r2_buckets": [
+				{
+					"binding": "RADAR_ASSETS",
+					"bucket_name": "omniwx-radar-assets-prod"
+				}
+			],
+			"vars": {
+				"RADAR_MANIFEST_INGEST_ENABLED": "1",
+				"RADAR_MANIFEST_INGEST_MAX_FRAMES": "60",
+				"RADAR_MANIFEST_INGEST_INCLUDE_NOWCAST": "0",
+				"RADAR_MANIFEST_RETENTION_COUNT": "12",
+				"RADAR_R2_PUBLISH_ENABLED": "1",
+				"RADAR_R2_PUBLISH_KEY": "radar/timeline/latest.json",
+				"RADAR_R2_IMAGE_PUBLISH_ENABLED": "1",
+				"RADAR_R2_IMAGE_HISTORY_FRAMES": "6",
+				"RADAR_R2_IMAGE_MAX_ZOOM": "3",
+				"RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED": "1",
+      "RADAR_R2_LOCAL_SITE_IDS": "IWA",
+				"RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES": "2",
+				"RADAR_R2_LOCAL_IMAGE_MIN_ZOOM": "7",
+				"RADAR_R2_LOCAL_IMAGE_MAX_ZOOM": "8"
+			}
 		}
 	}
 	/**

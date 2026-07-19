@@ -76,10 +76,25 @@ describe('worker module', () => {
     expect(json.ok).toBe(true);
     expect(json.backend?.mode).toBe('external-fallback');
     expect(json.backend?.selfHostedReady).toBe(false);
+    expect(json.ownedStorage?.d1?.retentionCount).toBe(12);
+    expect(json.ownedStorage?.r2?.timelinePublishEnabled).toBe(true);
     expect(Array.isArray(json.sources)).toBe(true);
     expect(json.sources.map((source: any) => source.id)).toEqual(
       expect.arrayContaining(['rainviewer', 'iem-mosaic', 'iem-ridge', 'iem-wms']),
     );
+  });
+
+  it('returns owned radar backend status', async () => {
+    const res = await SELF.fetch(
+      new Request('https://omniwx.test/v1/radar/backend/status'),
+    );
+    const json = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(typeof json.ownedPipeline?.d1?.bound).toBe('boolean');
+    expect(typeof json.ownedPipeline?.r2?.bound).toBe('boolean');
+    expect(json.currentSource?.images).toBe('r2-owned-when-available');
   });
 
   it('returns self-hosted radar backend manifest contract', async () => {

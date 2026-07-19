@@ -213,3 +213,39 @@ export async function upsertRadarManifest(
       .run();
   }
 }
+
+export async function pruneRadarManifests(
+  db: D1DatabaseLike,
+  args: { scope: RadarManifestScope; product: string; siteId?: string | null; source?: string | null; keepLatest: number },
+) {
+  const keepLatest = Math.max(1, Math.floor(args.keepLatest));
+  const rows = await db
+    .prepare(`
+      SELECT id
+      FROM radar_manifests
+      WHERE scope = ?
+        AND product = ?
+        AND (? IS NULL OR site_id = ?)
+        AND (? IS NULL OR source = ?)
+      ORDER BY generated_at DESC
+      LIMIT 1000 OFFSET ?
+    `)
+    .bind(
+      args.scope,
+      args.product,
+      args.siteId ?? null,
+      args.siteId ?? null,
+      args.source ?? null,
+      args.source ?? null,
+      keepLatest,
+    )
+    .all<{ id: string }>();
+
+  const staleIds = (rows.results ?? []).map((row) => row.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+  for (const manifestId of staleIds) {
+    await db.prepare(`DELETE FROM radar_frames WHERE manifest_id = ?`).bind(manifestId).run();
+    await db.prepare(`DELETE FROM radar_manifests WHERE id = ?`).bind(manifestId).run();
+  }
+
+  return { deleted: staleIds.length };
+}

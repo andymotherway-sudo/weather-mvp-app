@@ -103,6 +103,36 @@ Useful flags:
 
 This is the bridge between today's external timeline and tomorrow's owned ingest: the worker can now read the same manifest structure from D1 that this script generates.
 
+## Storage foundation
+
+The next infrastructure layer is Cloudflare R2.
+
+- D1 should stay the metadata and manifest control plane.
+- R2 should hold larger published radar artifacts such as manifest snapshots, frame blobs, rendered tiles, and future export inputs.
+- The Worker should remain the only app-facing entry point.
+
+Recommended bucket layout:
+
+- `RADAR_ASSETS`
+  - public-ready artifacts
+- `RADAR_ASSETS_PRIVATE`
+  - internal staging and intermediate files
+
+Recommended names:
+
+- dev: `omniwx-radar-assets-dev`, `omniwx-radar-private-dev`
+- prod: `omniwx-radar-assets-prod`, `omniwx-radar-private-prod`
+
+If Wrangler returns `Please enable R2 through the Cloudflare Dashboard. [code: 10042]`, the account itself still needs R2 enabled before bucket creation and binding rollout can happen.
+
+The detailed step-by-step storage rollout lives in `docs/cloudflare-radar-storage-rollout.md`.
+
+For the first R2 phase, keep it intentionally tiny:
+
+- do not archive timeline history by default
+- publish only a stable latest object key such as `radar/timeline/latest.json`
+- keep D1 retention on a small rolling window instead of unlimited manifests
+
 ## Expected backend endpoints
 
 ### `GET /manifest`
