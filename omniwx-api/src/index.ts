@@ -9559,6 +9559,22 @@ function buildRadarInfoPayload(env: Env) {
       rainviewer_tiles: "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png",
       iem_ridge_tiles: "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png",
     },
+    providers: {
+      rainviewer: {
+        maxZoom: 7,
+        includeNowcast: false,
+        tileSize: 512,
+        color: "2",
+        smooth: 1,
+        snow: 1,
+      },
+      iem: {
+        wmsBase: getIemWmsBase(env),
+        supportsWmsV1: true,
+        supportsWmsV2: true,
+        supportsRidgeTiles: true,
+      },
+    },
     sources: buildRadarSourceDescriptors(),
   };
 }

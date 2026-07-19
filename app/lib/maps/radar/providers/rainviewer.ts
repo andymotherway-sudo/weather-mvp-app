@@ -3,12 +3,37 @@ import type { RadarFrame, RadarProvider } from './types';
 
 let cachedFrames: RadarFrame[] | null = null;
 let cacheExpiresAt = 0;
+let cachedWorkerConfig:
+  | {
+      maxZoom?: number;
+      includeNowcast?: boolean;
+      tileSize?: 256 | 512;
+      color?: string;
+      smooth?: 0 | 1;
+      snow?: 0 | 1;
+    }
+  | null = null;
+let workerConfigExpiresAt = 0;
 
 type RainViewerMapsResponse = {
   host?: string;
   radar?: {
     past?: Array<{ time: number; path: string }>;
     nowcast?: Array<{ time: number; path: string }>;
+  };
+};
+
+type WorkerRadarInfoResponse = {
+  ok?: boolean;
+  providers?: {
+    rainviewer?: {
+      maxZoom?: number;
+      includeNowcast?: boolean;
+      tileSize?: number;
+      color?: string;
+      smooth?: number;
+      snow?: number;
+    };
   };
 };
 
@@ -49,18 +74,48 @@ export function createRainViewerProvider(opts?: {
   snow?: 0 | 1;
 }): RadarProvider {
   const ttlMs = opts?.ttlMs ?? 60_000;
-  const includeNowcast = opts?.includeNowcast ?? true;
+  const includeNowcastDefault = opts?.includeNowcast ?? true;
   const maxFrames = opts?.maxFrames ?? 12;
-  const maxZoom = opts?.maxZoom ?? 8;
+  const maxZoomDefault = opts?.maxZoom ?? 8;
 
   const workerBaseUrl = (opts?.workerBaseUrl ?? OMNIWX_WORKER_BASE).replace(/\/+$/, '');
 
-  const tileSize: 256 | 512 = opts?.tileSize === 512 ? 512 : 256;
-  const color = (opts?.color ?? '2').trim() || '2';
-  const smooth: 0 | 1 = opts?.smooth === 0 ? 0 : 1;
-  const snow: 0 | 1 = opts?.snow === 0 ? 0 : 1;
+  const tileSizeDefault: 256 | 512 = opts?.tileSize === 512 ? 512 : 256;
+  const colorDefault = (opts?.color ?? '2').trim() || '2';
+  const smoothDefault: 0 | 1 = opts?.smooth === 0 ? 0 : 1;
+  const snowDefault: 0 | 1 = opts?.snow === 0 ? 0 : 1;
 
-  async function fetchFrames(): Promise<{ frames: RadarFrame[]; host: string; paths: string[] }> {
+  async function getWorkerConfig() {
+    const now = Date.now();
+    if (cachedWorkerConfig && now < workerConfigExpiresAt) return cachedWorkerConfig;
+
+    try {
+      const res = await fetch(`${workerBaseUrl}/v1/radar/info`);
+      if (!res.ok) throw new Error(`Radar info failed: ${res.status}`);
+      const json = (await res.json()) as WorkerRadarInfoResponse;
+      const rainviewer = json?.providers?.rainviewer;
+      cachedWorkerConfig = rainviewer
+        ? {
+            maxZoom:
+              typeof rainviewer.maxZoom === 'number' && Number.isFinite(rainviewer.maxZoom)
+                ? rainviewer.maxZoom
+                : undefined,
+            includeNowcast: typeof rainviewer.includeNowcast === 'boolean' ? rainviewer.includeNowcast : undefined,
+            tileSize: rainviewer.tileSize === 512 ? 512 : rainviewer.tileSize === 256 ? 256 : undefined,
+            color: typeof rainviewer.color === 'string' && rainviewer.color.trim() ? rainviewer.color.trim() : undefined,
+            smooth: rainviewer.smooth === 0 ? 0 : rainviewer.smooth === 1 ? 1 : undefined,
+            snow: rainviewer.snow === 0 ? 0 : rainviewer.snow === 1 ? 1 : undefined,
+          }
+        : {};
+    } catch {
+      cachedWorkerConfig = {};
+    }
+
+    workerConfigExpiresAt = now + 10 * 60_000;
+    return cachedWorkerConfig;
+  }
+
+  async function fetchFrames(includeNowcast: boolean): Promise<{ frames: RadarFrame[]; host: string; paths: string[] }> {
     const res = await fetch(MAPS_JSON);
     if (!res.ok) throw new Error(`RainViewer maps.json failed: ${res.status}`);
 
@@ -92,6 +147,11 @@ export function createRainViewerProvider(opts?: {
    * Note: We do NOT need RainViewer host/path here — the Worker fetches by ts.   * cachedHost and cachedPaths are retained for compatibility with existing frame consumers.
    */
   function workerTileTemplateForFrame(ts: number, path?: string) {
+    const cfg = cachedWorkerConfig ?? {};
+    const tileSize: 256 | 512 = cfg.tileSize === 512 ? 512 : cfg.tileSize === 256 ? 256 : tileSizeDefault;
+    const color = (cfg.color ?? colorDefault).trim() || colorDefault;
+    const smooth: 0 | 1 = cfg.smooth === 0 ? 0 : cfg.smooth === 1 ? 1 : smoothDefault;
+    const snow: 0 | 1 = cfg.snow === 0 ? 0 : cfg.snow === 1 ? 1 : snowDefault;
     const qs =
       `ts=${encodeURIComponent(String(ts))}` +
       (path ? `&path=${encodeURIComponent(path)}` : '') +
@@ -108,13 +168,18 @@ export function createRainViewerProvider(opts?: {
 
   return {
     id: 'rainviewer',
-    maxZoom,
+    get maxZoom() {
+      const cfg = cachedWorkerConfig ?? {};
+      return typeof cfg.maxZoom === 'number' && Number.isFinite(cfg.maxZoom) ? cfg.maxZoom : maxZoomDefault;
+    },
 
     getFrames: async () => {
       const now = Date.now();
       if (cachedFrames && now < cacheExpiresAt && cachedHost && cachedPaths) return cachedFrames;
 
-      const { frames, host, paths } = await fetchFrames();
+      const cfg = await getWorkerConfig();
+      const includeNowcast = typeof cfg.includeNowcast === 'boolean' ? cfg.includeNowcast : includeNowcastDefault;
+      const { frames, host, paths } = await fetchFrames(includeNowcast);
       cachedFrames = frames;
       cachedHost = host;
       cachedPaths = paths;
