@@ -9845,6 +9845,116 @@ function buildTropicalOutlookRequest(url: URL) {
   };
 }
 
+function buildActiveAlertsCacheKey() {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/active");
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+function parseAlertsWwaRequest(url: URL) {
+  const north = Number(url.searchParams.get("north"));
+  const south = Number(url.searchParams.get("south"));
+  const east = Number(url.searchParams.get("east"));
+  const west = Number(url.searchParams.get("west"));
+  const limit = clampInt(Number(url.searchParams.get("limit") ?? "120"), 20, 300, 120);
+  if (![north, south, east, west].every(Number.isFinite)) {
+    return { ok: false as const, error: "north, south, east, and west are required numbers" };
+  }
+  return { ok: true as const, north, south, east, west, limit };
+}
+
+function buildAlertsWwaCacheKey(parsed: { north: number; south: number; east: number; west: number; limit: number }) {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/wwa");
+  cacheUrl.searchParams.set("north", String(roundCoordKey(parsed.north, 0.15)));
+  cacheUrl.searchParams.set("south", String(roundCoordKey(parsed.south, 0.15)));
+  cacheUrl.searchParams.set("east", String(roundCoordKey(parsed.east, 0.15)));
+  cacheUrl.searchParams.set("west", String(roundCoordKey(parsed.west, 0.15)));
+  cacheUrl.searchParams.set("limit", String(parsed.limit));
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+function buildAlertsDetailCacheKey(alertId: string) {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/detail");
+  cacheUrl.searchParams.set("id", alertId);
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+async function fetchOfficialActiveAlertsGeoJson() {
+  const features: any[] = [];
+  let url: string | null = "https://api.weather.gov/alerts/active?status=actual&message_type=alert%2Cupdate&limit=500";
+  let page = 0;
+
+  while (url && page < 4) {
+    const json = await fetchJsonWithTimeout(url, OPEN_METEO_TIMEOUT_MS, {
+      "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+      Accept: "application/geo+json",
+    });
+    if (Array.isArray(json?.features)) features.push(...json.features);
+    url = typeof json?.pagination?.next === "string" ? json.pagination.next : null;
+    page += 1;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
+}
+
+async function fetchWwaPolygonsGeoJson(parsed: { north: number; south: number; east: number; west: number; limit: number }) {
+  const features: any[] = [];
+  const seen = new Set<string>();
+
+  for (const layerId of [0, 1]) {
+    const upstream = new URL(
+      `https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/FeatureServer/${layerId}/query`,
+    );
+    upstream.searchParams.set("f", "geojson");
+    upstream.searchParams.set("where", "1=1");
+    upstream.searchParams.set("outFields", "*");
+    upstream.searchParams.set("returnGeometry", "true");
+    upstream.searchParams.set("geometry", `${parsed.west},${parsed.south},${parsed.east},${parsed.north}`);
+    upstream.searchParams.set("geometryType", "esriGeometryEnvelope");
+    upstream.searchParams.set("inSR", "4326");
+    upstream.searchParams.set("outSR", "4326");
+    upstream.searchParams.set("spatialRel", "esriSpatialRelIntersects");
+    upstream.searchParams.set("resultRecordCount", String(parsed.limit));
+
+    const json = await fetchJsonWithTimeout(upstream.toString(), OPEN_METEO_TIMEOUT_MS, {
+      "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+      Accept: "application/geo+json, application/json",
+    });
+    const layerFeatures = Array.isArray(json?.features) ? json.features : [];
+    for (const feature of layerFeatures) {
+      const props = typeof feature?.properties === "object" && feature.properties ? feature.properties : {};
+      const id = String(props.cap_id ?? props.objectid ?? props.OBJECTID ?? `${layerId}-${features.length}`);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      features.push({
+        ...feature,
+        properties: {
+          ...props,
+          _omniLayerId: layerId,
+        },
+      });
+      if (features.length >= parsed.limit) break;
+    }
+    if (features.length >= parsed.limit) break;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
+}
+
+async function fetchAlertDetailPayload(alertId: string) {
+  const sourceUrl = `https://api.weather.gov/alerts/${encodeURIComponent(alertId)}`;
+  const json = await fetchJsonWithTimeout(sourceUrl, OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/geo+json, application/ld+json, application/json",
+  });
+  return json;
+}
+
 function parseNesdisFramesRequest(url: URL) {
   const minutesBack = clampInt(Number(url.searchParams.get("minutesBack") ?? "120"), 30, 360, 120);
   const service = resolveNesdisService(url.pathname);
@@ -10329,6 +10439,67 @@ async function handleWorkerRequest(
           const ct = res.headers.get("content-type") || "application/geo+json; charset=utf-8";
           const body = await res.arrayBuffer();
           return new Response(body, { status: res.status, headers: { "content-type": ct } });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/alerts/active") {
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildActiveAlertsCacheKey(),
+        ttlSeconds: 180,
+        staleSeconds: 600,
+        fetchUpstream: async () => {
+          const payload = await fetchOfficialActiveAlertsGeoJson();
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/geo+json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/alerts/wwa") {
+      const parsed = parseAlertsWwaRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildAlertsWwaCacheKey(parsed),
+        ttlSeconds: 180,
+        staleSeconds: 600,
+        fetchUpstream: async () => {
+          const payload = await fetchWwaPolygonsGeoJson(parsed);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/geo+json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/alerts/detail") {
+      const alertId = (url.searchParams.get("id") ?? "").trim();
+      if (!alertId) {
+        return new Response(JSON.stringify({ ok: false, error: "id is required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildAlertsDetailCacheKey(alertId),
+        ttlSeconds: 180,
+        staleSeconds: 900,
+        fetchUpstream: async () => {
+          const payload = await fetchAlertDetailPayload(alertId);
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/geo+json; charset=utf-8" },
+          });
         },
       });
     }

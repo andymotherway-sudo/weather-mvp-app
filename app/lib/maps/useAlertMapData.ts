@@ -50,7 +50,6 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
 };
 
 const ALERTS_URL = 'https://api.weather.gov/alerts/active';
-const WWA_FEATURE_URL = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/WWA/watch_warn_adv/FeatureServer';
 const USER_AGENT = 'omniwx (dev)';
 
 let alertCache: { ts: number; key: string; geojson: GeoJsonFeatureCollection } | null = null;
@@ -291,24 +290,15 @@ async function fetchGlobalAlertPoints(signal: AbortSignal, region: RegionLike) {
 }
 
 async function fetchActiveAlerts(signal: AbortSignal) {
-  const features: any[] = [];
-  let url: string | null = `${ALERTS_URL}?status=actual&message_type=alert%2Cupdate&limit=500`;
-  let page = 0;
-
-  while (url && page < 4) {
-    const res = await fetchWithTimeout(url, 18000, {
-      signal,
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'application/geo+json',
-      },
-    });
-    if (!res.ok) throw new Error(`Official alerts failed (${res.status})`);
-    const json = await res.json().catch(() => null);
-    if (Array.isArray(json?.features)) features.push(...json.features);
-    url = typeof json?.pagination?.next === 'string' ? json.pagination.next : null;
-    page += 1;
-  }
+  const res = await fetchWithTimeout(apiUrl('/v1/maps/alerts/active'), 18000, {
+    signal,
+    headers: {
+      Accept: 'application/geo+json, application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`Official alerts failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  const features = Array.isArray(json?.features) ? json.features : [];
 
   return {
     type: 'FeatureCollection' as const,
@@ -316,57 +306,32 @@ async function fetchActiveAlerts(signal: AbortSignal) {
   };
 }
 
-function buildWwaQueryUrl(
-  layerId: number,
-  envelope: { west: number; east: number; south: number; north: number },
-  budget: AlertLayerBudget,
-) {
-  const params = new URLSearchParams({
-    f: 'geojson',
-    where: '1=1',
-    outFields: '*',
-    returnGeometry: 'true',
-    geometry: `${envelope.west},${envelope.south},${envelope.east},${envelope.north}`,
-    geometryType: 'esriGeometryEnvelope',
-    inSR: '4326',
-    outSR: '4326',
-    spatialRel: 'esriSpatialRelIntersects',
-    resultRecordCount: String(budget.wwaResultRecordCount),
-  });
-  return `${WWA_FEATURE_URL}/${layerId}/query?${params.toString()}`;
-}
-
 async function fetchWwaPolygons(
   signal: AbortSignal,
   envelope: { west: number; east: number; south: number; north: number },
   budget: AlertLayerBudget,
 ) {
-  const features: any[] = [];
-  const seen = new Set<string>();
-
-  for (const layerId of [0, 1]) {
-    const url = buildWwaQueryUrl(layerId, envelope, budget);
-    const res = await fetchWithTimeout(url, 18000, {
-      signal,
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'application/geo+json, application/json',
-      },
-    });
-    if (!res.ok) throw new Error(`NOAA WWA polygons failed (${res.status})`);
-    const json = await res.json().catch(() => null);
-    const layerFeatures = Array.isArray(json?.features) ? json.features : [];
-    for (const feature of layerFeatures) {
-      const normalized = normalizeWwaFeature(feature, features.length, layerId);
-      if (!normalized) continue;
-      const id = String(normalized.properties.id);
-      if (seen.has(id)) continue;
-      seen.add(id);
-      features.push(normalized);
-      if (features.length >= budget.maxWwaPolygons) break;
-    }
-    if (features.length >= budget.maxWwaPolygons) break;
-  }
+  const url = apiUrl(
+    `/v1/maps/alerts/wwa?north=${encodeURIComponent(String(envelope.north))}` +
+      `&south=${encodeURIComponent(String(envelope.south))}` +
+      `&east=${encodeURIComponent(String(envelope.east))}` +
+      `&west=${encodeURIComponent(String(envelope.west))}` +
+      `&limit=${encodeURIComponent(String(budget.wwaResultRecordCount))}`,
+  );
+  const res = await fetchWithTimeout(url, 18000, {
+    signal,
+    headers: {
+      Accept: 'application/geo+json, application/json',
+    },
+  });
+  if (!res.ok) throw new Error(`NOAA WWA polygons failed (${res.status})`);
+  const json = await res.json().catch(() => null);
+  const rawFeatures = Array.isArray(json?.features) ? json.features : [];
+  const features = rawFeatures
+    .map((feature: any, idx: number) =>
+      normalizeWwaFeature(feature, idx, Number(feature?.properties?._omniLayerId ?? 0)),
+    )
+    .filter(Boolean);
 
   return {
     type: 'FeatureCollection' as const,
@@ -400,26 +365,20 @@ export function alertFeatureToDetail(feature: any): WeatherAlertDetail | null {
 }
 
 export async function fetchWeatherAlertDetail(detail: WeatherAlertDetail, signal?: AbortSignal): Promise<WeatherAlertDetail> {
-  const sourceUrl =
-    detail.sourceUrl?.startsWith('https://api.weather.gov/alerts/')
-      ? detail.sourceUrl
-      : detail.id.startsWith('http')
-        ? detail.id
-        : detail.id.startsWith('urn:')
-          ? `${ALERTS_URL}/${encodeURIComponent(detail.id)}`
-          : null;
-  if (!sourceUrl) return detail;
+  if (!detail.id.startsWith('urn:')) return detail;
 
-  const res = await fetchWithTimeout(sourceUrl, 12000, {
+  const res = await fetchWithTimeout(apiUrl(`/v1/maps/alerts/detail?id=${encodeURIComponent(detail.id)}`), 12000, {
     signal,
     headers: {
-      'User-Agent': USER_AGENT,
       Accept: 'application/geo+json, application/ld+json, application/json',
     },
   });
   if (!res.ok) throw new Error(`Official alert text failed (${res.status})`);
   const json = await res.json().catch(() => null);
   const p = json?.properties ?? json ?? {};
+  const sourceUrl = detail.sourceUrl?.startsWith('https://api.weather.gov/alerts/')
+    ? detail.sourceUrl
+    : `${ALERTS_URL}/${encodeURIComponent(detail.id)}`;
   return {
     ...detail,
     id: String(json?.id ?? p?.id ?? detail.id),
