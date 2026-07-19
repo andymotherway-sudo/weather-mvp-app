@@ -9845,6 +9845,60 @@ function buildTropicalOutlookRequest(url: URL) {
   };
 }
 
+function buildTropicalCyclonesCacheKey() {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/tropical-cyclones");
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+async function fetchTropicalCycloneLayer(layerId: number) {
+  const upstream = new URL(
+    `https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Active_Hurricanes_v1/FeatureServer/${layerId}/query`,
+  );
+  upstream.searchParams.set("f", "geojson");
+  upstream.searchParams.set("where", "1=1");
+  upstream.searchParams.set("outFields", "*");
+  upstream.searchParams.set("returnGeometry", "true");
+  upstream.searchParams.set("outSR", "4326");
+  upstream.searchParams.set("resultRecordCount", "2000");
+
+  const json = await fetchJsonWithTimeout(upstream.toString(), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/geo+json, application/json",
+  });
+  return {
+    type: "FeatureCollection",
+    features: Array.isArray(json?.features) ? json.features : [],
+  };
+}
+
+async function fetchTropicalCyclonesPayload() {
+  const [cones, forecastTrack, observedTrack, forecastPoints, observedPoints, watches, wind34, wind50, wind64] =
+    await Promise.all([
+      fetchTropicalCycloneLayer(4),
+      fetchTropicalCycloneLayer(2),
+      fetchTropicalCycloneLayer(3),
+      fetchTropicalCycloneLayer(0),
+      fetchTropicalCycloneLayer(1),
+      fetchTropicalCycloneLayer(5),
+      fetchTropicalCycloneLayer(7),
+      fetchTropicalCycloneLayer(8),
+      fetchTropicalCycloneLayer(9),
+    ]);
+
+  return {
+    ok: true,
+    cones,
+    forecastTrack,
+    observedTrack,
+    forecastPoints,
+    observedPoints,
+    watches,
+    wind34,
+    wind50,
+    wind64,
+  };
+}
+
 function buildActiveAlertsCacheKey() {
   const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/active");
   return new Request(cacheUrl.toString(), { method: "GET" });
@@ -10499,6 +10553,21 @@ async function handleWorkerRequest(
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/geo+json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/tropical-cyclones") {
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildTropicalCyclonesCacheKey(),
+        ttlSeconds: 600,
+        staleSeconds: 1800,
+        fetchUpstream: async () => {
+          const payload = await fetchTropicalCyclonesPayload();
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
           });
         },
       });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { apiUrl } from '../net/apiBase';
 import { fetchWithTimeout } from '../net/fetchWithTimeout';
 
 type GeoJsonFeatureCollection = {
@@ -28,9 +29,6 @@ type TropicalLayerData = {
 };
 
 const EMPTY_FC: GeoJsonFeatureCollection = { type: 'FeatureCollection', features: [] };
-
-const ACTIVE_CYCLONES_FEATURE_SERVER =
-  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Active_Hurricanes_v1/FeatureServer';
 
 const LAYERS = {
   forecastPoints: 0,
@@ -113,20 +111,6 @@ function decorateFeatureCollection(
   };
 }
 
-async function fetchLayer(layerId: number, signal?: AbortSignal) {
-  const url = new URL(`${ACTIVE_CYCLONES_FEATURE_SERVER}/${layerId}/query`);
-  url.searchParams.set('f', 'geojson');
-  url.searchParams.set('where', '1=1');
-  url.searchParams.set('outFields', '*');
-  url.searchParams.set('returnGeometry', 'true');
-  url.searchParams.set('outSR', '4326');
-  url.searchParams.set('resultRecordCount', '2000');
-
-  const res = await fetchWithTimeout(url.toString(), 16000, { signal });
-  if (!res.ok) throw new Error(`Tropical cyclone layer ${layerId} failed (${res.status})`);
-  return asFeatureCollection(await res.json());
-}
-
 function mergeCollections(collections: GeoJsonFeatureCollection[], kind: string) {
   return decorateFeatureCollection(
     {
@@ -171,18 +155,21 @@ export function useTropicalCycloneLayer(enabled: boolean, _region: RegionLike | 
     const ac = new AbortController();
     setData((prev) => ({ ...prev, loading: true, error: null }));
 
-    Promise.all([
-      fetchLayer(LAYERS.cones, ac.signal),
-      fetchLayer(LAYERS.forecastTrack, ac.signal),
-      fetchLayer(LAYERS.observedTrack, ac.signal),
-      fetchLayer(LAYERS.forecastPoints, ac.signal),
-      fetchLayer(LAYERS.observedPoints, ac.signal),
-      fetchLayer(LAYERS.watches, ac.signal),
-      fetchLayer(LAYERS.wind34, ac.signal),
-      fetchLayer(LAYERS.wind50, ac.signal),
-      fetchLayer(LAYERS.wind64, ac.signal),
-    ])
-      .then(([cones, forecastTrack, observedTrack, forecastPoints, observedPoints, watches, wind34, wind50, wind64]) => {
+    fetchWithTimeout(apiUrl('/v1/maps/tropical-cyclones'), 16000, { signal: ac.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Tropical cyclone data failed (${res.status})`);
+        return res.json();
+      })
+      .then((json) => {
+        const cones = asFeatureCollection(json?.cones);
+        const forecastTrack = asFeatureCollection(json?.forecastTrack);
+        const observedTrack = asFeatureCollection(json?.observedTrack);
+        const forecastPoints = asFeatureCollection(json?.forecastPoints);
+        const observedPoints = asFeatureCollection(json?.observedPoints);
+        const watches = asFeatureCollection(json?.watches);
+        const wind34 = asFeatureCollection(json?.wind34);
+        const wind50 = asFeatureCollection(json?.wind50);
+        const wind64 = asFeatureCollection(json?.wind64);
         const normalized = {
           cones: decorateFeatureCollection(cones, classifyTropicalConeFeature),
           forecastTrack: decorateFeatureCollection(forecastTrack, 'forecast-track'),
