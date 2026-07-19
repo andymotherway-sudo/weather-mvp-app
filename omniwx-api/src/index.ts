@@ -9746,6 +9746,33 @@ function parseIemRadarScansRequest(url: URL) {
   return { ok: true as const, radarId3, product, lookbackMinutes };
 }
 
+function buildGoesWmsRequest(url: URL) {
+  const east = url.pathname === "/v1/satellite/goes/east/wms";
+  const west = url.pathname === "/v1/satellite/goes/west/wms";
+  if (!east && !west) return { ok: false as const, error: "unknown GOES WMS route" };
+
+  const upstream = new URL(
+    east
+      ? "https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi"
+      : "https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi",
+  );
+
+  for (const [key, value] of url.searchParams.entries()) {
+    upstream.searchParams.set(key, value);
+  }
+
+  const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
+  for (const [key, value] of url.searchParams.entries()) {
+    cacheUrl.searchParams.set(key, value);
+  }
+
+  return {
+    ok: true as const,
+    upstreamUrl: upstream.toString(),
+    cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
+  };
+}
+
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
   if (product === "N0B") return `${base}/n0b.cgi`;
   if (product === "N0Z") return `${base}/n0z.cgi`;
@@ -10049,6 +10076,35 @@ async function handleWorkerRequest(
           "content-type": "application/json; charset=utf-8",
           "cache-control": "public, max-age=45, stale-while-revalidate=180",
         }),
+      });
+    }
+
+    if (url.pathname === "/v1/satellite/goes/east/wms" || url.pathname === "/v1/satellite/goes/west/wms") {
+      const built = buildGoesWmsRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: built.cacheKey,
+        ttlSeconds: WMS_TTL_SECONDS,
+        staleSeconds: WMS_STALE_SECONDS,
+        fetchUpstream: async () => {
+          const res = await fetch(
+            built.upstreamUrl,
+            {
+              cf: { cacheEverything: true, cacheTtl: WMS_TTL_SECONDS },
+              headers: { "User-Agent": "omniwx-worker/1.0" },
+            } as any,
+          );
+
+          const ct = res.headers.get("content-type") || "image/png";
+          const body = await res.arrayBuffer();
+          return new Response(body, { status: res.status, headers: { "content-type": ct } });
+        },
       });
     }
 

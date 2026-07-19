@@ -609,6 +609,10 @@ function buildGoesWmsImageUrl(args: {
   return `${args.endpoint}?${params.toString()}`;
 }
 
+function goesWmsEndpoint(region: 'east' | 'west') {
+  return `${OMNI_WORKER_BASE}/v1/satellite/goes/${region}/wms`;
+}
+
 function buildRadarCompositorUrl(args: {
   product: RadarProductId;
   region: Region;
@@ -2774,7 +2778,7 @@ export default function MapsScreen() {
     if (cloudsEnabled) {
       addAnimatedSatelliteWms({
         id: 'goes-east-visible',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        url: goesWmsEndpoint('east'),
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 60,
@@ -2784,7 +2788,7 @@ export default function MapsScreen() {
       });
       addAnimatedSatelliteWms({
         id: 'goes-west-visible',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
+        url: goesWmsEndpoint('west'),
         layers: 'conus_ch02',
         opacity: Math.max(0, Math.min(1, Number(cloudsOpacity))),
         zIndex: 61,
@@ -2879,7 +2883,7 @@ export default function MapsScreen() {
     } else if (goesEastIrEnabled) {
       addAnimatedSatelliteWms({
         id: 'goes-east-ir',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        url: goesWmsEndpoint('east'),
         layers: 'conus_ch13',
         opacity: Math.max(0, Math.min(1, Number(goesEastIrOpacity))),
         zIndex: 63,
@@ -2892,7 +2896,7 @@ export default function MapsScreen() {
     if (goesEastWvEnabled) {
       addAnimatedSatelliteWms({
         id: 'goes-east-wv',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi',
+        url: goesWmsEndpoint('east'),
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesEastWvOpacity))),
         zIndex: 64,
@@ -2905,7 +2909,7 @@ export default function MapsScreen() {
     if (goesWestWvEnabled) {
       addAnimatedSatelliteWms({
         id: 'goes-west-wv',
-        url: 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi',
+        url: goesWmsEndpoint('west'),
         layers: 'conus_ch08',
         opacity: Math.max(0, Math.min(1, Number(goesWestWvOpacity))),
         zIndex: 64,
@@ -3862,8 +3866,8 @@ export default function MapsScreen() {
         });
       }
       const endpoint = source.includes('west')
-        ? 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_west.cgi'
-        : 'https://mesonet.agron.iastate.edu/cgi-bin/wms/goes_east.cgi';
+        ? goesWmsEndpoint('west')
+        : goesWmsEndpoint('east');
       const layer = source.includes('ir')
         ? 'conus_ch13'
         : source.includes('wv')
