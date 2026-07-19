@@ -550,6 +550,22 @@ type CurrentBatchResponse = {
   items: CurrentBatchItem[];
 };
 
+type FavoritePreviewBatchItem = {
+  lat: number;
+  lon: number;
+  hourlyTime: string[];
+  hourlyWeatherCode: Array<number | null>;
+  dailyWeatherCode: number | null;
+  hi: number | null;
+  lo: number | null;
+};
+
+type FavoritePreviewBatchResponse = {
+  ok: true;
+  units: Units;
+  items: FavoritePreviewBatchItem[];
+};
+
 type FireContextPayload = {
   ok: true;
   lat: number;
@@ -4898,6 +4914,50 @@ function buildOmHourlyCacheKey(reqUrl: URL, lats: string[], lons: string[], unit
   if (keyUrl.searchParams.get("h")) keyUrl.searchParams.delete("h");
   if (keyUrl.searchParams.get("tz")) keyUrl.searchParams.delete("tz");
 
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildFavoritePreviewBatchUpstream(lats: string[], lons: string[], units: Units) {
+  const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
+  const windUnit = units === "imperial" ? "mph" : "kmh";
+  const precipUnit = units === "imperial" ? "inch" : "mm";
+
+  const upstream = new URL("https://api.open-meteo.com/v1/forecast");
+  upstream.searchParams.set("latitude", lats.join(","));
+  upstream.searchParams.set("longitude", lons.join(","));
+  upstream.searchParams.set("hourly", "weather_code");
+  upstream.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min");
+  upstream.searchParams.set("forecast_days", "1");
+  upstream.searchParams.set("timezone", "auto");
+  upstream.searchParams.set("temperature_unit", temperatureUnit);
+  upstream.searchParams.set("wind_speed_unit", windUnit);
+  upstream.searchParams.set("precipitation_unit", precipUnit);
+  return upstream.toString();
+}
+
+function buildFavoritePreviewBatchCacheKey(reqUrl: URL, lats: string[], lons: string[], units: Units) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/home/favorites-preview";
+  keyUrl.search = "";
+  keyUrl.searchParams.set(
+    "lat",
+    lats
+      .map((raw) => {
+        const n = Number(raw);
+        return Number.isFinite(n) ? String(roundCoordKey(n, 0.05)) : "0";
+      })
+      .join(","),
+  );
+  keyUrl.searchParams.set(
+    "lon",
+    lons
+      .map((raw) => {
+        const n = Number(raw);
+        return Number.isFinite(n) ? String(roundCoordKey(n, 0.05)) : "0";
+      })
+      .join(","),
+  );
+  keyUrl.searchParams.set("units", units);
   return new Request(keyUrl.toString(), { method: "GET" });
 }
 
@@ -10802,6 +10862,86 @@ async function handleWorkerRequest(
         }));
 
         const payload: CurrentBatchResponse = {
+          ok: true,
+          units,
+          items,
+        };
+
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "X-Omni-Weather-Provider": "open-meteo",
+          },
+        });
+      } finally {
+        clearTimeout(t);
+      }
+    },
+  });
+}
+
+    if (url.pathname === "/api/home/favorites-preview") {
+  const units = parseUnits(url.searchParams.get("units"));
+  const lats = normalizeCommaList(url.searchParams.get("lat"), 40);
+  const lons = normalizeCommaList(url.searchParams.get("lon"), 40);
+
+  if (!lats.length || !lons.length || lats.length !== lons.length) {
+    return new Response(JSON.stringify({ ok: false, error: "latitude and longitude lists must be provided and have equal length" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
+
+  const parsedPoints = lats.map((latRaw, idx) => ({
+    lat: Number(latRaw),
+    lon: Number(lons[idx]),
+  }));
+
+  if (parsedPoints.some((point) => !Number.isFinite(point.lat) || !Number.isFinite(point.lon))) {
+    return new Response(JSON.stringify({ ok: false, error: "all lat/lon values must be valid numbers" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
+
+  return swrFetchJson(request, ctx, {
+    cacheKey: buildFavoritePreviewBatchCacheKey(url, lats, lons, units),
+    ttlSeconds: 10 * 60,
+    staleSeconds: 60 * 60,
+    fetchUpstream: async () => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+      try {
+        const res = await fetch(buildFavoritePreviewBatchUpstream(lats, lons, units), { signal: ctrl.signal });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Favorites preview upstream error", status: res.status, body: txt.slice(0, 200) }),
+            { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+          );
+        }
+
+        const json = await res.json<any>();
+        const rows = Array.isArray(json) ? json : Array.isArray(json?.results) ? json.results : [json];
+        const items: FavoritePreviewBatchItem[] = parsedPoints.map((point, idx) => {
+          const row = rows[idx] ?? {};
+          const hourly = row?.hourly ?? {};
+          const daily = row?.daily ?? {};
+          return {
+            lat: point.lat,
+            lon: point.lon,
+            hourlyTime: Array.isArray(hourly?.time) ? hourly.time.map((value: any) => String(value)) : [],
+            hourlyWeatherCode: Array.isArray(hourly?.weather_code)
+              ? hourly.weather_code.map((value: any) => safeNum(value))
+              : [],
+            dailyWeatherCode: safeNum(daily?.weather_code?.[0]),
+            hi: safeNum(daily?.temperature_2m_max?.[0]),
+            lo: safeNum(daily?.temperature_2m_min?.[0]),
+          };
+        });
+
+        const payload: FavoritePreviewBatchResponse = {
           ok: true,
           units,
           items,

@@ -12,6 +12,7 @@ import type {
   KpForecastSample,
 } from './types';
 import type { SpaceWeatherEvent } from './useSpaceWeatherEvents';
+import { apiUrl } from '../net/apiBase';
 
 // --- NOAA endpoints ---
 
@@ -47,16 +48,6 @@ const GOES_XRAY_6H_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays
 const GOES_XRAY_7D_URL = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json';
 const GOES_PROTONS_6H_URL =
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-6-hour.json';
-
-// ---------- Worker base (NASA DONKI / APOD / NCEI secrets live here) ----------
-
-const API_BASE_RAW = (process.env.EXPO_PUBLIC_API_BASE as string | undefined) ?? '';
-const API_BASE = API_BASE_RAW.replace(/\/+$/, '');
-
-function apiUrl(path: string) {
-  if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE. Set it in .env and restart Expo.');
-  return `${API_BASE}${path.startsWith('/') ? '' : '/'}${path}`;
-}
 
 export async function fetchMarsInsightWeather(): Promise<MarsInsightWeather> {
   return fetchJson<MarsInsightWeather>(apiUrl('/mars-insight'), 'Mars InSight weather');
@@ -641,50 +632,6 @@ async function loadKpForecastTimeline(): Promise<KpForecastSample[]> {
 
 // ---------- Public summary API (Solar tab) ----------
 
-async function fetchSpaceWeatherSummaryDirect(): Promise<SpaceWeatherSummary> {
-  const [plasma, kp] = await Promise.all([loadPlasmaWithFallbacks(), loadKpWithFallbacks()]);
-
-  const [noaaScales, goesXray, imf, protons, kpForecast] = await Promise.all([
-    safeOptional(() => fetchNoaaScalesNow(), 'NOAA scales'),
-    safeOptional(() => fetchGoesXrayNow(), 'GOES x-ray'),
-    safeOptional(async () => {
-      const m = await loadMagWithFallbacks();
-      const iso = toIsoFromNoaaTableTime(m.time);
-      const out: ImfNow = { timeTag: iso, bzGsmNt: m.bzGsmNt, btNt: m.btNt };
-      return out;
-    }, 'IMF mag (Bz/Bt)'),
-    safeOptional(() => fetchProtonsNow(), 'GOES protons (>=10 MeV)'),
-    safeOptional(() => loadKpForecastTimeline(), 'Kp forecast timeline'),
-  ]);
-
-  const plasmaTime = new Date(plasma.time);
-  const kpTime = new Date(kp.time);
-  const newest =
-    !Number.isNaN(plasmaTime.getTime()) && plasmaTime > kpTime ? plasma.time : kp.time;
-
-  const noaaScalesUpdatedAt =
-    noaaScales?.dateStamp && noaaScales?.timeStamp
-      ? new Date(`${noaaScales.dateStamp}T${noaaScales.timeStamp}Z`).toISOString()
-      : undefined;
-
-  return {
-    solarWindSpeed: plasma.speed,
-    solarWindDensity: plasma.density,
-    solarWindTemp: plasma.temperature,
-    kp: kp.kp,
-    kpForecast: kpForecast ?? undefined,
-    updatedAt: newest,
-    windHistory: plasma.history,
-
-    noaaScales: noaaScales ?? undefined,
-    noaaScalesUpdatedAt,
-    goesXray: goesXray ?? undefined,
-    imf: imf ?? undefined,
-    protons: protons ?? undefined,
-    source: 'NOAA SWPC direct public products',
-  };
-}
-
 async function fetchSpaceWeatherSummaryFromWorker(): Promise<SpaceWeatherSummary> {
   const json = await fetchJson<any>(apiUrl('/api/space-weather/summary'), 'Worker space weather');
   if (!json || json.ok === false) {
@@ -694,14 +641,7 @@ async function fetchSpaceWeatherSummaryFromWorker(): Promise<SpaceWeatherSummary
 }
 
 export async function fetchSpaceWeatherSummary(): Promise<SpaceWeatherSummary> {
-  if (API_BASE) {
-    try {
-      return await fetchSpaceWeatherSummaryFromWorker();
-    } catch {
-      // Direct SWPC products keep Space usable during Worker deploys or edge outages.
-    }
-  }
-  return fetchSpaceWeatherSummaryDirect();
+  return fetchSpaceWeatherSummaryFromWorker();
 }
 
 // =============================

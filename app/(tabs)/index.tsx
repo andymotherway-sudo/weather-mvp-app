@@ -30,7 +30,7 @@ import { useFireContext } from '../lib/fire/useFireContext';
 import { apiUrl } from '../lib/net/apiBase';
 import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
-import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
+import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
@@ -2037,28 +2037,24 @@ async function fetchFavoriteWeatherPreviewsBatch(
 
   if (!uncached.length) return out;
 
-  const rows = await fetchHourlyForecastBatch({
-    points: uncached.map((fav) => ({ lat: fav.lat, lon: fav.lon })),
-    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
-    hourly: 'weather_code',
-    forecastDays: 1,
-    timezone: 'auto',
-    units: 'imperial',
-  });
+  const rows = await fetchFavoritePreviewBatch(
+    uncached.map((fav) => ({ lat: fav.lat, lon: fav.lon })),
+    'imperial',
+  );
 
   uncached.forEach((fav, idx) => {
     const row = rows[idx] ?? null;
-    const hourlyTimes = Array.isArray(row?.hourly?.time) ? row.hourly.time : [];
+    const hourlyTimes = Array.isArray(row?.hourlyTime) ? row.hourlyTime : [];
     const bestIdx = nearestTimeIndex(hourlyTimes, now);
-    const currentCode = bestIdx >= 0 ? safeNum(row?.hourly?.weather_code?.[bestIdx]) : null;
+    const currentCode = bestIdx >= 0 ? safeNum(row?.hourlyWeatherCode?.[bestIdx]) : null;
 
-    const dailyCode = safeNum(row?.daily?.weather_code?.[0]);
+    const dailyCode = safeNum(row?.dailyWeatherCode);
     const code = currentCode ?? dailyCode ?? null;
     const preview: FavoriteWeatherPreview = {
       emoji: weatherCodeToEmoji(code),
       condition: weatherCodeToLabel(code),
-      hi: safeNum(row?.daily?.temperature_2m_max?.[0]),
-      lo: safeNum(row?.daily?.temperature_2m_min?.[0]),
+      hi: safeNum(row?.hi),
+      lo: safeNum(row?.lo),
     };
 
     favoritePreviewCache.set(favoritePreviewKey(fav.lat, fav.lon), {

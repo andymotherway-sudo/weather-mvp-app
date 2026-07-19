@@ -29,6 +29,16 @@ export type CurrentBatchItem = {
   current: CurrentBatchPayload;
 };
 
+export type FavoritePreviewBatchItem = {
+  lat: number;
+  lon: number;
+  hourlyTime: string[];
+  hourlyWeatherCode: Array<number | null>;
+  dailyWeatherCode: number | null;
+  hi: number | null;
+  lo: number | null;
+};
+
 export function nearestTimeIndex(times: unknown, targetMs = Date.now()): number {
   if (!Array.isArray(times) || !times.length) return -1;
 
@@ -104,4 +114,24 @@ export async function fetchHourlyForecastBatch(args: {
 
   const json = await res.json();
   return Array.isArray(json) ? json : [json];
+}
+
+export async function fetchFavoritePreviewBatch(
+  points: WeatherBatchPoint[],
+  units: 'imperial' | 'metric',
+  signal?: AbortSignal,
+): Promise<FavoritePreviewBatchItem[]> {
+  if (!points.length) return [];
+
+  const params = new URLSearchParams({
+    lat: points.map((point) => point.lat.toFixed(4)).join(','),
+    lon: points.map((point) => point.lon.toFixed(4)).join(','),
+    units,
+  });
+
+  const res = await fetchWithTimeout(apiUrl(`/api/home/favorites-preview?${params.toString()}`), 12000, { signal });
+  if (!res.ok) throw new Error(`Favorites preview batch failed (${res.status})`);
+
+  const json = await res.json();
+  return Array.isArray(json?.items) ? (json.items as FavoritePreviewBatchItem[]) : [];
 }
