@@ -9899,6 +9899,90 @@ async function fetchTropicalCyclonesPayload() {
   };
 }
 
+function parseWildfireMapsRequest(url: URL) {
+  const west = Number(url.searchParams.get("west"));
+  const south = Number(url.searchParams.get("south"));
+  const east = Number(url.searchParams.get("east"));
+  const north = Number(url.searchParams.get("north"));
+  if (![west, south, east, north].every(Number.isFinite)) {
+    return { ok: false as const, error: "west, south, east, and north are required numbers" };
+  }
+  return { ok: true as const, west, south, east, north };
+}
+
+function buildWildfireMapsCacheKey(parsed: { west: number; south: number; east: number; north: number }) {
+  const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/wildfire");
+  cacheUrl.searchParams.set("west", String(roundCoordKey(parsed.west, 0.1)));
+  cacheUrl.searchParams.set("south", String(roundCoordKey(parsed.south, 0.1)));
+  cacheUrl.searchParams.set("east", String(roundCoordKey(parsed.east, 0.1)));
+  cacheUrl.searchParams.set("north", String(roundCoordKey(parsed.north, 0.1)));
+  return new Request(cacheUrl.toString(), { method: "GET" });
+}
+
+async function fetchArcGisFeatureQuery(url: string, params: Record<string, string>) {
+  const upstream = new URL(url);
+  for (const [key, value] of Object.entries(params)) {
+    upstream.searchParams.set(key, value);
+  }
+  const json = await fetchJsonWithTimeout(upstream.toString(), OPEN_METEO_TIMEOUT_MS, {
+    "User-Agent": WEATHER_FALLBACK_USER_AGENT,
+    Accept: "application/json",
+  });
+  return Array.isArray(json?.features) ? json.features : [];
+}
+
+async function fetchWildfireMapsPayload(parsed: { west: number; south: number; east: number; north: number }) {
+  const shared = {
+    where: "1=1",
+    geometry: `${parsed.west},${parsed.south},${parsed.east},${parsed.north}`,
+    geometryType: "esriGeometryEnvelope",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outSR: "4326",
+    returnGeometry: "true",
+    f: "pjson",
+  } satisfies Record<string, string>;
+
+  const [smoke, wfigsPerimeters, usaPerimeters, incidents] = await Promise.all([
+    fetchArcGisFeatureQuery(
+      "https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Smoke_Detection_%28v1%29/FeatureServer/0/query",
+      {
+        ...shared,
+        outFields: "FID,Density,Satellite,Start,End_",
+      },
+    ),
+    fetchArcGisFeatureQuery(
+      "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query",
+      {
+        ...shared,
+        outFields: "*",
+      },
+    ),
+    fetchArcGisFeatureQuery(
+      "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/1/query",
+      {
+        ...shared,
+        outFields: "*",
+      },
+    ),
+    fetchArcGisFeatureQuery(
+      "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query",
+      {
+        ...shared,
+        outFields: "*",
+      },
+    ),
+  ]);
+
+  return {
+    ok: true,
+    smoke,
+    wfigsPerimeters,
+    usaPerimeters,
+    incidents,
+  };
+}
+
 function buildActiveAlertsCacheKey() {
   const cacheUrl = new URL("https://cache.omniwx.internal/v1/maps/alerts/active");
   return new Request(cacheUrl.toString(), { method: "GET" });
@@ -10565,6 +10649,29 @@ async function handleWorkerRequest(
         staleSeconds: 1800,
         fetchUpstream: async () => {
           const payload = await fetchTropicalCyclonesPayload();
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          });
+        },
+      });
+    }
+
+    if (url.pathname === "/v1/maps/wildfire") {
+      const parsed = parseWildfireMapsRequest(url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return swrFetchJson(request, ctx, {
+        cacheKey: buildWildfireMapsCacheKey(parsed),
+        ttlSeconds: 300,
+        staleSeconds: 900,
+        fetchUpstream: async () => {
+          const payload = await fetchWildfireMapsPayload(parsed);
           return new Response(JSON.stringify(payload), {
             status: 200,
             headers: { "content-type": "application/json; charset=utf-8" },

@@ -35,15 +35,6 @@ const EMPTY_FC: GeoJsonFeatureCollection = {
   features: [],
 };
 
-const CURRENT_WILDFIRE_INCIDENTS_QUERY_URL =
-  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query';
-const USA_WILDFIRES_CURRENT_PERIMETERS_QUERY_URL =
-  'https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/1/query';
-const CURRENT_WILDFIRE_PERIMETERS_QUERY_URL =
-  'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query';
-const NOAA_HMS_SMOKE_QUERY_URL =
-  'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Smoke_Detection_%28v1%29/FeatureServer/0/query';
-
 function emptyState(): WildfireMapData {
   return {
     smoke: EMPTY_FC,
@@ -404,15 +395,6 @@ function normalizeWildfireIncidents(features: any[]) {
   );
 }
 
-async function fetchArcGisFeatures(url: string, params: Record<string, string>, signal: AbortSignal) {
-  const query = new URL(url);
-  Object.entries(params).forEach(([key, value]) => query.searchParams.set(key, value));
-  const res = await fetchWithTimeout(query.toString(), 15000, { signal });
-  if (!res.ok) throw new Error(`Wildfire data failed (${res.status})`);
-  const json = await res.json().catch(() => null);
-  return Array.isArray(json?.features) ? json.features : [];
-}
-
 async function fetchGlobalHotspots(envelope: { west: number; south: number; east: number; north: number }, signal: AbortSignal) {
   const url = apiUrl(
     `/api/fire/hotspots?west=${encodeURIComponent(String(envelope.west))}&south=${encodeURIComponent(String(envelope.south))}&east=${encodeURIComponent(String(envelope.east))}&north=${encodeURIComponent(String(envelope.north))}&days=1`,
@@ -464,68 +446,47 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
       } satisfies Record<string, string>;
 
       try {
-        const [smokeRes, wfigsPerimetersRes, usaPerimetersRes, incidentsRes, hotspotsRes] = await Promise.allSettled([
-          fetchArcGisFeatures(
-            NOAA_HMS_SMOKE_QUERY_URL,
-            {
-              ...shared,
-              outFields: 'FID,Density,Satellite,Start,End_',
-            },
-            controller.signal
-          ),
-          fetchArcGisFeatures(
-            CURRENT_WILDFIRE_PERIMETERS_QUERY_URL,
-            {
-              ...shared,
-              outFields: '*',
-            },
-            controller.signal
-          ),
-          fetchArcGisFeatures(
-            USA_WILDFIRES_CURRENT_PERIMETERS_QUERY_URL,
-            {
-              ...shared,
-              outFields: '*',
-            },
-            controller.signal
-          ),
-          fetchArcGisFeatures(
-            CURRENT_WILDFIRE_INCIDENTS_QUERY_URL,
-            {
-              ...shared,
-              outFields: '*',
-            },
-            controller.signal
-          ),
+        const wildfireUrl = apiUrl(
+          `/v1/maps/wildfire?west=${encodeURIComponent(String(envelope.west))}` +
+            `&south=${encodeURIComponent(String(envelope.south))}` +
+            `&east=${encodeURIComponent(String(envelope.east))}` +
+            `&north=${encodeURIComponent(String(envelope.north))}`,
+        );
+        const [wildfireRes, hotspotsRes] = await Promise.allSettled([
+          fetchWithTimeout(wildfireUrl, 15000, { signal: controller.signal, headers: { Accept: 'application/json' } }).then(async (res) => {
+            if (!res.ok) throw new Error(`Wildfire data failed (${res.status})`);
+            return res.json().catch(() => null);
+          }),
           fetchGlobalHotspots(envelope, controller.signal),
         ]);
 
         if (cancelled) return;
 
-        setSmoke(smokeRes.status === 'fulfilled' ? normalizeWildfireSmoke(smokeRes.value) : EMPTY_FC);
+        const wildfireJson = wildfireRes.status === 'fulfilled' ? wildfireRes.value : null;
+        setSmoke(
+          wildfireJson && Array.isArray(wildfireJson?.smoke)
+            ? normalizeWildfireSmoke(wildfireJson.smoke)
+            : EMPTY_FC,
+        );
         const wfigsPerimeters =
-          wfigsPerimetersRes.status === 'fulfilled'
-            ? normalizeWildfirePerimeters(wfigsPerimetersRes.value)
+          wildfireJson && Array.isArray(wildfireJson?.wfigsPerimeters)
+            ? normalizeWildfirePerimeters(wildfireJson.wfigsPerimeters)
             : EMPTY_FC;
         const usaPerimeters =
-          usaPerimetersRes.status === 'fulfilled'
-            ? normalizeWildfirePerimeters(usaPerimetersRes.value)
+          wildfireJson && Array.isArray(wildfireJson?.usaPerimeters)
+            ? normalizeWildfirePerimeters(wildfireJson.usaPerimeters)
             : EMPTY_FC;
         setPerimeters(mergePerimeterCollections(usaPerimeters, wfigsPerimeters));
-        const incidentsFc = incidentsRes.status === 'fulfilled' ? normalizeWildfireIncidents(incidentsRes.value) : EMPTY_FC;
+        const incidentsFc =
+          wildfireJson && Array.isArray(wildfireJson?.incidents)
+            ? normalizeWildfireIncidents(wildfireJson.incidents)
+            : EMPTY_FC;
         const hotspotsFc = hotspotsRes.status === 'fulfilled' ? hotspotsRes.value : EMPTY_FC;
         setIncidents(asFeatureCollection([...incidentsFc.features, ...hotspotsFc.features]));
 
         const failures = [
-          smokeRes.status === 'rejected' ? `Smoke: ${String(smokeRes.reason?.message ?? smokeRes.reason)}` : null,
-          wfigsPerimetersRes.status === 'rejected'
-            ? `WFIGS perimeters: ${String(wfigsPerimetersRes.reason?.message ?? wfigsPerimetersRes.reason)}`
-            : null,
-          usaPerimetersRes.status === 'rejected'
-            ? `USA perimeters: ${String(usaPerimetersRes.reason?.message ?? usaPerimetersRes.reason)}`
-            : null,
-          incidentsRes.status === 'rejected'
-            ? `Incidents: ${String(incidentsRes.reason?.message ?? incidentsRes.reason)}`
+          wildfireRes.status === 'rejected'
+            ? `Wildfire overlays: ${String(wildfireRes.reason?.message ?? wildfireRes.reason)}`
             : null,
           hotspotsRes.status === 'rejected'
             ? `Hotspots: ${String(hotspotsRes.reason?.message ?? hotspotsRes.reason)}`
