@@ -5,6 +5,7 @@ import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
+import { readLatestRadarManifest } from "./services/radarManifest";
 import { withErrorBoundary } from "./middleware/errorHandler";
 import { createRequestContext } from "./middleware/requestId";
 import { handleHealthRoute } from "./routes/health";
@@ -9550,6 +9551,14 @@ type RadarBackendConfig = {
   selfHostedReady: boolean;
 };
 
+type StoredRadarTimeline = {
+  host: string | null;
+  frames: RainViewerFrameDescriptor[];
+  manifestId: string;
+  generatedAt: string;
+  source: string;
+};
+
 function normalizeOptionalUrl(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return null;
@@ -9578,6 +9587,34 @@ function getRadarBackendConfig(env: Env): RadarBackendConfig {
     wmsUrl,
     selfHostedReady,
   };
+}
+
+async function readStoredRadarTimeline(env: Env, args: { product?: string; siteId?: string | null; maxFrames: number }) {
+  if (!env.DB) return null;
+  const manifest = await readLatestRadarManifest(env.DB as any, {
+    scope: args.siteId ? "single-site" : "national-mosaic",
+    product: args.product ?? "precipitation",
+    siteId: args.siteId ?? null,
+  });
+  if (!manifest || !manifest.frames.length) return null;
+
+  const tail = manifest.frames.slice(Math.max(0, manifest.frames.length - args.maxFrames));
+  const host =
+    typeof manifest.metadata?.host === "string" && manifest.metadata.host.trim()
+      ? String(manifest.metadata.host).trim()
+      : null;
+
+  return {
+    host,
+    manifestId: manifest.id,
+    generatedAt: manifest.generatedAt,
+    source: manifest.source,
+    frames: tail.map((frame) => ({
+      time: frame.frameTime,
+      iso: frame.frameIso,
+      path: frame.path ?? frame.tileUrl ?? "",
+    })).filter((frame) => frame.path.length > 0),
+  } satisfies StoredRadarTimeline;
 }
 
 function buildRadarSourceDescriptors(env: Env) {
@@ -9718,6 +9755,15 @@ async function fetchExternalRainViewerTimeline(includeNowcast: boolean, maxFrame
 
 async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFrames: number) {
   const backend = getRadarBackendConfig(env);
+  if (backend.mode === "self-hosted-preferred") {
+    const stored = await readStoredRadarTimeline(env, { maxFrames });
+    if (stored?.frames.length) {
+      return {
+        host: stored.host,
+        frames: stored.frames,
+      };
+    }
+  }
   if (backend.timelineUrl) {
     const upstream = new URL(backend.timelineUrl);
     upstream.searchParams.set("includeNowcast", includeNowcast ? "1" : "0");
@@ -9734,7 +9780,7 @@ async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFra
         iso: typeof frame?.iso === "string" ? frame.iso : new Date(Number(frame?.time) * 1000).toISOString(),
         path: typeof frame?.path === "string" ? frame.path : "",
       }))
-      .filter((frame) => Number.isFinite(frame.time) && frame.path.length > 0)
+      .filter((frame: RainViewerFrameDescriptor) => Number.isFinite(frame.time) && frame.path.length > 0)
       .slice(Math.max(0, frames.length - maxFrames));
 
     if (normalized.length) {
@@ -9755,7 +9801,8 @@ function parseRainViewerFramesRequest(url: URL) {
     includeNowcastParam === "1" ||
     includeNowcastParam === "true" ||
     includeNowcastParam === "yes";
-  const maxFrames = clampInt(Number(maxFramesParam ?? "12"), 1, 48, 12);
+  const requestedMaxFrames = Number(maxFramesParam ?? "12");
+  const maxFrames = clampInt(Number.isFinite(requestedMaxFrames) ? requestedMaxFrames : 12, 1, 48);
 
   return { includeNowcast, maxFrames };
 }
@@ -9861,7 +9908,8 @@ async function fetchIemRadarScanList(radarId3: string, product: string, lookback
 function parseIemRadarScansRequest(url: URL) {
   const radarId3 = normalizeIemRadarSiteId(url.searchParams.get("radar") ?? "");
   const product = (url.searchParams.get("product") ?? "N0Q").trim().toUpperCase();
-  const lookbackMinutes = clampInt(Number(url.searchParams.get("lookbackMinutes") ?? "90"), 15, 240, 90);
+  const requestedLookbackMinutes = Number(url.searchParams.get("lookbackMinutes") ?? "90");
+  const lookbackMinutes = clampInt(Number.isFinite(requestedLookbackMinutes) ? requestedLookbackMinutes : 90, 15, 240);
   if (!/^[A-Z0-9]{3}$/.test(radarId3)) return { ok: false as const, error: "radar required (3-letter id)" };
   if (!/^[A-Z0-9]{3}$/.test(product)) return { ok: false as const, error: "product required" };
   return { ok: true as const, radarId3, product, lookbackMinutes };
@@ -10186,7 +10234,7 @@ async function fetchWildfireIncidentPayload(lat: number, lon: number) {
       const featureLat = safeNum(attrs?.attr_InitialLatitude);
       const featureLon = safeNum(attrs?.attr_InitialLongitude);
       const distanceMi =
-        featureLat != null && featureLon != null ? haversineMiles(lat, lon, featureLat, featureLon) : Number.POSITIVE_INFINITY;
+        featureLat != null && featureLon != null ? haversineKm(lat, lon, featureLat, featureLon) * 0.621371 : Number.POSITIVE_INFINITY;
       return { attrs, distanceMi };
     })
     .sort((a: any, b: any) => {
@@ -10210,7 +10258,8 @@ function parseAlertsWwaRequest(url: URL) {
   const south = Number(url.searchParams.get("south"));
   const east = Number(url.searchParams.get("east"));
   const west = Number(url.searchParams.get("west"));
-  const limit = clampInt(Number(url.searchParams.get("limit") ?? "120"), 20, 300, 120);
+  const requestedLimit = Number(url.searchParams.get("limit") ?? "120");
+  const limit = clampInt(Number.isFinite(requestedLimit) ? requestedLimit : 120, 20, 300);
   if (![north, south, east, west].every(Number.isFinite)) {
     return { ok: false as const, error: "north, south, east, and west are required numbers" };
   }
@@ -10311,7 +10360,8 @@ async function fetchAlertDetailPayload(alertId: string) {
 }
 
 function parseNesdisFramesRequest(url: URL) {
-  const minutesBack = clampInt(Number(url.searchParams.get("minutesBack") ?? "120"), 30, 360, 120);
+  const requestedMinutesBack = Number(url.searchParams.get("minutesBack") ?? "120");
+  const minutesBack = clampInt(Number.isFinite(requestedMinutesBack) ? requestedMinutesBack : 120, 30, 360);
   const service = resolveNesdisService(url.pathname);
   if (!service) return { ok: false as const, error: "unknown NESDIS frame route" };
   return { ok: true as const, minutesBack, service };
@@ -10374,7 +10424,9 @@ async function resolveRainViewerFramePath(env: Env, ts: string, requestedPath: s
 
   try {
     const timeline = await fetchRainViewerTimeline(env, true, 48);
-    const match = timeline.frames.find((frame) => String(frame.time) === ts && isRainViewerPath(frame.path ?? null));
+    const match = timeline.frames.find(
+      (frame: RainViewerFrameDescriptor) => String(frame.time) === ts && isRainViewerPath(frame.path ?? null),
+    );
     return match?.path ?? null;
   } catch {
     return null;
@@ -10795,10 +10847,58 @@ async function handleWorkerRequest(
       );
     }
 
+    if (url.pathname === "/v1/radar/backend/stored/manifest") {
+      const requestedMaxFrames = Number(url.searchParams.get("maxFrames") ?? "48");
+      const stored = await readStoredRadarTimeline(env, {
+        product: (url.searchParams.get("product") || "precipitation").trim(),
+        siteId: (url.searchParams.get("siteId") || "").trim() || null,
+        maxFrames: clampInt(Number.isFinite(requestedMaxFrames) ? requestedMaxFrames : 48, 1, 96),
+      });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        manifest: stored
+          ? {
+              id: stored.manifestId,
+              host: stored.host,
+              generatedAt: stored.generatedAt,
+              source: stored.source,
+              frameCount: stored.frames.length,
+            }
+          : null,
+      }), {
+        status: 200,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
     if (url.pathname === "/v1/radar/backend/timeline") {
       const parsed = parseRainViewerFramesRequest(url);
       const payload = await fetchExternalRainViewerTimeline(parsed.includeNowcast, parsed.maxFrames);
       return new Response(JSON.stringify({ ok: true, host: payload.host, frames: payload.frames }), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/backend/stored/timeline") {
+      const requestedMaxFrames = Number(url.searchParams.get("maxFrames") ?? "12");
+      const stored = await readStoredRadarTimeline(env, {
+        product: (url.searchParams.get("product") || "precipitation").trim(),
+        siteId: (url.searchParams.get("siteId") || "").trim() || null,
+        maxFrames: clampInt(Number.isFinite(requestedMaxFrames) ? requestedMaxFrames : 12, 1, 96),
+      });
+
+      return new Response(JSON.stringify({
+        ok: true,
+        host: stored?.host ?? null,
+        source: stored?.source ?? null,
+        generatedAt: stored?.generatedAt ?? null,
+        frames: stored?.frames ?? [],
+      }), {
         status: 200,
         headers: withCors({
           "content-type": "application/json; charset=utf-8",

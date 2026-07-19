@@ -43,6 +43,51 @@ Set:
 
 The worker now exposes backend-shaped routes at that base and proxies the current external radar sources behind them. That lets us validate the owned-radar contract end-to-end before we replace the internals with NOAA-fed ingest.
 
+## First manifest ingest scaffold
+
+You can also generate a D1-ready radar manifest today from the current RainViewer feed:
+
+```bash
+cd omniwx-api
+npm run radar:manifest -- --format json --max-frames 24
+```
+
+Or emit SQL that can be loaded into D1:
+
+```bash
+cd omniwx-api
+npm run radar:manifest -- --format sql --max-frames 24 --output tmp/radar-manifest.sql
+```
+
+Or generate and apply it directly with Wrangler:
+
+```bash
+cd omniwx-api
+npm run radar:manifest -- --apply --db omniwx-dev --remote --max-frames 24
+```
+
+Production example:
+
+```bash
+cd omniwx-api
+npm run radar:manifest -- --apply --db omniwx-prod --env production --remote --max-frames 24
+```
+
+Useful flags:
+
+- `--include-nowcast`
+- `--scope national-mosaic|single-site`
+- `--site-id PHX`
+- `--product precipitation|N0Q`
+- `--host https://radar-assets.omniwx.com`
+- `--output tmp/radar-manifest.sql`
+- `--apply`
+- `--db omniwx-dev|omniwx-prod`
+- `--env production`
+- `--remote`
+
+This is the bridge between today's external timeline and tomorrow's owned ingest: the worker can now read the same manifest structure from D1 that this script generates.
+
 ## Expected backend endpoints
 
 ### `GET /manifest`

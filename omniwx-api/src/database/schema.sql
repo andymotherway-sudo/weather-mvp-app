@@ -73,3 +73,42 @@ CREATE TABLE IF NOT EXISTS subscription_entitlements (
 CREATE INDEX IF NOT EXISTS idx_subscription_entitlements_user_status
   ON subscription_entitlements(user_id, status);
 
+CREATE TABLE IF NOT EXISTS radar_manifests (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  product TEXT NOT NULL,
+  site_id TEXT,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ready',
+  generated_at TEXT NOT NULL,
+  valid_from TEXT,
+  valid_to TEXT,
+  frame_count INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_manifests_scope_product_site_generated
+  ON radar_manifests(scope, product, site_id, generated_at DESC);
+
+CREATE TABLE IF NOT EXISTS radar_frames (
+  id TEXT PRIMARY KEY,
+  manifest_id TEXT NOT NULL,
+  frame_time INTEGER NOT NULL,
+  frame_iso TEXT NOT NULL,
+  path TEXT,
+  tile_url TEXT,
+  kind TEXT NOT NULL DEFAULT 'past',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (manifest_id) REFERENCES radar_manifests(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_frames_manifest_sort
+  ON radar_frames(manifest_id, sort_order ASC);
+
+CREATE INDEX IF NOT EXISTS idx_radar_frames_manifest_time
+  ON radar_frames(manifest_id, frame_time DESC);

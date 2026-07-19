@@ -6,6 +6,7 @@
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
+		"radar:manifest": "node ./scripts/build-radar-manifest.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},
