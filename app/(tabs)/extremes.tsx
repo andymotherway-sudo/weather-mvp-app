@@ -446,6 +446,64 @@ async function fetchSavedPlaceExtreme(place: FavoriteLocation, unit: 'F' | 'C'):
   }
 }
 
+async function fetchSavedPlaceExtremesBatch(
+  favorites: FavoriteLocation[],
+  unit: 'F' | 'C',
+): Promise<SavedPlaceExtreme[]> {
+  if (!favorites.length) return [];
+
+  const units = unit === 'C' ? 'metric' : 'imperial';
+  const params = new URLSearchParams({
+    lat: favorites.map((fav) => fav.lat.toFixed(4)).join(','),
+    lon: favorites.map((fav) => fav.lon.toFixed(4)).join(','),
+    units,
+  });
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(apiUrl(`/api/current/batch?${params.toString()}`), { signal: ctrl.signal });
+    if (!res.ok) throw new Error(`Current batch failed (${res.status})`);
+    const json = await res.json();
+    const items = Array.isArray(json?.items) ? json.items : [];
+
+    return favorites
+      .map((place, idx) => {
+        const current = items[idx]?.current ?? null;
+        const temp = safeNum(current?.temp);
+        const wind = safeNum(current?.wind);
+        const updatedAt = typeof current?.time === 'string' ? current.time : null;
+        const tempC = temp == null ? null : unit === 'C' ? temp : ((temp - 32) * 5) / 9;
+        const windKph =
+          wind == null
+            ? null
+            : unit === 'C'
+              ? wind
+              : wind * 1.60934;
+        const valueText =
+          tempC != null
+            ? `${formatTemp(tempC, unit)} • ${formatWindFromKph(windKph, unit)}`
+            : formatWindFromKph(windKph, unit);
+        return {
+          id: place.id,
+          name: place.name,
+          lat: place.lat,
+          lon: place.lon,
+          updatedAt,
+          tempC,
+          windKph,
+          windMph: windKph != null ? windKph * 0.621371 : null,
+          valueText,
+          subtitle: 'Saved place current conditions',
+          kind: 'hot' as const,
+        };
+      })
+      .filter((item) => item.tempC != null || item.windKph != null);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<SavedPlaceExtreme[]>([]);
@@ -460,8 +518,13 @@ function useSavedPlaceExtremes(favorites: FavoriteLocation[], unit: 'F' | 'C') {
     }
     setLoading(true);
     try {
-      const results = await Promise.all(favorites.slice(0, 24).map((fav) => fetchSavedPlaceExtreme(fav, unit)));
-      const next = results.filter(Boolean) as SavedPlaceExtreme[];
+      let next: SavedPlaceExtreme[] = [];
+      try {
+        next = await fetchSavedPlaceExtremesBatch(favorites.slice(0, 24), unit);
+      } catch {
+        const results = await Promise.all(favorites.slice(0, 24).map((fav) => fetchSavedPlaceExtreme(fav, unit)));
+        next = results.filter(Boolean) as SavedPlaceExtreme[];
+      }
       setItems(next);
       setUpdatedAt(new Date().toISOString());
     } finally {

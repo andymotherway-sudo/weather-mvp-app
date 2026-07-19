@@ -538,6 +538,18 @@ type CurrentResponse = {
   weatherCode: number | null;
 };
 
+type CurrentBatchItem = {
+  lat: number;
+  lon: number;
+  current: CurrentResponse;
+};
+
+type CurrentBatchResponse = {
+  ok: true;
+  units: Units;
+  items: CurrentBatchItem[];
+};
+
 type FireContextPayload = {
   ok: true;
   lat: number;
@@ -1034,7 +1046,7 @@ const LAND_MAX_ROWS = 10;
 const LAND_TTL_SECONDS = 15 * 60;
 const LAND_STALE_SECONDS = 6 * 3600;
 
-const CURRENT_TTL_SECONDS = 60;
+const CURRENT_TTL_SECONDS = 180;
 const CURRENT_STALE_SECONDS = 30 * 60;
 
 const OM_HOURLY_TTL_SECONDS = 600;
@@ -1410,6 +1422,35 @@ function currentJsonResponse(payload: CurrentResponse, provider: CurrentResponse
   });
 }
 
+function currentFromHourlyPayload(
+  hourly: OpenMeteoHourlyFallbackResponse["hourly"] | undefined,
+  units: Units,
+): CurrentResponse | null {
+  const h = hourly ?? {};
+  const idx = pickClosestHourlyIndex(h.time);
+  if (idx < 0) return null;
+
+  const at = <T,>(arr: Array<T | null> | undefined, i: number): T | null =>
+    Array.isArray(arr) && i >= 0 && i < arr.length ? (arr[i] ?? null) : null;
+
+  return {
+    ok: true,
+    source: "open-meteo",
+    time: Array.isArray(h.time) ? h.time[idx] ?? null : null,
+    units,
+    temp: at(h.temperature_2m, idx),
+    feels: at(h.apparent_temperature, idx),
+    dewPoint: at(h.dew_point_2m, idx),
+    humidityPct: at(h.relative_humidity_2m, idx),
+    cloudCoverPct: at(h.cloud_cover, idx),
+    wind: at(h.wind_speed_10m, idx),
+    windGust: at(h.wind_gusts_10m, idx),
+    windDir: at(h.wind_direction_10m, idx),
+    pressureMb: at(h.pressure_msl, idx),
+    weatherCode: at(h.weather_code, idx),
+  };
+}
+
 function hasUsableCurrentPayload(payload: CurrentResponse) {
   return (
     payload.temp != null ||
@@ -1701,6 +1742,35 @@ function toOpenMeteoHazardsUrl(lat: number, lon: number, units: Units) {
     `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
     `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
     `&precipitation_unit=${encodeURIComponent(precipUnit)}` +
+    `&timezone=auto`
+  );
+}
+
+function toOpenMeteoUrlCurrentFallbackMulti(lats: string[], lons: string[], units: Units) {
+  const temperatureUnit = units === "imperial" ? "fahrenheit" : "celsius";
+  const windUnit = units === "imperial" ? "mph" : "kmh";
+
+  const hourly = [
+    "temperature_2m",
+    "apparent_temperature",
+    "dew_point_2m",
+    "relative_humidity_2m",
+    "weather_code",
+    "cloud_cover",
+    "wind_speed_10m",
+    "wind_gusts_10m",
+    "wind_direction_10m",
+    "pressure_msl",
+  ].join(",");
+
+  return (
+    `https://api.open-meteo.com/v1/forecast` +
+    `?latitude=${encodeURIComponent(lats.join(","))}` +
+    `&longitude=${encodeURIComponent(lons.join(","))}` +
+    `&hourly=${encodeURIComponent(hourly)}` +
+    `&forecast_days=1` +
+    `&temperature_unit=${encodeURIComponent(temperatureUnit)}` +
+    `&wind_speed_unit=${encodeURIComponent(windUnit)}` +
     `&timezone=auto`
   );
 }
@@ -10509,8 +10579,8 @@ async function handleWorkerRequest(
     });
   }
 
-  const latKey = Math.round(lat * 100) / 100;
-  const lonKey = Math.round(lon * 100) / 100;
+  const latKey = roundCoordKey(lat, 0.02);
+  const lonKey = roundCoordKey(lon, 0.02);
 
   const cacheKeyUrl = new URL(request.url);
   cacheKeyUrl.pathname = "/__cache__/api/current";
@@ -10651,6 +10721,102 @@ async function handleWorkerRequest(
         status: 502,
         headers: { "content-type": "application/json; charset=utf-8" },
       });
+    },
+  });
+}
+
+    if (url.pathname === "/api/current/batch") {
+  const units = parseUnits(url.searchParams.get("units"));
+  const lats = normalizeCommaList(url.searchParams.get("lat"), 40);
+  const lons = normalizeCommaList(url.searchParams.get("lon"), 40);
+
+  if (!lats.length || !lons.length || lats.length !== lons.length) {
+    return new Response(JSON.stringify({ ok: false, error: "latitude and longitude lists must be provided and have equal length" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
+
+  const parsedPoints = lats.map((latRaw, idx) => ({
+    lat: Number(latRaw),
+    lon: Number(lons[idx]),
+  }));
+
+  if (parsedPoints.some((point) => !Number.isFinite(point.lat) || !Number.isFinite(point.lon))) {
+    return new Response(JSON.stringify({ ok: false, error: "all lat/lon values must be valid numbers" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
+
+  const cacheKeyUrl = new URL(request.url);
+  cacheKeyUrl.pathname = "/__cache__/api/current/batch";
+  cacheKeyUrl.search = "";
+  cacheKeyUrl.searchParams.set("lat", parsedPoints.map((point) => String(roundCoordKey(point.lat, 0.05))).join(","));
+  cacheKeyUrl.searchParams.set("lon", parsedPoints.map((point) => String(roundCoordKey(point.lon, 0.05))).join(","));
+  cacheKeyUrl.searchParams.set("units", units);
+
+  const cacheKey = new Request(cacheKeyUrl.toString(), { method: "GET" });
+  const upstream = toOpenMeteoUrlCurrentFallbackMulti(lats, lons, units);
+
+  return swrFetchJson(request, ctx, {
+    cacheKey,
+    ttlSeconds: CURRENT_TTL_SECONDS,
+    staleSeconds: CURRENT_STALE_SECONDS,
+    fetchUpstream: async () => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+      try {
+        const res = await fetch(upstream, { signal: ctrl.signal });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          return new Response(
+            JSON.stringify({ ok: false, error: "Current batch upstream error", status: res.status, body: txt.slice(0, 200) }),
+            { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+          );
+        }
+
+        const json = await res.json<any>();
+        const rows = Array.isArray(json) ? json : [json];
+        const items: CurrentBatchItem[] = parsedPoints.map((point, idx) => ({
+          lat: point.lat,
+          lon: point.lon,
+          current:
+            currentFromHourlyPayload((rows[idx] as OpenMeteoHourlyFallbackResponse | undefined)?.hourly, units) ??
+            {
+              ok: true,
+              source: "open-meteo",
+              time: null,
+              units,
+              temp: null,
+              feels: null,
+              dewPoint: null,
+              humidityPct: null,
+              cloudCoverPct: null,
+              wind: null,
+              windGust: null,
+              windDir: null,
+              pressureMb: null,
+              weatherCode: null,
+            },
+        }));
+
+        const payload: CurrentBatchResponse = {
+          ok: true,
+          units,
+          items,
+        };
+
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "X-Omni-Weather-Provider": "open-meteo",
+          },
+        });
+      } finally {
+        clearTimeout(t);
+      }
     },
   });
 }

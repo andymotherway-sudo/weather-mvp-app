@@ -101,82 +101,12 @@ async function fetchMarineConditions(
       if (json?.conditions) return json.conditions as MarineConditions;
     }
   } catch {
-    // Fall through to direct provider call when the worker is unavailable.
-  }
-
-  try {
-    const params = new URLSearchParams({
-      latitude: String(latitude),
-      longitude: String(longitude),
-      hourly: [
-        'wave_height',
-        'wave_direction',
-        'wave_period',
-        'sea_surface_temperature',
-        'wind_speed_10m',
-        'wind_gusts_10m',
-        'wind_direction_10m',
-      ].join(','),
-      length: '1',
-      timezone: 'auto',
-    });
-
-    const url = `https://marine-api.open-meteo.com/v1/marine?${params.toString()}`;
-    const res = await fetch(url);
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    const hourly = json.hourly;
-    if (!hourly || !hourly.time || hourly.time.length === 0) {
-      return null;
-    }
-
-    const idx = hourly.time.length - 1;
-
-    const get = (arr: any[] | undefined): number | null => {
-      if (!arr || arr.length === 0) return null;
-      const value = arr[idx];
-      return typeof value === 'number' ? value : null;
-    };
-
-    const waveHeightM = get(hourly.wave_height);
-    const swellPeriodS = get(hourly.wave_period);
-    const swellDirDeg = get(hourly.wave_direction);
-
-    const windSpeedMs = get(hourly.wind_speed_10m);
-    const windGustMs = get(hourly.wind_gusts_10m);
-    const windDirDeg = get(hourly.wind_direction_10m);
-
-    const seaTempC = get(hourly.sea_surface_temperature);
-
-    const observedAt =
-      typeof hourly.time[idx] === 'string' ? hourly.time[idx] : null;
-
-    const conditions: MarineConditions = {
-      significantWaveHeightM: waveHeightM,
-      primarySwellHeightM: waveHeightM,
-      primarySwellPeriodS: swellPeriodS,
-      primarySwellDirectionDeg: swellDirDeg,
-
-      windSpeedKts:
-        windSpeedMs != null ? windSpeedMs * MS_TO_KTS : null,
-      windGustKts:
-        windGustMs != null ? windGustMs * MS_TO_KTS : null,
-      windDirectionDeg: windDirDeg,
-
-      seaSurfaceTempC: seaTempC,
-      visibilityNm: null,
-      pressureHpa: null,
-
-      observedAt,
-      modelSource: 'Open-Meteo Marine',
-    };
-
-    return conditions;
-  } catch {
+    // Keep nautical summaries on the worker-controlled path; wind-only fallback
+    // is handled later through the worker-backed current endpoint.
     return null;
   }
+
+  return null;
 }
 
 // --- 2b. FALLBACK WIND FROM GLOBAL MODEL -----------------------------------

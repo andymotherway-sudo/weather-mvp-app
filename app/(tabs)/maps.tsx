@@ -1094,22 +1094,68 @@ async function fetchFavoriteTemperature(
   signal: AbortSignal,
 ): Promise<number | null> {
   const units = unit === 'C' ? 'metric' : 'imperial';
-  let url: string;
-
-  try {
-    url = apiUrl(`/api/current?lat=${encodeURIComponent(String(place.lat))}&lon=${encodeURIComponent(String(place.lon))}&units=${units}`);
-  } catch {
-    const temperatureUnit = unit === 'C' ? 'celsius' : 'fahrenheit';
-    url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(place.lat))}` +
-      `&longitude=${encodeURIComponent(String(place.lon))}` +
-      `&current=temperature_2m&temperature_unit=${temperatureUnit}&timezone=auto`;
-  }
+  const url = apiUrl(`/api/current?lat=${encodeURIComponent(String(place.lat))}&lon=${encodeURIComponent(String(place.lon))}&units=${units}`);
 
   const res = await fetchWithTimeout(url, 8000, { signal });
   if (!res.ok) throw new Error(`Favorite temperature failed (${res.status})`);
   const json = await res.json();
   return safeNum(json?.temp ?? json?.current?.temperature_2m);
+}
+
+function nearestHourlyIndexForNow(times: unknown): number {
+  if (!Array.isArray(times) || !times.length) return -1;
+
+  const now = Date.now();
+  let bestIdx = -1;
+  let bestDiff = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < times.length; i++) {
+    const ms = new Date(String(times[i])).getTime();
+    if (!Number.isFinite(ms)) continue;
+    const diff = Math.abs(ms - now);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestIdx = i;
+    }
+  }
+
+  return bestIdx;
+}
+
+async function fetchFavoriteTemperaturesBatch(
+  places: FavoriteLocation[],
+  unit: 'F' | 'C',
+  signal: AbortSignal,
+): Promise<Record<string, number | null>> {
+  if (!places.length) return {};
+
+  const units = unit === 'C' ? 'metric' : 'imperial';
+  const params = new URLSearchParams({
+    lat: places.map((place) => place.lat.toFixed(4)).join(','),
+    lon: places.map((place) => place.lon.toFixed(4)).join(','),
+    hourly: 'temperature_2m',
+    forecast_days: '1',
+    timezone: 'auto',
+    units,
+  });
+
+  const res = await fetchWithTimeout(apiUrl(`/api/openmeteo/hourly?${params.toString()}`), 12000, { signal });
+  if (!res.ok) throw new Error(`Favorite temperatures failed (${res.status})`);
+
+  const json = await res.json();
+  const rows = Array.isArray(json) ? json : [json];
+  const out: Record<string, number | null> = {};
+
+  places.forEach((place, idx) => {
+    const row = rows[idx] ?? null;
+    const hourly = row?.hourly ?? {};
+    const times = Array.isArray(hourly?.time) ? hourly.time : [];
+    const timeIdx = nearestHourlyIndexForNow(times);
+    const temp = timeIdx >= 0 && Array.isArray(hourly?.temperature_2m) ? hourly.temperature_2m[timeIdx] : null;
+    out[favoriteKey(place)] = safeNum(temp);
+  });
+
+  return out;
 }
 
 function useFavoriteTemperatures(favorites: FavoriteLocation[], unit: 'F' | 'C') {
@@ -1152,10 +1198,27 @@ function useFavoriteTemperatures(favorites: FavoriteLocation[], unit: 'F' | 'C')
     });
 
     async function run() {
-      for (let i = 0; i < stale.length; i += 4) {
-        const batch = stale.slice(i, i + 4);
+      try {
+        const tempsByKey = await fetchFavoriteTemperaturesBatch(stale, unit, controller.signal);
+        if (cancelled) return;
+        const updatedAt = Date.now();
+        setLookup((current) => {
+          const next = { ...current };
+          stale.forEach((place) => {
+            const key = favoriteKey(place);
+            next[key] = {
+              temp: tempsByKey[key] ?? null,
+              loading: false,
+              updatedAt,
+              unit,
+            };
+          });
+          return next;
+        });
+      } catch {
+        if (cancelled) return;
         await Promise.all(
-          batch.map(async (place) => {
+          stale.map(async (place) => {
             const key = favoriteKey(place);
             try {
               const temp = await fetchFavoriteTemperature(place, unit, controller.signal);

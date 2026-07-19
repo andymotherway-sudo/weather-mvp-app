@@ -2020,6 +2020,75 @@ async function fetchFavoriteWeatherPreview(lat: number, lon: number): Promise<Fa
   return preview;
 }
 
+async function fetchFavoriteWeatherPreviewsBatch(
+  favorites: FavoriteLocation[],
+): Promise<Record<string, FavoriteWeatherPreview>> {
+  const now = Date.now();
+  const out: Record<string, FavoriteWeatherPreview> = {};
+  const uncached: FavoriteLocation[] = [];
+
+  favorites.forEach((fav) => {
+    const key = favoritePreviewKey(fav.lat, fav.lon);
+    const cached = favoritePreviewCache.get(key);
+    if (cached && cached.expiresAt > now) out[fav.id] = cached.data;
+    else uncached.push(fav);
+  });
+
+  if (!uncached.length) return out;
+
+  const params = new URLSearchParams({
+    lat: uncached.map((fav) => fav.lat.toFixed(4)).join(','),
+    lon: uncached.map((fav) => fav.lon.toFixed(4)).join(','),
+    daily: 'weather_code,temperature_2m_max,temperature_2m_min',
+    hourly: 'weather_code',
+    forecast_days: '1',
+    timezone: 'auto',
+    units: 'imperial',
+  });
+  const res = await fetch(apiUrl(`/api/openmeteo/hourly?${params.toString()}`));
+  if (!res.ok) throw new Error(`Favorite previews failed (${res.status})`);
+
+  const json = await res.json();
+  const rows = Array.isArray(json) ? json : [json];
+
+  uncached.forEach((fav, idx) => {
+    const row = rows[idx] ?? null;
+    const hourlyTimes = Array.isArray(row?.hourly?.time) ? row.hourly.time : [];
+    let currentCode: number | null = null;
+    if (hourlyTimes.length) {
+      let bestIdx = 0;
+      let bestDiff = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < hourlyTimes.length; i++) {
+        const ts = new Date(String(hourlyTimes[i])).getTime();
+        if (!Number.isFinite(ts)) continue;
+        const diff = Math.abs(ts - now);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestIdx = i;
+        }
+      }
+      currentCode = safeNum(row?.hourly?.weather_code?.[bestIdx]);
+    }
+
+    const dailyCode = safeNum(row?.daily?.weather_code?.[0]);
+    const code = currentCode ?? dailyCode ?? null;
+    const preview: FavoriteWeatherPreview = {
+      emoji: weatherCodeToEmoji(code),
+      condition: weatherCodeToLabel(code),
+      hi: safeNum(row?.daily?.temperature_2m_max?.[0]),
+      lo: safeNum(row?.daily?.temperature_2m_min?.[0]),
+    };
+
+    favoritePreviewCache.set(favoritePreviewKey(fav.lat, fav.lon), {
+      expiresAt: Date.now() + FAVORITE_PREVIEW_TTL_MS,
+      data: preview,
+    });
+    out[fav.id] = preview;
+  });
+
+  return out;
+}
+
 function LocationPickerModal({
   visible,
   onClose,
@@ -2063,6 +2132,12 @@ function LocationPickerModal({
       }
 
       try {
+        const next = await fetchFavoriteWeatherPreviewsBatch(favs);
+        if (!cancelled) {
+          setFavoriteWeather(next);
+          return;
+        }
+
         const entries = await Promise.all(
           favs.map(async (fav) => {
             try {
