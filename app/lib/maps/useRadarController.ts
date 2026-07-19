@@ -78,6 +78,13 @@ function nextRenderableTileFrameIndex(templates: Array<string | null>, currentFr
   return currentIndex;
 }
 
+function latestRenderableTileFrameIndex(templates: Array<string | null>) {
+  for (let index = templates.length - 1; index >= 0; index -= 1) {
+    if (templates[index]) return index;
+  }
+  return templates.length ? templates.length - 1 : 0;
+}
+
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
@@ -810,7 +817,9 @@ export function useRadarController(args: {
     if (autoStartedContextRef.current === playlistContextKey) return;
     autoStartedContextRef.current = playlistContextKey;
 
-    const startIndex = firstUsableIndex >= 0 ? firstUsableIndex : safeFrameIndex;
+    const startIndex = usingLocalImage
+      ? safeFrameIndex
+      : latestRenderableTileFrameIndex(effectiveTemplates);
     if (state.radarTime.frameIndex !== startIndex) {
       prevFrameRef.current = startIndex;
       setXfade({ from: startIndex, to: startIndex, t: 1 });

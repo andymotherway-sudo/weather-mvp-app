@@ -11181,6 +11181,16 @@ function buildIemRidgeTileRequest(env: Env, url: URL) {
     x,
     y,
   });
+  const latestOwnedObjectKey = ts !== "0"
+    ? buildRadarOwnedRidgeTileObjectKey({
+        radar: radarRaw,
+        product,
+        ts: "0",
+        z,
+        x,
+        y,
+      })
+    : null;
   const cacheUrl = new URL(url.toString());
   cacheUrl.pathname = `/__cache__/radar/iem/ridge/${radarRaw}/${product}/${ts}/${z}/${x}/${y}.png`;
   cacheUrl.search = "";
@@ -11189,6 +11199,7 @@ function buildIemRidgeTileRequest(env: Env, url: URL) {
     ok: true as const,
     upstreamUrl,
     ownedObjectKey,
+    latestOwnedObjectKey,
     cacheKey: new Request(cacheUrl.toString(), { method: "GET" }),
   };
 }
@@ -12450,6 +12461,20 @@ async function handleWorkerRequest(
               headers: { "User-Agent": "omniwx-worker/1.0" },
             } as any,
           );
+
+          if (!res.ok && env.RADAR_ASSETS && built.latestOwnedObjectKey) {
+            const latestOwnedObject = await env.RADAR_ASSETS.get(built.latestOwnedObjectKey);
+            if (latestOwnedObject?.body) {
+              return new Response(latestOwnedObject.body, {
+                status: 200,
+                headers: {
+                  "content-type": latestOwnedObject.httpMetadata?.contentType || "image/png",
+                  "cache-control": latestOwnedObject.httpMetadata?.cacheControl || "public, max-age=120, stale-while-revalidate=600",
+                  "x-omni-radar-source": "r2-owned-local-fallback-latest",
+                },
+              });
+            }
+          }
 
           const body = await res.arrayBuffer();
           return new Response(body, {
