@@ -9682,35 +9682,7 @@ function buildRadarInfoPayload(env: Env) {
   };
 }
 
-async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFrames: number) {
-  const backend = getRadarBackendConfig(env);
-  if (backend.timelineUrl) {
-    const upstream = new URL(backend.timelineUrl);
-    upstream.searchParams.set("includeNowcast", includeNowcast ? "1" : "0");
-    upstream.searchParams.set("maxFrames", String(maxFrames));
-    const timeline = await fetchJsonWithTimeout(upstream.toString(), 9000, {
-      "User-Agent": "omniwx-worker/1.0",
-      Accept: "application/json",
-    });
-
-    const frames = Array.isArray(timeline?.frames) ? timeline.frames : [];
-    const normalized = frames
-      .map((frame: any) => ({
-        time: Number(frame?.time),
-        iso: typeof frame?.iso === "string" ? frame.iso : new Date(Number(frame?.time) * 1000).toISOString(),
-        path: typeof frame?.path === "string" ? frame.path : "",
-      }))
-      .filter((frame) => Number.isFinite(frame.time) && frame.path.length > 0)
-      .slice(Math.max(0, frames.length - maxFrames));
-
-    if (normalized.length) {
-      return {
-        host: typeof timeline?.host === "string" ? timeline.host : null,
-        frames: normalized satisfies RainViewerFrameDescriptor[],
-      };
-    }
-  }
-
+async function fetchExternalRainViewerTimeline(includeNowcast: boolean, maxFrames: number) {
   const timelineRes = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
     cf: { cacheEverything: true, cacheTtl: 60 },
     headers: { "User-Agent": "omniwx-worker/1.0" },
@@ -9742,6 +9714,38 @@ async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFra
       path: String(frame.path),
     })) satisfies RainViewerFrameDescriptor[],
   };
+}
+
+async function fetchRainViewerTimeline(env: Env, includeNowcast: boolean, maxFrames: number) {
+  const backend = getRadarBackendConfig(env);
+  if (backend.timelineUrl) {
+    const upstream = new URL(backend.timelineUrl);
+    upstream.searchParams.set("includeNowcast", includeNowcast ? "1" : "0");
+    upstream.searchParams.set("maxFrames", String(maxFrames));
+    const timeline = await fetchJsonWithTimeout(upstream.toString(), 9000, {
+      "User-Agent": "omniwx-worker/1.0",
+      Accept: "application/json",
+    });
+
+    const frames = Array.isArray(timeline?.frames) ? timeline.frames : [];
+    const normalized = frames
+      .map((frame: any) => ({
+        time: Number(frame?.time),
+        iso: typeof frame?.iso === "string" ? frame.iso : new Date(Number(frame?.time) * 1000).toISOString(),
+        path: typeof frame?.path === "string" ? frame.path : "",
+      }))
+      .filter((frame) => Number.isFinite(frame.time) && frame.path.length > 0)
+      .slice(Math.max(0, frames.length - maxFrames));
+
+    if (normalized.length) {
+      return {
+        host: typeof timeline?.host === "string" ? timeline.host : null,
+        frames: normalized satisfies RainViewerFrameDescriptor[],
+      };
+    }
+  }
+
+  return fetchExternalRainViewerTimeline(includeNowcast, maxFrames);
 }
 
 function parseRainViewerFramesRequest(url: URL) {
@@ -10377,6 +10381,109 @@ async function resolveRainViewerFramePath(env: Env, ts: string, requestedPath: s
   }
 }
 
+async function resolveExternalRainViewerFramePath(ts: string, requestedPath: string | null) {
+  let framePath = isRainViewerPath(requestedPath) ? requestedPath : null;
+  if (framePath) return framePath;
+
+  try {
+    const timeline = await fetchExternalRainViewerTimeline(true, 48);
+    const match = timeline.frames.find((frame) => String(frame.time) === ts && isRainViewerPath(frame.path ?? null));
+    return match?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildExternalIemRidgeTileUrl(z: string, x: string, y: string, radarRaw: string, product: string, ts: string) {
+  const service = `ridge::${radarRaw}-${product}-${ts}`;
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${service}/${z}/${x}/${y}.png`;
+}
+
+function buildExternalIemMosaicTileUrl(z: string, x: string, y: string, product: string, stamp: string) {
+  const layer = `nexrad-${product.toLowerCase()}-${stamp}`;
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layer}/${z}/${x}/${y}.png`;
+}
+
+async function buildSelfHostedRadarMosaicTileRequest(url: URL) {
+  const parts = url.pathname.replace("/v1/radar/backend/tiles/mosaic/", "").split("/");
+  if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
+
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  const ts = (url.searchParams.get("ts") || "").trim();
+  const requestedPath = url.searchParams.get("path");
+
+  if (ts) {
+    const size = url.searchParams.get("size") === "512" ? "512" : "256";
+    const color = url.searchParams.get("color") ?? "2";
+    const smooth = url.searchParams.get("smooth") ?? "1";
+    const snow = url.searchParams.get("snow") ?? "1";
+    const framePath = await resolveExternalRainViewerFramePath(ts, requestedPath);
+    const upstreamUrl = framePath
+      ? `https://tilecache.rainviewer.com${framePath}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
+      : `https://tilecache.rainviewer.com/v2/radar/${ts}/${size}/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`;
+
+    return { ok: true as const, upstreamUrl, contentType: "image/png" };
+  }
+
+  const product = (url.searchParams.get("product") || "N0Q").trim().toUpperCase();
+  const stamp = (url.searchParams.get("stamp") || "900913").trim();
+  if (!/^[A-Z0-9]{3}$/.test(product)) {
+    return { ok: false as const, error: "product must be like N0Q, N0B, N0S..." };
+  }
+  if (!(stamp === "900913" || /^900913-m\d{2}m$/.test(stamp))) {
+    return { ok: false as const, error: "stamp must be 900913 or 900913-mNNm" };
+  }
+
+  return {
+    ok: true as const,
+    upstreamUrl: buildExternalIemMosaicTileUrl(z, x, y, product, stamp),
+    contentType: "image/png",
+  };
+}
+
+function buildSelfHostedRadarRidgeTileRequest(url: URL) {
+  const parts = url.pathname.replace("/v1/radar/backend/tiles/ridge/", "").split("/");
+  if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
+
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  const radarRaw = (url.searchParams.get("radar") || "").trim().toUpperCase();
+  const product = (url.searchParams.get("product") || "N0Q").trim().toUpperCase();
+  const ts = (url.searchParams.get("ts") || "0").trim();
+
+  if (!/^[A-Z0-9]{3}$/.test(radarRaw)) {
+    return { ok: false as const, error: "radar must be 3-char site id (e.g. TLX)" };
+  }
+  if (!/^[A-Z0-9]{3}$/.test(product)) {
+    return { ok: false as const, error: "product must be like N0Q, N0B, N0S..." };
+  }
+  if (!(ts === "0" || /^\d{12}$/.test(ts))) {
+    return { ok: false as const, error: "ts must be 0 or YYYYMMDDHHMM" };
+  }
+
+  return {
+    ok: true as const,
+    upstreamUrl: buildExternalIemRidgeTileUrl(z, x, y, radarRaw, product, ts),
+    contentType: "image/png",
+  };
+}
+
+function buildSelfHostedRadarWmsRequest(env: Env, url: URL) {
+  const externalEnv = {
+    ...env,
+    RADAR_BACKEND_BASE_URL: undefined,
+    RADAR_BACKEND_MANIFEST_URL: undefined,
+    RADAR_BACKEND_TIMELINE_URL: undefined,
+    RADAR_BACKEND_MOSAIC_TILES_URL: undefined,
+    RADAR_BACKEND_RIDGE_TILES_URL: undefined,
+    RADAR_BACKEND_WMS_URL: undefined,
+  } as Env;
+  return buildRadarWmsRequest({ env: externalEnv, url, version: "v2" });
+}
+
 async function buildRainViewerTileRequest(env: Env, url: URL) {
   const parts = url.pathname.replace("/v1/radar/rainviewer/tiles/", "").split("/");
   if (parts.length < 3) return { ok: false as const, error: "bad tile path" };
@@ -10659,6 +10766,114 @@ async function handleWorkerRequest(
           "content-type": "application/json; charset=utf-8",
           "cache-control": "public, max-age=60, stale-while-revalidate=300",
         }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/backend/manifest") {
+      const backend = getRadarBackendConfig(env);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          backend: {
+            name: "omniwx-radar-backend",
+            mode: backend.mode,
+          },
+          capabilities: {
+            timeline: true,
+            mosaicTiles: true,
+            ridgeTiles: true,
+            wms: true,
+          },
+          routes: {
+            timeline: "/v1/radar/backend/timeline",
+            mosaicTiles: "/v1/radar/backend/tiles/mosaic/{z}/{x}/{y}.png",
+            ridgeTiles: "/v1/radar/backend/tiles/ridge/{z}/{x}/{y}.png",
+            wms: "/v1/radar/backend/wms",
+          },
+        }),
+        { status: 200, headers: withCors({ "content-type": "application/json; charset=utf-8" }) },
+      );
+    }
+
+    if (url.pathname === "/v1/radar/backend/timeline") {
+      const parsed = parseRainViewerFramesRequest(url);
+      const payload = await fetchExternalRainViewerTimeline(parsed.includeNowcast, parsed.maxFrames);
+      return new Response(JSON.stringify({ ok: true, host: payload.host, frames: payload.frames }), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=60, stale-while-revalidate=300",
+        }),
+      });
+    }
+
+    if (url.pathname.startsWith("/v1/radar/backend/tiles/mosaic/")) {
+      const built = await buildSelfHostedRadarMosaicTileRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const res = await fetch(
+        built.upstreamUrl,
+        {
+          cf: { cacheEverything: true, cacheTtl: RADAR_TILE_TTL_SECONDS },
+          headers: { "User-Agent": "omniwx-worker/1.0" },
+        } as any,
+      );
+      const body = await res.arrayBuffer();
+      return new Response(body, {
+        status: res.status,
+        headers: withCors({ "content-type": built.contentType }),
+      });
+    }
+
+    if (url.pathname.startsWith("/v1/radar/backend/tiles/ridge/")) {
+      const built = buildSelfHostedRadarRidgeTileRequest(url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const res = await fetch(
+        built.upstreamUrl,
+        {
+          cf: { cacheEverything: true, cacheTtl: RADAR_TILE_TTL_SECONDS },
+          headers: { "User-Agent": "omniwx-worker/1.0" },
+        } as any,
+      );
+      const body = await res.arrayBuffer();
+      return new Response(body, {
+        status: res.status,
+        headers: withCors({ "content-type": built.contentType }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/backend/wms") {
+      const built = buildSelfHostedRadarWmsRequest(env, url);
+      if (!built.ok) {
+        return new Response(JSON.stringify({ ok: false, error: built.error }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const res = await fetch(
+        built.upstreamUrl,
+        {
+          cf: { cacheEverything: true, cacheTtl: WMS_TTL_SECONDS },
+          headers: { "User-Agent": "omniwx-worker/1.0" },
+        } as any,
+      );
+      const ct = res.headers.get("content-type") || "image/png";
+      const body = await res.arrayBuffer();
+      return new Response(body, {
+        status: res.status,
+        headers: withCors({ "content-type": ct }),
       });
     }
 

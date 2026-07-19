@@ -32,6 +32,17 @@ If only `RADAR_BACKEND_BASE_URL` is set, the worker assumes these defaults:
 - ridge tiles: `{base}/tiles/ridge`
 - wms: `{base}/wms`
 
+## Immediate smoke test
+
+You can test the cutover contract now, before a separate radar service exists.
+
+Set:
+
+- `RADAR_BACKEND_MODE=self-hosted-preferred`
+- `RADAR_BACKEND_BASE_URL=https://omniwx-api.omniwx.workers.dev/v1/radar/backend`
+
+The worker now exposes backend-shaped routes at that base and proxies the current external radar sources behind them. That lets us validate the owned-radar contract end-to-end before we replace the internals with NOAA-fed ingest.
+
 ## Expected backend endpoints
 
 ### `GET /manifest`
