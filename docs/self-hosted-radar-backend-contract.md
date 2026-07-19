@@ -73,6 +73,21 @@ cd omniwx-api
 npm run radar:manifest -- --apply --db omniwx-prod --env production --remote --max-frames 24
 ```
 
+To make the dev proof path repeatable inside the worker, enable scheduled ingest with Worker vars:
+
+```text
+RADAR_MANIFEST_INGEST_ENABLED=1
+RADAR_MANIFEST_INGEST_MAX_FRAMES=24
+RADAR_MANIFEST_INGEST_INCLUDE_NOWCAST=0
+```
+
+The current scheduled ingest path is intentionally conservative:
+
+- It is disabled by default.
+- It only writes the national RainViewer-backed manifest into D1.
+- It does not change fetch behavior unless `RADAR_BACKEND_MODE=self-hosted-preferred` is also enabled.
+- It is intended for dev validation first, then production rollout once freshness looks good.
+
 Useful flags:
 
 - `--include-nowcast`

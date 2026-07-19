@@ -5,7 +5,7 @@ import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
-import { readLatestRadarManifest } from "./services/radarManifest";
+import { readLatestRadarManifest, upsertRadarManifest } from "./services/radarManifest";
 import { withErrorBoundary } from "./middleware/errorHandler";
 import { createRequestContext } from "./middleware/requestId";
 import { handleHealthRoute } from "./routes/health";
@@ -9525,6 +9525,10 @@ type RainViewerFrameDescriptor = {
   path: string;
 };
 
+type RadarManifestIngestResult =
+  | { ok: true; manifestId: string; frameCount: number; generatedAt: string; source: string; includeNowcast: boolean }
+  | { ok: false; skipped: true; reason: string };
+
 type IemRadarScanListResponse = {
   ok: true;
   radarId3: string;
@@ -9750,6 +9754,70 @@ async function fetchExternalRainViewerTimeline(includeNowcast: boolean, maxFrame
       iso: new Date(Number(frame.time) * 1000).toISOString(),
       path: String(frame.path),
     })) satisfies RainViewerFrameDescriptor[],
+  };
+}
+
+function isRadarManifestIngestEnabled(env: Env) {
+  const raw = String(env.RADAR_MANIFEST_INGEST_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function getRadarManifestIngestSettings(env: Env) {
+  const requestedMaxFrames = Number(env.RADAR_MANIFEST_INGEST_MAX_FRAMES ?? "24");
+  const maxFrames = clampInt(Number.isFinite(requestedMaxFrames) ? requestedMaxFrames : 24, 1, 96);
+  const includeNowcastRaw = String(env.RADAR_MANIFEST_INGEST_INCLUDE_NOWCAST ?? "").trim().toLowerCase();
+  const includeNowcast =
+    includeNowcastRaw === "1" || includeNowcastRaw === "true" || includeNowcastRaw === "yes" || includeNowcastRaw === "on";
+
+  return { maxFrames, includeNowcast };
+}
+
+async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestIngestResult> {
+  if (!env.DB) return { ok: false, skipped: true, reason: "missing-d1-binding" };
+  if (!isRadarManifestIngestEnabled(env)) return { ok: false, skipped: true, reason: "ingest-disabled" };
+
+  const settings = getRadarManifestIngestSettings(env);
+  const timeline = await fetchExternalRainViewerTimeline(settings.includeNowcast, settings.maxFrames);
+  if (!timeline.frames.length) return { ok: false, skipped: true, reason: "no-upstream-frames" };
+
+  const generatedAt = new Date().toISOString();
+  const manifestId = `radar-manifest-national-mosaic-precipitation-${crypto.randomUUID()}`;
+  await upsertRadarManifest(env.DB as any, {
+    id: manifestId,
+    scope: "national-mosaic",
+    product: "precipitation",
+    source: "rainviewer",
+    generatedAt,
+    validFrom: timeline.frames[0]?.iso ?? null,
+    validTo: timeline.frames[timeline.frames.length - 1]?.iso ?? null,
+    metadata: {
+      host: timeline.host,
+      includeNowcast: settings.includeNowcast,
+      maxFrames: settings.maxFrames,
+      ingestedBy: "worker-scheduled",
+    },
+    frames: timeline.frames.map((frame, index) => ({
+      id: `${manifestId}-frame-${index}`,
+      frameTime: frame.time,
+      frameIso: frame.iso,
+      path: frame.path,
+      tileUrl: timeline.host ? `${timeline.host}${frame.path}` : null,
+      kind: "past",
+      sortOrder: index,
+      metadata: {
+        host: timeline.host,
+        originalPath: frame.path,
+      },
+    })),
+  });
+
+  return {
+    ok: true,
+    manifestId,
+    frameCount: timeline.frames.length,
+    generatedAt,
+    source: "rainviewer",
+    includeNowcast: settings.includeNowcast,
   };
 }
 
@@ -13455,5 +13523,8 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const requestContext = createRequestContext(request);
     return withErrorBoundary(requestContext, () => handleWorkerRequest(request, env, ctx, requestContext));
+  },
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    await ingestNationalRadarManifest(env);
   },
 };

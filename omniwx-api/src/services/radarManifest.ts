@@ -28,6 +28,29 @@ export type RadarManifestRecord = {
   frames: RadarManifestFrame[];
 };
 
+export type RadarManifestUpsertInput = {
+  id: string;
+  scope: RadarManifestScope;
+  product: string;
+  siteId?: string | null;
+  source: string;
+  status?: string;
+  generatedAt: string;
+  validFrom?: string | null;
+  validTo?: string | null;
+  metadata?: Record<string, unknown> | null;
+  frames: Array<{
+    id: string;
+    frameTime: number;
+    frameIso: string;
+    path?: string | null;
+    tileUrl?: string | null;
+    kind?: string;
+    sortOrder?: number;
+    metadata?: Record<string, unknown> | null;
+  }>;
+};
+
 type RadarManifestRow = {
   id: string;
   scope: RadarManifestScope;
@@ -125,28 +148,7 @@ export async function readLatestRadarManifest(
 
 export async function upsertRadarManifest(
   db: D1DatabaseLike,
-  input: {
-    id: string;
-    scope: RadarManifestScope;
-    product: string;
-    siteId?: string | null;
-    source: string;
-    status?: string;
-    generatedAt: string;
-    validFrom?: string | null;
-    validTo?: string | null;
-    metadata?: Record<string, unknown> | null;
-    frames: Array<{
-      id: string;
-      frameTime: number;
-      frameIso: string;
-      path?: string | null;
-      tileUrl?: string | null;
-      kind?: string;
-      sortOrder?: number;
-      metadata?: Record<string, unknown> | null;
-    }>;
-  },
+  input: RadarManifestUpsertInput,
 ) {
   const nowIso = new Date().toISOString();
   await db
