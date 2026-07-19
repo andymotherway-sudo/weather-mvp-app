@@ -33,6 +33,7 @@ import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
+import { useHomeSummaryBundle } from '../lib/weather/useHomeSummaryBundle';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 import type { FavoriteLocation } from '../lib/locations/favorites';
@@ -4915,12 +4916,12 @@ function LandWeatherWithCoords({
   });
 
   const {
-    data: forecastData,
-    loading: forecastLoading,
-    error: forecastError,
-    refreshing: forecastRefreshing,
-    refresh: forecastRefresh,
-  } = useOpenMeteoForecast({
+    data: bundledHomeSummary,
+    loading: bundledHomeLoading,
+    error: bundledHomeError,
+    refreshing: bundledHomeRefreshing,
+    refresh: bundledHomeRefresh,
+  } = useHomeSummaryBundle({
     lat: coords.lat,
     lon: coords.lon,
     days: 15,
@@ -4928,20 +4929,47 @@ function LandWeatherWithCoords({
     enabled,
   });
 
-  const currentFallbackEnabled = enabled && !forecastLoading && !forecastData;
+  const bundledForecastData = bundledHomeSummary?.forecast ?? null;
+  const bundledCurrentData = bundledHomeSummary?.current ?? null;
 
   const {
-    data: currentData,
-    loading: currentLoading,
-    error: currentError,
-    refreshing: currentRefreshing,
-    refresh: currentRefresh,
+    data: forecastHookData,
+    loading: forecastHookLoading,
+    error: forecastHookError,
+    refreshing: forecastHookRefreshing,
+    refresh: forecastHookRefresh,
+  } = useOpenMeteoForecast({
+    lat: coords.lat,
+    lon: coords.lon,
+    days: 15,
+    model: forecastModel,
+    enabled: enabled && !bundledForecastData,
+  });
+
+  const forecastData = bundledForecastData ?? forecastHookData;
+  const forecastLoading = !forecastData && (bundledHomeLoading || forecastHookLoading);
+  const forecastRefreshing = bundledHomeRefreshing || forecastHookRefreshing;
+  const forecastError = forecastData ? null : bundledHomeError ?? forecastHookError;
+
+  const currentFallbackEnabled = enabled && !bundledCurrentData && !forecastLoading && !forecastHookData;
+
+  const {
+    data: currentHookData,
+    loading: currentHookLoading,
+    error: currentHookError,
+    refreshing: currentHookRefreshing,
+    refresh: currentHookRefresh,
   } = useCurrentWeather({
     lat: coords.lat,
     lon: coords.lon,
     units: 'imperial',
     enabled: currentFallbackEnabled,
   });
+
+  const currentData = bundledCurrentData ?? currentHookData;
+  const currentLoading = !currentData && !forecastData && (bundledHomeLoading || currentHookLoading);
+  const currentRefreshing = bundledHomeRefreshing || currentHookRefreshing;
+  const currentError = currentData ? null : bundledHomeError ?? currentHookError;
 
   const {
     data: astroData,
@@ -4989,6 +5017,7 @@ function LandWeatherWithCoords({
 
   const loading = forecastLoading || currentLoading;
   const refreshing =
+    bundledHomeRefreshing ||
     currentRefreshing ||
     forecastRefreshing ||
     astroRefreshing ||
@@ -4997,8 +5026,9 @@ function LandWeatherWithCoords({
 
   const onRefresh = () => {
     if (!enabled) return;
-    forecastRefresh?.();
-    if (currentFallbackEnabled) currentRefresh?.();
+    bundledHomeRefresh?.();
+    if (!bundledForecastData) forecastHookRefresh?.();
+    if (currentFallbackEnabled) currentHookRefresh?.();
     astroRefresh?.();
     fireContextRefresh?.();
     if (wxLab) nwsDeskRefresh?.();

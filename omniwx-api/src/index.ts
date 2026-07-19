@@ -566,6 +566,13 @@ type FavoritePreviewBatchResponse = {
   items: FavoritePreviewBatchItem[];
 };
 
+type HomeSummaryBundleResponse = {
+  ok: true;
+  current: any;
+  forecast: any;
+  airQuality: any;
+};
+
 type FireContextPayload = {
   ok: true;
   lat: number;
@@ -4958,6 +4965,18 @@ function buildFavoritePreviewBatchCacheKey(reqUrl: URL, lats: string[], lons: st
       .join(","),
   );
   keyUrl.searchParams.set("units", units);
+  return new Request(keyUrl.toString(), { method: "GET" });
+}
+
+function buildHomeSummaryCacheKey(reqUrl: URL, lat: number, lon: number, units: Units, days: number, model: string) {
+  const keyUrl = new URL(reqUrl.toString());
+  keyUrl.pathname = "/__cache__/home/summary";
+  keyUrl.search = "";
+  keyUrl.searchParams.set("lat", String(roundCoordKey(lat, 0.02)));
+  keyUrl.searchParams.set("lon", String(roundCoordKey(lon, 0.02)));
+  keyUrl.searchParams.set("units", units);
+  keyUrl.searchParams.set("days", String(days));
+  keyUrl.searchParams.set("model", model);
   return new Request(keyUrl.toString(), { method: "GET" });
 }
 
@@ -10957,6 +10976,129 @@ async function handleWorkerRequest(
       } finally {
         clearTimeout(t);
       }
+    },
+  });
+}
+
+    if (url.pathname === "/api/home/summary") {
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  const units = parseUnits(url.searchParams.get("units"));
+  const daysRaw = Number(url.searchParams.get("days") ?? "15");
+  const requestedModel = (url.searchParams.get("model") ?? "best_match").trim().toLowerCase();
+  const days =
+    requestedModel === "dwd_icon"
+      ? Math.max(1, Math.min(7, Number.isFinite(daysRaw) ? Math.round(daysRaw) : 15))
+      : requestedModel === "ecmwf"
+        ? Math.max(1, Math.min(15, Number.isFinite(daysRaw) ? Math.round(daysRaw) : 15))
+        : Math.max(1, Math.min(16, Number.isFinite(daysRaw) ? Math.round(daysRaw) : 15));
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return new Response(JSON.stringify({ ok: false, error: "lat and lon are required numbers" }), {
+      status: 400,
+      headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+    });
+  }
+
+  return swrFetchJson(request, ctx, {
+    cacheKey: buildHomeSummaryCacheKey(url, lat, lon, units, days, requestedModel),
+    ttlSeconds: 4 * 60,
+    staleSeconds: 30 * 60,
+    fetchUpstream: async () => {
+      const currentUrl = new URL("/api/current", url.origin);
+      currentUrl.searchParams.set("lat", String(lat));
+      currentUrl.searchParams.set("lon", String(lon));
+      currentUrl.searchParams.set("units", units);
+
+      const forecastUrl = new URL("/api/openmeteo/hourly", url.origin);
+      forecastUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
+      forecastUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
+      forecastUrl.searchParams.set(
+        "daily",
+        [
+          "temperature_2m_max",
+          "temperature_2m_min",
+          "apparent_temperature_max",
+          "apparent_temperature_min",
+          "precipitation_probability_max",
+          "wind_gusts_10m_max",
+          "wind_speed_10m_max",
+          "wind_direction_10m_dominant",
+          "cloud_cover_mean",
+          "dew_point_2m_max",
+          "weather_code",
+          "sunrise",
+          "sunset",
+          "daylight_duration",
+          "sunshine_duration",
+          "uv_index_max",
+        ].join(","),
+      );
+      forecastUrl.searchParams.set(
+        "hourly",
+        [
+          "temperature_2m",
+          "apparent_temperature",
+          "dew_point_2m",
+          "relative_humidity_2m",
+          "cloud_cover",
+          "precipitation_probability",
+          "visibility",
+          "pressure_msl",
+          "wind_speed_10m",
+          "wind_gusts_10m",
+          "wind_direction_10m",
+          "weather_code",
+          "uv_index",
+        ].join(","),
+      );
+      forecastUrl.searchParams.set("forecast_days", String(days));
+      forecastUrl.searchParams.set("timezone", "auto");
+      forecastUrl.searchParams.set("units", units);
+      if (requestedModel !== "best_match") {
+        forecastUrl.searchParams.set("model", requestedModel);
+      }
+
+      const aqForecastHours = Math.min(168, Math.max(24, days * 24));
+      const airQualityUrl = new URL("/api/air-quality/hourly", url.origin);
+      airQualityUrl.searchParams.set("lat", String(Number(lat.toFixed(3))));
+      airQualityUrl.searchParams.set("lon", String(Number(lon.toFixed(3))));
+      airQualityUrl.searchParams.set("timezone", "auto");
+      airQualityUrl.searchParams.set("forecast_hours", String(aqForecastHours));
+
+      const [currentRes, forecastRes, airQualityRes] = await Promise.all([
+        fetch(currentUrl.toString(), { headers: { accept: "application/json" } }),
+        fetch(forecastUrl.toString(), { headers: { accept: "application/json" } }),
+        fetch(airQualityUrl.toString(), { headers: { accept: "application/json" } }),
+      ]);
+
+      if (!currentRes.ok) {
+        const text = await currentRes.text().catch(() => "");
+        return new Response(
+          JSON.stringify({ ok: false, error: "Home summary current failed", status: currentRes.status, body: text.slice(0, 200) }),
+          { status: currentRes.status, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      }
+
+      if (!forecastRes.ok) {
+        const text = await forecastRes.text().catch(() => "");
+        return new Response(
+          JSON.stringify({ ok: false, error: "Home summary forecast failed", status: forecastRes.status, body: text.slice(0, 200) }),
+          { status: forecastRes.status, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      }
+
+      const payload: HomeSummaryBundleResponse = {
+        ok: true,
+        current: await currentRes.json<any>(),
+        forecast: await forecastRes.json<any>(),
+        airQuality: airQualityRes.ok ? await airQualityRes.json<any>() : null,
+      };
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     },
   });
 }
