@@ -95,6 +95,10 @@ describe('worker module', () => {
     expect(typeof json.ownedPipeline?.d1?.bound).toBe('boolean');
     expect(typeof json.ownedPipeline?.r2?.bound).toBe('boolean');
     expect(json.currentSource?.images).toBe('r2-owned-when-available');
+    expect(Array.isArray(json.ownedPipeline?.r2?.localSiteIds)).toBe(true);
+    expect(json.ownedPipeline?.r2?.localSiteIds).toContain('IWA');
+    expect(json.ownedPipeline?.r2?.localStorageEstimate?.siteCount).toBeGreaterThan(0);
+    expect(json.ownedPipeline?.r2?.localStorageEstimate?.estimatedObjects).toBeGreaterThan(0);
   });
 
   it('returns self-hosted radar backend manifest contract', async () => {

@@ -371,4 +371,64 @@ describe("radar scheduled ingest", () => {
 
     expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/0/7/"))).toBe(true);
   });
+
+  it("publishes owned local ridge tiles for non-Phoenix hot sites using derived site coverage", async () => {
+    const db = createMockDb();
+    const ctx = createExecutionContext();
+    const put = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("weather-maps.json")) {
+        return new Response(
+          JSON.stringify({
+            host: "https://tilecache.rainviewer.com",
+            radar: {
+              past: [{ time: 1_784_476_800, path: "/v2/radar/frame-a" }],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("mesonet.agron.iastate.edu/json/radar.py")) {
+        return new Response(
+          JSON.stringify({
+            scans: [{ ts: "202607192145" }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response("png", {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+
+    await worker.scheduled?.(
+      createScheduledController({ cron: "*/5 * * * *" }),
+      {
+        DB: db as any,
+        RADAR_ASSETS: { put } as any,
+        NOAA_NCEI_TOKEN: "test",
+        NASA_API_KEY: "test",
+        RADAR_MANIFEST_INGEST_ENABLED: "1",
+        RADAR_R2_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_SITE_IDS: "KTLX",
+        RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
+        RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
+        RADAR_R2_LOCAL_IMAGE_MAX_ZOOM: "7",
+      } as any,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
+    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/0/7/"))).toBe(true);
+  });
 });

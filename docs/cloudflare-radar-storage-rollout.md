@@ -88,6 +88,8 @@ The worker should stay near these defaults unless intentionally changed:
 - `RADAR_R2_IMAGE_MAX_ZOOM=1`
 - `RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED=1`
 - `RADAR_R2_LOCAL_SITE_IDS=IWA`
+- `RADAR_R2_LOCAL_SITE_LIMIT=12`
+- `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=45`
 - `RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES=2`
 - `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
 - `RADAR_R2_LOCAL_IMAGE_MAX_ZOOM=8`
@@ -99,3 +101,31 @@ That means:
 - owned radar PNGs are bounded to a tiny overview slice
 - owned local single-site radar is bounded to a tiny Phoenix-area starter slice
 - future expansion should increase one axis at a time
+
+## Hot-site path under 10 GB
+
+If the goal is responsive local radar across the U.S. without turning R2 into a giant archive, use a hot-site roster instead of trying to pre-cache every NEXRAD site.
+
+- Keep the national timeline and national overview hot at all times.
+- Publish owned local tiles only for a bounded list of hot sites.
+- Keep the local site list small at first, then grow it slowly based on real usage.
+- Keep local coverage radius and zoom range intentionally narrow.
+
+Suggested starter policy:
+
+- `RADAR_R2_LOCAL_SITE_IDS=IWA,TLX,DFW,FWS,LOT,FFC,LWX,OKX,AMX,TBW,HGX,SFX`
+- `RADAR_R2_LOCAL_SITE_LIMIT=12`
+- `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=45`
+- `RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES=2`
+- `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
+- `RADAR_R2_LOCAL_IMAGE_MAX_ZOOM=8`
+
+That keeps owned local radar focused on the sites most likely to matter first while leaving room for national radar and future GOES work.
+
+The worker status route now reports the hot-site posture directly, including:
+
+- configured local site IDs
+- local site limit
+- local coverage radius
+- estimated tile/object count for the current local cache policy
+- rough estimated storage in MB for the owned local rolling slice

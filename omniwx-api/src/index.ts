@@ -4,6 +4,7 @@
 import { lookupBortle } from "./bortleLookup";
 import { BOM_MARINE_ZONES } from "./bomMarineZones.generated";
 import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
+import { estimateOwnedRadarLocalSiteTilesPerFrame, getOwnedRadarLocalSiteBBox } from "./radarSites";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
 import { pruneRadarManifests, readLatestRadarManifest, upsertRadarManifest } from "./services/radarManifest";
 import { withErrorBoundary } from "./middleware/errorHandler";
@@ -9687,6 +9688,7 @@ function buildRadarInfoPayload(env: Env) {
   const timelinePublishEnabled = isRadarR2PublishEnabled(env);
   const imagePublishEnabled = isRadarR2ImagePublishEnabled(env);
   const settings = getRadarManifestIngestSettings(env);
+  const localStorageEstimate = buildOwnedRadarLocalStorageEstimate(settings);
   return {
     ok: true,
     iemWmsBase: getIemWmsBase(env),
@@ -9723,6 +9725,14 @@ function buildRadarInfoPayload(env: Env) {
         imagePublishEnabled,
         imageHistoryFrames: settings.imageHistoryFrames,
         imageMaxZoom: settings.imageMaxZoom,
+        localImagePublishEnabled: isRadarR2LocalImagePublishEnabled(env),
+        localSiteIds: settings.localSiteIds,
+        localSiteLimit: settings.localSiteLimit,
+        localCoverageRadiusMi: settings.localCoverageRadiusMi,
+        localImageHistoryFrames: settings.localImageHistoryFrames,
+        localImageMinZoom: settings.localImageMinZoom,
+        localImageMaxZoom: settings.localImageMaxZoom,
+        localStorageEstimate,
       },
     },
     providers: {
@@ -9747,6 +9757,7 @@ function buildRadarInfoPayload(env: Env) {
 
 async function buildOwnedRadarStatusPayload(env: Env) {
   const settings = getRadarManifestIngestSettings(env);
+  const localStorageEstimate = buildOwnedRadarLocalStorageEstimate(settings);
   let stored: Awaited<ReturnType<typeof readStoredRadarTimeline>> = null;
   let statusError: string | null = null;
   try {
@@ -9778,6 +9789,14 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         imagePublishEnabled: isRadarR2ImagePublishEnabled(env),
         imageHistoryFrames: settings.imageHistoryFrames,
         imageMaxZoom: settings.imageMaxZoom,
+        localImagePublishEnabled: isRadarR2LocalImagePublishEnabled(env),
+        localSiteIds: settings.localSiteIds,
+        localSiteLimit: settings.localSiteLimit,
+        localCoverageRadiusMi: settings.localCoverageRadiusMi,
+        localImageHistoryFrames: settings.localImageHistoryFrames,
+        localImageMinZoom: settings.localImageMinZoom,
+        localImageMaxZoom: settings.localImageMaxZoom,
+        localStorageEstimate,
       },
     },
     currentSource: {
@@ -9989,6 +10008,14 @@ function getRadarManifestIngestSettings(env: Env) {
     .split(",")
     .map((value) => normalizeIemRadarSiteId(value))
     .filter((value, index, list) => /^[A-Z0-9]{3}$/.test(value) && list.indexOf(value) === index);
+  const requestedLocalSiteLimit = Number(env.RADAR_R2_LOCAL_SITE_LIMIT ?? "12");
+  const localSiteLimit = clampInt(Number.isFinite(requestedLocalSiteLimit) ? requestedLocalSiteLimit : 12, 1, 48);
+  const requestedLocalCoverageRadiusMi = Number(env.RADAR_R2_LOCAL_COVERAGE_RADIUS_MI ?? "45");
+  const localCoverageRadiusMi = clampInt(
+    Number.isFinite(requestedLocalCoverageRadiusMi) ? requestedLocalCoverageRadiusMi : 45,
+    20,
+    120,
+  );
   const requestedLocalImageHistoryFrames = Number(env.RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES ?? "2");
   const localImageHistoryFrames = clampInt(
     Number.isFinite(requestedLocalImageHistoryFrames) ? requestedLocalImageHistoryFrames : 2,
@@ -10011,7 +10038,9 @@ function getRadarManifestIngestSettings(env: Env) {
     publishKey,
     imageHistoryFrames,
     imageMaxZoom,
-    localSiteIds,
+    localSiteIds: localSiteIds.slice(0, localSiteLimit),
+    localSiteLimit,
+    localCoverageRadiusMi,
     localImageHistoryFrames,
     localImageMinZoom,
     localImageMaxZoom,
@@ -10024,10 +10053,6 @@ const RADAR_OVERVIEW_BBOX = {
   east: -65,
   north: 51,
 } as const;
-
-const RADAR_LOCAL_BBOXES: Record<string, { west: number; south: number; east: number; north: number }> = {
-  IWA: { west: -112.45, south: 33.12, east: -111.45, north: 33.72 },
-};
 
 function lonToTileX(lon: number, z: number) {
   return Math.floor(((lon + 180) / 360) * (2 ** z));
@@ -10061,6 +10086,41 @@ function buildRadarOwnedRidgeTileObjectKey(args: {
   y: string;
 }) {
   return `radar/images/ridge/${args.radar}/${args.product}/${args.ts}/${args.z}/${args.x}/${args.y}.png`;
+}
+
+function buildOwnedRadarLocalStorageEstimate(settings: ReturnType<typeof getRadarManifestIngestSettings>) {
+  const sites = settings.localSiteIds
+    .map((siteId) => {
+      const bbox = getOwnedRadarLocalSiteBBox(siteId, settings.localCoverageRadiusMi);
+      if (!bbox) return null;
+      const tileEstimate = estimateOwnedRadarLocalSiteTilesPerFrame(
+        bbox,
+        settings.localImageMinZoom,
+        settings.localImageMaxZoom,
+      );
+      return {
+        siteId,
+        bbox,
+        tilesPerFrame: tileEstimate.totalTiles,
+        zoomBreakdown: tileEstimate.zoomBreakdown,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => !!entry);
+
+  const framesPerSite = Math.max(1, settings.localImageHistoryFrames + 1);
+  const estimatedObjects = sites.reduce((sum, site) => sum + (site.tilesPerFrame * framesPerSite), 0);
+  const estimatedBytes = estimatedObjects * 45 * 1024;
+
+  return {
+    siteCount: settings.localSiteIds.length,
+    resolvedSiteCount: sites.length,
+    siteLimit: settings.localSiteLimit,
+    coverageRadiusMi: settings.localCoverageRadiusMi,
+    framesPerSite,
+    estimatedObjects,
+    estimatedStorageMb: Number((estimatedBytes / (1024 * 1024)).toFixed(1)),
+    sites,
+  };
 }
 
 async function publishOwnedRadarOverviewTilesToR2(
@@ -10138,6 +10198,7 @@ async function publishOwnedRadarLocalTilesToR2(
   env: Env,
   args: {
     siteIds: string[];
+    coverageRadiusMi: number;
     historyFrames: number;
     minZoom: number;
     maxZoom: number;
@@ -10152,7 +10213,7 @@ async function publishOwnedRadarLocalTilesToR2(
 
   let publishedCount = 0;
   for (const siteId of args.siteIds) {
-    const bbox = RADAR_LOCAL_BBOXES[siteId];
+    const bbox = getOwnedRadarLocalSiteBBox(siteId, args.coverageRadiusMi);
     if (!bbox) continue;
     const scans = await fetchIemRadarScanList(siteId, "N0Q", 90);
     const tsListRaw = scans.tsList.slice(Math.max(0, scans.tsList.length - args.historyFrames));
@@ -10307,6 +10368,7 @@ async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestInges
   });
   await publishOwnedRadarLocalTilesToR2(env, {
     siteIds: settings.localSiteIds,
+    coverageRadiusMi: settings.localCoverageRadiusMi,
     historyFrames: settings.localImageHistoryFrames,
     minZoom: settings.localImageMinZoom,
     maxZoom: settings.localImageMaxZoom,
@@ -12461,20 +12523,6 @@ async function handleWorkerRequest(
               headers: { "User-Agent": "omniwx-worker/1.0" },
             } as any,
           );
-
-          if (!res.ok && env.RADAR_ASSETS && built.latestOwnedObjectKey) {
-            const latestOwnedObject = await env.RADAR_ASSETS.get(built.latestOwnedObjectKey);
-            if (latestOwnedObject?.body) {
-              return new Response(latestOwnedObject.body, {
-                status: 200,
-                headers: {
-                  "content-type": latestOwnedObject.httpMetadata?.contentType || "image/png",
-                  "cache-control": latestOwnedObject.httpMetadata?.cacheControl || "public, max-age=120, stale-while-revalidate=600",
-                  "x-omni-radar-source": "r2-owned-local-fallback-latest",
-                },
-              });
-            }
-          }
 
           const body = await res.arrayBuffer();
           return new Response(body, {
