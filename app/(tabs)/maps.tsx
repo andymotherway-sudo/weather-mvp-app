@@ -3520,7 +3520,7 @@ export default function MapsScreen() {
       ? state.radarTime.frameIndex
       : satelliteFrameIndex;
   const timelinePlaying = radarEnabled ? state.radarTime.playing : satellitePlaying;
-  const showTimeline = isFocused && !animationRecordMode && ((radarEnabled && frameCount > 1) || satelliteTimelineActive);
+  const showTimeline = isFocused && !animationRecordMode && (radarEnabled || satelliteTimelineActive);
   const satelliteLoadStatus = useMemo(() => {
     if (!satelliteTimelineActive) return null;
 
@@ -3626,6 +3626,30 @@ export default function MapsScreen() {
   const radarProductLabel = stormMode ? radarProductMeta.summaryLabel : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
+  const radarTimelineMeta = useMemo(() => {
+    if (frameCount > 1) {
+      return `${frameCount} frames / ${stationRadarMode ? 'local radar history' : 'radar history'}`;
+    }
+
+    if (stationRadarMode) {
+      if (radarCtl.iemLoading) return 'Refreshing local radar history';
+      if (radarCtl.iemError || radarCtl.localError) return 'Latest local radar only right now';
+      if (radarCtl.usingLocalImage) return 'Latest local radar only right now';
+      if (frameCount === 1) return 'Latest local radar frame only';
+      return 'Loading local radar history';
+    }
+
+    if (frameCount === 1) return 'Latest radar frame only';
+    if (radarCtl.iemLoading) return 'Loading radar history';
+    return 'Radar history unavailable';
+  }, [
+    frameCount,
+    radarCtl.iemError,
+    radarCtl.iemLoading,
+    radarCtl.localError,
+    radarCtl.usingLocalImage,
+    stationRadarMode,
+  ]);
   const timelineStateLabel = radarEnabled
     ? state.radarTime.playing
       ? 'Looping'
@@ -5763,7 +5787,7 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  {((radarEnabled && frameCount > 1) || animatedSatelliteEnabled) ? (
+                  {(radarEnabled || animatedSatelliteEnabled) ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>{radarEnabled ? 'Range' : 'Loop'}</Text>
                       <View style={styles.satelliteLoopChips}>
@@ -5792,7 +5816,7 @@ export default function MapsScreen() {
                       </View>
                       <Text style={styles.satelliteLoopMeta}>
                         {radarEnabled
-                          ? `${frameCount} frames / local radar history`
+                          ? radarTimelineMeta
                           : `${satelliteFrameCount} frames${
                               goesTrueColorEnabled
                                 ? trueColorUsingCatalog
