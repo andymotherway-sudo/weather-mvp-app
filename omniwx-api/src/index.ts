@@ -9758,9 +9758,9 @@ function buildRadarInfoPayload(env: Env) {
 
 async function buildOwnedRadarStatusPayload(env: Env) {
   const settings = getRadarManifestIngestSettings(env);
-  const localStorageEstimate = buildOwnedRadarLocalStorageEstimate(settings);
   let stored: Awaited<ReturnType<typeof readStoredRadarTimeline>> = null;
   let recentLocalSiteActivity: Awaited<ReturnType<typeof readRecentRadarSiteActivity>> = [];
+  let effectiveLocalSiteIds = settings.localSiteIds;
   let statusError: string | null = null;
   try {
     stored = await readStoredRadarTimeline(env, {
@@ -9771,9 +9771,14 @@ async function buildOwnedRadarStatusPayload(env: Env) {
     if (env.DB) {
       recentLocalSiteActivity = await readRecentRadarSiteActivity(env.DB as any, settings.localSiteLimit);
     }
+    effectiveLocalSiteIds = await resolveEffectiveOwnedLocalSiteIds(env, settings, recentLocalSiteActivity);
   } catch (error: any) {
     statusError = String(error?.message ?? error ?? "owned-radar-status-read-failed");
   }
+  const localStorageEstimate = buildOwnedRadarLocalStorageEstimate({
+    ...settings,
+    localSiteIds: effectiveLocalSiteIds,
+  });
 
   return {
     ok: true,
@@ -9795,7 +9800,8 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         imageHistoryFrames: settings.imageHistoryFrames,
         imageMaxZoom: settings.imageMaxZoom,
         localImagePublishEnabled: isRadarR2LocalImagePublishEnabled(env),
-        localSiteIds: settings.localSiteIds,
+        configuredLocalSiteIds: settings.localSiteIds,
+        localSiteIds: effectiveLocalSiteIds,
         localSiteLimit: settings.localSiteLimit,
         localCoverageRadiusMi: settings.localCoverageRadiusMi,
         localImageHistoryFrames: settings.localImageHistoryFrames,
@@ -10129,6 +10135,29 @@ function buildOwnedRadarLocalStorageEstimate(settings: ReturnType<typeof getRada
   };
 }
 
+async function resolveEffectiveOwnedLocalSiteIds(
+  env: Env,
+  settings: ReturnType<typeof getRadarManifestIngestSettings>,
+  recentActivity?: Awaited<ReturnType<typeof readRecentRadarSiteActivity>>,
+) {
+  const activity =
+    recentActivity ??
+    (env.DB ? await readRecentRadarSiteActivity(env.DB as any, Math.max(settings.localSiteLimit * 2, settings.localSiteLimit)) : []);
+
+  const ordered: string[] = [];
+  const pushUnique = (siteId: string | null | undefined) => {
+    const normalized = normalizeIemRadarSiteId(siteId ?? "");
+    if (!/^[A-Z0-9]{3}$/.test(normalized)) return;
+    if (ordered.includes(normalized)) return;
+    ordered.push(normalized);
+  };
+
+  activity.forEach((entry) => pushUnique(entry.siteId));
+  settings.localSiteIds.forEach((siteId) => pushUnique(siteId));
+
+  return ordered.slice(0, settings.localSiteLimit);
+}
+
 async function publishOwnedRadarOverviewTilesToR2(
   env: Env,
   args: {
@@ -10373,7 +10402,7 @@ async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestInges
     imageMaxZoom: settings.imageMaxZoom,
   });
   await publishOwnedRadarLocalTilesToR2(env, {
-    siteIds: settings.localSiteIds,
+    siteIds: await resolveEffectiveOwnedLocalSiteIds(env, settings),
     coverageRadiusMi: settings.localCoverageRadiusMi,
     historyFrames: settings.localImageHistoryFrames,
     minZoom: settings.localImageMinZoom,

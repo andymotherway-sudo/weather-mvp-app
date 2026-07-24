@@ -3,12 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import worker from "../src/index";
 
-function createMockDb() {
+function createMockDb(opts?: { recentSiteActivityRows?: Array<{ site_id: string; last_requested_at: string; request_count: number; created_at: string; updated_at: string }> }) {
   const manifests: unknown[][] = [];
   const frames: unknown[][] = [];
   const deletedFrames: string[] = [];
   const deletedManifests: string[] = [];
   const staleManifestRows = [{ id: "stale-manifest-1" }, { id: "stale-manifest-2" }];
+  const recentSiteActivityRows = opts?.recentSiteActivityRows ?? [];
 
   return {
     manifests,
@@ -49,6 +50,9 @@ function createMockDb() {
             async all<T>() {
               if (normalized.startsWith("SELECT id FROM radar_manifests")) {
                 return { results: staleManifestRows as T[] };
+              }
+              if (normalized.startsWith("SELECT site_id, last_requested_at, request_count, created_at, updated_at FROM radar_site_activity")) {
+                return { results: recentSiteActivityRows as T[] };
               }
               return { results: [] as T[] };
             },
@@ -430,5 +434,76 @@ describe("radar scheduled ingest", () => {
 
     expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
     expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/0/7/"))).toBe(true);
+  });
+
+  it("promotes recent local radar activity into the bounded hot-site roster", async () => {
+    const db = createMockDb({
+      recentSiteActivityRows: [
+        {
+          site_id: "TLX",
+          last_requested_at: "2026-07-24T11:59:00.000Z",
+          request_count: 5,
+          created_at: "2026-07-24T11:55:00.000Z",
+          updated_at: "2026-07-24T11:59:00.000Z",
+        },
+      ],
+    });
+    const ctx = createExecutionContext();
+    const put = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("weather-maps.json")) {
+        return new Response(
+          JSON.stringify({
+            host: "https://tilecache.rainviewer.com",
+            radar: {
+              past: [{ time: 1_784_476_800, path: "/v2/radar/frame-a" }],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("mesonet.agron.iastate.edu/json/radar.py")) {
+        return new Response(
+          JSON.stringify({
+            scans: [{ ts: "202607192145" }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response("png", {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+
+    await worker.scheduled?.(
+      createScheduledController({ cron: "*/5 * * * *" }),
+      {
+        DB: db as any,
+        RADAR_ASSETS: { put } as any,
+        NOAA_NCEI_TOKEN: "test",
+        NASA_API_KEY: "test",
+        RADAR_MANIFEST_INGEST_ENABLED: "1",
+        RADAR_R2_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_SITE_IDS: "KIWA",
+        RADAR_R2_LOCAL_SITE_LIMIT: "1",
+        RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
+        RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
+        RADAR_R2_LOCAL_IMAGE_MAX_ZOOM: "7",
+      } as any,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
+    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/202607192145/7/"))).toBe(false);
   });
 });
