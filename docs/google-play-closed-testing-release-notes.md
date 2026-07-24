@@ -1,22 +1,23 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.234**
-Android version code: **10251**
+Release: **OMNIwx 1.1.235**
+Android version code: **10252**
 Track: **Closed testing / internal testing candidate**
-Date: **July 19, 2026**
+Date: **July 24, 2026**
 
 ## Play Console Paste Notes
 
-This build fixes blank local-radar sessions by preferring the newest usable single-site frame on open and falling back to the latest owned local tile when older RIDGE history tiles fail upstream, while keeping the production-targeted backend flow added in the previous release.
+This build fixes Phoenix-area local radar showing no visible reflectivity by aligning Storm Scope's default reflectivity product with the owned local radar path, migrating older saved local-radar preferences forward, and keeping the recent owned-radar stability improvements in place.
 
 ## Tester Notes
 
-Please focus testing on radar stability and the local-radar blank-frame fix:
+Please focus testing on Phoenix-area local radar visibility and general radar stability:
 
 - Confirm radar still loads normally on first open and after app relaunch, without blank frames or provider-limit style errors.
 - Confirm radar animation still advances smoothly and recent frames look current.
 - Confirm national radar context and local radar views still behave the same visually as before this build.
-- Confirm zooming into Phoenix/Mesa radar now shows visible radar immediately instead of landing on a blank older local frame.
+- Confirm zooming into Phoenix/Mesa radar now shows visible reflectivity immediately instead of opening to an empty local-radar view.
+- Confirm users upgrading from the previous build no longer reopen Storm Scope on a stale saved local-radar product that renders blank.
 - Confirm local radar history still behaves acceptably even when older single-site frames are weak or missing upstream.
 - Confirm this Play build behaves like a real production-targeted build and does not show dev-only backend mistakes or missing worker-backed content.
 - Confirm the Land home screen still shows current conditions and forecast details correctly after refreshes and app relaunches.
@@ -25,8 +26,8 @@ Please focus testing on radar stability and the local-radar blank-frame fix:
 
 ## Internal Release Checklist
 
-- App version: `1.1.234`
-- Android version code: `10251`
+- App version: `1.1.235`
+- Android version code: `10252`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production` and the production API URL before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`

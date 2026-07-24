@@ -76,8 +76,9 @@ const NWS_HEATRISK_IMAGE_SERVER_URL =
   'https://mapservices.weather.noaa.gov/experimental/rest/services/NWS_HeatRisk/ImageServer/exportImage';
 const NWS_HEATRISK_RENDERING_RULE = JSON.stringify({ rasterFunction: 'heatrisk.rft' });
 const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
-const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
-const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
+const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v2';
+const LEGACY_STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
+const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
@@ -198,10 +199,18 @@ type StationRadarProduct = {
 
 const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
   {
-    id: 'N0B',
+    id: 'N0Q',
     shortLabel: 'REFL',
-    label: 'Base Reflectivity',
-    subtitle: 'Precip intensity',
+    label: 'Reflectivity',
+    subtitle: 'Animated local scans',
+    enabled: true,
+    learnTopicId: 'radar-base-reflectivity',
+  },
+  {
+    id: 'N0B',
+    shortLabel: 'HREFL',
+    label: 'High-res Reflectivity',
+    subtitle: 'Single-site detail',
     enabled: true,
     learnTopicId: 'radar-base-reflectivity',
   },
@@ -1295,7 +1304,7 @@ export default function MapsScreen() {
   const [animationExporting, setAnimationExporting] = useState(false);
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
-  const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
+  const [stationProduct, setStationProduct] = useState<RadarProductId>('N0Q');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
@@ -1381,9 +1390,10 @@ export default function MapsScreen() {
 
     async function hydrateRadarPrefs() {
       try {
-        const [storedMode, storedProduct] = await Promise.all([
+        const [storedMode, storedProduct, legacyStoredProduct] = await Promise.all([
           AsyncStorage.getItem(RADAR_MODE_STORAGE_KEY),
           AsyncStorage.getItem(STATION_PRODUCT_STORAGE_KEY),
+          AsyncStorage.getItem(LEGACY_STATION_PRODUCT_STORAGE_KEY),
         ]);
 
         if (cancelled) return;
@@ -1392,8 +1402,15 @@ export default function MapsScreen() {
           setRadarMode('mosaic');
         }
 
-        if (storedProduct && STATION_PRODUCT_IDS.has(storedProduct as RadarProductId)) {
-          setStationProduct(storedProduct === 'NET' ? 'EET' : (storedProduct as RadarProductId));
+        const preferredStoredProduct = storedProduct ?? legacyStoredProduct;
+        if (preferredStoredProduct && STATION_PRODUCT_IDS.has(preferredStoredProduct as RadarProductId)) {
+          setStationProduct(
+            preferredStoredProduct === 'NET'
+              ? 'EET'
+              : preferredStoredProduct === 'N0B'
+                ? 'N0Q'
+                : (preferredStoredProduct as RadarProductId),
+          );
         }
       } finally {
         if (!cancelled) radarPrefsHydratedRef.current = true;
@@ -1415,6 +1432,7 @@ export default function MapsScreen() {
   useEffect(() => {
     if (!radarPrefsHydratedRef.current) return;
     AsyncStorage.setItem(STATION_PRODUCT_STORAGE_KEY, stationProduct).catch(() => {});
+    AsyncStorage.removeItem(LEGACY_STATION_PRODUCT_STORAGE_KEY).catch(() => {});
   }, [stationProduct]);
 
   const lastPanMarkRef = useRef<number>(0);
@@ -1523,7 +1541,7 @@ export default function MapsScreen() {
   const product: RadarProductId = stationRadarMode
     ? stormScopeNexradVisible
       ? displayedStationProduct
-      : 'N0B'
+      : 'N0Q'
     : 'N0Q';
 
   const effectiveRadarProvider = stationRadarMode ? 'iem' : 'rainviewer';
@@ -2265,10 +2283,10 @@ export default function MapsScreen() {
       const available =
         stormScopeLocalZoom
           ? item.enabled
-          : item.id === 'N0B';
+          : item.id === 'N0Q';
       const active = stormScopeLocalZoom
         ? displayedStationProduct === item.id
-        : item.id === 'N0B';
+        : item.id === 'N0Q';
       const readyLabel =
         item.id === 'N0U'
           ? 'Latest velocity'
@@ -2280,7 +2298,7 @@ export default function MapsScreen() {
                 ? 'Latest echo tops'
                 : 'Animated local scans';
       const unavailableReason =
-        !stormScopeLocalZoom && item.id !== 'N0B'
+        !stormScopeLocalZoom && item.id !== 'N0Q'
           ? 'Zoom closer for local radar coverage.'
           : !item.enabled
             ? LIGHTNING_UNSUPPORTED_REASON
