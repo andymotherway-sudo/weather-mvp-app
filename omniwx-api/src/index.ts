@@ -7,6 +7,7 @@ import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { estimateOwnedRadarLocalSiteTilesPerFrame, getOwnedRadarLocalSiteBBox } from "./radarSites";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
 import { pruneRadarManifests, readLatestRadarManifest, upsertRadarManifest } from "./services/radarManifest";
+import { readRecentRadarSiteActivity, recordRadarSiteActivity } from "./services/radarSiteActivity";
 import { withErrorBoundary } from "./middleware/errorHandler";
 import { createRequestContext } from "./middleware/requestId";
 import { handleHealthRoute } from "./routes/health";
@@ -9759,6 +9760,7 @@ async function buildOwnedRadarStatusPayload(env: Env) {
   const settings = getRadarManifestIngestSettings(env);
   const localStorageEstimate = buildOwnedRadarLocalStorageEstimate(settings);
   let stored: Awaited<ReturnType<typeof readStoredRadarTimeline>> = null;
+  let recentLocalSiteActivity: Awaited<ReturnType<typeof readRecentRadarSiteActivity>> = [];
   let statusError: string | null = null;
   try {
     stored = await readStoredRadarTimeline(env, {
@@ -9766,6 +9768,9 @@ async function buildOwnedRadarStatusPayload(env: Env) {
       siteId: null,
       maxFrames: settings.maxFrames,
     });
+    if (env.DB) {
+      recentLocalSiteActivity = await readRecentRadarSiteActivity(env.DB as any, settings.localSiteLimit);
+    }
   } catch (error: any) {
     statusError = String(error?.message ?? error ?? "owned-radar-status-read-failed");
   }
@@ -9797,6 +9802,7 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         localImageMinZoom: settings.localImageMinZoom,
         localImageMaxZoom: settings.localImageMaxZoom,
         localStorageEstimate,
+        recentLocalSiteActivity,
       },
     },
     currentSource: {
@@ -12371,6 +12377,9 @@ async function handleWorkerRequest(
         ttlSeconds: RADAR_TILE_TTL_SECONDS,
         staleSeconds: RADAR_TILE_STALE_SECONDS,
         fetchUpstream: async () => {
+          if (env.DB) {
+            ctx.waitUntil(recordRadarSiteActivity(env.DB as any, (url.searchParams.get("radar") || "").trim().toUpperCase().replace(/^K/, "")));
+          }
           const res = await fetch(
             built.upstreamUrl,
             {

@@ -112,3 +112,14 @@ CREATE INDEX IF NOT EXISTS idx_radar_frames_manifest_sort
 
 CREATE INDEX IF NOT EXISTS idx_radar_frames_manifest_time
   ON radar_frames(manifest_id, frame_time DESC);
+
+CREATE TABLE IF NOT EXISTS radar_site_activity (
+  site_id TEXT PRIMARY KEY,
+  last_requested_at TEXT NOT NULL,
+  request_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_site_activity_last_requested
+  ON radar_site_activity(last_requested_at DESC);
