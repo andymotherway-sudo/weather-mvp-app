@@ -10022,9 +10022,9 @@ function getRadarManifestIngestSettings(env: Env) {
     .filter((value, index, list) => /^[A-Z0-9]{3}$/.test(value) && list.indexOf(value) === index);
   const requestedLocalSiteLimit = Number(env.RADAR_R2_LOCAL_SITE_LIMIT ?? "12");
   const localSiteLimit = clampInt(Number.isFinite(requestedLocalSiteLimit) ? requestedLocalSiteLimit : 12, 1, 48);
-  const requestedLocalCoverageRadiusMi = Number(env.RADAR_R2_LOCAL_COVERAGE_RADIUS_MI ?? "45");
+  const requestedLocalCoverageRadiusMi = Number(env.RADAR_R2_LOCAL_COVERAGE_RADIUS_MI ?? "90");
   const localCoverageRadiusMi = clampInt(
-    Number.isFinite(requestedLocalCoverageRadiusMi) ? requestedLocalCoverageRadiusMi : 45,
+    Number.isFinite(requestedLocalCoverageRadiusMi) ? requestedLocalCoverageRadiusMi : 90,
     20,
     120,
   );
