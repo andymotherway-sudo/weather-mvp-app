@@ -8,6 +8,8 @@ The goal of this phase is not to become a full national radar data company. The 
 
 This radar phase is done when OMNIwx can deliver a stable owned radar experience for the supported products and views, with bounded storage, explicit fallback behavior, clean release practices, and no obvious fragility in normal user flows.
 
+For phase 1, that owned local radar footprint must also include Minnesota coverage, not just the original starter markets.
+
 ## Must Be True Before Radar Is Done
 
 ### 1. Local Radar Reliability
@@ -24,6 +26,7 @@ This radar phase is done when OMNIwx can deliver a stable owned radar experience
 - Owned radar publish/storage is active for the supported local reflectivity path.
 - The app is not accidentally depending on direct third-party client calls for the supported owned path.
 - Fallback behavior is intentional, documented, and easy to explain.
+- The owned local hot-site roster includes Minnesota through `MPX` and `DLH`.
 
 ### 3. History and Timeline
 
@@ -45,6 +48,7 @@ This radar phase is done when OMNIwx can deliver a stable owned radar experience
 - Retention is defined for the current owned radar scope.
 - R2 growth does not increase without limit during normal ingest/publish operation.
 - Current radar architecture remains effectively near-zero cost at today's scale.
+- Expanding the owned hot-site roster, including Minnesota, does not break the current bounded-storage posture.
 
 ### 6. Production Safety
 
@@ -94,6 +98,7 @@ Radar phase work should be treated as done only when all four gates below are sa
 - Owned local radar publish is working for the supported reflectivity path.
 - Rolling retention and bounded storage are confirmed.
 - Fallback rules are understood and not accidental.
+- Minnesota sites `MPX` and `DLH` are present in the live owned local roster.
 
 ### Gate 3. Supported Products Match Reality
 

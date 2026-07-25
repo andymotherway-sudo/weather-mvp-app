@@ -88,7 +88,7 @@ The worker should stay near these defaults unless intentionally changed:
 - `RADAR_R2_IMAGE_MAX_ZOOM=1`
 - `RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED=1`
 - `RADAR_R2_LOCAL_SITE_IDS=IWA`
-- `RADAR_R2_LOCAL_SITE_LIMIT=12`
+- `RADAR_R2_LOCAL_SITE_LIMIT=14`
 - `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=90`
 - `RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES=2`
 - `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
@@ -113,14 +113,14 @@ If the goal is responsive local radar across the U.S. without turning R2 into a 
 
 Suggested starter policy:
 
-- `RADAR_R2_LOCAL_SITE_IDS=IWA,TLX,VTX,FWS,LOT,FFC,LWX,OKX,AMX,TBW,HGX,SFX`
-- `RADAR_R2_LOCAL_SITE_LIMIT=12`
+- `RADAR_R2_LOCAL_SITE_IDS=IWA,TLX,VTX,FWS,LOT,FFC,LWX,OKX,AMX,TBW,HGX,SFX,MPX,DLH`
+- `RADAR_R2_LOCAL_SITE_LIMIT=14`
 - `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=90`
 - `RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES=2`
 - `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
 - `RADAR_R2_LOCAL_IMAGE_MAX_ZOOM=8`
 
-That keeps owned local radar focused on the sites most likely to matter first while leaving room for national radar and future GOES work.
+That keeps owned local radar focused on the sites most likely to matter first, now including Minnesota coverage through `MPX` and `DLH`, while leaving room for national radar and future GOES work.
 
 The worker status route now reports the hot-site posture directly, including:
 
