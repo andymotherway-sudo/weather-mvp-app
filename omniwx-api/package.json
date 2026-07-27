@@ -7,6 +7,8 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"radar:manifest": "node ./scripts/build-radar-manifest.mjs",
+		"mrms:discover": "node ./scripts/discover-mrms.mjs",
+		"mrms:download": "node ./scripts/download-mrms-frame.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

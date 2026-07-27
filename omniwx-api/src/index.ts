@@ -7,6 +7,7 @@ import { LAND_POINTS, LAND_POINTS_VERSION } from "./landPoints.generated";
 import { estimateOwnedRadarLocalSiteTilesPerFrame, getOwnedRadarLocalSiteBBox } from "./radarSites";
 import { UK_SHIPPING_FORECAST_ZONES } from "./ukShippingForecastZones.generated";
 import { pruneRadarManifests, readLatestRadarManifest, upsertRadarManifest } from "./services/radarManifest";
+import { readRadarPipelineRun, recordRadarPipelineRun } from "./services/radarPipelineStatus";
 import { readRecentRadarSiteActivity, recordRadarSiteActivity } from "./services/radarSiteActivity";
 import { withErrorBoundary } from "./middleware/errorHandler";
 import { createRequestContext } from "./middleware/requestId";
@@ -19,6 +20,7 @@ import type { RequestContext } from "./types/api";
 import type { OmniwxEnv } from "./types/env";
 
 const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated-v2-2026-06-09` as const;
+const OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY = "owned-local-publish" as const;
 
 export interface Env extends OmniwxEnv {}
 
@@ -9727,6 +9729,8 @@ function buildRadarInfoPayload(env: Env) {
         imageHistoryFrames: settings.imageHistoryFrames,
         imageMaxZoom: settings.imageMaxZoom,
         localImagePublishEnabled: isRadarR2LocalImagePublishEnabled(env),
+        localTileCacheEnabled: isRadarR2LocalTileCacheEnabled(env),
+        localCronPublishEnabled: isRadarR2LocalCronPublishEnabled(env),
         localSiteIds: settings.localSiteIds,
         localSiteLimit: settings.localSiteLimit,
         localCoverageRadiusMi: settings.localCoverageRadiusMi,
@@ -9760,6 +9764,7 @@ async function buildOwnedRadarStatusPayload(env: Env) {
   const settings = getRadarManifestIngestSettings(env);
   let stored: Awaited<ReturnType<typeof readStoredRadarTimeline>> = null;
   let recentLocalSiteActivity: Awaited<ReturnType<typeof readRecentRadarSiteActivity>> = [];
+  let lastOwnedLocalPublish: Awaited<ReturnType<typeof readRadarPipelineRun>> = null;
   let effectiveLocalSiteIds = settings.localSiteIds;
   let statusError: string | null = null;
   try {
@@ -9770,6 +9775,7 @@ async function buildOwnedRadarStatusPayload(env: Env) {
     });
     if (env.DB) {
       recentLocalSiteActivity = await readRecentRadarSiteActivity(env.DB as any, settings.localSiteLimit);
+      lastOwnedLocalPublish = await readRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY);
     }
     effectiveLocalSiteIds = await resolveEffectiveOwnedLocalSiteIds(env, settings, recentLocalSiteActivity);
   } catch (error: any) {
@@ -9800,6 +9806,8 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         imageHistoryFrames: settings.imageHistoryFrames,
         imageMaxZoom: settings.imageMaxZoom,
         localImagePublishEnabled: isRadarR2LocalImagePublishEnabled(env),
+        localTileCacheEnabled: isRadarR2LocalTileCacheEnabled(env),
+        localCronPublishEnabled: isRadarR2LocalCronPublishEnabled(env),
         configuredLocalSiteIds: settings.localSiteIds,
         localSiteIds: effectiveLocalSiteIds,
         localSiteLimit: settings.localSiteLimit,
@@ -9809,11 +9817,16 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         localImageMaxZoom: settings.localImageMaxZoom,
         localStorageEstimate,
         recentLocalSiteActivity,
+        lastOwnedLocalPublish,
       },
     },
     currentSource: {
       timeline: stored ? "d1-stored-manifest" : "external-fallback",
-      images: isRadarR2ImagePublishEnabled(env) ? "r2-owned-when-available" : "external-fallback",
+      images: isRadarR2ImagePublishEnabled(env)
+        ? isRadarR2LocalTileCacheEnabled(env)
+          ? "r2-owned-overview-and-local-when-available"
+          : "r2-owned-overview-only-local-external"
+        : "external-fallback",
     },
   };
 }
@@ -10002,6 +10015,11 @@ function isRadarR2LocalImagePublishEnabled(env: Env) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function isRadarR2LocalTileCacheEnabled(env: Env) {
+  const raw = String(env.RADAR_R2_LOCAL_TILE_CACHE_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 function getRadarManifestIngestSettings(env: Env) {
   const requestedMaxFrames = Number(env.RADAR_MANIFEST_INGEST_MAX_FRAMES ?? "24");
   const maxFrames = clampInt(Number.isFinite(requestedMaxFrames) ? requestedMaxFrames : 24, 1, 96);
@@ -10100,6 +10118,103 @@ function buildRadarOwnedRidgeTileObjectKey(args: {
   return `radar/images/ridge/${args.radar}/${args.product}/${args.ts}/${args.z}/${args.x}/${args.y}.png`;
 }
 
+async function listAllR2ObjectKeys(bucket: R2Bucket, prefix: string) {
+  const keys: string[] = [];
+  let cursor: string | undefined = undefined;
+
+  do {
+    const page = await bucket.list({ prefix, cursor });
+    for (const object of page.objects) {
+      if (object?.key) keys.push(object.key);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  return keys;
+}
+
+async function evictOwnedRadarLocalTilesFromR2(
+  env: Env,
+  args: {
+    siteId: string;
+    product: string;
+    keepTs: string[];
+    maxDeletes?: number;
+  },
+) {
+  if (!env.RADAR_ASSETS) {
+    return { ok: false as const, skipped: true, deletedCount: 0 };
+  }
+
+  const prefix = `radar/images/ridge/${args.siteId}/${args.product}/`;
+  const keep = new Set(args.keepTs);
+  const keys = await listAllR2ObjectKeys(env.RADAR_ASSETS, prefix);
+  let deletedCount = 0;
+  const deleteLimit = typeof args.maxDeletes === "number" ? Math.max(0, Math.floor(args.maxDeletes)) : Number.POSITIVE_INFINITY;
+
+  for (const key of keys) {
+    if (deletedCount >= deleteLimit) break;
+    const suffix = key.slice(prefix.length);
+    const ts = suffix.split("/")[0] ?? "";
+    if (!ts || keep.has(ts)) continue;
+    await env.RADAR_ASSETS.delete(key);
+    deletedCount += 1;
+  }
+
+  return { ok: true as const, deletedCount };
+}
+
+const OWNED_LOCAL_RADAR_PRODUCTS = ["N0Q", "N0B"] as const;
+type OwnedLocalRadarProduct = typeof OWNED_LOCAL_RADAR_PRODUCTS[number];
+const OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN = 1;
+const OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN = 300;
+const OWNED_LOCAL_RADAR_MAX_EVICTIONS_PER_RUN = 60;
+const RADAR_R2_MAINTENANCE_CONFIRM = "delete-radar-images-ridge";
+const RADAR_R2_LOCAL_TILE_PREFIX = "radar/images/ridge/";
+const RADAR_R2_MAINTENANCE_CLEANUP_SOURCE_ENABLED = false;
+
+function isRadarR2LocalCronPublishEnabled(env: Env) {
+  const raw = String((env as any).RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isRadarR2MaintenanceCleanupEnabled(env: Env) {
+  const raw = String(env.RADAR_R2_MAINTENANCE_CLEANUP_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+async function cleanupRadarR2Prefix(
+  env: Env,
+  args: {
+    prefix: string;
+    dryRun: boolean;
+    limit: number;
+  },
+) {
+  if (!env.RADAR_ASSETS) {
+    return { ok: false as const, error: "RADAR_ASSETS not bound" };
+  }
+
+  const page = await env.RADAR_ASSETS.list({ prefix: args.prefix, limit: args.limit });
+  const keys = page.objects.map((object) => object.key).filter(Boolean);
+  if (!args.dryRun) {
+    for (const key of keys) {
+      await env.RADAR_ASSETS.delete(key);
+    }
+  }
+
+  return {
+    ok: true as const,
+    prefix: args.prefix,
+    dryRun: args.dryRun,
+    matchedCount: keys.length,
+    deletedCount: args.dryRun ? 0 : keys.length,
+    truncated: page.truncated,
+    cursor: page.cursor ?? null,
+    sampleKeys: keys.slice(0, 10),
+  };
+}
+
 function buildOwnedRadarLocalStorageEstimate(settings: ReturnType<typeof getRadarManifestIngestSettings>) {
   const sites = settings.localSiteIds
     .map((siteId) => {
@@ -10120,10 +10235,13 @@ function buildOwnedRadarLocalStorageEstimate(settings: ReturnType<typeof getRada
     .filter((entry): entry is NonNullable<typeof entry> => !!entry);
 
   const framesPerSite = Math.max(1, settings.localImageHistoryFrames + 1);
-  const estimatedObjects = sites.reduce((sum, site) => sum + (site.tilesPerFrame * framesPerSite), 0);
+  const estimatedObjects =
+    sites.reduce((sum, site) => sum + (site.tilesPerFrame * framesPerSite), 0) * OWNED_LOCAL_RADAR_PRODUCTS.length;
   const estimatedBytes = estimatedObjects * 45 * 1024;
 
   return {
+    products: [...OWNED_LOCAL_RADAR_PRODUCTS],
+    productCount: OWNED_LOCAL_RADAR_PRODUCTS.length,
     siteCount: settings.localSiteIds.length,
     resolvedSiteCount: sites.length,
     siteLimit: settings.localSiteLimit,
@@ -10245,57 +10363,102 @@ async function publishOwnedRadarLocalTilesToR2(
   if (!isRadarR2LocalImagePublishEnabled(env)) {
     return { ok: false as const, skipped: true, reason: "local-image-publish-disabled" };
   }
+  if (!isRadarR2LocalCronPublishEnabled(env)) {
+    return { ok: false as const, skipped: true, reason: "local-owned-publish-on-demand-only" };
+  }
 
   let publishedCount = 0;
-  for (const siteId of args.siteIds) {
+  let evictedCount = 0;
+  let budgetReached = false;
+  const publishedSiteIds = new Set<string>();
+  const deferredSiteIds = new Set<string>();
+  const prioritizedSiteIds = args.siteIds.slice(0, OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN);
+  args.siteIds.slice(OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN).forEach((siteId) => deferredSiteIds.add(siteId));
+
+  for (const siteId of prioritizedSiteIds) {
     const bbox = getOwnedRadarLocalSiteBBox(siteId, args.coverageRadiusMi);
     if (!bbox) continue;
-    const scans = await fetchIemRadarScanList(siteId, "N0Q", 90);
-    const tsListRaw = scans.tsList.slice(Math.max(0, scans.tsList.length - args.historyFrames));
-    const tsList = tsListRaw.length ? Array.from(new Set([...tsListRaw, "0"])) : ["0"];
-    for (const ts of tsList) {
-      for (let zoom = args.minZoom; zoom <= args.maxZoom; zoom += 1) {
-        const maxIndex = (2 ** zoom) - 1;
-        const minX = clampInt(lonToTileX(bbox.west, zoom), 0, maxIndex);
-        const maxX = clampInt(lonToTileX(bbox.east, zoom), 0, maxIndex);
-        const minY = clampInt(latToTileY(bbox.north, zoom), 0, maxIndex);
-        const maxY = clampInt(latToTileY(bbox.south, zoom), 0, maxIndex);
-        for (let x = minX; x <= maxX; x += 1) {
-          for (let y = minY; y <= maxY; y += 1) {
-            const objectKey = buildRadarOwnedRidgeTileObjectKey({
-              radar: siteId,
-              product: "N0Q",
-              ts,
-              z: String(zoom),
-              x: String(x),
-              y: String(y),
-            });
-            const upstreamUrl = buildExternalIemRidgeTileUrl(String(zoom), String(x), String(y), siteId, "N0Q", ts);
-            const response = await fetch(upstreamUrl, {
-              headers: { "User-Agent": "omniwx-worker/1.0" },
-            } as any);
-            if (!response.ok) continue;
-            const contentType = response.headers.get("content-type") || "image/png";
-            const body = await response.arrayBuffer();
-            await env.RADAR_ASSETS.put(objectKey, body, {
-              httpMetadata: {
-                contentType,
-                cacheControl: "public, max-age=120, stale-while-revalidate=600",
-              },
-              customMetadata: {
+    for (const product of OWNED_LOCAL_RADAR_PRODUCTS) {
+      const scans = await fetchIemRadarScanList(siteId, product, 90);
+      const tsListRaw = scans.tsList.slice(Math.max(0, scans.tsList.length - args.historyFrames)).reverse();
+      const tsList = tsListRaw.length ? Array.from(new Set(["0", ...tsListRaw])) : ["0"];
+      let keepTs = tsList.includes("0") ? ["0"] : [];
+      for (const ts of tsList) {
+        const zoomCounts: Array<{ zoom: number; minX: number; maxX: number; minY: number; maxY: number; tileCount: number }> = [];
+        let tileCountForTs = 0;
+        for (let zoom = args.minZoom; zoom <= args.maxZoom; zoom += 1) {
+          const maxIndex = (2 ** zoom) - 1;
+          const minX = clampInt(lonToTileX(bbox.west, zoom), 0, maxIndex);
+          const maxX = clampInt(lonToTileX(bbox.east, zoom), 0, maxIndex);
+          const minY = clampInt(latToTileY(bbox.north, zoom), 0, maxIndex);
+          const maxY = clampInt(latToTileY(bbox.south, zoom), 0, maxIndex);
+          const tileCount = (maxX - minX + 1) * (maxY - minY + 1);
+          zoomCounts.push({ zoom, minX, maxX, minY, maxY, tileCount });
+          tileCountForTs += tileCount;
+        }
+
+        if (publishedCount > 0 && publishedCount + tileCountForTs > OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN) {
+          budgetReached = true;
+          deferredSiteIds.add(siteId);
+          continue;
+        }
+
+        for (const zoomCount of zoomCounts) {
+          for (let x = zoomCount.minX; x <= zoomCount.maxX; x += 1) {
+            for (let y = zoomCount.minY; y <= zoomCount.maxY; y += 1) {
+              const objectKey = buildRadarOwnedRidgeTileObjectKey({
                 radar: siteId,
-                product: "N0Q",
+                product,
                 ts,
-              },
-            });
-            publishedCount += 1;
+                z: String(zoomCount.zoom),
+                x: String(x),
+                y: String(y),
+              });
+              const upstreamUrl = buildExternalIemRidgeTileUrl(String(zoomCount.zoom), String(x), String(y), siteId, product, ts);
+              const response = await fetch(upstreamUrl, {
+                headers: { "User-Agent": "omniwx-worker/1.0" },
+              } as any);
+              if (!response.ok) continue;
+              const contentType = response.headers.get("content-type") || "image/png";
+              const body = await response.arrayBuffer();
+              await env.RADAR_ASSETS.put(objectKey, body, {
+                httpMetadata: {
+                  contentType,
+                  cacheControl: "public, max-age=120, stale-while-revalidate=600",
+                },
+                customMetadata: {
+                  radar: siteId,
+                  product,
+                  ts,
+                },
+              });
+              publishedCount += 1;
+            }
           }
         }
+        keepTs.push(ts);
+        publishedSiteIds.add(siteId);
       }
+
+      const evicted = await evictOwnedRadarLocalTilesFromR2(env, {
+        siteId,
+        product,
+        keepTs: Array.from(new Set(keepTs)),
+        maxDeletes: Math.max(0, OWNED_LOCAL_RADAR_MAX_EVICTIONS_PER_RUN - evictedCount),
+      });
+      if (evicted.ok) evictedCount += evicted.deletedCount;
     }
   }
 
-  return { ok: true as const, publishedCount };
+  return {
+    ok: true as const,
+    publishedCount,
+    evictedCount,
+    budgetReached,
+    maxTilePublishesPerRun: OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN,
+    publishedSiteIds: Array.from(publishedSiteIds),
+    deferredSiteIds: Array.from(deferredSiteIds),
+  };
 }
 
 async function publishRadarTimelineToR2(
@@ -10401,13 +10564,45 @@ async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestInges
     imageHistoryFrames: settings.imageHistoryFrames,
     imageMaxZoom: settings.imageMaxZoom,
   });
-  await publishOwnedRadarLocalTilesToR2(env, {
-    siteIds: await resolveEffectiveOwnedLocalSiteIds(env, settings),
-    coverageRadiusMi: settings.localCoverageRadiusMi,
-    historyFrames: settings.localImageHistoryFrames,
-    minZoom: settings.localImageMinZoom,
-    maxZoom: settings.localImageMaxZoom,
-  });
+  const localPublishSiteIds = await resolveEffectiveOwnedLocalSiteIds(env, settings);
+  const localPublishStartedAt = new Date().toISOString();
+  try {
+    const localPublish = await publishOwnedRadarLocalTilesToR2(env, {
+      siteIds: localPublishSiteIds,
+      coverageRadiusMi: settings.localCoverageRadiusMi,
+      historyFrames: settings.localImageHistoryFrames,
+      minZoom: settings.localImageMinZoom,
+      maxZoom: settings.localImageMaxZoom,
+    });
+    await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, localPublish.ok ? "success" : "skipped", {
+      reason: localPublish.ok ? null : localPublish.reason,
+      generatedAt,
+      siteIds: localPublishSiteIds,
+      coverageRadiusMi: settings.localCoverageRadiusMi,
+      historyFrames: settings.localImageHistoryFrames,
+      minZoom: settings.localImageMinZoom,
+      maxZoom: settings.localImageMaxZoom,
+      products: [...OWNED_LOCAL_RADAR_PRODUCTS],
+      publishedCount: localPublish.ok ? localPublish.publishedCount : 0,
+      evictedCount: localPublish.ok ? localPublish.evictedCount : 0,
+      budgetReached: localPublish.ok ? localPublish.budgetReached : false,
+      maxTilePublishesPerRun: localPublish.ok ? localPublish.maxTilePublishesPerRun : OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN,
+      publishedSiteIds: localPublish.ok ? localPublish.publishedSiteIds : [],
+      deferredSiteIds: localPublish.ok ? localPublish.deferredSiteIds : [],
+    }, localPublishStartedAt);
+  } catch (error: any) {
+    await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, "error", {
+      generatedAt,
+      siteIds: localPublishSiteIds,
+      coverageRadiusMi: settings.localCoverageRadiusMi,
+      historyFrames: settings.localImageHistoryFrames,
+      minZoom: settings.localImageMinZoom,
+      maxZoom: settings.localImageMaxZoom,
+      products: [...OWNED_LOCAL_RADAR_PRODUCTS],
+      error: String(error?.message ?? error ?? "owned-local-publish-failed"),
+    }, localPublishStartedAt);
+    throw error;
+  }
 
   return {
     ok: true,
@@ -11569,6 +11764,41 @@ async function handleWorkerRequest(
       });
     }
 
+    if (url.pathname === "/v1/radar/maintenance/r2/cleanup-local-tiles") {
+      if (!RADAR_R2_MAINTENANCE_CLEANUP_SOURCE_ENABLED || !isRadarR2MaintenanceCleanupEnabled(env)) {
+        return new Response(JSON.stringify({ ok: false, error: "maintenance-cleanup-disabled" }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (request.method !== "POST") {
+        return new Response(JSON.stringify({ ok: false, error: "POST required" }), {
+          status: 405,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const confirm = url.searchParams.get("confirm") ?? "";
+      if (confirm !== RADAR_R2_MAINTENANCE_CONFIRM) {
+        return new Response(JSON.stringify({ ok: false, error: "confirmation phrase required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const limitRaw = Number(url.searchParams.get("limit") ?? "500");
+      const dryRun = url.searchParams.get("dryRun") !== "0";
+      const cleanup = await cleanupRadarR2Prefix(env, {
+        prefix: RADAR_R2_LOCAL_TILE_PREFIX,
+        dryRun,
+        limit: clampInt(Number.isFinite(limitRaw) ? limitRaw : 500, 1, 1000),
+      });
+      return new Response(JSON.stringify(cleanup), {
+        status: cleanup.ok ? 200 : 500,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
     if (url.pathname === "/v1/radar/backend/timeline") {
       const parsed = parseRainViewerFramesRequest(url);
       const payload = await fetchExternalRainViewerTimeline(parsed.includeNowcast, parsed.maxFrames);
@@ -12435,7 +12665,7 @@ async function handleWorkerRequest(
         });
       }
 
-      if (env.RADAR_ASSETS && built.ownedObjectKey) {
+      if (isRadarR2LocalTileCacheEnabled(env) && env.RADAR_ASSETS && built.ownedObjectKey) {
         const ownedObject = await env.RADAR_ASSETS.get(built.ownedObjectKey);
         if (ownedObject?.body) {
           return new Response(ownedObject.body, {

@@ -100,6 +100,7 @@ describe('worker module', () => {
     expect(json.ownedPipeline?.r2?.localStorageEstimate?.siteCount).toBeGreaterThan(0);
     expect(json.ownedPipeline?.r2?.localStorageEstimate?.estimatedObjects).toBeGreaterThan(0);
     expect(Array.isArray(json.ownedPipeline?.r2?.recentLocalSiteActivity)).toBe(true);
+    expect(json.ownedPipeline?.r2).toHaveProperty('lastOwnedLocalPublish');
   });
 
   it('returns self-hosted radar backend manifest contract', async () => {

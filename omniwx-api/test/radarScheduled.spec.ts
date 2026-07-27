@@ -6,6 +6,7 @@ import worker from "../src/index";
 function createMockDb(opts?: { recentSiteActivityRows?: Array<{ site_id: string; last_requested_at: string; request_count: number; created_at: string; updated_at: string }> }) {
   const manifests: unknown[][] = [];
   const frames: unknown[][] = [];
+  const pipelineRuns: unknown[][] = [];
   const deletedFrames: string[] = [];
   const deletedManifests: string[] = [];
   const staleManifestRows = [{ id: "stale-manifest-1" }, { id: "stale-manifest-2" }];
@@ -14,6 +15,7 @@ function createMockDb(opts?: { recentSiteActivityRows?: Array<{ site_id: string;
   return {
     manifests,
     frames,
+    pipelineRuns,
     deletedFrames,
     deletedManifests,
     prepare(sql: string) {
@@ -41,6 +43,10 @@ function createMockDb(opts?: { recentSiteActivityRows?: Array<{ site_id: string;
               }
               if (normalized.startsWith("INSERT INTO radar_frames")) {
                 frames.push(values);
+                return {};
+              }
+              if (normalized.startsWith("INSERT INTO radar_pipeline_runs")) {
+                pipelineRuns.push(values);
               }
               return {};
             },
@@ -60,6 +66,27 @@ function createMockDb(opts?: { recentSiteActivityRows?: Array<{ site_id: string;
         },
       };
     },
+  };
+}
+
+function createMockRadarAssets(existingKeys: string[] = []) {
+  const put = vi.fn().mockResolvedValue(undefined);
+  const del = vi.fn().mockResolvedValue(undefined);
+  const list = vi.fn().mockImplementation(async ({ prefix }: { prefix?: string }) => {
+    const objects = existingKeys
+      .filter((key) => (prefix ? key.startsWith(prefix) : true))
+      .map((key) => ({ key }));
+    return {
+      objects,
+      truncated: false,
+      cursor: undefined,
+    };
+  });
+
+  return {
+    put,
+    delete: del,
+    list,
   };
 }
 
@@ -134,7 +161,7 @@ describe("radar scheduled ingest", () => {
   it("does not publish to R2 unless explicitly enabled", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -156,7 +183,7 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
@@ -166,13 +193,13 @@ describe("radar scheduled ingest", () => {
     await waitOnExecutionContext(ctx);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(put).not.toHaveBeenCalled();
+    expect(radarAssets.put).not.toHaveBeenCalled();
   });
 
   it("publishes only the latest timeline object when explicitly enabled", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -195,7 +222,7 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
@@ -205,14 +232,14 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put).toHaveBeenCalledTimes(1);
-    expect(put.mock.calls[0]?.[0]).toBe("radar/timeline/latest.json");
+    expect(radarAssets.put).toHaveBeenCalledTimes(1);
+    expect(radarAssets.put.mock.calls[0]?.[0]).toBe("radar/timeline/latest.json");
   });
 
   it("publishes owned overview radar tiles when image publishing is enabled", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("weather-maps.json")) {
@@ -239,7 +266,7 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
@@ -252,15 +279,15 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put).toHaveBeenCalledTimes(2);
-    expect(put.mock.calls[0]?.[0]).toBe("radar/timeline/latest.json");
-    expect(String(put.mock.calls[1]?.[0])).toContain("radar/images/rainviewer/v2__radar__frame-a/256/1/");
+    expect(radarAssets.put).toHaveBeenCalledTimes(2);
+    expect(radarAssets.put.mock.calls[0]?.[0]).toBe("radar/timeline/latest.json");
+    expect(String(radarAssets.put.mock.calls[1]?.[0])).toContain("radar/images/rainviewer/v2__radar__frame-a/256/1/");
   });
 
   it("publishes owned local ridge radar tiles for configured PHX-area sites", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("weather-maps.json")) {
@@ -298,12 +325,13 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
         RADAR_R2_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_SITE_IDS: "KIWA",
         RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
         RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
@@ -313,14 +341,17 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/202607192145/7/"))).toBe(true);
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0B/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0B/0/7/"))).toBe(true);
+    expect(db.pipelineRuns.some((values) => values[0] === "owned-local-publish" && values[1] === "success")).toBe(true);
   });
 
   it("publishes latest-only owned local ridge tiles when scans are unavailable", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("weather-maps.json")) {
@@ -358,12 +389,13 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
         RADAR_R2_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_SITE_IDS: "KIWA",
         RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
         RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
@@ -373,13 +405,15 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0B/0/7/"))).toBe(true);
+    expect(radarAssets.delete).not.toHaveBeenCalled();
   });
 
   it("publishes owned local ridge tiles for non-Phoenix hot sites using derived site coverage", async () => {
     const db = createMockDb();
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("weather-maps.json")) {
@@ -417,12 +451,13 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
         RADAR_R2_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_SITE_IDS: "KTLX",
         RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
         RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
@@ -432,8 +467,84 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/0/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0B/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0B/0/7/"))).toBe(true);
+  });
+
+  it("evicts old owned local ridge timestamps outside the retained rolling window", async () => {
+    const db = createMockDb();
+    const ctx = createExecutionContext();
+    const radarAssets = createMockRadarAssets([
+      "radar/images/ridge/IWA/N0Q/202607192130/7/27/50.png",
+      "radar/images/ridge/IWA/N0Q/202607192130/7/27/51.png",
+      "radar/images/ridge/IWA/N0Q/202607192145/7/27/50.png",
+      "radar/images/ridge/IWA/N0Q/0/7/27/50.png",
+      "radar/images/ridge/IWA/N0B/202607192130/7/27/50.png",
+      "radar/images/ridge/IWA/N0B/202607192145/7/27/50.png",
+      "radar/images/ridge/IWA/N0B/0/7/27/50.png",
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("weather-maps.json")) {
+        return new Response(
+          JSON.stringify({
+            host: "https://tilecache.rainviewer.com",
+            radar: {
+              past: [{ time: 1_784_476_800, path: "/v2/radar/frame-a" }],
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("mesonet.agron.iastate.edu/json/radar.py")) {
+        return new Response(
+          JSON.stringify({
+            scans: [{ ts: "202607192145" }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      return new Response("png", {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+
+    await worker.scheduled?.(
+      createScheduledController({ cron: "*/5 * * * *" }),
+      {
+        DB: db as any,
+        RADAR_ASSETS: radarAssets as any,
+        NOAA_NCEI_TOKEN: "test",
+        NASA_API_KEY: "test",
+        RADAR_MANIFEST_INGEST_ENABLED: "1",
+        RADAR_R2_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_SITE_IDS: "KIWA",
+        RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
+        RADAR_R2_LOCAL_IMAGE_MIN_ZOOM: "7",
+        RADAR_R2_LOCAL_IMAGE_MAX_ZOOM: "7",
+      } as any,
+      ctx,
+    );
+    await waitOnExecutionContext(ctx);
+
+    expect(radarAssets.delete).toHaveBeenCalledWith("radar/images/ridge/IWA/N0Q/202607192130/7/27/50.png");
+    expect(radarAssets.delete).toHaveBeenCalledWith("radar/images/ridge/IWA/N0Q/202607192130/7/27/51.png");
+    expect(radarAssets.delete).toHaveBeenCalledWith("radar/images/ridge/IWA/N0B/202607192130/7/27/50.png");
+    expect(radarAssets.delete).not.toHaveBeenCalledWith("radar/images/ridge/IWA/N0Q/202607192145/7/27/50.png");
+    expect(radarAssets.delete).not.toHaveBeenCalledWith("radar/images/ridge/IWA/N0Q/0/7/27/50.png");
+    expect(radarAssets.delete).not.toHaveBeenCalledWith("radar/images/ridge/IWA/N0B/202607192145/7/27/50.png");
+    expect(radarAssets.delete).not.toHaveBeenCalledWith("radar/images/ridge/IWA/N0B/0/7/27/50.png");
   });
 
   it("promotes recent local radar activity into the bounded hot-site roster", async () => {
@@ -449,7 +560,7 @@ describe("radar scheduled ingest", () => {
       ],
     });
     const ctx = createExecutionContext();
-    const put = vi.fn().mockResolvedValue(undefined);
+    const radarAssets = createMockRadarAssets();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("weather-maps.json")) {
@@ -487,12 +598,13 @@ describe("radar scheduled ingest", () => {
       createScheduledController({ cron: "*/5 * * * *" }),
       {
         DB: db as any,
-        RADAR_ASSETS: { put } as any,
+        RADAR_ASSETS: radarAssets as any,
         NOAA_NCEI_TOKEN: "test",
         NASA_API_KEY: "test",
         RADAR_MANIFEST_INGEST_ENABLED: "1",
         RADAR_R2_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED: "1",
+        RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED: "1",
         RADAR_R2_LOCAL_SITE_IDS: "KIWA",
         RADAR_R2_LOCAL_SITE_LIMIT: "1",
         RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES: "1",
@@ -503,7 +615,8 @@ describe("radar scheduled ingest", () => {
     );
     await waitOnExecutionContext(ctx);
 
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
-    expect(put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/202607192145/7/"))).toBe(false);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0Q/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/TLX/N0B/202607192145/7/"))).toBe(true);
+    expect(radarAssets.put.mock.calls.some((call) => String(call?.[0]).includes("radar/images/ridge/IWA/N0Q/202607192145/7/"))).toBe(false);
   });
 });

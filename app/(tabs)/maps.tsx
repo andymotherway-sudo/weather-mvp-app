@@ -82,7 +82,6 @@ const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z',
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
-const OWNED_LOCAL_REFLECTIVITY_RADIUS_MI = 90;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
@@ -2227,17 +2226,15 @@ export default function MapsScreen() {
   const stationProductUnavailable =
     stormScopeLocalZoom && !stationProductLoading && frameCount <= 0;
 
-  const stationProductLatestOnly = product === 'N0U' || product === 'N0Z';
-  const localReflectivityOwnedFootprint =
-    stormScopeLocalZoom && product === 'N0Q' && radarCtl.usingLocalImage;
-
+  const stationProductLatestOnly =
+    product === 'N0U' || product === 'N0Z' || product === 'N0S' || product === 'EET' || product === 'NET';
   const stationProductSourceLabel =
     !stormScopeEnabled
       ? 'Storm Scope off'
       : !stormScopeLocalZoom
           ? 'zoom in for local NEXRAD products'
-          : localReflectivityOwnedFootprint
-            ? `owned local reflectivity (~${OWNED_LOCAL_REFLECTIVITY_RADIUS_MI} mi footprint)`
+          : radarCtl.usingLocalImage && product === 'N0Q'
+            ? 'smooth local reflectivity'
           : stationProductLatestOnly
             ? 'single-site latest tile'
             : radarCtl.usingIemRidgeAnimated
@@ -2267,7 +2264,6 @@ export default function MapsScreen() {
         stormScopeStatusLabel,
         stormScopeTiltLabel,
         stormScopeDistanceLabel,
-        localReflectivityOwnedFootprint ? `Owned ~${OWNED_LOCAL_REFLECTIVITY_RADIUS_MI} mi` : null,
       ].filter(Boolean).join('   ')
     : 'Local products available when zoomed closer';
   const stormScopeWarningMessage =
@@ -2275,8 +2271,6 @@ export default function MapsScreen() {
       ? `${radarProductMeta.legendTitle} unavailable: ${radarCtl.iemError}`
       : stationProductUnavailable
       ? `${radarProductMeta.legendTitle} temporarily unavailable`
-      : localReflectivityOwnedFootprint
-        ? `Owned local reflectivity currently covers about ${OWNED_LOCAL_REFLECTIVITY_RADIUS_MI} mi from ${selectedRadarSite ? getStationDisplayId(selectedRadarSite) : 'the radar site'}. Broader echoes may appear in mosaic first.`
       : !stormScopeLocalZoom
         ? 'Zoom closer for local radar products.'
         : null;
@@ -2318,16 +2312,19 @@ export default function MapsScreen() {
       const active = stormScopeLocalZoom
         ? displayedStationProduct === item.id
         : item.id === 'N0Q';
+      const isAnimatedReflectivity = item.id === 'N0Q' || item.id === 'N0B';
       const readyLabel =
         item.id === 'N0U'
-          ? 'Latest velocity'
+          ? 'Upstream latest velocity'
           : item.id === 'N0Z'
-            ? 'Legacy velocity'
+            ? 'Upstream legacy velocity'
             : item.id === 'N0S'
-              ? 'Storm-relative wind'
+              ? 'Upstream storm-relative wind'
               : item.id === 'EET'
-                ? 'Latest echo tops'
-                : 'Animated local scans';
+                ? 'Upstream latest echo tops'
+                : isAnimatedReflectivity
+                    ? 'Upstream animated local scans'
+                    : 'Animated local scans';
       const unavailableReason =
         !stormScopeLocalZoom && item.id !== 'N0Q'
           ? 'Zoom closer for local radar coverage.'
@@ -2351,11 +2348,21 @@ export default function MapsScreen() {
             ? 'Switching...'
             : 'Loading...'
           : available
-            ? 'Ready'
+            ? item.id === 'N0B' || item.id === 'N0Q'
+                ? 'Upstream'
+                : item.id === 'N0U' || item.id === 'N0Z' || item.id === 'N0S' || item.id === 'EET'
+                  ? 'Latest only'
+                  : 'Ready'
             : 'Unsupported',
       };
     });
-  }, [displayedStationProduct, pendingStationProduct, stationProduct, stationProductLoading, stormScopeLocalZoom]);
+  }, [
+    displayedStationProduct,
+    pendingStationProduct,
+    stationProduct,
+    stationProductLoading,
+    stormScopeLocalZoom,
+  ]);
   const stormScopeQuickToggles = useMemo(() => ([
     {
       id: 'warnings',
@@ -3676,6 +3683,13 @@ export default function MapsScreen() {
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
   const radarTimelineMeta = useMemo(() => {
+    if (stationRadarMode && stationProductLatestOnly) {
+      if (radarCtl.iemLoading) return 'Refreshing latest local radar';
+      if (radarCtl.iemError || radarCtl.localError) return 'Latest local radar only right now';
+      if (frameCount <= 1) return 'Latest local radar only';
+      return `${frameCount} latest snapshots / local radar`;
+    }
+
     if (frameCount > 1) {
       return `${frameCount} frames / ${stationRadarMode ? 'local radar history' : 'radar history'}`;
     }
@@ -3697,6 +3711,7 @@ export default function MapsScreen() {
     radarCtl.iemLoading,
     radarCtl.localError,
     radarCtl.usingLocalImage,
+    stationProductLatestOnly,
     stationRadarMode,
   ]);
   const timelineStateLabel = radarEnabled

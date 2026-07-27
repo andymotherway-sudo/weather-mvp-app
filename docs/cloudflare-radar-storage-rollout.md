@@ -87,6 +87,8 @@ The worker should stay near these defaults unless intentionally changed:
 - `RADAR_R2_IMAGE_HISTORY_FRAMES=1`
 - `RADAR_R2_IMAGE_MAX_ZOOM=1`
 - `RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED=1`
+- `RADAR_R2_LOCAL_TILE_CACHE_ENABLED=0`
+- `RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED=0`
 - `RADAR_R2_LOCAL_SITE_IDS=IWA`
 - `RADAR_R2_LOCAL_SITE_LIMIT=14`
 - `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=90`
@@ -99,8 +101,10 @@ That means:
 - D1 keeps only a small rolling manifest set
 - R2 stores one latest timeline object instead of growing an archive
 - owned radar PNGs are bounded to a tiny overview slice
-- owned local single-site radar is bounded to a tiny Phoenix-area starter slice
+- owned local single-site radar is bounded to a small hot-site roster, not a national archive
 - future expansion should increase one axis at a time
+
+During the MRMS pivot, local single-site tile accumulation stays off by default. The app can still request local radar through the worker and external fallback path, but exploratory local radar use should not write RIDGE tiles into R2 unless `RADAR_R2_LOCAL_TILE_CACHE_ENABLED=1` is intentionally enabled.
 
 ## Hot-site path under 10 GB
 
@@ -120,6 +124,11 @@ Suggested starter policy:
 - `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
 - `RADAR_R2_LOCAL_IMAGE_MAX_ZOOM=8`
 
+At this stage, the owned local publish path is intended to cover both:
+
+- `N0Q` reflectivity
+- `N0B` hi reflectivity
+
 That keeps owned local radar focused on the sites most likely to matter first, now including Minnesota coverage through `MPX` and `DLH`, while leaving room for national radar and future GOES work.
 
 The worker status route now reports the hot-site posture directly, including:
@@ -127,5 +136,7 @@ The worker status route now reports the hot-site posture directly, including:
 - configured local site IDs
 - local site limit
 - local coverage radius
+- owned local product set
 - estimated tile/object count for the current local cache policy
 - rough estimated storage in MB for the owned local rolling slice
+- rolling storage posture after old local timestamps are evicted from R2

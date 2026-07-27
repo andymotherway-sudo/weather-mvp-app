@@ -123,3 +123,15 @@ CREATE TABLE IF NOT EXISTS radar_site_activity (
 
 CREATE INDEX IF NOT EXISTS idx_radar_site_activity_last_requested
   ON radar_site_activity(last_requested_at DESC);
+
+CREATE TABLE IF NOT EXISTS radar_pipeline_runs (
+  pipeline_key TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  last_run_at TEXT NOT NULL,
+  details_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_pipeline_runs_last_run
+  ON radar_pipeline_runs(last_run_at DESC);

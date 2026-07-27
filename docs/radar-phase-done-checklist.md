@@ -23,7 +23,7 @@ For phase 1, that owned local radar footprint must also include Minnesota covera
 ### 2. Owned Radar Path
 
 - The worker is the primary app-facing radar API.
-- Owned radar publish/storage is active for the supported local reflectivity path.
+- Owned radar publish/storage is active for the supported local reflectivity paths.
 - The app is not accidentally depending on direct third-party client calls for the supported owned path.
 - Fallback behavior is intentional, documented, and easy to explain.
 - The owned local hot-site roster includes Minnesota through `MPX` and `DLH`.
@@ -38,7 +38,7 @@ For phase 1, that owned local radar footprint must also include Minnesota covera
 ### 4. Product Clarity
 
 - Supported radar products are clearly defined and labeled correctly in the UI.
-- Reflectivity defaults align with the owned radar path.
+- Reflectivity defaults align with the owned radar path where owned coverage exists, with explicit fallback elsewhere.
 - Unsupported products are either hidden, disabled, or clearly marked as unavailable.
 - Legends and product descriptions match what the layer is actually showing.
 
@@ -95,7 +95,7 @@ Radar phase work should be treated as done only when all four gates below are sa
 
 ### Gate 2. Owned Publish And Retention Are Stable
 
-- Owned local radar publish is working for the supported reflectivity path.
+- Owned local radar publish is working for the supported reflectivity products (`N0Q` and `N0B`).
 - Rolling retention and bounded storage are confirmed.
 - Fallback rules are understood and not accidental.
 - Minnesota sites `MPX` and `DLH` are present in the live owned local roster.
@@ -104,6 +104,7 @@ Radar phase work should be treated as done only when all four gates below are sa
 
 - UI product choices match real backend/source capability.
 - Reflectivity defaults, labels, and legends are honest and consistent.
+- Broader fallback radar still works in markets that are outside the owned hot-site roster.
 - Unsupported products are not presented as if they work.
 
 ### Gate 4. Release And Operations Are Clean

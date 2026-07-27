@@ -47,6 +47,7 @@ builds/
 
 # Local dev
 .vscode/
+tmp/
 
 # Private/local documentation notes
 docs/private/
@@ -58,7 +59,6 @@ rv-test.png
 logcat_cam.txt
 
 # Scripts / data
-omniwx-api/scripts/
 omniwx-api/data/
 omniwx-api/.expo/
 

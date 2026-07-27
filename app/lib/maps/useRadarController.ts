@@ -817,8 +817,10 @@ export function useRadarController(args: {
     if (autoStartedContextRef.current === playlistContextKey) return;
     autoStartedContextRef.current = playlistContextKey;
 
+    // Local Storm Scope reflectivity should open on the freshest local frame
+    // instead of inheriting an older loop position from the wider radar playlist.
     const startIndex = usingLocalImage
-      ? safeFrameIndex
+      ? Math.max(0, frameCount - 1)
       : latestRenderableTileFrameIndex(effectiveTemplates);
     if (state.radarTime.frameIndex !== startIndex) {
       prevFrameRef.current = startIndex;
