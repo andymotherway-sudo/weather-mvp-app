@@ -77,9 +77,57 @@ Current proof status:
 - The first `ReflectivityAtLowestAltitude` latest-frame download was about 656 KB.
 - The local renderer decoded a 7000 x 3500 MRMS raster and wrote a 1400 x 700 transparent PNG proof.
 - The proof renderer is not yet a tile generator and does not write to R2.
+- The first local XYZ tile proof generated 12 non-empty zoom 3-4 composite tiles totaling about 31 KB.
+- A z5-only composite proof generated 23 non-empty tiles totaling about 66 KB.
+- A z6-only composite proof generated 59 non-empty tiles totaling about 172 KB.
+- Based on measured local proof output, z3-z6 is roughly 270 KB per frame for this sparse-weather sample.
 
 Next renderer checkpoint:
 
-- Render the composite product and compare visual quality against lowest-altitude reflectivity.
-- Convert the georeferenced raster into Web Mercator tiles.
-- Publish only a tiny test prefix to R2 after the tile output is visually inspected.
+- Publish only the z3-z4 proof prefix to dev R2 first.
+- Add a Worker MRMS test route that can serve dev/prod tiles only when a manifest exists.
+- Keep app radar unchanged until the MRMS route renders correctly in isolation.
+
+## Current storage read
+
+The proof tile sizes are tiny at low zooms because empty/no-echo tiles are skipped. This is exactly the cost posture we want for early MRMS: publish only non-empty transparent PNG tiles and keep a rolling retention window. The next storage decision should be made from measured tile output, not theoretical full-grid math.
+
+Initial R2 test prefix:
+
+- `radar/mrms/proof/MergedReflectivityQCComposite/<valid-time>/`
+
+Initial publish scope:
+
+- dev R2 only
+- z3-z4 only
+- one frame only
+- no app cutover
+
+Dry-run the tiny publish plan:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run mrms:publish-proof
+```
+
+Apply only after the dry run shows the expected small z3-z4 manifest:
+
+```powershell
+npm run mrms:publish-proof -- --apply
+```
+
+Current dev publish status:
+
+- Uploaded 12 z3-z4 composite proof tiles plus one manifest to dev R2.
+- Prefix: `radar/mrms/proof/MergedReflectivityQCComposite/20260727T131600/`
+- Total tile bytes: about 31 KB.
+- Dev Worker version `29cc85cf-2eba-47ca-9b92-92cfb668db6b` can serve this proof through:
+- Manifest: `/v1/radar/mrms/proof/manifest?product=MergedReflectivityQCComposite&frame=20260727T131600`
+- Tile: `/v1/radar/mrms/proof/tiles/{z}/{x}/{y}.png?product=MergedReflectivityQCComposite&frame=20260727T131600`
+- Production keeps `MRMS_PROOF_ENABLED=0`, so this is not user-facing.
+
+Validated proof tile:
+
+- `/v1/radar/mrms/proof/tiles/4/4/6.png?product=MergedReflectivityQCComposite&frame=20260727T131600`
+- Response header included `x-omni-radar-source: r2-mrms-proof`.
+- Downloaded Worker-served tile size: 5389 bytes.

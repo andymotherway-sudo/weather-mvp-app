@@ -10,6 +10,8 @@
 		"mrms:discover": "node ./scripts/discover-mrms.mjs",
 		"mrms:download": "node ./scripts/download-mrms-frame.mjs",
 		"mrms:render-proof": "node ./scripts/render-mrms-proof.mjs",
+		"mrms:tile-proof": "node ./scripts/tile-mrms-proof.mjs",
+		"mrms:publish-proof": "node ./scripts/publish-mrms-proof.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

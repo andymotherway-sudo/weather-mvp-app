@@ -10183,6 +10183,48 @@ function isRadarR2MaintenanceCleanupEnabled(env: Env) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function isMrmsProofEnabled(env: Env) {
+  const raw = String(env.MRMS_PROOF_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function getMrmsProofPrefix(env: Env) {
+  return String(env.MRMS_PROOF_PREFIX || "radar/mrms/proof").trim().replace(/^\/+|\/+$/g, "");
+}
+
+function parseMrmsProofObjectRequest(env: Env, url: URL) {
+  if (!env.RADAR_ASSETS) return { ok: false as const, status: 503, error: "RADAR_ASSETS not bound" };
+  if (!isMrmsProofEnabled(env)) return { ok: false as const, status: 404, error: "mrms-proof-disabled" };
+
+  const product = (url.searchParams.get("product") || "MergedReflectivityQCComposite").trim();
+  const frame = (url.searchParams.get("frame") || "20260727T131600").trim();
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
+    return { ok: false as const, status: 400, error: "invalid product" };
+  }
+  if (!/^[0-9T]{8,32}$/.test(frame)) {
+    return { ok: false as const, status: 400, error: "invalid frame" };
+  }
+
+  const prefix = `${getMrmsProofPrefix(env)}/${product}/${frame}`;
+  if (url.pathname === "/v1/radar/mrms/proof/manifest") {
+    return { ok: true as const, key: `${prefix}/manifest.json`, contentType: "application/json; charset=utf-8" };
+  }
+
+  if (url.pathname.startsWith("/v1/radar/mrms/proof/tiles/")) {
+    const parts = url.pathname.replace("/v1/radar/mrms/proof/tiles/", "").split("/");
+    if (parts.length < 3) return { ok: false as const, status: 400, error: "bad tile path" };
+    const z = parts[0];
+    const x = parts[1];
+    const y = parts[2].replace(".png", "");
+    if (!/^\d{1,2}$/.test(z) || !/^\d{1,6}$/.test(x) || !/^\d{1,6}$/.test(y)) {
+      return { ok: false as const, status: 400, error: "invalid tile coordinate" };
+    }
+    return { ok: true as const, key: `${prefix}/${z}/${x}/${y}.png`, contentType: "image/png" };
+  }
+
+  return { ok: false as const, status: 404, error: "not found" };
+}
+
 async function cleanupRadarR2Prefix(
   env: Env,
   args: {
@@ -11761,6 +11803,33 @@ async function handleWorkerRequest(
       return new Response(JSON.stringify(await buildOwnedRadarStatusPayload(env)), {
         status: 200,
         headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/mrms/proof/manifest" || url.pathname.startsWith("/v1/radar/mrms/proof/tiles/")) {
+      const parsed = parseMrmsProofObjectRequest(env, url);
+      if (!parsed.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsed.error }), {
+          status: parsed.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const object = await env.RADAR_ASSETS!.get(parsed.key);
+      if (!object?.body) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-proof-object-not-found", key: parsed.key }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return new Response(object.body, {
+        status: 200,
+        headers: withCors({
+          "content-type": object.httpMetadata?.contentType || parsed.contentType,
+          "cache-control": object.httpMetadata?.cacheControl || "public, max-age=120",
+          "x-omni-radar-source": "r2-mrms-proof",
+        }),
       });
     }
 

@@ -44,6 +44,7 @@ builds/
 
 # TypeScript
 *.tsbuildinfo
+__pycache__/
 
 # Local dev
 .vscode/
