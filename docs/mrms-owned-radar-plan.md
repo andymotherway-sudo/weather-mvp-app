@@ -52,3 +52,34 @@ npm run mrms:download -- --product ReflectivityAtLowestAltitude
 ```
 
 This downloads only the latest compressed GRIB2 frame into `tmp/mrms`. It still does not write to R2. Rendering requires GDAL/wgrib2 or an equivalent containerized job runner; the current WSL environment does not have those tools installed yet.
+
+## Local render checkpoint
+
+For the current Codex desktop environment, install Python dependencies into ignored local storage:
+
+```powershell
+& "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m pip install --target tmp\mrms-pydeps cfgrib eccodes xarray numpy matplotlib pillow
+```
+
+Then render a first transparent PNG proof:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run mrms:render-proof
+```
+
+The proof renderer reads `tmp/mrms/MRMS_ReflectivityAtLowestAltitude.latest.grib2.gz` and writes `tmp/mrms/MRMS_ReflectivityAtLowestAltitude.proof.png`. It is intentionally downsampled and local-only.
+
+Current proof status:
+
+- `ReflectivityAtLowestAltitude` discovery works.
+- `MergedReflectivityQCComposite` discovery works.
+- The first `ReflectivityAtLowestAltitude` latest-frame download was about 656 KB.
+- The local renderer decoded a 7000 x 3500 MRMS raster and wrote a 1400 x 700 transparent PNG proof.
+- The proof renderer is not yet a tile generator and does not write to R2.
+
+Next renderer checkpoint:
+
+- Render the composite product and compare visual quality against lowest-altitude reflectivity.
+- Convert the georeferenced raster into Web Mercator tiles.
+- Publish only a tiny test prefix to R2 after the tile output is visually inspected.
