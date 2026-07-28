@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, PixelRatio } from 'react-native';
 
 import type { RadarOverlay, Region } from '../../../components/maps/MapRenderer';
+import { fetchMrmsFrames, type MrmsRadarFrame } from './radar/providers/mrms';
 import { createRainViewerProvider } from './radar/providers/rainviewer';
 import type { RadarFrame } from './radar/providers/types';
 import {
@@ -226,9 +227,11 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean, quality: An
   });
 }
 
+export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms';
+
 function getRadarFetchProfile(
   zoom: number,
-  provider: 'iem' | 'rainviewer',
+  provider: RadarProviderId,
   stormMode: boolean,
   quality: AnimationQuality,
 ) {
@@ -249,7 +252,7 @@ function getRadarFetchProfile(
     return profile;
   };
 
-  if (provider === 'rainviewer') {
+  if (provider === 'rainviewer' || provider === 'mrms') {
     if (z <= 5) return tune({ maxFrames: 24, lookbackMinutes: 120 });
     if (z <= 8) return tune({ maxFrames: 22, lookbackMinutes: 110 });
     return tune({ maxFrames: 18, lookbackMinutes: 90 });
@@ -267,7 +270,7 @@ function getRadarFetchProfile(
 }
 
 export type RadarControllerSheetValue = {
-  radarProvider: 'iem' | 'rainviewer';
+  radarProvider: RadarProviderId;
 };
 
 function getStormMode(state: any) {
@@ -371,6 +374,7 @@ export function useRadarController(args: {
   const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
   const [rvError, setRvError] = useState<string | null>(null);
   const rainViewerSelected = sheetValue.radarProvider === 'rainviewer';
+  const mrmsSelected = sheetValue.radarProvider === 'mrms';
 
   useEffect(() => {
     let cancelled = false;
@@ -405,6 +409,50 @@ export function useRadarController(args: {
   }, [rainViewerSelected, radarEnabled]);
 
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
+
+  /* =========================================================================
+   * MRMS preview frames
+   * ========================================================================= */
+  const [mrmsFrames, setMrmsFrames] = useState<MrmsRadarFrame[] | null>(null);
+  const [mrmsError, setMrmsError] = useState<string | null>(null);
+  const [mrmsLoading, setMrmsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function run() {
+      if (!mrmsSelected || !radarEnabled || stationMode || stormMode) {
+        setMrmsLoading(false);
+        if (!mrmsSelected) setMrmsFrames(null);
+        return;
+      }
+
+      try {
+        setMrmsError(null);
+        setMrmsLoading(true);
+        const frames = await fetchMrmsFrames({ product: 'MergedReflectivityQCComposite' });
+        if (cancelled) return;
+        setMrmsFrames(frames);
+        setMrmsLoading(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setMrmsFrames(null);
+        setMrmsError(String(e?.message ?? e ?? 'MRMS failed'));
+        setMrmsLoading(false);
+      }
+    }
+
+    run();
+    if (mrmsSelected && radarEnabled && !stationMode && !stormMode) {
+      interval = setInterval(run, 60_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [mrmsSelected, radarEnabled, stationMode, stormMode]);
 
   /* =========================================================================
    * Hyperlocal WMS image mode
@@ -649,6 +697,8 @@ export function useRadarController(args: {
 
     if (rainViewerSelected) {
       out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
+    } else if (mrmsSelected) {
+      out = mrmsFrames?.map((f) => ({ iso: f.iso })) ?? [];
     } else {
       const frames = iemUnified?.frames;
       if (iemUnified) out = frames?.map((f) => ({ iso: f.iso })) ?? [];
@@ -656,7 +706,7 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [rainViewerSelected, rvFrames, iemUnified, iemFramesFallback]);
+  }, [rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];
@@ -681,6 +731,12 @@ export function useRadarController(args: {
         .map((x) => x!.template);
     }
 
+    if (mrmsSelected) {
+      return [...(mrmsFrames ?? [])]
+        .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
+        .map((f) => f.template ?? null);
+    }
+
     const frames = iemUnified?.frames;
     if (iemUnified) {
       return [...(frames ?? [])]
@@ -691,7 +747,7 @@ export function useRadarController(args: {
     return [...iemFramesFallback]
       .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
       .map(() => null);
-  }, [radarEnabled, usingLocalImage, rainViewerSelected, rvFrames, iemUnified, iemFramesFallback]);
+  }, [radarEnabled, usingLocalImage, rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
 
   /* =========================================================================
    * Stable playback playlist
@@ -1138,13 +1194,14 @@ export function useRadarController(args: {
    * ========================================================================= */
   const radarTileMaxZ = useMemo(() => {
     if (usingRainViewer) return (rvProviderRef.current as any)?.maxZoom ?? 10;
+    if (mrmsSelected && mrmsFrames?.length) return Math.max(3, ...mrmsFrames.map((f) => f.maxZ ?? 4));
     if (usingLocalImage) return 10;
 
     const frames = iemUnified?.frames;
     if (frames?.length) return Math.max(7, ...frames.map((f) => f.maxZ ?? 7));
 
     return 9;
-  }, [usingRainViewer, usingLocalImage, iemUnified]);
+  }, [usingRainViewer, mrmsSelected, mrmsFrames, usingLocalImage, iemUnified]);
 
   /* =========================================================================
    * Final switch: localImage vs templates
@@ -1302,6 +1359,8 @@ export function useRadarController(args: {
 
     rvError,
     localError,
+    mrmsError,
+    mrmsLoading,
 
     iemError,
     iemLoading,

@@ -59,14 +59,14 @@ import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { useLightningMapData } from '../lib/maps/useLightningMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
-import { useRadarController, type AnimationQuality } from '../lib/maps/useRadarController';
+import { useRadarController, type AnimationQuality, type RadarProviderId } from '../lib/maps/useRadarController';
 import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
 import { useTropicalOutlookLayer } from '../lib/maps/useTropicalOutlookLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
-import { API_BASE, apiUrl } from '../lib/net/apiBase';
+import { API_BASE, API_ENVIRONMENT, apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 
@@ -85,6 +85,8 @@ const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
+const MRMS_RADAR_PREVIEW_ENABLED =
+  API_ENVIRONMENT !== 'production' && process.env.EXPO_PUBLIC_MRMS_RADAR_PREVIEW === '1';
 
 type WildfireIncidentDetails = {
   incidentName: string;
@@ -1304,6 +1306,7 @@ export default function MapsScreen() {
   const [animationExporting, setAnimationExporting] = useState(false);
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
+  const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'rainviewer' | 'mrms'>>('rainviewer');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0Q');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
@@ -1544,7 +1547,8 @@ export default function MapsScreen() {
       : 'N0Q'
     : 'N0Q';
 
-  const effectiveRadarProvider = stationRadarMode ? 'iem' : 'rainviewer';
+  const effectiveRadarProvider: RadarProviderId =
+    stationRadarMode ? 'iem' : MRMS_RADAR_PREVIEW_ENABLED ? wideRadarProvider : 'rainviewer';
 
   const stationRangeRings = useMemo(
     () => buildRadarStationGeoJson(showRadarRings ? selectedRadarSite : null),
@@ -3678,7 +3682,14 @@ export default function MapsScreen() {
     ? activeLayerSummary.subtitle ?? simpleStatus
     : simpleStatus;
 
-  const providerLabel = stormScopeEnabled ? 'Storm Scope' : effectiveRadarProvider === 'rainviewer' ? 'RainViewer' : 'IEM radar';
+  const providerLabel =
+    stormScopeEnabled
+      ? 'Storm Scope'
+      : effectiveRadarProvider === 'mrms'
+        ? 'MRMS preview'
+        : effectiveRadarProvider === 'rainviewer'
+          ? 'RainViewer'
+          : 'IEM radar';
   const radarProductLabel = stormMode ? radarProductMeta.summaryLabel : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
   const zoomLabel = `Zoom ${Math.round(mapZoom * 10) / 10}`;
@@ -3703,6 +3714,8 @@ export default function MapsScreen() {
     }
 
     if (frameCount === 1) return 'Latest radar frame only';
+    if (radarCtl.mrmsLoading) return 'Loading MRMS preview';
+    if (radarCtl.mrmsError) return 'MRMS preview unavailable';
     if (radarCtl.iemLoading) return 'Loading radar history';
     return 'Radar history unavailable';
   }, [
@@ -3710,6 +3723,8 @@ export default function MapsScreen() {
     radarCtl.iemError,
     radarCtl.iemLoading,
     radarCtl.localError,
+    radarCtl.mrmsError,
+    radarCtl.mrmsLoading,
     radarCtl.usingLocalImage,
     stationProductLatestOnly,
     stationRadarMode,
@@ -5593,6 +5608,13 @@ export default function MapsScreen() {
                         active={stormMode}
                         onPress={handleStormScopePress}
                       />
+                      {MRMS_RADAR_PREVIEW_ENABLED ? (
+                        <MiniToggle
+                          label="MRMS preview"
+                          active={!stormMode && effectiveRadarProvider === 'mrms'}
+                          onPress={() => setWideRadarProvider((current) => current === 'mrms' ? 'rainviewer' : 'mrms')}
+                        />
+                      ) : null}
                     </View>
                   </View>
                 ) : null}
@@ -5605,7 +5627,11 @@ export default function MapsScreen() {
                   compact
                 />
                 <Text style={styles.legendCardMeta}>
-                  RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.
+                  {effectiveRadarProvider === 'mrms'
+                    ? radarCtl.mrmsError
+                      ? `MRMS preview unavailable: ${radarCtl.mrmsError}`
+                      : 'MRMS preview uses our dev Worker and NOAA MRMS composite tiles. RainViewer remains the production default.'
+                    : 'RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.'}
                 </Text>
               </Glass>
             )}

@@ -198,3 +198,18 @@ The dev contract now looks like this:
 6. Worker serves tiles through `/v1/radar/mrms/tiles/{z}/{x}/{y}.png`.
 
 The app should not point at this by default yet. The next app-side step is a dev-only MRMS preview source that can be visually compared against RainViewer without degrading the shipped radar experience.
+
+## App preview gate
+
+The app preview is intentionally not a production cutover.
+
+Preview rules:
+
+- `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` enables the MRMS preview toggle.
+- `API_ENVIRONMENT !== production` is also required.
+- EAS `development` and `preview` profiles opt in.
+- EAS `production` explicitly sets `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=0`.
+- Station radar and Storm Scope local products continue to use the existing IEM/RIDGE path.
+- Normal wide radar remains RainViewer unless the preview toggle is manually enabled.
+
+The preview toggle is meant for visual comparison only. It should not be treated as DONE for production radar until MRMS has a rolling multi-frame timeline, more zoom depth, retention cleanup exercised with real repeated publishes, and a visual QA pass against RainViewer.
