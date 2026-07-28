@@ -9739,6 +9739,15 @@ function buildRadarInfoPayload(env: Env) {
         localImageMaxZoom: settings.localImageMaxZoom,
         localStorageEstimate,
       },
+      mrms: {
+        enabled: isMrmsEnabled(env),
+        proofEnabled: isMrmsProofEnabled(env),
+        maintenanceEnabled: isMrmsMaintenanceEnabled(env),
+        latestPrefix: getMrmsLatestPrefix(env),
+        proofPrefix: getMrmsProofPrefix(env),
+        timelineRoute: "/v1/radar/mrms/timeline",
+        tileRoute: "/v1/radar/mrms/tiles/{z}/{x}/{y}.png",
+      },
     },
     providers: {
       rainviewer: {
@@ -9818,6 +9827,13 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         localStorageEstimate,
         recentLocalSiteActivity,
         lastOwnedLocalPublish,
+      },
+      mrms: {
+        enabled: isMrmsEnabled(env),
+        proofEnabled: isMrmsProofEnabled(env),
+        maintenanceEnabled: isMrmsMaintenanceEnabled(env),
+        latestPrefix: getMrmsLatestPrefix(env),
+        proofPrefix: getMrmsProofPrefix(env),
       },
     },
     currentSource: {
@@ -10127,7 +10143,7 @@ async function listAllR2ObjectKeys(bucket: R2Bucket, prefix: string) {
     for (const object of page.objects) {
       if (object?.key) keys.push(object.key);
     }
-    cursor = page.truncated ? page.cursor : undefined;
+    cursor = page.truncated ? (page as R2Objects & { cursor: string }).cursor : undefined;
   } while (cursor);
 
   return keys;
@@ -10170,6 +10186,7 @@ const OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN = 1;
 const OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN = 300;
 const OWNED_LOCAL_RADAR_MAX_EVICTIONS_PER_RUN = 60;
 const RADAR_R2_MAINTENANCE_CONFIRM = "delete-radar-images-ridge";
+const MRMS_MAINTENANCE_CONFIRM = "cleanup-mrms-proof-dev";
 const RADAR_R2_LOCAL_TILE_PREFIX = "radar/images/ridge/";
 const RADAR_R2_MAINTENANCE_CLEANUP_SOURCE_ENABLED = false;
 
@@ -10188,19 +10205,40 @@ function isMrmsProofEnabled(env: Env) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function isMrmsEnabled(env: Env) {
+  const raw = String(env.MRMS_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isMrmsMaintenanceEnabled(env: Env) {
+  const raw = String(env.MRMS_MAINTENANCE_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 function getMrmsProofPrefix(env: Env) {
   return String(env.MRMS_PROOF_PREFIX || "radar/mrms/proof").trim().replace(/^\/+|\/+$/g, "");
+}
+
+function getMrmsLatestPrefix(env: Env) {
+  return String(env.MRMS_LATEST_PREFIX || "radar/mrms/latest").trim().replace(/^\/+|\/+$/g, "");
+}
+
+function normalizeMrmsProduct(url: URL) {
+  const product = (url.searchParams.get("product") || "MergedReflectivityQCComposite").trim();
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
+    return { ok: false as const, status: 400, error: "invalid product" };
+  }
+  return { ok: true as const, product };
 }
 
 function parseMrmsProofObjectRequest(env: Env, url: URL) {
   if (!env.RADAR_ASSETS) return { ok: false as const, status: 503, error: "RADAR_ASSETS not bound" };
   if (!isMrmsProofEnabled(env)) return { ok: false as const, status: 404, error: "mrms-proof-disabled" };
 
-  const product = (url.searchParams.get("product") || "MergedReflectivityQCComposite").trim();
+  const parsedProduct = normalizeMrmsProduct(url);
+  if (!parsedProduct.ok) return parsedProduct;
+  const { product } = parsedProduct;
   const frame = (url.searchParams.get("frame") || "20260727T131600").trim();
-  if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
-    return { ok: false as const, status: 400, error: "invalid product" };
-  }
   if (!/^[0-9T]{8,32}$/.test(frame)) {
     return { ok: false as const, status: 400, error: "invalid frame" };
   }
@@ -10223,6 +10261,115 @@ function parseMrmsProofObjectRequest(env: Env, url: URL) {
   }
 
   return { ok: false as const, status: 404, error: "not found" };
+}
+
+type MrmsLatestManifest = {
+  ok?: boolean;
+  source?: string;
+  product?: string;
+  validTime?: string | null;
+  frame?: string;
+  tileBasePrefix?: string;
+  tileSize?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  bounds?: unknown;
+  tileCount?: number;
+  totalBytes?: number;
+  generatedAt?: string;
+  tiles?: Array<{ z?: number; x?: number; y?: number; bytes?: number }>;
+};
+
+function buildMrmsLatestKey(env: Env, product: string) {
+  return `${getMrmsLatestPrefix(env)}/${product}.json`;
+}
+
+function parseMrmsTilePath(pathname: string) {
+  const parts = pathname.replace("/v1/radar/mrms/tiles/", "").split("/");
+  if (parts.length < 3) return null;
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  if (!/^\d{1,2}$/.test(z) || !/^\d{1,6}$/.test(x) || !/^\d{1,6}$/.test(y)) return null;
+  return { z, x, y };
+}
+
+async function readMrmsLatestManifest(env: Env, product: string) {
+  if (!env.RADAR_ASSETS) {
+    return { ok: false as const, status: 503, error: "RADAR_ASSETS not bound" };
+  }
+  if (!isMrmsEnabled(env)) {
+    return { ok: false as const, status: 404, error: "mrms-disabled" };
+  }
+
+  const key = buildMrmsLatestKey(env, product);
+  const object = await env.RADAR_ASSETS.get(key);
+  if (!object?.body) {
+    return { ok: false as const, status: 404, error: "mrms-latest-not-found", key };
+  }
+
+  try {
+    const manifest = (await object.json()) as MrmsLatestManifest;
+    if (!manifest?.tileBasePrefix || !manifest?.product) {
+      return { ok: false as const, status: 502, error: "mrms-latest-invalid", key };
+    }
+    return { ok: true as const, key, manifest };
+  } catch {
+    return { ok: false as const, status: 502, error: "mrms-latest-json-invalid", key };
+  }
+}
+
+async function cleanupMrmsProofFrames(
+  env: Env,
+  args: {
+    product: string;
+    keepFrames: number;
+    dryRun: boolean;
+    maxDeletes: number;
+  },
+) {
+  if (!env.RADAR_ASSETS) {
+    return { ok: false as const, error: "RADAR_ASSETS not bound" };
+  }
+
+  const prefix = `${getMrmsProofPrefix(env)}/${args.product}/`;
+  const keys = await listAllR2ObjectKeys(env.RADAR_ASSETS, prefix);
+  const frameMap = new Map<string, string[]>();
+  for (const key of keys) {
+    const rest = key.slice(prefix.length);
+    const frame = rest.split("/")[0];
+    if (!/^[0-9T]{8,32}$/.test(frame)) continue;
+    const frameKeys = frameMap.get(frame) ?? [];
+    frameKeys.push(key);
+    frameMap.set(frame, frameKeys);
+  }
+
+  const frames = Array.from(frameMap.keys()).sort().reverse();
+  const keep = new Set(frames.slice(0, args.keepFrames));
+  const deleteKeys = frames
+    .filter((frame) => !keep.has(frame))
+    .flatMap((frame) => frameMap.get(frame) ?? [])
+    .slice(0, args.maxDeletes);
+
+  if (!args.dryRun) {
+    for (const key of deleteKeys) {
+      await env.RADAR_ASSETS.delete(key);
+    }
+  }
+
+  return {
+    ok: true as const,
+    prefix,
+    dryRun: args.dryRun,
+    keepFrames: args.keepFrames,
+    frameCount: frames.length,
+    keptFrames: Array.from(keep),
+    matchedObjectCount: keys.length,
+    deleteCandidateCount: deleteKeys.length,
+    deletedCount: args.dryRun ? 0 : deleteKeys.length,
+    maxDeletes: args.maxDeletes,
+    sampleDeletedKeys: deleteKeys.slice(0, 12),
+  };
 }
 
 async function cleanupRadarR2Prefix(
@@ -10252,7 +10399,7 @@ async function cleanupRadarR2Prefix(
     matchedCount: keys.length,
     deletedCount: args.dryRun ? 0 : keys.length,
     truncated: page.truncated,
-    cursor: page.cursor ?? null,
+    cursor: page.truncated ? (page as R2Objects & { cursor: string }).cursor : null,
     sampleKeys: keys.slice(0, 10),
   };
 }
@@ -11802,6 +11949,121 @@ async function handleWorkerRequest(
     if (url.pathname === "/v1/radar/backend/status") {
       return new Response(JSON.stringify(await buildOwnedRadarStatusPayload(env)), {
         status: 200,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/mrms/timeline") {
+      const parsedProduct = normalizeMrmsProduct(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const latest = await readMrmsLatestManifest(env, parsedProduct.product);
+      if (!latest.ok) {
+        return new Response(JSON.stringify({ ok: false, error: latest.error, key: latest.key ?? null }), {
+          status: latest.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return new Response(JSON.stringify(latest.manifest), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=30, stale-while-revalidate=120",
+          "x-omni-radar-source": "r2-mrms-latest",
+        }),
+      });
+    }
+
+    if (url.pathname.startsWith("/v1/radar/mrms/tiles/")) {
+      const tile = parseMrmsTilePath(url.pathname);
+      if (!tile) {
+        return new Response(JSON.stringify({ ok: false, error: "bad tile path" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const parsedProduct = normalizeMrmsProduct(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const latest = await readMrmsLatestManifest(env, parsedProduct.product);
+      if (!latest.ok) {
+        return new Response(JSON.stringify({ ok: false, error: latest.error, key: latest.key ?? null }), {
+          status: latest.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const objectKey = `${latest.manifest.tileBasePrefix}/${tile.z}/${tile.x}/${tile.y}.png`;
+      const object = await env.RADAR_ASSETS!.get(objectKey);
+      if (!object?.body) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-tile-not-found", key: objectKey }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      return new Response(object.body, {
+        status: 200,
+        headers: withCors({
+          "content-type": object.httpMetadata?.contentType || "image/png",
+          "cache-control": object.httpMetadata?.cacheControl || "public, max-age=300, stale-while-revalidate=1800",
+          "x-omni-radar-source": "r2-mrms",
+          "x-omni-radar-frame": String(latest.manifest.frame || latest.manifest.validTime || ""),
+        }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/mrms/maintenance/cleanup-proof") {
+      if (!isMrmsMaintenanceEnabled(env)) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-maintenance-disabled" }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (request.method !== "POST") {
+        return new Response(JSON.stringify({ ok: false, error: "POST required" }), {
+          status: 405,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (url.searchParams.get("confirm") !== MRMS_MAINTENANCE_CONFIRM) {
+        return new Response(JSON.stringify({ ok: false, error: "confirmation required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const parsedProduct = normalizeMrmsProduct(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const keepFrames = Math.max(1, Math.min(24, Number(url.searchParams.get("keepFrames") ?? "12") || 12));
+      const maxDeletes = Math.max(1, Math.min(1000, Number(url.searchParams.get("maxDeletes") ?? "200") || 200));
+      const dryRun = url.searchParams.get("dryRun") !== "0";
+      const cleanup = await cleanupMrmsProofFrames(env, {
+        product: parsedProduct.product,
+        keepFrames,
+        maxDeletes,
+        dryRun,
+      });
+      return new Response(JSON.stringify(cleanup), {
+        status: cleanup.ok ? 200 : 503,
         headers: withCors({ "content-type": "application/json; charset=utf-8" }),
       });
     }
@@ -14373,6 +14635,8 @@ async function handleWorkerRequest(
           "/v2/radar/wms?product=N0Q|N0B|N0Z&bbox=minx,miny,maxx,maxy&width=1024&height=1024&time=ISO&shrink=0.85&dpr=2&fmt=png32",
           "/v1/radar/rainviewer/tiles/{z}/{x}/{y}.png?ts=UNIX&size=512&color=2&smooth=1&snow=1",
           "/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png?radar=TLX&product=N0Q&ts=0",
+          "/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite",
+          "/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=MergedReflectivityQCComposite",
           "/api/nasa/apod?date=YYYY-MM-DD",
           "/api/nasa/donki/<TYPE>?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD",
           "/api/ncei/*",

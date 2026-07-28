@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
 
 const DEFAULT_MANIFEST = "../tmp/mrms/tiles/MergedReflectivityQCComposite-z3z4/manifest.json";
 const DEFAULT_BUCKET = "omniwx-radar-assets-dev";
 const DEFAULT_PREFIX = "radar/mrms/proof/MergedReflectivityQCComposite";
+const DEFAULT_LATEST_PREFIX = "radar/mrms/latest";
 
 function parseArgs(argv) {
   const args = {
@@ -15,6 +17,8 @@ function parseArgs(argv) {
     maxTiles: 20,
     remote: true,
     dryRun: true,
+    publishLatest: true,
+    latestPrefix: DEFAULT_LATEST_PREFIX,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -22,9 +26,11 @@ function parseArgs(argv) {
     if (arg === "--manifest" && argv[i + 1]) args.manifest = argv[++i];
     else if (arg === "--bucket" && argv[i + 1]) args.bucket = argv[++i];
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
+    else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
     else if (arg === "--local") args.remote = false;
     else if (arg === "--apply") args.dryRun = false;
+    else if (arg === "--no-latest") args.publishLatest = false;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -41,7 +47,9 @@ Options:
   --manifest <path>    Local tile manifest. Default: ${DEFAULT_MANIFEST}
   --bucket <name>      R2 bucket. Default: ${DEFAULT_BUCKET}
   --prefix <key>       R2 key prefix. Default: ${DEFAULT_PREFIX}
+  --latest-prefix <key> Stable latest manifest prefix. Default: ${DEFAULT_LATEST_PREFIX}
   --max-tiles <count>  Safety cap. Default: 20
+  --no-latest          Skip stable latest manifest upload
   --apply              Actually upload. Default is dry-run
   --local              Use Wrangler local R2 instead of remote
 `);
@@ -55,6 +63,14 @@ function frameKey(manifest) {
 
 function contentTypeFor(path) {
   return path.endsWith(".json") ? "application/json; charset=utf-8" : "image/png";
+}
+
+function productKey(manifest) {
+  const product = String(manifest.product || "MergedReflectivityQCComposite").trim();
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
+    throw new Error(`Invalid manifest product: ${product}`);
+  }
+  return product;
 }
 
 function normalizeLocalPath(path) {
@@ -93,6 +109,7 @@ async function main() {
     throw new Error(`Refusing to publish ${tiles.length} tiles with --max-tiles ${args.maxTiles}`);
   }
 
+  const product = productKey(manifest);
   const frame = frameKey(manifest);
   const basePrefix = `${args.prefix}/${frame}`;
   const uploads = tiles.map((tile) => {
@@ -107,11 +124,47 @@ async function main() {
     objectPath: `${args.bucket}/${basePrefix}/manifest.json`,
   });
 
+  let latestManifestPath = null;
+  if (args.publishLatest) {
+    const latestManifest = {
+      ok: true,
+      source: manifest.source || "NOAA MRMS",
+      product,
+      frame,
+      validTime: manifest.validTime || null,
+      time: manifest.time || null,
+      generatedAt: new Date().toISOString(),
+      tileBasePrefix: basePrefix,
+      tileSize: manifest.tileSize,
+      minZoom: manifest.minZoom,
+      maxZoom: manifest.maxZoom,
+      bounds: manifest.bounds,
+      sourceShape: manifest.sourceShape,
+      tileCount: tiles.length,
+      totalBytes: manifest.totalBytes,
+      tiles: tiles.map((tile) => ({
+        z: tile.z,
+        x: tile.x,
+        y: tile.y,
+        bytes: tile.bytes,
+      })),
+    };
+    const latestDir = resolve("../tmp/mrms/publish");
+    await mkdir(latestDir, { recursive: true });
+    latestManifestPath = join(latestDir, `${product}.latest.json`);
+    await writeFile(latestManifestPath, JSON.stringify(latestManifest, null, 2), "utf8");
+    uploads.push({
+      localPath: latestManifestPath,
+      objectPath: `${args.bucket}/${args.latestPrefix}/${product}.json`,
+    });
+  }
+
   console.log(JSON.stringify({
     ok: true,
     dryRun: args.dryRun,
     bucket: args.bucket,
     prefix: basePrefix,
+    latestKey: args.publishLatest ? `${args.latestPrefix}/${product}.json` : null,
     uploadCount: uploads.length,
     tileCount: tiles.length,
     totalBytes: manifest.totalBytes,
