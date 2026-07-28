@@ -12,6 +12,7 @@
 		"mrms:render-proof": "node ./scripts/render-mrms-proof.mjs",
 		"mrms:tile-proof": "node ./scripts/tile-mrms-proof.mjs",
 		"mrms:publish-proof": "node ./scripts/publish-mrms-proof.mjs",
+		"mrms:update-latest": "node ./scripts/update-mrms-latest.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

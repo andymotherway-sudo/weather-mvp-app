@@ -164,6 +164,28 @@ Guardrails:
 
 This is the storage safety valve before increasing MRMS publish cadence or zoom depth. It prevents a proof prefix from becoming an accidental archive.
 
+## One-command dev update
+
+After the local Python MRMS dependencies are installed, the dev update flow can be run as one bounded command:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run mrms:update-latest
+```
+
+By default this downloads the latest composite frame, generates z3-z4 non-empty tiles, and dry-runs the dev R2 publish. To actually write the bounded frame prefix and latest pointer to dev R2, run the same command through WSL with `--apply`:
+
+```powershell
+wsl bash -lc 'cd /mnt/c/Users/andym_au640pp/weather-app/omniwx-api && npm run mrms:update-latest -- --apply'
+```
+
+Safety defaults:
+
+- Product: `MergedReflectivityQCComposite`
+- Zoom range: z3-z4
+- Publish cap: 20 tiles
+- R2 writes: disabled unless `--apply` is passed
+
 ## Current MRMS backend contract
 
 The dev contract now looks like this:
