@@ -206,7 +206,7 @@ The app preview is intentionally not a production cutover.
 Preview rules:
 
 - `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` enables the MRMS preview toggle.
-- `API_ENVIRONMENT !== production` is also required.
+- The app reads the build-time flag from Expo config so production/internal-testing builds can intentionally opt in.
 - EAS `development` and `preview` profiles opt in.
 - EAS `production` currently opts in with `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` for the small internal testing group.
 - Station radar and Storm Scope local products continue to use the existing IEM/RIDGE path.

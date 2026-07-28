@@ -66,7 +66,7 @@ import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
-import { API_BASE, API_ENVIRONMENT, apiUrl } from '../lib/net/apiBase';
+import { API_BASE, MRMS_RADAR_PREVIEW_ENABLED, apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
 import { fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 
@@ -85,9 +85,6 @@ const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
 const WATER_STATIONS_LAYER_ENABLED = true;
 const SPC_FIREWX_EXPORT_URL =
   'https://mapservices.weather.noaa.gov/vector/rest/services/fire_weather/SPC_firewx/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=png32&transparent=true&f=image';
-const MRMS_RADAR_PREVIEW_ENABLED =
-  API_ENVIRONMENT !== 'production' && process.env.EXPO_PUBLIC_MRMS_RADAR_PREVIEW === '1';
-
 type WildfireIncidentDetails = {
   incidentName: string;
   percentContained: number | null;

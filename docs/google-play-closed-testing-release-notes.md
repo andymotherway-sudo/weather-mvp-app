@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.237**
-Android version code: **10254**
+Release: **OMNIwx 1.1.238**
+Android version code: **10255**
 Track: **Closed testing / internal testing candidate**
 Date: **July 28, 2026**
 
 ## Play Console Paste Notes
 
-This build adds an internal-testing MRMS radar preview toggle backed by the production OMNIwx Worker and a tiny owned NOAA MRMS/R2 tile set. RainViewer remains the default wide radar source, Storm Scope/local NEXRAD products remain on the existing local radar path, and MRMS is manual opt-in for comparison only.
+This build fixes the internal-testing MRMS radar preview gate so the toggle is visible in production-targeted tester builds. The preview is backed by the production OMNIwx Worker and a tiny owned NOAA MRMS/R2 tile set. RainViewer remains the default wide radar source, Storm Scope/local NEXRAD products remain on the existing local radar path, and MRMS is manual opt-in for comparison only.
 
 ## Tester Notes
 
@@ -28,10 +28,10 @@ Please focus testing on the MRMS preview toggle and regression safety around the
 
 ## Internal Release Checklist
 
-- App version: `1.1.237`
-- Android version code: `10254`
+- App version: `1.1.238`
+- Android version code: `10255`
 - Intended backend environment: `production`
-- Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` before building
+- Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Production worker deploy: `cd omniwx-api && wrangler deploy --env production --keep-vars`

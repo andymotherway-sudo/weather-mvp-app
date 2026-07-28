@@ -11,6 +11,13 @@ export const API_ENVIRONMENT =
   String((Constants.expoConfig?.extra as any)?.apiEnvironment || process.env.OMNIWX_API_ENV || '').trim() ||
   'development';
 
+export const MRMS_RADAR_PREVIEW_ENABLED =
+  String(
+    (Constants.expoConfig?.extra as any)?.mrmsRadarPreviewEnabled ??
+      process.env.EXPO_PUBLIC_MRMS_RADAR_PREVIEW ??
+      '',
+  ).trim() === '1';
+
 export function apiUrl(path: string) {
   if (!API_BASE) throw new Error('Missing EXPO_PUBLIC_API_BASE');
   const p = path.startsWith('/') ? path : `/${path}`;

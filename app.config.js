@@ -25,10 +25,15 @@ function resolveApiBase(apiEnvironment) {
   return apiEnvironment === 'production' ? PROD_API_BASE : DEV_API_BASE;
 }
 
+function resolveMrmsRadarPreviewEnabled() {
+  return String(process.env.EXPO_PUBLIC_MRMS_RADAR_PREVIEW || '').trim() === '1';
+}
+
 module.exports = () => {
   const expo = baseConfig.expo;
   const apiEnvironment = resolveApiEnvironment();
   const apiBaseUrl = resolveApiBase(apiEnvironment);
+  const mrmsRadarPreviewEnabled = resolveMrmsRadarPreviewEnabled();
 
   return {
     ...expo,
@@ -36,6 +41,7 @@ module.exports = () => {
       ...expo.extra,
       apiBaseUrl,
       apiEnvironment,
+      mrmsRadarPreviewEnabled: mrmsRadarPreviewEnabled ? '1' : '0',
       buildProfile: process.env.EAS_BUILD_PROFILE || null,
     },
   };

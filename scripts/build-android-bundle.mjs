@@ -7,10 +7,12 @@ const targetConfig = {
   development: {
     apiEnvironment: 'development',
     apiBase: 'https://omniwx-api.omniwx.workers.dev',
+    mrmsRadarPreview: '1',
   },
   production: {
     apiEnvironment: 'production',
     apiBase: 'https://omniwx-api-production.omniwx.workers.dev',
+    mrmsRadarPreview: '1',
   },
 };
 
@@ -33,6 +35,7 @@ const result = spawnSync(gradleCmd, ['bundleRelease', '--console=plain'], {
     OMNIWX_API_ENV: selected.apiEnvironment,
     EXPO_PUBLIC_API_BASE: selected.apiBase,
     EXPO_PUBLIC_OMNIWX_API_BASE: selected.apiBase,
+    EXPO_PUBLIC_MRMS_RADAR_PREVIEW: selected.mrmsRadarPreview,
   },
 });
 
