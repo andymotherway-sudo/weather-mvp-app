@@ -86,7 +86,7 @@
 				"RADAR_R2_LOCAL_TILE_CACHE_ENABLED": "0",
 				"RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED": "0",
 				"RADAR_R2_MAINTENANCE_CLEANUP_ENABLED": "0",
-				"MRMS_ENABLED": "0",
+				"MRMS_ENABLED": "1",
 				"MRMS_PROOF_ENABLED": "0",
 				"MRMS_PROOF_PREFIX": "radar/mrms/proof",
 				"MRMS_LATEST_PREFIX": "radar/mrms/latest",

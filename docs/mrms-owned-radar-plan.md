@@ -208,8 +208,8 @@ Preview rules:
 - `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` enables the MRMS preview toggle.
 - `API_ENVIRONMENT !== production` is also required.
 - EAS `development` and `preview` profiles opt in.
-- EAS `production` explicitly sets `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=0`.
+- EAS `production` currently opts in with `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` for the small internal testing group.
 - Station radar and Storm Scope local products continue to use the existing IEM/RIDGE path.
 - Normal wide radar remains RainViewer unless the preview toggle is manually enabled.
 
-The preview toggle is meant for visual comparison only. It should not be treated as DONE for production radar until MRMS has a rolling multi-frame timeline, more zoom depth, retention cleanup exercised with real repeated publishes, and a visual QA pass against RainViewer.
+The preview toggle is meant for visual comparison only. It should not be treated as DONE for default production radar until MRMS has a rolling multi-frame timeline, more zoom depth, retention cleanup exercised with real repeated publishes, and a visual QA pass against RainViewer.

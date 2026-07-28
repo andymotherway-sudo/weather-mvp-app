@@ -41,7 +41,7 @@
         "OMNIWX_API_ENV": "production",
         "EXPO_PUBLIC_API_BASE": "https://omniwx-api-production.omniwx.workers.dev",
         "EXPO_PUBLIC_OMNIWX_API_BASE": "https://omniwx-api-production.omniwx.workers.dev",
-        "EXPO_PUBLIC_MRMS_RADAR_PREVIEW": "0"
+        "EXPO_PUBLIC_MRMS_RADAR_PREVIEW": "1"
       },
       "android": {
         "buildType": "app-bundle"
