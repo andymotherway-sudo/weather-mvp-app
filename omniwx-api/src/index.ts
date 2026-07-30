@@ -10355,6 +10355,7 @@ async function cleanupMrmsProofFrames(
   args: {
     product: string;
     keepFrames: number;
+    keepFrameIds?: string[];
     dryRun: boolean;
     maxDeletes: number;
   },
@@ -10376,15 +10377,17 @@ async function cleanupMrmsProofFrames(
   }
 
   const frames = Array.from(frameMap.keys()).sort().reverse();
-  const keep = new Set(frames.slice(0, args.keepFrames));
+  const keepFromLatest = new Set((args.keepFrameIds ?? []).filter((frame) => /^[0-9T]{8,32}$/.test(frame)));
+  const keep = keepFromLatest.size ? keepFromLatest : new Set(frames.slice(0, args.keepFrames));
   const deleteKeys = frames
     .filter((frame) => !keep.has(frame))
     .flatMap((frame) => frameMap.get(frame) ?? [])
     .slice(0, args.maxDeletes);
 
   if (!args.dryRun) {
-    for (const key of deleteKeys) {
-      await env.RADAR_ASSETS.delete(key);
+    const deleteBatchSize = 25;
+    for (let index = 0; index < deleteKeys.length; index += deleteBatchSize) {
+      await Promise.all(deleteKeys.slice(index, index + deleteBatchSize).map((key) => env.RADAR_ASSETS!.delete(key)));
     }
   }
 
@@ -10393,8 +10396,10 @@ async function cleanupMrmsProofFrames(
     prefix,
     dryRun: args.dryRun,
     keepFrames: args.keepFrames,
+    keepMode: keepFromLatest.size ? "latest-manifest" : "newest-count",
     frameCount: frames.length,
     keptFrames: Array.from(keep),
+    deletedFrames: frames.filter((frame) => !keep.has(frame)),
     matchedObjectCount: keys.length,
     deleteCandidateCount: deleteKeys.length,
     deletedCount: args.dryRun ? 0 : deleteKeys.length,
@@ -12103,6 +12108,68 @@ async function handleWorkerRequest(
         dryRun,
       });
       return new Response(JSON.stringify(cleanup), {
+        status: cleanup.ok ? 200 : 503,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/mrms/maintenance/cleanup-retained") {
+      if (!isMrmsMaintenanceEnabled(env)) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-maintenance-disabled" }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (request.method !== "POST") {
+        return new Response(JSON.stringify({ ok: false, error: "POST required" }), {
+          status: 405,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (url.searchParams.get("confirm") !== MRMS_MAINTENANCE_CONFIRM) {
+        return new Response(JSON.stringify({ ok: false, error: "confirmation required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const parsedProduct = normalizeMrmsProduct(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const latest = await readMrmsLatestManifest(env, parsedProduct.product);
+      if (!latest.ok) {
+        return new Response(JSON.stringify({ ok: false, error: latest.error, key: latest.key ?? null }), {
+          status: latest.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const keepFrameIds = (latest.manifest.frames?.length ? latest.manifest.frames : [latest.manifest])
+        .map((frame) => String(frame?.frame ?? "").trim())
+        .filter((frame) => /^[0-9T]{8,32}$/.test(frame));
+      if (!keepFrameIds.length) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-latest-has-no-retained-frames", key: latest.key }), {
+          status: 502,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const keepFrames = Math.max(1, Math.min(24, Number(url.searchParams.get("keepFrames") ?? "12") || 12));
+      const maxDeletes = Math.max(1, Math.min(1000, Number(url.searchParams.get("maxDeletes") ?? "200") || 200));
+      const dryRun = url.searchParams.get("dryRun") !== "0";
+      const cleanup = await cleanupMrmsProofFrames(env, {
+        product: parsedProduct.product,
+        keepFrames,
+        keepFrameIds,
+        maxDeletes,
+        dryRun,
+      });
+      return new Response(JSON.stringify({ ...cleanup, latestKey: latest.key }), {
         status: cleanup.ok ? 200 : 503,
         headers: withCors({ "content-type": "application/json; charset=utf-8" }),
       });

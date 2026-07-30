@@ -224,6 +224,7 @@ The stable latest pointer is now backward-compatible with the one-frame preview 
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...` still serves the latest frame.
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...&frame=<frame>` serves a specific retained frame.
 - `npm run mrms:update-latest -- --apply --retain-frames 12 --max-frame-age-minutes 360` publishes a bounded rolling manifest. Retention cleanup should still be run after repeated publishes so old frame prefixes do not become an archive.
+- `POST /v1/radar/mrms/maintenance/cleanup-retained?product=...&confirm=cleanup-mrms-proof-dev&dryRun=0` deletes MRMS proof frame prefixes that are not listed in the live latest manifest.
 
 Verified on 2026-07-30:
 
@@ -232,6 +233,7 @@ Verified on 2026-07-30:
 - Production latest manifest retained `20260730T141000` plus the previous production frame.
 - The `20260730T141000` frame produced 11 non-empty z3-z4 tiles totaling about 35 KB before manifests.
 - Legacy RainViewer-backed overview image publishing remained disabled while MRMS was updated.
+- Retained-frame cleanup deleted stale dev/prod proof frame prefixes and left only `20260730T141000` active in each bucket.
 
 Useful commands:
 
