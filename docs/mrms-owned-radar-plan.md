@@ -237,6 +237,7 @@ Verified on 2026-07-30:
 - A second fresh frame, `20260730T200800`, was published to dev and production. Both latest manifests now expose a two-frame retained playlist: `20260730T200800` and `20260730T141000`.
 - Dev retained cleanup dry-run reported 23 matched MRMS proof objects and zero delete candidates after the second frame publish.
 - z5 was measured and promoted for `20260730T200800`: 32 non-empty z3-z5 tiles totaling about 129 KB before manifests. Dev/prod latest manifests now advertise `maxZoom=5` for that latest frame.
+- App preview bug fixed in `1.1.240`: MRMS tile templates now preserve literal `{z}/{x}/{y}` placeholders for MapLibre instead of URL-encoding them, so the native map can request real owned MRMS tiles.
 
 Useful commands:
 

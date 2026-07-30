@@ -31,10 +31,13 @@ let cachedExpiresAt = 0;
 let cachedProduct = '';
 
 function buildMrmsTileTemplate(product: string, frame?: string | null) {
-  const u = new URL(`${API_BASE}/v1/radar/mrms/tiles/{z}/{x}/{y}.png`);
-  u.searchParams.set('product', product);
-  if (frame) u.searchParams.set('frame', frame);
-  return u.toString();
+  const params = new URLSearchParams();
+  params.set('product', product);
+  if (frame) params.set('frame', frame);
+
+  // URL.toString() percent-encodes the MapLibre placeholders, which prevents
+  // native tile substitution. Keep the path literal and only encode the query.
+  return `${API_BASE.replace(/\/+$/, '')}/v1/radar/mrms/tiles/{z}/{x}/{y}.png?${params.toString()}`;
 }
 
 function safeMaxZoom(value: unknown) {
