@@ -17,15 +17,23 @@ type MrmsTimelineResponse = {
   maxZoom?: number;
   tileCount?: number;
   totalBytes?: number;
+  maxFrameAgeMinutes?: number;
+  frames?: Array<{
+    frame?: string;
+    validTime?: string | null;
+    time?: string | null;
+    maxZoom?: number;
+  }>;
 };
 
 let cachedFrame: MrmsRadarFrame[] | null = null;
 let cachedExpiresAt = 0;
 let cachedProduct = '';
 
-function buildMrmsTileTemplate(product: string) {
+function buildMrmsTileTemplate(product: string, frame?: string | null) {
   const u = new URL(`${API_BASE}/v1/radar/mrms/tiles/{z}/{x}/{y}.png`);
   u.searchParams.set('product', product);
+  if (frame) u.searchParams.set('frame', frame);
   return u.toString();
 }
 
@@ -53,17 +61,40 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
   }
 
   const json = JSON.parse(text) as MrmsTimelineResponse;
-  const iso = json.validTime || json.time;
-  if (!json.ok || !iso) {
+  if (!json.ok) {
     throw new Error('MRMS timeline missing a valid frame');
   }
 
-  const frames = [{
-    iso,
-    template: buildMrmsTileTemplate(product),
-    maxZ: safeMaxZoom(json.maxZoom),
-    label: `MRMS ${json.frame || iso}`,
-  }];
+  const sourceFrames = Array.isArray(json.frames) && json.frames.length
+    ? json.frames
+    : [{ frame: json.frame, validTime: json.validTime, time: json.time, maxZoom: json.maxZoom }];
+  const mappedFrames = sourceFrames
+    .map((frame) => {
+      const iso = frame.validTime || frame.time;
+      if (!iso) return null;
+      return {
+        iso,
+        template: buildMrmsTileTemplate(product, frame.frame),
+        maxZ: safeMaxZoom(frame.maxZoom ?? json.maxZoom),
+        label: `MRMS ${frame.frame || iso}`,
+      };
+    })
+    .filter((frame): frame is MrmsRadarFrame => !!frame)
+    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime());
+  const newestMs = mappedFrames.reduce((best, frame) => {
+    const ms = new Date(frame.iso).getTime();
+    return Number.isFinite(ms) ? Math.max(best, ms) : best;
+  }, Number.NEGATIVE_INFINITY);
+  const maxAgeMs = Math.max(5, Math.min(360, json.maxFrameAgeMinutes ?? 360)) * 60_000;
+  const frames = Number.isFinite(newestMs)
+    ? mappedFrames.filter((frame) => {
+      const ms = new Date(frame.iso).getTime();
+      return Number.isFinite(ms) && newestMs - ms <= maxAgeMs;
+    })
+    : mappedFrames;
+  if (!frames.length) {
+    throw new Error('MRMS timeline missing a valid frame');
+  }
 
   cachedProduct = product;
   cachedFrame = frames;

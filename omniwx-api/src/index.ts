@@ -10286,6 +10286,23 @@ type MrmsLatestManifest = {
   totalBytes?: number;
   generatedAt?: string;
   tiles?: Array<{ z?: number; x?: number; y?: number; bytes?: number }>;
+  frameCount?: number;
+  retentionFrames?: number;
+  maxFrameAgeMinutes?: number;
+  frames?: Array<{
+    frame?: string;
+    validTime?: string | null;
+    time?: string | null;
+    generatedAt?: string | null;
+    tileBasePrefix?: string;
+    tileSize?: number;
+    minZoom?: number;
+    maxZoom?: number;
+    bounds?: unknown;
+    tileCount?: number;
+    totalBytes?: number;
+    tiles?: Array<{ z?: number; x?: number; y?: number; bytes?: number }>;
+  }>;
 };
 
 function buildMrmsLatestKey(env: Env, product: string) {
@@ -10300,6 +10317,12 @@ function parseMrmsTilePath(pathname: string) {
   const y = parts[2].replace(".png", "");
   if (!/^\d{1,2}$/.test(z) || !/^\d{1,6}$/.test(x) || !/^\d{1,6}$/.test(y)) return null;
   return { z, x, y };
+}
+
+function selectMrmsFrame(manifest: MrmsLatestManifest, requestedFrame: string | null) {
+  if (!requestedFrame) return manifest;
+  if (!/^[0-9A-Za-z]{8,32}$/.test(requestedFrame)) return null;
+  return (manifest.frames ?? []).find((frame) => frame?.frame === requestedFrame) ?? null;
 }
 
 async function readMrmsLatestManifest(env: Env, product: string) {
@@ -12014,7 +12037,15 @@ async function handleWorkerRequest(
         });
       }
 
-      const objectKey = `${latest.manifest.tileBasePrefix}/${tile.z}/${tile.x}/${tile.y}.png`;
+      const selectedFrame = selectMrmsFrame(latest.manifest, url.searchParams.get("frame"));
+      if (!selectedFrame?.tileBasePrefix) {
+        return new Response(JSON.stringify({ ok: false, error: "mrms-frame-not-found", frame: url.searchParams.get("frame") }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const objectKey = `${selectedFrame.tileBasePrefix}/${tile.z}/${tile.x}/${tile.y}.png`;
       const object = await env.RADAR_ASSETS!.get(objectKey);
       if (!object?.body) {
         return new Response(JSON.stringify({ ok: false, error: "mrms-tile-not-found", key: objectKey }), {
@@ -12029,7 +12060,7 @@ async function handleWorkerRequest(
           "content-type": object.httpMetadata?.contentType || "image/png",
           "cache-control": object.httpMetadata?.cacheControl || "public, max-age=300, stale-while-revalidate=1800",
           "x-omni-radar-source": "r2-mrms",
-          "x-omni-radar-frame": String(latest.manifest.frame || latest.manifest.validTime || ""),
+          "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
         }),
       });
     }

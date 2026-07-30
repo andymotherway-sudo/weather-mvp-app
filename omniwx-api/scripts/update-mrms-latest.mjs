@@ -13,6 +13,12 @@ function parseArgs(argv) {
     minZoom: 3,
     maxZoom: 4,
     maxTiles: 20,
+    retainFrames: 12,
+    maxFrameAgeMinutes: 360,
+    bucket: "omniwx-radar-assets-dev",
+    prefix: null,
+    latestPrefix: "radar/mrms/latest",
+    pydeps: null,
     apply: false,
     python: process.env.OMNIWX_PYTHON || null,
   };
@@ -23,6 +29,12 @@ function parseArgs(argv) {
     else if (arg === "--min-z" && argv[i + 1]) args.minZoom = parseInt(argv[++i], 10);
     else if (arg === "--max-z" && argv[i + 1]) args.maxZoom = parseInt(argv[++i], 10);
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
+    else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
+    else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
+    else if (arg === "--bucket" && argv[i + 1]) args.bucket = argv[++i];
+    else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
+    else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
+    else if (arg === "--pydeps" && argv[i + 1]) args.pydeps = argv[++i];
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
@@ -51,6 +63,12 @@ Options:
   --min-z <zoom>       Minimum XYZ zoom. Default: 3
   --max-z <zoom>       Maximum XYZ zoom. Default: 4
   --max-tiles <count>  Publish safety cap. Default: 20
+  --retain-frames <n>  Latest playlist retention count. Default: 12
+  --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
+  --bucket <name>      R2 bucket. Default: omniwx-radar-assets-dev
+  --prefix <key>       R2 frame prefix. Default: radar/mrms/proof/<product>
+  --latest-prefix <key> Stable latest prefix. Default: radar/mrms/latest
+  --pydeps <path>      Python dependency directory for tile rendering
   --python <path>      Python executable for the tile step
   --apply              Actually write to dev R2. Default is dry-run
 `);
@@ -70,7 +88,7 @@ function main() {
   const input = resolve(`../tmp/mrms/MRMS_${args.product}.latest.grib2.gz`);
   const outputDir = resolve(`../tmp/mrms/tiles/${args.product}-z${args.minZoom}z${args.maxZoom}`);
   const manifest = resolve(outputDir, "manifest.json");
-  const publishPrefix = `radar/mrms/proof/${args.product}`;
+  const publishPrefix = args.prefix || `radar/mrms/proof/${args.product}`;
 
   runStep("Download latest MRMS frame", process.execPath, [
     join(SCRIPT_DIR, "download-mrms-frame.mjs"),
@@ -92,16 +110,25 @@ function main() {
     String(args.maxZoom),
   ];
   if (args.python) tileArgs.push("--python", args.python);
+  if (args.pydeps) tileArgs.push("--pydeps", args.pydeps);
   runStep("Render non-empty MRMS XYZ tiles", process.execPath, tileArgs);
 
   const publishArgs = [
     join(SCRIPT_DIR, "publish-mrms-proof.mjs"),
     "--manifest",
     manifest,
+    "--bucket",
+    args.bucket,
     "--prefix",
     publishPrefix,
+    "--latest-prefix",
+    args.latestPrefix,
     "--max-tiles",
     String(args.maxTiles),
+    "--retain-frames",
+    String(args.retainFrames),
+    "--max-frame-age-minutes",
+    String(args.maxFrameAgeMinutes),
   ];
   if (args.apply) publishArgs.push("--apply");
   runStep(args.apply ? "Publish MRMS latest to dev R2" : "Dry-run MRMS dev R2 publish", process.execPath, publishArgs);

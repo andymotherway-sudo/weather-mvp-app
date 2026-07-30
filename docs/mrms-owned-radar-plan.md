@@ -213,3 +213,32 @@ Preview rules:
 - Normal wide radar remains RainViewer unless the preview toggle is manually enabled.
 
 The preview toggle is meant for visual comparison only. It should not be treated as DONE for default production radar until MRMS has a rolling multi-frame timeline, more zoom depth, retention cleanup exercised with real repeated publishes, and a visual QA pass against RainViewer.
+
+## Rolling MRMS latest playlist
+
+The stable latest pointer is now backward-compatible with the one-frame preview and forward-compatible with rolling playback:
+
+- Top-level fields such as `frame`, `validTime`, `tileBasePrefix`, `tiles`, and `maxZoom` still describe the latest frame.
+- `frames[]` contains the retained MRMS frame playlist.
+- Retained frames are freshness-gated, so old proof frames do not create multi-day radar jumps.
+- `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...` still serves the latest frame.
+- `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...&frame=<frame>` serves a specific retained frame.
+- `npm run mrms:update-latest -- --apply --retain-frames 12 --max-frame-age-minutes 360` publishes a bounded rolling manifest. Retention cleanup should still be run after repeated publishes so old frame prefixes do not become an archive.
+
+Verified on 2026-07-30:
+
+- Dev and production Workers support explicit retained-frame tile reads.
+- Dev latest manifest retained `20260730T141000` plus the previous dev frame.
+- Production latest manifest retained `20260730T141000` plus the previous production frame.
+- The `20260730T141000` frame produced 11 non-empty z3-z4 tiles totaling about 35 KB before manifests.
+- Legacy RainViewer-backed overview image publishing remained disabled while MRMS was updated.
+
+Useful commands:
+
+```powershell
+npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe
+```
+
+```bash
+node ./scripts/publish-mrms-proof.mjs --manifest /mnt/c/Users/andym_au640pp/weather-app/tmp/mrms/tiles/MergedReflectivityQCComposite-z3z4/manifest.json --bucket omniwx-radar-assets-prod --prefix radar/mrms/proof/MergedReflectivityQCComposite --max-tiles 20 --retain-frames 12 --apply
+```

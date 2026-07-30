@@ -19,6 +19,8 @@ function parseArgs(argv) {
     dryRun: true,
     publishLatest: true,
     latestPrefix: DEFAULT_LATEST_PREFIX,
+    retainFrames: 12,
+    maxFrameAgeMinutes: 360,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -28,6 +30,8 @@ function parseArgs(argv) {
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
+    else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
+    else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--local") args.remote = false;
     else if (arg === "--apply") args.dryRun = false;
     else if (arg === "--no-latest") args.publishLatest = false;
@@ -49,6 +53,8 @@ Options:
   --prefix <key>       R2 key prefix. Default: ${DEFAULT_PREFIX}
   --latest-prefix <key> Stable latest manifest prefix. Default: ${DEFAULT_LATEST_PREFIX}
   --max-tiles <count>  Safety cap. Default: 20
+  --retain-frames <n>  Latest playlist retention count. Default: 12
+  --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
   --no-latest          Skip stable latest manifest upload
   --apply              Actually upload. Default is dry-run
   --local              Use Wrangler local R2 instead of remote
@@ -101,6 +107,66 @@ function uploadObject(args, objectPath, filePath) {
   }
 }
 
+function downloadTextObject(args, objectPath) {
+  const wranglerArgs = [
+    "./node_modules/wrangler/bin/wrangler.js",
+    "r2",
+    "object",
+    "get",
+    objectPath,
+    args.remote ? "--remote" : "--local",
+    "--pipe",
+  ];
+  const result = spawnSync(process.execPath, wranglerArgs, { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return result.stdout || null;
+}
+
+function normalizeFrameEntry(value) {
+  if (!value || typeof value !== "object") return null;
+  const frame = String(value.frame || "").trim();
+  const tileBasePrefix = String(value.tileBasePrefix || "").trim();
+  if (!/^[0-9A-Za-z]{8,32}$/.test(frame) || !tileBasePrefix) return null;
+  return {
+    frame,
+    validTime: value.validTime || null,
+    time: value.time || null,
+    generatedAt: value.generatedAt || null,
+    tileBasePrefix,
+    tileSize: value.tileSize,
+    minZoom: value.minZoom,
+    maxZoom: value.maxZoom,
+    bounds: value.bounds,
+    tileCount: value.tileCount,
+    totalBytes: value.totalBytes,
+    tiles: Array.isArray(value.tiles) ? value.tiles : [],
+  };
+}
+
+function frameTimeMs(entry) {
+  const explicit = Date.parse(String(entry?.validTime || entry?.time || ""));
+  if (Number.isFinite(explicit)) return explicit;
+  const frame = String(entry?.frame || "");
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/.exec(frame);
+  if (!match) return Number.NaN;
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  return Date.parse(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+}
+
+function existingPlaylistFrames(args, latestKey) {
+  const text = downloadTextObject(args, `${args.bucket}/${latestKey}`);
+  if (!text) return [];
+  try {
+    const manifest = JSON.parse(text);
+    const frames = Array.isArray(manifest.frames) ? manifest.frames.map(normalizeFrameEntry).filter(Boolean) : [];
+    const topFrame = normalizeFrameEntry(manifest);
+    if (topFrame && !frames.some((entry) => entry.frame === topFrame.frame)) frames.push(topFrame);
+    return frames;
+  } catch {
+    return [];
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const manifest = JSON.parse(await readFile(args.manifest, "utf8"));
@@ -126,10 +192,7 @@ async function main() {
 
   let latestManifestPath = null;
   if (args.publishLatest) {
-    const latestManifest = {
-      ok: true,
-      source: manifest.source || "NOAA MRMS",
-      product,
+    const currentFrame = {
       frame,
       validTime: manifest.validTime || null,
       time: manifest.time || null,
@@ -139,7 +202,6 @@ async function main() {
       minZoom: manifest.minZoom,
       maxZoom: manifest.maxZoom,
       bounds: manifest.bounds,
-      sourceShape: manifest.sourceShape,
       tileCount: tiles.length,
       totalBytes: manifest.totalBytes,
       tiles: tiles.map((tile) => ({
@@ -149,13 +211,51 @@ async function main() {
         bytes: tile.bytes,
       })),
     };
+    const latestKey = `${args.latestPrefix}/${product}.json`;
+    const previousFrames = args.dryRun ? [] : existingPlaylistFrames(args, latestKey);
+    const framesById = new Map();
+    for (const entry of [currentFrame, ...previousFrames]) {
+      if (!entry?.frame || framesById.has(entry.frame)) continue;
+      framesById.set(entry.frame, entry);
+    }
+    const frames = Array.from(framesById.values())
+      .sort((a, b) => String(b.frame).localeCompare(String(a.frame)))
+      .filter((entry, _index, list) => {
+        const newestMs = frameTimeMs(list[0]);
+        const entryMs = frameTimeMs(entry);
+        if (!Number.isFinite(newestMs) || !Number.isFinite(entryMs)) return true;
+        return newestMs - entryMs <= args.maxFrameAgeMinutes * 60_000;
+      })
+      .slice(0, args.retainFrames);
+    const latestManifest = {
+      ok: true,
+      source: manifest.source || "NOAA MRMS",
+      product,
+      frame: currentFrame.frame,
+      validTime: currentFrame.validTime,
+      time: currentFrame.time,
+      generatedAt: new Date().toISOString(),
+      tileBasePrefix: currentFrame.tileBasePrefix,
+      tileSize: currentFrame.tileSize,
+      minZoom: currentFrame.minZoom,
+      maxZoom: currentFrame.maxZoom,
+      bounds: manifest.bounds,
+      sourceShape: manifest.sourceShape,
+      tileCount: currentFrame.tileCount,
+      totalBytes: currentFrame.totalBytes,
+      tiles: currentFrame.tiles,
+      frameCount: frames.length,
+      retentionFrames: args.retainFrames,
+      maxFrameAgeMinutes: args.maxFrameAgeMinutes,
+      frames,
+    };
     const latestDir = resolve("../tmp/mrms/publish");
     await mkdir(latestDir, { recursive: true });
     latestManifestPath = join(latestDir, `${product}.latest.json`);
     await writeFile(latestManifestPath, JSON.stringify(latestManifest, null, 2), "utf8");
     uploads.push({
       localPath: latestManifestPath,
-      objectPath: `${args.bucket}/${args.latestPrefix}/${product}.json`,
+      objectPath: `${args.bucket}/${latestKey}`,
     });
   }
 
@@ -165,6 +265,8 @@ async function main() {
     bucket: args.bucket,
     prefix: basePrefix,
     latestKey: args.publishLatest ? `${args.latestPrefix}/${product}.json` : null,
+    retainFrames: args.publishLatest ? args.retainFrames : null,
+    maxFrameAgeMinutes: args.publishLatest ? args.maxFrameAgeMinutes : null,
     uploadCount: uploads.length,
     tileCount: tiles.length,
     totalBytes: manifest.totalBytes,
