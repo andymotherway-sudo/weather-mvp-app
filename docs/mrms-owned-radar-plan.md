@@ -234,6 +234,8 @@ Verified on 2026-07-30:
 - The `20260730T141000` frame produced 11 non-empty z3-z4 tiles totaling about 35 KB before manifests.
 - Legacy RainViewer-backed overview image publishing remained disabled while MRMS was updated.
 - Retained-frame cleanup deleted stale dev/prod proof frame prefixes and left only `20260730T141000` active in each bucket.
+- A second fresh frame, `20260730T200800`, was published to dev and production. Both latest manifests now expose a two-frame retained playlist: `20260730T200800` and `20260730T141000`.
+- Dev retained cleanup dry-run reported 23 matched MRMS proof objects and zero delete candidates after the second frame publish.
 
 Useful commands:
 
@@ -243,4 +245,10 @@ npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp
 
 ```bash
 node ./scripts/publish-mrms-proof.mjs --manifest /mnt/c/Users/andym_au640pp/weather-app/tmp/mrms/tiles/MergedReflectivityQCComposite-z3z4/manifest.json --bucket omniwx-radar-assets-prod --prefix radar/mrms/proof/MergedReflectivityQCComposite --max-tiles 20 --retain-frames 12 --apply
+```
+
+```bash
+npm run mrms:cleanup-retained -- --env dev
+npm run mrms:cleanup-retained -- --env dev --apply
+npm run mrms:cleanup-retained -- --env production --allow-disabled
 ```
