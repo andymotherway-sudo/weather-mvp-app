@@ -236,6 +236,7 @@ Verified on 2026-07-30:
 - Retained-frame cleanup deleted stale dev/prod proof frame prefixes and left only `20260730T141000` active in each bucket.
 - A second fresh frame, `20260730T200800`, was published to dev and production. Both latest manifests now expose a two-frame retained playlist: `20260730T200800` and `20260730T141000`.
 - Dev retained cleanup dry-run reported 23 matched MRMS proof objects and zero delete candidates after the second frame publish.
+- z5 was measured and promoted for `20260730T200800`: 32 non-empty z3-z5 tiles totaling about 129 KB before manifests. Dev/prod latest manifests now advertise `maxZoom=5` for that latest frame.
 
 Useful commands:
 
