@@ -2,6 +2,8 @@
 
 This is the storage foundation for moving OMNIwx radar off IEM and RainViewer without changing app behavior first.
 
+Current direction: owned national radar should move through MRMS, not the older RainViewer-backed national overview image cache. Keep the tiny timeline manifest path available for compatibility, but do not publish legacy overview image tiles unless we intentionally re-enable that experiment.
+
 Cost guardrail:
 
 - zero-cost is the default target right now
@@ -71,7 +73,7 @@ The current live posture is still intentionally conservative:
 
 - D1 is the source of truth for the rolling manifest.
 - R2 stores one latest timeline object.
-- R2 also stores a tiny owned-image slice for national overview radar.
+- R2 can store a tiny owned-image slice for national overview radar, but that legacy RainViewer-backed publisher is disabled during the MRMS pivot.
 - The worker decides when to serve owned tiles and when to fall back.
 
 ## Current safe defaults
@@ -83,7 +85,7 @@ The worker should stay near these defaults unless intentionally changed:
 - `RADAR_MANIFEST_RETENTION_COUNT=12`
 - `RADAR_R2_PUBLISH_ENABLED=1`
 - `RADAR_R2_PUBLISH_KEY=radar/timeline/latest.json`
-- `RADAR_R2_IMAGE_PUBLISH_ENABLED=1`
+- `RADAR_R2_IMAGE_PUBLISH_ENABLED=0`
 - `RADAR_R2_IMAGE_HISTORY_FRAMES=1`
 - `RADAR_R2_IMAGE_MAX_ZOOM=1`
 - `RADAR_R2_LOCAL_IMAGE_PUBLISH_ENABLED=1`
@@ -100,17 +102,20 @@ That means:
 
 - D1 keeps only a small rolling manifest set
 - R2 stores one latest timeline object instead of growing an archive
-- owned radar PNGs are bounded to a tiny overview slice
+- owned national MRMS proof/latest PNGs are bounded and manually promoted
+- legacy national overview PNG publishing is off
 - owned local single-site radar is bounded to a small hot-site roster, not a national archive
 - future expansion should increase one axis at a time
 
 During the MRMS pivot, local single-site tile accumulation stays off by default. The app can still request local radar through the worker and external fallback path, but exploratory local radar use should not write RIDGE tiles into R2 unless `RADAR_R2_LOCAL_TILE_CACHE_ENABLED=1` is intentionally enabled.
 
+Legacy overview image publishing is also off by default. MRMS is the preferred owned national reflectivity path; RainViewer remains the default user-facing broad radar fallback until MRMS has rolling history, visual QA, and retention exercised.
+
 ## Hot-site path under 10 GB
 
 If the goal is responsive local radar across the U.S. without turning R2 into a giant archive, use a hot-site roster instead of trying to pre-cache every NEXRAD site.
 
-- Keep the national timeline and national overview hot at all times.
+- Keep the national timeline manifest hot for compatibility, but keep legacy national overview image tiles disabled while MRMS is being built.
 - Publish owned local tiles only for a bounded list of hot sites.
 - Keep the local site list small at first, then grow it slowly based on real usage.
 - Keep local coverage radius and zoom range intentionally narrow.
