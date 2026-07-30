@@ -10186,9 +10186,12 @@ const OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN = 1;
 const OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN = 300;
 const OWNED_LOCAL_RADAR_MAX_EVICTIONS_PER_RUN = 60;
 const RADAR_R2_MAINTENANCE_CONFIRM = "delete-radar-images-ridge";
+const RADAR_R2_LEGACY_OVERVIEW_MAINTENANCE_CONFIRM = "delete-radar-images-rainviewer";
 const MRMS_MAINTENANCE_CONFIRM = "cleanup-mrms-proof-dev";
+const RADAR_R2_LEGACY_OVERVIEW_TILE_PREFIX = "radar/images/rainviewer/";
 const RADAR_R2_LOCAL_TILE_PREFIX = "radar/images/ridge/";
 const RADAR_R2_MAINTENANCE_CLEANUP_SOURCE_ENABLED = false;
+const RADAR_R2_LEGACY_OVERVIEW_CLEANUP_SOURCE_ENABLED = true;
 
 function isRadarR2LocalCronPublishEnabled(env: Env) {
   const raw = String((env as any).RADAR_R2_LOCAL_CRON_PUBLISH_ENABLED ?? "").trim().toLowerCase();
@@ -10197,6 +10200,11 @@ function isRadarR2LocalCronPublishEnabled(env: Env) {
 
 function isRadarR2MaintenanceCleanupEnabled(env: Env) {
   const raw = String(env.RADAR_R2_MAINTENANCE_CLEANUP_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isRadarR2LegacyOverviewCleanupEnabled(env: Env) {
+  const raw = String(env.RADAR_R2_LEGACY_OVERVIEW_CLEANUP_ENABLED ?? "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
@@ -10387,8 +10395,9 @@ async function cleanupRadarR2Prefix(
   const page = await env.RADAR_ASSETS.list({ prefix: args.prefix, limit: args.limit });
   const keys = page.objects.map((object) => object.key).filter(Boolean);
   if (!args.dryRun) {
-    for (const key of keys) {
-      await env.RADAR_ASSETS.delete(key);
+    const deleteBatchSize = 25;
+    for (let index = 0; index < keys.length; index += deleteBatchSize) {
+      await Promise.all(keys.slice(index, index + deleteBatchSize).map((key) => env.RADAR_ASSETS!.delete(key)));
     }
   }
 
@@ -12121,6 +12130,41 @@ async function handleWorkerRequest(
       const dryRun = url.searchParams.get("dryRun") !== "0";
       const cleanup = await cleanupRadarR2Prefix(env, {
         prefix: RADAR_R2_LOCAL_TILE_PREFIX,
+        dryRun,
+        limit: clampInt(Number.isFinite(limitRaw) ? limitRaw : 500, 1, 1000),
+      });
+      return new Response(JSON.stringify(cleanup), {
+        status: cleanup.ok ? 200 : 500,
+        headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/maintenance/r2/cleanup-legacy-overview") {
+      if (!RADAR_R2_LEGACY_OVERVIEW_CLEANUP_SOURCE_ENABLED || !isRadarR2LegacyOverviewCleanupEnabled(env)) {
+        return new Response(JSON.stringify({ ok: false, error: "legacy-overview-cleanup-disabled" }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      if (request.method !== "POST") {
+        return new Response(JSON.stringify({ ok: false, error: "POST required" }), {
+          status: 405,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const confirm = url.searchParams.get("confirm") ?? "";
+      if (confirm !== RADAR_R2_LEGACY_OVERVIEW_MAINTENANCE_CONFIRM) {
+        return new Response(JSON.stringify({ ok: false, error: "confirmation phrase required" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const limitRaw = Number(url.searchParams.get("limit") ?? "500");
+      const dryRun = url.searchParams.get("dryRun") !== "0";
+      const cleanup = await cleanupRadarR2Prefix(env, {
+        prefix: RADAR_R2_LEGACY_OVERVIEW_TILE_PREFIX,
         dryRun,
         limit: clampInt(Number.isFinite(limitRaw) ? limitRaw : 500, 1, 1000),
       });

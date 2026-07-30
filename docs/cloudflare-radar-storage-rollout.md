@@ -111,6 +111,8 @@ During the MRMS pivot, local single-site tile accumulation stays off by default.
 
 Legacy overview image publishing is also off by default. MRMS is the preferred owned national reflectivity path; RainViewer remains the default user-facing broad radar fallback until MRMS has rolling history, visual QA, and retention exercised.
 
+To delete old legacy overview objects, temporarily enable `RADAR_R2_LEGACY_OVERVIEW_CLEANUP_ENABLED=1` and call `POST /v1/radar/maintenance/r2/cleanup-legacy-overview?confirm=delete-radar-images-rainviewer&dryRun=0&limit=1000` repeatedly until `matchedCount` is `0`. The route is hard-coded to `radar/images/rainviewer/` so it cannot delete MRMS, timeline manifests, or local RIDGE tiles.
+
 ## Hot-site path under 10 GB
 
 If the goal is responsive local radar across the U.S. without turning R2 into a giant archive, use a hot-site roster instead of trying to pre-cache every NEXRAD site.
