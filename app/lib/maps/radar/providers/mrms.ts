@@ -45,6 +45,17 @@ function safeMaxZoom(value: unknown) {
   return Math.max(3, Math.min(10, n));
 }
 
+function normalizeMrmsUtcIso(value: unknown) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  // MRMS GRIB timestamps are UTC. Some decoded values arrive without a zone
+  // suffix, and JavaScript would otherwise interpret them as device-local time.
+  const utcRaw = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+  const ms = Date.parse(utcRaw);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number }): Promise<MrmsRadarFrame[]> {
   const product = (args?.product || 'MergedReflectivityQCComposite').trim();
   const ttlMs = Math.max(10_000, args?.ttlMs ?? 60_000);
@@ -73,7 +84,7 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
     : [{ frame: json.frame, validTime: json.validTime, time: json.time, maxZoom: json.maxZoom }];
   const mappedFrames = sourceFrames
     .map((frame) => {
-      const iso = frame.validTime || frame.time;
+      const iso = normalizeMrmsUtcIso(frame.validTime || frame.time);
       if (!iso) return null;
       return {
         iso,
@@ -95,12 +106,16 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
       return Number.isFinite(ms) && newestMs - ms <= maxAgeMs;
     })
     : mappedFrames;
-  if (!frames.length) {
+  const highestMaxZ = frames.reduce((best, frame) => Math.max(best, frame.maxZ), 0);
+  const bestQualityFrames = highestMaxZ > 0
+    ? frames.filter((frame) => frame.maxZ >= highestMaxZ)
+    : frames;
+  if (!bestQualityFrames.length) {
     throw new Error('MRMS timeline missing a valid frame');
   }
 
   cachedProduct = product;
-  cachedFrame = frames;
+  cachedFrame = bestQualityFrames;
   cachedExpiresAt = now + ttlMs;
-  return frames;
+  return bestQualityFrames;
 }

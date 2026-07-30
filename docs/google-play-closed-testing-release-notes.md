@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.240**
-Android version code: **10257**
+Release: **OMNIwx 1.1.241**
+Android version code: **10258**
 Track: **Closed testing / internal testing candidate**
 Date: **July 30, 2026**
 
 ## Play Console Paste Notes
 
-This build fixes the owned NOAA MRMS radar preview tile template so MapLibre can request real `{z}/{x}/{y}` MRMS tiles instead of encoded placeholder paths. The MRMS preview still reads a rolling retained-frame playlist from the production OMNIwx Worker, supports explicit frame tile requests, and includes a z5 latest-frame tile set for broad-map comparison while keeping R2 storage bounded. RainViewer remains the default wide radar source, Storm Scope/local NEXRAD products remain on the existing local radar path, and MRMS is manual opt-in for comparison only.
+This build fixes MRMS preview timing and retained-frame quality. MRMS valid times are now treated as UTC before being shown in the local device timezone, so Phoenix testers should no longer see future-looking labels such as `8:08 PM` when it is only afternoon locally. The app also avoids mixing lower-zoom retained MRMS proof frames with higher-quality z5 frames, which prevents the first history frame from looking blurrier than the current frame. RainViewer remains the default wide radar source, Storm Scope/local NEXRAD products remain on the existing local radar path, and MRMS is manual opt-in for comparison only.
 
 ## Tester Notes
 
@@ -19,6 +19,8 @@ Please focus testing on the MRMS preview toggle and regression safety around the
 - Confirm RainViewer remains the default until `MRMS preview` is manually enabled.
 - Confirm enabling `MRMS preview` shows the owned MRMS mosaic tile where echoes exist, with no crash or blank-map regression.
 - Confirm MRMS preview imagery appears at broad U.S. zooms now that tile placeholders are preserved for MapLibre.
+- Confirm MRMS preview timestamps display in the correct local timezone and are not shown as future local times.
+- Confirm MRMS preview does not mix the older lower-zoom retained proof frame with the newer z5 frame.
 - Confirm MRMS preview now has multiple retained frames available in the radar timeline when the production Worker has fresh frames.
 - Confirm broad-map MRMS detail looks improved around z5 compared with the previous low-zoom-only proof.
 - Confirm disabling `MRMS preview` returns to RainViewer behavior.
@@ -31,8 +33,8 @@ Please focus testing on the MRMS preview toggle and regression safety around the
 
 ## Internal Release Checklist
 
-- App version: `1.1.240`
-- Android version code: `10257`
+- App version: `1.1.241`
+- Android version code: `10258`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`

@@ -238,6 +238,7 @@ Verified on 2026-07-30:
 - Dev retained cleanup dry-run reported 23 matched MRMS proof objects and zero delete candidates after the second frame publish.
 - z5 was measured and promoted for `20260730T200800`: 32 non-empty z3-z5 tiles totaling about 129 KB before manifests. Dev/prod latest manifests now advertise `maxZoom=5` for that latest frame.
 - App preview bug fixed in `1.1.240`: MRMS tile templates now preserve literal `{z}/{x}/{y}` placeholders for MapLibre instead of URL-encoding them, so the native map can request real owned MRMS tiles.
+- App preview timing/quality bug fixed in `1.1.241`: MRMS timestamps without an explicit zone are normalized as UTC before display, and lower-maxZoom retained frames are filtered out when higher-quality frames exist.
 
 Useful commands:
 
