@@ -3710,12 +3710,16 @@ export default function MapsScreen() {
       return 'Loading local radar history';
     }
 
-    if (frameCount === 1) return 'Latest radar frame only';
     if (radarCtl.mrmsLoading) return 'Loading MRMS preview';
     if (radarCtl.mrmsError) return 'MRMS preview unavailable';
+    if (effectiveRadarProvider === 'mrms' && frameCount > 0 && frameCount < 3) {
+      return 'Building MRMS history';
+    }
+    if (frameCount === 1) return 'Latest radar frame only';
     if (radarCtl.iemLoading) return 'Loading radar history';
     return 'Radar history unavailable';
   }, [
+    effectiveRadarProvider,
     frameCount,
     radarCtl.iemError,
     radarCtl.iemLoading,

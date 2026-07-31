@@ -259,6 +259,7 @@ Verified on 2026-07-30:
 - Richer MRMS preview promoted after measurement: the one-command cycle now defaults to z3-z8, `--max-tiles 900`, and bilinear raster sampling. Current measured z3-z8 bilinear output was 714 non-empty tiles totaling about 1.9 MB for one sparse-weather frame.
 - Production z8 publish verified with `20260731T010000`: 717 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, `sampling=bilinear`, and a live z8 tile returned `x-omni-radar-source: r2-mrms`.
 - Production z8 cleanup removed the prior z7-only frame and a follow-up dry run reported zero stale MRMS objects. History is temporarily one frame until additional z8 cycles rebuild the rolling playlist.
+- Second production z8 frame verified with `20260731T010800`: 727 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, a live z8 tile returned `x-omni-radar-source: r2-mrms`, and cleanup dry-run reported zero stale MRMS objects. The retained playlist is now rebuilding with two same-quality z8 frames.
 
 Useful commands:
 
