@@ -1,0 +1,119 @@
+name: MRMS radar cycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+      apply:
+        description: "Write to R2"
+        required: true
+        default: false
+        type: boolean
+      max_zoom:
+        description: "Maximum MRMS tile zoom"
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "4"
+          - "5"
+      retain_frames:
+        description: "Rolling retained frame count"
+        required: true
+        default: "12"
+        type: choice
+        options:
+          - "6"
+          - "12"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mrms-radar-cycle-${{ inputs.target_env || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  publish-mrms:
+    name: Publish bounded MRMS radar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      MRMS_MAX_ZOOM: ${{ inputs.max_zoom || '5' }}
+      MRMS_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ecCodes system library
+        run: sudo apt-get update && sudo apt-get install -y libeccodes0 libeccodes-dev
+        working-directory: .
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install MRMS Python dependencies
+        run: python -m pip install --target ../tmp/mrms-pydeps cfgrib eccodes xarray numpy pillow
+
+      - name: Check R2 credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured as a GitHub Actions secret"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Type-check API scripts
+        run: npx tsc --noEmit
+
+      - name: Run MRMS radar cycle
+        shell: bash
+        run: |
+          args=(
+            --env "$MRMS_TARGET_ENV"
+            --max-z "$MRMS_MAX_ZOOM"
+            --max-tiles 80
+            --retain-frames "$MRMS_RETAIN_FRAMES"
+            --max-frame-age-minutes 360
+            --min-retained-max-z "$MRMS_MAX_ZOOM"
+            --uploader s3
+          )
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            args+=(--apply)
+          fi
+          npm run mrms:cycle -- "${args[@]}"

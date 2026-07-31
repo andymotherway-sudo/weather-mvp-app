@@ -273,3 +273,33 @@ npm run mrms:cleanup-retained -- --env dev --apply
 npm run mrms:cleanup-retained -- --env production --uploader s3
 npm run mrms:cleanup-retained -- --env production --uploader s3 --apply
 ```
+
+## GitHub Actions job runner
+
+The first repeatable production job runner is `.github/workflows/mrms-radar-cycle.yml`. It is manual-run only right now so we do not accidentally consume recurring GitHub Actions minutes or R2 operations before the first hosted run is proven.
+
+Required GitHub repository secrets:
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+
+Optional GitHub repository secret:
+
+- `R2_ENDPOINT`
+
+Manual dry-run path:
+
+1. Open GitHub Actions.
+2. Select `MRMS radar cycle`.
+3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=5`, `retain_frames=12`.
+4. Confirm the job downloads NOAA MRMS, renders z3-z5 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
+
+Manual apply path after dry-run succeeds:
+
+1. Run the same workflow with `apply=true`.
+2. Verify `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite` shows a new latest frame.
+3. Verify a known tile returns `x-omni-radar-source: r2-mrms`.
+4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
+
+Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z5 and 12 retained frames.
