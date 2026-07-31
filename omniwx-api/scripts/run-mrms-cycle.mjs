@@ -140,6 +140,8 @@ function main() {
     workerEnv,
     "--product",
     args.product,
+    "--uploader",
+    args.uploader === "wrangler" ? "worker" : args.uploader,
     "--max-deletes",
     "1000",
     "--allow-disabled",

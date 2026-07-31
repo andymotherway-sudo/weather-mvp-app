@@ -144,23 +144,29 @@ Validated stable dev tile:
 
 ## MRMS retention brake
 
-Wrangler 4.105.0 supports R2 object get/put/delete here, but not object listing. Because retention requires listing, the Worker owns the cleanup path.
+The retention brake now runs directly against R2 through Cloudflare's S3-compatible API when credentials are present. This avoids Wrangler object-listing limits and avoids depending on a production Worker maintenance route.
 
-Dev-only cleanup route:
+Direct cleanup command:
 
-```text
-POST /v1/radar/mrms/maintenance/cleanup-proof?product=MergedReflectivityQCComposite&keepFrames=12&dryRun=1&confirm=cleanup-mrms-proof-dev
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run mrms:cleanup-retained -- --env production --product MergedReflectivityQCComposite --uploader s3
+```
+
+Apply only after the dry run shows expected stale prefixes:
+
+```powershell
+npm run mrms:cleanup-retained -- --env production --product MergedReflectivityQCComposite --uploader s3 --max-deletes 1000 --apply
 ```
 
 Guardrails:
 
-- `MRMS_MAINTENANCE_ENABLED=1` only in dev.
-- `MRMS_MAINTENANCE_ENABLED=0` in production.
-- POST is required.
-- `confirm=cleanup-mrms-proof-dev` is required.
-- `dryRun` defaults on; use `dryRun=0` only after inspecting candidates.
-- `keepFrames` is clamped from 1 to 24.
-- `maxDeletes` is clamped from 1 to 1000 per request.
+- Cleanup is dry-run by default.
+- Cleanup is scoped to `radar/mrms/proof/<product>/`.
+- The latest Worker timeline is treated as the source of truth for retained frame prefixes.
+- Objects are deleted only when their frame prefix is not listed in the latest retained playlist.
+- `--max-deletes` is a hard safety cap.
+- If R2 S3 credentials are missing and `--uploader auto` is used, the script falls back to the older Worker maintenance route.
 
 This is the storage safety valve before increasing MRMS publish cadence or zoom depth. It prevents a proof prefix from becoming an accidental archive.
 
@@ -243,6 +249,9 @@ Verified on 2026-07-30:
 - Production latest manifest was repaired to retain only same-quality z5 frames. Live production now advertises `20260731T000200` and `20260730T200800`, both with `maxZoom=5`, preventing the earlier blurry z4 retained frame from being shown.
 - Direct R2 S3-compatible upload path added: `publish-mrms-proof` and `mrms:cycle` support `--uploader auto|s3|wrangler`. `auto` uses S3-compatible R2 uploads when `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` are present; otherwise it falls back to Wrangler.
 - R2 S3 upload uses the AWS SDK pointed at Cloudflare R2. It does not require an AWS account. Keep real credentials in `.env` or scheduler secrets only.
+- Direct R2 S3-compatible cleanup path added: `mrms:cleanup-retained` supports `--uploader auto|s3|worker`, and `mrms:cycle -- --uploader s3` now uses direct S3 cleanup after publish.
+- Production S3 publish was verified with `20260731T004000`: 36 z3-z5 non-empty tiles, 125 KB of tile bytes, and the live tile route returned `x-omni-radar-source: r2-mrms`.
+- Production S3 cleanup removed stale frame `20260730T141000`: 11 objects, 34 KB. A follow-up dry run reported zero stale objects.
 
 Useful commands:
 
@@ -261,5 +270,6 @@ node ./scripts/publish-mrms-proof.mjs --manifest /mnt/c/Users/andym_au640pp/weat
 ```bash
 npm run mrms:cleanup-retained -- --env dev
 npm run mrms:cleanup-retained -- --env dev --apply
-npm run mrms:cleanup-retained -- --env production --allow-disabled
+npm run mrms:cleanup-retained -- --env production --uploader s3
+npm run mrms:cleanup-retained -- --env production --uploader s3 --apply
 ```
