@@ -83,14 +83,14 @@ Current proof status:
 - Based on measured local proof output, z3-z6 is roughly 270 KB per frame for this sparse-weather sample.
 - A z3-z7 nearest-neighbor composite proof generated 280 non-empty tiles totaling about 883 KB.
 - A z3-z7 bilinear composite proof generated 274 non-empty tiles totaling about 821 KB.
-- A z3-z8 bilinear composite proof generated 714 non-empty tiles totaling about 1.9 MB.
+- A z3-z10 bilinear composite proof generated 5,223 non-empty tiles totaling about 9.5 MB for a sparse-weather frame.
 
 Current renderer checkpoint:
 
-- Publish z3-z8 only with a hard tile cap.
+- Publish z3-z10 only with a hard tile cap.
 - Keep bilinear sampling as the default for cleaner zoomed-in tiles.
 - Keep the app default on RainViewer unless the MRMS preview toggle is enabled.
-- Rebuild history with same-quality z8 frames before considering MRMS as a default radar layer.
+- Rebuild history with same-quality z10 frames before considering MRMS as a default radar layer.
 
 ## Current storage read
 
@@ -260,6 +260,7 @@ Verified on 2026-07-30:
 - Production z8 publish verified with `20260731T010000`: 717 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, `sampling=bilinear`, and a live z8 tile returned `x-omni-radar-source: r2-mrms`.
 - Production z8 cleanup removed the prior z7-only frame and a follow-up dry run reported zero stale MRMS objects. History is temporarily one frame until additional z8 cycles rebuild the rolling playlist.
 - Second production z8 frame verified with `20260731T010800`: 727 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, a live z8 tile returned `x-omni-radar-source: r2-mrms`, and cleanup dry-run reported zero stale MRMS objects. The retained playlist is now rebuilding with two same-quality z8 frames.
+- City-level MRMS preview promoted after z10 measurement: the one-command cycle now defaults to z3-z10, `--max-tiles 12000`, and bilinear raster sampling. Production z10 publish verified with `20260731T011600`: 5,223 non-empty tiles, about 9.5 MB of tile bytes, and a live z10 tile returned `x-omni-radar-source: r2-mrms`. Cleanup removed the two older z8 frame prefixes, so retained production history is temporarily one z10 frame while same-quality z10 history rebuilds.
 
 Useful commands:
 
@@ -268,7 +269,7 @@ npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp
 ```
 
 ```powershell
-npm run mrms:cycle -- --env production --max-z 8 --max-tiles 900 --min-retained-max-z 8 --sampling bilinear --uploader s3 --apply
+npm run mrms:cycle -- --env production --max-z 10 --max-tiles 12000 --min-retained-max-z 10 --sampling bilinear --uploader s3 --apply
 ```
 
 ```bash
@@ -300,8 +301,8 @@ Manual dry-run path:
 
 1. Open GitHub Actions.
 2. Select `MRMS radar cycle`.
-3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=8`, `retain_frames=12`.
-4. Confirm the job downloads NOAA MRMS, renders z3-z8 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
+3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=10`, `retain_frames=12`.
+4. Confirm the job downloads NOAA MRMS, renders z3-z10 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
 
 Manual apply path after dry-run succeeds:
 
@@ -310,4 +311,4 @@ Manual apply path after dry-run succeeds:
 3. Verify a known tile returns `x-omni-radar-source: r2-mrms`.
 4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
 
-Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z8 and 12 retained frames.
+Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z10 and 12 retained frames.

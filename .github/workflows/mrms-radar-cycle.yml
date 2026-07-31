@@ -19,7 +19,7 @@ on:
       max_zoom:
         description: "Maximum MRMS tile zoom"
         required: true
-        default: "8"
+        default: "10"
         type: choice
         options:
           - "4"
@@ -27,6 +27,8 @@ on:
           - "6"
           - "7"
           - "8"
+          - "9"
+          - "10"
       retain_frames:
         description: "Rolling retained frame count"
         required: true
@@ -59,7 +61,7 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
-      MRMS_MAX_ZOOM: ${{ inputs.max_zoom || '5' }}
+      MRMS_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
       MRMS_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
 
     steps:
@@ -110,7 +112,7 @@ jobs:
           args=(
             --env "$MRMS_TARGET_ENV"
             --max-z "$MRMS_MAX_ZOOM"
-            --max-tiles 900
+            --max-tiles 12000
             --retain-frames "$MRMS_RETAIN_FRAMES"
             --max-frame-age-minutes 360
             --min-retained-max-z "$MRMS_MAX_ZOOM"

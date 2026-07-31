@@ -11,8 +11,8 @@ function parseArgs(argv) {
   const args = {
     product: DEFAULT_PRODUCT,
     minZoom: 3,
-    maxZoom: 4,
-    maxTiles: 900,
+    maxZoom: 10,
+    maxTiles: 12000,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
@@ -72,8 +72,8 @@ unless --apply is passed.
 Options:
   --product <name>     MRMS 2D product. Default: ${DEFAULT_PRODUCT}
   --min-z <zoom>       Minimum XYZ zoom. Default: 3
-  --max-z <zoom>       Maximum XYZ zoom. Default: 4
-  --max-tiles <count>  Publish safety cap. Default: 900
+  --max-z <zoom>       Maximum XYZ zoom. Default: 10
+  --max-tiles <count>  Publish safety cap. Default: 12000
   --retain-frames <n>  Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
   --min-retained-max-z <n> Drop retained playlist frames below this max zoom

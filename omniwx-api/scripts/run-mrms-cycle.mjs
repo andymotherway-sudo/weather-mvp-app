@@ -18,8 +18,8 @@ function parseArgs(argv) {
     env: "dev",
     product: DEFAULT_PRODUCT,
     minZoom: 3,
-    maxZoom: 8,
-    maxTiles: 900,
+    maxZoom: 10,
+    maxTiles: 12000,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
@@ -82,8 +82,8 @@ Options:
   --env <dev|production>     Target environment. Default: dev
   --product <name>           MRMS product. Default: ${DEFAULT_PRODUCT}
   --min-z <n>                Minimum zoom. Default: 3
-  --max-z <n>                Maximum zoom. Default: 8
-  --max-tiles <n>            Publish safety cap. Default: 900
+  --max-z <n>                Maximum zoom. Default: 10
+  --max-tiles <n>            Publish safety cap. Default: 12000
   --retain-frames <n>        Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this. Default: 360
   --min-retained-max-z <n>   Drop retained playlist frames below this max zoom. Default: --max-z
@@ -151,7 +151,7 @@ function main() {
     "--uploader",
     args.uploader === "wrangler" ? "worker" : args.uploader,
     "--max-deletes",
-    "1000",
+    String(Math.max(10000, args.maxTiles * 2)),
     "--allow-disabled",
   ];
   if (args.apply) cleanupArgs.push("--apply");
