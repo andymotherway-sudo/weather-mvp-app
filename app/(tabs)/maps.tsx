@@ -5627,7 +5627,7 @@ export default function MapsScreen() {
                   {effectiveRadarProvider === 'mrms'
                     ? radarCtl.mrmsError
                       ? `MRMS preview unavailable: ${radarCtl.mrmsError}`
-                      : 'MRMS preview uses our dev Worker and NOAA MRMS composite tiles. RainViewer remains the production default.'
+                      : 'MRMS preview uses our owned Worker and NOAA MRMS composite tiles. RainViewer remains the default unless you switch to preview.'
                     : 'RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.'}
                 </Text>
               </Glass>

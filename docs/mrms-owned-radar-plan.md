@@ -83,12 +83,14 @@ Current proof status:
 - Based on measured local proof output, z3-z6 is roughly 270 KB per frame for this sparse-weather sample.
 - A z3-z7 nearest-neighbor composite proof generated 280 non-empty tiles totaling about 883 KB.
 - A z3-z7 bilinear composite proof generated 274 non-empty tiles totaling about 821 KB.
+- A z3-z8 bilinear composite proof generated 714 non-empty tiles totaling about 1.9 MB.
 
-Next renderer checkpoint:
+Current renderer checkpoint:
 
-- Publish only the z3-z4 proof prefix to dev R2 first.
-- Add a Worker MRMS test route that can serve dev/prod tiles only when a manifest exists.
-- Keep app radar unchanged until the MRMS route renders correctly in isolation.
+- Publish z3-z8 only with a hard tile cap.
+- Keep bilinear sampling as the default for cleaner zoomed-in tiles.
+- Keep the app default on RainViewer unless the MRMS preview toggle is enabled.
+- Rebuild history with same-quality z8 frames before considering MRMS as a default radar layer.
 
 ## Current storage read
 
@@ -254,7 +256,9 @@ Verified on 2026-07-30:
 - Direct R2 S3-compatible cleanup path added: `mrms:cleanup-retained` supports `--uploader auto|s3|worker`, and `mrms:cycle -- --uploader s3` now uses direct S3 cleanup after publish.
 - Production S3 publish was verified with `20260731T004000`: 36 z3-z5 non-empty tiles, 125 KB of tile bytes, and the live tile route returned `x-omni-radar-source: r2-mrms`.
 - Production S3 cleanup removed stale frame `20260730T141000`: 11 objects, 34 KB. A follow-up dry run reported zero stale objects.
-- Richer MRMS preview promoted after measurement: the one-command cycle now defaults to z3-z7, `--max-tiles 400`, and bilinear raster sampling. Current measured z3-z7 bilinear output was 274 non-empty tiles totaling about 821 KB for one sparse-weather frame.
+- Richer MRMS preview promoted after measurement: the one-command cycle now defaults to z3-z8, `--max-tiles 900`, and bilinear raster sampling. Current measured z3-z8 bilinear output was 714 non-empty tiles totaling about 1.9 MB for one sparse-weather frame.
+- Production z8 publish verified with `20260731T010000`: 717 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, `sampling=bilinear`, and a live z8 tile returned `x-omni-radar-source: r2-mrms`.
+- Production z8 cleanup removed the prior z7-only frame and a follow-up dry run reported zero stale MRMS objects. History is temporarily one frame until additional z8 cycles rebuild the rolling playlist.
 
 Useful commands:
 
@@ -263,7 +267,7 @@ npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp
 ```
 
 ```powershell
-npm run mrms:cycle -- --env production --max-z 7 --max-tiles 400 --min-retained-max-z 7 --sampling bilinear --uploader s3 --apply
+npm run mrms:cycle -- --env production --max-z 8 --max-tiles 900 --min-retained-max-z 8 --sampling bilinear --uploader s3 --apply
 ```
 
 ```bash
@@ -295,8 +299,8 @@ Manual dry-run path:
 
 1. Open GitHub Actions.
 2. Select `MRMS radar cycle`.
-3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=7`, `retain_frames=12`.
-4. Confirm the job downloads NOAA MRMS, renders z3-z7 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
+3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=8`, `retain_frames=12`.
+4. Confirm the job downloads NOAA MRMS, renders z3-z8 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
 
 Manual apply path after dry-run succeeds:
 
@@ -305,4 +309,4 @@ Manual apply path after dry-run succeeds:
 3. Verify a known tile returns `x-omni-radar-source: r2-mrms`.
 4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
 
-Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z7 and 12 retained frames.
+Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z8 and 12 retained frames.
