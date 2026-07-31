@@ -9745,6 +9745,8 @@ function buildRadarInfoPayload(env: Env) {
         maintenanceEnabled: isMrmsMaintenanceEnabled(env),
         latestPrefix: getMrmsLatestPrefix(env),
         proofPrefix: getMrmsProofPrefix(env),
+        publicTileBaseUrl: getMrmsPublicTileBaseUrl(env),
+        publicTileDeliveryEnabled: !!getMrmsPublicTileBaseUrl(env),
         timelineRoute: "/v1/radar/mrms/timeline",
         tileRoute: "/v1/radar/mrms/tiles/{z}/{x}/{y}.png",
       },
@@ -9834,6 +9836,8 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         maintenanceEnabled: isMrmsMaintenanceEnabled(env),
         latestPrefix: getMrmsLatestPrefix(env),
         proofPrefix: getMrmsProofPrefix(env),
+        publicTileBaseUrl: getMrmsPublicTileBaseUrl(env),
+        publicTileDeliveryEnabled: !!getMrmsPublicTileBaseUrl(env),
       },
     },
     currentSource: {
@@ -10231,6 +10235,18 @@ function getMrmsLatestPrefix(env: Env) {
   return String(env.MRMS_LATEST_PREFIX || "radar/mrms/latest").trim().replace(/^\/+|\/+$/g, "");
 }
 
+function getMrmsPublicTileBaseUrl(env: Env) {
+  const raw = String(env.MRMS_PUBLIC_TILE_BASE_URL || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return null;
+    return parsed.toString().replace(/\/+$/g, "");
+  } catch {
+    return null;
+  }
+}
+
 function normalizeMrmsProduct(url: URL) {
   const product = (url.searchParams.get("product") || "MergedReflectivityQCComposite").trim();
   if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
@@ -10276,12 +10292,14 @@ type MrmsLatestManifest = {
   source?: string;
   product?: string;
   validTime?: string | null;
+  time?: string | null;
   frame?: string;
   tileBasePrefix?: string;
   tileSize?: number;
   minZoom?: number;
   maxZoom?: number;
   bounds?: unknown;
+  sourceShape?: unknown;
   tileCount?: number;
   totalBytes?: number;
   generatedAt?: string;
@@ -10305,6 +10323,8 @@ type MrmsLatestManifest = {
   }>;
 };
 
+type MrmsTimelineFrame = NonNullable<MrmsLatestManifest["frames"]>[number] | MrmsLatestManifest;
+
 function buildMrmsLatestKey(env: Env, product: string) {
   return `${getMrmsLatestPrefix(env)}/${product}.json`;
 }
@@ -10323,6 +10343,50 @@ function selectMrmsFrame(manifest: MrmsLatestManifest, requestedFrame: string | 
   if (!requestedFrame) return manifest;
   if (!/^[0-9A-Za-z]{8,32}$/.test(requestedFrame)) return null;
   return (manifest.frames ?? []).find((frame) => frame?.frame === requestedFrame) ?? null;
+}
+
+function buildMrmsPublicTileTemplate(env: Env, frame: { tileBasePrefix?: string } | null | undefined) {
+  const baseUrl = getMrmsPublicTileBaseUrl(env);
+  const prefix = String(frame?.tileBasePrefix || "").replace(/^\/+|\/+$/g, "");
+  if (!baseUrl || !prefix) return null;
+  return `${baseUrl}/${prefix}/{z}/{x}/{y}.png`;
+}
+
+function slimMrmsFrameForTimeline(env: Env, frame: MrmsTimelineFrame) {
+  const tileTemplate = buildMrmsPublicTileTemplate(env, frame);
+  return {
+    frame: frame.frame,
+    validTime: frame.validTime ?? null,
+    time: frame.time ?? null,
+    generatedAt: frame.generatedAt ?? null,
+    tileBasePrefix: frame.tileBasePrefix,
+    tileTemplate,
+    tileDelivery: tileTemplate ? "public-r2" : "worker-r2",
+    tileSize: frame.tileSize,
+    minZoom: frame.minZoom,
+    maxZoom: frame.maxZoom,
+    bounds: frame.bounds,
+    tileCount: frame.tileCount,
+    totalBytes: frame.totalBytes,
+  };
+}
+
+function buildMrmsTimelineResponse(env: Env, manifest: MrmsLatestManifest) {
+  const frames = Array.isArray(manifest.frames) && manifest.frames.length
+    ? manifest.frames.map((frame) => slimMrmsFrameForTimeline(env, frame))
+    : [slimMrmsFrameForTimeline(env, manifest)];
+  const latestFrame = slimMrmsFrameForTimeline(env, manifest);
+  return {
+    ok: manifest.ok,
+    source: manifest.source,
+    product: manifest.product,
+    ...latestFrame,
+    sourceShape: manifest.sourceShape,
+    frameCount: manifest.frameCount ?? frames.length,
+    retentionFrames: manifest.retentionFrames,
+    maxFrameAgeMinutes: manifest.maxFrameAgeMinutes,
+    frames,
+  };
 }
 
 async function readMrmsLatestManifest(env: Env, product: string) {
@@ -12007,7 +12071,8 @@ async function handleWorkerRequest(
         });
       }
 
-      return new Response(JSON.stringify(latest.manifest), {
+      const timeline = buildMrmsTimelineResponse(env, latest.manifest);
+      return new Response(JSON.stringify(timeline), {
         status: 200,
         headers: withCors({
           "content-type": "application/json; charset=utf-8",

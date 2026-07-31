@@ -50,6 +50,26 @@ Recommended names:
 
 This keeps public delivery separate from internal ingest/output staging, which is cleaner once we add caching and lifecycle rules.
 
+## Public MRMS tile delivery
+
+MRMS frame tiles are public weather imagery, so the scalable delivery path is direct static delivery from the public radar assets bucket instead of routing every map tile through the Worker.
+
+Current safe cutover shape:
+
+- Keep MRMS timeline/control-plane reads on the Worker at `/v1/radar/mrms/timeline`.
+- Attach a Cloudflare public/custom domain to the production `RADAR_ASSETS` bucket, for example `https://radar-assets.omniwx.com`.
+- Set `MRMS_PUBLIC_TILE_BASE_URL` to that HTTPS origin after the domain is live.
+- The Worker timeline will then emit each frame with `tileTemplate` pointing directly at R2, such as `https://radar-assets.omniwx.com/radar/mrms/proof/MergedReflectivityQCComposite/<frame>/{z}/{x}/{y}.png`.
+- The app prefers `tileTemplate` when present and falls back to `/v1/radar/mrms/tiles/{z}/{x}/{y}.png` when it is absent.
+- The Worker tile route remains as a compatibility fallback while the public delivery path is proven.
+
+Guardrails:
+
+- Put only public-safe radar artifacts in `RADAR_ASSETS`; never store secrets, user data, logs, private manifests, or paid-only assets in this public bucket.
+- Keep timestamped MRMS frame tiles immutable or long-cacheable.
+- Keep latest/timeline responses short-cacheable.
+- Do not make MRMS default until direct tile delivery, fallback behavior, cleanup, and storage limits have been verified in production.
+
 ## The order to do this in
 
 1. Keep D1 as the rolling manifest control plane.

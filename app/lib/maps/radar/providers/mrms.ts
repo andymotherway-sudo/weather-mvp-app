@@ -23,6 +23,7 @@ type MrmsTimelineResponse = {
     validTime?: string | null;
     time?: string | null;
     maxZoom?: number;
+    tileTemplate?: string | null;
   }>;
 };
 
@@ -88,7 +89,7 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
       if (!iso) return null;
       return {
         iso,
-        template: buildMrmsTileTemplate(product, frame.frame),
+        template: frame.tileTemplate || buildMrmsTileTemplate(product, frame.frame),
         maxZ: safeMaxZoom(frame.maxZoom ?? json.maxZoom),
         label: `MRMS ${frame.frame || iso}`,
       };

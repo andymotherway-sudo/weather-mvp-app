@@ -231,6 +231,8 @@ The stable latest pointer is now backward-compatible with the one-frame preview 
 - Top-level fields such as `frame`, `validTime`, `tileBasePrefix`, `tiles`, and `maxZoom` still describe the latest frame.
 - `frames[]` contains the retained MRMS frame playlist.
 - Retained frames are freshness-gated, so old proof frames do not create multi-day radar jumps.
+- The stored R2 latest manifest can still include `tiles`, but the Worker app-facing timeline response is slimmed and does not send the full per-tile inventory.
+- If `MRMS_PUBLIC_TILE_BASE_URL` is configured, each timeline frame includes a direct public R2 `tileTemplate`; otherwise the app falls back to the Worker tile route.
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...` still serves the latest frame.
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...&frame=<frame>` serves a specific retained frame.
 - `npm run mrms:update-latest -- --apply --retain-frames 12 --max-frame-age-minutes 360` publishes a bounded rolling manifest. Retention cleanup should still be run after repeated publishes so old frame prefixes do not become an archive.
