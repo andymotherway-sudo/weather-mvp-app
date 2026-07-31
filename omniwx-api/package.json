@@ -13,6 +13,7 @@
 		"mrms:tile-proof": "node ./scripts/tile-mrms-proof.mjs",
 		"mrms:publish-proof": "node ./scripts/publish-mrms-proof.mjs",
 		"mrms:update-latest": "node ./scripts/update-mrms-latest.mjs",
+		"mrms:cycle": "node ./scripts/run-mrms-cycle.mjs",
 		"mrms:cleanup-retained": "node ./scripts/cleanup-mrms-retained.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"

@@ -239,6 +239,8 @@ Verified on 2026-07-30:
 - z5 was measured and promoted for `20260730T200800`: 32 non-empty z3-z5 tiles totaling about 129 KB before manifests. Dev/prod latest manifests now advertise `maxZoom=5` for that latest frame.
 - App preview bug fixed in `1.1.240`: MRMS tile templates now preserve literal `{z}/{x}/{y}` placeholders for MapLibre instead of URL-encoding them, so the native map can request real owned MRMS tiles.
 - App preview timing/quality bug fixed in `1.1.241`: MRMS timestamps without an explicit zone are normalized as UTC before display, and lower-maxZoom retained frames are filtered out when higher-quality frames exist.
+- Pipeline hardening added after `1.1.241`: `npm run mrms:cycle -- --env production --max-z 5 --max-tiles 80 --min-retained-max-z 5` runs the bounded download/render/publish path, while `publish-mrms-proof` now normalizes manifest timestamps to UTC ISO and can rewrite only the stable latest pointer with `--latest-only`.
+- Production latest manifest was repaired to retain only same-quality z5 frames. Live production now advertises `20260731T000200` and `20260730T200800`, both with `maxZoom=5`, preventing the earlier blurry z4 retained frame from being shown.
 
 Useful commands:
 

@@ -18,9 +18,11 @@ function parseArgs(argv) {
     remote: true,
     dryRun: true,
     publishLatest: true,
+    latestOnly: false,
     latestPrefix: DEFAULT_LATEST_PREFIX,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
+    minRetainedMaxZoom: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -32,9 +34,11 @@ function parseArgs(argv) {
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
+    else if (arg === "--min-retained-max-z" && argv[i + 1]) args.minRetainedMaxZoom = Math.max(0, Math.floor(Number(argv[++i])));
     else if (arg === "--local") args.remote = false;
     else if (arg === "--apply") args.dryRun = false;
     else if (arg === "--no-latest") args.publishLatest = false;
+    else if (arg === "--latest-only") args.latestOnly = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -55,7 +59,9 @@ Options:
   --max-tiles <count>  Safety cap. Default: 20
   --retain-frames <n>  Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
+  --min-retained-max-z <n> Drop retained frames below this max zoom
   --no-latest          Skip stable latest manifest upload
+  --latest-only        Only upload the stable latest manifest, not frame tiles
   --apply              Actually upload. Default is dry-run
   --local              Use Wrangler local R2 instead of remote
 `);
@@ -65,6 +71,14 @@ function frameKey(manifest) {
   return String(manifest.validTime || manifest.time || "unknown-frame")
     .replace(/[^0-9A-Za-z]+/g, "")
     .slice(0, 32) || "unknown-frame";
+}
+
+function normalizeUtcIso(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
 function contentTypeFor(path) {
@@ -129,8 +143,8 @@ function normalizeFrameEntry(value) {
   if (!/^[0-9A-Za-z]{8,32}$/.test(frame) || !tileBasePrefix) return null;
   return {
     frame,
-    validTime: value.validTime || null,
-    time: value.time || null,
+    validTime: normalizeUtcIso(value.validTime) || null,
+    time: normalizeUtcIso(value.time) || null,
     generatedAt: value.generatedAt || null,
     tileBasePrefix,
     tileSize: value.tileSize,
@@ -144,7 +158,7 @@ function normalizeFrameEntry(value) {
 }
 
 function frameTimeMs(entry) {
-  const explicit = Date.parse(String(entry?.validTime || entry?.time || ""));
+  const explicit = Date.parse(String(normalizeUtcIso(entry?.validTime || entry?.time) || ""));
   if (Number.isFinite(explicit)) return explicit;
   const frame = String(entry?.frame || "");
   const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/.exec(frame);
@@ -178,24 +192,26 @@ async function main() {
   const product = productKey(manifest);
   const frame = frameKey(manifest);
   const basePrefix = `${args.prefix}/${frame}`;
-  const uploads = tiles.map((tile) => {
+  const uploads = args.latestOnly ? [] : tiles.map((tile) => {
     const localPath = String(tile.path);
     return {
       localPath,
       objectPath: `${args.bucket}/${basePrefix}/${tile.z}/${tile.x}/${tile.y}.png`,
     };
   });
-  uploads.push({
-    localPath: args.manifest,
-    objectPath: `${args.bucket}/${basePrefix}/manifest.json`,
-  });
+  if (!args.latestOnly) {
+    uploads.push({
+      localPath: args.manifest,
+      objectPath: `${args.bucket}/${basePrefix}/manifest.json`,
+    });
+  }
 
   let latestManifestPath = null;
   if (args.publishLatest) {
     const currentFrame = {
       frame,
-      validTime: manifest.validTime || null,
-      time: manifest.time || null,
+      validTime: normalizeUtcIso(manifest.validTime) || null,
+      time: normalizeUtcIso(manifest.time) || null,
       generatedAt: new Date().toISOString(),
       tileBasePrefix: basePrefix,
       tileSize: manifest.tileSize,
@@ -225,6 +241,11 @@ async function main() {
         const entryMs = frameTimeMs(entry);
         if (!Number.isFinite(newestMs) || !Number.isFinite(entryMs)) return true;
         return newestMs - entryMs <= args.maxFrameAgeMinutes * 60_000;
+      })
+      .filter((entry) => {
+        if (args.minRetainedMaxZoom == null || !Number.isFinite(args.minRetainedMaxZoom)) return true;
+        const maxZoom = Number(entry.maxZoom);
+        return Number.isFinite(maxZoom) && maxZoom >= args.minRetainedMaxZoom;
       })
       .slice(0, args.retainFrames);
     const latestManifest = {
@@ -265,6 +286,7 @@ async function main() {
     bucket: args.bucket,
     prefix: basePrefix,
     latestKey: args.publishLatest ? `${args.latestPrefix}/${product}.json` : null,
+    latestOnly: args.latestOnly,
     retainFrames: args.publishLatest ? args.retainFrames : null,
     maxFrameAgeMinutes: args.publishLatest ? args.maxFrameAgeMinutes : null,
     uploadCount: uploads.length,

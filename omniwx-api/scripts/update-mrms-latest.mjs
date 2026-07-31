@@ -15,6 +15,7 @@ function parseArgs(argv) {
     maxTiles: 20,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
+    minRetainedMaxZoom: null,
     bucket: "omniwx-radar-assets-dev",
     prefix: null,
     latestPrefix: "radar/mrms/latest",
@@ -31,6 +32,7 @@ function parseArgs(argv) {
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
+    else if (arg === "--min-retained-max-z" && argv[i + 1]) args.minRetainedMaxZoom = Math.max(0, Math.floor(Number(argv[++i])));
     else if (arg === "--bucket" && argv[i + 1]) args.bucket = argv[++i];
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
@@ -65,6 +67,7 @@ Options:
   --max-tiles <count>  Publish safety cap. Default: 20
   --retain-frames <n>  Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
+  --min-retained-max-z <n> Drop retained playlist frames below this max zoom
   --bucket <name>      R2 bucket. Default: omniwx-radar-assets-dev
   --prefix <key>       R2 frame prefix. Default: radar/mrms/proof/<product>
   --latest-prefix <key> Stable latest prefix. Default: radar/mrms/latest
@@ -130,8 +133,11 @@ function main() {
     "--max-frame-age-minutes",
     String(args.maxFrameAgeMinutes),
   ];
+  if (args.minRetainedMaxZoom != null && Number.isFinite(args.minRetainedMaxZoom)) {
+    publishArgs.push("--min-retained-max-z", String(args.minRetainedMaxZoom));
+  }
   if (args.apply) publishArgs.push("--apply");
-  runStep(args.apply ? "Publish MRMS latest to dev R2" : "Dry-run MRMS dev R2 publish", process.execPath, publishArgs);
+  runStep(args.apply ? `Publish MRMS latest to ${args.bucket}` : `Dry-run MRMS publish to ${args.bucket}`, process.execPath, publishArgs);
 }
 
 try {
