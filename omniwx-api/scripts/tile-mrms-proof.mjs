@@ -20,6 +20,7 @@ function parseArgs(argv) {
     product: "MergedReflectivityQCComposite",
     pydeps: DEFAULT_PYDEPS,
     python: process.env.OMNIWX_PYTHON || null,
+    sampling: "bilinear",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -30,6 +31,7 @@ function parseArgs(argv) {
     else if (arg === "--min-z" && argv[i + 1]) args.minZoom = parseInt(argv[++i], 10);
     else if (arg === "--max-z" && argv[i + 1]) args.maxZoom = parseInt(argv[++i], 10);
     else if (arg === "--tile-size" && argv[i + 1]) args.tileSize = parseInt(argv[++i], 10);
+    else if (arg === "--sampling" && argv[i + 1]) args.sampling = argv[++i].trim().toLowerCase();
     else if (arg === "--pydeps" && argv[i + 1]) args.pydeps = resolve(argv[++i]);
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--help" || arg === "-h") {
@@ -41,6 +43,9 @@ function parseArgs(argv) {
   args.minZoom = Math.max(0, Math.min(10, Number.isFinite(args.minZoom) ? args.minZoom : 3));
   args.maxZoom = Math.max(args.minZoom, Math.min(10, Number.isFinite(args.maxZoom) ? args.maxZoom : args.minZoom));
   args.tileSize = Math.max(128, Math.min(512, Number.isFinite(args.tileSize) ? args.tileSize : 256));
+  if (!["bilinear", "nearest"].includes(args.sampling)) {
+    throw new Error(`Unsupported sampling mode "${args.sampling}". Use bilinear or nearest.`);
+  }
   return args;
 }
 
@@ -54,6 +59,7 @@ Options:
   --min-z <zoom>       Minimum XYZ zoom. Default: 3
   --max-z <zoom>       Maximum XYZ zoom. Default: 4
   --tile-size <px>     Tile size. Default: 256
+  --sampling <mode>    Raster sampling mode: bilinear or nearest. Default: bilinear
   --pydeps <path>      Python dependency directory. Default: ../tmp/mrms-pydeps
   --python <path>      Python executable. Also supports OMNIWX_PYTHON
 `);
@@ -83,6 +89,7 @@ function runPython(args) {
       "--min-z", String(args.minZoom),
       "--max-z", String(args.maxZoom),
       "--tile-size", String(args.tileSize),
+      "--sampling", args.sampling,
     ], {
       cwd: REPO_ROOT,
       env: {

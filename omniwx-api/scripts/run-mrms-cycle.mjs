@@ -18,14 +18,15 @@ function parseArgs(argv) {
     env: "dev",
     product: DEFAULT_PRODUCT,
     minZoom: 3,
-    maxZoom: 5,
-    maxTiles: 80,
+    maxZoom: 7,
+    maxTiles: 400,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
     python: process.env.OMNIWX_PYTHON || null,
     uploader: "auto",
     uploadConcurrency: 6,
+    sampling: "bilinear",
     apply: false,
     skipCleanup: false,
   };
@@ -43,6 +44,7 @@ function parseArgs(argv) {
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
+    else if (arg === "--sampling" && argv[i + 1]) args.sampling = argv[++i].trim().toLowerCase();
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--skip-cleanup") args.skipCleanup = true;
     else if (arg === "--help" || arg === "-h") {
@@ -56,6 +58,9 @@ function parseArgs(argv) {
   }
   if (!(args.env in BUCKETS)) {
     throw new Error(`Unsupported env "${args.env}". Use dev or production.`);
+  }
+  if (!["bilinear", "nearest"].includes(args.sampling)) {
+    throw new Error(`Unsupported sampling mode "${args.sampling}". Use bilinear or nearest.`);
   }
   args.maxZoom = Math.max(args.minZoom, args.maxZoom);
   if (args.minRetainedMaxZoom == null || !Number.isFinite(args.minRetainedMaxZoom)) {
@@ -77,14 +82,15 @@ Options:
   --env <dev|production>     Target environment. Default: dev
   --product <name>           MRMS product. Default: ${DEFAULT_PRODUCT}
   --min-z <n>                Minimum zoom. Default: 3
-  --max-z <n>                Maximum zoom. Default: 5
-  --max-tiles <n>            Publish safety cap. Default: 80
+  --max-z <n>                Maximum zoom. Default: 7
+  --max-tiles <n>            Publish safety cap. Default: 400
   --retain-frames <n>        Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this. Default: 360
   --min-retained-max-z <n>   Drop retained playlist frames below this max zoom. Default: --max-z
   --python <path>            Python executable for cfgrib/eccodes rendering
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
   --upload-concurrency <n>   S3 upload concurrency. Default: 6
+  --sampling <mode>          Raster sampling mode: bilinear or nearest. Default: bilinear
   --skip-cleanup             Skip retained cleanup request
   --apply                    Actually write to R2. Default is dry-run
 `);
@@ -116,6 +122,8 @@ function main() {
     String(args.maxZoom),
     "--max-tiles",
     String(args.maxTiles),
+    "--sampling",
+    args.sampling,
     "--retain-frames",
     String(args.retainFrames),
     "--max-frame-age-minutes",

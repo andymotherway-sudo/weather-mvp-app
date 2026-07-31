@@ -12,7 +12,7 @@ function parseArgs(argv) {
     product: DEFAULT_PRODUCT,
     minZoom: 3,
     maxZoom: 4,
-    maxTiles: 20,
+    maxTiles: 400,
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
@@ -24,6 +24,7 @@ function parseArgs(argv) {
     python: process.env.OMNIWX_PYTHON || null,
     uploader: "auto",
     uploadConcurrency: 6,
+    sampling: "bilinear",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -42,6 +43,7 @@ function parseArgs(argv) {
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
+    else if (arg === "--sampling" && argv[i + 1]) args.sampling = argv[++i].trim().toLowerCase();
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -54,6 +56,9 @@ function parseArgs(argv) {
   }
   args.minZoom = Math.max(0, Math.min(10, Number.isFinite(args.minZoom) ? args.minZoom : 3));
   args.maxZoom = Math.max(args.minZoom, Math.min(10, Number.isFinite(args.maxZoom) ? args.maxZoom : args.minZoom));
+  if (!["bilinear", "nearest"].includes(args.sampling)) {
+    throw new Error(`Unsupported sampling mode "${args.sampling}". Use bilinear or nearest.`);
+  }
   return args;
 }
 
@@ -68,7 +73,7 @@ Options:
   --product <name>     MRMS 2D product. Default: ${DEFAULT_PRODUCT}
   --min-z <zoom>       Minimum XYZ zoom. Default: 3
   --max-z <zoom>       Maximum XYZ zoom. Default: 4
-  --max-tiles <count>  Publish safety cap. Default: 20
+  --max-tiles <count>  Publish safety cap. Default: 400
   --retain-frames <n>  Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
   --min-retained-max-z <n> Drop retained playlist frames below this max zoom
@@ -79,6 +84,7 @@ Options:
   --python <path>      Python executable for the tile step
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
   --upload-concurrency <n> S3 upload concurrency. Default: 6
+  --sampling <mode>    Raster sampling mode: bilinear or nearest. Default: bilinear
   --apply              Actually write to dev R2. Default is dry-run
 `);
 }
@@ -117,6 +123,8 @@ function main() {
     String(args.minZoom),
     "--max-z",
     String(args.maxZoom),
+    "--sampling",
+    args.sampling,
   ];
   if (args.python) tileArgs.push("--python", args.python);
   if (args.pydeps) tileArgs.push("--pydeps", args.pydeps);

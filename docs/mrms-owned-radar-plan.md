@@ -81,6 +81,8 @@ Current proof status:
 - A z5-only composite proof generated 23 non-empty tiles totaling about 66 KB.
 - A z6-only composite proof generated 59 non-empty tiles totaling about 172 KB.
 - Based on measured local proof output, z3-z6 is roughly 270 KB per frame for this sparse-weather sample.
+- A z3-z7 nearest-neighbor composite proof generated 280 non-empty tiles totaling about 883 KB.
+- A z3-z7 bilinear composite proof generated 274 non-empty tiles totaling about 821 KB.
 
 Next renderer checkpoint:
 
@@ -252,6 +254,7 @@ Verified on 2026-07-30:
 - Direct R2 S3-compatible cleanup path added: `mrms:cleanup-retained` supports `--uploader auto|s3|worker`, and `mrms:cycle -- --uploader s3` now uses direct S3 cleanup after publish.
 - Production S3 publish was verified with `20260731T004000`: 36 z3-z5 non-empty tiles, 125 KB of tile bytes, and the live tile route returned `x-omni-radar-source: r2-mrms`.
 - Production S3 cleanup removed stale frame `20260730T141000`: 11 objects, 34 KB. A follow-up dry run reported zero stale objects.
+- Richer MRMS preview promoted after measurement: the one-command cycle now defaults to z3-z7, `--max-tiles 400`, and bilinear raster sampling. Current measured z3-z7 bilinear output was 274 non-empty tiles totaling about 821 KB for one sparse-weather frame.
 
 Useful commands:
 
@@ -260,7 +263,7 @@ npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp
 ```
 
 ```powershell
-npm run mrms:cycle -- --env production --max-z 5 --max-tiles 80 --min-retained-max-z 5 --uploader s3 --apply
+npm run mrms:cycle -- --env production --max-z 7 --max-tiles 400 --min-retained-max-z 7 --sampling bilinear --uploader s3 --apply
 ```
 
 ```bash
@@ -292,8 +295,8 @@ Manual dry-run path:
 
 1. Open GitHub Actions.
 2. Select `MRMS radar cycle`.
-3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=5`, `retain_frames=12`.
-4. Confirm the job downloads NOAA MRMS, renders z3-z5 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
+3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=7`, `retain_frames=12`.
+4. Confirm the job downloads NOAA MRMS, renders z3-z7 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
 
 Manual apply path after dry-run succeeds:
 
@@ -302,4 +305,4 @@ Manual apply path after dry-run succeeds:
 3. Verify a known tile returns `x-omni-radar-source: r2-mrms`.
 4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
 
-Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z5 and 12 retained frames.
+Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z7 and 12 retained frames.

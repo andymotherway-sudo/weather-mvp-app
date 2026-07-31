@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--min-z", type=int, default=3, help="Minimum XYZ zoom")
     parser.add_argument("--max-z", type=int, default=4, help="Maximum XYZ zoom")
     parser.add_argument("--tile-size", type=int, default=256, help="Tile size in pixels")
+    parser.add_argument("--sampling", choices=["bilinear", "nearest"], default="bilinear", help="Raster sampling mode")
     return parser.parse_args()
 
 
@@ -49,7 +50,7 @@ def lat_to_tile_y(lat, z):
     return int(math.floor((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * (2 ** z)))
 
 
-def sample_nearest(data, latitudes, longitudes, tile_lons, tile_lats):
+def sample_raster(data, latitudes, longitudes, tile_lons, tile_lats, mode):
     lon_values = np.where(longitudes > 180.0, longitudes - 360.0, longitudes)
     lon_min = float(np.nanmin(lon_values))
     lon_max = float(np.nanmax(lon_values))
@@ -67,13 +68,45 @@ def sample_nearest(data, latitudes, longitudes, tile_lons, tile_lats):
         (tile_lats >= lat_min) &
         (tile_lats <= lat_max)
     )
-    rows = np.rint((lat0 - tile_lats) / lat_step).astype(np.int64)
-    cols = np.rint((tile_lons - lon0) / lon_step).astype(np.int64)
-    rows = np.clip(rows, 0, data.shape[0] - 1)
-    cols = np.clip(cols, 0, data.shape[1] - 1)
-
     sampled = np.full(tile_lons.shape, np.nan, dtype=np.float32)
-    sampled[inside] = data[rows[inside], cols[inside]]
+    row_f = (lat0 - tile_lats) / lat_step
+    col_f = (tile_lons - lon0) / lon_step
+
+    if mode == "nearest":
+        rows = np.rint(row_f).astype(np.int64)
+        cols = np.rint(col_f).astype(np.int64)
+        rows = np.clip(rows, 0, data.shape[0] - 1)
+        cols = np.clip(cols, 0, data.shape[1] - 1)
+        sampled[inside] = data[rows[inside], cols[inside]]
+        sampled[sampled <= -900] = np.nan
+        return sampled
+
+    r0 = np.floor(row_f).astype(np.int64)
+    c0 = np.floor(col_f).astype(np.int64)
+    r1 = r0 + 1
+    c1 = c0 + 1
+    r0 = np.clip(r0, 0, data.shape[0] - 1)
+    r1 = np.clip(r1, 0, data.shape[0] - 1)
+    c0 = np.clip(c0, 0, data.shape[1] - 1)
+    c1 = np.clip(c1, 0, data.shape[1] - 1)
+
+    wr = np.clip(row_f - np.floor(row_f), 0.0, 1.0)
+    wc = np.clip(col_f - np.floor(col_f), 0.0, 1.0)
+    weights = [
+        ((1.0 - wr) * (1.0 - wc), data[r0, c0]),
+        ((1.0 - wr) * wc, data[r0, c1]),
+        (wr * (1.0 - wc), data[r1, c0]),
+        (wr * wc, data[r1, c1]),
+    ]
+    numerator = np.zeros(tile_lons.shape, dtype=np.float64)
+    denominator = np.zeros(tile_lons.shape, dtype=np.float64)
+    for weight, values in weights:
+        valid_values = np.isfinite(values) & (values > -900)
+        numerator += np.where(valid_values, values * weight, 0.0)
+        denominator += np.where(valid_values, weight, 0.0)
+
+    valid = inside & (denominator > 0)
+    sampled[valid] = (numerator[valid] / denominator[valid]).astype(np.float32)
     sampled[sampled <= -900] = np.nan
     return sampled
 
@@ -92,7 +125,7 @@ def tile_bounds_for_raster(latitudes, longitudes, z):
     return west, south, east, north, min_x, max_x, min_y, max_y
 
 
-def render_tile(data, latitudes, longitudes, z, x, y, tile_size):
+def render_tile(data, latitudes, longitudes, z, x, y, tile_size, sampling):
     n = 2 ** z
     px = np.arange(tile_size, dtype=np.float64)
     py = np.arange(tile_size, dtype=np.float64)
@@ -102,7 +135,7 @@ def render_tile(data, latitudes, longitudes, z, x, y, tile_size):
     mercator = math.pi * (1.0 - 2.0 * world_y / n)
     tile_lats_1d = np.degrees(np.arctan(np.sinh(mercator)))
     tile_lons, tile_lats = np.meshgrid(tile_lons_1d, tile_lats_1d)
-    sampled = sample_nearest(data, latitudes, longitudes, tile_lons, tile_lats)
+    sampled = sample_raster(data, latitudes, longitudes, tile_lons, tile_lats, sampling)
     return Image.fromarray(colorize(sampled), "RGBA")
 
 
@@ -129,6 +162,7 @@ def main():
             "validTime": scalar_coord(dataset, "valid_time"),
             "time": scalar_coord(dataset, "time"),
             "tileSize": args.tile_size,
+            "sampling": args.sampling,
             "minZoom": args.min_z,
             "maxZoom": args.max_z,
             "sourceShape": list(data.shape),
@@ -140,7 +174,7 @@ def main():
             manifest["bounds"] = {"west": west, "south": south, "east": east, "north": north}
             for x in range(min_x, max_x + 1):
                 for y in range(min_y, max_y + 1):
-                    tile = render_tile(data, latitudes, longitudes, z, x, y, args.tile_size)
+                    tile = render_tile(data, latitudes, longitudes, z, x, y, args.tile_size, args.sampling)
                     if not np.asarray(tile.getchannel("A")).any():
                         continue
                     path = output_dir / str(z) / str(x) / f"{y}.png"

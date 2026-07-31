@@ -19,11 +19,13 @@ on:
       max_zoom:
         description: "Maximum MRMS tile zoom"
         required: true
-        default: "5"
+        default: "7"
         type: choice
         options:
           - "4"
           - "5"
+          - "6"
+          - "7"
       retain_frames:
         description: "Rolling retained frame count"
         required: true
@@ -107,10 +109,11 @@ jobs:
           args=(
             --env "$MRMS_TARGET_ENV"
             --max-z "$MRMS_MAX_ZOOM"
-            --max-tiles 80
+            --max-tiles 400
             --retain-frames "$MRMS_RETAIN_FRAMES"
             --max-frame-age-minutes 360
             --min-retained-max-z "$MRMS_MAX_ZOOM"
+            --sampling bilinear
             --uploader s3
           )
           if [ "${{ inputs.apply }}" = "true" ]; then
