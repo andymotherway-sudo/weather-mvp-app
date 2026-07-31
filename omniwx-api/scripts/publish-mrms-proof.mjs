@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
@@ -23,6 +24,8 @@ function parseArgs(argv) {
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
+    uploader: "auto",
+    uploadConcurrency: 6,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -35,6 +38,8 @@ function parseArgs(argv) {
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--min-retained-max-z" && argv[i + 1]) args.minRetainedMaxZoom = Math.max(0, Math.floor(Number(argv[++i])));
+    else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
+    else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
     else if (arg === "--local") args.remote = false;
     else if (arg === "--apply") args.dryRun = false;
     else if (arg === "--no-latest") args.publishLatest = false;
@@ -43,6 +48,10 @@ function parseArgs(argv) {
       printHelp();
       process.exit(0);
     }
+  }
+
+  if (!["auto", "s3", "wrangler"].includes(args.uploader)) {
+    throw new Error(`Unsupported uploader "${args.uploader}". Use auto, s3, or wrangler.`);
   }
 
   return args;
@@ -60,6 +69,8 @@ Options:
   --retain-frames <n>  Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this from newest. Default: 360
   --min-retained-max-z <n> Drop retained frames below this max zoom
+  --uploader <auto|s3|wrangler> Upload transport. Default: auto
+  --upload-concurrency <n> S3 upload concurrency. Default: 6
   --no-latest          Skip stable latest manifest upload
   --latest-only        Only upload the stable latest manifest, not frame tiles
   --apply              Actually upload. Default is dry-run
@@ -85,6 +96,10 @@ function contentTypeFor(path) {
   return path.endsWith(".json") ? "application/json; charset=utf-8" : "image/png";
 }
 
+function cacheControlFor(path) {
+  return path.endsWith(".json") ? "public, max-age=30" : "public, max-age=300, stale-while-revalidate=1800";
+}
+
 function productKey(manifest) {
   const product = String(manifest.product || "MergedReflectivityQCComposite").trim();
   if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
@@ -100,6 +115,36 @@ function normalizeLocalPath(path) {
   return `/mnt/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
 }
 
+function parseObjectPath(objectPath) {
+  const normalized = String(objectPath || "").replace(/^\/+/, "");
+  const slash = normalized.indexOf("/");
+  if (slash <= 0 || slash >= normalized.length - 1) {
+    throw new Error(`Invalid R2 object path: ${objectPath}`);
+  }
+  return {
+    bucket: normalized.slice(0, slash),
+    key: normalized.slice(slash + 1),
+  };
+}
+
+function r2S3Config() {
+  const accountId = String(process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  const endpoint = String(process.env.R2_ENDPOINT || (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "")).trim();
+  const accessKeyId = String(process.env.R2_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || "").trim();
+  const secretAccessKey = String(process.env.R2_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || "").trim();
+  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
+  return { endpoint, accessKeyId, secretAccessKey };
+}
+
+function resolveUploader(args) {
+  if (args.uploader === "wrangler") return "wrangler";
+  const config = r2S3Config();
+  if (args.uploader === "s3" && !config) {
+    throw new Error("S3 uploader requested but R2 S3 credentials are missing. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY.");
+  }
+  return config ? "s3" : "wrangler";
+}
+
 function uploadObject(args, objectPath, filePath) {
   const wranglerArgs = [
     "./node_modules/wrangler/bin/wrangler.js",
@@ -113,12 +158,65 @@ function uploadObject(args, objectPath, filePath) {
     "--content-type",
     contentTypeFor(filePath),
     "--cache-control",
-    filePath.endsWith(".json") ? "public, max-age=30" : "public, max-age=300, stale-while-revalidate=1800",
+    cacheControlFor(filePath),
   ];
   const result = spawnSync(process.execPath, wranglerArgs, { stdio: "inherit" });
   if (result.status !== 0) {
     throw new Error(`wrangler upload failed for ${objectPath}`);
   }
+}
+
+async function createS3Client() {
+  const config = r2S3Config();
+  if (!config) {
+    throw new Error("R2 S3 credentials are missing. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY.");
+  }
+  const { S3Client } = await import("@aws-sdk/client-s3");
+  return new S3Client({
+    region: "auto",
+    endpoint: config.endpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+    },
+  });
+}
+
+async function uploadObjectS3(client, objectPath, filePath) {
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const { bucket, key } = parseObjectPath(objectPath);
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: createReadStream(filePath),
+    ContentType: contentTypeFor(filePath),
+    CacheControl: cacheControlFor(filePath),
+  }));
+}
+
+async function uploadObjectsS3(args, uploads) {
+  const client = await createS3Client();
+  let nextIndex = 0;
+  const concurrency = Math.max(1, Math.min(32, args.uploadConcurrency));
+
+  async function worker() {
+    while (nextIndex < uploads.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const upload = uploads[index];
+      await uploadObjectS3(client, upload.objectPath, upload.localPath);
+      console.log(JSON.stringify({
+        ok: true,
+        uploader: "s3",
+        uploaded: index + 1,
+        total: uploads.length,
+        objectPath: upload.objectPath,
+      }));
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, uploads.length) }, () => worker()));
 }
 
 function downloadTextObject(args, objectPath) {
@@ -134,6 +232,27 @@ function downloadTextObject(args, objectPath) {
   const result = spawnSync(process.execPath, wranglerArgs, { encoding: "utf8" });
   if (result.status !== 0) return null;
   return result.stdout || null;
+}
+
+async function downloadTextObjectS3(objectPath) {
+  const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await createS3Client();
+  const { bucket, key } = parseObjectPath(objectPath);
+  try {
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!response.Body) return null;
+    if (typeof response.Body.transformToString === "function") {
+      return await response.Body.transformToString();
+    }
+    const chunks = [];
+    for await (const chunk of response.Body) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks).toString("utf8");
+  } catch (error) {
+    const name = String(error?.name || "");
+    const status = Number(error?.$metadata?.httpStatusCode);
+    if (name === "NoSuchKey" || name === "NotFound" || status === 404) return null;
+    throw error;
+  }
 }
 
 function normalizeFrameEntry(value) {
@@ -167,8 +286,11 @@ function frameTimeMs(entry) {
   return Date.parse(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
 }
 
-function existingPlaylistFrames(args, latestKey) {
-  const text = downloadTextObject(args, `${args.bucket}/${latestKey}`);
+async function existingPlaylistFrames(args, latestKey, uploader) {
+  const objectPath = `${args.bucket}/${latestKey}`;
+  const text = uploader === "s3"
+    ? await downloadTextObjectS3(objectPath)
+    : downloadTextObject(args, objectPath);
   if (!text) return [];
   try {
     const manifest = JSON.parse(text);
@@ -183,6 +305,7 @@ function existingPlaylistFrames(args, latestKey) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const uploader = resolveUploader(args);
   const manifest = JSON.parse(await readFile(args.manifest, "utf8"));
   const tiles = Array.isArray(manifest.tiles) ? manifest.tiles : [];
   if (tiles.length > args.maxTiles) {
@@ -228,7 +351,7 @@ async function main() {
       })),
     };
     const latestKey = `${args.latestPrefix}/${product}.json`;
-    const previousFrames = args.dryRun ? [] : existingPlaylistFrames(args, latestKey);
+    const previousFrames = args.dryRun ? [] : await existingPlaylistFrames(args, latestKey, uploader);
     const framesById = new Map();
     for (const entry of [currentFrame, ...previousFrames]) {
       if (!entry?.frame || framesById.has(entry.frame)) continue;
@@ -283,6 +406,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     dryRun: args.dryRun,
+    uploader,
     bucket: args.bucket,
     prefix: basePrefix,
     latestKey: args.publishLatest ? `${args.latestPrefix}/${product}.json` : null,
@@ -296,8 +420,12 @@ async function main() {
   }, null, 2));
 
   if (args.dryRun) return;
-  for (const upload of uploads) {
-    uploadObject(args, upload.objectPath, upload.localPath);
+  if (uploader === "s3") {
+    await uploadObjectsS3(args, uploads);
+  } else {
+    for (const upload of uploads) {
+      uploadObject(args, upload.objectPath, upload.localPath);
+    }
   }
 }
 

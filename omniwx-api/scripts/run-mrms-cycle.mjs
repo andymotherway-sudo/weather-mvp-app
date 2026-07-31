@@ -24,6 +24,8 @@ function parseArgs(argv) {
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
     python: process.env.OMNIWX_PYTHON || null,
+    uploader: "auto",
+    uploadConcurrency: 6,
     apply: false,
     skipCleanup: false,
   };
@@ -39,6 +41,8 @@ function parseArgs(argv) {
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--min-retained-max-z" && argv[i + 1]) args.minRetainedMaxZoom = Math.max(0, Math.floor(Number(argv[++i])));
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
+    else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
+    else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--skip-cleanup") args.skipCleanup = true;
     else if (arg === "--help" || arg === "-h") {
@@ -79,6 +83,8 @@ Options:
   --max-frame-age-minutes <n> Drop retained frames older than this. Default: 360
   --min-retained-max-z <n>   Drop retained playlist frames below this max zoom. Default: --max-z
   --python <path>            Python executable for cfgrib/eccodes rendering
+  --uploader <auto|s3|wrangler> Upload transport. Default: auto
+  --upload-concurrency <n>   S3 upload concurrency. Default: 6
   --skip-cleanup             Skip retained cleanup request
   --apply                    Actually write to R2. Default is dry-run
 `);
@@ -116,6 +122,10 @@ function main() {
     String(args.maxFrameAgeMinutes),
     "--min-retained-max-z",
     String(args.minRetainedMaxZoom),
+    "--uploader",
+    args.uploader,
+    "--upload-concurrency",
+    String(args.uploadConcurrency),
   ];
   if (args.python) updateArgs.push("--python", args.python);
   if (args.apply) updateArgs.push("--apply");

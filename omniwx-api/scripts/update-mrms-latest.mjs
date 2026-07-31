@@ -22,6 +22,8 @@ function parseArgs(argv) {
     pydeps: null,
     apply: false,
     python: process.env.OMNIWX_PYTHON || null,
+    uploader: "auto",
+    uploadConcurrency: 6,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -38,6 +40,8 @@ function parseArgs(argv) {
     else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--pydeps" && argv[i + 1]) args.pydeps = argv[++i];
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
+    else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
+    else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -73,6 +77,8 @@ Options:
   --latest-prefix <key> Stable latest prefix. Default: radar/mrms/latest
   --pydeps <path>      Python dependency directory for tile rendering
   --python <path>      Python executable for the tile step
+  --uploader <auto|s3|wrangler> Upload transport. Default: auto
+  --upload-concurrency <n> S3 upload concurrency. Default: 6
   --apply              Actually write to dev R2. Default is dry-run
 `);
 }
@@ -132,6 +138,10 @@ function main() {
     String(args.retainFrames),
     "--max-frame-age-minutes",
     String(args.maxFrameAgeMinutes),
+    "--uploader",
+    args.uploader,
+    "--upload-concurrency",
+    String(args.uploadConcurrency),
   ];
   if (args.minRetainedMaxZoom != null && Number.isFinite(args.minRetainedMaxZoom)) {
     publishArgs.push("--min-retained-max-z", String(args.minRetainedMaxZoom));

@@ -241,11 +241,17 @@ Verified on 2026-07-30:
 - App preview timing/quality bug fixed in `1.1.241`: MRMS timestamps without an explicit zone are normalized as UTC before display, and lower-maxZoom retained frames are filtered out when higher-quality frames exist.
 - Pipeline hardening added after `1.1.241`: `npm run mrms:cycle -- --env production --max-z 5 --max-tiles 80 --min-retained-max-z 5` runs the bounded download/render/publish path, while `publish-mrms-proof` now normalizes manifest timestamps to UTC ISO and can rewrite only the stable latest pointer with `--latest-only`.
 - Production latest manifest was repaired to retain only same-quality z5 frames. Live production now advertises `20260731T000200` and `20260730T200800`, both with `maxZoom=5`, preventing the earlier blurry z4 retained frame from being shown.
+- Direct R2 S3-compatible upload path added: `publish-mrms-proof` and `mrms:cycle` support `--uploader auto|s3|wrangler`. `auto` uses S3-compatible R2 uploads when `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` are present; otherwise it falls back to Wrangler.
+- R2 S3 upload uses the AWS SDK pointed at Cloudflare R2. It does not require an AWS account. Keep real credentials in `.env` or scheduler secrets only.
 
 Useful commands:
 
 ```powershell
 npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe
+```
+
+```powershell
+npm run mrms:cycle -- --env production --max-z 5 --max-tiles 80 --min-retained-max-z 5 --uploader s3 --apply
 ```
 
 ```bash
