@@ -11222,7 +11222,7 @@ function parseWildfireMapsRequest(url: URL) {
 }
 
 function buildWildfireMapsCacheKey(parsed: { west: number; south: number; east: number; north: number }) {
-  const cacheUrl = new URL("https://cache.omniwx.internal/v2/maps/wildfire");
+  const cacheUrl = new URL("https://cache.omniwx.internal/v3/maps/wildfire");
   cacheUrl.searchParams.set("west", String(roundCoordKey(parsed.west, 0.1)));
   cacheUrl.searchParams.set("south", String(roundCoordKey(parsed.south, 0.1)));
   cacheUrl.searchParams.set("east", String(roundCoordKey(parsed.east, 0.1)));
