@@ -11242,6 +11242,72 @@ async function fetchArcGisFeatureQuery(url: string, params: Record<string, strin
   return Array.isArray(json?.features) ? json.features : [];
 }
 
+const WFIGS_WILDFIRE_OUT_FIELDS = [
+  "OBJECTID",
+  "GlobalID",
+  "poly_IncidentName",
+  "poly_GISAcres",
+  "poly_DateCurrent",
+  "poly_Source",
+  "attr_IncidentName",
+  "attr_IncidentSize",
+  "attr_PercentContained",
+  "attr_ModifiedOnDateTime_dt",
+  "attr_InitialLatitude",
+  "attr_InitialLongitude",
+  "attr_POOCounty",
+  "attr_POOState",
+  "attr_POOCity",
+  "attr_Source",
+  "attr_UniqueFireIdentifier",
+  "attr_IrwinID",
+].join(",");
+
+const USA_WILDFIRE_PERIMETER_OUT_FIELDS = [
+  "OBJECTID",
+  "IncidentName",
+  "GISAcres",
+  "DateCurrent",
+  "PolygonDateTime",
+  "IRWINID",
+  "GlobalID",
+  "CurrentDateAge",
+  "IncidentTypeCategory",
+  "PercentContained",
+].join(",");
+
+const USA_WILDFIRE_INCIDENT_OUT_FIELDS = [
+  "OBJECTID",
+  "IncidentName",
+  "DailyAcres",
+  "GISAcres",
+  "CalculatedAcres",
+  "IncidentSize",
+  "PercentContained",
+  "PercentContainedValue",
+  "ModifiedOnDateTime_dt",
+  "FireDiscoveryDateTime",
+  "InitialLatitude",
+  "InitialLongitude",
+  "POOLatitude",
+  "POOLongitude",
+  "POOCounty",
+  "POOState",
+  "POOCity",
+  "Source",
+  "IrwinID",
+  "UniqueFireIdentifier",
+  "ComplexName",
+].join(",");
+
+function wildfireGeometryOffset(parsed: { west: number; south: number; east: number; north: number }) {
+  const span = Math.max(Math.abs(parsed.east - parsed.west), Math.abs(parsed.north - parsed.south));
+  if (span <= 2) return "0.0005";
+  if (span <= 5) return "0.001";
+  if (span <= 10) return "0.0025";
+  return "0.005";
+}
+
 async function fetchWildfireMapsPayload(parsed: { west: number; south: number; east: number; north: number }) {
   const shared = {
     where: "1=1",
@@ -11251,7 +11317,9 @@ async function fetchWildfireMapsPayload(parsed: { west: number; south: number; e
     spatialRel: "esriSpatialRelIntersects",
     outSR: "4326",
     returnGeometry: "true",
-    f: "pjson",
+    geometryPrecision: "5",
+    maxAllowableOffset: wildfireGeometryOffset(parsed),
+    f: "json",
   } satisfies Record<string, string>;
 
   const [smoke, wfigsPerimeters, usaPerimeters, incidents] = await Promise.all([
@@ -11266,21 +11334,21 @@ async function fetchWildfireMapsPayload(parsed: { west: number; south: number; e
       "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query",
       {
         ...shared,
-        outFields: "*",
+        outFields: WFIGS_WILDFIRE_OUT_FIELDS,
       },
     ),
     fetchArcGisFeatureQuery(
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/1/query",
       {
         ...shared,
-        outFields: "*",
+        outFields: USA_WILDFIRE_PERIMETER_OUT_FIELDS,
       },
     ),
     fetchArcGisFeatureQuery(
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USA_Wildfires_v1/FeatureServer/0/query",
       {
         ...shared,
-        outFields: "*",
+        outFields: USA_WILDFIRE_INCIDENT_OUT_FIELDS,
       },
     ),
   ]);
