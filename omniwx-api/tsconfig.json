@@ -27,6 +27,5 @@
   "include": [
     "worker-configuration.d.ts",
     "src/**/*.ts"
-  ],
-  "extends": "expo/tsconfig.base"
+  ]
 }
