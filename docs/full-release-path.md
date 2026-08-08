@@ -123,7 +123,7 @@ Optional MRMS direct-tile cutover:
 - After the public R2 tile domain is attached, run GitHub Actions -> `Configure Worker Variables`.
 - Use `target_env=production`.
 - Set `mrms_public_tile_base_url` to the HTTPS R2 tile origin, for example `https://radar-assets.omniwx.com`.
-- The workflow writes `MRMS_PUBLIC_TILE_BASE_URL` as a Worker secret, verifies `/v1/radar/backend/status` reports `publicTileDeliveryEnabled=true`, confirms the MRMS timeline emits `public-r2` templates, and smoke-tests a direct public PNG tile.
+- The workflow writes `MRMS_PUBLIC_TILE_BASE_URL` as a normal Worker environment variable, verifies `/v1/radar/backend/status` reports `publicTileDeliveryEnabled=true`, confirms the MRMS timeline emits `public-r2` templates, and smoke-tests a direct public PNG tile.
 
 Fallback path: if GitHub Actions is unavailable and WSL is healthy, use an explicit production deploy command from `omniwx-api/`:
 

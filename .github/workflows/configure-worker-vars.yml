@@ -81,10 +81,53 @@ jobs:
           NODE
           exit "$missing"
 
-      - name: Synchronize deployed Worker version
+      - name: Configure MRMS public tile variable
         shell: bash
         run: |
-          args=(deploy --keep-vars --message "Synchronize Worker before variable configuration")
+          node - <<'NODE'
+          const fs = require("node:fs");
+
+          const configPath = "wrangler.jsonc";
+          const targetEnv = process.env.TARGET_ENV || "production";
+          const value = process.env.MRMS_PUBLIC_TILE_BASE_URL || "";
+          const escapedValue = JSON.stringify(value);
+          let config = fs.readFileSync(configPath, "utf8");
+
+          function replaceFirstAfter(marker) {
+            const start = config.indexOf(marker);
+            if (start === -1) {
+              throw new Error(`Could not find marker: ${marker}`);
+            }
+            const before = config.slice(0, start);
+            const after = config.slice(start);
+            const replaced = after.replace(
+              /"MRMS_PUBLIC_TILE_BASE_URL"\s*:\s*"[^"]*"/,
+              `"MRMS_PUBLIC_TILE_BASE_URL": ${escapedValue}`,
+            );
+            if (after === replaced) {
+              throw new Error(`Could not update MRMS_PUBLIC_TILE_BASE_URL after marker: ${marker}`);
+            }
+            config = before + replaced;
+          }
+
+          if (targetEnv === "production") {
+            replaceFirstAfter('"production": {');
+          } else if (targetEnv === "dev") {
+            config = config.replace(
+              /"MRMS_PUBLIC_TILE_BASE_URL"\s*:\s*"[^"]*"/,
+              `"MRMS_PUBLIC_TILE_BASE_URL": ${escapedValue}`,
+            );
+          } else {
+            throw new Error(`Unsupported target_env: ${targetEnv}`);
+          }
+
+          fs.writeFileSync(configPath, config);
+          NODE
+
+      - name: Deploy configured Worker
+        shell: bash
+        run: |
+          args=(deploy --message "Configure MRMS public tile base URL")
           if [ "$TARGET_ENV" = "production" ]; then
             args+=(--env production)
           elif [ "$TARGET_ENV" != "dev" ]; then
@@ -92,18 +135,6 @@ jobs:
             exit 1
           fi
           npx wrangler "${args[@]}"
-
-      - name: Set MRMS public tile base URL
-        shell: bash
-        run: |
-          args=(secret put MRMS_PUBLIC_TILE_BASE_URL)
-          if [ "$TARGET_ENV" = "production" ]; then
-            args+=(--env production)
-          elif [ "$TARGET_ENV" != "dev" ]; then
-            echo "::error::Unsupported target_env: $TARGET_ENV"
-            exit 1
-          fi
-          printf '%s' "$MRMS_PUBLIC_TILE_BASE_URL" | npx wrangler "${args[@]}"
 
       - name: Smoke test configured Worker
         shell: bash
