@@ -1,43 +1,37 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.241**
-Android version code: **10258**
+Release: **OMNIwx 1.1.242**
+Android version code: **10259**
 Track: **Closed testing / internal testing candidate**
-Date: **July 30, 2026**
+Date: **August 8, 2026**
 
 ## Play Console Paste Notes
 
-This build fixes MRMS preview timing and retained-frame quality. MRMS valid times are now treated as UTC before being shown in the local device timezone, so Phoenix testers should no longer see future-looking labels such as `8:08 PM` when it is only afternoon locally. The app also avoids mixing lower-zoom retained MRMS proof frames with higher-quality z5 frames, which prevents the first history frame from looking blurrier than the current frame. RainViewer remains the default wide radar source, Storm Scope/local NEXRAD products remain on the existing local radar path, and MRMS is manual opt-in for comparison only.
+This build advances the owned MRMS radar preview and fixes wildfire perimeter reliability. MRMS preview now uses the production Worker tile route so clear-air/missing sparse MRMS tiles return transparent PNGs instead of noisy tile errors, while fresh owned MRMS frames are published to production R2 through the GitHub pipeline. Wildfire perimeter requests are now trimmed and geometry-simplified by viewport so broad wildfire views should load much more reliably on mobile. RainViewer remains the default wide radar source, and MRMS remains opt-in for comparison.
 
 ## Tester Notes
 
-Please focus testing on the MRMS preview toggle and regression safety around the existing radar experience:
+Please focus testing on Maps and regression safety:
 
-- Confirm radar still loads normally on first open and after app relaunch, without blank frames or provider-limit style errors.
-- Confirm radar animation still advances smoothly and recent frames look current.
-- Confirm the normal radar legend shows an `MRMS preview` toggle when Storm Scope is off.
-- Confirm RainViewer remains the default until `MRMS preview` is manually enabled.
-- Confirm enabling `MRMS preview` shows the owned MRMS mosaic tile where echoes exist, with no crash or blank-map regression.
-- Confirm MRMS preview imagery appears at broad U.S. zooms now that tile placeholders are preserved for MapLibre.
-- Confirm MRMS preview timestamps display in the correct local timezone and are not shown as future local times.
-- Confirm MRMS preview does not mix the older lower-zoom retained proof frame with the newer z5 frame.
-- Confirm MRMS preview now has multiple retained frames available in the radar timeline when the production Worker has fresh frames.
-- Confirm broad-map MRMS detail looks improved around z5 compared with the previous low-zoom-only proof.
-- Confirm disabling `MRMS preview` returns to RainViewer behavior.
+- Confirm RainViewer remains the default radar source until `MRMS preview` is enabled.
+- Confirm enabling `MRMS preview` shows owned MRMS radar where echoes exist and stays visually clean where skies are clear.
+- Confirm MRMS timestamps look current and are not shown as future local times.
+- Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
+- Confirm disabling `MRMS preview` returns to the normal radar path.
 - Confirm Storm Scope/local radar products still use the existing local radar controls and are not replaced by MRMS.
-- Confirm the MRMS preview remains clearly opt-in and gracefully falls back to the normal radar path if retained MRMS tiles are unavailable.
-- Confirm this Play build points at the production Worker and does not show dev-only backend mistakes or missing worker-backed content.
-- Confirm the Land home screen still shows current conditions and forecast details correctly after refreshes and app relaunches.
-- Confirm favorite place previews and location search still return sensible results without blank/error states.
-- Confirm Astro map / Sky map still renders after panning and zooming and does not regress cloud or visibility overlays.
+- Confirm the Wildfire view loads perimeters/incidents/smoke without hanging or silently disappearing on broad western-US views.
+- Confirm wildfire labels/details still show names, acres, containment, source, and update timing where available.
+- Confirm Astro map / Sky map still renders after panning and zooming.
+- Confirm Land and Hourly still show current conditions and forecast details after refresh/relaunch.
+- Confirm this Play build points at the production Worker and does not show dev-only backend behavior.
 
 ## Internal Release Checklist
 
-- App version: `1.1.241`
-- Android version code: `10258`
+- App version: `1.1.242`
+- Android version code: `10259`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
-- Production worker deploy: `cd omniwx-api && wrangler deploy --env production --keep-vars`
+- Production worker deploy: GitHub Actions -> `Deploy Cloudflare Worker`
 - Android build: `npm run build:android:prod`
