@@ -11239,6 +11239,13 @@ async function fetchArcGisFeatureQuery(url: string, params: Record<string, strin
     "User-Agent": WEATHER_FALLBACK_USER_AGENT,
     Accept: "application/json",
   });
+  if (json?.error) {
+    console.warn("arcgis.feature_query.error", {
+      url,
+      code: json.error.code,
+      message: json.error.message,
+    });
+  }
   return Array.isArray(json?.features) ? json.features : [];
 }
 
@@ -11265,39 +11272,35 @@ const WFIGS_WILDFIRE_OUT_FIELDS = [
 
 const USA_WILDFIRE_PERIMETER_OUT_FIELDS = [
   "OBJECTID",
+  "GlobalID",
   "IncidentName",
   "GISAcres",
   "DateCurrent",
   "PolygonDateTime",
   "IRWINID",
-  "GlobalID",
   "CurrentDateAge",
   "IncidentTypeCategory",
-  "PercentContained",
+  "ComplexName",
+  "LocalIncidentID",
 ].join(",");
 
 const USA_WILDFIRE_INCIDENT_OUT_FIELDS = [
   "OBJECTID",
+  "GlobalID",
   "IncidentName",
   "DailyAcres",
-  "GISAcres",
   "CalculatedAcres",
-  "IncidentSize",
   "PercentContained",
-  "PercentContainedValue",
-  "ModifiedOnDateTime_dt",
+  "ModifiedOnDateTime",
   "FireDiscoveryDateTime",
-  "InitialLatitude",
-  "InitialLongitude",
-  "POOLatitude",
-  "POOLongitude",
   "POOCounty",
   "POOState",
-  "POOCity",
-  "Source",
   "IrwinID",
   "UniqueFireIdentifier",
-  "ComplexName",
+  "IncidentTypeCategory",
+  "IncidentTypeKind",
+  "FireCause",
+  "FireCauseGeneral",
 ].join(",");
 
 function wildfireGeometryOffset(parsed: { west: number; south: number; east: number; north: number }) {
