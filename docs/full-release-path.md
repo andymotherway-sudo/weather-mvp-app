@@ -101,7 +101,24 @@ Keep these aligned:
 
 Do not assume the last deploy was prod.
 
-Use an explicit production deploy command from `omniwx-api/`:
+Preferred path: use the manual GitHub Action so production deploys do not depend on local WSL.
+
+1. Open GitHub Actions.
+2. Select `Deploy Cloudflare Worker`.
+3. Run workflow with:
+
+- `target_env=production`
+- `smoke_base_url=https://omniwx-api-production.omniwx.workers.dev`
+- `message=<short release note>`
+
+The workflow type-checks the Worker, deploys with `--env production --keep-vars`, and smoke-tests `/v1/health` plus `/v1/radar/backend/status`.
+
+Required GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Fallback path: if GitHub Actions is unavailable and WSL is healthy, use an explicit production deploy command from `omniwx-api/`:
 
 ```powershell
 wsl bash -lc 'cd /mnt/c/Users/andym_au640pp/weather-app/omniwx-api && node ./node_modules/wrangler/bin/wrangler.js deploy --env production --keep-vars --message "your release message"'
