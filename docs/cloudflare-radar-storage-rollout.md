@@ -58,7 +58,7 @@ Current safe cutover shape:
 
 - Keep MRMS timeline/control-plane reads on the Worker at `/v1/radar/mrms/timeline`.
 - Attach a Cloudflare public/custom domain to the production `RADAR_ASSETS` bucket, for example `https://radar-assets.omniwx.com`.
-- Set `MRMS_PUBLIC_TILE_BASE_URL` to that HTTPS origin after the domain is live.
+- Set `MRMS_PUBLIC_TILE_BASE_URL` to that HTTPS origin after the domain is live. Preferred path: run the manual GitHub Action `Configure Worker Variables` with `target_env=production` and the public tile base URL.
 - The Worker timeline will then emit each frame with `tileTemplate` pointing directly at R2, such as `https://radar-assets.omniwx.com/radar/mrms/proof/MergedReflectivityQCComposite/<frame>/{z}/{x}/{y}.png`.
 - The app prefers `tileTemplate` when present and falls back to `/v1/radar/mrms/tiles/{z}/{x}/{y}.png` when it is absent.
 - The Worker tile route remains as a compatibility fallback while the public delivery path is proven.

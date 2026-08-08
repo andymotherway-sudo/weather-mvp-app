@@ -118,6 +118,13 @@ Required GitHub repository secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
+Optional MRMS direct-tile cutover:
+
+- After the public R2 tile domain is attached, run GitHub Actions -> `Configure Worker Variables`.
+- Use `target_env=production`.
+- Set `mrms_public_tile_base_url` to the HTTPS R2 tile origin, for example `https://radar-assets.omniwx.com`.
+- The workflow writes `MRMS_PUBLIC_TILE_BASE_URL` as a Worker secret and verifies `/v1/radar/backend/status` reports `publicTileDeliveryEnabled=true`.
+
 Fallback path: if GitHub Actions is unavailable and WSL is healthy, use an explicit production deploy command from `omniwx-api/`:
 
 ```powershell

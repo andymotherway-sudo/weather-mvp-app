@@ -1,0 +1,114 @@
+name: Configure Worker Variables
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Worker environment to configure"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+      mrms_public_tile_base_url:
+        description: "HTTPS public R2 tile origin, for example https://radar-assets.omniwx.com"
+        required: true
+        type: string
+      smoke_base_url:
+        description: "Base URL to smoke-test after configuration"
+        required: true
+        default: "https://omniwx-api-production.omniwx.workers.dev"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: configure-worker-vars-${{ inputs.target_env || 'manual' }}
+  cancel-in-progress: false
+
+jobs:
+  configure-worker-vars:
+    name: Configure Worker Variables
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      MRMS_PUBLIC_TILE_BASE_URL: ${{ inputs.mrms_public_tile_base_url }}
+      SMOKE_BASE_URL: ${{ inputs.smoke_base_url || 'https://omniwx-api-production.omniwx.workers.dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate inputs and credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MRMS_PUBLIC_TILE_BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required"
+              missing=1
+            fi
+          done
+          node - <<'NODE'
+          const raw = process.env.MRMS_PUBLIC_TILE_BASE_URL || "";
+          const parsed = new URL(raw);
+          if (parsed.protocol !== "https:") {
+            throw new Error("MRMS_PUBLIC_TILE_BASE_URL must be an HTTPS URL");
+          }
+          if (raw.endsWith("/")) {
+            throw new Error("MRMS_PUBLIC_TILE_BASE_URL should not end with a slash");
+          }
+          NODE
+          exit "$missing"
+
+      - name: Set MRMS public tile base URL
+        shell: bash
+        run: |
+          args=(secret put MRMS_PUBLIC_TILE_BASE_URL)
+          if [ "$TARGET_ENV" = "production" ]; then
+            args+=(--env production)
+          elif [ "$TARGET_ENV" != "dev" ]; then
+            echo "::error::Unsupported target_env: $TARGET_ENV"
+            exit 1
+          fi
+          printf '%s' "$MRMS_PUBLIC_TILE_BASE_URL" | npx wrangler "${args[@]}"
+
+      - name: Smoke test configured Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$SMOKE_BASE_URL/v1/radar/backend/status" > /tmp/radar-status.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const radar = JSON.parse(fs.readFileSync("/tmp/radar-status.json", "utf8"));
+          if (!radar.ok) throw new Error("Radar backend status did not report ok");
+          const mrms = radar.ownedPipeline?.mrms ?? {};
+          if (!mrms.publicTileDeliveryEnabled) {
+            throw new Error("MRMS public tile delivery is not enabled after configuration");
+          }
+          console.log(JSON.stringify({
+            ok: true,
+            publicTileDeliveryEnabled: mrms.publicTileDeliveryEnabled,
+            publicTileBaseUrl: mrms.publicTileBaseUrl ?? null,
+          }, null, 2));
+          NODE
