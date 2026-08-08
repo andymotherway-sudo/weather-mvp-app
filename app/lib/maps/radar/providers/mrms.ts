@@ -89,7 +89,9 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
       if (!iso) return null;
       return {
         iso,
-        template: frame.tileTemplate || buildMrmsTileTemplate(product, frame.frame),
+        // Owned MRMS publishes only non-empty tiles. The Worker route returns
+        // transparent PNGs for empty tiles, avoiding public R2 404 noise in MapLibre.
+        template: buildMrmsTileTemplate(product, frame.frame),
         maxZ: safeMaxZoom(frame.maxZoom ?? json.maxZoom),
         label: `MRMS ${frame.frame || iso}`,
       };

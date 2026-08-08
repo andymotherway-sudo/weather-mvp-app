@@ -235,6 +235,7 @@ The stable latest pointer is now backward-compatible with the one-frame preview 
 - If `MRMS_PUBLIC_TILE_BASE_URL` is configured, each timeline frame includes a direct public R2 `tileTemplate`; otherwise the app falls back to the Worker tile route.
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...` still serves the latest frame.
 - `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=...&frame=<frame>` serves a specific retained frame.
+- The mobile app currently uses the Worker MRMS tile route even when public R2 templates are present. MRMS is sparse and only stores non-empty tiles; the Worker returns a cacheable transparent PNG for empty tile coordinates so MapLibre does not treat clear-air tiles as noisy 404s.
 - `npm run mrms:update-latest -- --apply --retain-frames 12 --max-frame-age-minutes 360` publishes a bounded rolling manifest. Retention cleanup should still be run after repeated publishes so old frame prefixes do not become an archive.
 - `POST /v1/radar/mrms/maintenance/cleanup-retained?product=...&confirm=cleanup-mrms-proof-dev&dryRun=0` deletes MRMS proof frame prefixes that are not listed in the live latest manifest.
 

@@ -10325,6 +10325,14 @@ type MrmsLatestManifest = {
 
 type MrmsTimelineFrame = NonNullable<MrmsLatestManifest["frames"]>[number] | MrmsLatestManifest;
 
+const TRANSPARENT_PNG_1X1 = Uint8Array.from([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+  0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196,
+  137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 96, 0, 0,
+  0, 2, 0, 1, 226, 33, 188, 51, 0, 0, 0, 0, 73, 69, 78,
+  68, 174, 66, 96, 130,
+]);
+
 function buildMrmsLatestKey(env: Env, product: string) {
   return `${getMrmsLatestPrefix(env)}/${product}.json`;
 }
@@ -12118,9 +12126,14 @@ async function handleWorkerRequest(
       const objectKey = `${selectedFrame.tileBasePrefix}/${tile.z}/${tile.x}/${tile.y}.png`;
       const object = await env.RADAR_ASSETS!.get(objectKey);
       if (!object?.body) {
-        return new Response(JSON.stringify({ ok: false, error: "mrms-tile-not-found", key: objectKey }), {
-          status: 404,
-          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        return new Response(TRANSPARENT_PNG_1X1, {
+          status: 200,
+          headers: withCors({
+            "content-type": "image/png",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
+            "x-omni-radar-source": "r2-mrms-empty",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
         });
       }
 
