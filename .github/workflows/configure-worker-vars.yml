@@ -81,6 +81,18 @@ jobs:
           NODE
           exit "$missing"
 
+      - name: Synchronize deployed Worker version
+        shell: bash
+        run: |
+          args=(deploy --keep-vars --message "Synchronize Worker before variable configuration")
+          if [ "$TARGET_ENV" = "production" ]; then
+            args+=(--env production)
+          elif [ "$TARGET_ENV" != "dev" ]; then
+            echo "::error::Unsupported target_env: $TARGET_ENV"
+            exit 1
+          fi
+          npx wrangler "${args[@]}"
+
       - name: Set MRMS public tile base URL
         shell: bash
         run: |
