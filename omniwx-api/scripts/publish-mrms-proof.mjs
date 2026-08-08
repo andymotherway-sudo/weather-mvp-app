@@ -316,6 +316,20 @@ async function main() {
   const product = productKey(manifest);
   const frame = frameKey(manifest);
   const basePrefix = `${args.prefix}/${frame}`;
+  const latestKey = `${args.latestPrefix}/${product}.json`;
+  const previousFrames = args.dryRun || !args.publishLatest ? [] : await existingPlaylistFrames(args, latestKey, uploader);
+  const duplicateFrame = previousFrames.some((entry) => {
+    if (entry.frame !== frame) return false;
+    if (String(entry.tileBasePrefix || "") !== basePrefix) return false;
+    const previousMaxZoom = Number(entry.maxZoom);
+    const currentMaxZoom = Number(manifest.maxZoom);
+    const previousTileCount = Number(entry.tileCount);
+    return Number.isFinite(previousMaxZoom)
+      && Number.isFinite(currentMaxZoom)
+      && previousMaxZoom >= currentMaxZoom
+      && Number.isFinite(previousTileCount)
+      && previousTileCount === tiles.length;
+  });
   const uploads = args.latestOnly ? [] : tiles.map((tile) => {
     const localPath = String(tile.path);
     return {
@@ -328,6 +342,9 @@ async function main() {
       localPath: args.manifest,
       objectPath: `${args.bucket}/${basePrefix}/manifest.json`,
     });
+  }
+  if (duplicateFrame && !args.latestOnly) {
+    uploads.length = 0;
   }
 
   let latestManifestPath = null;
@@ -352,8 +369,6 @@ async function main() {
         bytes: tile.bytes,
       })),
     };
-    const latestKey = `${args.latestPrefix}/${product}.json`;
-    const previousFrames = args.dryRun ? [] : await existingPlaylistFrames(args, latestKey, uploader);
     const framesById = new Map();
     for (const entry of [currentFrame, ...previousFrames]) {
       if (!entry?.frame || framesById.has(entry.frame)) continue;
@@ -400,10 +415,12 @@ async function main() {
     await mkdir(latestDir, { recursive: true });
     latestManifestPath = join(latestDir, `${product}.latest.json`);
     await writeFile(latestManifestPath, JSON.stringify(latestManifest, null, 2), "utf8");
-    uploads.push({
-      localPath: latestManifestPath,
-      objectPath: `${args.bucket}/${latestKey}`,
-    });
+    if (!duplicateFrame || args.latestOnly) {
+      uploads.push({
+        localPath: latestManifestPath,
+        objectPath: `${args.bucket}/${latestKey}`,
+      });
+    }
   }
 
   console.log(JSON.stringify({
@@ -414,6 +431,7 @@ async function main() {
     prefix: basePrefix,
     latestKey: args.publishLatest ? `${args.latestPrefix}/${product}.json` : null,
     latestOnly: args.latestOnly,
+    duplicateFrame,
     retainFrames: args.publishLatest ? args.retainFrames : null,
     maxFrameAgeMinutes: args.publishLatest ? args.maxFrameAgeMinutes : null,
     uploadCount: uploads.length,

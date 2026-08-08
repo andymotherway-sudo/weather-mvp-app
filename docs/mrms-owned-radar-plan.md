@@ -287,7 +287,16 @@ npm run mrms:cleanup-retained -- --env production --uploader s3 --apply
 
 ## GitHub Actions job runner
 
-The first repeatable production job runner is `.github/workflows/mrms-radar-cycle.yml`. It is manual-run only right now so we do not accidentally consume recurring GitHub Actions minutes or R2 operations before the first hosted run is proven.
+The first repeatable production job runner is `.github/workflows/mrms-radar-cycle.yml`. It is manual-run only while we are holding Cloudflare cost at zero.
+
+Cost-control guardrails:
+
+- The job uses the S3-compatible R2 uploader, not per-object Wrangler uploads.
+- It keeps the retained playlist bounded by frame count and age.
+- It filters retained history to the requested maximum zoom so older blurry frames do not reappear.
+- `publish-mrms-proof` skips R2 writes when NOAA's latest frame is already published at the requested zoom and tile count.
+- The job cancels overlapping runs so slow renders do not stack up.
+- The public timeline smoke test only runs after apply writes and verifies `tileDelivery=public-r2`.
 
 Required GitHub repository secrets:
 
@@ -303,14 +312,18 @@ Manual dry-run path:
 
 1. Open GitHub Actions.
 2. Select `MRMS radar cycle`.
-3. Run workflow with `target_env=production`, `apply=false`, `max_zoom=10`, `retain_frames=12`.
+3. Run workflow with `target_env=production`, `apply=false`, `min_zoom=3`, `max_zoom=10`, `retain_frames=12`, `max_frame_age_minutes=360`.
 4. Confirm the job downloads NOAA MRMS, renders z3-z10 tiles, reports `uploader: "s3"`, and reaches cleanup dry-run with no unexpected stale prefixes.
 
 Manual apply path after dry-run succeeds:
 
 1. Run the same workflow with `apply=true`.
-2. Verify `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite` shows a new latest frame.
-3. Verify a known tile returns `x-omni-radar-source: r2-mrms`.
+2. Verify `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite` shows a new latest frame and `tileDelivery=public-r2`.
+3. Verify a known public tile returns `image/png` from `https://radar-assets.omni-wx.com/...`.
 4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
 
-Schedule is intentionally not enabled yet. After one hosted dry-run and one hosted apply succeed, add a conservative cron such as every 10 minutes while we stay at z3-z10 and 12 retained frames.
+Future scheduled path:
+
+- Do not enable high-cadence z10 scheduling while cost must remain zero.
+- A rough zero-cost-safe starter cadence is a few manual or scheduled applies per day, then measure R2 Class A operations and cleanup deletes before increasing.
+- A polished production cadence such as every 10-30 minutes at z10 is a paid-growth step because each fresh frame writes thousands of tile objects.
