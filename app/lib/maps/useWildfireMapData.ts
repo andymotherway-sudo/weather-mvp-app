@@ -450,7 +450,8 @@ export function useWildfireMapData(enabled: boolean, region: RegionLike | null) 
           `/v1/maps/wildfire?west=${encodeURIComponent(String(envelope.west))}` +
             `&south=${encodeURIComponent(String(envelope.south))}` +
             `&east=${encodeURIComponent(String(envelope.east))}` +
-            `&north=${encodeURIComponent(String(envelope.north))}`,
+            `&north=${encodeURIComponent(String(envelope.north))}` +
+            `&payload=v3`,
         );
         const [wildfireRes, hotspotsRes] = await Promise.allSettled([
           fetchWithTimeout(wildfireUrl, 15000, { signal: controller.signal, headers: { Accept: 'application/json' } }).then(async (res) => {
