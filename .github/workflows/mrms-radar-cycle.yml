@@ -1,4 +1,5 @@
 name: MRMS radar cycle
+run-name: MRMS ${{ inputs.target_env || 'production' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '3' }}-${{ inputs.max_zoom || '10' }}
 
 on:
   workflow_dispatch:
@@ -123,6 +124,19 @@ jobs:
           done
           exit "$missing"
 
+      - name: Show MRMS cycle settings
+        shell: bash
+        run: |
+          echo "target_env=$MRMS_TARGET_ENV"
+          echo "apply=$MRMS_APPLY"
+          echo "min_zoom=$MRMS_MIN_ZOOM"
+          echo "max_zoom=$MRMS_MAX_ZOOM"
+          echo "retain_frames=$MRMS_RETAIN_FRAMES"
+          echo "max_frame_age_minutes=$MRMS_MAX_FRAME_AGE_MINUTES"
+          if [ "$MRMS_APPLY" != "true" ]; then
+            echo "::warning::This is a dry-run. It will render MRMS but will not write to R2 or advance the live app timeline."
+          fi
+
       - name: Type-check API scripts
         run: npx tsc --noEmit
 
@@ -161,9 +175,19 @@ jobs:
             throw new Error(`MRMS tileDelivery is ${frame.tileDelivery}, expected public-r2`);
           }
           if (!frame.tileTemplate) throw new Error("MRMS frame has no public tileTemplate");
+          const validTimeMs = Date.parse(String(frame.validTime || frame.time || ""));
+          if (!Number.isFinite(validTimeMs)) {
+            throw new Error("MRMS frame has no parseable validTime");
+          }
+          const ageMinutes = (Date.now() - validTimeMs) / 60_000;
+          if (ageMinutes > 180) {
+            throw new Error(`MRMS frame is stale after publish: ${Math.round(ageMinutes)} minutes old`);
+          }
           console.log(JSON.stringify({
             ok: true,
             frame: frame.frame,
+            validTime: frame.validTime,
+            ageMinutes: Math.round(ageMinutes),
             frameCount: timeline.frameCount,
             maxZoom: timeline.maxZoom,
             tileDelivery: frame.tileDelivery,

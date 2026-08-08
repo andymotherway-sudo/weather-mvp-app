@@ -296,7 +296,8 @@ Cost-control guardrails:
 - It filters retained history to the requested maximum zoom so older blurry frames do not reappear.
 - `publish-mrms-proof` skips R2 writes when NOAA's latest frame is already published at the requested zoom and tile count.
 - The job cancels overlapping runs so slow renders do not stack up.
-- The public timeline smoke test only runs after apply writes and verifies `tileDelivery=public-r2`.
+- The public timeline smoke test only runs after apply writes and verifies `tileDelivery=public-r2` plus a fresh frame valid time.
+- Dry-runs log an explicit warning because they do not update the live app timeline.
 
 Required GitHub repository secrets:
 
