@@ -53,8 +53,8 @@ on:
         type: choice
         options:
           - "1"
+          - "2"
           - "3"
-          - "6"
       max_frame_age_minutes:
         description: "Maximum retained history age"
         required: true
@@ -76,7 +76,7 @@ jobs:
   publish-mrms:
     name: Publish bounded MRMS radar
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
 
     defaults:
       run:

@@ -1,0 +1,129 @@
+name: MRMS radar maintenance
+run-name: MRMS maintenance ${{ inputs.target_env || 'production' }} cleanup=${{ inputs.apply_cleanup || false }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+      apply_cleanup:
+        description: "Delete stale retained-frame objects"
+        required: true
+        default: false
+        type: boolean
+      fail_on_stale:
+        description: "Fail if stale objects remain after this run"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mrms-radar-maintenance-${{ inputs.target_env || 'production' }}
+  cancel-in-progress: true
+
+jobs:
+  maintain-mrms:
+    name: Maintain MRMS radar storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      MRMS_APPLY_CLEANUP: ${{ inputs.apply_cleanup }}
+      MRMS_FAIL_ON_STALE: ${{ inputs.fail_on_stale }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check R2 credentials
+        shell: bash
+        run: |
+          missing=0
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured as a GitHub Actions secret"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Cleanup stale MRMS objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --env "$MRMS_TARGET_ENV"
+            --product MergedReflectivityQCComposite
+            --uploader s3
+            --max-deletes 50000
+          )
+          if [ "$MRMS_APPLY_CLEANUP" = "true" ]; then
+            args+=(--apply)
+          fi
+          npm run mrms:cleanup-retained -- "${args[@]}"
+
+      - name: Report MRMS retained storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --env "$MRMS_TARGET_ENV"
+            --product MergedReflectivityQCComposite
+            --fail-storage-mb 5120
+            --json
+          )
+          if [ "$MRMS_FAIL_ON_STALE" = "true" ]; then
+            args+=(--fail-stale-objects 0)
+          fi
+          npm --silent run mrms:storage-status -- "${args[@]}" > /tmp/mrms-storage-status.json
+          cat /tmp/mrms-storage-status.json
+          node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const fs = require("node:fs");
+          const status = JSON.parse(fs.readFileSync("/tmp/mrms-storage-status.json", "utf8"));
+          const lines = [
+            "## MRMS retained storage",
+            "",
+            `- Environment: ${status.env}`,
+            `- Product: ${status.product}`,
+            `- Timeline frames: ${status.timeline.frameCount}`,
+            `- Newest frame age: ${status.timeline.newestAgeMinutes} minutes`,
+            `- Max zoom: ${status.timeline.maxZoom}`,
+            `- Tile delivery: ${status.timeline.tileDelivery}`,
+            `- R2 objects under prefix: ${status.storage.objectCount}`,
+            `- R2 total under prefix: ${status.storage.totalMb} MB`,
+            `- Retained objects: ${status.storage.retainedObjectCount}`,
+            `- Retained bytes: ${status.storage.retainedMb} MB`,
+            `- Stale objects: ${status.storage.staleObjectCount}`,
+            `- Stale bytes: ${status.storage.staleMb} MB`,
+            "",
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
+          NODE

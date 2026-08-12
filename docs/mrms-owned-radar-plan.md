@@ -193,10 +193,10 @@ Backfill discovers recent timestamped NOAA MRMS frames, publishes them oldest-to
 Guardrails:
 
 - `backfill_frames` defaults to `1`.
-- The workflow only offers `1`, `3`, or `6` frames.
+- The workflow only offers `1`, `2`, or `3` frames for z10 safety.
 - The publish cap remains `12000` tiles per frame.
 - Cleanup still treats the live latest manifest as the source of truth for retained prefixes.
-- Use `3` first for release validation; use `6` when a longer loop is worth the extra Action time and R2 operations.
+- Use `3` for release validation. A 6-frame z10 backfill exceeded the 60-minute job limit on August 12, 2026, so longer loops should be built through repeated smaller runs or a future faster job runner.
 
 ## One-command dev update
 
@@ -355,3 +355,4 @@ Future scheduled path:
 - Do not enable high-cadence z10 scheduling while cost must remain zero.
 - A rough zero-cost-safe starter cadence is a few manual or scheduled applies per day, then measure R2 Class A operations and cleanup deletes before increasing.
 - A polished production cadence such as every 10-30 minutes at z10 is a paid-growth step because each fresh frame writes thousands of tile objects.
+- Use GitHub Actions -> `MRMS radar maintenance` after canceled publish runs or anytime storage posture needs checking without rendering new frames.

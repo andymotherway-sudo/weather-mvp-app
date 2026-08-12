@@ -68,7 +68,7 @@ Implementation:
 
 - Run manual MRMS backfills when testing:
   - `backfill_frames=3` for routine verification.
-  - `backfill_frames=6` for a better demo loop.
+  - `backfill_frames=2` when a faster top-up is enough.
 - Keep `retain_frames=12`.
 - Keep `max_frame_age_minutes=360`.
 - Keep `max_zoom=10`.
@@ -254,8 +254,8 @@ Paid-customer cadence:
 
 ## Immediate Next Steps
 
-1. Run one `backfill_frames=6` production test only if we want a better tester loop today.
-2. Exercise the production MRMS storage summary in GitHub Actions after the next apply run.
+1. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
+2. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
 3. Add retained-byte/object trend logging across multiple workflow runs.
 4. Add MRMS source-priority fallback rules for US default readiness.
 5. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
