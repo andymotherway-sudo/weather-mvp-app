@@ -15,6 +15,7 @@
 		"mrms:update-latest": "node ./scripts/update-mrms-latest.mjs",
 		"mrms:cycle": "node ./scripts/run-mrms-cycle.mjs",
 		"mrms:cleanup-retained": "node ./scripts/cleanup-mrms-retained.mjs",
+		"mrms:storage-status": "node ./scripts/mrms-storage-status.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

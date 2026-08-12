@@ -80,6 +80,8 @@ Implementation:
   - per-frame bytes
   - live tile response header
   - R2 bucket size check
+- Require the MRMS workflow to report retained R2 object count, retained bytes, stale object count, and stale bytes after every applied run.
+- Fail the workflow if the MRMS prefix exceeds 5 GB or cleanup leaves stale objects behind.
 
 Cost posture:
 
@@ -94,6 +96,7 @@ Done when:
 - R2 cleanup leaves only retained frame prefixes.
 - RainViewer fallback still works when MRMS is disabled, stale, or missing.
 - The app can explain MRMS as "US national radar preview" honestly.
+- The app refuses stale MRMS timelines instead of silently showing old radar.
 
 ## Phase 2: Controlled Automation
 
@@ -252,9 +255,9 @@ Paid-customer cadence:
 ## Immediate Next Steps
 
 1. Run one `backfill_frames=6` production test only if we want a better tester loop today.
-2. Add a production MRMS health summary command or script.
-3. Add retained-byte/object reporting to the MRMS workflow output.
-4. Add stale/fallback logic for MRMS default readiness.
+2. Exercise the production MRMS storage summary in GitHub Actions after the next apply run.
+3. Add retained-byte/object trend logging across multiple workflow runs.
+4. Add MRMS source-priority fallback rules for US default readiness.
 5. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
 6. Keep RainViewer fallback active until Phase 4 gates pass.
 

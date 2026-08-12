@@ -171,7 +171,7 @@ jobs:
           fi
           npm run mrms:cycle -- "${args[@]}"
 
-      - name: Smoke test public MRMS timeline
+      - name: Smoke test MRMS timeline
         if: env.MRMS_APPLY == 'true'
         shell: bash
         run: |
@@ -204,4 +204,39 @@ jobs:
             tileDelivery: frame.tileDelivery,
             tileTemplate: frame.tileTemplate,
           }, null, 2));
+          NODE
+
+      - name: Report MRMS retained storage
+        if: env.MRMS_APPLY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --silent run mrms:storage-status -- \
+            --env "$MRMS_TARGET_ENV" \
+            --product MergedReflectivityQCComposite \
+            --fail-storage-mb 5120 \
+            --fail-stale-objects 0 \
+            --json > /tmp/mrms-storage-status.json
+          cat /tmp/mrms-storage-status.json
+          node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const fs = require("node:fs");
+          const status = JSON.parse(fs.readFileSync("/tmp/mrms-storage-status.json", "utf8"));
+          const lines = [
+            "## MRMS retained storage",
+            "",
+            `- Environment: ${status.env}`,
+            `- Product: ${status.product}`,
+            `- Timeline frames: ${status.timeline.frameCount}`,
+            `- Newest frame age: ${status.timeline.newestAgeMinutes} minutes`,
+            `- Max zoom: ${status.timeline.maxZoom}`,
+            `- Tile delivery: ${status.timeline.tileDelivery}`,
+            `- R2 objects under prefix: ${status.storage.objectCount}`,
+            `- R2 total under prefix: ${status.storage.totalMb} MB`,
+            `- Retained objects: ${status.storage.retainedObjectCount}`,
+            `- Retained bytes: ${status.storage.retainedMb} MB`,
+            `- Stale objects: ${status.storage.staleObjectCount}`,
+            `- Stale bytes: ${status.storage.staleMb} MB`,
+            "",
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
           NODE

@@ -7,6 +7,8 @@ export type MrmsRadarFrame = {
   label: string;
 };
 
+const DEFAULT_MRMS_STALE_AFTER_MS = 30 * 60_000;
+
 type MrmsTimelineResponse = {
   ok?: boolean;
   product?: string;
@@ -57,9 +59,10 @@ function normalizeMrmsUtcIso(value: unknown) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
-export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number }): Promise<MrmsRadarFrame[]> {
+export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number; staleAfterMs?: number }): Promise<MrmsRadarFrame[]> {
   const product = (args?.product || 'MergedReflectivityQCComposite').trim();
   const ttlMs = Math.max(10_000, args?.ttlMs ?? 60_000);
+  const staleAfterMs = Math.max(5 * 60_000, args?.staleAfterMs ?? DEFAULT_MRMS_STALE_AFTER_MS);
   const now = Date.now();
 
   if (cachedFrame && cachedProduct === product && now < cachedExpiresAt) {
@@ -102,6 +105,10 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number 
     const ms = new Date(frame.iso).getTime();
     return Number.isFinite(ms) ? Math.max(best, ms) : best;
   }, Number.NEGATIVE_INFINITY);
+  if (!Number.isFinite(newestMs) || now - newestMs > staleAfterMs) {
+    const ageMinutes = Number.isFinite(newestMs) ? Math.round((now - newestMs) / 60_000) : null;
+    throw new Error(`MRMS timeline is stale${ageMinutes == null ? '' : ` (${ageMinutes} minutes old)`}`);
+  }
   const maxAgeMs = Math.max(5, Math.min(360, json.maxFrameAgeMinutes ?? 360)) * 60_000;
   const frames = Number.isFinite(newestMs)
     ? mappedFrames.filter((frame) => {

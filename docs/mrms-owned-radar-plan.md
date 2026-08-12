@@ -322,6 +322,8 @@ Cost-control guardrails:
 - `publish-mrms-proof` skips R2 writes when NOAA's latest frame is already published at the requested zoom and tile count.
 - The job cancels overlapping runs so slow renders do not stack up.
 - The public timeline smoke test only runs after apply writes and verifies `tileDelivery=worker-r2` plus a fresh frame valid time.
+- Applied runs report retained R2 object count, retained bytes, stale object count, and stale bytes to the GitHub Actions summary.
+- Applied runs fail if the MRMS product prefix exceeds 5 GB or if retained cleanup leaves stale objects.
 - Dry-runs log an explicit warning because they do not update the live app timeline.
 
 Required GitHub repository secrets:
