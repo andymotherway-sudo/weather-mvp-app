@@ -23,6 +23,7 @@ function parseArgs(argv) {
     retainFrames: 12,
     maxFrameAgeMinutes: 360,
     minRetainedMaxZoom: null,
+    backfillFrames: 1,
     python: process.env.OMNIWX_PYTHON || null,
     uploader: "auto",
     uploadConcurrency: 6,
@@ -41,6 +42,7 @@ function parseArgs(argv) {
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.floor(Number(argv[++i]) || args.retainFrames));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--min-retained-max-z" && argv[i + 1]) args.minRetainedMaxZoom = Math.max(0, Math.floor(Number(argv[++i])));
+    else if (arg === "--backfill-frames" && argv[i + 1]) args.backfillFrames = Math.max(1, Math.min(12, Math.floor(Number(argv[++i]) || args.backfillFrames)));
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
@@ -87,6 +89,7 @@ Options:
   --retain-frames <n>        Latest playlist retention count. Default: 12
   --max-frame-age-minutes <n> Drop retained frames older than this. Default: 360
   --min-retained-max-z <n>   Drop retained playlist frames below this max zoom. Default: --max-z
+  --backfill-frames <n>      Publish newest N timestamped frames in one run. Default: 1
   --python <path>            Python executable for cfgrib/eccodes rendering
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
   --upload-concurrency <n>   S3 upload concurrency. Default: 6
@@ -105,11 +108,46 @@ function runStep(label, command, args) {
   }
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const bucket = BUCKETS[args.env];
-  const workerEnv = args.env === "production" || args.env === "prod" ? "production" : "dev";
+function runStepCapture(label, command, args) {
+  console.log(`\n== ${label} ==`);
+  console.log([command, ...args].join(" "));
+  const result = spawnSync(command, args, { encoding: "utf8" });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.status !== 0) {
+    throw new Error(`${label} failed with exit code ${result.status ?? 1}`);
+  }
+  return result.stdout || "";
+}
 
+function frameLabelFromDiscoveredFrame(frame) {
+  const raw = String(frame?.frameTime || frame?.name || "").trim();
+  const match = /(\d{4})-?(\d{2})-?(\d{2})T?(\d{2}):?(\d{2}):?(\d{2})?/i.exec(raw);
+  if (match) {
+    const [, year, month, day, hour, minute, second = "00"] = match;
+    return `${year}${month}${day}T${hour}${minute}${second}`;
+  }
+  return String(frame?.name || "frame").replace(/[^0-9A-Za-z_-]+/g, "").slice(0, 40);
+}
+
+function discoverBackfillFrames(args) {
+  const output = runStepCapture("Discover MRMS timestamped frames", process.execPath, [
+    join(SCRIPT_DIR, "discover-mrms.mjs"),
+    "--product",
+    args.product,
+    "--max-frames",
+    String(args.backfillFrames),
+    "--json",
+  ]);
+  const payload = JSON.parse(output);
+  const frames = Array.isArray(payload.frames) ? payload.frames : [];
+  if (!frames.length) throw new Error("MRMS discovery returned no timestamped frames");
+  return frames.slice(0, args.backfillFrames).reverse();
+}
+
+function publishFrame(args, bucket, workerEnv, frame = null) {
+  const frameUrl = frame?.url ? String(frame.url) : null;
+  const frameLabel = frame ? frameLabelFromDiscoveredFrame(frame) : null;
   const updateArgs = [
     join(SCRIPT_DIR, "update-mrms-latest.mjs"),
     "--product",
@@ -135,13 +173,17 @@ function main() {
     "--upload-concurrency",
     String(args.uploadConcurrency),
   ];
+  if (frameUrl) updateArgs.push("--frame-url", frameUrl);
+  if (frameLabel) updateArgs.push("--frame-label", frameLabel);
   if (args.python) updateArgs.push("--python", args.python);
   if (args.apply) updateArgs.push("--apply");
 
-  runStep(args.apply ? `Publish MRMS ${workerEnv}` : `Dry-run MRMS ${workerEnv}`, process.execPath, updateArgs);
+  const suffix = frameLabel ? ` ${frameLabel}` : "";
+  runStep(args.apply ? `Publish MRMS ${workerEnv}${suffix}` : `Dry-run MRMS ${workerEnv}${suffix}`, process.execPath, updateArgs);
+}
 
+function cleanupRetained(args, workerEnv) {
   if (args.skipCleanup) return;
-
   const cleanupArgs = [
     join(SCRIPT_DIR, "cleanup-mrms-retained.mjs"),
     "--env",
@@ -156,6 +198,24 @@ function main() {
   ];
   if (args.apply) cleanupArgs.push("--apply");
   runStep(args.apply ? `Cleanup retained MRMS ${workerEnv}` : `Dry-run cleanup retained MRMS ${workerEnv}`, process.execPath, cleanupArgs);
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const bucket = BUCKETS[args.env];
+  const workerEnv = args.env === "production" || args.env === "prod" ? "production" : "dev";
+
+  if (args.backfillFrames > 1) {
+    const frames = discoverBackfillFrames(args);
+    for (const frame of frames) {
+      publishFrame(args, bucket, workerEnv, frame);
+    }
+    cleanupRetained(args, workerEnv);
+    return;
+  }
+
+  publishFrame(args, bucket, workerEnv);
+  cleanupRetained(args, workerEnv);
 }
 
 try {

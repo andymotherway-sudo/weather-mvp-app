@@ -91,6 +91,8 @@ Current renderer checkpoint:
 - Keep bilinear sampling as the default for cleaner zoomed-in tiles.
 - Keep the app default on RainViewer unless the MRMS preview toggle is enabled.
 - Rebuild history with same-quality z10 frames before considering MRMS as a default radar layer.
+- Production MRMS preview now serves tiles through the Worker (`worker-r2`) rather than exposing public R2 tile templates to the app.
+- MRMS history can be populated with a bounded backfill run instead of waiting for many separate single-frame publishes.
 
 ## Current storage read
 
@@ -173,6 +175,28 @@ Guardrails:
 - If R2 S3 credentials are missing and `--uploader auto` is used, the script falls back to the older Worker maintenance route.
 
 This is the storage safety valve before increasing MRMS publish cadence or zoom depth. It prevents a proof prefix from becoming an accidental archive.
+
+## MRMS history backfill
+
+The normal MRMS cycle still publishes one latest frame by default. To build a short loop quickly, run the GitHub Action `MRMS radar cycle` with:
+
+- `target_env=production`
+- `apply=true`
+- `min_zoom=3`
+- `max_zoom=10`
+- `retain_frames=12`
+- `backfill_frames=3` or `6`
+- `max_frame_age_minutes=360`
+
+Backfill discovers recent timestamped NOAA MRMS frames, publishes them oldest-to-newest, and then runs retained-frame cleanup once. This keeps the latest manifest pointed at the freshest frame while building a usable playlist.
+
+Guardrails:
+
+- `backfill_frames` defaults to `1`.
+- The workflow only offers `1`, `3`, or `6` frames.
+- The publish cap remains `12000` tiles per frame.
+- Cleanup still treats the live latest manifest as the source of truth for retained prefixes.
+- Use `3` first for release validation; use `6` when a longer loop is worth the extra Action time and R2 operations.
 
 ## One-command dev update
 

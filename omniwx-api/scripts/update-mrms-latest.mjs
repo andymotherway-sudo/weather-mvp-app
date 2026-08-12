@@ -19,6 +19,8 @@ function parseArgs(argv) {
     bucket: "omniwx-radar-assets-dev",
     prefix: null,
     latestPrefix: "radar/mrms/latest",
+    frameUrl: null,
+    frameLabel: null,
     pydeps: null,
     apply: false,
     python: process.env.OMNIWX_PYTHON || null,
@@ -39,6 +41,8 @@ function parseArgs(argv) {
     else if (arg === "--bucket" && argv[i + 1]) args.bucket = argv[++i];
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
+    else if (arg === "--frame-url" && argv[i + 1]) args.frameUrl = argv[++i];
+    else if (arg === "--frame-label" && argv[i + 1]) args.frameLabel = argv[++i].replace(/[^0-9A-Za-z_-]+/g, "").slice(0, 40);
     else if (arg === "--pydeps" && argv[i + 1]) args.pydeps = argv[++i];
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
@@ -80,6 +84,8 @@ Options:
   --bucket <name>      R2 bucket. Default: omniwx-radar-assets-dev
   --prefix <key>       R2 frame prefix. Default: radar/mrms/proof/<product>
   --latest-prefix <key> Stable latest prefix. Default: radar/mrms/latest
+  --frame-url <url>    Exact MRMS frame URL to publish instead of the latest alias
+  --frame-label <id>   Stable local output suffix for the exact frame
   --pydeps <path>      Python dependency directory for tile rendering
   --python <path>      Python executable for the tile step
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
@@ -100,8 +106,9 @@ function runStep(label, command, args) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const input = resolve(`../tmp/mrms/MRMS_${args.product}.latest.grib2.gz`);
-  const outputDir = resolve(`../tmp/mrms/tiles/${args.product}-z${args.minZoom}z${args.maxZoom}`);
+  const localFrameLabel = args.frameLabel || (args.frameUrl ? "selected" : "latest");
+  const input = resolve(`../tmp/mrms/MRMS_${args.product}.${localFrameLabel}.grib2.gz`);
+  const outputDir = resolve(`../tmp/mrms/tiles/${args.product}-${localFrameLabel}-z${args.minZoom}z${args.maxZoom}`);
   const manifest = resolve(outputDir, "manifest.json");
   const publishPrefix = args.prefix || `radar/mrms/proof/${args.product}`;
 
@@ -109,7 +116,21 @@ function main() {
     join(SCRIPT_DIR, "download-mrms-frame.mjs"),
     "--product",
     args.product,
+    "--output-dir",
+    resolve("../tmp/mrms"),
+    ...(args.frameUrl ? ["--url", args.frameUrl] : []),
   ]);
+
+  if (args.frameUrl) {
+    const downloadedName = new URL(args.frameUrl).pathname.split("/").pop();
+    const downloadedPath = resolve(`../tmp/mrms/${downloadedName}`);
+    if (downloadedPath !== input) {
+      runStep("Stage exact MRMS frame", process.execPath, [
+        "-e",
+        `require("node:fs").copyFileSync(${JSON.stringify(downloadedPath)}, ${JSON.stringify(input)})`,
+      ]);
+    }
+  }
 
   const tileArgs = [
     join(SCRIPT_DIR, "tile-mrms-proof.mjs"),

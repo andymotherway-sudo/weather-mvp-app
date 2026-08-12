@@ -1,5 +1,5 @@
 name: MRMS radar cycle
-run-name: MRMS ${{ inputs.target_env || 'production' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '3' }}-${{ inputs.max_zoom || '10' }}
+run-name: MRMS ${{ inputs.target_env || 'production' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '3' }}-${{ inputs.max_zoom || '10' }} backfill=${{ inputs.backfill_frames || '1' }}
 
 on:
   workflow_dispatch:
@@ -46,6 +46,15 @@ on:
         options:
           - "6"
           - "12"
+      backfill_frames:
+        description: "Newest timestamped frames to publish this run"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "3"
+          - "6"
       max_frame_age_minutes:
         description: "Maximum retained history age"
         required: true
@@ -67,7 +76,7 @@ jobs:
   publish-mrms:
     name: Publish bounded MRMS radar
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     defaults:
       run:
@@ -82,6 +91,7 @@ jobs:
       MRMS_MIN_ZOOM: ${{ inputs.min_zoom || '3' }}
       MRMS_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
       MRMS_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
+      MRMS_BACKFILL_FRAMES: ${{ inputs.backfill_frames || '1' }}
       MRMS_MAX_FRAME_AGE_MINUTES: ${{ inputs.max_frame_age_minutes || '360' }}
       MRMS_APPLY: ${{ inputs.apply }}
       MRMS_SMOKE_BASE_URL: ${{ inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
@@ -132,6 +142,7 @@ jobs:
           echo "min_zoom=$MRMS_MIN_ZOOM"
           echo "max_zoom=$MRMS_MAX_ZOOM"
           echo "retain_frames=$MRMS_RETAIN_FRAMES"
+          echo "backfill_frames=$MRMS_BACKFILL_FRAMES"
           echo "max_frame_age_minutes=$MRMS_MAX_FRAME_AGE_MINUTES"
           if [ "$MRMS_APPLY" != "true" ]; then
             echo "::warning::This is a dry-run. It will render MRMS but will not write to R2 or advance the live app timeline."
@@ -149,6 +160,7 @@ jobs:
             --max-z "$MRMS_MAX_ZOOM"
             --max-tiles 12000
             --retain-frames "$MRMS_RETAIN_FRAMES"
+            --backfill-frames "$MRMS_BACKFILL_FRAMES"
             --max-frame-age-minutes "$MRMS_MAX_FRAME_AGE_MINUTES"
             --min-retained-max-z "$MRMS_MAX_ZOOM"
             --sampling bilinear
