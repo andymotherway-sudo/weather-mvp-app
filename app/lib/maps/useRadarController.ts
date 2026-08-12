@@ -227,7 +227,7 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean, quality: An
   });
 }
 
-export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms';
+export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms' | 'auto';
 
 function getRadarFetchProfile(
   zoom: number,
@@ -252,7 +252,7 @@ function getRadarFetchProfile(
     return profile;
   };
 
-  if (provider === 'rainviewer' || provider === 'mrms') {
+  if (provider === 'rainviewer' || provider === 'mrms' || provider === 'auto') {
     if (z <= 5) return tune({ maxFrames: 24, lookbackMinutes: 120 });
     if (z <= 8) return tune({ maxFrames: 22, lookbackMinutes: 110 });
     return tune({ maxFrames: 18, lookbackMinutes: 90 });
@@ -373,15 +373,23 @@ export function useRadarController(args: {
 
   const [rvFrames, setRvFrames] = useState<RadarFrame[] | null>(null);
   const [rvError, setRvError] = useState<string | null>(null);
-  const rainViewerSelected = sheetValue.radarProvider === 'rainviewer';
-  const mrmsSelected = sheetValue.radarProvider === 'mrms';
+  const [mrmsFrames, setMrmsFrames] = useState<MrmsRadarFrame[] | null>(null);
+  const [mrmsError, setMrmsError] = useState<string | null>(null);
+  const [mrmsLoading, setMrmsLoading] = useState(false);
+  const autoRadarSelected = sheetValue.radarProvider === 'auto';
+  const rainViewerFetchSelected =
+    sheetValue.radarProvider === 'rainviewer' ||
+    (autoRadarSelected && !stationMode && !stormMode);
+  const mrmsFetchSelected =
+    sheetValue.radarProvider === 'mrms' ||
+    (autoRadarSelected && !stationMode && !stormMode);
 
   useEffect(() => {
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
 
     async function run() {
-      if (!rainViewerSelected || !radarEnabled) return;
+      if (!rainViewerFetchSelected || !radarEnabled) return;
 
       try {
         setRvError(null);
@@ -396,7 +404,7 @@ export function useRadarController(args: {
     }
 
     run();
-    if (rainViewerSelected && radarEnabled) {
+    if (rainViewerFetchSelected && radarEnabled) {
       interval = setInterval(run, 60_000);
     } else {
       setRvFrames(null);
@@ -406,25 +414,34 @@ export function useRadarController(args: {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [rainViewerSelected, radarEnabled]);
+  }, [rainViewerFetchSelected, radarEnabled]);
 
+  const autoMrmsHealthy = autoRadarSelected && !!mrmsFrames?.length && !mrmsError;
+  const effectiveTileProvider: Exclude<RadarProviderId, 'auto'> =
+    autoRadarSelected
+      ? autoMrmsHealthy
+        ? 'mrms'
+        : 'rainviewer'
+      : sheetValue.radarProvider === 'mrms'
+        ? 'mrms'
+        : sheetValue.radarProvider === 'rainviewer'
+          ? 'rainviewer'
+          : 'iem';
+  const rainViewerSelected = effectiveTileProvider === 'rainviewer';
+  const mrmsSelected = effectiveTileProvider === 'mrms';
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
 
   /* =========================================================================
    * MRMS preview frames
    * ========================================================================= */
-  const [mrmsFrames, setMrmsFrames] = useState<MrmsRadarFrame[] | null>(null);
-  const [mrmsError, setMrmsError] = useState<string | null>(null);
-  const [mrmsLoading, setMrmsLoading] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
 
     async function run() {
-      if (!mrmsSelected || !radarEnabled || stationMode || stormMode) {
+      if (!mrmsFetchSelected || !radarEnabled || stationMode || stormMode) {
         setMrmsLoading(false);
-        if (!mrmsSelected) setMrmsFrames(null);
+        if (!mrmsFetchSelected) setMrmsFrames(null);
         return;
       }
 
@@ -444,7 +461,7 @@ export function useRadarController(args: {
     }
 
     run();
-    if (mrmsSelected && radarEnabled && !stationMode && !stormMode) {
+    if (mrmsFetchSelected && radarEnabled && !stationMode && !stormMode) {
       interval = setInterval(run, 60_000);
     }
 
@@ -452,7 +469,7 @@ export function useRadarController(args: {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [mrmsSelected, radarEnabled, stationMode, stormMode]);
+  }, [mrmsFetchSelected, radarEnabled, stationMode, stormMode]);
 
   /* =========================================================================
    * Hyperlocal WMS image mode
@@ -461,7 +478,7 @@ export function useRadarController(args: {
   // also allow the alternate reflectivity product for sharper single-site inspection.
   const localWmsProduct = localWmsProductForRadar(product);
   const usingLocalImage =
-    sheetValue.radarProvider === 'iem' &&
+    effectiveTileProvider === 'iem' &&
     radarEnabled &&
     !!localWmsProduct &&
     !state.radarTime.playing &&
@@ -623,7 +640,7 @@ export function useRadarController(args: {
     let cancelled = false;
 
     async function run() {
-      if (sheetValue.radarProvider !== 'iem' || !radarEnabled || usingLocalImage) {
+      if (effectiveTileProvider !== 'iem' || !radarEnabled || usingLocalImage) {
         setIemLoading(false);
         return;
       }
@@ -667,7 +684,7 @@ export function useRadarController(args: {
       cancelled = true;
     };
   }, [
-    sheetValue.radarProvider,
+    effectiveTileProvider,
     radarEnabled,
     usingLocalImage,
     stationMode,
@@ -684,7 +701,7 @@ export function useRadarController(args: {
 
   const iemDebugLabel = iemUnified?.debugLabel ?? null;
   const usingIemRidgeAnimated =
-    sheetValue.radarProvider === 'iem' &&
+    effectiveTileProvider === 'iem' &&
     radarEnabled &&
     !usingLocalImage &&
     iemUnified?.mode === 'ridge';
@@ -768,13 +785,13 @@ export function useRadarController(args: {
         : 'wide';
 
       return [
-        sheetValue.radarProvider,
+        effectiveTileProvider,
         radarModeKey,
         stationMode ? product : 'mosaic',
         usingLocalImage ? 'image' : 'tiles',
       ].join('|');
     },
-    [sheetValue.radarProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
+    [effectiveTileProvider, stationMode, stormMode, radarSiteId3, product, usingLocalImage],
   );
 
   useEffect(() => {
@@ -1298,7 +1315,7 @@ export function useRadarController(args: {
     console.debug('[radar:controller]', {
       frameIndex: safeFrameIndex,
       observationTimestamp: activeIso,
-      source: usingRainViewer ? 'rainviewer' : sheetValue.radarProvider,
+      source: usingRainViewer ? 'rainviewer' : effectiveTileProvider,
       product: stationMode ? product : 'mosaic',
       frameIdentifier: visibleTemplate,
       previousFrame: {
@@ -1321,7 +1338,7 @@ export function useRadarController(args: {
     effectiveFrames,
     radarEnabled,
     safeFrameIndex,
-    sheetValue.radarProvider,
+    effectiveTileProvider,
     stationMode,
     product,
     usingRainViewer,
@@ -1361,6 +1378,8 @@ export function useRadarController(args: {
     localError,
     mrmsError,
     mrmsLoading,
+    effectiveRadarProvider: effectiveTileProvider,
+    requestedRadarProvider: sheetValue.radarProvider,
 
     iemError,
     iemLoading,

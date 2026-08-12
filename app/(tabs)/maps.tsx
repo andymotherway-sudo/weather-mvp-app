@@ -705,6 +705,17 @@ function getRadarAnchor(activePlace: any, currentCoords: { lat: number; lon: num
   return { lat: 39.5, lon: -98.35 };
 }
 
+function isInsideMrmsBetaCoverage(coords: { lat: number; lon: number } | null | undefined) {
+  if (!coords) return false;
+  const lat = Number(coords.lat);
+  const lon = Number(coords.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+
+  // MRMS phase 1 is a US beta backbone. Keep global users on RainViewer until
+  // we intentionally add a non-US owned radar source.
+  return lat >= 20 && lat <= 55 && lon >= -130 && lon <= -60;
+}
+
 function nearestRadarSites(lat: number, lon: number, limit = 8) {
   return NEXRAD_SITES
     .filter(isNexradSite)
@@ -1303,7 +1314,7 @@ export default function MapsScreen() {
   const [animationExporting, setAnimationExporting] = useState(false);
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
-  const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'rainviewer' | 'mrms'>>('rainviewer');
+  const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'auto' | 'rainviewer' | 'mrms'>>('auto');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0Q');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
@@ -1465,6 +1476,7 @@ export default function MapsScreen() {
   );
 
   const radarAnchorKey = `${radarAnchor.lat.toFixed(4)},${radarAnchor.lon.toFixed(4)}`;
+  const mrmsBetaCoverage = isInsideMrmsBetaCoverage(radarAnchor);
 
   const autoNearestRadar = useMemo(
     () =>
@@ -1545,7 +1557,13 @@ export default function MapsScreen() {
     : 'N0Q';
 
   const effectiveRadarProvider: RadarProviderId =
-    stationRadarMode ? 'iem' : MRMS_RADAR_PREVIEW_ENABLED ? wideRadarProvider : 'rainviewer';
+    stationRadarMode
+      ? 'iem'
+      : MRMS_RADAR_PREVIEW_ENABLED
+        ? wideRadarProvider === 'auto' && !mrmsBetaCoverage
+          ? 'rainviewer'
+          : wideRadarProvider
+        : 'rainviewer';
 
   const stationRangeRings = useMemo(
     () => buildRadarStationGeoJson(showRadarRings ? selectedRadarSite : null),
@@ -2072,6 +2090,7 @@ export default function MapsScreen() {
   const frameCount = radarCtl.frameCount;
   const activeFrameIso = radarCtl.activeFrameIso;
   const timestampLabel = radarCtl.timestampLabel;
+  const activeRadarProvider = radarCtl.effectiveRadarProvider ?? effectiveRadarProvider;
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const atmosphericTimelineFrames = useMemo(
     () => buildMasterTimelineFrames(radarEnabled ? uiFrames : [], animatedSatelliteEnabled ? satellitePlaybackFrames : []),
@@ -2157,8 +2176,8 @@ export default function MapsScreen() {
     if (!radarEnabled || frameCount < 2) return 'none';
     const firstIso = uiFrames[0]?.iso ?? 'start';
     const lastIso = uiFrames[frameCount - 1]?.iso ?? 'end';
-    return `${effectiveRadarProvider}:${stationRadarMode ? 'station' : 'mosaic'}:${frameCount}:${firstIso}:${lastIso}`;
-  }, [effectiveRadarProvider, frameCount, radarEnabled, stationRadarMode, uiFrames]);
+    return `${activeRadarProvider}:${stationRadarMode ? 'station' : 'mosaic'}:${frameCount}:${firstIso}:${lastIso}`;
+  }, [activeRadarProvider, frameCount, radarEnabled, stationRadarMode, uiFrames]);
 
   useEffect(() => {
     const currentFrame = clampIndex(state.radarTime.frameIndex, frameCount);
@@ -3682,10 +3701,14 @@ export default function MapsScreen() {
   const providerLabel =
     stormScopeEnabled
       ? 'Storm Scope'
-      : effectiveRadarProvider === 'mrms'
-        ? 'MRMS preview'
-        : effectiveRadarProvider === 'rainviewer'
-          ? 'RainViewer'
+      : activeRadarProvider === 'mrms'
+        ? wideRadarProvider === 'auto'
+          ? 'MRMS auto'
+          : 'MRMS preview'
+        : activeRadarProvider === 'rainviewer'
+          ? wideRadarProvider === 'auto'
+            ? 'Auto fallback'
+            : 'RainViewer'
           : 'IEM radar';
   const radarProductLabel = stormMode ? radarProductMeta.summaryLabel : null;
   const radarUpdatedLabel = timestampLabel ? `Updated ${timestampLabel}` : 'Latest frame';
@@ -3710,15 +3733,22 @@ export default function MapsScreen() {
       return 'Loading local radar history';
     }
 
-    if (radarCtl.mrmsLoading) return 'Loading MRMS preview';
-    if (radarCtl.mrmsError) return 'MRMS preview unavailable';
-    if (effectiveRadarProvider === 'mrms' && frameCount > 0 && frameCount < 3) {
+    if (activeRadarProvider === 'rainviewer' && wideRadarProvider === 'auto' && radarCtl.mrmsLoading) {
+      return 'Using RainViewer while MRMS warms';
+    }
+    if (activeRadarProvider === 'rainviewer' && wideRadarProvider === 'auto' && radarCtl.mrmsError) {
+      return 'Using RainViewer fallback';
+    }
+    if (activeRadarProvider === 'mrms' && radarCtl.mrmsLoading) return 'Refreshing MRMS preview';
+    if (effectiveRadarProvider === 'mrms' && radarCtl.mrmsError) return 'MRMS preview unavailable';
+    if (activeRadarProvider === 'mrms' && frameCount > 0 && frameCount < 3) {
       return 'Building MRMS history';
     }
     if (frameCount === 1) return 'Latest radar frame only';
     if (radarCtl.iemLoading) return 'Loading radar history';
     return 'Radar history unavailable';
   }, [
+    activeRadarProvider,
     effectiveRadarProvider,
     frameCount,
     radarCtl.iemError,
@@ -3729,6 +3759,7 @@ export default function MapsScreen() {
     radarCtl.usingLocalImage,
     stationProductLatestOnly,
     stationRadarMode,
+    wideRadarProvider,
   ]);
   const timelineStateLabel = radarEnabled
     ? state.radarTime.playing
@@ -5611,9 +5642,19 @@ export default function MapsScreen() {
                       />
                       {MRMS_RADAR_PREVIEW_ENABLED ? (
                         <MiniToggle
-                          label="MRMS preview"
-                          active={!stormMode && effectiveRadarProvider === 'mrms'}
-                          onPress={() => setWideRadarProvider((current) => current === 'mrms' ? 'rainviewer' : 'mrms')}
+                          label={
+                            wideRadarProvider === 'auto'
+                              ? 'MRMS auto'
+                              : wideRadarProvider === 'mrms'
+                                ? 'MRMS force'
+                                : 'RainViewer'
+                          }
+                          active={!stormMode && wideRadarProvider !== 'rainviewer'}
+                          onPress={() =>
+                            setWideRadarProvider((current) =>
+                              current === 'auto' ? 'rainviewer' : current === 'rainviewer' ? 'mrms' : 'auto',
+                            )
+                          }
                         />
                       ) : null}
                     </View>
@@ -5628,11 +5669,19 @@ export default function MapsScreen() {
                   compact
                 />
                 <Text style={styles.legendCardMeta}>
-                  {effectiveRadarProvider === 'mrms'
+                  {activeRadarProvider === 'mrms'
                     ? radarCtl.mrmsError
                       ? `MRMS preview unavailable: ${radarCtl.mrmsError}`
-                      : 'MRMS preview uses our owned Worker and NOAA MRMS composite tiles. RainViewer remains the default unless you switch to preview.'
-                    : 'RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.'}
+                      : wideRadarProvider === 'auto'
+                        ? 'Auto radar is using owned NOAA MRMS tiles. RainViewer stays warm as the fallback.'
+                        : 'MRMS preview uses owned NOAA MRMS tiles through our Cloudflare radar path.'
+                    : wideRadarProvider === 'auto'
+                      ? mrmsBetaCoverage
+                        ? radarCtl.mrmsError
+                          ? `RainViewer fallback is active: ${radarCtl.mrmsError}`
+                          : 'RainViewer fallback is active while MRMS warms up.'
+                        : 'Outside MRMS beta coverage. RainViewer remains active here.'
+                      : 'RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.'}
                 </Text>
               </Glass>
             )}

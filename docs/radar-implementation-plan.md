@@ -45,8 +45,8 @@ Implementation:
 - Keep zoom range: z3-z10.
 - Keep tile serving: Worker route `/v1/radar/mrms/tiles/{z}/{x}/{y}.png`.
 - Keep missing sparse tiles as transparent PNGs, not 404s.
-- Keep app label as `MRMS preview`.
-- Keep RainViewer as default until MRMS has reliable history and fallback behavior.
+- Keep app label explicit: `MRMS auto`, `MRMS preview`, or `Auto fallback`.
+- Default the wide radar app path to MRMS-auto in the US beta footprint, while keeping RainViewer preloaded as fallback.
 
 Done when:
 
@@ -92,9 +92,9 @@ Cost posture:
 
 Done when:
 
-- MRMS preview consistently shows a useful 30-60 minute loop.
+- MRMS-auto consistently shows a useful 30-60 minute loop where owned coverage exists.
 - R2 cleanup leaves only retained frame prefixes.
-- RainViewer fallback still works when MRMS is disabled, stale, or missing.
+- RainViewer fallback still works when MRMS is disabled, stale, missing, warming, or outside the US beta footprint.
 - The app can explain MRMS as "US national radar preview" honestly.
 - The app refuses stale MRMS timelines instead of silently showing old radar.
 

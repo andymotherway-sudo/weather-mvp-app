@@ -231,7 +231,7 @@ The dev contract now looks like this:
 5. Worker reads the latest pointer through `/v1/radar/mrms/timeline`.
 6. Worker serves tiles through `/v1/radar/mrms/tiles/{z}/{x}/{y}.png`.
 
-The app should not point at this by default yet. The next app-side step is a dev-only MRMS preview source that can be visually compared against RainViewer without degrading the shipped radar experience.
+The app can now request `auto` for wide radar in the US beta footprint. In auto mode, the controller fetches MRMS and RainViewer together, displays owned MRMS when the MRMS timeline is healthy, and silently falls back to RainViewer while MRMS is warming, stale, missing, or outside the US beta footprint.
 
 ## App preview gate
 
@@ -244,9 +244,9 @@ Preview rules:
 - EAS `development` and `preview` profiles opt in.
 - EAS `production` currently opts in with `EXPO_PUBLIC_MRMS_RADAR_PREVIEW=1` for the small internal testing group.
 - Station radar and Storm Scope local products continue to use the existing IEM/RIDGE path.
-- Normal wide radar remains RainViewer unless the preview toggle is manually enabled.
+- Normal wide radar defaults to `MRMS auto` for the internal-testing US beta footprint. RainViewer remains the fallback path and can still be manually selected from the radar legend toggle.
 
-The preview toggle is meant for visual comparison only. It should not be treated as DONE for default production radar until MRMS has a rolling multi-frame timeline, more zoom depth, retention cleanup exercised with real repeated publishes, and a visual QA pass against RainViewer.
+The preview/auto toggle is still a beta safety valve. It should not be treated as DONE for broad commercial radar until MRMS has a rolling multi-frame timeline, retention cleanup exercised with real repeated publishes, visual QA against RainViewer, and clear operational runbooks.
 
 ## Rolling MRMS latest playlist
 

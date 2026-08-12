@@ -7,17 +7,17 @@ Date: **August 8, 2026**
 
 ## Play Console Paste Notes
 
-This build advances the owned MRMS radar preview and fixes wildfire perimeter reliability. MRMS preview now uses the production Worker tile route so clear-air/missing sparse MRMS tiles return transparent PNGs instead of noisy tile errors, while fresh owned MRMS frames are published to production R2 through the GitHub pipeline. Wildfire perimeter requests are now trimmed and geometry-simplified by viewport so broad wildfire views should load much more reliably on mobile. RainViewer remains the default wide radar source, and MRMS remains opt-in for comparison.
+This build advances the owned MRMS radar beta path and fixes wildfire perimeter reliability. Wide radar now defaults to `MRMS auto` inside the US beta footprint: the app displays owned NOAA MRMS tiles when the MRMS timeline is healthy, while keeping RainViewer warm as a fallback if MRMS is stale, warming, missing, or outside coverage. MRMS still uses the production Worker tile route so clear-air/missing sparse MRMS tiles return transparent PNGs instead of noisy tile errors. Wildfire perimeter requests are trimmed and geometry-simplified by viewport so broad wildfire views should load much more reliably on mobile.
 
 ## Tester Notes
 
 Please focus testing on Maps and regression safety:
 
-- Confirm RainViewer remains the default radar source until `MRMS preview` is enabled.
-- Confirm enabling `MRMS preview` shows owned MRMS radar where echoes exist and stays visually clean where skies are clear.
+- Confirm wide radar opens as `MRMS auto` in US test locations when MRMS is healthy.
+- Confirm the radar toggle can cycle to RainViewer fallback and forced MRMS preview for comparison.
 - Confirm MRMS timestamps look current and are not shown as future local times.
 - Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
-- Confirm disabling `MRMS preview` returns to the normal radar path.
+- Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope/local radar products still use the existing local radar controls and are not replaced by MRMS.
 - Confirm the Wildfire view loads perimeters/incidents/smoke without hanging or silently disappearing on broad western-US views.
 - Confirm wildfire labels/details still show names, acres, containment, source, and update timing where available.
