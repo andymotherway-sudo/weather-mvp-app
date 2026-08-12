@@ -321,7 +321,7 @@ Cost-control guardrails:
 - It filters retained history to the requested maximum zoom so older blurry frames do not reappear.
 - `publish-mrms-proof` skips R2 writes when NOAA's latest frame is already published at the requested zoom and tile count.
 - The job cancels overlapping runs so slow renders do not stack up.
-- The public timeline smoke test only runs after apply writes and verifies `tileDelivery=public-r2` plus a fresh frame valid time.
+- The public timeline smoke test only runs after apply writes and verifies `tileDelivery=worker-r2` plus a fresh frame valid time.
 - Dry-runs log an explicit warning because they do not update the live app timeline.
 
 Required GitHub repository secrets:
@@ -344,8 +344,8 @@ Manual dry-run path:
 Manual apply path after dry-run succeeds:
 
 1. Run the same workflow with `apply=true`.
-2. Verify `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite` shows a new latest frame and `tileDelivery=public-r2`.
-3. Verify a known public tile returns `image/png` from `https://radar-assets.omni-wx.com/...`.
+2. Verify `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite` shows a new latest frame and `tileDelivery=worker-r2`.
+3. Verify a known Worker-served tile returns `image/png` from `/v1/radar/mrms/tiles/{z}/{x}/{y}.png`.
 4. Check R2 storage after a few runs; storage should grow only within the retained rolling window.
 
 Future scheduled path:
