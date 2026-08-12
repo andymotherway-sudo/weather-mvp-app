@@ -171,10 +171,9 @@ jobs:
           if (!timeline.ok) throw new Error("MRMS timeline did not report ok");
           const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
           if (!frame) throw new Error("MRMS timeline has no frames");
-          if (frame.tileDelivery !== "public-r2") {
-            throw new Error(`MRMS tileDelivery is ${frame.tileDelivery}, expected public-r2`);
+          if (frame.tileDelivery !== "worker-r2") {
+            throw new Error(`MRMS tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
           }
-          if (!frame.tileTemplate) throw new Error("MRMS frame has no public tileTemplate");
           const validTimeMs = Date.parse(String(frame.validTime || frame.time || ""));
           if (!Number.isFinite(validTimeMs)) {
             throw new Error("MRMS frame has no parseable validTime");
