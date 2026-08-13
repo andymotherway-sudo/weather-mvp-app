@@ -171,6 +171,7 @@ Check:
 $env:OMNIWX_API_ENV='production'
 $env:EXPO_PUBLIC_API_BASE='https://omniwx-api-production.omniwx.workers.dev'
 $env:EXPO_PUBLIC_OMNIWX_API_BASE='https://omniwx-api-production.omniwx.workers.dev'
+$env:EXPO_PUBLIC_MRMS_RADAR_PREVIEW='1'
 npx expo config --json
 ```
 
