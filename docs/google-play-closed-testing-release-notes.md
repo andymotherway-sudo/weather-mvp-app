@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.242**
-Android version code: **10259**
+Release: **OMNIwx 1.1.243**
+Android version code: **10260**
 Track: **Closed testing / internal testing candidate**
 Date: **August 13, 2026**
 
@@ -29,8 +29,8 @@ Please focus testing on Maps and regression safety:
 
 ## Internal Release Checklist
 
-- App version: `1.1.242`
-- Android version code: `10259`
+- App version: `1.1.243`
+- Android version code: `10260`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`

@@ -97,6 +97,17 @@ Keep these aligned:
 - build label
 - release notes summary
 
+Docs are part of the release surface. If behavior, infrastructure posture, testing instructions, or user-facing capability changed, update the relevant docs in the same release slice before building the AAB.
+
+At minimum for radar/infrastructure releases, check:
+
+- [docs/google-play-closed-testing-release-notes.md](C:/Users/andym_au640pp/weather-app/docs/google-play-closed-testing-release-notes.md)
+- [docs/radar-phase-done-checklist.md](C:/Users/andym_au640pp/weather-app/docs/radar-phase-done-checklist.md)
+- [docs/mrms-owned-radar-plan.md](C:/Users/andym_au640pp/weather-app/docs/mrms-owned-radar-plan.md)
+- [docs/cloudflare-radar-storage-rollout.md](C:/Users/andym_au640pp/weather-app/docs/cloudflare-radar-storage-rollout.md)
+
+If none of those docs need a change, say that explicitly in the release notes or commit message so the omission is intentional.
+
 ### 4. Promote The Worker To Production
 
 Do not assume the last deploy was prod.
@@ -213,6 +224,7 @@ If internal testing passes, the same backend/app pairing becomes the candidate f
 - Worker tests passed
 - TypeScript passed
 - Versions/docs bumped
+- Release notes and affected docs updated or explicitly marked unchanged
 - Worker explicitly deployed to production
 - Production bindings confirmed
 - Production backend probes passed
