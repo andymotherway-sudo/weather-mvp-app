@@ -312,7 +312,8 @@ export function useRadarController(args: {
   const requestedLoopHours = Number.isFinite(args.loopHours as number) ? Math.max(1, Number(args.loopHours)) : null;
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
-  const stormMode = getStormMode(state);
+  const rawStormMode = getStormMode(state);
+  const stormMode = stationMode && rawStormMode;
 
   const profile = useMemo(
     () => getRadarProfile(mapZoom, rawMode, state.nerdy, animationQuality),
@@ -492,7 +493,6 @@ export function useRadarController(args: {
     effectiveTileProvider === 'iem' &&
     radarEnabled &&
     !!localWmsProduct &&
-    !state.radarTime.playing &&
     (
       (stationMode && stormMode) ||
       (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
@@ -716,12 +716,20 @@ export function useRadarController(args: {
     radarEnabled &&
     !usingLocalImage &&
     iemUnified?.mode === 'ridge';
+  const localImageFrameIso = useMemo(
+    () => drivingIso ?? new Date().toISOString(),
+    [drivingIso],
+  );
 
   /* =========================================================================
    * Live frames/templates
    * ========================================================================= */
   const liveFrames: Array<{ iso: string }> = useMemo(() => {
     let out: Array<{ iso: string }> = [];
+
+    if (usingLocalImage) {
+      return [{ iso: localImageFrameIso }];
+    }
 
     if (rainViewerSelected) {
       out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
@@ -734,7 +742,7 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
+  }, [usingLocalImage, localImageFrameIso, rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];

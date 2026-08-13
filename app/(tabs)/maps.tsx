@@ -2258,8 +2258,8 @@ export default function MapsScreen() {
           ? 'using broad mosaic radar'
       : !stormScopeLocalZoom
           ? 'zoom in for local NEXRAD products'
-          : radarCtl.usingLocalImage && product === 'N0Q'
-            ? 'smooth local reflectivity'
+          : radarCtl.usingLocalImage && (product === 'N0Q' || product === 'N0B' || product === 'N0Z')
+            ? 'live local NEXRAD image'
           : stationProductLatestOnly
             ? 'single-site latest tile'
             : radarCtl.usingIemRidgeAnimated
@@ -5676,21 +5676,23 @@ export default function MapsScreen() {
                         onPress={handleStormScopePress}
                       />
                       {MRMS_RADAR_PREVIEW_ENABLED ? (
-                        <MiniToggle
-                          label={
-                            wideRadarProvider === 'auto'
-                              ? 'MRMS auto'
-                              : wideRadarProvider === 'mrms'
-                                ? 'MRMS force'
-                                : 'RainViewer'
-                          }
-                          active={!stormMode && wideRadarProvider !== 'rainviewer'}
-                          onPress={() =>
-                            setWideRadarProvider((current) =>
-                              current === 'auto' ? 'rainviewer' : current === 'rainviewer' ? 'mrms' : 'auto',
-                            )
-                          }
-                        />
+                        <>
+                          <MiniToggle
+                            label="Auto"
+                            active={wideRadarProvider === 'auto'}
+                            onPress={() => setWideRadarProvider('auto')}
+                          />
+                          <MiniToggle
+                            label="MRMS"
+                            active={wideRadarProvider === 'mrms'}
+                            onPress={() => setWideRadarProvider('mrms')}
+                          />
+                          <MiniToggle
+                            label="RainViewer"
+                            active={wideRadarProvider === 'rainviewer'}
+                            onPress={() => setWideRadarProvider('rainviewer')}
+                          />
+                        </>
                       ) : null}
                     </View>
                   </View>
