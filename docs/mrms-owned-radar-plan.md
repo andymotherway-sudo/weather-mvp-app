@@ -279,6 +279,20 @@ cd C:\Users\andym_au640pp\weather-app\omniwx-api
 npm run level3:download -- --site IWA --product N0B --days 1
 ```
 
+For a local-only transparent PNG render proof:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run level3:render-proof -- --input ../tmp/nexrad-level3/IWA_N0B_2026_08_13_04_08_27 --output ../tmp/nexrad-level3/IWA_N0B.proof.png --metadata-output ../tmp/nexrad-level3/IWA_N0B.proof.json
+```
+
+For a local-only XYZ tile proof:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run level3:tile-proof -- --input ../tmp/nexrad-level3/IWA_N0B_2026_08_13_04_08_27 --output-dir ../tmp/nexrad-level3/tiles/IWA/N0B/20260813T040827 --min-z 6 --max-z 7
+```
+
 Important findings from the first Phoenix/Minnesota check:
 
 - The public Level III bucket uses `IWA` keys, not `KIWA`.
@@ -290,10 +304,22 @@ Important findings from the first Phoenix/Minnesota check:
 
 Next Level III step:
 
-- Download one current Level III `N0B` frame locally.
-- Identify the file format/decoder path.
-- Render a transparent proof tile locally.
+- Download one current Level III `N0B` frame locally. Done for `IWA`.
+- Identify the file format/decoder path. Done with MetPy `Level3File`.
+- Render a transparent proof PNG locally. Done for `IWA N0B` and `MPX EET`.
+- Render a transparent local XYZ tile proof. Done for z6-z7 `IWA N0B` and `MPX EET`.
 - Only after visual QA, define a small station/product pilot and a separate bounded R2 prefix.
+
+Current local-only Level III proof status:
+
+- `IWA N0B` raw frame downloaded at about 243 KB.
+- `IWA N0B` render decoded 720 radials x 1840 gates, max range 460 km, and produced a transparent 1024 px proof image.
+- `IWA N0B` z6-z7 local tile proof produced 10 non-empty tiles totaling about 50 KB.
+- `MPX EET` raw frame downloaded at about 8.7 KB.
+- `MPX EET` render decoded 360 radials x 346 gates, max range 345 km, and produced a transparent 1024 px proof image.
+- `MPX EET` z6-z7 local tile proof produced 9 non-empty tiles totaling about 20 KB.
+- All files are written under ignored `tmp/nexrad-level3`; nothing is published to R2 by these commands.
+- The current renderer is nearest-neighbor and proof-grade. Production quality still needs smoothing, tile seam QA, product-specific legends, retention/publish code, and app fallback wiring.
 
 ## Rolling MRMS latest playlist
 

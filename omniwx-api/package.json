@@ -19,6 +19,8 @@
 		"level3:discover": "node ./scripts/discover-nexrad-level3.mjs",
 		"level3:download": "node ./scripts/download-nexrad-level3.mjs",
 		"level3:inventory": "node ./scripts/inventory-nexrad-level3.mjs",
+		"level3:render-proof": "node ./scripts/render-nexrad-level3-proof.mjs",
+		"level3:tile-proof": "node ./scripts/tile-nexrad-level3-proof.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

@@ -78,6 +78,7 @@ For phase 1, the owned national radar path should cover US beta users through MR
 - Additional local radar history depth if it stays bounded and cheap.
 - NOAA Level III product inventory for more beta markets.
 - One-frame owned local NEXRAD renderer proof.
+- Local-only Level III XYZ tile proof before any R2 publish.
 
 ## Out Of Scope For This Phase
 

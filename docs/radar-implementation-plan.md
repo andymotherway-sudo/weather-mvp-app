@@ -213,8 +213,8 @@ What we need to build:
 - Product inventory by station/product.
 - Read-only NOAA Level III discovery tool.
 - One-frame local download/decode proof for the highest-value available products.
-- Decoder pipeline.
-- Local tile renderer.
+- Decoder pipeline, starting with MetPy `Level3File`.
+- Local tile renderer that samples station polar radar into Web Mercator XYZ tiles.
 - Station coverage model.
 - Product-specific legends.
 - Retention/cost model per station and product.
@@ -235,6 +235,13 @@ Done when:
 - Local product rendering is good enough to be a paid differentiator.
 - It does not break the national MRMS backbone.
 - It has a separate storage and retention policy from MRMS.
+
+Current proof status:
+
+- `N0B` reflectivity and `EET` echo tops decode from NOAA Level III files locally.
+- z6-z7 local XYZ tile proofs have been generated without R2 writes.
+- The first measured local station tile outputs are tens of KB per frame at z6-z7 because clear-air tiles are skipped.
+- This is promising, but it is not production-ready until smoothing, z8-z10 sizing, publish retention, and app fallback rules are implemented.
 
 ## Operating Cadences
 
