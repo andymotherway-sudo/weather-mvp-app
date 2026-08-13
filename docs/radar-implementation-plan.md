@@ -241,6 +241,8 @@ Current proof status:
 - `N0B` reflectivity and `EET` echo tops decode from NOAA Level III files locally.
 - z6-z7 local XYZ tile proofs have been generated without R2 writes.
 - The first measured local station tile outputs are tens of KB per frame at z6-z7 because clear-air tiles are skipped.
+- z8-z10 remains plausible for targeted station products: the first `IWA N0B` proof was about 1.17 MB for one frame, and `MPX EET` was about 270 KB for one frame.
+- 2x supersampling improves visual smoothness but increases tile bytes significantly, so it should not be the early default.
 - This is promising, but it is not production-ready until smoothing, z8-z10 sizing, publish retention, and app fallback rules are implemented.
 
 ## Operating Cadences

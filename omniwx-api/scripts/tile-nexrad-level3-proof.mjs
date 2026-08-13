@@ -17,6 +17,7 @@ function parseArgs(argv) {
     minZoom: 6,
     maxZoom: 7,
     tileSize: 256,
+    supersample: 1,
     maxRangeKm: null,
     pydeps: DEFAULT_PYDEPS,
     python: process.env.OMNIWX_PYTHON || null,
@@ -29,6 +30,7 @@ function parseArgs(argv) {
     else if (arg === "--min-z" && argv[i + 1]) args.minZoom = parseInt(argv[++i], 10);
     else if (arg === "--max-z" && argv[i + 1]) args.maxZoom = parseInt(argv[++i], 10);
     else if (arg === "--tile-size" && argv[i + 1]) args.tileSize = parseInt(argv[++i], 10);
+    else if (arg === "--supersample" && argv[i + 1]) args.supersample = parseInt(argv[++i], 10);
     else if (arg === "--max-range-km" && argv[i + 1]) {
       const parsed = Number(argv[++i]);
       if (Number.isFinite(parsed)) args.maxRangeKm = Math.max(25, Math.min(460, parsed));
@@ -43,6 +45,7 @@ function parseArgs(argv) {
   args.minZoom = Math.max(0, Math.min(12, Number.isFinite(args.minZoom) ? args.minZoom : 6));
   args.maxZoom = Math.max(args.minZoom, Math.min(12, Number.isFinite(args.maxZoom) ? args.maxZoom : args.minZoom));
   args.tileSize = Math.max(128, Math.min(512, Number.isFinite(args.tileSize) ? args.tileSize : 256));
+  args.supersample = Math.max(1, Math.min(4, Number.isFinite(args.supersample) ? args.supersample : 1));
   return args;
 }
 
@@ -57,6 +60,7 @@ Options:
   --min-z <zoom>          Minimum XYZ zoom. Default: 6
   --max-z <zoom>          Maximum XYZ zoom. Default: 7
   --tile-size <px>        Tile size. Default: 256
+  --supersample <factor>  Render larger then downsample for smoother tiles. Default: 1
   --max-range-km <km>     Override station render radius. Default: file max range
   --pydeps <path>         Python dependency directory. Default: ../tmp/level3-pydeps
   --python <path>         Python executable. Also supports OMNIWX_PYTHON
@@ -86,6 +90,7 @@ function runPython(args) {
       "--min-z", String(args.minZoom),
       "--max-z", String(args.maxZoom),
       "--tile-size", String(args.tileSize),
+      "--supersample", String(args.supersample),
     ];
     if (args.maxRangeKm) pythonArgs.push("--max-range-km", String(args.maxRangeKm));
 

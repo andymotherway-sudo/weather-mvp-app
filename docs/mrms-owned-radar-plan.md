@@ -293,6 +293,12 @@ cd C:\Users\andym_au640pp\weather-app\omniwx-api
 npm run level3:tile-proof -- --input ../tmp/nexrad-level3/IWA_N0B_2026_08_13_04_08_27 --output-dir ../tmp/nexrad-level3/tiles/IWA/N0B/20260813T040827 --min-z 6 --max-z 7
 ```
 
+The local Level III renderer uses MetPy. Install it into ignored local storage, not the repo or app bundle:
+
+```powershell
+& "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m pip install --target tmp\level3-pydeps metpy
+```
+
 Important findings from the first Phoenix/Minnesota check:
 
 - The public Level III bucket uses `IWA` keys, not `KIWA`.
@@ -318,8 +324,13 @@ Current local-only Level III proof status:
 - `MPX EET` raw frame downloaded at about 8.7 KB.
 - `MPX EET` render decoded 360 radials x 346 gates, max range 345 km, and produced a transparent 1024 px proof image.
 - `MPX EET` z6-z7 local tile proof produced 9 non-empty tiles totaling about 20 KB.
+- `IWA N0B` z8-z10 local tile proof produced 215 non-empty tiles totaling about 1.17 MB.
+- `IWA N0B` z10 alone produced 143 non-empty tiles totaling about 745 KB.
+- `MPX EET` z8-z10 local tile proof produced 164 non-empty tiles totaling about 270 KB.
+- Optional 2x supersampling made the z10 images smoother but increased storage sharply: `IWA N0B` z10 rose to about 5.7 MB, and `MPX EET` z10 rose to about 776 KB.
 - All files are written under ignored `tmp/nexrad-level3`; nothing is published to R2 by these commands.
-- The current renderer is nearest-neighbor and proof-grade. Production quality still needs smoothing, tile seam QA, product-specific legends, retention/publish code, and app fallback wiring.
+- The current storage-safe default should remain nearest/sparse rendering. Supersampling is useful for QA and future paid-tier quality experiments, but it is too expensive to make the early free-tier default.
+- Production quality still needs smoothing strategy, tile seam QA, product-specific legends, retention/publish code, and app fallback wiring.
 
 ## Rolling MRMS latest playlist
 

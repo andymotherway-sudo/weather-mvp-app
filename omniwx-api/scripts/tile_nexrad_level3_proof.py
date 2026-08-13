@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument("--min-z", type=int, default=6, help="Minimum XYZ zoom")
     parser.add_argument("--max-z", type=int, default=7, help="Maximum XYZ zoom")
     parser.add_argument("--tile-size", type=int, default=256, help="Tile size in pixels")
+    parser.add_argument("--supersample", type=int, default=1, help="Render larger then downsample for smoother tiles")
     parser.add_argument("--max-range-km", type=float, help="Override station render radius in km")
     return parser.parse_args()
 
@@ -80,6 +81,13 @@ def render_tile(values, azimuths, station_lat, station_lon, max_range_km, z, x, 
     return Image.fromarray(colorize(sampled, product_code), "RGBA")
 
 
+def downsample_tile(tile, tile_size):
+    if tile.size == (tile_size, tile_size):
+        return tile
+    resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    return tile.resize((tile_size, tile_size), resampling)
+
+
 def iso_or_none(value):
     return value.isoformat() if hasattr(value, "isoformat") else None
 
@@ -110,28 +118,36 @@ def main():
         "validTime": iso_or_none(level3.metadata.get("vol_time")),
         "productTime": iso_or_none(level3.metadata.get("prod_time")),
         "tileSize": args.tile_size,
+        "supersample": max(1, min(4, int(args.supersample))),
         "minZoom": args.min_z,
         "maxZoom": args.max_z,
+        "byZoom": {},
         "tiles": [],
     }
 
     for z in range(args.min_z, args.max_z + 1):
         west, south, east, north, min_x, max_x, min_y, max_y = tile_bounds_for_station(level3.lat, level3.lon, max_range_km, z)
         manifest["bounds"] = {"west": west, "south": south, "east": east, "north": north}
+        manifest["byZoom"][str(z)] = {"tileCount": 0, "totalBytes": 0}
         for x in range(min_x, max_x + 1):
             for y in range(min_y, max_y + 1):
-                tile = render_tile(values, azimuths, level3.lat, level3.lon, max_range_km, z, x, y, args.tile_size, product_code)
+                render_size = args.tile_size * manifest["supersample"]
+                tile = render_tile(values, azimuths, level3.lat, level3.lon, max_range_km, z, x, y, render_size, product_code)
+                tile = downsample_tile(tile, args.tile_size)
                 if not np.asarray(tile.getchannel("A")).any():
                     continue
                 path = output_dir / str(z) / str(x) / f"{y}.png"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tile.save(path)
+                size_bytes = path.stat().st_size
+                manifest["byZoom"][str(z)]["tileCount"] += 1
+                manifest["byZoom"][str(z)]["totalBytes"] += size_bytes
                 manifest["tiles"].append({
                     "z": z,
                     "x": x,
                     "y": y,
                     "path": str(path),
-                    "bytes": path.stat().st_size,
+                    "bytes": size_bytes,
                 })
 
     manifest_path = output_dir / "manifest.json"
