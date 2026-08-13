@@ -145,8 +145,10 @@ function buildWorkerWmsUrl(args: {
 }
 
 function localWmsProductForRadar(product: RadarProductId): 'N0Q' | 'N0B' | 'N0Z' | null {
-  if (product === 'N0B') return 'N0B';
-  if (product === 'N0Z') return 'N0Z';
+  // IEM's WMS endpoint is reliable for N0Q, while N0B/N0Z can return
+  // upstream WMS errors. Use N0Q as the visible reflectivity safety net
+  // for high-res reflectivity so Storm Scope never opens to a blank radar.
+  if (product === 'N0B') return 'N0Q';
   if (product === 'N0Q') return 'N0Q';
   return null;
 }
@@ -493,7 +495,6 @@ export function useRadarController(args: {
     effectiveTileProvider === 'iem' &&
     radarEnabled &&
     !!localWmsProduct &&
-    !state.radarTime.playing &&
     (
       (stationMode && stormMode) ||
       (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
