@@ -22,6 +22,15 @@ on:
         required: true
         default: true
         type: boolean
+      max_deletes:
+        description: "Maximum stale objects cleanup may delete"
+        required: true
+        default: "120000"
+        type: choice
+        options:
+          - "50000"
+          - "120000"
+          - "200000"
 
 permissions:
   contents: read
@@ -48,6 +57,7 @@ jobs:
       MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
       MRMS_APPLY_CLEANUP: ${{ inputs.apply_cleanup }}
       MRMS_FAIL_ON_STALE: ${{ inputs.fail_on_stale }}
+      MRMS_MAX_DELETES: ${{ inputs.max_deletes || '120000' }}
 
     steps:
       - name: Checkout
@@ -83,7 +93,7 @@ jobs:
             --env "$MRMS_TARGET_ENV"
             --product MergedReflectivityQCComposite
             --uploader s3
-            --max-deletes 50000
+            --max-deletes "$MRMS_MAX_DELETES"
           )
           if [ "$MRMS_APPLY_CLEANUP" = "true" ]; then
             args+=(--apply)

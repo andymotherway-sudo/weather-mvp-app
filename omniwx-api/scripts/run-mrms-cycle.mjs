@@ -193,7 +193,7 @@ function cleanupRetained(args, workerEnv) {
     "--uploader",
     args.uploader === "wrangler" ? "worker" : args.uploader,
     "--max-deletes",
-    String(Math.max(10000, args.maxTiles * 2)),
+    String(Math.max(120000, args.maxTiles * 10)),
     "--allow-disabled",
   ];
   if (args.apply) cleanupArgs.push("--apply");

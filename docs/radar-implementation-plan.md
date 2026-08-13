@@ -83,6 +83,7 @@ Implementation:
 - Require the MRMS workflow to report retained R2 object count, retained bytes, stale object count, and stale bytes after every applied run.
 - Keep a bounded R2 storage-status history sample after applied cycle/maintenance runs.
 - Fail the workflow if the MRMS prefix exceeds 5 GB or cleanup leaves stale objects behind.
+- Cleanup safety caps must be high enough to remove stale z10 experiment objects, while still scoped to `radar/mrms/proof/<product>/` and retained-frame manifests.
 
 Cost posture:
 
