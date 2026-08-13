@@ -493,6 +493,7 @@ export function useRadarController(args: {
     effectiveTileProvider === 'iem' &&
     radarEnabled &&
     !!localWmsProduct &&
+    !state.radarTime.playing &&
     (
       (stationMode && stormMode) ||
       (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||

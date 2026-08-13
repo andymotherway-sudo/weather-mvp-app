@@ -2,6 +2,12 @@
 
 This is the new phase 1 owned radar path for OMNIwx. The goal is to replace the broad national radar mosaic first, while keeping local Storm Scope/NEXRAD products on the existing external fallback path until a real station renderer exists.
 
+MRMS and local NEXRAD are related but separate workstreams:
+
+- MRMS is the owned US national mosaic/backbone.
+- NOAA NEXRAD Level III is the first owned local station-product candidate.
+- Level II is a later option for deeper raw radar/dual-pol work after Level III proves the user experience and cost model.
+
 ## Starting source
 
 Use NOAA MRMS 2D products from:
@@ -249,6 +255,45 @@ Preview rules:
 - Normal wide radar defaults to `MRMS auto` for the internal-testing US beta footprint. RainViewer remains the fallback path and can still be manually selected from the radar legend toggle.
 
 The preview/auto toggle is still a beta safety valve. It should not be treated as DONE for broad commercial radar until MRMS has a rolling multi-frame timeline, retention cleanup exercised with real repeated publishes, visual QA against RainViewer, and clear operational runbooks.
+
+## Local NEXRAD Level III discovery
+
+The first owned local radar step is read-only discovery against NOAA/Unidata Level III objects. This avoids writing anything to R2 until we know which products have real recent data for a station.
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run level3:discover -- --site IWA --products N0B,N0S,N0Q,N0U,EET,NET --days 1
+```
+
+For a multi-site inventory:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run level3:inventory -- --sites IWA,MPX,DLH,TLX,CAE --products N0B,N0S,EET --days 1
+```
+
+For a local-only raw frame download:
+
+```powershell
+cd C:\Users\andym_au640pp\weather-app\omniwx-api
+npm run level3:download -- --site IWA --product N0B --days 1
+```
+
+Important findings from the first Phoenix/Minnesota check:
+
+- The public Level III bucket uses `IWA` keys, not `KIWA`.
+- `N0B` reflectivity, `N0S` storm-relative velocity, and `EET` echo tops had recent frames for `IWA`, `MPX`, and `DLH`.
+- `N0Q`, `N0U`, `N0Z`, and `NET` were not present for the first checked Phoenix/Minnesota sample.
+- A sampled 5-site pilot inventory (`IWA`, `MPX`, `DLH`, `TLX`, `CAE`) showed recent `N0B`, `N0S`, and `EET` frames for all five sites.
+- A sampled 8-site app-catalog inventory showed recent `N0B` and `EET` frames for all eight sampled NEXRAD sites.
+- The app should default local reflectivity to products with measured availability instead of forcing unavailable product codes.
+
+Next Level III step:
+
+- Download one current Level III `N0B` frame locally.
+- Identify the file format/decoder path.
+- Render a transparent proof tile locally.
+- Only after visual QA, define a small station/product pilot and a separate bounded R2 prefix.
 
 ## Rolling MRMS latest playlist
 

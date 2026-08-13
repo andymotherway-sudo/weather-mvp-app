@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.244**
-Android version code: **10261**
+Release: **OMNIwx 1.1.245**
+Android version code: **10262**
 Track: **Closed testing / internal testing candidate**
 Date: **August 13, 2026**
 
 ## Play Console Paste Notes
 
-Improves radar controls and reliability: explicit Auto/MRMS/RainViewer buttons, clearer Storm Scope Auto/Mosaic/Local switching, smoother MRMS playback, safer fallback, and more reliable wildfire perimeter loading.
+Restores animated local NEXRAD behavior where station history is available, improves Auto/MRMS/RainViewer controls, keeps WMS as a latest-image fallback, and improves wildfire perimeter reliability.
 
 ## Tester Notes
 
@@ -20,7 +20,9 @@ Please focus testing on Maps and regression safety:
 - Confirm MRMS playback feels smoother and less like a hard tile/frame flip when multiple frames are available.
 - Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.
-- Confirm Storm Scope local reflectivity renders visible NEXRAD imagery through the Worker WMS path instead of falling into blank latest-only RIDGE tiles.
+- Confirm Storm Scope local `HREFL` / `N0B` uses animated RIDGE history where the station provides scans.
+- Confirm Storm Scope local velocity can fall back to storm-relative velocity history when base velocity history is unavailable.
+- Confirm WMS latest-image fallback is only used when animated station history is not available or playback is paused.
 - Confirm Storm Scope/local radar products still use the existing local radar controls and are not replaced by MRMS.
 - Confirm the Wildfire view loads perimeters/incidents/smoke without hanging or silently disappearing on broad western-US views.
 - Confirm wildfire labels/details still show names, acres, containment, source, and update timing where available.
@@ -30,8 +32,8 @@ Please focus testing on Maps and regression safety:
 
 ## Internal Release Checklist
 
-- App version: `1.1.244`
-- Android version code: `10261`
+- App version: `1.1.245`
+- Android version code: `10262`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`

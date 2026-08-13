@@ -202,12 +202,17 @@ Goal: add high-value local storm products that MRMS/RainViewer do not fully cove
 
 Likely source:
 
-- NOAA NEXRAD Level II or Level III products, not RainViewer.
-- Specialty products such as correlation coefficient, differential reflectivity, velocity, echo tops, and storm-relative tools require a real decoder/renderer path.
+- NOAA NEXRAD Level III first for operational station products, then Level II only when we need raw moments/dual-pol detail that Level III cannot provide cleanly.
+- The current public Level III source is the Unidata/NOAA-style real-time S3 bucket at `https://unidata-nexrad-level3.s3.amazonaws.com`.
+- The Level III bucket uses 3-character station IDs, such as `IWA`, not `KIWA`, with object keys like `IWA_N0B_2026_08_13_03_58_32`.
+- Start with Level III products that actually have recent frames at target stations. Do not assume every historical IEM/RIDGE product code exists for every site.
+- Specialty products such as correlation coefficient, differential reflectivity, velocity, echo tops, and storm-relative tools require a real decoder/renderer path before they become owned app layers.
 
 What we need to build:
 
 - Product inventory by station/product.
+- Read-only NOAA Level III discovery tool.
+- One-frame local download/decode proof for the highest-value available products.
 - Decoder pipeline.
 - Local tile renderer.
 - Station coverage model.
@@ -217,12 +222,13 @@ What we need to build:
 
 Beta approach:
 
-- Do not start nationwide local NEXRAD specialty rendering yet.
+- Keep local NEXRAD exploratory work read-only until the product inventory and decoder proof are known.
 - Pick a small paid-tier pilot set:
   - Phoenix/Mesa
   - Minnesota sites `MPX` and `DLH`
   - one storm-active central/southeast market
-- Start with one specialty product, not five.
+- Start with one or two Level III products that are proven available by station, not five.
+- Keep the app's existing external Storm Scope fallback until owned station rendering is visibly better.
 
 Done when:
 
@@ -255,16 +261,19 @@ Paid-customer cadence:
 
 ## Immediate Next Steps
 
-1. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
-2. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
-3. Verify the bounded storage-history sample appears after the next applied cycle or maintenance run.
-4. Verify MRMS-auto across several US regions in internal testing.
-5. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
-6. Keep RainViewer fallback active until Phase 4 hardening gates pass.
+1. Keep the 1.1.245 local NEXRAD restoration release moving so testers are not stuck on broken station products.
+2. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
+3. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
+4. Verify the bounded storage-history sample appears after the next applied cycle or maintenance run.
+5. Verify MRMS-auto across several US regions in internal testing.
+6. Run Level III product discovery for `IWA`, `MPX`, `DLH`, and one storm-active central/southeast station before building any owned local cache.
+7. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
+8. Keep RainViewer fallback active until Phase 4 hardening gates pass.
 
 ## Decision Log
 
 - MRMS is the owned US national radar path.
 - RainViewer remains fallback, not the future core dependency.
 - Public R2 tile templates are not the app path yet; Worker-served tiles remain safer because sparse MRMS tiles need transparent empty responses.
-- Local NEXRAD specialty products are a later premium-path investment, not the beta foundation.
+- NOAA Level III is the first owned local NEXRAD candidate path because it is smaller and more product-oriented than Level II.
+- Local NEXRAD specialty products are a premium-path investment. They should not block the MRMS beta backbone.

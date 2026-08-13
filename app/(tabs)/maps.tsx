@@ -1315,7 +1315,7 @@ export default function MapsScreen() {
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'auto' | 'rainviewer' | 'mrms'>>('auto');
-  const [stationProduct, setStationProduct] = useState<RadarProductId>('N0Q');
+  const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
@@ -1419,9 +1419,7 @@ export default function MapsScreen() {
           setStationProduct(
             preferredStoredProduct === 'NET'
               ? 'EET'
-              : preferredStoredProduct === 'N0B'
-                ? 'N0Q'
-                : (preferredStoredProduct as RadarProductId),
+              : (preferredStoredProduct as RadarProductId),
           );
         }
       } finally {
@@ -2250,7 +2248,7 @@ export default function MapsScreen() {
     stormScopeLocalZoom && !stationProductLoading && frameCount <= 0;
 
   const stationProductLatestOnly =
-    product === 'N0U' || product === 'N0Z' || product === 'N0S' || product === 'EET' || product === 'NET';
+    product === 'N0Z' || product === 'EET' || product === 'NET';
   const stationProductSourceLabel =
     !stormScopeEnabled
       ? 'Storm Scope off'
@@ -2342,11 +2340,11 @@ export default function MapsScreen() {
       const isAnimatedReflectivity = item.id === 'N0Q' || item.id === 'N0B';
       const readyLabel =
         item.id === 'N0U'
-          ? 'Upstream latest velocity'
+          ? 'Upstream animated velocity when available'
           : item.id === 'N0Z'
             ? 'Upstream legacy velocity'
-            : item.id === 'N0S'
-              ? 'Upstream storm-relative wind'
+          : item.id === 'N0S'
+              ? 'Upstream animated storm-relative wind'
               : item.id === 'EET'
                 ? 'Upstream latest echo tops'
                 : isAnimatedReflectivity
@@ -2379,7 +2377,7 @@ export default function MapsScreen() {
           : available
             ? item.id === 'N0B' || item.id === 'N0Q'
                 ? 'Upstream'
-                : item.id === 'N0U' || item.id === 'N0Z' || item.id === 'N0S' || item.id === 'EET'
+                : item.id === 'N0Z' || item.id === 'EET'
                   ? 'Latest only'
                   : 'Ready'
             : 'Unsupported',

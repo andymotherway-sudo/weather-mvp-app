@@ -8,7 +8,7 @@ The goal of this phase is not to become a full national radar data company. The 
 
 This radar phase is done when OMNIwx can deliver a stable owned radar experience for the supported products and views, with bounded storage, explicit fallback behavior, clean release practices, and no obvious fragility in normal user flows.
 
-For phase 1, the owned national radar path should cover US beta users through MRMS. Local hot-site caching, including Minnesota-specific local station ownership, is a later/pilot concern unless explicitly re-enabled.
+For phase 1, the owned national radar path should cover US beta users through MRMS. Local NEXRAD ownership starts as NOAA Level III discovery and renderer proof work; it should not silently replace the app's existing Storm Scope fallback until the owned product is visibly reliable.
 
 ## Must Be True Before Radar Is Done
 
@@ -42,6 +42,7 @@ For phase 1, the owned national radar path should cover US beta users through MR
 - Supported radar products are clearly defined and labeled correctly in the UI.
 - Reflectivity defaults align with the owned radar path where owned coverage exists, with explicit fallback elsewhere.
 - Unsupported products are either hidden, disabled, or clearly marked as unavailable.
+- Local NEXRAD product choices are backed by measured Level III availability or an explicit fallback source.
 - Legends and product descriptions match what the layer is actually showing.
 
 ### 5. Storage and Cost Control
@@ -75,11 +76,14 @@ For phase 1, the owned national radar path should cover US beta users through MR
 - More graceful visual transitions between radar and satellite layers.
 - Better diagnostics for internal testing and support.
 - Additional local radar history depth if it stays bounded and cheap.
+- NOAA Level III product inventory for more beta markets.
+- One-frame owned local NEXRAD renderer proof.
 
 ## Out Of Scope For This Phase
 
 - Full nationwide owned hyperlocal radar for every station.
-- Dual-polarization products such as `CC` and `ZDR`.
+- Nationwide owned Level II decoding.
+- Dual-polarization products such as `CC` and `ZDR` unless Level III availability and rendering are first proven for a small pilot.
 - `VIL` support.
 - A giant radar archive.
 - Redis or a more complex multi-layer cache stack unless scaling pressure truly requires it.

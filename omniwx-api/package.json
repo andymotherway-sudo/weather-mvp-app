@@ -16,6 +16,9 @@
 		"mrms:cycle": "node ./scripts/run-mrms-cycle.mjs",
 		"mrms:cleanup-retained": "node ./scripts/cleanup-mrms-retained.mjs",
 		"mrms:storage-status": "node ./scripts/mrms-storage-status.mjs",
+		"level3:discover": "node ./scripts/discover-nexrad-level3.mjs",
+		"level3:download": "node ./scripts/download-nexrad-level3.mjs",
+		"level3:inventory": "node ./scripts/inventory-nexrad-level3.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},
