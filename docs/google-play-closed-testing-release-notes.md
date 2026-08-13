@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.245**
-Android version code: **10262**
+Release: **OMNIwx 1.1.246**
+Android version code: **10263**
 Track: **Closed testing / internal testing candidate**
 Date: **August 13, 2026**
 
 ## Play Console Paste Notes
 
-Adds the owned NOAA MRMS radar preview with bounded z10 production tiles, restores local NEXRAD scan history where available, improves radar source controls, and improves wildfire map reliability.
+Fixes Storm Scope local reflectivity visibility while keeping the owned NOAA MRMS preview, production z10 radar tiles, source controls, and wildfire reliability improvements.
 
 ## Tester Notes
 
@@ -21,9 +21,10 @@ Please focus testing on Maps and regression safety:
 - Confirm MRMS loads production Worker/R2 tiles through z10 inside the US beta footprint.
 - Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.
-- Confirm Storm Scope local `HREFL` / `N0B` uses animated RIDGE history where the station provides scans.
+- Confirm Storm Scope local `HREFL` / `N0B` visibly shows reflectivity in active Phoenix-area weather instead of opening to a blank map.
+- Confirm Storm Scope local `HREFL` / `N0B` still reports local radar history where station scan history is available.
 - Confirm Storm Scope local velocity can fall back to storm-relative velocity history when base velocity history is unavailable.
-- Confirm WMS latest-image fallback is only used when animated station history is not available or playback is paused.
+- Confirm WMS/latest-image fallback keeps reflectivity visible when local animated station tiles are unreliable.
 - Confirm Storm Scope/local radar products still use the existing local radar controls and are not replaced by MRMS.
 - Confirm the Wildfire view loads perimeters/incidents/smoke without hanging or silently disappearing on broad western-US views.
 - Confirm wildfire labels/details still show names, acres, containment, source, and update timing where available.
@@ -33,8 +34,8 @@ Please focus testing on Maps and regression safety:
 
 ## Internal Release Checklist
 
-- App version: `1.1.245`
-- Android version code: `10262`
+- App version: `1.1.246`
+- Android version code: `10263`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
