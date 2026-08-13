@@ -430,6 +430,17 @@ export function useRadarController(args: {
   const rainViewerSelected = effectiveTileProvider === 'rainviewer';
   const mrmsSelected = effectiveTileProvider === 'mrms';
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
+  const animationProfile = useMemo(() => {
+    if (!mrmsSelected) return profile;
+    const wideView = mapZoom < 8.5;
+    return {
+      ...profile,
+      blendMs: Math.max(profile.blendMs, wideView ? 1250 : 1050),
+      dwellMs: Math.min(profile.dwellMs, wideView ? 850 : 650),
+      enableTemporal3: true,
+      label: `${profile.label} MRMS`,
+    };
+  }, [mapZoom, mrmsSelected, profile]);
 
   /* =========================================================================
    * MRMS preview frames
@@ -973,13 +984,13 @@ export function useRadarController(args: {
       xfadeTimerRef.current = null;
     }
 
-    if (profile.blendMs <= 0) {
+    if (animationProfile.blendMs <= 0) {
       setXfade({ from: next, to: next, t: 1 });
       return;
     }
 
     const start = Date.now();
-    const duration = profile.blendMs;
+    const duration = animationProfile.blendMs;
 
     setXfade({ from: prev, to: next, t: 0 });
 
@@ -1005,7 +1016,7 @@ export function useRadarController(args: {
   }, [
     usingLocalImage,
     safeFrameIndex,
-    profile.blendMs,
+    animationProfile.blendMs,
     mapZoom,
     effectiveTemplates,
     effectiveTemplates.length,
@@ -1021,7 +1032,7 @@ export function useRadarController(args: {
     const to = clampIndex(xfade.to, n);
     const t = Math.max(0, Math.min(1, xfade.t));
 
-    const noBlend = profile.blendMs <= 0 || from === to;
+    const noBlend = animationProfile.blendMs <= 0 || from === to;
     if (noBlend) {
       out[to] = radarOpacity;
       return out;
@@ -1030,7 +1041,7 @@ export function useRadarController(args: {
     out[from] = radarOpacity * (1 - t);
     out[to] = radarOpacity * t;
 
-    if (profile.enableTemporal3 && mapZoom <= 5 && t < 0.98) {
+    if (animationProfile.enableTemporal3 && (mapZoom <= 5 || mrmsSelected) && t < 0.98) {
       const back = clampIndex(to - 1, n);
       if (back !== to) {
         const tailMax = 0.025;
@@ -1040,7 +1051,7 @@ export function useRadarController(args: {
     }
 
     return out;
-  }, [effectiveTemplates.length, xfade.from, xfade.to, xfade.t, radarOpacity, profile.blendMs, profile.enableTemporal3, mapZoom]);
+  }, [animationProfile.blendMs, animationProfile.enableTemporal3, effectiveTemplates.length, mapZoom, mrmsSelected, radarOpacity, xfade.from, xfade.to, xfade.t]);
 
   /* =========================================================================
    * Active radar slots (tiles)
@@ -1081,7 +1092,7 @@ export function useRadarController(args: {
     const to = clampIndex(xfade.to, n);
     const back = clampIndex(to - 1, n);
 
-    const noBlend = profile.blendMs <= 0 || from === to;
+    const noBlend = animationProfile.blendMs <= 0 || from === to;
     if (noBlend) {
       outTemplates[0] = effectiveTemplates[to] ?? slotHoldRef.current[0];
       outOpacities[0] = radarOpacity;
@@ -1102,7 +1113,7 @@ export function useRadarController(args: {
     outTemplates[1] = effectiveTemplates[to] ?? slotHoldRef.current[1];
     outOpacities[1] = perFrameOpacities[to] ?? 0;
 
-    if (profile.enableTemporal3 && mapZoom <= 5 && back !== to) {
+    if (animationProfile.enableTemporal3 && (mapZoom <= 5 || mrmsSelected) && back !== to) {
       const tailOp = perFrameOpacities[back] ?? 0;
       if (tailOp > 0.02) {
         outTemplates[2] = effectiveTemplates[back] ?? slotHoldRef.current[2];
@@ -1125,10 +1136,11 @@ export function useRadarController(args: {
     perFrameOpacities,
     xfade.from,
     xfade.to,
-    profile.enableTemporal3,
-    profile.blendMs,
+    animationProfile.enableTemporal3,
+    animationProfile.blendMs,
     radarOpacity,
     mapZoom,
+    mrmsSelected,
     stationMode,
     stormMode,
   ]);
@@ -1149,7 +1161,7 @@ export function useRadarController(args: {
     const atEnd = safeFrameIndex >= frameCount - 1;
     const advanceKey = `${playlistContextKey}|${frameCount}`;
     const firstAdvanceForPlaylist = autoAdvancePrimedRef.current !== advanceKey;
-    const baseDwell = atEnd ? Math.round(profile.dwellMs * END_HOLD_MULTIPLIER) : profile.dwellMs;
+    const baseDwell = atEnd ? Math.round(animationProfile.dwellMs * END_HOLD_MULTIPLIER) : animationProfile.dwellMs;
     const dwellNow = Math.max(180, Math.round(baseDwell / playbackRate));
     const delayMs = firstAdvanceForPlaylist ? Math.min(STARTUP_ADVANCE_MS, dwellNow) : dwellNow;
 
@@ -1199,7 +1211,7 @@ export function useRadarController(args: {
     playbackBlocked,
     playlistContextKey,
     playbackRate,
-    profile.dwellMs,
+    animationProfile.dwellMs,
     radarEnabled,
     safeFrameIndex,
     state.radarTime.playing,
@@ -1372,7 +1384,7 @@ export function useRadarController(args: {
     usingLocalImage,
     radarOpacity,
     radarTileMaxZ,
-    profileLabel: profile.label,
+    profileLabel: animationProfile.label,
 
     rvError,
     localError,

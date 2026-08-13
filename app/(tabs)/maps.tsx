@@ -1319,6 +1319,7 @@ export default function MapsScreen() {
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
+  const [stormScopeSourceMode, setStormScopeSourceMode] = useState<'auto' | 'mosaic' | 'local'>('auto');
   const [stormScopeRangeRingsEnabled, setStormScopeRangeRingsEnabled] = useState(true);
   const [stormScopeSitesVisible, setStormScopeSitesVisible] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
@@ -1536,7 +1537,9 @@ export default function MapsScreen() {
   const displayedStationProduct = pendingStationProduct ?? stationProduct;
 
   const stormScopeLocalZoom =
-    stormScopeEnabled && radarBehaviorZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM;
+    stormScopeEnabled &&
+    stormScopeSourceMode !== 'mosaic' &&
+    (stormScopeSourceMode === 'local' || radarBehaviorZoom >= STORM_SCOPE_NEXRAD_MIN_ZOOM);
 
   const stormScopeNexradVisible = stormScopeLocalZoom;
 
@@ -2251,6 +2254,8 @@ export default function MapsScreen() {
   const stationProductSourceLabel =
     !stormScopeEnabled
       ? 'Storm Scope off'
+      : stormScopeSourceMode === 'mosaic'
+          ? 'using broad mosaic radar'
       : !stormScopeLocalZoom
           ? 'zoom in for local NEXRAD products'
           : radarCtl.usingLocalImage && product === 'N0Q'
@@ -2285,13 +2290,15 @@ export default function MapsScreen() {
         stormScopeTiltLabel,
         stormScopeDistanceLabel,
       ].filter(Boolean).join('   ')
-    : 'Local products available when zoomed closer';
+    : stormScopeSourceMode === 'mosaic'
+      ? 'Broad mosaic selected. Switch to Local for NEXRAD products.'
+      : 'Local products available when zoomed closer or by selecting Local.';
   const stormScopeWarningMessage =
     radarCtl.iemError && stormScopeLocalZoom
       ? `${radarProductMeta.legendTitle} unavailable: ${radarCtl.iemError}`
       : stationProductUnavailable
       ? `${radarProductMeta.legendTitle} temporarily unavailable`
-      : !stormScopeLocalZoom
+      : !stormScopeLocalZoom && stormScopeSourceMode !== 'mosaic'
         ? 'Zoom closer for local radar products.'
         : null;
   const pendingProductMeta =
@@ -2347,7 +2354,9 @@ export default function MapsScreen() {
                     : 'Animated local scans';
       const unavailableReason =
         !stormScopeLocalZoom && item.id !== 'N0Q'
-          ? 'Zoom closer for local radar coverage.'
+          ? stormScopeSourceMode === 'mosaic'
+            ? 'Switch Storm Scope source to Local for NEXRAD products.'
+            : 'Zoom closer or switch Storm Scope source to Local.'
           : !item.enabled
             ? LIGHTNING_UNSUPPORTED_REASON
             : null;
@@ -2382,8 +2391,30 @@ export default function MapsScreen() {
     stationProduct,
     stationProductLoading,
     stormScopeLocalZoom,
+    stormScopeSourceMode,
   ]);
   const stormScopeQuickToggles = useMemo(() => ([
+    {
+      id: 'source-auto',
+      label: 'Auto',
+      active: stormScopeSourceMode === 'auto',
+      onPress: () => setStormScopeSourceMode('auto'),
+    },
+    {
+      id: 'source-mosaic',
+      label: 'Mosaic',
+      active: stormScopeSourceMode === 'mosaic',
+      onPress: () => {
+        setStormScopeSourceMode('mosaic');
+        setPendingStationProduct(null);
+      },
+    },
+    {
+      id: 'source-local',
+      label: 'Local',
+      active: stormScopeSourceMode === 'local',
+      onPress: () => setStormScopeSourceMode('local'),
+    },
     {
       id: 'warnings',
       label: 'Warnings',
@@ -2408,7 +2439,7 @@ export default function MapsScreen() {
       active: lightningEnabled,
       onPress: () => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'lightning.strikes', enabled: !lightningEnabled }),
     },
-  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeRangeRingsEnabled, stormScopeSitesVisible]);
+  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeRangeRingsEnabled, stormScopeSitesVisible, stormScopeSourceMode]);
   const stormScopeRadarSites = useMemo(() => {
     return nearbyRadarSites.map(({ site, distanceMi }) => {
       const id3 = normalizeRadarSiteId(site.id);
@@ -2420,6 +2451,7 @@ export default function MapsScreen() {
         selected: id3 === selectedRadarId3,
         onUse: () => {
           setManualRadarSiteId3(id3);
+          setStormScopeSourceMode('local');
           setStormScopeConsoleOpen(false);
           lastCenteredRadarSiteRef.current = null;
         },
@@ -2449,6 +2481,7 @@ export default function MapsScreen() {
     setRadarMode('mosaic');
     setStationPanelCollapsed(false);
     setStormScopeConsoleOpen(false);
+    setStormScopeSourceMode('auto');
     setManualRadarSiteId3(null);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
@@ -2469,6 +2502,7 @@ export default function MapsScreen() {
     setRadarMode('mosaic');
     setStationPanelCollapsed(true);
     setStormScopeConsoleOpen(false);
+    setStormScopeSourceMode('auto');
     setManualRadarSiteId3(null);
     setPendingStationProduct(null);
     lastCenteredRadarSiteRef.current = null;
@@ -5624,6 +5658,7 @@ export default function MapsScreen() {
                   setPendingStationProduct(nextProduct);
                   setStationProduct(nextProduct);
                 }}
+                onExitStormScope={turnStormScopeOff}
                 onOpenLearn={() => {
                   const topic = STATION_RADAR_PRODUCTS.find((item) => item.id === product)?.learnTopicId;
                   setLearnTopicId(topic ?? 'radar-base-reflectivity');

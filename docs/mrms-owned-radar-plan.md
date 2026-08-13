@@ -93,6 +93,8 @@ Current renderer checkpoint:
 - Rebuild history with same-quality z10 frames before widening MRMS beyond the beta posture.
 - Production MRMS preview now serves tiles through the Worker (`worker-r2`) rather than exposing public R2 tile templates to the app.
 - MRMS history can be populated with a bounded backfill run instead of waiting for many separate single-frame publishes.
+- The app now gives Storm Scope explicit `Auto`, `Mosaic`, and `Local` source controls so the owned MRMS mosaic path and local NEXRAD fallback path are not hidden behind zoom heuristics.
+- MRMS playback uses a dedicated smoother animation profile in the app: longer blends, shorter dwell, and temporal tailing. This improves visual continuity, but true RainViewer-grade motion still depends on publishing enough fresh MRMS frames at a consistent cadence.
 
 ## Current storage read
 

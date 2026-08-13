@@ -16,6 +16,8 @@ For phase 1, the owned national radar path should cover US beta users through MR
 
 - MRMS-auto renders usable broad reflectivity in production builds for US beta locations when the MRMS timeline is healthy.
 - Opening Storm Scope does not land users on a blank radar state during normal use.
+- Storm Scope always gives users an explicit way to choose `Auto`, `Mosaic`, or `Local` radar source.
+- Leaving Storm Scope returns the map to the broad radar mosaic path instead of trapping users in local mode.
 - Radar remains visible when switching between supported local history ranges.
 - Radar controls remain visible and usable during normal local radar interaction.
 - If upstream history is weak or missing, the app falls back gracefully instead of looking broken.
@@ -61,6 +63,7 @@ For phase 1, the owned national radar path should cover US beta users through MR
 
 - Local radar feels dependable enough to ship to testers without caveats like "it might be blank."
 - National-to-local handoff feels intentional, not jarring or broken.
+- MRMS playback should feel like moving reflectivity, not obvious tile popping or a slow frame deck, when multiple frames are available.
 - Radar and related overlays are aligned well enough that motion does not feel obviously wrong.
 - Error states are understandable and do not dump raw backend noise into the UI.
 

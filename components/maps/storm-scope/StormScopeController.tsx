@@ -63,6 +63,7 @@ export function StormScopeController(props: {
   radarSites: RadarSiteOption[];
   onSelectProduct: (id: string) => void;
   onOpenLearn: () => void;
+  onExitStormScope: () => void;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
@@ -145,6 +146,7 @@ export function StormScopeController(props: {
                     onPress={() => props.onSetHudMinimized(true)}
                   />
                   <IconButton label="..." onPress={() => props.onSetConsoleOpen(true)} />
+                  <IconButton label="Exit" onPress={props.onExitStormScope} wide />
                 </View>
               </View>
 
@@ -288,6 +290,9 @@ export function StormScopeController(props: {
               <Pressable onPress={() => props.onSetConsoleOpen(false)} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
                 <Text style={{ color: 'white', fontWeight: '900' }}>Done</Text>
               </Pressable>
+              <Pressable onPress={props.onExitStormScope} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(251,191,36,0.22)', backgroundColor: 'rgba(120,53,15,0.14)' }}>
+                <Text style={{ color: 'white', fontWeight: '900' }}>Exit Scope</Text>
+              </Pressable>
             </View>
 
             <ScrollView style={{ marginTop: 14 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 12 }}>
@@ -296,6 +301,48 @@ export function StormScopeController(props: {
                 <ConsoleMetric label="Product" value={props.productLine} />
                 <ConsoleMetric label="Source" value={props.sourceLine} />
                 <ConsoleMetric label="Status" value={props.warningMessage ?? props.loadingMessage ?? props.statusLabel} />
+              </SectionCard>
+
+              <SectionCard title="Radar Source" subtitle="Jump between broad mosaic and local NEXRAD without leaving Storm Scope">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {props.quickToggles.filter((item) => item.id.startsWith('source-')).map((item) => (
+                    <Pressable
+                      key={`console-toggle-${item.id}`}
+                      onPress={item.onPress}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 9,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: item.active ? 'rgba(125,211,252,0.30)' : 'rgba(255,255,255,0.09)',
+                        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </SectionCard>
+
+              <SectionCard title="Map Aids" subtitle="Optional context while you inspect storms">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {props.quickToggles.filter((item) => !item.id.startsWith('source-')).map((item) => (
+                    <Pressable
+                      key={`console-toggle-${item.id}`}
+                      onPress={item.onPress}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 9,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: item.active ? 'rgba(125,211,252,0.30)' : 'rgba(255,255,255,0.09)',
+                        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
               </SectionCard>
 
               <SectionCard title="Products" subtitle="Switch products without reopening the HUD">
@@ -423,12 +470,12 @@ function Eyebrow(props: { label: string }) {
   return <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{props.label}</Text>;
 }
 
-function IconButton(props: { label: string; onPress: () => void }) {
+function IconButton(props: { label: string; onPress: () => void; wide?: boolean }) {
   return (
     <Pressable
       onPress={props.onPress}
       style={{
-        width: 34,
+        width: props.wide ? 52 : 34,
         height: 34,
         borderRadius: 999,
         borderWidth: 1,
