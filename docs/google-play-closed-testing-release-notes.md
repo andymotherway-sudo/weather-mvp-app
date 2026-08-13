@@ -7,7 +7,7 @@ Date: **August 13, 2026**
 
 ## Play Console Paste Notes
 
-Restores animated local NEXRAD behavior where station history is available, improves Auto/MRMS/RainViewer controls, keeps WMS as a latest-image fallback, and improves wildfire perimeter reliability.
+Adds the owned NOAA MRMS radar preview with bounded z10 production tiles, restores local NEXRAD scan history where available, improves radar source controls, and improves wildfire map reliability.
 
 ## Tester Notes
 
@@ -18,6 +18,7 @@ Please focus testing on Maps and regression safety:
 - Confirm MRMS timestamps look current and are not shown as future local times.
 - Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
 - Confirm MRMS playback feels smoother and less like a hard tile/frame flip when multiple frames are available.
+- Confirm MRMS loads production Worker/R2 tiles through z10 inside the US beta footprint.
 - Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.
 - Confirm Storm Scope local `HREFL` / `N0B` uses animated RIDGE history where the station provides scans.
@@ -39,4 +40,5 @@ Please focus testing on Maps and regression safety:
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Production worker deploy: GitHub Actions -> `Deploy Cloudflare Worker`
+- MRMS maintenance: GitHub Actions -> `MRMS radar maintenance`
 - Android build: `npm run build:android:prod`
