@@ -24,6 +24,9 @@ function parseArgs(argv) {
     json: false,
     failStorageMb: null,
     failStaleObjects: null,
+    writeHistory: false,
+    historyKey: null,
+    historyLimit: 60,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -35,6 +38,9 @@ function parseArgs(argv) {
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--fail-storage-mb" && argv[i + 1]) args.failStorageMb = Number(argv[++i]);
     else if (arg === "--fail-stale-objects" && argv[i + 1]) args.failStaleObjects = Number(argv[++i]);
+    else if (arg === "--write-history") args.writeHistory = true;
+    else if (arg === "--history-key" && argv[i + 1]) args.historyKey = argv[++i].replace(/^\/+|\/+$/g, "");
+    else if (arg === "--history-limit" && argv[i + 1]) args.historyLimit = Math.max(1, Math.min(500, Math.floor(Number(argv[++i]) || args.historyLimit)));
     else if (arg === "--json") args.json = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -47,6 +53,7 @@ function parseArgs(argv) {
   }
   args.bucket ||= BUCKETS[args.env] || BUCKETS.dev;
   args.prefix ||= `radar/mrms/proof/${args.product}`;
+  args.historyKey ||= `radar/mrms/status/${args.product}/storage-history.json`;
   return args;
 }
 
@@ -63,6 +70,9 @@ Options:
   --prefix <key>               R2 frame prefix. Default: radar/mrms/proof/<product>
   --fail-storage-mb <n>        Exit non-zero if total prefix storage is above n MB
   --fail-stale-objects <n>     Exit non-zero if stale object count is above n
+  --write-history              Append a compact bounded storage sample to R2
+  --history-key <key>          R2 key for bounded history. Default: radar/mrms/status/<product>/storage-history.json
+  --history-limit <n>          Maximum history samples to retain. Default: 60
   --json                       Print machine-readable JSON only
 `);
 }
@@ -135,6 +145,89 @@ async function listObjects(args) {
   return objects;
 }
 
+async function readR2Json(client, bucket, key) {
+  const { GetObjectCommand, NoSuchKey } = await import("@aws-sdk/client-s3");
+  try {
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const body = await response.Body?.transformToString?.();
+    if (!body) return null;
+    return JSON.parse(body);
+  } catch (error) {
+    const name = error?.name || error?.Code || error?.code;
+    const status = error?.$metadata?.httpStatusCode;
+    if (name === "NoSuchKey" || status === 404 || (typeof NoSuchKey === "function" && error instanceof NoSuchKey)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function compactHistorySample(summary) {
+  return {
+    recordedAt: summary.recordedAt,
+    env: summary.env,
+    product: summary.product,
+    frameCount: summary.timeline.frameCount,
+    newestFrame: summary.timeline.newestFrame,
+    newestAgeMinutes: summary.timeline.newestAgeMinutes,
+    maxZoom: summary.timeline.maxZoom,
+    tileDelivery: summary.timeline.tileDelivery,
+    objectCount: summary.storage.objectCount,
+    totalBytes: summary.storage.totalBytes,
+    totalMb: summary.storage.totalMb,
+    retainedObjectCount: summary.storage.retainedObjectCount,
+    retainedBytes: summary.storage.retainedBytes,
+    retainedMb: summary.storage.retainedMb,
+    staleObjectCount: summary.storage.staleObjectCount,
+    staleBytes: summary.storage.staleBytes,
+    staleMb: summary.storage.staleMb,
+  };
+}
+
+async function writeBoundedHistory(args, summary) {
+  const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await createS3Client();
+  const existing = await readR2Json(client, args.bucket, args.historyKey);
+  const existingSamples = Array.isArray(existing?.samples) ? existing.samples : [];
+  const sample = compactHistorySample(summary);
+  const samples = [...existingSamples, sample]
+    .filter((entry) => entry && typeof entry === "object")
+    .slice(-args.historyLimit);
+  const latest = samples[samples.length - 1] || sample;
+  const previous = samples.length > 1 ? samples[samples.length - 2] : null;
+  const history = {
+    ok: true,
+    env: args.env,
+    bucket: args.bucket,
+    product: args.product,
+    key: args.historyKey,
+    limit: args.historyLimit,
+    updatedAt: summary.recordedAt,
+    latest,
+    previous,
+    deltaFromPrevious: previous
+      ? {
+          totalBytes: latest.totalBytes - previous.totalBytes,
+          totalMb: mb(latest.totalBytes - previous.totalBytes),
+          retainedBytes: latest.retainedBytes - previous.retainedBytes,
+          retainedMb: mb(latest.retainedBytes - previous.retainedBytes),
+          staleObjectCount: latest.staleObjectCount - previous.staleObjectCount,
+          frameCount: latest.frameCount - previous.frameCount,
+        }
+      : null,
+    samples,
+  };
+
+  await client.send(new PutObjectCommand({
+    Bucket: args.bucket,
+    Key: args.historyKey,
+    Body: JSON.stringify(history, null, 2),
+    ContentType: "application/json; charset=utf-8",
+    CacheControl: "no-store",
+  }));
+  return history;
+}
+
 function mb(bytes) {
   return Math.round((bytes / 1024 / 1024) * 100) / 100;
 }
@@ -182,6 +275,7 @@ async function main() {
   const totalBytes = objects.reduce((total, object) => total + object.size, 0);
   const summary = {
     ok: true,
+    recordedAt: new Date().toISOString(),
     env: args.env,
     bucket: args.bucket,
     product: args.product,
@@ -214,6 +308,17 @@ async function main() {
         .map((entry) => ({ ...entry, mb: mb(entry.bytes) })),
     },
   };
+
+  if (args.writeHistory) {
+    const history = await writeBoundedHistory(args, summary);
+    summary.history = {
+      key: history.key,
+      sampleCount: history.samples.length,
+      limit: history.limit,
+      previousRecordedAt: history.previous?.recordedAt || null,
+      deltaFromPrevious: history.deltaFromPrevious,
+    };
+  }
 
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));

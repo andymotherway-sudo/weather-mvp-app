@@ -98,6 +98,8 @@ jobs:
             --env "$MRMS_TARGET_ENV"
             --product MergedReflectivityQCComposite
             --fail-storage-mb 5120
+            --write-history
+            --history-limit 60
             --json
           )
           if [ "$MRMS_FAIL_ON_STALE" = "true" ]; then
@@ -123,6 +125,8 @@ jobs:
             `- Retained bytes: ${status.storage.retainedMb} MB`,
             `- Stale objects: ${status.storage.staleObjectCount}`,
             `- Stale bytes: ${status.storage.staleMb} MB`,
+            `- History samples: ${status.history?.sampleCount ?? "not written"}`,
+            `- Delta from previous: ${status.history?.deltaFromPrevious ? `${status.history.deltaFromPrevious.totalMb} MB, ${status.history.deltaFromPrevious.frameCount} frame(s)` : "first sample"}`,
             "",
           ];
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));

@@ -221,6 +221,7 @@ Current direction:
 - RainViewer stays warm as fallback.
 - Worker-served MRMS tiles remain safest while sparse empty-tile handling is still important.
 - R2 storage remains rolling and bounded.
+- Applied MRMS workflows record a bounded storage trend so we can verify cleanup is stabilizing instead of silently accumulating objects.
 
 Done when:
 

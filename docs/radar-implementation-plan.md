@@ -81,6 +81,7 @@ Implementation:
   - live tile response header
   - R2 bucket size check
 - Require the MRMS workflow to report retained R2 object count, retained bytes, stale object count, and stale bytes after every applied run.
+- Keep a bounded R2 storage-status history sample after applied cycle/maintenance runs.
 - Fail the workflow if the MRMS prefix exceeds 5 GB or cleanup leaves stale objects behind.
 
 Cost posture:
@@ -256,7 +257,7 @@ Paid-customer cadence:
 
 1. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
 2. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
-3. Add retained-byte/object trend logging across multiple workflow runs.
+3. Verify the bounded storage-history sample appears after the next applied cycle or maintenance run.
 4. Verify MRMS-auto across several US regions in internal testing.
 5. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
 6. Keep RainViewer fallback active until Phase 4 hardening gates pass.

@@ -272,6 +272,7 @@ Current verified capability:
 - Direct R2 S3-compatible upload and cleanup are available through `--uploader auto|s3|wrangler`.
 - R2 S3 upload uses the AWS SDK pointed at Cloudflare R2; it does not require an AWS account.
 - Keep real credentials in `.env` or scheduler secrets only.
+- Applied MRMS cycle and maintenance workflows write a bounded storage trend to `radar/mrms/status/<product>/storage-history.json`.
 - Current z3-z10 bilinear output has measured around 5,200 non-empty sparse-weather tiles and roughly 10-18 MB per frame depending on weather coverage and metadata overhead.
 - Legacy RainViewer-backed overview image publishing remains disabled while MRMS is the owned national path.
 
