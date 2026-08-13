@@ -1,6 +1,6 @@
 # OMNIwx Paid-User Architecture Foundation
 
-Last updated: July 2026
+Last updated: August 13, 2026
 
 This document captures the backend foundation for future paid OMNIwx users. It is intentionally not a production billing launch plan. The current app still runs without accounts, RevenueCat, Clerk, or a required login.
 

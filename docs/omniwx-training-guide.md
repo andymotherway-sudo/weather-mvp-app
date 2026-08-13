@@ -4,7 +4,7 @@
 
 Audience: this is written for someone who can write a basic Python `hello world`, understands simple variables/functions, and has some basic SQL experience. You do not need to already know React Native, Expo, TypeScript, or mobile app architecture.
 
-Last updated: June 30, 2026
+Last updated: August 13, 2026
 
 Personal note: this file is meant to be Andy's private working guide. It explains the product and codebase in more detail than a public README should, including intent, mental models, and implementation notes that are useful while building OMNIwx.
 
@@ -25,7 +25,7 @@ The app is organized around weather “lenses”:
 - **Aviation**: aviation weather hazards and aviation-focused views.
 - **Extremes**: land/marine/space extremes that can link into maps.
 
-Current product direction as of June 2026:
+Current product direction:
 
 - **Land** is the primary daily weather surface. It has a compact header, alert card, Simple/WxLab toggle, and daily range card. Sun/Moon arcs and detailed astronomy timing live in wxLab with the richer diagnostic cards. The old climatology context card was removed because Almanac owns that job now.
 - **Hourly** remains its own forecast tab, but horizontal navigation can also move between tabs using an edge/home-row swipe pattern.
@@ -955,9 +955,9 @@ The app needs to:
 
 ### Mosaic, NEXRAD, and Storm Scope
 
-At broader zoom levels, normal radar should use the RainViewer mosaic. This is the national/broad-view product.
+For the US beta footprint, normal wide radar should use MRMS-auto: owned NOAA MRMS when healthy, RainViewer fallback when MRMS is warming, stale, missing, or outside scope.
 
-At close zoom levels, normal radar can automatically latch into the nearest NEXRAD site. The handoff should use hysteresis so a tiny zoom jitter does not rapidly switch providers.
+Local NEXRAD behavior belongs in Storm Scope. Do not silently replace the normal broad radar path with local station products just because the user zoomed in.
 
 Storm Scope is the explicit chaser/workstation tool. It should turn on local NEXRAD/product controls while it is active, then fully return to normal radar behavior when it is turned off.
 
@@ -965,12 +965,12 @@ Storm Scope is the explicit chaser/workstation tool. It should turn on local NEX
 
 Radar should preserve three user-facing behaviors:
 
-- Broad map views show the national radar mosaic.
-- Local zoom and station contexts can use the nearest NEXRAD site and expose station products.
+- Broad map views show the best available national radar mosaic.
+- MRMS-auto is the preferred US beta wide-radar path; RainViewer is fallback, not the product foundation.
+- Local station contexts can use the nearest NEXRAD site and expose station products only through explicit Storm Scope behavior.
 - Storm Scope is an in-place radar mode, not a separate map view that forces the camera.
 - Storm Scope controls must stay available at broad zoom; they should not be gated behind local NEXRAD zoom.
-- Normal radar defaults to the broad RainViewer mosaic and automatically hands off to nearest NEXRAD at close zoom. Storm Scope is an explicit tool for local NEXRAD, product selection, and chaser-style inspection.
-- Zooming back out from local radar should return to the broad national mosaic.
+- Zooming alone should not switch the user into local station radar.
 
 Zoom controls should only change camera zoom. They should not recenter the map, lock the user to a radar site, or keep snapping back to the active location.
 
@@ -1926,7 +1926,7 @@ That question pattern will work for almost every part of OMNIwx.
 
 ---
 
-## 35. Current Architecture Snapshot - June 2026
+## 35. Architecture Snapshot
 
 This section is the practical "what we have now" layer. Treat it as the current owner manual for the app.
 
@@ -1939,20 +1939,17 @@ The current Android/Expo app identity is split across several files:
 - `android/app/build.gradle`: native Android `versionCode` and `versionName`.
 - `android/app/src/main/AndroidManifest.xml`: native permissions, Android Auto service, widget receivers, and deep link intent filters.
 
-Current closed-test build identity:
+Current closed-test build identity lives in `package.json`, `app.json`, `android/app/build.gradle`, and `docs/google-play-closed-testing-release-notes.md`.
 
-- Current release example: app version `1.1.197`, Android version code `10214`.
-- Play release note file: `docs/google-play-closed-testing-release-notes.md`.
-
-Radar release note: broad/national radar should prefer the RainViewer mosaic. RainViewer frames now require their generated `/v2/radar/<frame-id>` path, so the app forwards that path to the Worker and the Worker still supports older timestamp-only requests by looking up the matching RainViewer frame path.
+Radar release note: broad/national radar should prefer MRMS-auto for the US beta footprint. The app should display owned NOAA MRMS when healthy, keep RainViewer fallback warm, and avoid showing stale/blank MRMS as if it were current radar.
 
 Radar playback note: provider swaps, product swaps, zoom handoffs, and Storm Scope toggles must preserve playback by nearest timestamp. Initial map entry may arm playback from frame `0`, but provider refreshes and UI controls should not dispatch `SET_RADAR_FRAME` with `frameIndex: 0` unless the user explicitly scrubbed to the first frame.
 
-Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Any legacy `storm` route/view should normalize back through the standard radar view with Storm Scope enabled so the visible chip remains the single on/off control. Normal radar owns the automatic RainViewer-to-NEXRAD zoom handoff; Storm Scope is an explicit chaser/workstation tool layered on top of that workflow.
+Storm Scope state note: Storm Scope should be driven by `radarTime.stormMode`, not by multiple overlapping flags. Any legacy `storm` route/view should normalize back through the standard radar view with Storm Scope enabled so the visible chip remains the single on/off control. Storm Scope is the explicit chaser/workstation tool for local NEXRAD products.
 
 Radar playlist note: when provider frames refresh, map the new playlist to the displayed timestamp, but do not snap to frame `0` just because the old timestamp falls before the new frame list. Preserve the user's current loop position unless the user actually scrubbed to the first frame.
 
-Radar handoff note: broad zoom should use the RainViewer mosaic and close zoom can latch into nearest local NEXRAD with hysteresis. MapLibre tiled radar source IDs should remain stable during playback so frame changes update tile URLs and opacity without remount flashes.
+Radar handoff note: broad radar should use MRMS-auto in the US beta footprint and RainViewer fallback elsewhere or when MRMS is not usable. MapLibre tiled radar source IDs should remain stable during playback so frame changes update tile URLs and opacity without remount flashes.
 
 Radar source-key note: animated tiled radar should not remount the MapLibre source on every frame. If the scrubber timestamp advances but the raster stays visually frozen, check that the renderer receives new tile URL templates while keeping source IDs stable.
 
@@ -1972,7 +1969,7 @@ Storm Scope product-integrity note: station products must not silently render a 
 
 Storm Scope toggle note: the Storm Scope chip is a true on/off control. Turning it on enables station/NEXRAD tools and range rings; turning it off clears manual station state, suppresses immediate auto-nearest relatching, and returns to standard animated mosaic radar.
 
-Storm Scope architecture note: normal radar and Storm Scope are separate modes. Normal radar should render the RainViewer mosaic. Storm Scope should render station/NEXRAD products only when the user explicitly turns it on and the map is zoomed in far enough. Do not reintroduce auto-nearest NEXRAD as an implicit normal-radar mode until the state/render split is stable.
+Storm Scope architecture note: normal radar and Storm Scope are separate modes. Normal radar should render MRMS-auto/RainViewer fallback. Storm Scope should render station/NEXRAD products only when the user explicitly turns it on and the map is zoomed in far enough. Do not reintroduce auto-nearest NEXRAD as an implicit normal-radar mode.
 
 HeatRisk layer note: `heat.nwsHeatRisk` is a selectable weather overlay and must also be wired into the rendered overlay list. It uses the NOAA experimental `NWS_HeatRisk` ImageServer `exportImage` endpoint with the `heatrisk.rft` rendering rule; catalog entries alone are not enough to draw it.
 
@@ -2703,7 +2700,7 @@ Use this when you are trying to orient quickly:
 - **Video export** is native Android MediaCodec/MediaMuxer.
 - **Notifications** currently have client preferences; full alerting needs backend event logic.
 
-## 44. Personal Maintenance Notes
+## 44. Maintenance Notes
 
 These docs are intentionally more detailed and more opinionated than public documentation.
 
@@ -2718,12 +2715,4 @@ Keep them useful by updating them whenever you make a meaningful product-directi
 - a build/version issue happens
 - a major bug reveals an architectural trap
 
-If these docs are kept out of commits, they can stay honest and specific without worrying about whether every sentence belongs in public project documentation.
-
-## 45. Release Notes - OMNIwx 1.1.213 / 10230
-
-This release tightens the post-button zoom handoff so the native pinch gesture takes over cleanly after a zoom button tap.
-
-- Zoom buttons no longer optimistically push zoom state into React before the map settles.
-- Programmatic zoom steps no longer immediately emit non-user region updates back into parent state before the next pinch begins.
-- Radar behavior is intentionally unchanged in this release; the fix is scoped to the camera interaction path.
+Keep short-lived private learning notes in ignored local docs folders. Keep this guide focused on durable app architecture and operating rules.

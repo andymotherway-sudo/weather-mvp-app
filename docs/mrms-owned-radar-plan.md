@@ -89,8 +89,8 @@ Current renderer checkpoint:
 
 - Publish z3-z10 only with a hard tile cap.
 - Keep bilinear sampling as the default for cleaner zoomed-in tiles.
-- Keep the app default on RainViewer unless the MRMS preview toggle is enabled.
-- Rebuild history with same-quality z10 frames before considering MRMS as a default radar layer.
+- Keep MRMS-auto as the US beta default only while RainViewer fallback remains warm and reliable.
+- Rebuild history with same-quality z10 frames before widening MRMS beyond the beta posture.
 - Production MRMS preview now serves tiles through the Worker (`worker-r2`) rather than exposing public R2 tile templates to the app.
 - MRMS history can be populated with a bounded backfill run instead of waiting for many separate single-frame publishes.
 
@@ -263,44 +263,22 @@ The stable latest pointer is now backward-compatible with the one-frame preview 
 - `npm run mrms:update-latest -- --apply --retain-frames 12 --max-frame-age-minutes 360` publishes a bounded rolling manifest. Retention cleanup should still be run after repeated publishes so old frame prefixes do not become an archive.
 - `POST /v1/radar/mrms/maintenance/cleanup-retained?product=...&confirm=cleanup-mrms-proof-dev&dryRun=0` deletes MRMS proof frame prefixes that are not listed in the live latest manifest.
 
-Verified on 2026-07-30:
+Current verified capability:
 
 - Dev and production Workers support explicit retained-frame tile reads.
-- Dev latest manifest retained `20260730T141000` plus the previous dev frame.
-- Production latest manifest retained `20260730T141000` plus the previous production frame.
-- The `20260730T141000` frame produced 11 non-empty z3-z4 tiles totaling about 35 KB before manifests.
-- Legacy RainViewer-backed overview image publishing remained disabled while MRMS was updated.
-- Retained-frame cleanup deleted stale dev/prod proof frame prefixes and left only `20260730T141000` active in each bucket.
-- A second fresh frame, `20260730T200800`, was published to dev and production. Both latest manifests now expose a two-frame retained playlist: `20260730T200800` and `20260730T141000`.
-- Dev retained cleanup dry-run reported 23 matched MRMS proof objects and zero delete candidates after the second frame publish.
-- z5 was measured and promoted for `20260730T200800`: 32 non-empty z3-z5 tiles totaling about 129 KB before manifests. Dev/prod latest manifests now advertise `maxZoom=5` for that latest frame.
-- App preview bug fixed in `1.1.240`: MRMS tile templates now preserve literal `{z}/{x}/{y}` placeholders for MapLibre instead of URL-encoding them, so the native map can request real owned MRMS tiles.
-- App preview timing/quality bug fixed in `1.1.241`: MRMS timestamps without an explicit zone are normalized as UTC before display, and lower-maxZoom retained frames are filtered out when higher-quality frames exist.
-- Pipeline hardening added after `1.1.241`: `npm run mrms:cycle -- --env production --max-z 5 --max-tiles 80 --min-retained-max-z 5` runs the bounded download/render/publish path, while `publish-mrms-proof` now normalizes manifest timestamps to UTC ISO and can rewrite only the stable latest pointer with `--latest-only`.
-- Production latest manifest was repaired to retain only same-quality z5 frames. Live production now advertises `20260731T000200` and `20260730T200800`, both with `maxZoom=5`, preventing the earlier blurry z4 retained frame from being shown.
-- Direct R2 S3-compatible upload path added: `publish-mrms-proof` and `mrms:cycle` support `--uploader auto|s3|wrangler`. `auto` uses S3-compatible R2 uploads when `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` are present; otherwise it falls back to Wrangler.
-- R2 S3 upload uses the AWS SDK pointed at Cloudflare R2. It does not require an AWS account. Keep real credentials in `.env` or scheduler secrets only.
-- Direct R2 S3-compatible cleanup path added: `mrms:cleanup-retained` supports `--uploader auto|s3|worker`, and `mrms:cycle -- --uploader s3` now uses direct S3 cleanup after publish.
-- Production S3 publish was verified with `20260731T004000`: 36 z3-z5 non-empty tiles, 125 KB of tile bytes, and the live tile route returned `x-omni-radar-source: r2-mrms`.
-- Production S3 cleanup removed stale frame `20260730T141000`: 11 objects, 34 KB. A follow-up dry run reported zero stale objects.
-- Richer MRMS preview promoted after measurement: the one-command cycle now defaults to z3-z8, `--max-tiles 900`, and bilinear raster sampling. Current measured z3-z8 bilinear output was 714 non-empty tiles totaling about 1.9 MB for one sparse-weather frame.
-- Production z8 publish verified with `20260731T010000`: 717 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, `sampling=bilinear`, and a live z8 tile returned `x-omni-radar-source: r2-mrms`.
-- Production z8 cleanup removed the prior z7-only frame and a follow-up dry run reported zero stale MRMS objects. History is temporarily one frame until additional z8 cycles rebuild the rolling playlist.
-- Second production z8 frame verified with `20260731T010800`: 727 z3-z8 non-empty tiles, about 1.9 MB of tile bytes, a live z8 tile returned `x-omni-radar-source: r2-mrms`, and cleanup dry-run reported zero stale MRMS objects. The retained playlist is now rebuilding with two same-quality z8 frames.
-- City-level MRMS preview promoted after z10 measurement: the one-command cycle now defaults to z3-z10, `--max-tiles 12000`, and bilinear raster sampling. Production z10 publish verified with `20260731T011600`: 5,223 non-empty tiles, about 9.5 MB of tile bytes, and a live z10 tile returned `x-omni-radar-source: r2-mrms`. Cleanup removed the two older z8 frame prefixes, so retained production history is temporarily one z10 frame while same-quality z10 history rebuilds.
+- MRMS tile templates preserve literal `{z}/{x}/{y}` placeholders for MapLibre.
+- MRMS timestamps are normalized as UTC before display.
+- Retained history filters out lower-quality frames when higher-maxZoom frames are available.
+- Direct R2 S3-compatible upload and cleanup are available through `--uploader auto|s3|wrangler`.
+- R2 S3 upload uses the AWS SDK pointed at Cloudflare R2; it does not require an AWS account.
+- Keep real credentials in `.env` or scheduler secrets only.
+- Current z3-z10 bilinear output has measured around 5,200 non-empty sparse-weather tiles and roughly 10-18 MB per frame depending on weather coverage and metadata overhead.
+- Legacy RainViewer-backed overview image publishing remains disabled while MRMS is the owned national path.
 
 Useful commands:
 
 ```powershell
-npm run mrms:update-latest -- --retain-frames 12 --python C:\Users\andym_au640pp\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe
-```
-
-```powershell
 npm run mrms:cycle -- --env production --max-z 10 --max-tiles 12000 --min-retained-max-z 10 --sampling bilinear --uploader s3 --apply
-```
-
-```bash
-node ./scripts/publish-mrms-proof.mjs --manifest /mnt/c/Users/andym_au640pp/weather-app/tmp/mrms/tiles/MergedReflectivityQCComposite-z3z4/manifest.json --bucket omniwx-radar-assets-prod --prefix radar/mrms/proof/MergedReflectivityQCComposite --max-tiles 20 --retain-frames 12 --apply
 ```
 
 ```bash

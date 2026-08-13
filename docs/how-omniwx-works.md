@@ -4,7 +4,7 @@ This document explains the app in plain English from the code that is in this re
 
 It is written for someone who is not deeply familiar with coding, React, or mobile app structure.
 
-Last updated: June 24, 2026
+Last updated: August 13, 2026
 
 Personal note: this is Andy's private plain-English system explanation. It is meant to be more candid and more detailed than a public README.
 
@@ -583,12 +583,13 @@ The heavy radar logic lives in [`app/lib/maps/useRadarController.ts`](../app/lib
 
 That hook manages:
 
-- provider choice (`iem` vs `rainviewer`)
+- provider choice (`auto`, `mrms`, `rainviewer`, and `iem`)
 - frame selection
 - playback timing
 - safe playlist updates
 - worker WMS URLs
 - smoothing and opacity rules
+- MRMS-auto fallback from owned NOAA MRMS to RainViewer when MRMS is warming, stale, missing, or outside the US beta footprint
 
 This is a good example of why custom hooks are powerful: the screen stays large, but the radar-specific machinery is pulled into a reusable unit.
 
@@ -948,7 +949,7 @@ Astronomy and Aviation should not be active at the same time. They are not just 
 
 ## 29. Radar and Satellite Animation
 
-Live regional radar follows the provider's native timestamped RainViewer tile sequence so each timeline step maps to a real radar frame. The map prewarms adjacent tiles and crossfades between active slots, but it does not replace RainViewer playback with viewport screenshots.
+Live regional radar follows the active provider's timestamped frame sequence so each timeline step maps to a real radar frame. In the US beta footprint, wide radar requests `MRMS auto`: owned NOAA MRMS is displayed when healthy, with RainViewer fallback when MRMS is warming, stale, missing, or outside scope. The map prewarms adjacent tiles and crossfades between active slots, but it does not replace radar playback with viewport screenshots.
 
 The disk-backed front/back image compositor remains in use for GOES satellite imagery and export previews, where complete viewport images help prevent blank flashes. Buffer progress is isolated from the requested display frame so an unrelated background download cannot cancel a crossfade already in progress.
 

@@ -3,7 +3,7 @@
 Release: **OMNIwx 1.1.242**
 Android version code: **10259**
 Track: **Closed testing / internal testing candidate**
-Date: **August 8, 2026**
+Date: **August 13, 2026**
 
 ## Play Console Paste Notes
 

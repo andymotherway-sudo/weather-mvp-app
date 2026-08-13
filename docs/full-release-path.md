@@ -1,6 +1,6 @@
 # Full Release Path
 
-This is the standard OMNIwx release path as of July 19, 2026.
+This is the standard OMNIwx release path as of August 13, 2026.
 
 It exists to prevent one easy mistake:
 

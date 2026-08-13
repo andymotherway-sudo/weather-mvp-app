@@ -164,9 +164,9 @@ Done when:
 - Each product has a clear legend and timestamp.
 - Product storage remains separately inspectable and bounded.
 
-## Phase 4: RainViewer Replacement Gate
+## Phase 4: RainViewer Replacement Hardening
 
-Goal: make MRMS the default US radar path.
+Goal: make the new MRMS-auto default dependable enough that RainViewer is a fallback dependency, not the product foundation.
 
 Requirements:
 
@@ -174,16 +174,16 @@ Requirements:
 - MRMS timestamps are correct locally and UTC-safe.
 - MRMS is visually acceptable at common beta zooms.
 - MRMS gracefully handles clear air.
-- Worker fallback selects RainViewer only when MRMS is unavailable or outside scope.
+- Worker/app fallback selects RainViewer only when MRMS is unavailable, stale, warming, or outside scope.
 - We have tested several regions, not just Phoenix.
 
 Implementation:
 
-- Add source priority:
+- Maintain source priority:
   - US + MRMS healthy: MRMS default.
   - MRMS stale/missing: RainViewer fallback.
   - outside US: RainViewer or other fallback remains.
-- Add stale threshold:
+- Keep stale threshold:
   - MRMS older than 20-30 minutes should warn/fallback.
 - Add app copy:
   - "MRMS radar"
@@ -257,9 +257,9 @@ Paid-customer cadence:
 1. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
 2. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
 3. Add retained-byte/object trend logging across multiple workflow runs.
-4. Add MRMS source-priority fallback rules for US default readiness.
+4. Verify MRMS-auto across several US regions in internal testing.
 5. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
-6. Keep RainViewer fallback active until Phase 4 gates pass.
+6. Keep RainViewer fallback active until Phase 4 hardening gates pass.
 
 ## Decision Log
 

@@ -1,6 +1,6 @@
 # OMNIwx Feature Guide
 
-Last updated: July 8, 2026
+Last updated: August 13, 2026
 
 This guide explains the user-facing screens and major features currently present in OMNIwx. It is written as a product walkthrough rather than a code tutorial. For architecture details, see `docs/how-omniwx-works.md` and `docs/omniwx-training-guide.md`.
 
@@ -236,9 +236,9 @@ Many layers support opacity control, legend/source info, or timestamp behavior.
 
 Maps supports:
 
-- RainViewer and IEM radar sources.
-- Mosaic radar for broad use.
-- Nearest NEXRAD behavior when zoomed in.
+- MRMS-auto broad radar for the US beta footprint, backed by RainViewer fallback.
+- RainViewer fallback for unavailable/out-of-scope MRMS and global broad radar.
+- IEM/RIDGE-backed local radar for Storm Scope while owned local rendering is still future work.
 - Station radar mode for advanced radar products.
 - Storm Scope radar behavior.
 - Radar timeline scrubbing.

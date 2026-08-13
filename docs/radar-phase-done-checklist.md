@@ -8,13 +8,13 @@ The goal of this phase is not to become a full national radar data company. The 
 
 This radar phase is done when OMNIwx can deliver a stable owned radar experience for the supported products and views, with bounded storage, explicit fallback behavior, clean release practices, and no obvious fragility in normal user flows.
 
-For phase 1, that owned local radar footprint must also include Minnesota coverage, not just the original starter markets.
+For phase 1, the owned national radar path should cover US beta users through MRMS. Local hot-site caching, including Minnesota-specific local station ownership, is a later/pilot concern unless explicitly re-enabled.
 
 ## Must Be True Before Radar Is Done
 
 ### 1. Local Radar Reliability
 
-- Phoenix-area local reflectivity renders reliably in production builds.
+- MRMS-auto renders usable broad reflectivity in production builds for US beta locations when the MRMS timeline is healthy.
 - Opening Storm Scope does not land users on a blank radar state during normal use.
 - Radar remains visible when switching between supported local history ranges.
 - Radar controls remain visible and usable during normal local radar interaction.
@@ -23,14 +23,14 @@ For phase 1, that owned local radar footprint must also include Minnesota covera
 ### 2. Owned Radar Path
 
 - The worker is the primary app-facing radar API.
-- Owned radar publish/storage is active for the supported local reflectivity paths.
+- Owned radar publish/storage is active for the supported MRMS reflectivity path.
 - The app is not accidentally depending on direct third-party client calls for the supported owned path.
 - Fallback behavior is intentional, documented, and easy to explain.
-- The owned local hot-site roster includes Minnesota through `MPX` and `DLH`.
+- RainViewer fallback remains available when owned MRMS is not usable.
 
 ### 3. History and Timeline
 
-- Supported local history ranges work consistently for the owned path.
+- Supported MRMS history ranges work consistently for the owned path.
 - Timeline/frame metadata stays coherent with the imagery users see.
 - Radar playback does not routinely present blank or unusable frames.
 - The newest usable frame is favored when history is thin or degraded.
@@ -48,7 +48,7 @@ For phase 1, that owned local radar footprint must also include Minnesota covera
 - Retention is defined for the current owned radar scope.
 - R2 growth does not increase without limit during normal ingest/publish operation.
 - Current radar architecture remains effectively near-zero cost at today's scale.
-- Expanding the owned hot-site roster, including Minnesota, does not break the current bounded-storage posture.
+- Expanding MRMS retention, cadence, zoom, or products does not break the current bounded-storage posture.
 
 ### 6. Production Safety
 
@@ -66,8 +66,8 @@ For phase 1, that owned local radar footprint must also include Minnesota covera
 
 ## Nice To Have But Not Required For This Phase
 
-- Better smoothing or cleanup for noisy NEXRAD visuals.
-- More local radar markets beyond the current bounded owned footprint.
+- Better smoothing or cleanup for noisy local NEXRAD visuals.
+- Owned local radar markets beyond the future pilot footprint.
 - More refined product legends and education content.
 - More graceful visual transitions between radar and satellite layers.
 - Better diagnostics for internal testing and support.
@@ -89,22 +89,21 @@ Radar phase work should be treated as done only when all four gates below are sa
 
 ### Gate 1. Local Reflectivity Is Stable
 
-- Phoenix/Mesa local reflectivity works in the released app.
-- No reproducible blank-open local radar failure remains in the core path.
+- MRMS-auto reflectivity works in the released app for US beta locations with healthy MRMS coverage.
+- No reproducible blank-open radar failure remains in the core path.
 - Saved preferences do not trap upgraded users in a broken local product state.
 
 ### Gate 2. Owned Publish And Retention Are Stable
 
-- Owned local radar publish is working for the supported reflectivity products (`N0Q` and `N0B`).
+- Owned MRMS publish is working for the supported reflectivity product.
 - Rolling retention and bounded storage are confirmed.
 - Fallback rules are understood and not accidental.
-- Minnesota sites `MPX` and `DLH` are present in the live owned local roster.
 
 ### Gate 3. Supported Products Match Reality
 
 - UI product choices match real backend/source capability.
 - Reflectivity defaults, labels, and legends are honest and consistent.
-- Broader fallback radar still works in markets that are outside the owned hot-site roster.
+- Broader fallback radar still works where owned MRMS is unavailable or outside scope.
 - Unsupported products are not presented as if they work.
 
 ### Gate 4. Release And Operations Are Clean

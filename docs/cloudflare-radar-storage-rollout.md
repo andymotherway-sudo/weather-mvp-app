@@ -1,6 +1,6 @@
 # Cloudflare Radar Storage Rollout
 
-This is the storage foundation for moving OMNIwx radar off IEM and RainViewer without changing app behavior first.
+This is the storage foundation for moving OMNIwx radar toward owned NOAA/MRMS assets while keeping third-party fallback paths available.
 
 Current direction: owned national radar should move through MRMS, not the older RainViewer-backed national overview image cache. Keep the tiny timeline manifest path available for compatibility, but do not publish legacy overview image tiles unless we intentionally re-enable that experiment.
 
@@ -8,7 +8,7 @@ Cost guardrail:
 
 - zero-cost is the default target right now
 - no archive should be created automatically
-- publish only a single rolling timeline object first, not a history set
+- publish only bounded rolling history, not an archive
 
 ## What we have today
 
@@ -25,12 +25,10 @@ Cost guardrail:
   - `omniwx-radar-assets-dev`
   - `omniwx-radar-assets-prod`
 - Worker bindings are active for `RADAR_ASSETS`.
-- D1 manifest ingest is live on a 5-minute cron.
-- R2 timeline publishing is live at `radar/timeline/latest.json`.
-- A tiny owned-image publish path is live:
-  - latest frame only
-  - zoom-1 national overview tiles only
-  - fallback to upstream when an owned tile is not present
+- D1 manifest ingest exists for compatibility.
+- MRMS tile publishing uses R2 for rendered non-empty tiles.
+- MRMS timeline/control-plane reads remain Worker-mediated.
+- Legacy RainViewer-backed overview image publishing is disabled during the MRMS pivot.
 
 ## Recommended bucket layout
 
@@ -60,15 +58,15 @@ Current safe cutover shape:
 - Attach a Cloudflare public/custom domain to the production `RADAR_ASSETS` bucket, for example `https://radar-assets.omniwx.com`.
 - Set `MRMS_PUBLIC_TILE_BASE_URL` to that HTTPS origin after the domain is live. Preferred path: run the manual GitHub Action `Configure Worker Variables` with `target_env=production` and the public tile base URL.
 - The Worker timeline will then emit each frame with `tileTemplate` pointing directly at R2, such as `https://radar-assets.omniwx.com/radar/mrms/proof/MergedReflectivityQCComposite/<frame>/{z}/{x}/{y}.png`.
-- The app prefers `tileTemplate` when present and falls back to `/v1/radar/mrms/tiles/{z}/{x}/{y}.png` when it is absent.
-- The Worker tile route remains as a compatibility fallback while the public delivery path is proven.
+- The app currently uses the Worker MRMS tile route because sparse MRMS tiles need transparent empty responses instead of noisy 404s.
+- Public R2/custom-domain tile delivery remains the future scale path after fallback and empty-tile behavior are proven.
 
 Guardrails:
 
 - Put only public-safe radar artifacts in `RADAR_ASSETS`; never store secrets, user data, logs, private manifests, or paid-only assets in this public bucket.
 - Keep timestamped MRMS frame tiles immutable or long-cacheable.
 - Keep latest/timeline responses short-cacheable.
-- Do not make MRMS default until direct tile delivery, fallback behavior, cleanup, and storage limits have been verified in production.
+- Keep RainViewer fallback active until MRMS freshness, cleanup, and storage limits are boring in production.
 
 ## The order to do this in
 
@@ -87,14 +85,14 @@ Guardrails:
 - The Worker stays the stable API edge for the app.
 - This supports thousands of users now and gives a real path toward much larger scale later without forcing Open-Meteo commercial just to fix radar infrastructure.
 
-## Immediate next code milestone after R2 is enabled
+## Current posture
 
-The current live posture is still intentionally conservative:
+The current live posture is intentionally bounded:
 
-- D1 is the source of truth for the rolling manifest.
-- R2 stores one latest timeline object.
-- R2 can store a tiny owned-image slice for national overview radar, but that legacy RainViewer-backed publisher is disabled during the MRMS pivot.
-- The worker decides when to serve owned tiles and when to fall back.
+- D1 remains the metadata/control-plane layer where needed.
+- R2 stores bounded MRMS frame tiles and a stable latest manifest.
+- The app requests MRMS-auto in the US beta footprint.
+- The Worker decides when to serve owned MRMS tiles and when fallback is needed.
 
 ## Current safe defaults
 
@@ -121,49 +119,23 @@ The worker should stay near these defaults unless intentionally changed:
 That means:
 
 - D1 keeps only a small rolling manifest set
-- R2 stores one latest timeline object instead of growing an archive
-- owned national MRMS proof/latest PNGs are bounded and manually promoted
+- R2 stores bounded rolling MRMS frames instead of growing an archive
+- owned national MRMS PNGs are bounded and manually/operationally promoted
 - legacy national overview PNG publishing is off
-- owned local single-site radar is bounded to a small hot-site roster, not a national archive
+- owned local single-site radar cache is off unless intentionally enabled
 - future expansion should increase one axis at a time
 
 During the MRMS pivot, local single-site tile accumulation stays off by default. The app can still request local radar through the worker and external fallback path, but exploratory local radar use should not write RIDGE tiles into R2 unless `RADAR_R2_LOCAL_TILE_CACHE_ENABLED=1` is intentionally enabled.
 
-Legacy overview image publishing is also off by default. MRMS is the preferred owned national reflectivity path; RainViewer remains the default user-facing broad radar fallback until MRMS has rolling history, visual QA, and retention exercised.
+Legacy overview image publishing is also off by default. MRMS is the preferred owned national reflectivity path in the US beta footprint; RainViewer remains fallback when MRMS is stale, warming, missing, or outside scope.
 
 To delete old legacy overview objects, temporarily enable `RADAR_R2_LEGACY_OVERVIEW_CLEANUP_ENABLED=1` and call `POST /v1/radar/maintenance/r2/cleanup-legacy-overview?confirm=delete-radar-images-rainviewer&dryRun=0&limit=1000` repeatedly until `matchedCount` is `0`. The route is hard-coded to `radar/images/rainviewer/` so it cannot delete MRMS, timeline manifests, or local RIDGE tiles.
 
-## Hot-site path under 10 GB
+## Local hot-site path
 
-If the goal is responsive local radar across the U.S. without turning R2 into a giant archive, use a hot-site roster instead of trying to pre-cache every NEXRAD site.
+Local hot-site caching is not the current beta foundation. If it is re-enabled later, use a hot-site roster instead of trying to pre-cache every NEXRAD site.
 
-- Keep the national timeline manifest hot for compatibility, but keep legacy national overview image tiles disabled while MRMS is being built.
-- Publish owned local tiles only for a bounded list of hot sites.
-- Keep the local site list small at first, then grow it slowly based on real usage.
-- Keep local coverage radius and zoom range intentionally narrow.
-
-Suggested starter policy:
-
-- `RADAR_R2_LOCAL_SITE_IDS=IWA,TLX,VTX,FWS,LOT,FFC,LWX,OKX,AMX,TBW,HGX,SFX,MPX,DLH`
-- `RADAR_R2_LOCAL_SITE_LIMIT=14`
-- `RADAR_R2_LOCAL_COVERAGE_RADIUS_MI=90`
-- `RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES=2`
-- `RADAR_R2_LOCAL_IMAGE_MIN_ZOOM=7`
-- `RADAR_R2_LOCAL_IMAGE_MAX_ZOOM=8`
-
-At this stage, the owned local publish path is intended to cover both:
-
-- `N0Q` reflectivity
-- `N0B` hi reflectivity
-
-That keeps owned local radar focused on the sites most likely to matter first, now including Minnesota coverage through `MPX` and `DLH`, while leaving room for national radar and future GOES work.
-
-The worker status route now reports the hot-site posture directly, including:
-
-- configured local site IDs
-- local site limit
-- local coverage radius
-- owned local product set
-- estimated tile/object count for the current local cache policy
-- rough estimated storage in MB for the owned local rolling slice
-- rolling storage posture after old local timestamps are evicted from R2
+- Keep legacy national overview image tiles disabled while MRMS is being built.
+- Publish owned local tiles only for a bounded list of explicit pilot sites.
+- Keep local coverage radius, zoom range, product count, and retained history intentionally narrow.
+- Require a separate storage budget from MRMS before enabling local station products such as `N0Q`, `N0B`, velocity, correlation coefficient, or echo tops.
