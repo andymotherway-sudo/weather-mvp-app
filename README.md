@@ -88,6 +88,7 @@ Google Play uniqueness is controlled by Android `versionCode`. Keep these files 
 - `docs/omniwx-training-guide.md`: private builder/training guide.
 - `docs/google-play-closed-testing-release-notes.md`: tester-facing release notes for Play Console.
 - `docs/full-release-path.md`: the required dev-to-production release sequence for internal testing.
+- `docs/production-readiness-plan.md`: security, paid-customer, radar, Storm Scope, and operations roadmap.
 - `docs/documentation-guidelines.md`: what docs belong in git versus ignored private notes.
 - `docs/privacy-policy.md`: publishable replacement privacy policy for omni-wx.com.
 
