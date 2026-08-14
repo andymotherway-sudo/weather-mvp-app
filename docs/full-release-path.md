@@ -182,6 +182,18 @@ Confirm:
 
 If the resolved config is wrong, do not build the release AAB yet.
 
+Also confirm the native Android Gradle metadata matches the release. Google Play reads
+the native bundle metadata, not just `app.json`.
+
+```powershell
+Select-String -Path android/app/build.gradle -Pattern 'versionCode|versionName'
+```
+
+Confirm:
+
+- `versionCode` matches `expo.android.versionCode` in `app.json`
+- `versionName` matches `expo.version` in `app.json`
+
 ### 7. Build The Release AAB
 
 Run the production-targeted release build:
