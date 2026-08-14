@@ -246,7 +246,7 @@ async function fetchRidgeWithProductFallback(args: {
     preferred === 'N0Q'
       ? ['N0Q', 'N0B', 'N0Z']
       : preferred === 'N0B'
-        ? ['N0B', 'N0Q', 'N0Z']
+        ? ['N0Q', 'N0B', 'N0Z']
         : preferred === 'N0U'
           ? ['N0U', 'N0S', 'N0Z']
           : preferred === 'N0S'

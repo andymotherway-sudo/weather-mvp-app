@@ -496,9 +496,10 @@ export function useRadarController(args: {
     radarEnabled &&
     !!localWmsProduct &&
     (
-      (stationMode && stormMode) ||
-      (!stationMode && !state.radarTime.playing && product === 'N0Q' && mapZoom >= localMinZoom) ||
-      (stormMode && stationMode && mapZoom > 8)
+      !stationMode &&
+      !state.radarTime.playing &&
+      product === 'N0Q' &&
+      mapZoom >= localMinZoom
     );
 
   const windowSize = Dimensions.get('window');

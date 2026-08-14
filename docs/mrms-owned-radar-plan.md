@@ -331,6 +331,7 @@ Current local-only Level III proof status:
 - All files are written under ignored `tmp/nexrad-level3`; nothing is published to R2 by these commands.
 - The current storage-safe default should remain nearest/sparse rendering. Supersampling is useful for QA and future paid-tier quality experiments, but it is too expensive to make the early free-tier default.
 - Production quality still needs smoothing strategy, tile seam QA, product-specific legends, retention/publish code, and app fallback wiring.
+- Until owned Level III station products are published, Storm Scope local reflectivity should prefer the most reliable visible IEM/RIDGE reflectivity animation and avoid forcing one-frame WMS image mode as the default.
 
 ## Rolling MRMS latest playlist
 
