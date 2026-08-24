@@ -834,12 +834,10 @@ export function useRadarController(args: {
     xfadeTimerRef.current = null;
 
     if (!liveFrames.length) {
-      if (stormMode || stationMode || !playFrames.length) {
-        setPlayFrames([]);
-        setPlayTemplates([]);
-        prevFrameRef.current = 0;
-        setXfade({ from: 0, to: 0, t: 1 });
-      }
+      setPlayFrames([]);
+      setPlayTemplates([]);
+      prevFrameRef.current = 0;
+      setXfade({ from: 0, to: 0, t: 1 });
       return;
     }
 
