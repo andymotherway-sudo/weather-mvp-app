@@ -77,6 +77,8 @@ describe('worker module', () => {
     expect(json.backend?.mode).toBe('external-fallback');
     expect(json.backend?.selfHostedReady).toBe(false);
     expect(json.ownedStorage?.d1?.retentionCount).toBe(12);
+    expect(json.ownedStorage?.d1?.readEnabled).toBe(false);
+    expect(json.ownedStorage?.d1?.writeEnabled).toBe(false);
     expect(json.ownedStorage?.r2?.timelinePublishEnabled).toBe(true);
     expect(Array.isArray(json.sources)).toBe(true);
     expect(json.sources.map((source: any) => source.id)).toEqual(
@@ -93,6 +95,9 @@ describe('worker module', () => {
     expect(res.status).toBe(200);
     expect(json.ok).toBe(true);
     expect(typeof json.ownedPipeline?.d1?.bound).toBe('boolean');
+    expect(json.ownedPipeline?.d1?.readEnabled).toBe(false);
+    expect(json.ownedPipeline?.d1?.writeEnabled).toBe(false);
+    expect(json.ownedPipeline?.d1?.statusSkipped).toBe('d1-read-disabled-free-tier-protection');
     expect(typeof json.ownedPipeline?.r2?.bound).toBe('boolean');
     expect(json.currentSource?.images).toBe('external-fallback');
     expect(Array.isArray(json.ownedPipeline?.r2?.localSiteIds)).toBe(true);

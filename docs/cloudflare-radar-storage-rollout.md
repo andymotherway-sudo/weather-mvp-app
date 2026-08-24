@@ -26,6 +26,7 @@ Cost guardrail:
   - `omniwx-radar-assets-prod`
 - Worker bindings are active for `RADAR_ASSETS`.
 - D1 manifest ingest exists for compatibility.
+- D1 radar reads/writes are opt-in to protect the free daily row budget.
 - MRMS tile publishing uses R2 for rendered non-empty tiles.
 - MRMS timeline/control-plane reads remain Worker-mediated.
 - Legacy RainViewer-backed overview image publishing is disabled during the MRMS pivot.
@@ -89,7 +90,7 @@ Guardrails:
 
 The current live posture is intentionally bounded:
 
-- D1 remains the metadata/control-plane layer where needed.
+- D1 remains an optional compatibility metadata/control-plane layer where needed.
 - R2 stores bounded MRMS frame tiles and a stable latest manifest.
 - The app requests MRMS-auto in the US beta footprint.
 - The Worker decides when to serve owned MRMS tiles and when fallback is needed.
@@ -98,6 +99,9 @@ The current live posture is intentionally bounded:
 
 The worker should stay near these defaults unless intentionally changed:
 
+- `RADAR_D1_READ_ENABLED=0`
+- `RADAR_D1_WRITE_ENABLED=0`
+- `RADAR_SITE_ACTIVITY_TRACKING_ENABLED=0`
 - `RADAR_MANIFEST_INGEST_ENABLED=1`
 - `RADAR_MANIFEST_INGEST_MAX_FRAMES=60`
 - `RADAR_MANIFEST_RETENTION_COUNT=12`
@@ -118,7 +122,7 @@ The worker should stay near these defaults unless intentionally changed:
 
 That means:
 
-- D1 keeps only a small rolling manifest set
+- D1 manifest reads/writes stay off unless deliberately enabled for debugging or a paid D1 posture
 - R2 stores bounded rolling MRMS frames instead of growing an archive
 - owned national MRMS PNGs are bounded and manually/operationally promoted
 - legacy national overview PNG publishing is off

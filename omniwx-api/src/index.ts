@@ -9599,6 +9599,7 @@ function getRadarBackendConfig(env: Env): RadarBackendConfig {
 
 async function readStoredRadarTimeline(env: Env, args: { product?: string; siteId?: string | null; maxFrames: number }) {
   if (!env.DB) return null;
+  if (!isRadarD1ReadEnabled(env)) return null;
   const manifest = await readLatestRadarManifest(env.DB as any, {
     scope: args.siteId ? "single-site" : "national-mosaic",
     product: args.product ?? "precipitation",
@@ -9718,7 +9719,10 @@ function buildRadarInfoPayload(env: Env) {
     ownedStorage: {
       d1: {
         enabled: !!env.DB,
+        readEnabled: isRadarD1ReadEnabled(env),
+        writeEnabled: isRadarD1WriteEnabled(env),
         ingestEnabled,
+        ingestActive: ingestEnabled && isRadarD1WriteEnabled(env),
         retentionCount: settings.retentionCount,
       },
       r2: {
@@ -9773,24 +9777,28 @@ function buildRadarInfoPayload(env: Env) {
 
 async function buildOwnedRadarStatusPayload(env: Env) {
   const settings = getRadarManifestIngestSettings(env);
+  const d1ReadEnabled = isRadarD1ReadEnabled(env);
   let stored: Awaited<ReturnType<typeof readStoredRadarTimeline>> = null;
   let recentLocalSiteActivity: Awaited<ReturnType<typeof readRecentRadarSiteActivity>> = [];
   let lastOwnedLocalPublish: Awaited<ReturnType<typeof readRadarPipelineRun>> = null;
   let effectiveLocalSiteIds = settings.localSiteIds;
   let statusError: string | null = null;
-  try {
-    stored = await readStoredRadarTimeline(env, {
-      product: "precipitation",
-      siteId: null,
-      maxFrames: settings.maxFrames,
-    });
-    if (env.DB) {
-      recentLocalSiteActivity = await readRecentRadarSiteActivity(env.DB as any, settings.localSiteLimit);
-      lastOwnedLocalPublish = await readRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY);
+  let statusSkipped: string | null = d1ReadEnabled ? null : "d1-read-disabled-free-tier-protection";
+  if (d1ReadEnabled) {
+    try {
+      stored = await readStoredRadarTimeline(env, {
+        product: "precipitation",
+        siteId: null,
+        maxFrames: settings.maxFrames,
+      });
+      if (env.DB) {
+        recentLocalSiteActivity = await readRecentRadarSiteActivity(env.DB as any, settings.localSiteLimit);
+        lastOwnedLocalPublish = await readRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY);
+      }
+      effectiveLocalSiteIds = await resolveEffectiveOwnedLocalSiteIds(env, settings, recentLocalSiteActivity);
+    } catch (error: any) {
+      statusError = String(error?.message ?? error ?? "owned-radar-status-read-failed");
     }
-    effectiveLocalSiteIds = await resolveEffectiveOwnedLocalSiteIds(env, settings, recentLocalSiteActivity);
-  } catch (error: any) {
-    statusError = String(error?.message ?? error ?? "owned-radar-status-read-failed");
   }
   const localStorageEstimate = buildOwnedRadarLocalStorageEstimate({
     ...settings,
@@ -9802,11 +9810,15 @@ async function buildOwnedRadarStatusPayload(env: Env) {
     ownedPipeline: {
       d1: {
         bound: !!env.DB,
+        readEnabled: d1ReadEnabled,
+        writeEnabled: isRadarD1WriteEnabled(env),
         ingestEnabled: isRadarManifestIngestEnabled(env),
+        ingestActive: isRadarManifestIngestEnabled(env) && isRadarD1WriteEnabled(env),
         retentionCount: settings.retentionCount,
         latestManifestId: stored?.manifestId ?? null,
         latestGeneratedAt: stored?.generatedAt ?? null,
         latestFrameCount: stored?.frames.length ?? 0,
+        statusSkipped,
         statusError,
       },
       r2: {
@@ -9841,7 +9853,7 @@ async function buildOwnedRadarStatusPayload(env: Env) {
       },
     },
     currentSource: {
-      timeline: stored ? "d1-stored-manifest" : "external-fallback",
+      timeline: isMrmsEnabled(env) ? "r2-mrms-when-available" : stored ? "d1-stored-manifest" : "external-fallback",
       images: isRadarR2ImagePublishEnabled(env)
         ? isRadarR2LocalTileCacheEnabled(env)
           ? "r2-owned-overview-and-local-when-available"
@@ -10017,6 +10029,21 @@ async function fetchCurrentResponseForLocation(lat: number, lon: number, units: 
 
 function isRadarManifestIngestEnabled(env: Env) {
   const raw = String(env.RADAR_MANIFEST_INGEST_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isRadarD1ReadEnabled(env: Env) {
+  const raw = String(env.RADAR_D1_READ_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isRadarD1WriteEnabled(env: Env) {
+  const raw = String(env.RADAR_D1_WRITE_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function isRadarSiteActivityTrackingEnabled(env: Env) {
+  const raw = String(env.RADAR_SITE_ACTIVITY_TRACKING_ENABLED ?? "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
@@ -10806,6 +10833,7 @@ async function publishRadarTimelineToR2(
 async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestIngestResult> {
   if (!env.DB) return { ok: false, skipped: true, reason: "missing-d1-binding" };
   if (!isRadarManifestIngestEnabled(env)) return { ok: false, skipped: true, reason: "ingest-disabled" };
+  if (!isRadarD1WriteEnabled(env)) return { ok: false, skipped: true, reason: "d1-write-disabled-free-tier-protection" };
 
   const settings = getRadarManifestIngestSettings(env);
   const timeline = await fetchExternalRainViewerTimeline(settings.includeNowcast, settings.maxFrames);
@@ -10872,33 +10900,37 @@ async function ingestNationalRadarManifest(env: Env): Promise<RadarManifestInges
       minZoom: settings.localImageMinZoom,
       maxZoom: settings.localImageMaxZoom,
     });
-    await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, localPublish.ok ? "success" : "skipped", {
-      reason: localPublish.ok ? null : localPublish.reason,
-      generatedAt,
-      siteIds: localPublishSiteIds,
-      coverageRadiusMi: settings.localCoverageRadiusMi,
-      historyFrames: settings.localImageHistoryFrames,
-      minZoom: settings.localImageMinZoom,
-      maxZoom: settings.localImageMaxZoom,
-      products: [...OWNED_LOCAL_RADAR_PRODUCTS],
-      publishedCount: localPublish.ok ? localPublish.publishedCount : 0,
-      evictedCount: localPublish.ok ? localPublish.evictedCount : 0,
-      budgetReached: localPublish.ok ? localPublish.budgetReached : false,
-      maxTilePublishesPerRun: localPublish.ok ? localPublish.maxTilePublishesPerRun : OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN,
-      publishedSiteIds: localPublish.ok ? localPublish.publishedSiteIds : [],
-      deferredSiteIds: localPublish.ok ? localPublish.deferredSiteIds : [],
-    }, localPublishStartedAt);
+    if (isRadarD1WriteEnabled(env)) {
+      await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, localPublish.ok ? "success" : "skipped", {
+        reason: localPublish.ok ? null : localPublish.reason,
+        generatedAt,
+        siteIds: localPublishSiteIds,
+        coverageRadiusMi: settings.localCoverageRadiusMi,
+        historyFrames: settings.localImageHistoryFrames,
+        minZoom: settings.localImageMinZoom,
+        maxZoom: settings.localImageMaxZoom,
+        products: [...OWNED_LOCAL_RADAR_PRODUCTS],
+        publishedCount: localPublish.ok ? localPublish.publishedCount : 0,
+        evictedCount: localPublish.ok ? localPublish.evictedCount : 0,
+        budgetReached: localPublish.ok ? localPublish.budgetReached : false,
+        maxTilePublishesPerRun: localPublish.ok ? localPublish.maxTilePublishesPerRun : OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN,
+        publishedSiteIds: localPublish.ok ? localPublish.publishedSiteIds : [],
+        deferredSiteIds: localPublish.ok ? localPublish.deferredSiteIds : [],
+      }, localPublishStartedAt);
+    }
   } catch (error: any) {
-    await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, "error", {
-      generatedAt,
-      siteIds: localPublishSiteIds,
-      coverageRadiusMi: settings.localCoverageRadiusMi,
-      historyFrames: settings.localImageHistoryFrames,
-      minZoom: settings.localImageMinZoom,
-      maxZoom: settings.localImageMaxZoom,
-      products: [...OWNED_LOCAL_RADAR_PRODUCTS],
-      error: String(error?.message ?? error ?? "owned-local-publish-failed"),
-    }, localPublishStartedAt);
+    if (isRadarD1WriteEnabled(env)) {
+      await recordRadarPipelineRun(env.DB as any, OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY, "error", {
+        generatedAt,
+        siteIds: localPublishSiteIds,
+        coverageRadiusMi: settings.localCoverageRadiusMi,
+        historyFrames: settings.localImageHistoryFrames,
+        minZoom: settings.localImageMinZoom,
+        maxZoom: settings.localImageMaxZoom,
+        products: [...OWNED_LOCAL_RADAR_PRODUCTS],
+        error: String(error?.message ?? error ?? "owned-local-publish-failed"),
+      }, localPublishStartedAt);
+    }
     throw error;
   }
 
@@ -13258,7 +13290,7 @@ async function handleWorkerRequest(
         ttlSeconds: RADAR_TILE_TTL_SECONDS,
         staleSeconds: RADAR_TILE_STALE_SECONDS,
         fetchUpstream: async () => {
-          if (env.DB) {
+          if (env.DB && isRadarD1WriteEnabled(env) && isRadarSiteActivityTrackingEnabled(env)) {
             ctx.waitUntil(recordRadarSiteActivity(env.DB as any, (url.searchParams.get("radar") || "").trim().toUpperCase().replace(/^K/, "")));
           }
           const res = await fetch(

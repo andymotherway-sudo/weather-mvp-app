@@ -70,14 +70,14 @@ Before promoting anything, verify the actual behavior you changed.
 
 Examples:
 
-- `/v1/radar/backend/status` returns healthy values
+- `/v1/radar/backend/status` returns healthy values without doing default D1 reads
 - live tile or API probes show the expected source/header behavior
 - app flows most likely to regress still behave normally
 
 For radar/infrastructure work, verify both:
 
 - control plane
-  - status route, manifest/timeline posture, bindings, retention
+  - status route, manifest/timeline posture, bindings, retention, D1 read/write guardrails
 - data plane
   - real tile fetches, real timeline responses, real headers
 
