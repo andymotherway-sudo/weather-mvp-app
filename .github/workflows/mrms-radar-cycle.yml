@@ -1,11 +1,10 @@
 name: MRMS radar cycle
-run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '10' }} backfill=${{ github.event.inputs.backfill_frames || '1' }}
+run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '8' }} backfill=${{ github.event.inputs.backfill_frames || '1' }}
 
 on:
   schedule:
-    # Keep beta MRMS fresh without building a large archive. One z10 frame
-    # currently takes about 12-13 minutes, so a 20-minute cadence leaves room
-    # for cleanup/reporting while avoiding overlapping publish churn.
+    # Keep beta MRMS fresh without building a large archive. Scheduled runs use
+    # z8 until the heavier z10 upload path has retry/resume protection.
     - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
@@ -94,7 +93,7 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       MRMS_TARGET_ENV: ${{ github.event.inputs.target_env || 'production' }}
       MRMS_MIN_ZOOM: ${{ github.event.inputs.min_zoom || '3' }}
-      MRMS_MAX_ZOOM: ${{ github.event.inputs.max_zoom || '10' }}
+      MRMS_MAX_ZOOM: ${{ github.event.inputs.max_zoom || '8' }}
       MRMS_RETAIN_FRAMES: ${{ github.event.inputs.retain_frames || '12' }}
       MRMS_BACKFILL_FRAMES: ${{ github.event.inputs.backfill_frames || '1' }}
       MRMS_MAX_FRAME_AGE_MINUTES: ${{ github.event.inputs.max_frame_age_minutes || '360' }}

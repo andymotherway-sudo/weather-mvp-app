@@ -92,7 +92,8 @@ Cost posture:
 Operational note:
 
 - MRMS is kept fresh by the scheduled `MRMS radar cycle` GitHub workflow.
-- The beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=1`.
+- The beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=8`, `retain_frames=12`, and `backfill_frames=1`.
+- Manual z10 publishes remain available for QA, but scheduled z10 should wait for upload retry/resume protection because one z10 frame can require 6k+ R2 object writes.
 - If the production timeline is older than the app freshness window, `MRMS auto` intentionally falls back to RainViewer.
 - For beta testing deeper history, manually run the `MRMS radar cycle` GitHub workflow against `production` with `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=2-3`, then verify the production timeline newest frame age.
 - Do not confuse a healthy fallback with MRMS rendering: if the status says `Auto fallback`, MRMS is stale or warming and users are seeing RainViewer.
