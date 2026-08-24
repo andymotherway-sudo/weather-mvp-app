@@ -7,7 +7,7 @@ export type MrmsRadarFrame = {
   label: string;
 };
 
-const DEFAULT_MRMS_STALE_AFTER_MS = 30 * 60_000;
+const DEFAULT_MRMS_STALE_AFTER_MS = 90 * 60_000;
 
 type MrmsTimelineResponse = {
   ok?: boolean;

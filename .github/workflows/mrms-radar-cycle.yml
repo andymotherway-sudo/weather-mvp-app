@@ -1,7 +1,12 @@
 name: MRMS radar cycle
-run-name: MRMS ${{ inputs.target_env || 'production' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '3' }}-${{ inputs.max_zoom || '10' }} backfill=${{ inputs.backfill_frames || '1' }}
+run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '10' }} backfill=${{ github.event.inputs.backfill_frames || '1' }}
 
 on:
+  schedule:
+    # Keep beta MRMS fresh without building a large archive. One z10 frame
+    # currently takes about 12-13 minutes, so a 20-minute cadence leaves room
+    # for cleanup/reporting while avoiding overlapping publish churn.
+    - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
       target_env:
@@ -69,7 +74,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mrms-radar-cycle-${{ inputs.target_env || 'production' }}
+  group: mrms-radar-cycle-${{ github.event.inputs.target_env || 'production' }}
   cancel-in-progress: true
 
 jobs:
@@ -87,14 +92,14 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-      MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
-      MRMS_MIN_ZOOM: ${{ inputs.min_zoom || '3' }}
-      MRMS_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
-      MRMS_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
-      MRMS_BACKFILL_FRAMES: ${{ inputs.backfill_frames || '1' }}
-      MRMS_MAX_FRAME_AGE_MINUTES: ${{ inputs.max_frame_age_minutes || '360' }}
-      MRMS_APPLY: ${{ inputs.apply }}
-      MRMS_SMOKE_BASE_URL: ${{ inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
+      MRMS_TARGET_ENV: ${{ github.event.inputs.target_env || 'production' }}
+      MRMS_MIN_ZOOM: ${{ github.event.inputs.min_zoom || '3' }}
+      MRMS_MAX_ZOOM: ${{ github.event.inputs.max_zoom || '10' }}
+      MRMS_RETAIN_FRAMES: ${{ github.event.inputs.retain_frames || '12' }}
+      MRMS_BACKFILL_FRAMES: ${{ github.event.inputs.backfill_frames || '1' }}
+      MRMS_MAX_FRAME_AGE_MINUTES: ${{ github.event.inputs.max_frame_age_minutes || '360' }}
+      MRMS_APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply }}
+      MRMS_SMOKE_BASE_URL: ${{ github.event.inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
 
     steps:
       - name: Checkout

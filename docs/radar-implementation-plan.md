@@ -91,9 +91,10 @@ Cost posture:
 
 Operational note:
 
-- MRMS is not a continuously live feed until a scheduler/job runner is enabled.
+- MRMS is kept fresh by the scheduled `MRMS radar cycle` GitHub workflow.
+- The beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=1`.
 - If the production timeline is older than the app freshness window, `MRMS auto` intentionally falls back to RainViewer.
-- For beta testing, run the `MRMS radar cycle` GitHub workflow against `production` with `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=2-3`, then verify the production timeline newest frame age.
+- For beta testing deeper history, manually run the `MRMS radar cycle` GitHub workflow against `production` with `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=2-3`, then verify the production timeline newest frame age.
 - Do not confuse a healthy fallback with MRMS rendering: if the status says `Auto fallback`, MRMS is stale or warming and users are seeing RainViewer.
 - 60 frames at current measured size is roughly 1.1 GB.
 - 5 hours at 2-minute cadence is roughly 150 frames and could be around 2.5-3 GB in sparse weather, but can be higher during widespread storms.
