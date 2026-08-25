@@ -30,6 +30,7 @@ Cost guardrail:
 - MRMS tile publishing uses R2 for rendered non-empty tiles.
 - MRMS timeline/control-plane reads remain Worker-mediated.
 - Legacy RainViewer-backed overview image publishing is disabled during the MRMS pivot.
+- MRMS downloads validate gzip integrity and retry transient partial NOAA responses before rendering.
 
 ## Recommended bucket layout
 
