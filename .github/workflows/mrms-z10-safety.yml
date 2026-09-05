@@ -82,4 +82,4 @@ jobs:
             --max-frame-age-minutes 360 \
             --min-retained-max-z 10 \
             --sampling bilinear \
-            --uploader s3
+            --uploader auto
