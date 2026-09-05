@@ -102,6 +102,8 @@ def main():
     product_code = input_path.name.split("_")[1] if "_" in input_path.name else str(level3.wmo_code or "")
     values = decode_product_value(raw, product_code)
     max_range_km = float(args.max_range_km or level3.max_range or (raw.shape[1] * level3.ij_to_km))
+    finite_values = values[np.isfinite(values)]
+    alpha_preview = np.asarray(colorize(values, product_code))[:, :, 3]
 
     manifest = {
         "ok": True,
@@ -115,6 +117,12 @@ def main():
         "maxRangeKm": max_range_km,
         "radials": int(raw.shape[0]),
         "gates": int(raw.shape[1]),
+        "rawMin": int(np.min(raw)) if raw.size else None,
+        "rawMax": int(np.max(raw)) if raw.size else None,
+        "finiteValueCount": int(finite_values.size),
+        "valueMin": float(np.min(finite_values)) if finite_values.size else None,
+        "valueMax": float(np.max(finite_values)) if finite_values.size else None,
+        "nonTransparentSourceCells": int(np.count_nonzero(alpha_preview)),
         "validTime": iso_or_none(level3.metadata.get("vol_time")),
         "productTime": iso_or_none(level3.metadata.get("prod_time")),
         "tileSize": args.tile_size,
