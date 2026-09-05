@@ -187,6 +187,8 @@ jobs:
           )
           if [ "$MRMS_APPLY" = "true" ]; then
             args+=(--apply)
+          else
+            args+=(--skip-cleanup)
           fi
           npm run mrms:cycle -- "${args[@]}"
 
