@@ -11546,7 +11546,7 @@ function buildAlertsDetailCacheKey(alertId: string) {
 
 async function fetchOfficialActiveAlertsGeoJson() {
   const features: any[] = [];
-  let url: string | null = "https://api.weather.gov/alerts/active?status=actual&message_type=alert%2Cupdate&limit=500";
+  let url: string | null = "https://api.weather.gov/alerts/active?status=actual&message_type=alert%2Cupdate";
   let page = 0;
 
   while (url && page < 4) {

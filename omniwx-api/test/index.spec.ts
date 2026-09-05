@@ -1,5 +1,5 @@
 import { SELF } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 function geometryRings(geometry: any): any[][][] {
   if (geometry?.type === 'Polygon') return geometry.coordinates ?? [];
@@ -106,6 +106,38 @@ describe('worker module', () => {
     expect(json.ownedPipeline?.r2?.localStorageEstimate?.estimatedObjects).toBeGreaterThan(0);
     expect(Array.isArray(json.ownedPipeline?.r2?.recentLocalSiteActivity)).toBe(true);
     expect(json.ownedPipeline?.r2).toHaveProperty('lastOwnedLocalPublish');
+  });
+
+  it('fetches active map alerts without unsupported NWS limit parameter', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('api.weather.gov/alerts/active')) {
+        expect(url).not.toContain('limit=');
+        return new Response(JSON.stringify({
+          type: 'FeatureCollection',
+          features: [],
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/geo+json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      const res = await SELF.fetch(new Request('https://omniwx.test/v1/maps/alerts/active'));
+      const json = await res.json() as any;
+
+      expect(res.status).toBe(200);
+      expect(json.type).toBe('FeatureCollection');
+      expect(Array.isArray(json.features)).toBe(true);
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it('returns self-hosted radar backend manifest contract', async () => {
