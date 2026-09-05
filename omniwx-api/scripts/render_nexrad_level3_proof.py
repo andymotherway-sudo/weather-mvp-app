@@ -60,7 +60,14 @@ def decode_product_value(raw: np.ndarray, product_code: str) -> np.ndarray:
     if product_code in {"N0B", "N0Q", "N0C", "N0X"}:
         values = values / 2.0 - 32.0
     elif product_code in {"N0S", "N0U"}:
-        values = values - 129.0
+        if raw.size and int(np.nanmax(raw)) <= 15:
+            velocity_bins = np.array(
+                [np.nan, np.nan, -70.0, -50.0, -36.0, -26.0, -20.0, -10.0, -5.0, 0.0, 5.0, 10.0, 20.0, 26.0, 36.0, 50.0],
+                dtype="float32",
+            )
+            values = velocity_bins[np.clip(raw, 0, len(velocity_bins) - 1)]
+        else:
+            values = values - 129.0
     elif product_code in {"EET", "NET"}:
         # Echo tops are encoded in kft-like bins for these Level III products.
         values = values.astype("float32")
