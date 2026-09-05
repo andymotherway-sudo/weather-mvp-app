@@ -286,6 +286,13 @@ First publish proof target:
 - Worker timeline: `/v1/radar/level3/timeline?site=IWA&product=N0B`
 - Worker tile route: `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`
 
+First production proof result:
+
+- `IWA N0B` published successfully through GitHub Actions on September 5, 2026.
+- The live Worker timeline reports z7-z10, one retained frame, 179 non-empty sparse tiles, and about 0.52 MB for the frame.
+- A known tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
+- This proves the owned local Level III R2/Worker path works, but it is still a backend proof rather than a Storm Scope replacement.
+
 ## Operating Cadences
 
 Zero-cost beta cadence:

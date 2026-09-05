@@ -351,6 +351,12 @@ Initial production proof posture:
 - Keep `max_zoom=10`, `max_tiles=2000`, and `supersample=1` for the zero-cost beta proof.
 - Keep IEM/RIDGE local fallback in the app until owned Level III has smooth multi-frame playback.
 
+First production proof evidence:
+
+- `IWA N0B` z7-z10 published successfully to production R2 on September 5, 2026.
+- The frame had 179 non-empty sparse tiles totaling about 0.52 MB.
+- The live Worker timeline returned `tileDelivery=worker-r2`, and a sample tile returned `x-omni-radar-source: r2-level3`.
+
 ## Rolling MRMS latest playlist
 
 The stable latest pointer is now backward-compatible with the one-frame preview and forward-compatible with rolling playback:
