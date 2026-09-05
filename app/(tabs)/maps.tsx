@@ -79,6 +79,7 @@ const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v2';
 const LEGACY_STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
+const OWNED_LEVEL3_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0S', 'EET']);
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
@@ -1320,6 +1321,7 @@ export default function MapsScreen() {
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
   const [stormScopeSourceMode, setStormScopeSourceMode] = useState<'auto' | 'mosaic' | 'local'>('auto');
+  const [stormScopeLocalProvider, setStormScopeLocalProvider] = useState<'iem' | 'level3'>('iem');
   const [stormScopeRangeRingsEnabled, setStormScopeRangeRingsEnabled] = useState(true);
   const [stormScopeSitesVisible, setStormScopeSitesVisible] = useState(false);
   const [stationAnchor, setStationAnchor] = useState<{ lat: number; lon: number } | null>(null);
@@ -1559,7 +1561,7 @@ export default function MapsScreen() {
 
   const effectiveRadarProvider: RadarProviderId =
     stationRadarMode
-      ? 'iem'
+      ? stormScopeLocalProvider
       : MRMS_RADAR_PREVIEW_ENABLED
         ? wideRadarProvider === 'auto' && !mrmsBetaCoverage
           ? 'rainviewer'
@@ -2242,11 +2244,13 @@ export default function MapsScreen() {
   ]);
 
   const stationProductLoading =
-    stormScopeLocalZoom && radarCtl.iemLoading;
+    stormScopeLocalZoom && (radarCtl.iemLoading || radarCtl.level3Loading);
 
   const stationProductUnavailable =
     stormScopeLocalZoom && !stationProductLoading && frameCount <= 0;
 
+  const ownedLevel3Requested = stormScopeLocalZoom && stormScopeLocalProvider === 'level3';
+  const ownedLevel3ProductSupported = OWNED_LEVEL3_PRODUCT_IDS.has(product);
   const stationProductLatestOnly =
     product === 'N0Z' || product === 'EET' || product === 'NET';
   const stationProductSourceLabel =
@@ -2256,6 +2260,12 @@ export default function MapsScreen() {
           ? 'using broad mosaic radar'
       : !stormScopeLocalZoom
           ? 'zoom in for local NEXRAD products'
+          : radarCtl.usingLevel3
+            ? 'owned NOAA Level III'
+          : ownedLevel3Requested && !ownedLevel3ProductSupported
+            ? 'owned Level III unsupported here; using IEM fallback'
+          : ownedLevel3Requested && radarCtl.level3Error
+            ? 'owned Level III unavailable; using IEM fallback'
           : radarCtl.usingLocalImage && (product === 'N0Q' || product === 'N0B' || product === 'N0Z')
             ? 'live local NEXRAD image'
           : stationProductLatestOnly
@@ -2312,6 +2322,7 @@ export default function MapsScreen() {
 
   useEffect(() => {
     if (!stormScopeLocalZoom) return;
+    if (ownedLevel3Requested) return;
     if (pendingStationProduct) return;
     if (stationProductLoading) return;
     if (stationProduct !== 'N0B') return;
@@ -2326,6 +2337,7 @@ export default function MapsScreen() {
     stationProductUnavailable,
     stormScopeIsStale,
     stormScopeLocalZoom,
+    ownedLevel3Requested,
   ]);
 
   const stormScopeProductOptions = useMemo(() => {
@@ -2338,8 +2350,11 @@ export default function MapsScreen() {
         ? displayedStationProduct === item.id
         : item.id === 'N0Q';
       const isAnimatedReflectivity = item.id === 'N0Q' || item.id === 'N0B';
+      const ownedLevel3Available = stormScopeLocalProvider === 'level3' && OWNED_LEVEL3_PRODUCT_IDS.has(item.id as RadarProductId);
       const readyLabel =
-        item.id === 'N0U'
+        ownedLevel3Available
+          ? 'Owned NOAA Level III beta'
+        : item.id === 'N0U'
           ? 'Upstream animated velocity when available'
           : item.id === 'N0Z'
             ? 'Upstream legacy velocity'
@@ -2375,7 +2390,9 @@ export default function MapsScreen() {
             ? 'Switching...'
             : 'Loading...'
           : available
-            ? item.id === 'N0B' || item.id === 'N0Q'
+            ? ownedLevel3Available
+                ? 'Owned beta'
+              : item.id === 'N0B' || item.id === 'N0Q'
                 ? 'Upstream'
                 : item.id === 'N0Z' || item.id === 'EET'
                   ? 'Latest only'
@@ -2388,6 +2405,7 @@ export default function MapsScreen() {
     pendingStationProduct,
     stationProduct,
     stationProductLoading,
+    stormScopeLocalProvider,
     stormScopeLocalZoom,
     stormScopeSourceMode,
   ]);
@@ -2414,6 +2432,24 @@ export default function MapsScreen() {
       onPress: () => setStormScopeSourceMode('local'),
     },
     {
+      id: 'local-iem',
+      label: 'IEM',
+      active: stormScopeLocalProvider === 'iem',
+      onPress: () => {
+        setStormScopeLocalProvider('iem');
+        setStormScopeSourceMode('local');
+      },
+    },
+    {
+      id: 'local-level3',
+      label: 'Owned L3',
+      active: stormScopeLocalProvider === 'level3',
+      onPress: () => {
+        setStormScopeLocalProvider('level3');
+        setStormScopeSourceMode('local');
+      },
+    },
+    {
       id: 'warnings',
       label: 'Warnings',
       active: alertsEnabled,
@@ -2437,7 +2473,7 @@ export default function MapsScreen() {
       active: lightningEnabled,
       onPress: () => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'lightning.strikes', enabled: !lightningEnabled }),
     },
-  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeRangeRingsEnabled, stormScopeSitesVisible, stormScopeSourceMode]);
+  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeLocalProvider, stormScopeRangeRingsEnabled, stormScopeSitesVisible, stormScopeSourceMode]);
   const stormScopeRadarSites = useMemo(() => {
     return nearbyRadarSites.map(({ site, distanceMi }) => {
       const id3 = normalizeRadarSiteId(site.id);

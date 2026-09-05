@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, PixelRatio } from 'react-native';
 
 import type { RadarOverlay, Region } from '../../../components/maps/MapRenderer';
+import { fetchLevel3Frames, supportsLevel3Product, type Level3RadarFrame } from './radar/providers/level3';
 import { fetchMrmsFrames, type MrmsRadarFrame } from './radar/providers/mrms';
 import { createRainViewerProvider } from './radar/providers/rainviewer';
 import type { RadarFrame } from './radar/providers/types';
@@ -229,7 +230,7 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean, quality: An
   });
 }
 
-export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms' | 'auto';
+export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms' | 'level3' | 'auto';
 
 function getRadarFetchProfile(
   zoom: number,
@@ -379,6 +380,9 @@ export function useRadarController(args: {
   const [mrmsFrames, setMrmsFrames] = useState<MrmsRadarFrame[] | null>(null);
   const [mrmsError, setMrmsError] = useState<string | null>(null);
   const [mrmsLoading, setMrmsLoading] = useState(false);
+  const [level3Frames, setLevel3Frames] = useState<Level3RadarFrame[] | null>(null);
+  const [level3Error, setLevel3Error] = useState<string | null>(null);
+  const [level3Loading, setLevel3Loading] = useState(false);
   const autoRadarSelected = sheetValue.radarProvider === 'auto';
   const rainViewerFetchSelected =
     sheetValue.radarProvider === 'rainviewer' ||
@@ -386,6 +390,12 @@ export function useRadarController(args: {
   const mrmsFetchSelected =
     sheetValue.radarProvider === 'mrms' ||
     (autoRadarSelected && !stationMode && !stormMode);
+  const level3Requested = sheetValue.radarProvider === 'level3';
+  const level3Supported =
+    level3Requested &&
+    stationMode &&
+    !!radarSiteId3 &&
+    supportsLevel3Product(product);
 
   useEffect(() => {
     let cancelled = false;
@@ -425,6 +435,8 @@ export function useRadarController(args: {
       ? autoMrmsHealthy
         ? 'mrms'
         : 'rainviewer'
+      : sheetValue.radarProvider === 'level3'
+        ? 'level3'
       : sheetValue.radarProvider === 'mrms'
         ? 'mrms'
         : sheetValue.radarProvider === 'rainviewer'
@@ -432,7 +444,9 @@ export function useRadarController(args: {
           : 'iem';
   const rainViewerSelected = effectiveTileProvider === 'rainviewer';
   const mrmsSelected = effectiveTileProvider === 'mrms';
+  const level3Selected = effectiveTileProvider === 'level3';
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
+  const usingLevel3 = level3Selected && !!level3Frames?.length;
   const animationProfile = useMemo(() => {
     if (!mrmsSelected) return profile;
     const wideView = mapZoom < 8.5;
@@ -484,6 +498,46 @@ export function useRadarController(args: {
       if (interval) clearInterval(interval);
     };
   }, [mrmsFetchSelected, radarEnabled, stationMode, stormMode]);
+
+  /* =========================================================================
+   * Owned NOAA Level III frames
+   * ========================================================================= */
+  useEffect(() => {
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function run() {
+      if (!level3Requested || !radarEnabled || !stationMode || !level3Supported) {
+        setLevel3Loading(false);
+        setLevel3Frames(null);
+        return;
+      }
+
+      try {
+        setLevel3Error(null);
+        setLevel3Loading(true);
+        const frames = await fetchLevel3Frames({ site: radarSiteId3, product });
+        if (cancelled) return;
+        setLevel3Frames(frames);
+        setLevel3Loading(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setLevel3Frames(null);
+        setLevel3Error(String(e?.message ?? e ?? 'Owned Level III failed'));
+        setLevel3Loading(false);
+      }
+    }
+
+    run();
+    if (level3Requested && radarEnabled && stationMode && level3Supported) {
+      interval = setInterval(run, 60_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [level3Requested, level3Supported, radarEnabled, stationMode, radarSiteId3, product]);
 
   /* =========================================================================
    * Hyperlocal WMS image mode
@@ -654,7 +708,11 @@ export function useRadarController(args: {
     let cancelled = false;
 
     async function run() {
-      if (effectiveTileProvider !== 'iem' || !radarEnabled || usingLocalImage) {
+      const iemFallbackForOwnedLocal =
+        level3Requested &&
+        stationMode &&
+        (!level3Supported || level3Loading || !!level3Error || !level3Frames?.length);
+      if (!radarEnabled || usingLocalImage || (effectiveTileProvider !== 'iem' && !iemFallbackForOwnedLocal)) {
         setIemLoading(false);
         return;
       }
@@ -699,6 +757,11 @@ export function useRadarController(args: {
     };
   }, [
     effectiveTileProvider,
+    level3Error,
+    level3Frames,
+    level3Loading,
+    level3Requested,
+    level3Supported,
     radarEnabled,
     usingLocalImage,
     stationMode,
@@ -715,7 +778,7 @@ export function useRadarController(args: {
 
   const iemDebugLabel = iemUnified?.debugLabel ?? null;
   const usingIemRidgeAnimated =
-    effectiveTileProvider === 'iem' &&
+    (effectiveTileProvider === 'iem' || (level3Selected && !usingLevel3)) &&
     radarEnabled &&
     !usingLocalImage &&
     iemUnified?.mode === 'ridge';
@@ -738,6 +801,8 @@ export function useRadarController(args: {
       out = rvFrames?.map((f) => ({ iso: f.iso })) ?? [];
     } else if (mrmsSelected) {
       out = mrmsFrames?.map((f) => ({ iso: f.iso })) ?? [];
+    } else if (level3Selected && level3Frames?.length) {
+      out = level3Frames.map((f) => ({ iso: f.iso }));
     } else {
       const frames = iemUnified?.frames;
       if (iemUnified) out = frames?.map((f) => ({ iso: f.iso })) ?? [];
@@ -745,7 +810,7 @@ export function useRadarController(args: {
     }
 
     return [...out].sort((a, b) => isoMs(a.iso) - isoMs(b.iso));
-  }, [usingLocalImage, localImageFrameIso, rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
+  }, [usingLocalImage, localImageFrameIso, rainViewerSelected, mrmsSelected, level3Selected, rvFrames, mrmsFrames, level3Frames, iemUnified, iemFramesFallback]);
 
   const liveTemplates: Array<string | null> = useMemo(() => {
     if (!radarEnabled) return [];
@@ -776,6 +841,12 @@ export function useRadarController(args: {
         .map((f) => f.template ?? null);
     }
 
+    if (level3Selected && level3Frames?.length) {
+      return [...level3Frames]
+        .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
+        .map((f) => f.template ?? null);
+    }
+
     const frames = iemUnified?.frames;
     if (iemUnified) {
       return [...(frames ?? [])]
@@ -786,7 +857,7 @@ export function useRadarController(args: {
     return [...iemFramesFallback]
       .sort((a, b) => isoMs(a.iso) - isoMs(b.iso))
       .map(() => null);
-  }, [radarEnabled, usingLocalImage, rainViewerSelected, mrmsSelected, rvFrames, mrmsFrames, iemUnified, iemFramesFallback]);
+  }, [radarEnabled, usingLocalImage, rainViewerSelected, mrmsSelected, level3Selected, rvFrames, mrmsFrames, level3Frames, iemUnified, iemFramesFallback]);
 
   /* =========================================================================
    * Stable playback playlist
@@ -1233,13 +1304,14 @@ export function useRadarController(args: {
   const radarTileMaxZ = useMemo(() => {
     if (usingRainViewer) return (rvProviderRef.current as any)?.maxZoom ?? 10;
     if (mrmsSelected && mrmsFrames?.length) return Math.max(3, ...mrmsFrames.map((f) => f.maxZ ?? 4));
+    if (usingLevel3 && level3Frames?.length) return Math.max(7, ...level3Frames.map((f) => f.maxZ ?? 10));
     if (usingLocalImage) return 10;
 
     const frames = iemUnified?.frames;
     if (frames?.length) return Math.max(7, ...frames.map((f) => f.maxZ ?? 7));
 
     return 9;
-  }, [usingRainViewer, mrmsSelected, mrmsFrames, usingLocalImage, iemUnified]);
+  }, [usingRainViewer, mrmsSelected, mrmsFrames, usingLevel3, level3Frames, usingLocalImage, iemUnified]);
 
   /* =========================================================================
    * Final switch: localImage vs templates
@@ -1336,7 +1408,7 @@ export function useRadarController(args: {
     console.debug('[radar:controller]', {
       frameIndex: safeFrameIndex,
       observationTimestamp: activeIso,
-      source: usingRainViewer ? 'rainviewer' : effectiveTileProvider,
+      source: usingRainViewer ? 'rainviewer' : usingLevel3 ? 'level3' : effectiveTileProvider,
       product: stationMode ? product : 'mosaic',
       frameIdentifier: visibleTemplate,
       previousFrame: {
@@ -1363,6 +1435,7 @@ export function useRadarController(args: {
     stationMode,
     product,
     usingRainViewer,
+    usingLevel3,
     xfade.from,
     xfade.to,
   ]);
@@ -1399,6 +1472,10 @@ export function useRadarController(args: {
     localError,
     mrmsError,
     mrmsLoading,
+    level3Error,
+    level3Loading,
+    level3Supported,
+    usingLevel3,
     effectiveRadarProvider: effectiveTileProvider,
     requestedRadarProvider: sheetValue.radarProvider,
 

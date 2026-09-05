@@ -274,7 +274,8 @@ Current proof status:
 - This is promising, but it is not production-ready until smoothing, z8-z10 sizing, publish retention, and app fallback rules are implemented.
 - September 5, 2026 inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE. This supports moving to a small owned Level III tile-publish proof, still without replacing IEM/RIDGE in the app.
 - A bounded Level III publish path now exists for one station/product proof at a time. It writes to `radar/level3/proof/<site>/<product>/<frame>/...`, updates `radar/level3/latest/<site>/<product>.json`, and exposes the result through Worker routes.
-- The app should not switch Storm Scope to owned Level III until at least one pilot station/product has repeated retained frames, clean animation, product-specific legends, and IEM/RIDGE fallback preserved.
+- The app can now expose owned Level III as an explicit Storm Scope beta source for comparison, while keeping IEM/RIDGE as the default and fallback.
+- Owned Level III should not become the default Storm Scope local source until at least one pilot station/product has repeated retained frames, clean animation, product-specific legends, and IEM/RIDGE fallback preserved.
 
 First publish proof target:
 
@@ -295,6 +296,7 @@ First production proof result:
 - This proves the owned local Level III R2/Worker path works, but it is still a backend proof rather than a Storm Scope replacement.
 - `IWA EET` also published successfully as a tiny z7-z10 proof, giving us one local non-reflectivity product path.
 - `IWA N0S` velocity now decodes structurally, but the sampled Phoenix frame had zero non-empty tiles. Empty products are intentionally blocked from publishing until they produce useful data.
+- Storm Scope now has an `Owned L3` source toggle for supported proof products (`N0B`, `N0S`, `EET`). If the owned timeline is missing, stale, unsupported, or still loading, the app keeps the IEM local radar path alive instead of going blank.
 
 ## Operating Cadences
 
