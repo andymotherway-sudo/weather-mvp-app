@@ -74,19 +74,34 @@ export function StormScopeController(props: {
     return () => clearTimeout(timeout);
   }, [notice]);
 
-  const hudTone = props.stale
-    ? 'rgba(251,191,36,0.16)'
-    : props.loadingMessage
-      ? 'rgba(96,165,250,0.14)'
-      : 'rgba(15,23,42,0.08)';
+  const activeProduct = useMemo(
+    () => props.products.find((item) => item.active) ?? props.products[0] ?? null,
+    [props.products],
+  );
 
-  const modeBadge = props.mode === 'local' ? 'LOCAL NEXRAD' : 'MOSAIC OVERVIEW';
+  const sourceToggles = useMemo(
+    () => props.quickToggles.filter((item) => item.id.startsWith('source-')),
+    [props.quickToggles],
+  );
 
-  const minimizedLabel = useMemo(() => {
-    const productCode = props.products.find((item) => item.active)?.shortLabel ?? 'REFL';
-    const age = props.productLine.split('·').slice(-1)[0]?.trim() ?? props.statusLabel;
-    return `${props.siteTitle} · ${productCode} · ${age}`;
-  }, [props.productLine, props.products, props.siteTitle, props.statusLabel]);
+  const localProviderToggles = useMemo(
+    () => props.quickToggles.filter((item) => item.id.startsWith('local-')),
+    [props.quickToggles],
+  );
+
+  const overlayToggles = useMemo(
+    () => props.quickToggles.filter((item) => !item.id.startsWith('source-') && !item.id.startsWith('local-')),
+    [props.quickToggles],
+  );
+
+  const ageLabel = useMemo(() => {
+    const parts = props.productLine.split(/(?:Â·|·)/g).map((part) => part.trim()).filter(Boolean);
+    return parts.at(-1) ?? props.statusLabel;
+  }, [props.productLine, props.statusLabel]);
+
+  const productLabel = activeProduct?.shortLabel ?? 'REFL';
+  const modeLabel = props.mode === 'local' ? 'LOCAL' : 'MOSAIC';
+  const attentionLine = props.loadingMessage ?? props.warningMessage ?? props.sourceLine;
 
   const handleProductPress = (item: ProductOption) => {
     if (item.active && item.loading) return;
@@ -100,336 +115,153 @@ export function StormScopeController(props: {
 
   return (
     <>
-      <View pointerEvents="box-none" style={{ gap: 8 }}>
-        <Glass
-          style={{
-            paddingHorizontal: 12,
-            paddingVertical: props.hudMinimized ? 10 : 12,
-            borderRadius: 22,
-            backgroundColor: hudTone,
-            width: '100%',
-          }}
-        >
-          {props.hudMinimized ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Pressable onPress={() => props.onSetHudMinimized(false)} style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ color: 'white', fontSize: 13, fontWeight: '900' }} numberOfLines={1}>
-                  {minimizedLabel}
-                </Text>
-              </Pressable>
-              <SmallPill label={props.stale ? 'STALE' : modeBadge} accent={props.stale ? 'amber' : 'cyan'} />
-              <IconButton label="..." onPress={() => props.onSetConsoleOpen(true)} />
-            </View>
-          ) : (
-            <View style={{ gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <Eyebrow label="STORM SCOPE" />
-                    <SmallPill label={modeBadge} accent={props.mode === 'local' ? 'cyan' : 'slate'} />
-                    {props.stale ? <SmallPill label="STALE" accent="amber" /> : null}
-                  </View>
-                  <Text style={{ color: 'white', fontSize: 20, fontWeight: '900', marginTop: 8 }} numberOfLines={1}>
-                    {props.siteTitle}
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 14, fontWeight: '800', marginTop: 4 }} numberOfLines={1}>
-                    {props.productLine}
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, fontWeight: '700', marginTop: 6 }} numberOfLines={2}>
-                    {props.metadataLine}
-                  </Text>
-                </View>
-
-                <View style={{ gap: 8 }}>
-                  <IconButton
-                    label="-"
-                    onPress={() => props.onSetHudMinimized(true)}
-                  />
-                  <IconButton label="..." onPress={() => props.onSetConsoleOpen(true)} />
-                  <IconButton label="Exit" onPress={props.onExitStormScope} wide />
-                </View>
-              </View>
-
-              <View
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 9,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.09)',
-                  backgroundColor: 'rgba(255,255,255,0.035)',
-                }}
-              >
-                <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '800' }}>
-                  {props.loadingMessage ?? props.warningMessage ?? props.sourceLine}
-                </Text>
-              </View>
-            </View>
-          )}
-        </Glass>
-
-        {!props.hudMinimized ? (
-          <>
-        <Glass style={{ borderRadius: 18, paddingHorizontal: 9, paddingVertical: 8 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
-            {props.products.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => handleProductPress(item)}
-                style={{
-                  minWidth: 62,
-                  paddingHorizontal: 9,
-                  paddingVertical: 8,
-                  borderRadius: 15,
-                  borderWidth: 1,
-                  borderColor: item.active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
-                  backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
-                  opacity: item.available ? 1 : 0.58,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.shortLabel}</Text>
-                  {item.loading ? <ActivityIndicator size="small" color="#bae6fd" /> : null}
-                </View>
-                <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 9, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>
-                  {item.loading ? item.statusLabel ?? 'Loading...' : item.available ? item.subtitle : item.statusLabel ?? 'Unavailable'}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {notice ? (
-            <View
-              style={{
-                marginTop: 10,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: 'rgba(251,191,36,0.22)',
-                backgroundColor: 'rgba(120,53,15,0.18)',
-              }}
-            >
-              <Text style={{ color: 'rgba(255,255,255,0.90)', fontSize: 11, fontWeight: '700' }}>{notice}</Text>
-            </View>
-          ) : null}
-        </Glass>
-
-        <Glass style={{ borderRadius: 18, paddingHorizontal: 9, paddingVertical: 8 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {props.quickToggles.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={item.onPress}
-                style={{
-                  paddingHorizontal: 9,
-                  paddingVertical: 8,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: item.active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
-                  backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
-                }}
-              >
-                <Text style={{ color: 'white', fontSize: 10, fontWeight: '900' }}>{item.label}</Text>
-              </Pressable>
-            ))}
-            <SmallPill label={props.statusLabel} accent="slate" />
-          </View>
-        </Glass>
-
-        <Glass style={{ borderRadius: 18, paddingHorizontal: 10, paddingVertical: 8 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <Text style={{ color: 'white', fontSize: 12, fontWeight: '900' }}>Legend</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.54)', fontSize: 10, fontWeight: '800' }}>{props.legend.title}</Text>
-              <IconButton label={legendExpanded ? '-' : '+'} onPress={() => setLegendExpanded((current) => !current)} />
-            </View>
-          </View>
-          <RadarLegend
-            style={props.legend.style}
-            leftLabel={props.legend.leftLabel}
-            midLabel={props.legend.midLabel}
-            rightLabel={props.legend.rightLabel}
-            compact
-          />
-          {legendExpanded ? (
-            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '700', marginTop: 8 }}>
-              {props.legend.note}
-            </Text>
-          ) : null}
-        </Glass>
-          </>
-        ) : null}
-      </View>
+      <CompactHud
+        ageLabel={ageLabel}
+        modeLabel={modeLabel}
+        productLabel={productLabel}
+        productLine={props.productLine}
+        siteTitle={props.siteTitle}
+        stale={props.stale}
+        statusLabel={props.statusLabel}
+        onOpen={() => props.onSetConsoleOpen(true)}
+      />
 
       <Modal visible={props.consoleOpen} animationType="slide" transparent onRequestClose={() => props.onSetConsoleOpen(false)}>
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(2,6,23,0.52)' }}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(2,6,23,0.42)' }}>
           <Glass
             style={{
               borderBottomLeftRadius: 0,
               borderBottomRightRadius: 0,
-              borderTopLeftRadius: 26,
-              borderTopRightRadius: 26,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
               paddingHorizontal: 14,
               paddingTop: 12,
               paddingBottom: 18,
-              maxHeight: '82%',
+              maxHeight: '86%',
             }}
           >
             <View style={{ alignItems: 'center', marginBottom: 10 }}>
               <View style={{ width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.18)' }} />
             </View>
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: 'white', fontSize: 20, fontWeight: '900' }}>Storm Scope Console</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12, fontWeight: '700', marginTop: 4 }}>
-                  Radar details, quick product access, and radar-site selection without taking over the map.
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
+                  STORM SCOPE
+                </Text>
+                <Text style={{ color: 'white', fontSize: 20, fontWeight: '900', marginTop: 4 }} numberOfLines={1}>
+                  {props.siteTitle}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '800', marginTop: 4 }} numberOfLines={2}>
+                  {props.productLine} - {attentionLine}
                 </Text>
               </View>
-              <Pressable onPress={() => props.onSetConsoleOpen(false)} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                <Text style={{ color: 'white', fontWeight: '900' }}>Done</Text>
-              </Pressable>
-              <Pressable onPress={props.onExitStormScope} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(251,191,36,0.22)', backgroundColor: 'rgba(120,53,15,0.14)' }}>
-                <Text style={{ color: 'white', fontWeight: '900' }}>Exit Scope</Text>
-              </Pressable>
+              <PillButton label="Done" onPress={() => props.onSetConsoleOpen(false)} />
             </View>
 
             <ScrollView style={{ marginTop: 14 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 12 }}>
-              <SectionCard title="Current Radar" subtitle={props.mode === 'local' ? 'Local radar context' : 'Broad mosaic context'}>
-                <ConsoleMetric label="Site" value={props.siteTitle} />
-                <ConsoleMetric label="Product" value={props.productLine} />
-                <ConsoleMetric label="Source" value={props.sourceLine} />
-                <ConsoleMetric label="Status" value={props.warningMessage ?? props.loadingMessage ?? props.statusLabel} />
+              <SectionCard title="Radar" subtitle={props.mode === 'local' ? props.metadataLine : 'Broad radar context'}>
+                <SegmentedRow items={sourceToggles} />
+                {localProviderToggles.length ? (
+                  <View style={{ gap: 8 }}>
+                    <Text style={{ color: 'rgba(255,255,255,0.48)', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 }}>
+                      LOCAL SOURCE
+                    </Text>
+                    <SegmentedRow items={localProviderToggles} />
+                  </View>
+                ) : null}
+                <ConsoleMetric label="Status" value={props.warningMessage ?? props.loadingMessage ?? props.sourceLine} />
               </SectionCard>
 
-              <SectionCard title="Radar Source" subtitle="Jump between broad mosaic and local NEXRAD without leaving Storm Scope">
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {props.quickToggles.filter((item) => item.id.startsWith('source-')).map((item) => (
-                    <Pressable
-                      key={`console-toggle-${item.id}`}
-                      onPress={item.onPress}
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 9,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: item.active ? 'rgba(125,211,252,0.30)' : 'rgba(255,255,255,0.09)',
-                        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </SectionCard>
-
-              <SectionCard title="Map Aids" subtitle="Optional context while you inspect storms">
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {props.quickToggles.filter((item) => !item.id.startsWith('source-')).map((item) => (
-                    <Pressable
-                      key={`console-toggle-${item.id}`}
-                      onPress={item.onPress}
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 9,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: item.active ? 'rgba(125,211,252,0.30)' : 'rgba(255,255,255,0.09)',
-                        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </SectionCard>
-
-              <SectionCard title="Products" subtitle="Switch products without reopening the HUD">
-                <View style={{ gap: 8 }}>
+              <SectionCard title="Product" subtitle="Horizontal picker keeps unsupported products out of the way">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
                   {props.products.map((item) => (
-                    <Pressable
-                      key={`console-product-${item.id}`}
-                      onPress={() => handleProductPress(item)}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 12,
-                        borderRadius: 16,
-                        borderWidth: 1,
-                        borderColor: item.active ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
-                        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
-                        opacity: item.available ? 1 : 0.64,
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={{ color: 'white', fontSize: 13, fontWeight: '900' }}>{item.title}</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
-                            {item.loading
-                              ? item.statusLabel ?? 'Loading current scans...'
-                              : item.available
-                                ? item.subtitle
-                                : item.unavailableReason ?? item.statusLabel ?? 'Unavailable right now.'}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                          {item.loading ? <ActivityIndicator size="small" color="#bae6fd" /> : null}
-                          <SmallPill label={item.shortLabel} accent={item.active ? 'cyan' : 'slate'} />
-                        </View>
-                      </View>
-                    </Pressable>
+                    <ProductChip key={item.id} item={item} onPress={() => handleProductPress(item)} />
                   ))}
-                </View>
+                </ScrollView>
+                {notice ? <Notice text={notice} /> : null}
               </SectionCard>
 
-              <SectionCard title="Nearby Radars" subtitle="Use a different radar without recentering the map">
+              <SectionCard title="Overlays" subtitle="Map aids are toggles, separate from radar source">
+                <ToggleWrap items={overlayToggles} />
+              </SectionCard>
+
+              <SectionCard title="Legend" subtitle={legendExpanded ? props.legend.note : `${props.legend.leftLabel} to ${props.legend.rightLabel}`}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12, fontWeight: '900' }}>{props.legend.title}</Text>
+                  <PillButton label={legendExpanded ? 'Less' : 'More'} onPress={() => setLegendExpanded((current) => !current)} />
+                </View>
+                <RadarLegend
+                  style={props.legend.style}
+                  leftLabel={props.legend.leftLabel}
+                  midLabel={props.legend.midLabel}
+                  rightLabel={props.legend.rightLabel}
+                  compact
+                />
+              </SectionCard>
+
+              <SectionCard title="Nearby Radars" subtitle="Pick a station without losing the current map view">
                 <View style={{ gap: 8 }}>
                   {props.radarSites.map((site) => (
-                    <View
-                      key={`storm-site-${site.id}`}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 12,
-                        borderRadius: 16,
-                        borderWidth: 1,
-                        borderColor: site.selected ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
-                        backgroundColor: site.selected ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)',
-                        gap: 8,
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={{ color: 'white', fontSize: 13, fontWeight: '900' }}>{site.title}</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
-                            {site.subtitle}
-                          </Text>
-                        </View>
-                        <SmallPill label={site.distanceLabel} accent="slate" />
-                      </View>
-
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                        <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, fontWeight: '800' }}>
-                          {site.selected ? 'Current radar' : 'Available nearby'}
-                        </Text>
-                        <Pressable onPress={site.onUse} style={{ paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                          <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{site.selected ? 'Using radar' : 'Use radar'}</Text>
-                        </Pressable>
-                      </View>
-                    </View>
+                    <RadarSiteRow key={site.id} site={site} />
                   ))}
                 </View>
               </SectionCard>
 
-              <SectionCard title="Learn" subtitle="Keep product education nearby, not floating over the map">
-                <Pressable onPress={props.onOpenLearn} style={{ paddingVertical: 10, paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
-                  <Text style={{ color: 'white', fontWeight: '900' }}>Open wxLearn for active product</Text>
-                </Pressable>
+              <SectionCard title="More" subtitle="Secondary actions stay out of the normal storm view">
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  <PillButton label="wxLearn" onPress={props.onOpenLearn} />
+                  <PillButton label="Exit Storm Scope" tone="danger" onPress={props.onExitStormScope} />
+                </View>
               </SectionCard>
             </ScrollView>
           </Glass>
         </View>
       </Modal>
     </>
+  );
+}
+
+function CompactHud(props: {
+  ageLabel: string;
+  modeLabel: string;
+  productLabel: string;
+  productLine: string;
+  siteTitle: string;
+  stale: boolean;
+  statusLabel: string;
+  onOpen: () => void;
+}) {
+  return (
+    <Glass
+      style={{
+        minHeight: 74,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 22,
+        backgroundColor: props.stale ? 'rgba(146,64,14,0.28)' : 'rgba(15,23,42,0.20)',
+        width: '100%',
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Pressable onPress={props.onOpen} style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
+              STORM SCOPE
+            </Text>
+            <SmallPill label={props.modeLabel} accent={props.modeLabel === 'LOCAL' ? 'cyan' : 'slate'} />
+            {props.stale ? <SmallPill label={`! ${props.ageLabel}`} accent="amber" /> : null}
+          </View>
+          <Text style={{ color: 'white', fontSize: 17, fontWeight: '900' }} numberOfLines={1}>
+            {props.siteTitle}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '800', marginTop: 3 }} numberOfLines={1}>
+            {props.productLabel} - {props.stale ? props.ageLabel : props.statusLabel}
+          </Text>
+        </Pressable>
+        <PillButton label="..." onPress={props.onOpen} />
+      </View>
+    </Glass>
   );
 }
 
@@ -448,7 +280,7 @@ function SectionCard(props: { title: string; subtitle: string; children: React.R
     >
       <View>
         <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }}>{props.title}</Text>
-        <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '700', marginTop: 3 }}>
+        <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 11, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
           {props.subtitle}
         </Text>
       </View>
@@ -457,35 +289,167 @@ function SectionCard(props: { title: string; subtitle: string; children: React.R
   );
 }
 
+function SegmentedRow(props: { items: QuickToggle[] }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.10)',
+        backgroundColor: 'rgba(2,6,23,0.34)',
+        overflow: 'hidden',
+      }}
+    >
+      {props.items.map((item) => (
+        <Pressable
+          key={item.id}
+          onPress={item.onPress}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            paddingHorizontal: 8,
+            alignItems: 'center',
+            backgroundColor: item.active ? 'rgba(96,165,250,0.24)' : 'transparent',
+          }}
+        >
+          <Text style={{ color: item.active ? 'white' : 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '900' }}>
+            {item.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ToggleWrap(props: { items: QuickToggle[] }) {
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+      {props.items.map((item) => (
+        <Pressable
+          key={item.id}
+          onPress={item.onPress}
+          style={{
+            paddingHorizontal: 10,
+            paddingVertical: 9,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: item.active ? 'rgba(125,211,252,0.30)' : 'rgba(255,255,255,0.09)',
+            backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+          }}
+        >
+          <Text style={{ color: 'white', fontSize: 11, fontWeight: '900' }}>{item.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function ProductChip(props: { item: ProductOption; onPress: () => void }) {
+  const { item } = props;
+  return (
+    <Pressable
+      onPress={props.onPress}
+      style={{
+        width: 116,
+        minHeight: 76,
+        paddingHorizontal: 10,
+        paddingVertical: 10,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: item.active ? 'rgba(125,211,252,0.34)' : 'rgba(255,255,255,0.09)',
+        backgroundColor: item.active ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.04)',
+        opacity: item.available ? 1 : 0.54,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }}>{item.shortLabel}</Text>
+        {item.loading ? <ActivityIndicator size="small" color="#bae6fd" /> : null}
+      </View>
+      <Text style={{ color: 'rgba(255,255,255,0.66)', fontSize: 10, fontWeight: '800', marginTop: 6 }} numberOfLines={2}>
+        {item.loading ? item.statusLabel ?? 'Loading...' : item.available ? item.subtitle : item.statusLabel ?? 'Unavailable'}
+      </Text>
+    </Pressable>
+  );
+}
+
+function RadarSiteRow(props: { site: RadarSiteOption }) {
+  const { site } = props;
+  return (
+    <View
+      style={{
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: site.selected ? 'rgba(125,211,252,0.28)' : 'rgba(255,255,255,0.09)',
+        backgroundColor: site.selected ? 'rgba(96,165,250,0.12)' : 'rgba(255,255,255,0.04)',
+        gap: 8,
+      }}
+    >
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={{ color: 'white', fontSize: 13, fontWeight: '900' }} numberOfLines={1}>
+            {site.title}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
+            {site.subtitle}
+          </Text>
+        </View>
+        <SmallPill label={site.distanceLabel} accent="slate" />
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+        <PillButton label={site.selected ? 'Using radar' : 'Use radar'} onPress={site.onUse} />
+      </View>
+    </View>
+  );
+}
+
 function ConsoleMetric(props: { label: string; value: string }) {
   return (
     <View style={{ gap: 3 }}>
-      <Text style={{ color: 'rgba(255,255,255,0.48)', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>{props.label.toUpperCase()}</Text>
+      <Text style={{ color: 'rgba(255,255,255,0.48)', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 }}>
+        {props.label.toUpperCase()}
+      </Text>
       <Text style={{ color: 'white', fontSize: 13, fontWeight: '800' }}>{props.value}</Text>
     </View>
   );
 }
 
-function Eyebrow(props: { label: string }) {
-  return <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>{props.label}</Text>;
+function Notice(props: { text: string }) {
+  return (
+    <View
+      style={{
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(251,191,36,0.22)',
+        backgroundColor: 'rgba(120,53,15,0.18)',
+      }}
+    >
+      <Text style={{ color: 'rgba(255,255,255,0.90)', fontSize: 11, fontWeight: '700' }}>{props.text}</Text>
+    </View>
+  );
 }
 
-function IconButton(props: { label: string; onPress: () => void; wide?: boolean }) {
+function PillButton(props: { label: string; onPress: () => void; tone?: 'default' | 'danger' }) {
+  const danger = props.tone === 'danger';
   return (
     <Pressable
       onPress={props.onPress}
       style={{
-        width: props.wide ? 52 : 34,
-        height: 34,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
         borderRadius: 999,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
-        backgroundColor: 'rgba(255,255,255,0.04)',
+        borderColor: danger ? 'rgba(251,191,36,0.22)' : 'rgba(255,255,255,0.10)',
+        backgroundColor: danger ? 'rgba(120,53,15,0.14)' : 'rgba(255,255,255,0.04)',
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <Text style={{ color: 'white', fontSize: 13, fontWeight: '900' }}>{props.label}</Text>
+      <Text style={{ color: 'white', fontSize: 12, fontWeight: '900' }}>{props.label}</Text>
     </Pressable>
   );
 }
