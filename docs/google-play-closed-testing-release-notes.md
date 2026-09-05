@@ -18,7 +18,7 @@ Please focus testing on Maps and regression safety:
 - Confirm MRMS timestamps look current and are not shown as future local times.
 - Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
 - Confirm MRMS playback feels smoother and less like a hard tile/frame flip when multiple frames are available.
-- Confirm MRMS loads production Worker/R2 tiles through z10 inside the US beta footprint.
+- Confirm MRMS loads production Worker/R2 tiles through the current production zoom ceiling inside the US beta footprint.
 - Confirm forced `MRMS` shows owned NOAA MRMS when the production timeline is fresh.
 - Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.

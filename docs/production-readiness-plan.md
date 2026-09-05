@@ -1,8 +1,10 @@
 # OMNIwx Production Readiness Plan
 
-Last updated: August 13, 2026
+Last updated: September 5, 2026
 
 This plan organizes the security, paid-customer, infrastructure, and Storm Scope notes into one execution path. It is intentionally practical: protect what exists, keep the app lovable, and add commercial capability only after the trust foundation is real.
+
+For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](C:/Users/andym_au640pp/weather-app/docs/current-status.md).
 
 ## North Star
 
@@ -23,8 +25,8 @@ Do not add RevenueCat, Clerk, or production billing yet.
 Build the foundation in this order:
 
 1. Secure the existing Cloudflare Worker and deployment posture.
-2. Add D1 migration/schema support for future user data.
-3. Keep radar work focused on MRMS-auto broad radar and Storm Scope UX.
+2. Keep D1 prepared for future user data, but out of the default radar path while free-tier row limits matter.
+3. Keep radar work focused on owned MRMS broad radar, Storm Scope UX, and future NOAA Level III local products.
 4. Add accounts only after backend security and D1 are ready.
 5. Add paid subscriptions only after account sync works.
 

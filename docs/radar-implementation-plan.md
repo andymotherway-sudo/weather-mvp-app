@@ -92,8 +92,11 @@ Cost posture:
 Operational note:
 
 - MRMS is kept fresh by the scheduled `MRMS radar cycle` GitHub workflow.
-- The beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=8`, `retain_frames=12`, and `backfill_frames=1`.
+- The intended beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=8`, `retain_frames=12`, and `backfill_frames=2`.
+- GitHub scheduled workflow timing can vary, so MRMS freshness must be validated from the live timeline rather than assumed from the cron expression.
+- Scheduled runs fail if the live timeline does not expose the expected zoom or minimum frame count after publish.
 - Manual z10 publishes remain available for QA, but scheduled z10 should wait for upload retry/resume protection because one z10 frame can require 6k+ R2 object writes.
+- Use the `MRMS z10 safety check` workflow for dry-run z10 render sizing before applying any z10 publish to R2.
 - If the production timeline is older than the app freshness window, `MRMS auto` intentionally falls back to RainViewer.
 - For beta testing deeper history, manually run the `MRMS radar cycle` GitHub workflow against `production` with `apply=true`, `max_zoom=10`, `retain_frames=12`, and `backfill_frames=2-3`, then verify the production timeline newest frame age.
 - Do not confuse a healthy fallback with MRMS rendering: if the status says `Auto fallback`, MRMS is stale or warming and users are seeing RainViewer.
@@ -147,6 +150,7 @@ Goal: add radar tools RainViewer does not give us, without multiplying storage b
 Candidate product order:
 
 - Composite reflectivity: already first.
+- Lowest-altitude reflectivity.
 - Echo tops or height/echo-top style products.
 - Surface precipitation rate.
 - Short-duration precipitation accumulation.
@@ -156,6 +160,8 @@ Implementation:
 
 - Add one MRMS product at a time.
 - Start each product at low zoom or low retention.
+- The MRMS cycle workflow can now be manually run for `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, or `PrecipRate`.
+- The renderer has product-aware palettes for reflectivity, echo tops, and precip rate.
 - Use separate prefixes:
   - `radar/mrms/proof/<product>/<frame>/...`
   - `radar/mrms/latest/<product>.json`
@@ -280,13 +286,13 @@ Paid-customer cadence:
 
 ## Immediate Next Steps
 
-1. Keep the 1.1.245 local NEXRAD restoration release moving so testers are not stuck on broken station products.
-2. Use `backfill_frames=3` as the current maximum z10 backfill until render performance improves.
-3. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
-4. Verify the bounded storage-history sample appears after the next applied cycle or maintenance run.
-5. Verify MRMS-auto across several US regions in internal testing.
-6. Run Level III product discovery for `IWA`, `MPX`, `DLH`, and one storm-active central/southeast station before building any owned local cache.
-7. Add the first MRMS product candidate research spike: echo tops vs precipitation rate.
+1. Let the scheduled z8 MRMS cycle run several times and verify the timeline keeps at least two fresh same-quality frames.
+2. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
+3. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
+4. Run `NEXRAD Level III inventory` for `IWA`, `MPX`, `DLH`, and one storm-active central/southeast station before building any owned local cache.
+5. Keep local NEXRAD fallback reliable in the current release line so testers are not stuck on broken station products while owned Level III work continues.
+6. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
+7. Verify MRMS-auto across several US regions in internal testing.
 8. Keep RainViewer fallback active until Phase 4 hardening gates pass.
 
 ## Decision Log

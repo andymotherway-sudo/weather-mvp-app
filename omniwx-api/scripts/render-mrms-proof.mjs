@@ -14,6 +14,7 @@ function parseArgs(argv) {
   const args = {
     input: resolve(REPO_ROOT, "tmp/mrms/MRMS_ReflectivityAtLowestAltitude.latest.grib2.gz"),
     output: resolve(REPO_ROOT, "tmp/mrms/MRMS_ReflectivityAtLowestAltitude.proof.png"),
+    product: "ReflectivityAtLowestAltitude",
     maxWidth: 1400,
     pydeps: DEFAULT_PYDEPS,
     python: process.env.OMNIWX_PYTHON || null,
@@ -23,6 +24,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--input" && argv[i + 1]) args.input = resolve(argv[++i]);
     else if (arg === "--output" && argv[i + 1]) args.output = resolve(argv[++i]);
+    else if (arg === "--product" && argv[i + 1]) args.product = argv[++i];
     else if (arg === "--max-width" && argv[i + 1]) {
       const parsed = Number(argv[++i]);
       if (Number.isFinite(parsed)) args.maxWidth = Math.max(256, Math.min(7000, Math.floor(parsed)));
@@ -43,6 +45,7 @@ function printHelp() {
 Options:
   --input <path>       Input .grib2 or .grib2.gz file
   --output <path>      Output transparent PNG proof
+  --product <name>     MRMS product label for palette selection. Default: ReflectivityAtLowestAltitude
   --max-width <px>     Downsampled proof width. Default: 1400
   --pydeps <path>      Python dependency directory. Default: ../tmp/mrms-pydeps
   --python <path>      Python executable. Also supports OMNIWX_PYTHON
@@ -71,6 +74,7 @@ function runPython(args) {
       PY_SCRIPT,
       "--input", args.input,
       "--output", args.output,
+      "--product", args.product,
       "--max-width", String(args.maxWidth),
     ], {
       cwd: REPO_ROOT,

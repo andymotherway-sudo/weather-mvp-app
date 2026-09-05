@@ -1,12 +1,14 @@
 # Full Release Path
 
-This is the standard OMNIwx release path as of August 13, 2026.
+This is the standard OMNIwx release path as of September 5, 2026.
 
 It exists to prevent one easy mistake:
 
 - uploading an internal-testing AAB that still points at a dev backend
 
 Because OMNIwx can only be fully validated through Google Play internal testing, the internal-testing release should be treated as the real staging gate. That means backend and app environment choices must be deliberate.
+
+Before starting a release, compare the intended change against [current-status.md](C:/Users/andym_au640pp/weather-app/docs/current-status.md) so stale planning notes do not drive a production build.
 
 ## Environment Roles
 

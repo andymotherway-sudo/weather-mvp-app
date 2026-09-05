@@ -1,5 +1,5 @@
 name: MRMS radar cycle
-run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '8' }} backfill=${{ github.event.inputs.backfill_frames || '1' }}
+run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} ${{ github.event.inputs.product || 'MergedReflectivityQCComposite' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '8' }} backfill=${{ github.event.inputs.backfill_frames || '2' }}
 
 on:
   schedule:
@@ -16,6 +16,16 @@ on:
         options:
           - production
           - dev
+      product:
+        description: "MRMS product"
+        required: true
+        default: "MergedReflectivityQCComposite"
+        type: choice
+        options:
+          - "MergedReflectivityQCComposite"
+          - "ReflectivityAtLowestAltitude"
+          - "EchoTop_18"
+          - "PrecipRate"
       apply:
         description: "Write to R2"
         required: true
@@ -92,10 +102,12 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       MRMS_TARGET_ENV: ${{ github.event.inputs.target_env || 'production' }}
+      MRMS_PRODUCT: ${{ github.event.inputs.product || 'MergedReflectivityQCComposite' }}
       MRMS_MIN_ZOOM: ${{ github.event.inputs.min_zoom || '3' }}
       MRMS_MAX_ZOOM: ${{ github.event.inputs.max_zoom || '8' }}
       MRMS_RETAIN_FRAMES: ${{ github.event.inputs.retain_frames || '12' }}
-      MRMS_BACKFILL_FRAMES: ${{ github.event.inputs.backfill_frames || '1' }}
+      MRMS_BACKFILL_FRAMES: ${{ github.event.inputs.backfill_frames || '2' }}
+      MRMS_MIN_TIMELINE_FRAMES: ${{ github.event_name == 'schedule' && '2' || '1' }}
       MRMS_MAX_FRAME_AGE_MINUTES: ${{ github.event.inputs.max_frame_age_minutes || '360' }}
       MRMS_APPLY: ${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply }}
       MRMS_SMOKE_BASE_URL: ${{ github.event.inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
@@ -142,11 +154,13 @@ jobs:
         shell: bash
         run: |
           echo "target_env=$MRMS_TARGET_ENV"
+          echo "product=$MRMS_PRODUCT"
           echo "apply=$MRMS_APPLY"
           echo "min_zoom=$MRMS_MIN_ZOOM"
           echo "max_zoom=$MRMS_MAX_ZOOM"
           echo "retain_frames=$MRMS_RETAIN_FRAMES"
           echo "backfill_frames=$MRMS_BACKFILL_FRAMES"
+          echo "min_timeline_frames=$MRMS_MIN_TIMELINE_FRAMES"
           echo "max_frame_age_minutes=$MRMS_MAX_FRAME_AGE_MINUTES"
           if [ "$MRMS_APPLY" != "true" ]; then
             echo "::warning::This is a dry-run. It will render MRMS but will not write to R2 or advance the live app timeline."
@@ -160,6 +174,7 @@ jobs:
         run: |
           args=(
             --env "$MRMS_TARGET_ENV"
+            --product "$MRMS_PRODUCT"
             --min-z "$MRMS_MIN_ZOOM"
             --max-z "$MRMS_MAX_ZOOM"
             --max-tiles 12000
@@ -180,15 +195,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error "$MRMS_SMOKE_BASE_URL/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite" > /tmp/mrms-timeline.json
+          curl --fail --silent --show-error "$MRMS_SMOKE_BASE_URL/v1/radar/mrms/timeline?product=$MRMS_PRODUCT" > /tmp/mrms-timeline.json
           node - <<'NODE'
           const fs = require("node:fs");
           const timeline = JSON.parse(fs.readFileSync("/tmp/mrms-timeline.json", "utf8"));
+          const requestedMaxZoom = Number(process.env.MRMS_MAX_ZOOM || 0);
+          const minTimelineFrames = Number(process.env.MRMS_MIN_TIMELINE_FRAMES || 1);
           if (!timeline.ok) throw new Error("MRMS timeline did not report ok");
-          const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
+          const frames = Array.isArray(timeline.frames) ? timeline.frames : [];
+          const frame = frames[0] || null;
           if (!frame) throw new Error("MRMS timeline has no frames");
+          if (frames.length < minTimelineFrames) {
+            throw new Error(`MRMS timeline has ${frames.length} frame(s), expected at least ${minTimelineFrames}`);
+          }
           if (frame.tileDelivery !== "worker-r2") {
             throw new Error(`MRMS tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
+          }
+          if (requestedMaxZoom && Number(timeline.maxZoom || frame.maxZoom || 0) < requestedMaxZoom) {
+            throw new Error(`MRMS maxZoom is ${timeline.maxZoom || frame.maxZoom}, expected at least ${requestedMaxZoom}`);
           }
           const validTimeMs = Date.parse(String(frame.validTime || frame.time || ""));
           if (!Number.isFinite(validTimeMs)) {
@@ -217,7 +241,7 @@ jobs:
           set -euo pipefail
           npm --silent run mrms:storage-status -- \
             --env "$MRMS_TARGET_ENV" \
-            --product MergedReflectivityQCComposite \
+            --product "$MRMS_PRODUCT" \
             --fail-storage-mb 5120 \
             --fail-stale-objects 0 \
             --write-history \

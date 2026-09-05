@@ -1,0 +1,85 @@
+name: MRMS z10 safety check
+run-name: MRMS z10 safety ${{ inputs.product || 'MergedReflectivityQCComposite' }} backfill=${{ inputs.backfill_frames || '1' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "MRMS product"
+        required: true
+        default: "MergedReflectivityQCComposite"
+        type: choice
+        options:
+          - "MergedReflectivityQCComposite"
+          - "ReflectivityAtLowestAltitude"
+          - "EchoTop_18"
+          - "PrecipRate"
+      backfill_frames:
+        description: "Newest frames to dry-run"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+
+permissions:
+  contents: read
+
+jobs:
+  assess:
+    name: Dry-run z10 render without R2 writes
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      MRMS_PRODUCT: ${{ inputs.product || 'MergedReflectivityQCComposite' }}
+      MRMS_BACKFILL_FRAMES: ${{ inputs.backfill_frames || '1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ecCodes system library
+        run: sudo apt-get update && sudo apt-get install -y libeccodes0 libeccodes-dev
+        working-directory: .
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install MRMS Python dependencies
+        run: python -m pip install --target ../tmp/mrms-pydeps cfgrib eccodes xarray numpy pillow
+
+      - name: Dry-run z10 MRMS cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run mrms:cycle -- \
+            --env production \
+            --product "$MRMS_PRODUCT" \
+            --min-z 3 \
+            --max-z 10 \
+            --max-tiles 12000 \
+            --retain-frames 12 \
+            --backfill-frames "$MRMS_BACKFILL_FRAMES" \
+            --max-frame-age-minutes 360 \
+            --min-retained-max-z 10 \
+            --sampling bilinear \
+            --uploader s3

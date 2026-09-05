@@ -130,7 +130,7 @@ Apply only after the dry run shows the expected small z3-z4 manifest:
 npm run mrms:publish-proof -- --apply
 ```
 
-Current dev publish status:
+Historical proof publish status:
 
 - Uploaded 12 z3-z4 composite proof tiles plus one manifest to dev R2.
 - Prefix: `radar/mrms/proof/MergedReflectivityQCComposite/20260727T131600/`
@@ -141,8 +141,8 @@ Current dev publish status:
 - Tile: `/v1/radar/mrms/proof/tiles/{z}/{x}/{y}.png?product=MergedReflectivityQCComposite&frame=20260727T131600`
 - Stable timeline: `/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite`
 - Stable tile: `/v1/radar/mrms/tiles/{z}/{x}/{y}.png?product=MergedReflectivityQCComposite`
-- Production keeps `MRMS_PROOF_ENABLED=0`, so this is not user-facing.
-- Production keeps `MRMS_ENABLED=0`, so stable MRMS is not user-facing either.
+- This section describes the original dev proof, not the current production posture.
+- Current production MRMS is enabled through the stable timeline path when healthy, with RainViewer fallback when stale, warming, missing, disabled, or outside scope.
 
 Validated proof tile:
 
@@ -376,7 +376,16 @@ npm run mrms:cleanup-retained -- --env production --uploader s3 --apply
 
 ## GitHub Actions job runner
 
-The first repeatable production job runner is `.github/workflows/mrms-radar-cycle.yml`. It is manual-run only while we are holding Cloudflare cost at zero.
+The first repeatable production job runner is `.github/workflows/mrms-radar-cycle.yml`. It now supports both scheduled bounded production runs and manual QA/backfill runs while we are holding Cloudflare cost near zero.
+
+Current routine production posture:
+
+- Scheduled runs publish bounded MRMS frames to production R2.
+- Scheduled runs use z3-z8 by default, publish a small backfill, retain a small rolling history, smoke-check the live timeline, and run cleanup.
+- GitHub schedule execution can drift, so the app must still treat stale MRMS as fallback-worthy.
+- Manual runs remain the safer path for z10 QA and deeper backfill until upload retry/resume and storage measurements are consistently boring.
+- `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
+- `NEXRAD Level III inventory` gives repeatable read-only station/product availability checks before owned local cache work.
 
 Cost-control guardrails:
 

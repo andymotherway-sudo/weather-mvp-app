@@ -11,7 +11,7 @@ from PIL import Image
 import xarray as xr
 
 
-COLOR_STOPS = [
+REFLECTIVITY_COLOR_STOPS = [
     (-32.0, (0, 0, 0, 0)),
     (5.0, (44, 150, 255, 72)),
     (15.0, (50, 210, 95, 122)),
@@ -22,11 +22,34 @@ COLOR_STOPS = [
     (65.0, (255, 255, 255, 250)),
 ]
 
+ECHO_TOP_COLOR_STOPS = [
+    (-1.0, (0, 0, 0, 0)),
+    (5.0, (65, 170, 255, 72)),
+    (15.0, (50, 210, 140, 124)),
+    (25.0, (245, 222, 60, 176)),
+    (35.0, (250, 138, 44, 210)),
+    (45.0, (232, 54, 72, 232)),
+    (55.0, (176, 68, 220, 244)),
+    (65.0, (255, 255, 255, 250)),
+]
+
+PRECIP_RATE_COLOR_STOPS = [
+    (-0.01, (0, 0, 0, 0)),
+    (0.2, (54, 156, 255, 64)),
+    (1.0, (45, 205, 120, 112)),
+    (3.0, (152, 215, 44, 150)),
+    (8.0, (250, 220, 64, 190)),
+    (16.0, (250, 142, 42, 220)),
+    (32.0, (228, 48, 60, 240)),
+    (64.0, (190, 72, 230, 250)),
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Render a downsampled transparent MRMS proof PNG.")
     parser.add_argument("--input", required=True, help="Input .grib2 or .grib2.gz path")
     parser.add_argument("--output", required=True, help="Output PNG path")
+    parser.add_argument("--product", default="MergedReflectivityQCComposite", help="MRMS product label")
     parser.add_argument("--max-width", type=int, default=1400, help="Downsampled proof width")
     return parser.parse_args()
 
@@ -42,12 +65,22 @@ def decompressed_path(input_path: Path):
     return temp_path, temp_path
 
 
-def colorize(values: np.ndarray) -> np.ndarray:
+def product_palette(product: str):
+    normalized = (product or "").lower()
+    if "echotop" in normalized:
+        return ECHO_TOP_COLOR_STOPS, 5.0
+    if "preciprate" in normalized:
+        return PRECIP_RATE_COLOR_STOPS, 0.2
+    return REFLECTIVITY_COLOR_STOPS, 5.0
+
+
+def colorize(values: np.ndarray, product: str = "MergedReflectivityQCComposite") -> np.ndarray:
+    stops, minimum_visible = product_palette(product)
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
     valid = np.isfinite(values)
-    for lower, color in COLOR_STOPS:
+    for lower, color in stops:
         rgba[(values >= lower) & valid] = color
-    rgba[(values < 5) | ~valid] = (0, 0, 0, 0)
+    rgba[(values < minimum_visible) | ~valid] = (0, 0, 0, 0)
     return rgba
 
 
@@ -75,7 +108,7 @@ def main():
         max_width = max(256, min(args.max_width, data.shape[1]))
         stride = max(1, int(np.ceil(data.shape[1] / max_width)))
         sampled = data[::stride, ::stride]
-        image = Image.fromarray(colorize(sampled), "RGBA")
+        image = Image.fromarray(colorize(sampled, args.product), "RGBA")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         image.save(output_path)
 
@@ -83,6 +116,7 @@ def main():
             "ok": True,
             "input": str(input_path),
             "output": str(output_path),
+            "product": args.product,
             "variable": variable_name,
             "sourceShape": list(data.shape),
             "proofShape": [image.height, image.width],

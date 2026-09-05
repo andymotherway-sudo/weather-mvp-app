@@ -16,7 +16,7 @@ Cost guardrail:
 - D1 databases:
   - dev: `omniwx-dev`
   - prod: `omniwx-prod`
-- Scheduled ingest scaffold already writing radar manifests into D1
+- D1 is provisioned for future metadata, account, entitlement, and compatibility use, but radar D1 reads/writes should stay disabled by default while free-tier limits are a concern.
 
 ## What is live now
 
@@ -29,6 +29,7 @@ Cost guardrail:
 - D1 radar reads/writes are opt-in to protect the free daily row budget.
 - MRMS tile publishing uses R2 for rendered non-empty tiles.
 - MRMS timeline/control-plane reads remain Worker-mediated.
+- Scheduled MRMS runs publish a small z8 backfill by default so history can improve without turning z10 into the default.
 - Legacy RainViewer-backed overview image publishing is disabled during the MRMS pivot.
 - MRMS downloads validate gzip integrity and retry transient partial NOAA responses before rendering.
 
@@ -72,8 +73,8 @@ Guardrails:
 
 ## The order to do this in
 
-1. Keep D1 as the rolling manifest control plane.
-2. Keep R2 timeline publishing on the stable latest key.
+1. Keep R2 timeline publishing on the stable latest key.
+2. Keep D1 out of the active radar request path unless we intentionally enable it for a measured paid-tier/control-plane use case.
 3. Expand owned image coverage cautiously:
    - first by zoom level
    - then by history-frame depth
@@ -82,7 +83,8 @@ Guardrails:
 
 ## Why this is the right shape
 
-- D1 remains the fast metadata/control plane.
+- R2 plus the Worker timeline route are the current radar metadata/control path.
+- D1 remains available for future account, entitlement, saved-user-data, and measured metadata use.
 - R2 becomes the cheap blob store for radar artifacts.
 - The Worker stays the stable API edge for the app.
 - This supports thousands of users now and gives a real path toward much larger scale later without forcing Open-Meteo commercial just to fix radar infrastructure.
@@ -129,6 +131,7 @@ That means:
 - legacy national overview PNG publishing is off
 - owned local single-site radar cache is off unless intentionally enabled
 - future expansion should increase one axis at a time
+- z10 should be promoted only after dry-run safety checks and applied storage samples prove it stays well under the current storage ceiling
 
 During the MRMS pivot, local single-site tile accumulation stays off by default. The app can still request local radar through the worker and external fallback path, but exploratory local radar use should not write RIDGE tiles into R2 unless `RADAR_R2_LOCAL_TILE_CACHE_ENABLED=1` is intentionally enabled.
 

@@ -1,0 +1,103 @@
+name: NEXRAD Level III inventory
+run-name: Level III inventory ${{ inputs.sites || 'IWA,MPX,DLH,TLX,CAE' }} ${{ inputs.products || 'N0B,N0S,EET' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sites:
+        description: "Comma-separated 3-letter Level III station ids"
+        required: true
+        default: "IWA,MPX,DLH,TLX,CAE"
+      products:
+        description: "Comma-separated Level III products"
+        required: true
+        default: "N0B,N0S,EET"
+      days:
+        description: "UTC days to inspect"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+      all_nexrad:
+        description: "Sample from the app NEXRAD catalog instead of explicit sites"
+        required: true
+        default: false
+        type: boolean
+      max_sites:
+        description: "Safety cap when all_nexrad=true"
+        required: true
+        default: "30"
+        type: choice
+        options:
+          - "10"
+          - "30"
+          - "60"
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Inventory NOAA Level III availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run Level III inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --sites "${{ inputs.sites }}"
+            --products "${{ inputs.products }}"
+            --days "${{ inputs.days }}"
+            --max-sites "${{ inputs.max_sites }}"
+            --json
+          )
+          if [ "${{ inputs.all_nexrad }}" = "true" ]; then
+            args+=(--all-nexrad)
+          fi
+          npm --silent run level3:inventory -- "${args[@]}" > /tmp/level3-inventory.json
+          cat /tmp/level3-inventory.json
+          node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const fs = require("node:fs");
+          const data = JSON.parse(fs.readFileSync("/tmp/level3-inventory.json", "utf8"));
+          const lines = [
+            "## NOAA NEXRAD Level III inventory",
+            "",
+            `- Sites inspected: ${data.siteCount}`,
+            `- Products: ${data.productCodes.join(", ")}`,
+            `- Days: ${data.days}`,
+            "",
+            "| Site | Product availability |",
+            "| --- | --- |",
+          ];
+          for (const site of data.sites) {
+            const cells = site.products.map((product) => {
+              const newest = product.newestTime ? product.newestTime.replace("T", " ").replace("Z", "Z") : "none";
+              return `${product.product}: ${product.frameCount} frame(s), newest ${newest}`;
+            }).join("<br>");
+            lines.push(`| ${site.site} | ${cells} |`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
+          NODE

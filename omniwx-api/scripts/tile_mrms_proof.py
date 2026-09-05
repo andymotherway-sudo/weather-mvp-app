@@ -125,7 +125,7 @@ def tile_bounds_for_raster(latitudes, longitudes, z):
     return west, south, east, north, min_x, max_x, min_y, max_y
 
 
-def render_tile(data, latitudes, longitudes, z, x, y, tile_size, sampling):
+def render_tile(data, latitudes, longitudes, z, x, y, tile_size, sampling, product):
     n = 2 ** z
     px = np.arange(tile_size, dtype=np.float64)
     py = np.arange(tile_size, dtype=np.float64)
@@ -136,7 +136,7 @@ def render_tile(data, latitudes, longitudes, z, x, y, tile_size, sampling):
     tile_lats_1d = np.degrees(np.arctan(np.sinh(mercator)))
     tile_lons, tile_lats = np.meshgrid(tile_lons_1d, tile_lats_1d)
     sampled = sample_raster(data, latitudes, longitudes, tile_lons, tile_lats, sampling)
-    return Image.fromarray(colorize(sampled), "RGBA")
+    return Image.fromarray(colorize(sampled, product), "RGBA")
 
 
 def main():
@@ -174,7 +174,7 @@ def main():
             manifest["bounds"] = {"west": west, "south": south, "east": east, "north": north}
             for x in range(min_x, max_x + 1):
                 for y in range(min_y, max_y + 1):
-                    tile = render_tile(data, latitudes, longitudes, z, x, y, args.tile_size, args.sampling)
+                    tile = render_tile(data, latitudes, longitudes, z, x, y, args.tile_size, args.sampling, args.product)
                     if not np.asarray(tile.getchannel("A")).any():
                         continue
                     path = output_dir / str(z) / str(x) / f"{y}.png"
