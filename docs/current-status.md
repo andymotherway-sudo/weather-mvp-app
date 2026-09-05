@@ -6,10 +6,10 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Product
 
-- Current app release line: `1.1.247`
-- Current Android version code: `10264`
+- Current app release line: `1.1.248`
+- Current Android version code: `10265`
 - Internal testing is the active release channel.
-- The latest local AAB is still the `10264` bundle unless a new full release path run builds a newer one.
+- The latest release slice targets a fresh `10265` AAB once the full release path build completes.
 
 ## Backend
 
@@ -53,6 +53,8 @@ This file is the short source of truth for where the product and infrastructure 
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready, but inventory and a first bounded R2 proof cycle can now be run repeatably in GitHub Actions.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
+- Local NEXRAD/IEM tile-template generation was fixed on September 5, 2026 so MapLibre receives literal `{z}/{x}/{y}` placeholders instead of encoded `%7Bz%7D` paths.
+- IEM local product fallback now prefers current `N0B` reflectivity and `N0S` velocity scan history before older streams that may return empty lists.
 
 ## Latest Radar Evidence
 

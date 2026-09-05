@@ -57,18 +57,20 @@ export function iemNationalMosaicTimestamps() {
 }
 
 function iemMosaicTileTemplate(product: RadarProductId, stamp: string) {
-  const u = new URL(`${API_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
-  u.searchParams.set('product', product);
-  u.searchParams.set('stamp', stamp);
-  return u.toString();
+  const params = new URLSearchParams();
+  params.set('product', product);
+  params.set('stamp', stamp);
+  // Do not pass tile placeholders through URL.toString(); it percent-encodes
+  // {z}/{x}/{y}, which prevents MapLibre from substituting real tile coords.
+  return `${API_BASE.replace(/\/+$/, '')}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png?${params.toString()}`;
 }
 
 function iemRidgeTileTemplate(radarId3: string, product: RadarProductId, ts: string) {
-  const u = new URL(`${API_BASE}/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png`);
-  u.searchParams.set('radar', radarId3);
-  u.searchParams.set('product', product);
-  u.searchParams.set('ts', ts);
-  return u.toString();
+  const params = new URLSearchParams();
+  params.set('radar', radarId3);
+  params.set('product', product);
+  params.set('ts', ts);
+  return `${API_BASE.replace(/\/+$/, '')}/v1/radar/iem/ridge/tiles/{z}/{x}/{y}.png?${params.toString()}`;
 }
 
 function canonicalRidgeProduct(product: RadarProductId): RadarProductId {
@@ -244,11 +246,11 @@ async function fetchRidgeWithProductFallback(args: {
 
   const order: RadarProductId[] =
     preferred === 'N0Q'
-      ? ['N0Q', 'N0B', 'N0Z']
+      ? ['N0B', 'N0Q', 'N0Z']
       : preferred === 'N0B'
-        ? ['N0Q', 'N0B', 'N0Z']
+        ? ['N0B', 'N0Q', 'N0Z']
         : preferred === 'N0U'
-          ? ['N0U', 'N0S', 'N0Z']
+          ? ['N0S', 'N0U', 'N0Z']
           : preferred === 'N0S'
             ? ['N0S', 'N0U', 'N0Z']
           : preferred === 'EET'

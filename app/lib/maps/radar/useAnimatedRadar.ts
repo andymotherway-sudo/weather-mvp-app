@@ -7,10 +7,10 @@ const IEM_FRAMES: readonly IemFrame[] = ['m50m', 'm45m', 'm40m', 'm35m', 'm30m',
 
 function iemFrameTemplate(frame: IemFrame) {
   const stamp = frame === 'latest' ? '900913' : `900913-${frame}`;
-  const u = new URL(`${API_BASE}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png`);
-  u.searchParams.set('product', 'N0Q');
-  u.searchParams.set('stamp', stamp);
-  return u.toString();
+  const params = new URLSearchParams();
+  params.set('product', 'N0Q');
+  params.set('stamp', stamp);
+  return `${API_BASE.replace(/\/+$/, '')}/v1/radar/iem/mosaic/tiles/{z}/{x}/{y}.png?${params.toString()}`;
 }
 
 export type RadarFront = 'A' | 'B';
