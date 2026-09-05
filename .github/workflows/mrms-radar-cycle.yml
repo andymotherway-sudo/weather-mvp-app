@@ -83,7 +83,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mrms-radar-cycle-${{ github.event.inputs.target_env || 'production' }}
+  group: mrms-radar-cycle-${{ github.event.inputs.target_env || 'production' }}-${{ github.event.inputs.product || 'MergedReflectivityQCComposite' }}
   cancel-in-progress: true
 
 jobs:
