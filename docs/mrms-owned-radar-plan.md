@@ -343,12 +343,14 @@ Owned local Level III now mirrors the MRMS proof pattern at a smaller station/pr
 - Tile route: `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`
 - Missing sparse tiles return cacheable transparent PNGs instead of noisy tile errors.
 - `NEXRAD Level III proof cycle` can dry-run or publish one site/product proof with bounded zoom, retention, and tile-count caps.
+- Applied publishes delete stale frame objects under that station/product prefix after the retained playlist is written, so Level III proofs stay rolling instead of archival.
 
 Initial production proof posture:
 
 - Use `IWA N0B` first because Phoenix/Mesa is the main tester market.
 - Keep `retain_frames=3` until repeated runs prove cleanup/storage behavior.
 - Keep `max_zoom=10`, `max_tiles=2000`, and `supersample=1` for the zero-cost beta proof.
+- Keep cleanup enabled and capped with `--max-deletes` so a bad config cannot delete outside the scoped station/product prefix.
 - Keep IEM/RIDGE local fallback in the app until owned Level III has smooth multi-frame playback.
 
 First production proof evidence:

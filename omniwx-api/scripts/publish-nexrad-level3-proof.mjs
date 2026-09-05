@@ -19,6 +19,7 @@ function parseArgs(argv) {
     retainFrames: 3,
     maxFrameAgeMinutes: 360,
     uploadConcurrency: 6,
+    maxDeletes: 1000,
     dryRun: true,
   };
 
@@ -32,6 +33,7 @@ function parseArgs(argv) {
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.min(12, Math.floor(Number(argv[++i]) || args.retainFrames)));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
+    else if (arg === "--max-deletes" && argv[i + 1]) args.maxDeletes = Math.max(0, Math.floor(Number(argv[++i]) || args.maxDeletes));
     else if (arg === "--apply") args.dryRun = false;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -56,6 +58,7 @@ Options:
   --retain-frames <n>            Latest playlist retention count. Default: 3
   --max-frame-age-minutes <n>    Drop retained frames older than this. Default: 360
   --upload-concurrency <n>       S3 upload concurrency. Default: 6
+  --max-deletes <n>              Cleanup safety cap. Default: 1000
   --apply                        Actually write to R2
 `);
 }
@@ -152,6 +155,45 @@ async function uploadObjects(client, bucket, uploads, concurrency) {
   await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), uploads.length) }, () => worker()));
 }
 
+async function listKeys(client, bucket, prefix) {
+  const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+  const keys = [];
+  let ContinuationToken;
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      ContinuationToken,
+    }));
+    for (const object of response.Contents ?? []) {
+      if (object.Key) keys.push(object.Key);
+    }
+    ContinuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (ContinuationToken);
+  return keys;
+}
+
+function frameFromKey(prefixRoot, key) {
+  const normalizedRoot = prefixRoot.replace(/\/+$/g, "");
+  const normalizedKey = String(key || "");
+  if (!normalizedKey.startsWith(`${normalizedRoot}/`)) return null;
+  const rest = normalizedKey.slice(normalizedRoot.length + 1);
+  const frame = rest.split("/")[0];
+  return /^[0-9A-Za-z]{8,32}$/.test(frame) ? frame : null;
+}
+
+async function deleteKeys(client, bucket, keys, concurrency) {
+  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < keys.length) {
+      const index = nextIndex++;
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys[index] }));
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), keys.length) }, () => worker()));
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const manifest = JSON.parse(await readFile(args.manifest, "utf8"));
@@ -205,6 +247,7 @@ async function main() {
       return newestMs - entryMs <= args.maxFrameAgeMinutes * 60_000;
     })
     .slice(0, args.retainFrames);
+  const retainedFrameIds = new Set(frames.map((entry) => entry.frame).filter(Boolean));
 
   const latestManifest = {
     ok: true,
@@ -253,6 +296,7 @@ async function main() {
     framePrefix,
     latestKey,
     retainFrames: args.retainFrames,
+    retainedFrameIds: Array.from(retainedFrameIds),
     uploadCount: uploads.length,
     tileCount: tiles.length,
     totalBytes: manifest.totalBytes,
@@ -260,7 +304,30 @@ async function main() {
     uploads: uploads.slice(0, 20),
   }, null, 2));
 
-  if (!args.dryRun) await uploadObjects(client, args.bucket, uploads, args.uploadConcurrency);
+  if (args.dryRun) return;
+
+  await uploadObjects(client, args.bucket, uploads, args.uploadConcurrency);
+
+  const prefixRoot = `${args.prefix}/${site}/${product}`;
+  const existingKeys = await listKeys(client, args.bucket, `${prefixRoot}/`);
+  const staleKeys = existingKeys.filter((key) => {
+    const keyFrame = frameFromKey(prefixRoot, key);
+    return keyFrame && !retainedFrameIds.has(keyFrame);
+  });
+
+  if (staleKeys.length > args.maxDeletes) {
+    throw new Error(`Refusing to delete ${staleKeys.length} stale Level III objects with --max-deletes ${args.maxDeletes}`);
+  }
+  if (staleKeys.length) await deleteKeys(client, args.bucket, staleKeys, args.uploadConcurrency);
+
+  console.log(JSON.stringify({
+    ok: true,
+    cleanup: "level3-retained-prefix",
+    prefix: `${prefixRoot}/`,
+    retainedFrameIds: Array.from(retainedFrameIds),
+    existingObjectCount: existingKeys.length,
+    deletedObjectCount: staleKeys.length,
+  }, null, 2));
 }
 
 main().catch((error) => {

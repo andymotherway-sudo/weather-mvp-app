@@ -26,7 +26,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Production MRMS is currently bounded for cost: scheduled z3-z8, retained rolling frames, no archive.
 - Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
 - Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
-- Owned Level III local radar now has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes and Worker timeline/tile routes. It is not app-default yet.
+- Owned Level III local radar now has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. It is not app-default yet.
 
 ## Cloudflare
 
