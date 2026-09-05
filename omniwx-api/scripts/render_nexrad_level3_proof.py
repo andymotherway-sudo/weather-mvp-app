@@ -25,7 +25,8 @@ VELOCITY_STOPS = [
     (-50.0, (46, 89, 190, 215)),
     (-25.0, (45, 185, 220, 190)),
     (-5.0, (76, 210, 120, 155)),
-    (5.0, (0, 0, 0, 0)),
+    (0.0, (190, 198, 205, 100)),
+    (5.0, (255, 221, 71, 175)),
     (25.0, (255, 221, 71, 175)),
     (50.0, (245, 116, 42, 215)),
     (80.0, (210, 32, 47, 235)),
@@ -75,7 +76,7 @@ def colorize(values: np.ndarray, product_code: str) -> np.ndarray:
     valid = np.isfinite(values)
     if product_code in {"N0S", "N0U"}:
         stops = VELOCITY_STOPS
-        valid = valid & (np.abs(values) >= 5)
+        valid = valid & (np.abs(values) >= 1)
     elif product_code in {"EET", "NET"}:
         stops = ECHO_TOP_STOPS
         valid = valid & (values >= 5)
