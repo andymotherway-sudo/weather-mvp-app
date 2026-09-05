@@ -20,6 +20,7 @@ function parseArgs(argv) {
     minZoom: 7,
     maxZoom: 10,
     maxTiles: 2000,
+    minTiles: 1,
     retainFrames: 3,
     maxFrameAgeMinutes: 360,
     supersample: 1,
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     else if (arg === "--min-z" && argv[i + 1]) args.minZoom = Math.max(0, Math.floor(Number(argv[++i]) || args.minZoom));
     else if (arg === "--max-z" && argv[i + 1]) args.maxZoom = Math.max(0, Math.floor(Number(argv[++i]) || args.maxZoom));
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
+    else if (arg === "--min-tiles" && argv[i + 1]) args.minTiles = Math.max(0, Math.floor(Number(argv[++i]) || args.minTiles));
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.min(12, Math.floor(Number(argv[++i]) || args.retainFrames)));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--supersample" && argv[i + 1]) args.supersample = Math.max(1, Math.min(4, Math.floor(Number(argv[++i]) || args.supersample)));
@@ -67,6 +69,7 @@ Options:
   --min-z <n>                  Minimum zoom. Default: 7
   --max-z <n>                  Maximum zoom. Default: 10
   --max-tiles <n>              Publish safety cap. Default: 2000
+  --min-tiles <n>              Minimum non-empty tiles required. Default: 1
   --retain-frames <n>          Retained frames. Default: 3
   --supersample <n>            Supersample factor. Default: 1
   --max-range-km <km>          Optional render radius cap
@@ -121,6 +124,7 @@ function main() {
     "--manifest", join(tileDir, "manifest.json"),
     "--bucket", bucket,
     "--max-tiles", String(args.maxTiles),
+    "--min-tiles", String(args.minTiles),
     "--retain-frames", String(args.retainFrames),
     "--max-frame-age-minutes", String(args.maxFrameAgeMinutes),
   ];

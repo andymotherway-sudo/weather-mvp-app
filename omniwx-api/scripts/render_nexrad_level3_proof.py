@@ -94,7 +94,11 @@ def packet_to_arrays(packet):
     gates = max(len(row) for row in packet["data"])
     raw = np.zeros((radials, gates), dtype=np.uint8)
     for index, row in enumerate(packet["data"]):
-        raw[index, :len(row)] = np.frombuffer(row, dtype=np.uint8)
+        if isinstance(row, (bytes, bytearray, memoryview)):
+            row_values = np.frombuffer(row, dtype=np.uint8)
+        else:
+            row_values = np.asarray(row, dtype=np.uint8)
+        raw[index, :len(row_values)] = row_values
     start_az = np.asarray(packet["start_az"], dtype="float32")
     end_az = np.asarray(packet["end_az"], dtype="float32")
     azimuths = (start_az + ((end_az - start_az) % 360.0) / 2.0) % 360.0

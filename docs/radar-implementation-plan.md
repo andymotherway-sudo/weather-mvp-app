@@ -293,6 +293,8 @@ First production proof result:
 - A known tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
 - Level III publishing now deletes stale objects under the same station/product proof prefix after applied runs, capped by `--max-deletes`.
 - This proves the owned local Level III R2/Worker path works, but it is still a backend proof rather than a Storm Scope replacement.
+- `IWA EET` also published successfully as a tiny z7-z10 proof, giving us one local non-reflectivity product path.
+- `IWA N0S` velocity now decodes structurally, but the sampled Phoenix frame had zero non-empty tiles. Empty products are intentionally blocked from publishing until they produce useful data.
 
 ## Operating Cadences
 

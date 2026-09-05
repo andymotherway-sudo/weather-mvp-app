@@ -16,6 +16,7 @@ function parseArgs(argv) {
     prefix: DEFAULT_PREFIX,
     latestPrefix: DEFAULT_LATEST_PREFIX,
     maxTiles: 2000,
+    minTiles: 1,
     retainFrames: 3,
     maxFrameAgeMinutes: 360,
     uploadConcurrency: 6,
@@ -30,6 +31,7 @@ function parseArgs(argv) {
     else if (arg === "--prefix" && argv[i + 1]) args.prefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--latest-prefix" && argv[i + 1]) args.latestPrefix = argv[++i].replace(/^\/+|\/+$/g, "");
     else if (arg === "--max-tiles" && argv[i + 1]) args.maxTiles = Math.max(1, Math.floor(Number(argv[++i]) || args.maxTiles));
+    else if (arg === "--min-tiles" && argv[i + 1]) args.minTiles = Math.max(0, Math.floor(Number(argv[++i]) || args.minTiles));
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.min(12, Math.floor(Number(argv[++i]) || args.retainFrames)));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
@@ -55,6 +57,7 @@ Options:
   --prefix <key>                 Frame prefix root. Default: ${DEFAULT_PREFIX}
   --latest-prefix <key>          Latest pointer root. Default: ${DEFAULT_LATEST_PREFIX}
   --max-tiles <count>            Publish safety cap. Default: 2000
+  --min-tiles <count>            Minimum non-empty tiles required. Default: 1
   --retain-frames <n>            Latest playlist retention count. Default: 3
   --max-frame-age-minutes <n>    Drop retained frames older than this. Default: 360
   --upload-concurrency <n>       S3 upload concurrency. Default: 6
@@ -201,6 +204,9 @@ async function main() {
   if (tiles.length > args.maxTiles) {
     throw new Error(`Refusing to publish ${tiles.length} tiles with --max-tiles ${args.maxTiles}`);
   }
+  if (tiles.length < args.minTiles) {
+    throw new Error(`Refusing to publish ${tiles.length} tiles with --min-tiles ${args.minTiles}`);
+  }
 
   const site = normalizeSite(manifest.site);
   const product = normalizeProduct(manifest.product);
@@ -298,6 +304,7 @@ async function main() {
     retainFrames: args.retainFrames,
     retainedFrameIds: Array.from(retainedFrameIds),
     uploadCount: uploads.length,
+    minTiles: args.minTiles,
     tileCount: tiles.length,
     totalBytes: manifest.totalBytes,
     byZoom: manifest.byZoom,

@@ -343,6 +343,7 @@ Owned local Level III now mirrors the MRMS proof pattern at a smaller station/pr
 - Tile route: `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`
 - Missing sparse tiles return cacheable transparent PNGs instead of noisy tile errors.
 - `NEXRAD Level III proof cycle` can dry-run or publish one site/product proof with bounded zoom, retention, and tile-count caps.
+- Empty Level III renders are refused by default with `--min-tiles 1`, so a blank product cannot replace a useful latest timeline.
 - Applied publishes delete stale frame objects under that station/product prefix after the retained playlist is written, so Level III proofs stay rolling instead of archival.
 
 Initial production proof posture:
@@ -358,6 +359,8 @@ First production proof evidence:
 - `IWA N0B` z7-z10 published successfully to production R2 on September 5, 2026.
 - The frame had 179 non-empty sparse tiles totaling about 0.52 MB.
 - The live Worker timeline returned `tileDelivery=worker-r2`, and a sample tile returned `x-omni-radar-source: r2-level3`.
+- `IWA EET` z7-z10 also published successfully with 62 non-empty tiles totaling about 0.06 MB.
+- `IWA N0S` velocity decoding now handles list-backed radial packets, but the sampled frame had zero non-empty tiles and was blocked by `--min-tiles 1`.
 
 ## Rolling MRMS latest playlist
 

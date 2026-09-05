@@ -147,6 +147,7 @@ jobs:
             --min-z "$LEVEL3_MIN_ZOOM"
             --max-z "$LEVEL3_MAX_ZOOM"
             --max-tiles 2000
+            --min-tiles 1
             --retain-frames "$LEVEL3_RETAIN_FRAMES"
             --supersample "$LEVEL3_SUPERSAMPLE"
           )
