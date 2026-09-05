@@ -6,10 +6,10 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Product
 
-- Current app release line: `1.1.248`
-- Current Android version code: `10265`
+- Current app release line: `1.1.249`
+- Current Android version code: `10266`
 - Internal testing is the active release channel.
-- The latest release slice targets a fresh `10265` AAB once the full release path build completes.
+- The latest release slice targets a fresh `10266` AAB once the full release path build completes.
 
 ## Backend
 

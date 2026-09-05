@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.248**
-Android version code: **10265**
+Release: **OMNIwx 1.1.249**
+Android version code: **10266**
 Track: **Closed testing / internal testing candidate**
 Date: **September 5, 2026**
 
 ## Play Console Paste Notes
 
-Fixes local NEXRAD radar tiles and restores Storm Scope reflectivity/velocity history where station scans are available.
+Improves Storm Scope controls, restores local NEXRAD reliability, and adds an Owned Level III beta source.
 
 ## Tester Notes
 
@@ -22,6 +22,8 @@ Please focus testing on Maps and regression safety:
 - Confirm forced `MRMS` shows owned NOAA MRMS when the production timeline is fresh.
 - Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
 - Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.
+- Confirm Storm Scope uses one compact HUD by default and the expanded console no longer duplicates the main map controls.
+- Confirm Storm Scope local provider toggles can switch between `IEM` and `Owned L3` without breaking fallback behavior.
 - Confirm Storm Scope local `HREFL` / `N0B` visibly shows reflectivity in active Phoenix-area weather instead of opening to a blank map.
 - Confirm Storm Scope local `HREFL` / `N0B` shows animated local radar history where station scan history is available.
 - Confirm Storm Scope local velocity can fall back to storm-relative velocity history when base velocity history is unavailable.
@@ -35,8 +37,8 @@ Please focus testing on Maps and regression safety:
 
 ## Internal Release Checklist
 
-- App version: `1.1.248`
-- Android version code: `10265`
+- App version: `1.1.249`
+- Android version code: `10266`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
