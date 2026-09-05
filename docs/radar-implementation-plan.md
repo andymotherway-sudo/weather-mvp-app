@@ -273,6 +273,18 @@ Current proof status:
 - 2x supersampling improves visual smoothness but increases tile bytes significantly, so it should not be the early default.
 - This is promising, but it is not production-ready until smoothing, z8-z10 sizing, publish retention, and app fallback rules are implemented.
 - September 5, 2026 inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE. This supports moving to a small owned Level III tile-publish proof, still without replacing IEM/RIDGE in the app.
+- A bounded Level III publish path now exists for one station/product proof at a time. It writes to `radar/level3/proof/<site>/<product>/<frame>/...`, updates `radar/level3/latest/<site>/<product>.json`, and exposes the result through Worker routes.
+- The app should not switch Storm Scope to owned Level III until at least one pilot station/product has repeated retained frames, clean animation, product-specific legends, and IEM/RIDGE fallback preserved.
+
+First publish proof target:
+
+- Workflow: `NEXRAD Level III proof cycle`
+- Starting site/product: `IWA N0B`
+- Starting zoom range: z7-z10
+- Starting retention: 3 frames
+- Starting safety cap: 2,000 tiles per frame
+- Worker timeline: `/v1/radar/level3/timeline?site=IWA&product=N0B`
+- Worker tile route: `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`
 
 ## Operating Cadences
 

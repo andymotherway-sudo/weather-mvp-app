@@ -26,6 +26,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Production MRMS is currently bounded for cost: scheduled z3-z8, retained rolling frames, no archive.
 - Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
 - Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
+- Owned Level III local radar now has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes and Worker timeline/tile routes. It is not app-default yet.
 
 ## Cloudflare
 
@@ -43,13 +44,14 @@ This file is the short source of truth for where the product and infrastructure 
 - Manual runs are still used for z10 QA, backfill, and recovery.
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
+- `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
 
 ## Not Done Yet
 
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
-- Owned local NEXRAD/Level III rendering is not production-ready, but inventory can now be run repeatably in GitHub Actions.
+- Owned local NEXRAD/Level III rendering is not production-ready, but inventory and a first bounded R2 proof cycle can now be run repeatably in GitHub Actions.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
 
 ## Latest Radar Evidence
@@ -60,3 +62,4 @@ This file is the short source of truth for where the product and infrastructure 
 - EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
 - PrecipRate z3-z8 dry-run passed without R2 writes: 750 non-empty tiles, about 2.07 MB.
 - Level III inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE.
+- Level III Worker proof endpoints are `/v1/radar/level3/timeline?site=IWA&product=N0B` and `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`.

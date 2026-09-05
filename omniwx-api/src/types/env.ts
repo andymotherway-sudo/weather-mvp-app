@@ -37,6 +37,9 @@ export interface OmniwxEnv {
   MRMS_LATEST_PREFIX?: string;
   MRMS_PUBLIC_TILE_BASE_URL?: string;
   MRMS_MAINTENANCE_ENABLED?: string;
+  LEVEL3_ENABLED?: string;
+  LEVEL3_PROOF_PREFIX?: string;
+  LEVEL3_LATEST_PREFIX?: string;
   RADAR_R2_LOCAL_SITE_IDS?: string;
   RADAR_R2_LOCAL_SITE_LIMIT?: string;
   RADAR_R2_LOCAL_COVERAGE_RADIUS_MI?: string;

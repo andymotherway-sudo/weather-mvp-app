@@ -21,6 +21,8 @@
 		"level3:inventory": "node ./scripts/inventory-nexrad-level3.mjs",
 		"level3:render-proof": "node ./scripts/render-nexrad-level3-proof.mjs",
 		"level3:tile-proof": "node ./scripts/tile-nexrad-level3-proof.mjs",
+		"level3:publish-proof": "node ./scripts/publish-nexrad-level3-proof.mjs",
+		"level3:cycle": "node ./scripts/run-nexrad-level3-cycle.mjs",
 		"test": "vitest",
 		"cf-typegen": "wrangler types"
 	},

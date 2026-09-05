@@ -9754,6 +9754,15 @@ function buildRadarInfoPayload(env: Env) {
         timelineRoute: "/v1/radar/mrms/timeline",
         tileRoute: "/v1/radar/mrms/tiles/{z}/{x}/{y}.png",
       },
+      level3: {
+        enabled: isLevel3Enabled(env),
+        latestPrefix: getLevel3LatestPrefix(env),
+        proofPrefix: getLevel3ProofPrefix(env),
+        timelineRoute: "/v1/radar/level3/timeline",
+        tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
+        source: "NOAA NEXRAD Level III",
+        initialProducts: ["N0B", "N0S", "EET"],
+      },
     },
     providers: {
       rainviewer: {
@@ -9850,6 +9859,15 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         proofPrefix: getMrmsProofPrefix(env),
         publicTileBaseUrl: getMrmsPublicTileBaseUrl(env),
         publicTileDeliveryEnabled: !!getMrmsPublicTileBaseUrl(env),
+      },
+      level3: {
+        enabled: isLevel3Enabled(env),
+        latestPrefix: getLevel3LatestPrefix(env),
+        proofPrefix: getLevel3ProofPrefix(env),
+        timelineRoute: "/v1/radar/level3/timeline",
+        tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
+        source: "NOAA NEXRAD Level III",
+        initialProducts: ["N0B", "N0S", "EET"],
       },
     },
     currentSource: {
@@ -10254,12 +10272,25 @@ function isMrmsMaintenanceEnabled(env: Env) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function isLevel3Enabled(env: Env) {
+  const raw = String((env as any).LEVEL3_ENABLED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 function getMrmsProofPrefix(env: Env) {
   return String(env.MRMS_PROOF_PREFIX || "radar/mrms/proof").trim().replace(/^\/+|\/+$/g, "");
 }
 
 function getMrmsLatestPrefix(env: Env) {
   return String(env.MRMS_LATEST_PREFIX || "radar/mrms/latest").trim().replace(/^\/+|\/+$/g, "");
+}
+
+function getLevel3ProofPrefix(env: Env) {
+  return String((env as any).LEVEL3_PROOF_PREFIX || "radar/level3/proof").trim().replace(/^\/+|\/+$/g, "");
+}
+
+function getLevel3LatestPrefix(env: Env) {
+  return String((env as any).LEVEL3_LATEST_PREFIX || "radar/level3/latest").trim().replace(/^\/+|\/+$/g, "");
 }
 
 function getMrmsPublicTileBaseUrl(env: Env) {
@@ -10277,6 +10308,22 @@ function getMrmsPublicTileBaseUrl(env: Env) {
 function normalizeMrmsProduct(url: URL) {
   const product = (url.searchParams.get("product") || "MergedReflectivityQCComposite").trim();
   if (!/^[A-Za-z0-9_-]{3,80}$/.test(product)) {
+    return { ok: false as const, status: 400, error: "invalid product" };
+  }
+  return { ok: true as const, product };
+}
+
+function normalizeLevel3Site(url: URL) {
+  const site = (url.searchParams.get("site") || "IWA").trim().toUpperCase().replace(/^K([A-Z0-9]{3})$/, "$1");
+  if (!/^[A-Z0-9]{3}$/.test(site)) {
+    return { ok: false as const, status: 400, error: "invalid site" };
+  }
+  return { ok: true as const, site };
+}
+
+function normalizeLevel3Product(url: URL) {
+  const product = (url.searchParams.get("product") || "N0B").trim().toUpperCase();
+  if (!/^[A-Z0-9]{3}$/.test(product)) {
     return { ok: false as const, status: 400, error: "invalid product" };
   }
   return { ok: true as const, product };
@@ -10352,6 +10399,54 @@ type MrmsLatestManifest = {
 
 type MrmsTimelineFrame = NonNullable<MrmsLatestManifest["frames"]>[number] | MrmsLatestManifest;
 
+type Level3LatestManifest = {
+  ok?: boolean;
+  source?: string;
+  site?: string;
+  product?: string;
+  productName?: string | null;
+  validTime?: string | null;
+  productTime?: string | null;
+  frame?: string;
+  tileBasePrefix?: string;
+  tileSize?: number;
+  minZoom?: number;
+  maxZoom?: number;
+  bounds?: unknown;
+  lat?: number;
+  lon?: number;
+  maxRangeKm?: number;
+  tileCount?: number;
+  totalBytes?: number;
+  generatedAt?: string;
+  byZoom?: unknown;
+  frameCount?: number;
+  retentionFrames?: number;
+  maxFrameAgeMinutes?: number;
+  frames?: Array<{
+    frame?: string;
+    site?: string;
+    product?: string;
+    productName?: string | null;
+    validTime?: string | null;
+    productTime?: string | null;
+    generatedAt?: string | null;
+    tileBasePrefix?: string;
+    tileSize?: number;
+    minZoom?: number;
+    maxZoom?: number;
+    bounds?: unknown;
+    lat?: number;
+    lon?: number;
+    maxRangeKm?: number;
+    tileCount?: number;
+    totalBytes?: number;
+    byZoom?: unknown;
+  }>;
+};
+
+type Level3TimelineFrame = NonNullable<Level3LatestManifest["frames"]>[number] | Level3LatestManifest;
+
 const TRANSPARENT_PNG_1X1 = Uint8Array.from([
   137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
   0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196,
@@ -10364,6 +10459,10 @@ function buildMrmsLatestKey(env: Env, product: string) {
   return `${getMrmsLatestPrefix(env)}/${product}.json`;
 }
 
+function buildLevel3LatestKey(env: Env, site: string, product: string) {
+  return `${getLevel3LatestPrefix(env)}/${site}/${product}.json`;
+}
+
 function parseMrmsTilePath(pathname: string) {
   const parts = pathname.replace("/v1/radar/mrms/tiles/", "").split("/");
   if (parts.length < 3) return null;
@@ -10372,6 +10471,88 @@ function parseMrmsTilePath(pathname: string) {
   const y = parts[2].replace(".png", "");
   if (!/^\d{1,2}$/.test(z) || !/^\d{1,6}$/.test(x) || !/^\d{1,6}$/.test(y)) return null;
   return { z, x, y };
+}
+
+function parseLevel3TilePath(pathname: string) {
+  const parts = pathname.replace("/v1/radar/level3/tiles/", "").split("/");
+  if (parts.length < 3) return null;
+  const z = parts[0];
+  const x = parts[1];
+  const y = parts[2].replace(".png", "");
+  if (!/^\d{1,2}$/.test(z) || !/^\d{1,6}$/.test(x) || !/^\d{1,6}$/.test(y)) return null;
+  return { z, x, y };
+}
+
+function selectLevel3Frame(manifest: Level3LatestManifest, requestedFrame: string | null) {
+  if (!requestedFrame) return manifest;
+  if (!/^[0-9A-Za-z]{8,32}$/.test(requestedFrame)) return null;
+  return (manifest.frames ?? []).find((frame) => frame?.frame === requestedFrame) ?? null;
+}
+
+function slimLevel3FrameForTimeline(frame: Level3TimelineFrame) {
+  return {
+    frame: frame.frame,
+    site: frame.site,
+    product: frame.product,
+    productName: frame.productName ?? null,
+    validTime: frame.validTime ?? null,
+    productTime: frame.productTime ?? null,
+    generatedAt: frame.generatedAt ?? null,
+    tileBasePrefix: frame.tileBasePrefix,
+    tileTemplate: null,
+    tileDelivery: "worker-r2",
+    tileSize: frame.tileSize,
+    minZoom: frame.minZoom,
+    maxZoom: frame.maxZoom,
+    bounds: frame.bounds,
+    lat: frame.lat,
+    lon: frame.lon,
+    maxRangeKm: frame.maxRangeKm,
+    tileCount: frame.tileCount,
+    totalBytes: frame.totalBytes,
+    byZoom: frame.byZoom,
+  };
+}
+
+function buildLevel3TimelineResponse(manifest: Level3LatestManifest) {
+  const frames = Array.isArray(manifest.frames) && manifest.frames.length
+    ? manifest.frames.map((frame) => slimLevel3FrameForTimeline(frame))
+    : [slimLevel3FrameForTimeline(manifest)];
+  const latestFrame = slimLevel3FrameForTimeline(manifest);
+  return {
+    ok: manifest.ok,
+    source: manifest.source,
+    ...latestFrame,
+    frameCount: manifest.frameCount ?? frames.length,
+    retentionFrames: manifest.retentionFrames,
+    maxFrameAgeMinutes: manifest.maxFrameAgeMinutes,
+    frames,
+  };
+}
+
+async function readLevel3LatestManifest(env: Env, site: string, product: string) {
+  if (!env.RADAR_ASSETS) {
+    return { ok: false as const, status: 503, error: "RADAR_ASSETS not bound" };
+  }
+  if (!isLevel3Enabled(env)) {
+    return { ok: false as const, status: 404, error: "level3-disabled" };
+  }
+
+  const key = buildLevel3LatestKey(env, site, product);
+  const object = await env.RADAR_ASSETS.get(key);
+  if (!object?.body) {
+    return { ok: false as const, status: 404, error: "level3-latest-not-found", key };
+  }
+
+  try {
+    const manifest = (await object.json()) as Level3LatestManifest;
+    if (!manifest?.tileBasePrefix || !manifest?.site || !manifest?.product) {
+      return { ok: false as const, status: 502, error: "level3-latest-invalid", key };
+    }
+    return { ok: true as const, key, manifest };
+  } catch {
+    return { ok: false as const, status: 502, error: "level3-latest-json-invalid", key };
+  }
 }
 
 function selectMrmsFrame(manifest: MrmsLatestManifest, requestedFrame: string | null) {
@@ -12246,6 +12427,105 @@ async function handleWorkerRequest(
           "content-type": object.httpMetadata?.contentType || "image/png",
           "cache-control": object.httpMetadata?.cacheControl || "public, max-age=300, stale-while-revalidate=1800",
           "x-omni-radar-source": "r2-mrms",
+          "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+        }),
+      });
+    }
+
+    if (url.pathname === "/v1/radar/level3/timeline") {
+      const parsedSite = normalizeLevel3Site(url);
+      if (!parsedSite.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedSite.error }), {
+          status: parsedSite.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      const parsedProduct = normalizeLevel3Product(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const latest = await readLevel3LatestManifest(env, parsedSite.site, parsedProduct.product);
+      if (!latest.ok) {
+        return new Response(JSON.stringify({ ok: false, error: latest.error, key: latest.key ?? null }), {
+          status: latest.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const timeline = buildLevel3TimelineResponse(latest.manifest);
+      return new Response(JSON.stringify(timeline), {
+        status: 200,
+        headers: withCors({
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=30, stale-while-revalidate=120",
+          "x-omni-radar-source": "r2-level3-latest",
+        }),
+      });
+    }
+
+    if (url.pathname.startsWith("/v1/radar/level3/tiles/")) {
+      const tile = parseLevel3TilePath(url.pathname);
+      if (!tile) {
+        return new Response(JSON.stringify({ ok: false, error: "bad tile path" }), {
+          status: 400,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      const parsedSite = normalizeLevel3Site(url);
+      if (!parsedSite.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedSite.error }), {
+          status: parsedSite.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+      const parsedProduct = normalizeLevel3Product(url);
+      if (!parsedProduct.ok) {
+        return new Response(JSON.stringify({ ok: false, error: parsedProduct.error }), {
+          status: parsedProduct.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const latest = await readLevel3LatestManifest(env, parsedSite.site, parsedProduct.product);
+      if (!latest.ok) {
+        return new Response(JSON.stringify({ ok: false, error: latest.error, key: latest.key ?? null }), {
+          status: latest.status,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const selectedFrame = selectLevel3Frame(latest.manifest, url.searchParams.get("frame"));
+      if (!selectedFrame?.tileBasePrefix) {
+        return new Response(JSON.stringify({ ok: false, error: "level3-frame-not-found", frame: url.searchParams.get("frame") }), {
+          status: 404,
+          headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const objectKey = `${selectedFrame.tileBasePrefix}/${tile.z}/${tile.x}/${tile.y}.png`;
+      const object = await env.RADAR_ASSETS!.get(objectKey);
+      if (!object?.body) {
+        return new Response(TRANSPARENT_PNG_1X1, {
+          status: 200,
+          headers: withCors({
+            "content-type": "image/png",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
+            "x-omni-radar-source": "r2-level3-empty",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
+        });
+      }
+
+      return new Response(object.body, {
+        status: 200,
+        headers: withCors({
+          "content-type": object.httpMetadata?.contentType || "image/png",
+          "cache-control": object.httpMetadata?.cacheControl || "public, max-age=300, stale-while-revalidate=1800",
+          "x-omni-radar-source": "r2-level3",
           "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
         }),
       });

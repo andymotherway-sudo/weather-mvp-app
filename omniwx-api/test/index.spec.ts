@@ -80,6 +80,10 @@ describe('worker module', () => {
     expect(json.ownedStorage?.d1?.readEnabled).toBe(false);
     expect(json.ownedStorage?.d1?.writeEnabled).toBe(false);
     expect(json.ownedStorage?.r2?.timelinePublishEnabled).toBe(true);
+    expect(json.ownedStorage?.level3?.enabled).toBe(true);
+    expect(json.ownedStorage?.level3?.timelineRoute).toBe('/v1/radar/level3/timeline');
+    expect(json.ownedStorage?.level3?.tileRoute).toBe('/v1/radar/level3/tiles/{z}/{x}/{y}.png');
+    expect(json.ownedStorage?.level3?.initialProducts).toEqual(expect.arrayContaining(['N0B', 'N0S', 'EET']));
     expect(Array.isArray(json.sources)).toBe(true);
     expect(json.sources.map((source: any) => source.id)).toEqual(
       expect.arrayContaining(['rainviewer', 'iem-mosaic', 'iem-ridge', 'iem-wms']),
@@ -106,6 +110,24 @@ describe('worker module', () => {
     expect(json.ownedPipeline?.r2?.localStorageEstimate?.estimatedObjects).toBeGreaterThan(0);
     expect(Array.isArray(json.ownedPipeline?.r2?.recentLocalSiteActivity)).toBe(true);
     expect(json.ownedPipeline?.r2).toHaveProperty('lastOwnedLocalPublish');
+    expect(json.ownedPipeline?.level3?.enabled).toBe(true);
+    expect(json.ownedPipeline?.level3?.latestPrefix).toBe('radar/level3/latest');
+    expect(json.ownedPipeline?.level3?.proofPrefix).toBe('radar/level3/proof');
+    expect(json.ownedPipeline?.level3?.initialProducts).toEqual(expect.arrayContaining(['N0B', 'N0S', 'EET']));
+  });
+
+  it('validates owned Level III route parameters before reading storage', async () => {
+    const badSite = await SELF.fetch(
+      new Request('https://omniwx.test/v1/radar/level3/timeline?site=TOO-LONG&product=N0B'),
+    );
+    const badProduct = await SELF.fetch(
+      new Request('https://omniwx.test/v1/radar/level3/tiles/7/31/50.png?site=IWA&product=TOO-LONG'),
+    );
+
+    expect(badSite.status).toBe(400);
+    expect((await badSite.json() as any).error).toBe('invalid site');
+    expect(badProduct.status).toBe(400);
+    expect((await badProduct.json() as any).error).toBe('invalid product');
   });
 
   it('fetches active map alerts without unsupported NWS limit parameter', async () => {

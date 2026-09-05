@@ -328,10 +328,28 @@ Current local-only Level III proof status:
 - `IWA N0B` z10 alone produced 143 non-empty tiles totaling about 745 KB.
 - `MPX EET` z8-z10 local tile proof produced 164 non-empty tiles totaling about 270 KB.
 - Optional 2x supersampling made the z10 images smoother but increased storage sharply: `IWA N0B` z10 rose to about 5.7 MB, and `MPX EET` z10 rose to about 776 KB.
-- All files are written under ignored `tmp/nexrad-level3`; nothing is published to R2 by these commands.
+- Local proof files are written under ignored `tmp/nexrad-level3`. The dedicated proof cycle can now publish a bounded station/product sample to R2 when `apply=true`.
 - The current storage-safe default should remain nearest/sparse rendering. Supersampling is useful for QA and future paid-tier quality experiments, but it is too expensive to make the early free-tier default.
-- Production quality still needs smoothing strategy, tile seam QA, product-specific legends, retention/publish code, and app fallback wiring.
+- Production quality still needs smoothing strategy, tile seam QA, product-specific legends, repeated retention verification, and app fallback wiring.
 - Until owned Level III station products are published, Storm Scope local reflectivity should prefer the most reliable visible IEM/RIDGE reflectivity animation and avoid forcing one-frame WMS image mode as the default.
+
+## Rolling Level III proof playlist
+
+Owned local Level III now mirrors the MRMS proof pattern at a smaller station/product scope:
+
+- Frame tiles: `radar/level3/proof/<site>/<product>/<frame>/{z}/{x}/{y}.png`
+- Latest pointer: `radar/level3/latest/<site>/<product>.json`
+- Timeline route: `/v1/radar/level3/timeline?site=IWA&product=N0B`
+- Tile route: `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`
+- Missing sparse tiles return cacheable transparent PNGs instead of noisy tile errors.
+- `NEXRAD Level III proof cycle` can dry-run or publish one site/product proof with bounded zoom, retention, and tile-count caps.
+
+Initial production proof posture:
+
+- Use `IWA N0B` first because Phoenix/Mesa is the main tester market.
+- Keep `retain_frames=3` until repeated runs prove cleanup/storage behavior.
+- Keep `max_zoom=10`, `max_tiles=2000`, and `supersample=1` for the zero-cost beta proof.
+- Keep IEM/RIDGE local fallback in the app until owned Level III has smooth multi-frame playback.
 
 ## Rolling MRMS latest playlist
 

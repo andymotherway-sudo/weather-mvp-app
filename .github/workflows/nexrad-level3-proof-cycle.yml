@@ -1,0 +1,179 @@
+name: NEXRAD Level III proof cycle
+run-name: Level III ${{ inputs.target_env || 'production' }} ${{ inputs.site || 'IWA' }} ${{ inputs.product || 'N0B' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '7' }}-${{ inputs.max_zoom || '10' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+      site:
+        description: "3-letter Level III site id"
+        required: true
+        default: "IWA"
+      product:
+        description: "Level III product"
+        required: true
+        default: "N0B"
+        type: choice
+        options:
+          - "N0B"
+          - "N0S"
+          - "EET"
+      apply:
+        description: "Write proof tiles to R2"
+        required: true
+        default: false
+        type: boolean
+      min_zoom:
+        description: "Minimum tile zoom"
+        required: true
+        default: "7"
+        type: choice
+        options:
+          - "6"
+          - "7"
+          - "8"
+      max_zoom:
+        description: "Maximum tile zoom"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "8"
+          - "9"
+          - "10"
+      retain_frames:
+        description: "Rolling retained proof frames"
+        required: true
+        default: "3"
+        type: choice
+        options:
+          - "1"
+          - "3"
+          - "6"
+      supersample:
+        description: "Tile supersampling factor"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: level3-proof-${{ inputs.target_env || 'production' }}-${{ inputs.site || 'IWA' }}-${{ inputs.product || 'N0B' }}
+  cancel-in-progress: true
+
+jobs:
+  level3-proof:
+    name: Build Level III proof tiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      LEVEL3_TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      LEVEL3_SITE: ${{ inputs.site || 'IWA' }}
+      LEVEL3_PRODUCT: ${{ inputs.product || 'N0B' }}
+      LEVEL3_MIN_ZOOM: ${{ inputs.min_zoom || '7' }}
+      LEVEL3_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
+      LEVEL3_RETAIN_FRAMES: ${{ inputs.retain_frames || '3' }}
+      LEVEL3_SUPERSAMPLE: ${{ inputs.supersample || '1' }}
+      LEVEL3_APPLY: ${{ inputs.apply }}
+      LEVEL3_SMOKE_BASE_URL: ${{ inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Level III Python dependencies
+        run: python -m pip install --target ../tmp/level3-pydeps metpy numpy pillow
+
+      - name: Check R2 credentials
+        if: env.LEVEL3_APPLY == 'true'
+        shell: bash
+        run: |
+          missing=0
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not configured as a GitHub Actions secret"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Type-check API scripts
+        run: npx tsc --noEmit
+
+      - name: Run Level III proof cycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --env "$LEVEL3_TARGET_ENV"
+            --site "$LEVEL3_SITE"
+            --product "$LEVEL3_PRODUCT"
+            --min-z "$LEVEL3_MIN_ZOOM"
+            --max-z "$LEVEL3_MAX_ZOOM"
+            --max-tiles 2000
+            --retain-frames "$LEVEL3_RETAIN_FRAMES"
+            --supersample "$LEVEL3_SUPERSAMPLE"
+          )
+          if [ "$LEVEL3_APPLY" = "true" ]; then
+            args+=(--apply)
+          else
+            echo "::warning::This is a dry-run. It will render Level III tiles but will not write to R2."
+          fi
+          npm run level3:cycle -- "${args[@]}"
+
+      - name: Smoke test Level III timeline
+        if: env.LEVEL3_APPLY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$LEVEL3_SMOKE_BASE_URL/v1/radar/level3/timeline?site=$LEVEL3_SITE&product=$LEVEL3_PRODUCT" > /tmp/level3-timeline.json
+          cat /tmp/level3-timeline.json
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const timeline = JSON.parse(fs.readFileSync("/tmp/level3-timeline.json", "utf8"));
+          if (!timeline.ok) throw new Error("Level III timeline did not report ok");
+          const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
+          if (!frame) throw new Error("Level III timeline has no frames");
+          if (frame.tileDelivery !== "worker-r2") {
+            throw new Error(`Level III tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
+          }
+          if (Number(frame.maxZoom || timeline.maxZoom || 0) < Number(process.env.LEVEL3_MAX_ZOOM || 0)) {
+            throw new Error(`Level III maxZoom is ${frame.maxZoom || timeline.maxZoom}, expected ${process.env.LEVEL3_MAX_ZOOM}`);
+          }
+          NODE
