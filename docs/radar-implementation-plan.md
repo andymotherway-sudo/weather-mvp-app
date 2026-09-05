@@ -175,6 +175,18 @@ Storage rule:
 - Each new MRMS product must have an explicit max retained frames and max zoom.
 - If a product is mostly informational, start z3-z7 or z3-z8 instead of z10.
 
+Measured September 5, 2026 dry-runs:
+
+- Composite reflectivity z3-z10: 6,552 non-empty tiles, about 13.78 MB, 6,554 would-be uploads for one frame.
+- EchoTop_18 z3-z8: 686 non-empty tiles, about 0.94 MB for one frame.
+- PrecipRate z3-z8: 750 non-empty tiles, about 2.07 MB for one frame.
+
+Interpretation:
+
+- z10 composite is plausible for occasional/manual QA, but it is not boring enough yet to make the default scheduled production ceiling.
+- EchoTop_18 and PrecipRate are storage-light enough to continue as dry-run/QA product candidates.
+- Product UI should wait until each product has a validated legend, fallback behavior, and retained timeline quality.
+
 Done when:
 
 - The app offers 2-3 MRMS products that feel useful and distinct.
@@ -260,6 +272,7 @@ Current proof status:
 - z8-z10 remains plausible for targeted station products: the first `IWA N0B` proof was about 1.17 MB for one frame, and `MPX EET` was about 270 KB for one frame.
 - 2x supersampling improves visual smoothness but increases tile bytes significantly, so it should not be the early default.
 - This is promising, but it is not production-ready until smoothing, z8-z10 sizing, publish retention, and app fallback rules are implemented.
+- September 5, 2026 inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE. This supports moving to a small owned Level III tile-publish proof, still without replacing IEM/RIDGE in the app.
 
 ## Operating Cadences
 

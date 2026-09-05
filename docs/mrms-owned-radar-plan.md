@@ -387,6 +387,14 @@ Current routine production posture:
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` gives repeatable read-only station/product availability checks before owned local cache work.
 
+Latest measured evidence from September 5, 2026:
+
+- Production z3-z8 composite cycle succeeded and live timeline retained 5 frames.
+- Latest z8 composite frame: 838 non-empty tiles, about 2.54 MB.
+- z10 composite dry-run passed: 6,552 non-empty tiles, about 13.78 MB for one frame.
+- EchoTop_18 z3-z8 dry-run passed: 686 non-empty tiles, about 0.94 MB.
+- PrecipRate z3-z8 dry-run passed: 750 non-empty tiles, about 2.07 MB.
+
 Cost-control guardrails:
 
 - The job uses the S3-compatible R2 uploader, not per-object Wrangler uploads.

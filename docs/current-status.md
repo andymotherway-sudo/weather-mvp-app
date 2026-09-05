@@ -51,3 +51,12 @@ This file is the short source of truth for where the product and infrastructure 
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready, but inventory can now be run repeatably in GitHub Actions.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
+
+## Latest Radar Evidence
+
+- A bounded production MRMS cycle on September 5, 2026 published fresh z3-z8 composite reflectivity and left the live timeline with 5 retained frames.
+- The fresh z8 composite frame measured 838 non-empty tiles and about 2.54 MB.
+- The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
+- EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
+- PrecipRate z3-z8 dry-run passed without R2 writes: 750 non-empty tiles, about 2.07 MB.
+- Level III inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE.
