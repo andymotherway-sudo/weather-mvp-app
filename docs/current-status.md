@@ -26,7 +26,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Production MRMS is currently bounded for cost: scheduled z3-z8, retained rolling frames, no archive.
 - Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
 - Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
-- Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes.
+- Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. Production proofs now publish reflectivity, velocity, and echo tops for `IWA`.
 - Storm Scope now has an app-selectable `Owned L3` beta local source, but `IEM` remains the default and fallback until owned Level III has repeated fresh frames and broader station/product coverage.
 
 ## Cloudflare
@@ -52,14 +52,14 @@ This file is the short source of truth for where the product and infrastructure 
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
-- Owned local NEXRAD/Level III rendering is not production-ready, but inventory and a first bounded R2 proof cycle can now be run repeatably in GitHub Actions.
+- Owned local NEXRAD/Level III rendering is not production-ready, but inventory and bounded R2 proof cycles can now be run repeatably in GitHub Actions.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
 - Local NEXRAD/IEM tile-template generation was fixed on September 5, 2026 so MapLibre receives literal `{z}/{x}/{y}` placeholders instead of encoded `%7Bz%7D` paths.
 - IEM local product fallback now prefers current `N0B` reflectivity and `N0S` velocity scan history before older streams that may return empty lists.
 
 ## Latest Radar Evidence
 
-- A bounded production MRMS cycle on September 5, 2026 published fresh z3-z8 composite reflectivity and left the live timeline with 5 retained frames.
+- A bounded production MRMS cycle on September 5, 2026 published fresh z3-z8 composite reflectivity and left the live timeline with 7 retained frames.
 - The fresh z8 composite frame measured 838 non-empty tiles and about 2.54 MB.
 - The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
 - EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
@@ -68,4 +68,4 @@ This file is the short source of truth for where the product and infrastructure 
 - Level III Worker proof endpoints are `/v1/radar/level3/timeline?site=IWA&product=N0B` and `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`.
 - First production Level III proof published `IWA N0B` at z7-z10 with 179 non-empty sparse tiles and about 0.52 MB. A live tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
 - `IWA EET` also published successfully at z7-z10 with 62 non-empty sparse tiles and about 0.06 MB.
-- Current `IWA N0S` velocity decoded but produced zero non-empty tiles, so the empty-publish guard correctly prevents it from replacing the latest timeline.
+- `IWA N0S` velocity now publishes successfully at z7-z10 after adding legacy 16-level velocity-bin decoding: 153 non-empty sparse tiles and about 0.46 MB.
