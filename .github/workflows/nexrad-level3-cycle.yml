@@ -181,17 +181,17 @@ jobs:
             curl --fail --silent --show-error "$url" > "/tmp/level3-$product-timeline.json"
             cat "/tmp/level3-$product-timeline.json"
             PRODUCT="$product" node - <<'NODE'
-            const fs = require("node:fs");
-            const product = process.env.PRODUCT;
-            const timeline = JSON.parse(fs.readFileSync(`/tmp/level3-${product}-timeline.json`, "utf8"));
-            if (!timeline.ok) throw new Error(`Level III ${product} timeline did not report ok`);
-            const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
-            if (!frame) throw new Error(`Level III ${product} timeline has no frames`);
-            if (frame.tileDelivery !== "worker-r2") {
-              throw new Error(`Level III ${product} tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
-            }
-            if (Number(frame.maxZoom || timeline.maxZoom || 0) < Number(process.env.LEVEL3_MAX_ZOOM || 0)) {
-              throw new Error(`Level III ${product} maxZoom is ${frame.maxZoom || timeline.maxZoom}, expected ${process.env.LEVEL3_MAX_ZOOM}`);
-            }
-            NODE
+          const fs = require("node:fs");
+          const product = process.env.PRODUCT;
+          const timeline = JSON.parse(fs.readFileSync(`/tmp/level3-${product}-timeline.json`, "utf8"));
+          if (!timeline.ok) throw new Error(`Level III ${product} timeline did not report ok`);
+          const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
+          if (!frame) throw new Error(`Level III ${product} timeline has no frames`);
+          if (frame.tileDelivery !== "worker-r2") {
+            throw new Error(`Level III ${product} tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
+          }
+          if (Number(frame.maxZoom || timeline.maxZoom || 0) < Number(process.env.LEVEL3_MAX_ZOOM || 0)) {
+            throw new Error(`Level III ${product} maxZoom is ${frame.maxZoom || timeline.maxZoom}, expected ${process.env.LEVEL3_MAX_ZOOM}`);
+          }
+          NODE
           done
