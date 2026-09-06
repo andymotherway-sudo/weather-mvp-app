@@ -1,0 +1,138 @@
+name: MRMS radar watchdog
+run-name: MRMS watchdog production stale>${{ inputs.stale_after_minutes || '50' }}m
+
+on:
+  schedule:
+    # Offset from the MRMS publisher's :07/:27/:47 slots. This is a recovery
+    # guard, not the primary ingest cadence.
+    - cron: "17,37,57 * * * *"
+  workflow_dispatch:
+    inputs:
+      stale_after_minutes:
+        description: "Dispatch MRMS cycle if newest live frame is older than this"
+        required: true
+        default: "50"
+      dry_run:
+        description: "Report only; do not dispatch recovery workflow"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: mrms-radar-watchdog-production
+  cancel-in-progress: true
+
+jobs:
+  watchdog:
+    name: Check production MRMS freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '50' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      MRMS_TIMELINE_URL: https://omniwx-api-production.omniwx.workers.dev/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check live MRMS timeline
+        id: freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE' > /tmp/mrms-watchdog.env
+          const staleAfterMinutes = Math.max(10, Number(process.env.STALE_AFTER_MINUTES || 50));
+          const url = process.env.MRMS_TIMELINE_URL;
+          const result = {
+            ok: false,
+            shouldDispatch: false,
+            ageMinutes: null,
+            frameCount: 0,
+            maxZoom: null,
+            reason: "unknown",
+          };
+
+          try {
+            const res = await fetch(url, { headers: { accept: "application/json" } });
+            const text = await res.text();
+            if (!res.ok) throw new Error(`timeline ${res.status}: ${text.slice(0, 200)}`);
+            const json = JSON.parse(text);
+            const validTime = json.validTime || json.time || json.frames?.[0]?.validTime || json.frames?.[0]?.time;
+            const validTimeMs = Date.parse(String(validTime || ""));
+            result.ok = Boolean(json.ok && Number.isFinite(validTimeMs));
+            result.frameCount = Array.isArray(json.frames) ? json.frames.length : Number(json.frameCount || 0);
+            result.maxZoom = json.maxZoom ?? null;
+            result.ageMinutes = Number.isFinite(validTimeMs) ? Math.round((Date.now() - validTimeMs) / 60_000) : null;
+            result.reason = result.ok ? "freshness-read" : "timeline-missing-valid-frame";
+            result.shouldDispatch = !result.ok || result.ageMinutes == null || result.ageMinutes > staleAfterMinutes;
+          } catch (error) {
+            result.reason = error instanceof Error ? error.message : String(error);
+            result.shouldDispatch = true;
+          }
+
+          console.log(`SHOULD_DISPATCH=${result.shouldDispatch ? "true" : "false"}`);
+          console.log(`AGE_MINUTES=${result.ageMinutes ?? ""}`);
+          console.log(`FRAME_COUNT=${result.frameCount}`);
+          console.log(`MAX_ZOOM=${result.maxZoom ?? ""}`);
+          console.log(`REASON=${JSON.stringify(result.reason)}`);
+          NODE
+          cat /tmp/mrms-watchdog.env
+          cat /tmp/mrms-watchdog.env >> "$GITHUB_OUTPUT"
+
+      - name: Check active MRMS publisher runs
+        id: active
+        shell: bash
+        run: |
+          set -euo pipefail
+          active_count=$(
+            {
+              gh run list --workflow mrms-radar-cycle.yml --status queued --limit 20 --json databaseId 2>/dev/null
+              gh run list --workflow mrms-radar-cycle.yml --status in_progress --limit 20 --json databaseId 2>/dev/null
+            } | node -e '
+              const fs = require("node:fs");
+              const input = fs.readFileSync(0, "utf8").trim().split(/\n(?=\[)/).filter(Boolean);
+              let count = 0;
+              for (const chunk of input) {
+                try { count += JSON.parse(chunk).length; } catch {}
+              }
+              process.stdout.write(String(count));
+            '
+          )
+          echo "ACTIVE_COUNT=$active_count" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Dispatch bounded MRMS recovery
+        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run mrms-radar-cycle.yml \
+            -f target_env=production \
+            -f product=MergedReflectivityQCComposite \
+            -f apply=true \
+            -f min_zoom=3 \
+            -f max_zoom=8 \
+            -f retain_frames=12 \
+            -f backfill_frames=2 \
+            -f max_frame_age_minutes=360
+
+      - name: Report watchdog decision
+        shell: bash
+        run: |
+          {
+            echo "## MRMS watchdog"
+            echo ""
+            echo "- Timeline age: ${{ steps.freshness.outputs.AGE_MINUTES || 'unknown' }} minutes"
+            echo "- Timeline frames: ${{ steps.freshness.outputs.FRAME_COUNT }}"
+            echo "- Timeline max zoom: ${{ steps.freshness.outputs.MAX_ZOOM || 'unknown' }}"
+            echo "- Reason: ${{ steps.freshness.outputs.REASON }}"
+            echo "- Active publisher runs: ${{ steps.active.outputs.ACTIVE_COUNT }}"
+            echo "- Would dispatch: ${{ steps.freshness.outputs.SHOULD_DISPATCH }}"
+            echo "- Dry run: $DRY_RUN"
+          } >> "$GITHUB_STEP_SUMMARY"

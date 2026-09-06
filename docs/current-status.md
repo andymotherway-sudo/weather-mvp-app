@@ -44,6 +44,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Scheduled runs use production, apply writes, z3-z8, a small backfill, retained frames, smoke checks, and cleanup on staggered `:07/:27/:47` UTC cron slots.
 - GitHub schedule timing can vary; do not assume every cron run executes exactly on the 20-minute mark.
 - The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
+- `MRMS radar watchdog` is a beta recovery workflow on offset `:17/:37/:57` UTC cron slots. It checks the live production timeline and dispatches the bounded MRMS cycle only when the timeline is stale and no MRMS publisher run is already queued or running.
 - Manual runs are still used for z10 QA, backfill, and recovery.
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.

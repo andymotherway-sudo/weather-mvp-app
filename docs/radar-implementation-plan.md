@@ -96,6 +96,7 @@ Operational note:
 - GitHub scheduled workflow timing can vary, so MRMS freshness must be validated from the live timeline rather than assumed from the cron expression.
 - Scheduled runs fail if the live timeline does not expose the expected zoom or minimum frame count after publish.
 - Scheduled runs fail if the newest live MRMS frame is more than 90 minutes old after publish.
+- `MRMS radar watchdog` checks production MRMS on offset `:17`, `:37`, and `:57` UTC slots and dispatches the bounded z3-z8 MRMS cycle only when the live timeline is stale and no MRMS publisher run is already queued/running.
 - Manual z10 publishes remain available for QA, but scheduled z10 should wait for upload retry/resume protection because one z10 frame can require 6k+ R2 object writes.
 - Use the `MRMS z10 safety check` workflow for dry-run z10 render sizing before applying any z10 publish to R2.
 - If the production timeline is older than the app freshness window, `MRMS auto` intentionally falls back to RainViewer.
@@ -131,6 +132,7 @@ Implementation:
   - total retained bytes
   - stale objects deleted
   - bucket estimate
+- Keep the watchdog threshold above normal cadence so it catches missed publishes without doubling routine R2 writes.
 
 Escalation triggers:
 
@@ -168,6 +170,7 @@ Production runner requirements:
 Cost posture:
 
 - Do not add a paid runner only to solve today's internal testing if GitHub Actions is good enough after cadence hardening.
+- The GitHub watchdog is a beta safety net, not a substitute for the dedicated runner once radar freshness is customer-critical.
 - Add the dedicated runner when we need production-grade freshness, z10 by default, multiple MRMS products, or reliable recurring Level III products.
 - Keep D1 out of the radar hot path; use R2 manifests and object prefixes as the radar source of truth.
 
