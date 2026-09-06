@@ -28,6 +28,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
 - Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. Production proofs now publish reflectivity, velocity, and echo tops for `IWA`.
 - Storm Scope now has an app-selectable `Owned L3` beta local source, but `IEM` remains the default and fallback until owned Level III has repeated fresh frames and broader station/product coverage.
+- Storm Scope's compact HUD labels owned Level III usage directly as `OWNED L3` when the app is actually rendering the Worker/R2 Level III source.
 
 ## Cloudflare
 
@@ -46,6 +47,7 @@ This file is the short source of truth for where the product and infrastructure 
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
 - `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
+- `NEXRAD Level III cycle` can publish the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally.
 
 ## Not Done Yet
 

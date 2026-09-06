@@ -120,6 +120,7 @@ export function StormScopeController(props: {
         modeLabel={modeLabel}
         productLabel={productLabel}
         productLine={props.productLine}
+        sourceLine={props.sourceLine}
         siteTitle={props.siteTitle}
         stale={props.stale}
         statusLabel={props.statusLabel}
@@ -227,11 +228,19 @@ function CompactHud(props: {
   modeLabel: string;
   productLabel: string;
   productLine: string;
+  sourceLine: string;
   siteTitle: string;
   stale: boolean;
   statusLabel: string;
   onOpen: () => void;
 }) {
+  const sourceBadge =
+    props.sourceLine.toLowerCase().includes('owned')
+      ? 'OWNED L3'
+      : props.sourceLine.toLowerCase().includes('iem') || props.sourceLine.toLowerCase().includes('ridge')
+        ? 'IEM'
+        : props.modeLabel;
+
   return (
     <Glass
       style={{
@@ -249,14 +258,14 @@ function CompactHud(props: {
             <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
               STORM SCOPE
             </Text>
-            <SmallPill label={props.modeLabel} accent={props.modeLabel === 'LOCAL' ? 'cyan' : 'slate'} />
+            <SmallPill label={sourceBadge} accent={sourceBadge === 'OWNED L3' ? 'cyan' : 'slate'} />
             {props.stale ? <SmallPill label={`! ${props.ageLabel}`} accent="amber" /> : null}
           </View>
           <Text style={{ color: 'white', fontSize: 17, fontWeight: '900' }} numberOfLines={1}>
             {props.siteTitle}
           </Text>
           <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '800', marginTop: 3 }} numberOfLines={1}>
-            {props.productLabel} - {props.stale ? props.ageLabel : props.statusLabel}
+            {props.productLabel} - {props.sourceLine}
           </Text>
         </Pressable>
         <PillButton label="..." onPress={props.onOpen} />
