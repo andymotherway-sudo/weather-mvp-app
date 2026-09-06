@@ -28,7 +28,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { useFireContext } from '../lib/fire/useFireContext';
 import { apiUrl } from '../lib/net/apiBase';
-import { useNwsDesk, useNwsStormReports } from '../lib/nws/useNwsDesk';
+import { useNwsDesk, useNwsStormReports, type NwsStormReport, type NwsStormReports } from '../lib/nws/useNwsDesk';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
@@ -3962,7 +3962,7 @@ function formatReportDistance(value: number | null | undefined) {
   return `${Math.round(value)} mi`;
 }
 
-function formatStormReport(report: NonNullable<ReturnType<typeof useNwsStormReports>['data']>['reports'][number] | null | undefined) {
+function formatStormReport(report: NwsStormReport | null | undefined) {
   if (!report) return 'None';
   const bits = [
     report.event,
@@ -3971,6 +3971,27 @@ function formatStormReport(report: NonNullable<ReturnType<typeof useNwsStormRepo
     formatReportDistance(report.distanceMiles),
   ].filter(Boolean);
   return bits.join(' • ');
+}
+
+function formatStormReportTime(value: string | null | undefined) {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(ms));
+}
+
+function describeStormReport(report: NwsStormReport) {
+  return [
+    report.location,
+    report.countyState,
+    formatReportDistance(report.distanceMiles),
+    report.source ? `via ${report.source}` : null,
+  ].filter(Boolean).join(' • ');
 }
 
 function StormRecapCard({
@@ -3984,11 +4005,19 @@ function StormRecapCard({
   error: string | null;
   onOpenLearnTopic: (topicId?: string) => void;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedReport, setSelectedReport] = useState<NwsStormReport | null>(null);
   if (!reports && !loading && !error) return null;
   const count = reports?.summary?.count ?? 0;
   const updated = reports?.updatedAt ? formatUpdatedTime(reports.updatedAt) : null;
   const office = reports?.office?.id ? `WFO ${reports.office.id}` : 'NWS office';
   const recent = reports?.reports?.slice(0, 3) ?? [];
+  const allReports = reports?.reports ?? [];
+  const openReport = (report: NwsStormReport | null | undefined) => {
+    if (!reports) return;
+    setSelectedReport(report ?? null);
+    setDetailsOpen(true);
+  };
 
   return (
     <View style={nwd.card}>
@@ -3997,9 +4026,18 @@ function StormRecapCard({
           <Text style={nwd.kicker}>STORM RECAP</Text>
           <Text style={nwd.title}>Local Storm Reports</Text>
         </View>
-        <Pressable style={nwd.learnButton} onPress={() => onOpenLearnTopic('local-storm-reports')}>
-          <Text style={nwd.learnButtonText}>wxLearn</Text>
-        </Pressable>
+        <View style={nwd.headerActions}>
+          <Pressable
+            style={[nwd.learnButton, !reports && nwd.disabledButton]}
+            disabled={!reports}
+            onPress={() => openReport(reports?.summary.latest ?? allReports[0] ?? null)}
+          >
+            <Text style={nwd.learnButtonText}>{count > 0 ? 'Reports' : 'Details'}</Text>
+          </Pressable>
+          <Pressable style={nwd.iconButton} onPress={() => onOpenLearnTopic('local-storm-reports')} accessibilityLabel="Learn about local storm reports">
+            <Ionicons name="help-circle-outline" size={17} color="rgba(255,255,255,0.82)" />
+          </Pressable>
+        </View>
       </View>
 
       {loading && !reports ? (
@@ -4024,13 +4062,13 @@ function StormRecapCard({
           </Text>
 
           <View style={nwd.factGrid}>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.closest)}>
               <Text style={nwd.factLabel}>Closest</Text>
               <Text style={nwd.factValue} numberOfLines={3}>
                 {formatStormReport(reports.summary.closest)}
               </Text>
             </Pressable>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.latest)}>
               <Text style={nwd.factLabel}>Latest</Text>
               <Text style={nwd.factValue} numberOfLines={3}>
                 {formatStormReport(reports.summary.latest)}
@@ -4039,13 +4077,13 @@ function StormRecapCard({
           </View>
 
           <View style={nwd.factGrid}>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.strongestWind)}>
               <Text style={nwd.factLabel}>Max Wind</Text>
               <Text style={nwd.factValue} numberOfLines={2}>
                 {formatStormReport(reports.summary.strongestWind)}
               </Text>
             </Pressable>
-            <Pressable style={nwd.fact} onPress={() => onOpenLearnTopic('local-storm-reports')}>
+            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.largestHail)}>
               <Text style={nwd.factLabel}>Largest Hail</Text>
               <Text style={nwd.factValue} numberOfLines={2}>
                 {formatStormReport(reports.summary.largestHail)}
@@ -4060,22 +4098,119 @@ function StormRecapCard({
               </View>
               <View style={nwd.reportList}>
                 {recent.map((report, index) => (
-                  <View key={`${report.id ?? index}-${report.event}`} style={nwd.reportRow}>
+                  <Pressable key={`${report.id ?? index}-${report.event}`} style={nwd.reportRow} onPress={() => openReport(report)}>
                     <Text style={nwd.reportEvent}>{report.event}</Text>
                     <Text style={nwd.reportDetail} numberOfLines={2}>
-                      {[report.location, report.countyState, report.source].filter(Boolean).join(' • ')}
+                      {describeStormReport(report)}
                     </Text>
                     {report.remarks ? <Text style={nwd.reportRemark} numberOfLines={2}>{report.remarks}</Text> : null}
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </View>
           ) : null}
 
           <Text style={nwd.source}>Source: {reports.source}</Text>
+          <StormReportDetailsModal
+            reports={reports}
+            visible={detailsOpen}
+            selectedReport={selectedReport}
+            onSelectReport={setSelectedReport}
+            onClose={() => setDetailsOpen(false)}
+            onOpenLearn={() => onOpenLearnTopic('local-storm-reports')}
+          />
         </>
       ) : null}
     </View>
+  );
+}
+
+function StormReportDetailsModal({
+  reports,
+  visible,
+  selectedReport,
+  onSelectReport,
+  onClose,
+  onOpenLearn,
+}: {
+  reports: NwsStormReports;
+  visible: boolean;
+  selectedReport: NwsStormReport | null;
+  onSelectReport: (report: NwsStormReport) => void;
+  onClose: () => void;
+  onOpenLearn: () => void;
+}) {
+  const selected = selectedReport ?? reports.summary.latest ?? reports.reports[0] ?? null;
+  const updated = reports.updatedAt ? formatUpdatedTime(reports.updatedAt) : null;
+  const selectedTime = formatStormReportTime(selected?.issuedAt);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={nwd.reportModalRoot}>
+        <Pressable style={nwd.reportModalBackdrop} onPress={onClose} />
+        <SafeAreaView style={nwd.reportModalSafe}>
+          <View style={nwd.reportModalSheet}>
+            <View style={nwd.reportModalHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={nwd.kicker}>STORM RECAP</Text>
+                <Text style={nwd.reportModalTitle}>Official storm reports</Text>
+                <Text style={nwd.reportModalMeta}>
+                  {[reports.office?.id ? `WFO ${reports.office.id}` : null, `Last ${reports.hours}h`, updated ? `Updated ${updated}` : null].filter(Boolean).join(' • ')}
+                </Text>
+              </View>
+              <Pressable onPress={onClose} style={nwd.reportModalClose}>
+                <Text style={nwd.reportModalCloseText}>Done</Text>
+              </Pressable>
+            </View>
+
+            {selected ? (
+              <View style={nwd.reportDetailCard}>
+                <View style={nwd.reportDetailTop}>
+                  <Text style={nwd.reportDetailEvent}>{selected.event}</Text>
+                  {selectedTime ? <Text style={nwd.reportTime}>{selectedTime}</Text> : null}
+                </View>
+                <Text style={nwd.reportDetailLine}>{describeStormReport(selected) || 'Official NWS report'}</Text>
+                {selected.magnitude && selected.magnitude !== '0' ? <Text style={nwd.reportMagnitude}>Magnitude: {selected.magnitude}</Text> : null}
+                {selected.remarks ? <Text style={nwd.reportFullRemarks}>{selected.remarks}</Text> : <Text style={nwd.muted}>No remarks were included with this report.</Text>}
+              </View>
+            ) : (
+              <View style={nwd.reportDetailCard}>
+                <Text style={nwd.reportDetailEvent}>No recent official reports</Text>
+                <Text style={nwd.muted}>This forecast office has not published recent local storm reports for this location window.</Text>
+              </View>
+            )}
+
+            <View style={nwd.reportModalListHeader}>
+              <Text style={nwd.rawTitle}>{reports.reports.length ? `${reports.reports.length} reports` : 'No report rows'}</Text>
+              <Pressable onPress={onOpenLearn} style={nwd.reportLearnLink}>
+                <Text style={nwd.reportLearnText}>What is an LSR?</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={nwd.reportModalList} contentContainerStyle={nwd.reportModalListContent}>
+              {reports.reports.map((report, index) => {
+                const isSelected = selected === report || (!!selected?.id && selected.id === report.id);
+                const issued = formatStormReportTime(report.issuedAt);
+                return (
+                  <Pressable
+                    key={`${report.id ?? index}-${report.event}`}
+                    style={[nwd.reportPickerRow, isSelected && nwd.reportPickerRowActive]}
+                    onPress={() => onSelectReport(report)}
+                  >
+                    <View style={nwd.reportPickerTop}>
+                      <Text style={nwd.reportEvent}>{report.event}</Text>
+                      {issued ? <Text style={nwd.reportTime}>{issued}</Text> : null}
+                    </View>
+                    <Text style={nwd.reportDetail} numberOfLines={2}>{describeStormReport(report)}</Text>
+                    {report.remarks ? <Text style={nwd.reportRemark} numberOfLines={3}>{report.remarks}</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </View>
+    </Modal>
   );
 }
 
@@ -4094,6 +4229,11 @@ const nwd = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   kicker: {
     fontSize: 11,
@@ -4120,6 +4260,19 @@ const nwd = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.86)',
+  },
+  disabledButton: {
+    opacity: 0.55,
+  },
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   loadingRow: {
     flexDirection: 'row',
@@ -4386,6 +4539,154 @@ const nwd = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.68)',
+  },
+  reportModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  reportModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+  },
+  reportModalSafe: {
+    justifyContent: 'flex-end',
+  },
+  reportModalSheet: {
+    maxHeight: '88%',
+    marginHorizontal: 12,
+    marginBottom: 10,
+    borderRadius: 24,
+    padding: 16,
+    backgroundColor: 'rgba(9,22,45,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(155,205,255,0.22)',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.38,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: -10 },
+    elevation: 20,
+  },
+  reportModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reportModalTitle: {
+    marginTop: 4,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900',
+    color: 'white',
+  },
+  reportModalMeta: {
+    marginTop: 5,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  reportModalClose: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  reportModalCloseText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  reportDetailCard: {
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    gap: 8,
+  },
+  reportDetailTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  reportDetailEvent: {
+    flex: 1,
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: '900',
+    color: 'white',
+  },
+  reportTime: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '900',
+    color: 'rgba(186,230,253,0.76)',
+  },
+  reportDetailLine: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.68)',
+  },
+  reportMagnitude: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.88)',
+  },
+  reportFullRemarks: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.82)',
+  },
+  reportModalListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  reportLearnLink: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  reportLearnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(184,230,255,0.92)',
+  },
+  reportModalList: {
+    minHeight: 120,
+  },
+  reportModalListContent: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  reportPickerRow: {
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    gap: 5,
+  },
+  reportPickerRowActive: {
+    backgroundColor: 'rgba(56,189,248,0.16)',
+    borderColor: 'rgba(125,211,252,0.34)',
+  },
+  reportPickerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   source: {
     fontSize: 11,
