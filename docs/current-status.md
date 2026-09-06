@@ -71,3 +71,4 @@ This file is the short source of truth for where the product and infrastructure 
 - First production Level III proof published `IWA N0B` at z7-z10 with 179 non-empty sparse tiles and about 0.52 MB. A live tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
 - `IWA EET` also published successfully at z7-z10 with 62 non-empty sparse tiles and about 0.06 MB.
 - `IWA N0S` velocity now publishes successfully at z7-z10 after adding legacy 16-level velocity-bin decoding: 153 non-empty sparse tiles and about 0.46 MB.
+- The bundled `NEXRAD Level III cycle` workflow passed on September 5, 2026 for production `IWA` products `N0B,N0S,EET` at z7-z10 with retained-frame cleanup enabled. Live production timelines then reported `N0B` with 2 retained frames, `N0S` with 2 retained frames, and `EET` with 1 retained frame through `worker-r2`.
