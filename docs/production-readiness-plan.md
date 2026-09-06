@@ -224,6 +224,8 @@ Current direction:
 - Worker-served MRMS tiles remain safest while sparse empty-tile handling is still important.
 - R2 storage remains rolling and bounded.
 - Applied MRMS workflows record a bounded storage trend so we can verify cleanup is stabilizing instead of silently accumulating objects.
+- GitHub Actions is acceptable as the beta publisher only while freshness remains non-critical and fallback stays healthy.
+- A dedicated radar runner is the intended production-grade path before owned z10, multi-product MRMS, or recurring Level III becomes a paid-customer promise.
 
 Done when:
 
@@ -232,6 +234,7 @@ Done when:
 - Retention cleanup prevents accidental archive growth.
 - Storage stays below the approved beta ceiling.
 - MRMS history is long enough to feel useful without pretending we have commercial-grade global radar yet.
+- The scheduled publisher, watchdog, or future runner keeps MRMS fresh without manual rescue during normal beta operation.
 
 ### D2. Storm Scope Redesign
 
@@ -329,6 +332,14 @@ Current Redis stance:
 
 - Do not add Redis yet unless we have a specific coordination problem Cloudflare cache/D1/R2 cannot handle cleanly.
 - Revisit Redis for entitlement/session hot paths, cache stampede prevention, or shared job coordination only when actual scale pressure appears.
+
+Dedicated radar runner stance:
+
+- Do not buy dedicated compute only because it sounds more professional.
+- Use GitHub Actions plus the MRMS watchdog during zero-cost beta if freshness stays acceptable.
+- Move radar rendering to a dedicated runner when scheduled freshness, z10 depth, multiple MRMS products, or recurring Level III station products become customer-critical.
+- The runner should own fetch/decode/render/upload/cleanup with retries, locks, storage guardrails, and source-specific queues.
+- D1 should remain out of radar tile serving and radar ingest hot paths.
 
 Done when:
 

@@ -66,6 +66,9 @@ This file is the short source of truth for where the product and infrastructure 
 ## Latest Radar Evidence
 
 - A bounded production MRMS cycle on September 5, 2026 published fresh z3-z8 composite reflectivity and left the live timeline with 7 retained frames.
+- On September 6, 2026, the MRMS watchdog dry-run correctly detected a stale production timeline at 131 minutes old with no active publisher run.
+- The live watchdog recovery path then dispatched `MRMS radar cycle`, which completed successfully and refreshed production MRMS to newest frame `20260906T142800`, newest age 6 minutes, 6 retained frames, z3-z8, and `worker-r2` tile delivery.
+- The same recovery run reported 4,708 retained MRMS objects, 12.26 MB under the production MRMS prefix, 6 retained frame prefixes, and 0 stale objects.
 - The fresh z8 composite frame measured 838 non-empty tiles and about 2.54 MB.
 - The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
 - EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
