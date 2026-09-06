@@ -41,17 +41,20 @@ This file is the short source of truth for where the product and infrastructure 
 ## GitHub Actions
 
 - `MRMS radar cycle` is the current MRMS publisher.
-- Scheduled runs use production, apply writes, z3-z8, a small backfill, retained frames, smoke checks, and cleanup.
+- Scheduled runs use production, apply writes, z3-z8, a small backfill, retained frames, smoke checks, and cleanup on staggered `:07/:27/:47` UTC cron slots.
 - GitHub schedule timing can vary; do not assume every cron run executes exactly on the 20-minute mark.
+- The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
 - Manual runs are still used for z10 QA, backfill, and recovery.
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
 - `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
 - `NEXRAD Level III cycle` can publish the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally.
+- A dedicated radar runner is now the planned production-grade replacement for GitHub Actions once owned z10, multi-product MRMS, or recurring Level III becomes customer-critical.
 
 ## Not Done Yet
 
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
+- GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready, but inventory and bounded R2 proof cycles can now be run repeatably in GitHub Actions.

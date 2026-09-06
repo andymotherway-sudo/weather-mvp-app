@@ -92,9 +92,10 @@ Cost posture:
 Operational note:
 
 - MRMS is kept fresh by the scheduled `MRMS radar cycle` GitHub workflow.
-- The intended beta cadence is every 20 minutes with `target_env=production`, `apply=true`, `max_zoom=8`, `retain_frames=12`, and `backfill_frames=2`.
+- The intended beta cadence is three times per hour on staggered cron slots (`:07`, `:27`, `:47`) with `target_env=production`, `apply=true`, `max_zoom=8`, `retain_frames=12`, and `backfill_frames=2`.
 - GitHub scheduled workflow timing can vary, so MRMS freshness must be validated from the live timeline rather than assumed from the cron expression.
 - Scheduled runs fail if the live timeline does not expose the expected zoom or minimum frame count after publish.
+- Scheduled runs fail if the newest live MRMS frame is more than 90 minutes old after publish.
 - Manual z10 publishes remain available for QA, but scheduled z10 should wait for upload retry/resume protection because one z10 frame can require 6k+ R2 object writes.
 - Use the `MRMS z10 safety check` workflow for dry-run z10 render sizing before applying any z10 publish to R2.
 - If the production timeline is older than the app freshness window, `MRMS auto` intentionally falls back to RainViewer.
@@ -142,6 +143,33 @@ Done when:
 - MRMS stays fresh during beta without manual clicks.
 - Storage remains bounded after several days.
 - The app has stable fallback behavior if a scheduled run fails.
+
+## Phase 2B: Dedicated Radar Runner
+
+Goal: replace GitHub Actions as the long-term radar scheduler/renderer before paid customers depend on owned radar freshness.
+
+Why this matters:
+
+- GitHub Actions is good for beta automation, proof publishing, and manual recovery, but scheduled jobs can drift or skip.
+- Radar needs boring cadence: fetch, decode, render, upload, cleanup, and health checks should run continuously without waiting for a manually triggered workflow.
+- A dedicated runner lets us add z10, more MRMS products, and Level III station products with retry/resume protection instead of restarting a whole workflow after partial progress.
+
+Production runner requirements:
+
+- Containerized Node + Python runtime with MRMS GRIB2 and Level III dependencies preinstalled.
+- S3-compatible R2 uploader with resumable/retryable object writes.
+- Product/station queues so MRMS, Level III reflectivity, velocity, and echo tops can run independently.
+- Per-product locks so two jobs never publish the same prefix at once.
+- Retention cleanup after every successful publish, scoped to each product/station prefix.
+- Storage guardrails that fail closed before R2 approaches the beta ceiling.
+- Health output that reports newest frame age, retained frames, retained bytes, stale objects, and last failure.
+- Worker/app fallback preserved until the runner has proven several days of fresh timelines.
+
+Cost posture:
+
+- Do not add a paid runner only to solve today's internal testing if GitHub Actions is good enough after cadence hardening.
+- Add the dedicated runner when we need production-grade freshness, z10 by default, multiple MRMS products, or reliable recurring Level III products.
+- Keep D1 out of the radar hot path; use R2 manifests and object prefixes as the radar source of truth.
 
 ## Phase 3: MRMS Product Expansion
 
@@ -319,7 +347,8 @@ Paid-customer cadence:
 - z3-z10 every 5-10 minutes for reflectivity.
 - Add selected MRMS products.
 - Consider Workers Paid if tile requests approach the free limit.
-- Consider paid GitHub Actions, a cheap job runner, or self-hosted runner if rendering cadence exceeds included minutes.
+- Prefer the dedicated radar runner path before relying on paid GitHub Actions for production freshness.
+- Consider Workers Paid if Worker-served tile traffic approaches the free request ceiling before public R2/CDN delivery is ready.
 
 ## Immediate Next Steps
 
@@ -331,6 +360,7 @@ Paid-customer cadence:
 6. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
 7. Verify MRMS-auto across several US regions in internal testing.
 8. Keep RainViewer fallback active until Phase 4 hardening gates pass.
+9. Design the dedicated radar runner before making z10/multi-product radar a paid-customer dependency.
 
 ## Decision Log
 

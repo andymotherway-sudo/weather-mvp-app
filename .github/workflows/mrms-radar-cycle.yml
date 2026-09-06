@@ -3,9 +3,10 @@ run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} ${{ github.
 
 on:
   schedule:
-    # Keep beta MRMS fresh without building a large archive. Scheduled runs use
-    # z8 until the heavier z10 upload path has retry/resume protection.
-    - cron: "*/20 * * * *"
+    # Keep beta MRMS fresh without building a large archive. Staggered slots
+    # avoid the busiest top-of-hour GitHub Actions schedule windows.
+    # Scheduled runs use z8 until z10 has retry/resume protection.
+    - cron: "7,27,47 * * * *"
   workflow_dispatch:
     inputs:
       target_env:
@@ -221,7 +222,7 @@ jobs:
             throw new Error("MRMS frame has no parseable validTime");
           }
           const ageMinutes = (Date.now() - validTimeMs) / 60_000;
-          if (ageMinutes > 180) {
+          if (ageMinutes > 90) {
             throw new Error(`MRMS frame is stale after publish: ${Math.round(ageMinutes)} minutes old`);
           }
           console.log(JSON.stringify({
