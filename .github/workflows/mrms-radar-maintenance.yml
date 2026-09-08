@@ -70,6 +70,7 @@ jobs:
       MRMS_APPLY_CLEANUP: ${{ inputs.apply_cleanup }}
       MRMS_FAIL_ON_STALE: ${{ inputs.fail_on_stale }}
       MRMS_MAX_DELETES: ${{ inputs.max_deletes || '120000' }}
+      MRMS_SMOKE_BASE_URL: ${{ inputs.target_env == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
 
     steps:
       - name: Checkout
@@ -112,6 +113,10 @@ jobs:
           fi
           for product in "${products[@]}"; do
             echo "Maintaining MRMS product: $product"
+            if ! curl --fail --silent --show-error "$MRMS_SMOKE_BASE_URL/v1/radar/mrms/timeline?product=$product" > /tmp/mrms-maintenance-timeline.json; then
+              echo "::notice::No live MRMS timeline for $product yet; skipping cleanup for this product."
+              continue
+            fi
             args=(
               --env "$MRMS_TARGET_ENV"
               --product "$product"
@@ -139,6 +144,10 @@ jobs:
           fi
           for product in "${products[@]}"; do
             echo "Reporting MRMS product: $product"
+            if ! curl --fail --silent --show-error "$MRMS_SMOKE_BASE_URL/v1/radar/mrms/timeline?product=$product" > /tmp/mrms-maintenance-timeline.json; then
+              echo "::notice::No live MRMS timeline for $product yet; skipping storage report for this product."
+              continue
+            fi
             args=(
               --env "$MRMS_TARGET_ENV"
               --product "$product"
