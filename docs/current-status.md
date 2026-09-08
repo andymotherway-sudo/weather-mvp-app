@@ -75,9 +75,9 @@ This file is the short source of truth for where the product and infrastructure 
 - The same recovery run reported 4,708 retained MRMS objects, 12.26 MB under the production MRMS prefix, 6 retained frame prefixes, and 0 stale objects.
 - The fresh z8 composite frame measured 838 non-empty tiles and about 2.54 MB.
 - The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
-- EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
-- PrecipRate z3-z8 dry-run passed without R2 writes: 750 non-empty tiles, about 2.07 MB.
 - ReflectivityAtLowestAltitude was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 559 non-empty tiles, about 1.66 MB, and `worker-r2` tile delivery.
+- EchoTop_18 was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 521 non-empty tiles, about 0.76 MB, and `worker-r2` tile delivery.
+- PrecipRate was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 531 non-empty tiles, about 1.58 MB, and `worker-r2` tile delivery.
 - Level III inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE.
 - Level III Worker proof endpoints are `/v1/radar/level3/timeline?site=IWA&product=N0B` and `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`.
 - First production Level III proof published `IWA N0B` at z7-z10 with 179 non-empty sparse tiles and about 0.52 MB. A live tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
