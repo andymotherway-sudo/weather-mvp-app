@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Last updated: September 5, 2026
+Last updated: September 8, 2026
 
 This file is the short source of truth for where the product and infrastructure stand today. Deeper planning details live in the roadmap docs, but this file should stay factual and current.
 
@@ -10,6 +10,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Current Android version code: `10266`
 - Internal testing is the active release channel.
 - The latest release slice targets a fresh `10266` AAB once the full release path build completes.
+- Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
 
 ## Backend
 
