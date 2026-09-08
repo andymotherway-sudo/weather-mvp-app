@@ -11,6 +11,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Internal testing is the active release channel.
 - The latest release slice targets a fresh `10266` AAB once the full release path build completes.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
+- Initial shared brand primitives now exist for new work: `OmniGlassCard`, `OmniChip`, `OmniMetricTile`, and `OmniSectionHeader`.
 
 ## Backend
 

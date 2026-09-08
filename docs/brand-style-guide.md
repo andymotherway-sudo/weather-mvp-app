@@ -124,9 +124,9 @@ Adjust before implementation:
 
 ## Implementation Path
 
-1. Freeze the brand guide as the design contract.
-2. Add semantic theme tokens for score colors, freshness states, glass opacity, control states, and feature accents.
-3. Create shared UI primitives without changing screens yet.
+1. Freeze the brand guide as the design contract. Initial guide added September 8, 2026.
+2. Add semantic theme tokens for score colors, freshness states, glass opacity, control states, and feature accents. Initial tokens added September 8, 2026.
+3. Create shared UI primitives without changing screens yet. Initial `OmniGlassCard`, `OmniChip`, `OmniMetricTile`, and `OmniSectionHeader` primitives added September 8, 2026.
 4. Convert one screen section at a time, starting with low-risk duplicated patterns.
 5. Use Space as the first polished redesign target after radar stabilizes.
 6. Follow with Storm Scope controls, then Land/Hourly card consistency.
