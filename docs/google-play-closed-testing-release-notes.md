@@ -1,19 +1,22 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.249**
-Android version code: **10266**
+Release: **OMNIwx 1.1.250**
+Android version code: **10267**
 Track: **Closed testing / internal testing candidate**
-Date: **September 5, 2026**
+Date: **September 8, 2026**
 
 ## Play Console Paste Notes
 
-Improves Storm Scope controls, restores local NEXRAD reliability, and adds an Owned Level III beta source.
+Adds MRMS product previews and starts shared OMNIwx theme polish.
 
 ## Tester Notes
 
 Please focus testing on Maps and regression safety:
 
 - Confirm wide radar opens as `MRMS auto` in US test locations when MRMS is healthy.
+- Confirm MRMS product chips appear for composite, lowest-altitude reflectivity, echo tops, and precip rate.
+- Confirm `Comp` remains the safest/default MRMS view and `Low`, `Tops`, and `Rate` can load their one-frame preview timelines when fresh.
+- Confirm Maps chips still fit cleanly after the shared chip styling migration.
 - Confirm the radar buttons can explicitly select `Auto`, `MRMS`, and `RainViewer`.
 - Confirm MRMS timestamps look current and are not shown as future local times.
 - Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
@@ -37,8 +40,8 @@ Please focus testing on Maps and regression safety:
 
 ## Internal Release Checklist
 
-- App version: `1.1.249`
-- Android version code: `10266`
+- App version: `1.1.250`
+- Android version code: `10267`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
