@@ -76,6 +76,7 @@ This file is the short source of truth for where the product and infrastructure 
 - The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
 - EchoTop_18 z3-z8 dry-run passed without R2 writes: 686 non-empty tiles, about 0.94 MB.
 - PrecipRate z3-z8 dry-run passed without R2 writes: 750 non-empty tiles, about 2.07 MB.
+- ReflectivityAtLowestAltitude was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 559 non-empty tiles, about 1.66 MB, and `worker-r2` tile delivery.
 - Level III inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE.
 - Level III Worker proof endpoints are `/v1/radar/level3/timeline?site=IWA&product=N0B` and `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`.
 - First production Level III proof published `IWA N0B` at z7-z10 with 179 non-empty sparse tiles and about 0.52 MB. A live tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
