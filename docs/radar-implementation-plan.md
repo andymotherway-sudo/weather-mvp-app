@@ -198,6 +198,7 @@ Implementation:
   - `radar/mrms/latest/<product>.json`
 - Add UI toggles only for products that have current, retained, same-quality frames.
 - The wide-radar app UI now exposes beta MRMS product chips for composite reflectivity, lowest-altitude reflectivity, echo tops, and precip rate. Composite remains the safe default while the other product timelines are still publish-on-demand.
+- The MRMS maintenance workflow can clean/report a single product or all preview products, so product expansion remains rolling-retention instead of accidental archive growth.
 - Keep product-specific legends.
 - Use product-specific storage budgets.
 

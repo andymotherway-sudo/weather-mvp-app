@@ -12,6 +12,17 @@ on:
         options:
           - production
           - dev
+      product:
+        description: "MRMS product to maintain"
+        required: true
+        default: "MergedReflectivityQCComposite"
+        type: choice
+        options:
+          - "MergedReflectivityQCComposite"
+          - "ReflectivityAtLowestAltitude"
+          - "EchoTop_18"
+          - "PrecipRate"
+          - "all"
       apply_cleanup:
         description: "Delete stale retained-frame objects"
         required: true
@@ -55,6 +66,7 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       MRMS_TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      MRMS_PRODUCT: ${{ inputs.product || 'MergedReflectivityQCComposite' }}
       MRMS_APPLY_CLEANUP: ${{ inputs.apply_cleanup }}
       MRMS_FAIL_ON_STALE: ${{ inputs.fail_on_stale }}
       MRMS_MAX_DELETES: ${{ inputs.max_deletes || '120000' }}
@@ -89,55 +101,79 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(
-            --env "$MRMS_TARGET_ENV"
-            --product MergedReflectivityQCComposite
-            --uploader s3
-            --max-deletes "$MRMS_MAX_DELETES"
-          )
-          if [ "$MRMS_APPLY_CLEANUP" = "true" ]; then
-            args+=(--apply)
+          products=("$MRMS_PRODUCT")
+          if [ "$MRMS_PRODUCT" = "all" ]; then
+            products=(
+              "MergedReflectivityQCComposite"
+              "ReflectivityAtLowestAltitude"
+              "EchoTop_18"
+              "PrecipRate"
+            )
           fi
-          npm run mrms:cleanup-retained -- "${args[@]}"
+          for product in "${products[@]}"; do
+            echo "Maintaining MRMS product: $product"
+            args=(
+              --env "$MRMS_TARGET_ENV"
+              --product "$product"
+              --uploader s3
+              --max-deletes "$MRMS_MAX_DELETES"
+            )
+            if [ "$MRMS_APPLY_CLEANUP" = "true" ]; then
+              args+=(--apply)
+            fi
+            npm run mrms:cleanup-retained -- "${args[@]}"
+          done
 
       - name: Report MRMS retained storage
         shell: bash
         run: |
           set -euo pipefail
-          args=(
-            --env "$MRMS_TARGET_ENV"
-            --product MergedReflectivityQCComposite
-            --fail-storage-mb 5120
-            --write-history
-            --history-limit 60
-            --json
-          )
-          if [ "$MRMS_FAIL_ON_STALE" = "true" ]; then
-            args+=(--fail-stale-objects 0)
+          products=("$MRMS_PRODUCT")
+          if [ "$MRMS_PRODUCT" = "all" ]; then
+            products=(
+              "MergedReflectivityQCComposite"
+              "ReflectivityAtLowestAltitude"
+              "EchoTop_18"
+              "PrecipRate"
+            )
           fi
-          npm --silent run mrms:storage-status -- "${args[@]}" > /tmp/mrms-storage-status.json
-          cat /tmp/mrms-storage-status.json
-          node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
-          const fs = require("node:fs");
-          const status = JSON.parse(fs.readFileSync("/tmp/mrms-storage-status.json", "utf8"));
-          const lines = [
-            "## MRMS retained storage",
-            "",
-            `- Environment: ${status.env}`,
-            `- Product: ${status.product}`,
-            `- Timeline frames: ${status.timeline.frameCount}`,
-            `- Newest frame age: ${status.timeline.newestAgeMinutes} minutes`,
-            `- Max zoom: ${status.timeline.maxZoom}`,
-            `- Tile delivery: ${status.timeline.tileDelivery}`,
-            `- R2 objects under prefix: ${status.storage.objectCount}`,
-            `- R2 total under prefix: ${status.storage.totalMb} MB`,
-            `- Retained objects: ${status.storage.retainedObjectCount}`,
-            `- Retained bytes: ${status.storage.retainedMb} MB`,
-            `- Stale objects: ${status.storage.staleObjectCount}`,
-            `- Stale bytes: ${status.storage.staleMb} MB`,
-            `- History samples: ${status.history?.sampleCount ?? "not written"}`,
-            `- Delta from previous: ${status.history?.deltaFromPrevious ? `${status.history.deltaFromPrevious.totalMb} MB, ${status.history.deltaFromPrevious.frameCount} frame(s)` : "first sample"}`,
-            "",
-          ];
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
-          NODE
+          for product in "${products[@]}"; do
+            echo "Reporting MRMS product: $product"
+            args=(
+              --env "$MRMS_TARGET_ENV"
+              --product "$product"
+              --fail-storage-mb 5120
+              --write-history
+              --history-limit 60
+              --json
+            )
+            if [ "$MRMS_FAIL_ON_STALE" = "true" ]; then
+              args+=(--fail-stale-objects 0)
+            fi
+            output="/tmp/mrms-storage-status-$product.json"
+            npm --silent run mrms:storage-status -- "${args[@]}" > "$output"
+            cat "$output"
+            STATUS_PATH="$output" node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+            const fs = require("node:fs");
+            const status = JSON.parse(fs.readFileSync(process.env.STATUS_PATH, "utf8"));
+            const lines = [
+              `## MRMS retained storage: ${status.product}`,
+              "",
+              `- Environment: ${status.env}`,
+              `- Timeline frames: ${status.timeline.frameCount}`,
+              `- Newest frame age: ${status.timeline.newestAgeMinutes} minutes`,
+              `- Max zoom: ${status.timeline.maxZoom}`,
+              `- Tile delivery: ${status.timeline.tileDelivery}`,
+              `- R2 objects under prefix: ${status.storage.objectCount}`,
+              `- R2 total under prefix: ${status.storage.totalMb} MB`,
+              `- Retained objects: ${status.storage.retainedObjectCount}`,
+              `- Retained bytes: ${status.storage.retainedMb} MB`,
+              `- Stale objects: ${status.storage.staleObjectCount}`,
+              `- Stale bytes: ${status.storage.staleMb} MB`,
+              `- History samples: ${status.history?.sampleCount ?? "not written"}`,
+              `- Delta from previous: ${status.history?.deltaFromPrevious ? `${status.history.deltaFromPrevious.totalMb} MB, ${status.history.deltaFromPrevious.frameCount} frame(s)` : "first sample"}`,
+              "",
+            ];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n"));
+            NODE
+          done
