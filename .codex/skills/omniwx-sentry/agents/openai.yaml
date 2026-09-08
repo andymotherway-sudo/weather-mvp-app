@@ -1,0 +1,7 @@
+interface:
+  display_name: "OMNIwx Sentry"
+  short_description: "Senior engineering, security, release, and code-quality supervision for OMNIwx."
+  default_prompt: "Use $omniwx-sentry to review and harden the current OMNIwx diff for release safety, security, maintainability, and company-ready polish."
+
+policy:
+  allow_implicit_invocation: true
