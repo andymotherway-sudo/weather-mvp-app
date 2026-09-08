@@ -231,6 +231,11 @@ function getRadarProfile(zoom: number, raw: boolean, nerdy: boolean, quality: An
 }
 
 export type RadarProviderId = 'iem' | 'rainviewer' | 'mrms' | 'level3' | 'auto';
+export type MrmsProductId =
+  | 'MergedReflectivityQCComposite'
+  | 'ReflectivityAtLowestAltitude'
+  | 'EchoTop_18'
+  | 'PrecipRate';
 
 function getRadarFetchProfile(
   zoom: number,
@@ -304,8 +309,10 @@ export function useRadarController(args: {
   playbackBlocked?: boolean;
   playbackRate?: number;
   loopHours?: number;
+  mrmsProduct?: MrmsProductId;
 }) {
   const { state, dispatch, sheetValue, centerForRadar, mapZoom, product, rawMode, region } = args;
+  const mrmsProduct = args.mrmsProduct ?? 'MergedReflectivityQCComposite';
   const animationQuality = args.animationQuality ?? 'cinematic';
   const suspendRasterTransitions = args.suspendRasterTransitions === true;
   const playbackBlocked = args.playbackBlocked === true;
@@ -476,7 +483,7 @@ export function useRadarController(args: {
       try {
         setMrmsError(null);
         setMrmsLoading(true);
-        const frames = await fetchMrmsFrames({ product: 'MergedReflectivityQCComposite' });
+        const frames = await fetchMrmsFrames({ product: mrmsProduct });
         if (cancelled) return;
         setMrmsFrames(frames);
         setMrmsLoading(false);
@@ -497,7 +504,7 @@ export function useRadarController(args: {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [mrmsFetchSelected, radarEnabled, stationMode, stormMode]);
+  }, [mrmsFetchSelected, radarEnabled, stationMode, stormMode, mrmsProduct]);
 
   /* =========================================================================
    * Owned NOAA Level III frames

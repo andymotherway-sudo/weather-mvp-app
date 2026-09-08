@@ -59,7 +59,7 @@ import { useAviationMapData } from '../lib/maps/useAviationMapData';
 import { useFireRestrictionsMapData } from '../lib/maps/useFireRestrictionsMapData';
 import { useLightningMapData } from '../lib/maps/useLightningMapData';
 import { formatMarineUpdated, formatMarineWaterTemp, useMarineMapLayer } from '../lib/maps/useMarineMapLayer';
-import { useRadarController, type AnimationQuality, type RadarProviderId } from '../lib/maps/useRadarController';
+import { useRadarController, type AnimationQuality, type MrmsProductId, type RadarProviderId } from '../lib/maps/useRadarController';
 import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
 import { useTropicalOutlookLayer } from '../lib/maps/useTropicalOutlookLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
@@ -80,6 +80,38 @@ const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v2';
 const LEGACY_STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
 const OWNED_LEVEL3_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0S', 'EET']);
+
+const MRMS_PRODUCT_OPTIONS: {
+  id: MrmsProductId;
+  label: string;
+  title: string;
+  note: string;
+}[] = [
+  {
+    id: 'MergedReflectivityQCComposite',
+    label: 'Comp',
+    title: 'Composite reflectivity',
+    note: 'Owned MRMS national reflectivity backbone.',
+  },
+  {
+    id: 'ReflectivityAtLowestAltitude',
+    label: 'Low',
+    title: 'Lowest-altitude reflectivity',
+    note: 'Preview product; appears when a fresh timeline has been published.',
+  },
+  {
+    id: 'EchoTop_18',
+    label: 'Tops',
+    title: 'Echo tops',
+    note: 'Preview product for storm height context.',
+  },
+  {
+    id: 'PrecipRate',
+    label: 'Rate',
+    title: 'Precip rate',
+    note: 'Preview product for rainfall intensity context.',
+  },
+];
 const STORM_SCOPE_RINGS_MIN_ZOOM = 5.25;
 const STORM_SCOPE_NEXRAD_MIN_ZOOM = 5.75;
 const STORM_SCOPE_PRODUCTS_MIN_ZOOM = 5.75;
@@ -1316,6 +1348,7 @@ export default function MapsScreen() {
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'auto' | 'rainviewer' | 'mrms'>>('auto');
+  const [wideMrmsProduct, setWideMrmsProduct] = useState<MrmsProductId>('MergedReflectivityQCComposite');
   const [stationProduct, setStationProduct] = useState<RadarProductId>('N0B');
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
@@ -2086,6 +2119,7 @@ export default function MapsScreen() {
     playbackBlocked: false,
     playbackRate,
     loopHours: radarLoopHours,
+    mrmsProduct: wideMrmsProduct,
   });
 
   const uiFrames = radarCtl.uiFrames;
@@ -2095,6 +2129,31 @@ export default function MapsScreen() {
   const timestampLabel = radarCtl.timestampLabel;
   const activeRadarProvider = radarCtl.effectiveRadarProvider ?? effectiveRadarProvider;
   const radarProductMeta = RADAR_PRODUCT_META[product];
+  const wideMrmsProductMeta =
+    MRMS_PRODUCT_OPTIONS.find((item) => item.id === wideMrmsProduct) ?? MRMS_PRODUCT_OPTIONS[0];
+  const showingSelectedMrmsProduct = activeRadarProvider === 'mrms' && !radarCtl.mrmsError;
+  const wideRadarLegendTitle = showingSelectedMrmsProduct ? wideMrmsProductMeta.title : 'Reflectivity';
+  const wideRadarLegendLeft = showingSelectedMrmsProduct
+    ? wideMrmsProduct === 'EchoTop_18'
+      ? 'LOW'
+      : wideMrmsProduct === 'PrecipRate'
+        ? 'LIGHT'
+        : '5 dBZ'
+    : '5 dBZ';
+  const wideRadarLegendMid = showingSelectedMrmsProduct
+    ? wideMrmsProduct === 'EchoTop_18'
+      ? 'TOPS'
+      : wideMrmsProduct === 'PrecipRate'
+        ? 'RATE'
+        : '40 dBZ'
+    : '40 dBZ';
+  const wideRadarLegendRight = showingSelectedMrmsProduct
+    ? wideMrmsProduct === 'EchoTop_18'
+      ? 'HIGH'
+      : wideMrmsProduct === 'PrecipRate'
+        ? 'HEAVY'
+        : '75+'
+    : '75+';
   const atmosphericTimelineFrames = useMemo(
     () => buildMasterTimelineFrames(radarEnabled ? uiFrames : [], animatedSatelliteEnabled ? satellitePlaybackFrames : []),
     [animatedSatelliteEnabled, radarEnabled, satellitePlaybackFrames, uiFrames],
@@ -5729,14 +5788,29 @@ export default function MapsScreen() {
                         </>
                       ) : null}
                     </View>
+                    {MRMS_RADAR_PREVIEW_ENABLED ? (
+                      <View style={styles.radarModeRow}>
+                        {MRMS_PRODUCT_OPTIONS.map((item) => (
+                          <MiniToggle
+                            key={item.id}
+                            label={item.label}
+                            active={wideMrmsProduct === item.id}
+                            onPress={() => {
+                              setWideMrmsProduct(item.id);
+                              if (wideRadarProvider === 'rainviewer') setWideRadarProvider('auto');
+                            }}
+                          />
+                        ))}
+                      </View>
+                    ) : null}
                   </View>
                 ) : null}
                 <RadarLegend
                   style="rainviewer"
-                  title="Reflectivity"
-                  leftLabel="5 dBZ"
-                  midLabel="40 dBZ"
-                  rightLabel="75+"
+                  title={wideRadarLegendTitle}
+                  leftLabel={wideRadarLegendLeft}
+                  midLabel={wideRadarLegendMid}
+                  rightLabel={wideRadarLegendRight}
                   compact
                 />
                 <Text style={styles.legendCardMeta}>
@@ -5744,13 +5818,13 @@ export default function MapsScreen() {
                     ? radarCtl.mrmsError
                       ? `MRMS preview unavailable: ${radarCtl.mrmsError}`
                       : wideRadarProvider === 'auto'
-                        ? 'Auto radar is using owned NOAA MRMS tiles. RainViewer stays warm as the fallback.'
-                        : 'MRMS preview uses owned NOAA MRMS tiles through our Cloudflare radar path.'
+                        ? `Auto radar is using owned NOAA MRMS ${wideMrmsProductMeta.title.toLowerCase()}. RainViewer stays warm as the fallback.`
+                        : `${wideMrmsProductMeta.note} Served through our Cloudflare radar path.`
                     : wideRadarProvider === 'auto'
                       ? mrmsBetaCoverage
                         ? radarCtl.mrmsError
-                          ? `RainViewer fallback is active: ${radarCtl.mrmsError}`
-                          : 'RainViewer fallback is active while MRMS warms up.'
+                          ? `RainViewer fallback is active; ${wideMrmsProductMeta.title} is not fresh yet.`
+                          : `RainViewer fallback is active while ${wideMrmsProductMeta.title.toLowerCase()} warms up.`
                         : 'Outside MRMS beta coverage. RainViewer remains active here.'
                       : 'RainViewer colors vary slightly by provider frame. Turn on Storm Scope for a dedicated radar workspace.'}
                 </Text>
@@ -8239,9 +8313,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   radarModeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
     gap: 8,
     marginBottom: 2,
   },

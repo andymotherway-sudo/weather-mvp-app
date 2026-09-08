@@ -25,6 +25,7 @@ This file is the short source of truth for where the product and infrastructure 
 - IEM/RIDGE remains the local Storm Scope/NEXRAD fallback until owned NOAA Level III rendering is production-ready.
 - Production MRMS is currently bounded for cost: scheduled z3-z8, retained rolling frames, no archive.
 - Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
+- The app now has wide-radar MRMS preview product chips for composite reflectivity, lowest-altitude reflectivity, echo tops, and precip rate. Composite remains the default; the other products require fresh published timelines before they render.
 - Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
 - Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. Production proofs now publish reflectivity, velocity, and echo tops for `IWA`.
 - Storm Scope now has an app-selectable `Owned L3` beta local source, but `IEM` remains the default and fallback until owned Level III has repeated fresh frames and broader station/product coverage.
