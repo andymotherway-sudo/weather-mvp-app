@@ -110,7 +110,28 @@ At minimum for radar/infrastructure releases, check:
 
 If none of those docs need a change, say that explicitly in the release notes or commit message so the omission is intentional.
 
-### 4. Promote The Worker To Production
+### 4. Run OMNIwx Sentry Release Review
+
+Before building the AAB, invoke the repo skill:
+
+```text
+Use $omniwx-sentry to review the current diff for release safety.
+```
+
+Required scope:
+
+- current diff
+- release metadata
+- backend target
+- radar/source changes
+- Android/native/package changes
+- docs/release notes
+
+Do not proceed to AAB upload with unresolved high-severity findings. If a finding is intentionally accepted for an internal-testing build, document that decision before building.
+
+For backend, Android/native, auth, payment, radar, environment-config, or release-metadata changes, run the review after metadata/docs are updated so the skill can check the whole release slice.
+
+### 5. Promote The Worker To Production
 
 Do not assume the last deploy was prod.
 
@@ -149,7 +170,7 @@ Then confirm the deploy output shows the production bindings you expect, for exa
 - `env.DB (omniwx-prod)`
 - `env.RADAR_ASSETS (omniwx-radar-assets-prod)`
 
-### 5. Verify Production Before Building The AAB
+### 6. Verify Production Before Building The AAB
 
 This is the most important release gate.
 
@@ -163,7 +184,7 @@ Examples:
 
 If the backend is wrong, stop here and fix it before building.
 
-### 6. Confirm The App Resolves To Production
+### 7. Confirm The App Resolves To Production
 
 Before building the AAB, verify the resolved Expo config points at the intended production API.
 
@@ -196,7 +217,7 @@ Confirm:
 - `versionCode` matches `expo.android.versionCode` in `app.json`
 - `versionName` matches `expo.version` in `app.json`
 
-### 7. Build The Release AAB
+### 8. Build The Release AAB
 
 Run the production-targeted release build:
 
@@ -208,7 +229,7 @@ Artifact:
 
 - [android/app/build/outputs/bundle/release/app-release.aab](C:/Users/andym_au640pp/weather-app/android/app/build/outputs/bundle/release/app-release.aab)
 
-### 8. Upload To Internal Testing
+### 9. Upload To Internal Testing
 
 Internal testing is the real end-to-end staging gate for OMNIwx.
 
@@ -218,7 +239,7 @@ That means this upload should represent:
 - the exact app build wired to that backend
 - the release notes and tester asks for this slice
 
-### 9. Validate Through Internal Testing
+### 10. Validate Through Internal Testing
 
 Use internal testing to validate what cannot be proven locally.
 
@@ -229,7 +250,7 @@ Examples:
 - end-to-end map/radar behavior after install/update
 - regression checks for high-sensitivity features like Astro and Maps
 
-### 10. Only Then Consider Wider Release
+### 11. Only Then Consider Wider Release
 
 If internal testing passes, the same backend/app pairing becomes the candidate for wider rollout.
 
@@ -240,6 +261,8 @@ If internal testing passes, the same backend/app pairing becomes the candidate f
 - TypeScript passed
 - Versions/docs bumped
 - Release notes and affected docs updated or explicitly marked unchanged
+- `$omniwx-sentry` release-safety review completed
+- High-severity findings resolved or explicitly accepted
 - Worker explicitly deployed to production
 - Production bindings confirmed
 - Production backend probes passed
