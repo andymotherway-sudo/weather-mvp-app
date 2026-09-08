@@ -8,11 +8,12 @@ type OmniChipProps = {
   active?: boolean;
   disabled?: boolean;
   icon?: ReactNode;
+  size?: 'compact' | 'default';
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
 };
 
-export function OmniChip({ label, active = false, disabled = false, icon, onPress, style }: OmniChipProps) {
+export function OmniChip({ label, active = false, disabled = false, icon, size = 'default', onPress, style }: OmniChipProps) {
   const { chrome } = useAppChrome();
 
   return (
@@ -23,6 +24,7 @@ export function OmniChip({ label, active = false, disabled = false, icon, onPres
       onPress={onPress}
       style={[
         styles.chip,
+        size === 'compact' ? styles.compact : null,
         {
           backgroundColor: active ? chrome.pillActive : chrome.pill,
           borderColor: active ? chrome.borderStrong : chrome.border,
@@ -32,7 +34,9 @@ export function OmniChip({ label, active = false, disabled = false, icon, onPres
       ]}
     >
       {icon}
-      <Text style={[styles.label, { color: active ? '#FFFFFF' : 'rgba(255,255,255,0.78)' }]}>{label}</Text>
+      <Text style={[styles.label, size === 'compact' ? styles.compactLabel : null, { color: active ? '#FFFFFF' : 'rgba(255,255,255,0.78)' }]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -49,8 +53,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
   },
+  compact: {
+    minHeight: 28,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+  },
   label: {
     fontSize: 12,
     fontWeight: '900',
+  },
+  compactLabel: {
+    fontSize: 9,
   },
 });

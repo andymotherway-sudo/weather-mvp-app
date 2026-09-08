@@ -18,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Glass } from '../../components/common/Glass';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { OmniChip } from '../../components/common/OmniChip';
 import { AlertDetailCard } from '../../components/maps/AlertDetailCard';
 import { AlertMapLayers } from '../../components/maps/AlertMapLayers';
 import { AnimationCompositor, type AnimationBufferStatus } from '../../components/maps/AnimationCompositor';
@@ -7617,11 +7618,7 @@ function StatusPill(props: { label: string; active?: boolean }) {
 }
 
 function MiniToggle(props: { label: string; active?: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={props.onPress} style={[styles.statusPill, props.active ? styles.statusPillActive : null]}>
-      <Text style={styles.statusPillText}>{props.label}</Text>
-    </Pressable>
-  );
+  return <OmniChip label={props.label} active={props.active} onPress={props.onPress} size="compact" />;
 }
 
 function AstroMetric(props: { label: string; value: string }) {
