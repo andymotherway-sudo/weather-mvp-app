@@ -1,11 +1,11 @@
 ---
 name: omniwx-sentry
-description: Use when the user wants a standing senior OMNIwx software engineer, release supervisor, security reviewer, code-quality auditor, best-practices cleanup pass, GitHub embarrassment-prevention pass, or company/acquirer-ready review over the app, Android, maps/radar, docs, or omniwx-api workspace.
+description: Use when the user wants a standing senior OMNIwx software engineer, release supervisor, security reviewer, code-quality auditor, best-practices cleanup pass, repository-readiness pass, or company/acquirer-ready review over the app, Android, maps/radar, docs, or omniwx-api workspace.
 ---
 
 # OMNIwx Sentry
 
-Use this skill to review and harden `C:\Users\andym_au640pp\weather-app` with the mindset of a detail-oriented supervising software engineer preparing the repo for serious users, future teammates, security review, and possible acquirer due diligence.
+Use this skill to review and harden the OMNIwx repository with the mindset of a detail-oriented supervising software engineer preparing the repo for serious users, future teammates, security review, and possible acquirer due diligence.
 
 The goal is not only "does it work?" The goal is "does this look intentional, maintainable, safe, and professionally operated?"
 
@@ -35,7 +35,7 @@ Do not treat passing checks as sufficient. Look for behavioral regressions, inco
 Order by severity. Include file references and concrete failure mode. Keep summaries brief and secondary.
 
 6. Fix when explicitly asked for cleanup/hardening.
-If the user asks to clean up, harden, make it company-ready, avoid GitHub embarrassment, or make the code look established, make safe changes after building context. Preserve unrelated user changes. Prefer small, reviewable commits over sweeping rewrites.
+If the user asks to clean up, harden, make it company-ready, improve repository polish, or make the code look established, make safe changes after building context. Preserve unrelated user changes. Prefer small, reviewable commits over sweeping rewrites.
 
 ## Review Modes
 

@@ -44,7 +44,7 @@ Done means:
 ## First command
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:discover -- --product ReflectivityAtLowestAltitude --max-frames 12
 ```
 
@@ -53,7 +53,7 @@ This discovery command is read-only. It does not download GRIB2 payloads, render
 ## Local download checkpoint
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:download -- --product ReflectivityAtLowestAltitude
 ```
 
@@ -70,7 +70,7 @@ For the current Codex desktop environment, install Python dependencies into igno
 Then render a first transparent PNG proof:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:render-proof
 ```
 
@@ -120,7 +120,7 @@ Initial publish scope:
 Dry-run the tiny publish plan:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:publish-proof
 ```
 
@@ -163,7 +163,7 @@ The retention brake now runs directly against R2 through Cloudflare's S3-compati
 Direct cleanup command:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:cleanup-retained -- --env production --product MergedReflectivityQCComposite --uploader s3
 ```
 
@@ -211,14 +211,14 @@ Guardrails:
 After the local Python MRMS dependencies are installed, the dev update flow can be run as one bounded command:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run mrms:update-latest
 ```
 
 By default this downloads the latest composite frame, generates z3-z4 non-empty tiles, and dry-runs the dev R2 publish. To actually write the bounded frame prefix and latest pointer to dev R2, run the same command through WSL with `--apply`:
 
 ```powershell
-wsl bash -lc 'cd /mnt/c/Users/andym_au640pp/weather-app/omniwx-api && npm run mrms:update-latest -- --apply'
+wsl bash -lc 'cd "$PWD/omniwx-api" && npm run mrms:update-latest -- --apply'
 ```
 
 Safety defaults:
@@ -261,35 +261,35 @@ The preview/auto toggle is still a beta safety valve. It should not be treated a
 The first owned local radar step is read-only discovery against NOAA/Unidata Level III objects. This avoids writing anything to R2 until we know which products have real recent data for a station.
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run level3:discover -- --site IWA --products N0B,N0S,N0Q,N0U,EET,NET --days 1
 ```
 
 For a multi-site inventory:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run level3:inventory -- --sites IWA,MPX,DLH,TLX,CAE --products N0B,N0S,EET --days 1
 ```
 
 For a local-only raw frame download:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run level3:download -- --site IWA --product N0B --days 1
 ```
 
 For a local-only transparent PNG render proof:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run level3:render-proof -- --input ../tmp/nexrad-level3/IWA_N0B_2026_08_13_04_08_27 --output ../tmp/nexrad-level3/IWA_N0B.proof.png --metadata-output ../tmp/nexrad-level3/IWA_N0B.proof.json
 ```
 
 For a local-only XYZ tile proof:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\omniwx-api
+cd omniwx-api
 npm run level3:tile-proof -- --input ../tmp/nexrad-level3/IWA_N0B_2026_08_13_04_08_27 --output-dir ../tmp/nexrad-level3/tiles/IWA/N0B/20260813T040827 --min-z 6 --max-z 7
 ```
 

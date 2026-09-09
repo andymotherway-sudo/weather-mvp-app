@@ -34,7 +34,7 @@ export function OmniChip({ label, active = false, disabled = false, icon, size =
       ]}
     >
       {icon}
-      <Text style={[styles.label, size === 'compact' ? styles.compactLabel : null, { color: active ? '#FFFFFF' : 'rgba(255,255,255,0.78)' }]}>
+      <Text style={[styles.label, size === 'compact' ? styles.compactLabel : null, { color: active ? chrome.textPrimary : chrome.textSecondary }]}>
         {label}
       </Text>
     </Pressable>

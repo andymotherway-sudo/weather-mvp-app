@@ -1,10 +1,10 @@
 # OMNIwx Production Readiness Plan
 
-Last updated: September 5, 2026
+Last updated: September 8, 2026
 
-This plan organizes the security, paid-customer, infrastructure, and Storm Scope notes into one execution path. It is intentionally practical: protect what exists, keep the app lovable, and add commercial capability only after the trust foundation is real.
+This plan organizes the security, paid-customer, infrastructure, Storm Scope, cleanup, and professional-readiness notes into one execution path. It is intentionally practical: protect what exists, keep the app lovable, and add commercial capability only after the trust foundation is real.
 
-For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](C:/Users/andym_au640pp/weather-app/docs/current-status.md).
+For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](current-status.md).
 
 ## North Star
 
@@ -308,7 +308,79 @@ Done when:
 - Store listing screenshots match the current app.
 - User-facing docs explain source limits honestly.
 
-## Track F: Operations, Backup, And Scale
+## Track F: Deep Cleanup And Professional Readiness
+
+Goal: make the repository feel intentional, maintainable, and credible to a senior engineer, future teammate, security reviewer, or possible acquirer.
+
+This is not a vanity cleanup track. It exists so the codebase becomes easier to change safely while the product grows into accounts, paid tiers, owned radar, and broader tester usage.
+
+### F1. Repository Hygiene Baseline
+
+Scope:
+
+- Remove proven-unused starter files, demo routes, abandoned reset scripts, and unreferenced scaffolding.
+- Keep generated files only when they are required for builds, tests, or offline/runtime performance.
+- Keep private learning notes, screenshots, local experiments, and scratch plans out of git unless distilled into clean docs.
+- Remove personal machine paths, placeholder emails, and casual internal phrasing from public-facing docs.
+- Keep README, current status, release notes, and implementation plans aligned.
+
+Done when:
+
+- `git status --short` contains only intentional changes.
+- Static checks pass after removals.
+- Targeted scans find no Expo starter remnants, local machine paths, placeholder contacts, or obvious key/token patterns.
+- Any retained "unused" candidates are documented as false positives, route entry points, workflow entry points, native surfaces, or generated artifacts.
+
+### F2. Structure And Maintainability Review
+
+Scope:
+
+- Identify large files that need extraction because they slow safe development, especially Maps, Land, Worker routing, and Android Auto.
+- Prefer feature modules over generic abstractions when weather semantics matter.
+- Centralize repeated source/fallback/error semantics only when it reduces behavior risk.
+- Tighten broad `any` use around external provider data gradually with runtime guards and typed normalizers.
+- Keep debug logging development-only and operational logging structured.
+
+Done when:
+
+- High-risk surfaces have a short owner map: where state lives, where fetches happen, where rendering happens, and what fallbacks exist.
+- The next extraction targets are documented before code is moved.
+- Refactors land in small, validated commits rather than sweeping rewrites.
+- App behavior, radar behavior, widgets, Android Auto, and export flows still pass release-path checks after each cleanup slice.
+
+### F3. Dependency And Security Posture
+
+Scope:
+
+- Remove direct dependencies that are no longer imported or configured.
+- Run `npm audit` regularly, but do not use `--force` on Expo, React Native, MapLibre, or navigation packages without a planned upgrade branch.
+- Track residual transitive vulnerabilities separately from app-exploitable risks.
+- Keep secrets in Cloudflare Worker secrets, GitHub Actions secrets, or ignored local files.
+
+Done when:
+
+- Direct dependencies are justified by source imports, Expo plugins, native needs, or documented workflow use.
+- Non-breaking audit fixes are applied and validated.
+- Breaking audit fixes are grouped into a planned Expo/MapLibre/navigation upgrade task.
+- Secret scans find no committed private values.
+
+### F4. Professional Readiness Gate
+
+Add this gate before major release builds, payment work, or major radar cutovers:
+
+1. Run `$omniwx-sentry` against the current diff.
+2. Run lint, app TypeScript, Worker TypeScript, and relevant Worker tests.
+3. For native-impacting work, run the Android compile or release bundle path.
+4. Confirm README/current-status/release notes match the actual release posture.
+5. Confirm no user-facing path exposes raw backend/provider errors.
+6. Confirm no source label claims owned/routed data unless that source is actually rendering.
+
+Done when:
+
+- The current diff has no high-confidence dead code, stale docs, exposed secrets, raw user-facing provider payloads, or misleading source labels.
+- Remaining risks are named with a next action instead of silently ignored.
+
+## Track G: Operations, Backup, And Scale
 
 Goal: know what happens when things fail.
 
@@ -356,6 +428,7 @@ Done when:
 3. Add backend security docs and D1 schema/migration groundwork.
 4. Continue MRMS-auto validation and retention cleanup.
 5. Fix user-visible error boundary/reset path.
+6. Finish the first repository hygiene baseline and commit it as a small, reviewable cleanup.
 
 ### Next
 
@@ -364,6 +437,7 @@ Done when:
 3. Fix fire duplicate labels and legend consistency.
 4. Add backup/retention/BCP docs.
 5. Verify production release path remains boring.
+6. Plan the Expo/MapLibre/navigation security-upgrade branch for remaining audit findings.
 
 ### Later
 
@@ -386,4 +460,5 @@ This plan is done when:
 - MRMS-auto and RainViewer fallback are stable enough for internal testing.
 - Storm Scope has a clear implementation path and acceptance criteria.
 - Backup, retention, and recovery responsibilities are explicit.
+- The repository hygiene baseline is complete and future cleanup work is captured in small, auditable tasks.
 - The full release path is documented, repeatable, and followed for production builds.

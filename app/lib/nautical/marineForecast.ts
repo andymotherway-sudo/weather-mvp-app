@@ -24,6 +24,7 @@ interface UseMarineForecastResult {
 const NWS_API = 'https://api.weather.gov';
 const NWS_PRODUCT = 'https://forecast.weather.gov/product.php';
 const NWS_MARINE_ZONE_TEXT = 'https://marine.weather.gov/MapClick.php';
+const NOAA_USER_AGENT = 'OMNIwx/1.0 (contact: admin@omni-wx.com)';
 
 function shortBody(body: string, max = 240) {
   const s = (body ?? '').replace(/\s+/g, ' ').trim();
@@ -82,7 +83,7 @@ async function fetchZoneForecastJson(path: string, zoneId: string) {
 
   const res = await fetch(url, {
     headers: {
-      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      'User-Agent': NOAA_USER_AGENT,
       Accept: 'application/geo+json, application/json',
     },
   });
@@ -124,7 +125,7 @@ async function fetchTgftpText(zoneId: string) {
 
   const res = await fetch(url, {
     headers: {
-      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      'User-Agent': NOAA_USER_AGENT,
       Accept: 'text/plain',
     },
   });
@@ -154,7 +155,7 @@ async function fetchGreatLakesNearshoreText(zoneId: string, wfo?: string) {
   const url = `${NWS_PRODUCT}?issuedby=${encodeURIComponent(office)}&product=NSH&format=TXT&glossary=0`;
   const res = await fetch(url, {
     headers: {
-      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      'User-Agent': NOAA_USER_AGENT,
       Accept: 'text/html,text/plain',
     },
   });
@@ -227,7 +228,7 @@ async function fetchGreatLakesZoneText(zoneId: string) {
 
   const res = await fetch(url, {
     headers: {
-      'User-Agent': 'omniwx-app/1.0 (contact: andym@example.com)',
+      'User-Agent': NOAA_USER_AGENT,
       Accept: 'text/html,text/plain',
     },
   });

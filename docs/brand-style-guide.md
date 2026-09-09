@@ -94,10 +94,8 @@ Create or formalize these components before large visual rewrites:
 
 - `OmniScreen`: safe-area screen shell with background, padding, and refresh behavior.
 - `OmniHero`: top card/header pattern with logo, title, subtitle, and primary action.
-- `OmniGlassCard`: named variants around `Glass` for default, strong, compact, and floating.
 - `OmniChip`: selected, unselected, disabled, segmented, and toggle variants.
-- `OmniMetricTile`: metric value, label, icon, status, and optional meter.
-- `OmniSectionHeader`: eyebrow/title/subtitle/action row.
+- Planned next: card, metric, and section-header primitives should be added only when a screen adopts them.
 - `OmniBottomSheet`: collapsed, half, expanded states for Maps/Storm Scope and dense tools.
 - `OmniLegend`: compact and expanded legends for radar/fire/sky score/data layers.
 
@@ -126,7 +124,7 @@ Adjust before implementation:
 
 1. Freeze the brand guide as the design contract. Initial guide added September 8, 2026.
 2. Add semantic theme tokens for score colors, freshness states, glass opacity, control states, and feature accents. Initial tokens added September 8, 2026.
-3. Create shared UI primitives without changing screens yet. Initial `OmniGlassCard`, `OmniChip`, `OmniMetricTile`, and `OmniSectionHeader` primitives added September 8, 2026.
+3. Expand shared UI primitives as screens adopt them. `OmniChip` is the first adopted primitive; avoid adding unused shared components ahead of actual UI work.
 4. Convert one screen section at a time, starting with low-risk duplicated patterns.
 5. Use Space as the first polished redesign target after radar stabilizes.
 6. Follow with Storm Scope controls, then Land/Hourly card consistency.

@@ -8,7 +8,7 @@ It exists to prevent one easy mistake:
 
 Because OMNIwx can only be fully validated through Google Play internal testing, the internal-testing release should be treated as the real staging gate. That means backend and app environment choices must be deliberate.
 
-Before starting a release, compare the intended change against [current-status.md](C:/Users/andym_au640pp/weather-app/docs/current-status.md) so stale planning notes do not drive a production build.
+Before starting a release, compare the intended change against [current-status.md](current-status.md) so stale planning notes do not drive a production build.
 
 ## Environment Roles
 
@@ -29,7 +29,7 @@ That resolution comes from:
 
 - `OMNIWX_API_ENV`
 - EAS build profile environment variables
-- [app.config.js](C:/Users/andym_au640pp/weather-app/app.config.js)
+- [app.config.js](../app.config.js)
 
 If the AAB is going to testers, the resolved environment must be `production`, not `development`.
 
@@ -87,10 +87,10 @@ For radar/infrastructure work, verify both:
 
 Update the release surfaces together:
 
-- [package.json](C:/Users/andym_au640pp/weather-app/package.json)
-- [app.json](C:/Users/andym_au640pp/weather-app/app.json)
-- [android/app/build.gradle](C:/Users/andym_au640pp/weather-app/android/app/build.gradle)
-- [docs/google-play-closed-testing-release-notes.md](C:/Users/andym_au640pp/weather-app/docs/google-play-closed-testing-release-notes.md)
+- [package.json](../package.json)
+- [app.json](../app.json)
+- [android/app/build.gradle](../android/app/build.gradle)
+- [docs/google-play-closed-testing-release-notes.md](google-play-closed-testing-release-notes.md)
 
 Keep these aligned:
 
@@ -103,10 +103,10 @@ Docs are part of the release surface. If behavior, infrastructure posture, testi
 
 At minimum for radar/infrastructure releases, check:
 
-- [docs/google-play-closed-testing-release-notes.md](C:/Users/andym_au640pp/weather-app/docs/google-play-closed-testing-release-notes.md)
-- [docs/radar-phase-done-checklist.md](C:/Users/andym_au640pp/weather-app/docs/radar-phase-done-checklist.md)
-- [docs/mrms-owned-radar-plan.md](C:/Users/andym_au640pp/weather-app/docs/mrms-owned-radar-plan.md)
-- [docs/cloudflare-radar-storage-rollout.md](C:/Users/andym_au640pp/weather-app/docs/cloudflare-radar-storage-rollout.md)
+- [docs/google-play-closed-testing-release-notes.md](google-play-closed-testing-release-notes.md)
+- [docs/radar-phase-done-checklist.md](radar-phase-done-checklist.md)
+- [docs/mrms-owned-radar-plan.md](mrms-owned-radar-plan.md)
+- [docs/cloudflare-radar-storage-rollout.md](cloudflare-radar-storage-rollout.md)
 
 If none of those docs need a change, say that explicitly in the release notes or commit message so the omission is intentional.
 
@@ -162,7 +162,7 @@ Optional MRMS direct-tile cutover:
 Fallback path: if GitHub Actions is unavailable and WSL is healthy, use an explicit production deploy command from `omniwx-api/`:
 
 ```powershell
-wsl bash -lc 'cd /mnt/c/Users/andym_au640pp/weather-app/omniwx-api && node ./node_modules/wrangler/bin/wrangler.js deploy --env production --keep-vars --message "your release message"'
+wsl bash -lc 'cd "$PWD/omniwx-api" && node ./node_modules/wrangler/bin/wrangler.js deploy --env production --keep-vars --message "your release message"'
 ```
 
 Then confirm the deploy output shows the production bindings you expect, for example:
@@ -227,7 +227,7 @@ npm run build:android:prod
 
 Artifact:
 
-- [android/app/build/outputs/bundle/release/app-release.aab](C:/Users/andym_au640pp/weather-app/android/app/build/outputs/bundle/release/app-release.aab)
+- [android/app/build/outputs/bundle/release/app-release.aab](../android/app/build/outputs/bundle/release/app-release.aab)
 
 ### 9. Upload To Internal Testing
 

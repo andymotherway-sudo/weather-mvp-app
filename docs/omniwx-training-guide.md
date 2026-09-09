@@ -1437,7 +1437,7 @@ android/
 The release APK command is:
 
 ```powershell
-cd C:\Users\andym_au640pp\weather-app\android
+cd android
 .\gradlew.bat assembleRelease
 ```
 

@@ -69,7 +69,6 @@ export default function RootLayout() {
                   >
                     <Stack.Screen name="(onboarding)" />
                     <Stack.Screen name="(tabs)" />
-                    <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
                   </Stack>
                 </AlmanacWarmupProvider>
               </AppBoot>

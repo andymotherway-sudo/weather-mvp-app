@@ -11,7 +11,8 @@ This file is the short source of truth for where the product and infrastructure 
 - Internal testing is the active release channel.
 - The latest release slice targets a fresh `10267` AAB once the full release path build completes.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
-- Initial shared brand primitives now exist for new work: `OmniGlassCard`, `OmniChip`, `OmniMetricTile`, and `OmniSectionHeader`.
+- Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
+- Professional readiness is now tracked as a dedicated workstream in `docs/production-readiness-plan.md`.
 
 ## Backend
 
@@ -58,6 +59,7 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Not Done Yet
 
+- Finish committing the first deep-clean baseline after final review.
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
 - GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
 - z10 production posture is not fully settled.

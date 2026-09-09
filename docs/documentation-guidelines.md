@@ -20,10 +20,10 @@ These docs should stay tracked:
 
 Examples in this repo:
 
-- [google-play-closed-testing-release-notes.md](C:/Users/andym_au640pp/weather-app/docs/google-play-closed-testing-release-notes.md)
-- [full-release-path.md](C:/Users/andym_au640pp/weather-app/docs/full-release-path.md)
-- [how-omniwx-works.md](C:/Users/andym_au640pp/weather-app/docs/how-omniwx-works.md)
-- [omniwx-feature-guide.md](C:/Users/andym_au640pp/weather-app/docs/omniwx-feature-guide.md)
+- [google-play-closed-testing-release-notes.md](google-play-closed-testing-release-notes.md)
+- [full-release-path.md](full-release-path.md)
+- [how-omniwx-works.md](how-omniwx-works.md)
+- [omniwx-feature-guide.md](omniwx-feature-guide.md)
 
 ## What Should Stay Out Of Git
 
