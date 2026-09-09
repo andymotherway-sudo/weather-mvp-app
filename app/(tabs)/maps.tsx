@@ -2402,15 +2402,18 @@ export default function MapsScreen() {
 
   const stormScopeProductOptions = useMemo(() => {
     return STATION_RADAR_PRODUCTS.map((item) => {
+      const ownedLevel3Mode = stormScopeLocalProvider === 'level3';
+      const ownedLevel3Available = ownedLevel3Mode && OWNED_LEVEL3_PRODUCT_IDS.has(item.id as RadarProductId);
       const available =
-        stormScopeLocalZoom
-          ? item.enabled
+        stormScopeLocalZoom && ownedLevel3Mode
+          ? ownedLevel3Available
+          : stormScopeLocalZoom
+            ? item.enabled
           : item.id === 'N0Q';
       const active = stormScopeLocalZoom
         ? displayedStationProduct === item.id
         : item.id === 'N0Q';
       const isAnimatedReflectivity = item.id === 'N0Q' || item.id === 'N0B';
-      const ownedLevel3Available = stormScopeLocalProvider === 'level3' && OWNED_LEVEL3_PRODUCT_IDS.has(item.id as RadarProductId);
       const readyLabel =
         ownedLevel3Available
           ? 'Owned NOAA Level III beta'
@@ -2426,7 +2429,11 @@ export default function MapsScreen() {
                     ? 'Upstream animated local scans'
                     : 'Animated local scans';
       const unavailableReason =
-        !stormScopeLocalZoom && item.id !== 'N0Q'
+        stormScopeLocalZoom && ownedLevel3Mode && !ownedLevel3Available
+          ? item.id === 'N0Q'
+            ? 'Owned Level III reflectivity uses HREFL right now.'
+            : 'This product is not owned yet; use IEM fallback for now.'
+        : !stormScopeLocalZoom && item.id !== 'N0Q'
           ? stormScopeSourceMode === 'mosaic'
             ? 'Switch Storm Scope source to Local for NEXRAD products.'
             : 'Zoom closer or switch Storm Scope source to Local.'
@@ -2505,6 +2512,12 @@ export default function MapsScreen() {
       label: 'Owned L3',
       active: stormScopeLocalProvider === 'level3',
       onPress: () => {
+        if (stationProduct === 'N0Q') {
+          setStationProduct('N0B');
+        }
+        if (pendingStationProduct === 'N0Q') {
+          setPendingStationProduct(null);
+        }
         setStormScopeLocalProvider('level3');
         setStormScopeSourceMode('local');
       },
@@ -2533,7 +2546,17 @@ export default function MapsScreen() {
       active: lightningEnabled,
       onPress: () => dispatch({ type: 'SET_LAYER_ENABLED', layerId: 'lightning.strikes', enabled: !lightningEnabled }),
     },
-  ]), [alertsEnabled, dispatch, lightningEnabled, stormScopeLocalProvider, stormScopeRangeRingsEnabled, stormScopeSitesVisible, stormScopeSourceMode]);
+  ]), [
+    alertsEnabled,
+    dispatch,
+    lightningEnabled,
+    pendingStationProduct,
+    stationProduct,
+    stormScopeLocalProvider,
+    stormScopeRangeRingsEnabled,
+    stormScopeSitesVisible,
+    stormScopeSourceMode,
+  ]);
   const stormScopeRadarSites = useMemo(() => {
     return nearbyRadarSites.map(({ site, distanceMi }) => {
       const id3 = normalizeRadarSiteId(site.id);
