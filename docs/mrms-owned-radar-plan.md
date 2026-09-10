@@ -346,6 +346,7 @@ Owned local Level III now mirrors the MRMS proof pattern at a smaller station/pr
 - Empty Level III renders are refused by default with `--min-tiles 1`, so a blank product cannot replace a useful latest timeline.
 - Applied publishes delete stale frame objects under that station/product prefix after the retained playlist is written, so Level III proofs stay rolling instead of archival.
 - Expanded Level III beta products can create more than 1,000 stale objects per station/product cleanup when moving from older test settings to the current rolling retention. The cycle workflow now passes a configurable `max_deletes` value, defaulting to 5,000, so cleanup remains bounded but does not fail normal z7-z10 retention maintenance.
+- Some Level III diagnostic products are legitimately sparse. For example, echo tops can render zero non-empty tiles when there are no qualifying returns. The scheduled cycle should use `allow_empty_skip=true` so optional diagnostic products skip publishing and preserve their previous timeline, while required products such as `N0B` and `N0S` still fail loudly if they cannot publish.
 
 Initial production proof posture:
 

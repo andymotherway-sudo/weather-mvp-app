@@ -41,6 +41,7 @@ jobs:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_PRODUCTS || 'N0B,N0S,EET') || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
+      LEVEL3_REQUIRED_PRODUCTS: ${{ vars.LEVEL3_REQUIRED_PRODUCTS || 'N0B,N0S' }}
       LEVEL3_MAX_DELETES: ${{ vars.LEVEL3_MAX_DELETES || '5000' }}
       LEVEL3_BASE_URL: https://omniwx-api-production.omniwx.workers.dev
 
@@ -63,6 +64,10 @@ jobs:
             .split(",")
             .map((value) => value.trim().toUpperCase())
             .filter(Boolean);
+          const requiredProducts = new Set(String(process.env.LEVEL3_REQUIRED_PRODUCTS || "N0B,N0S")
+            .split(",")
+            .map((value) => value.trim().toUpperCase())
+            .filter(Boolean));
           const baseUrl = String(process.env.LEVEL3_BASE_URL || "").replace(/\/+$/, "");
           const checks = [];
 
@@ -98,9 +103,11 @@ jobs:
           }
 
           const stale = checks.filter((check) => !check.ok || check.ageMinutes == null || check.ageMinutes > staleAfterMinutes);
-          const shouldDispatch = stale.length > 0;
+          const requiredStale = stale.filter((check) => requiredProducts.has(check.product));
+          const shouldDispatch = requiredStale.length > 0;
           console.log(`SHOULD_DISPATCH=${shouldDispatch ? "true" : "false"}`);
           console.log(`STALE_PRODUCTS=${stale.map((check) => `${check.site}:${check.product}`).join(",")}`);
+          console.log(`STALE_REQUIRED_PRODUCTS=${requiredStale.map((check) => `${check.site}:${check.product}`).join(",")}`);
           console.log(`CHECKS_JSON=${JSON.stringify(checks)}`);
           NODE
           cat /tmp/level3-watchdog.env
@@ -142,6 +149,7 @@ jobs:
             -f retain_frames=12 \
             -f max_frame_age_minutes=120 \
             -f max_deletes="$LEVEL3_MAX_DELETES" \
+            -f allow_empty_skip=true \
             -f supersample=1
 
       - name: Report watchdog decision
@@ -154,7 +162,9 @@ jobs:
             echo ""
             echo "- Sites: $LEVEL3_SITES"
             echo "- Products: $LEVEL3_PRODUCTS"
+            echo "- Required products: $LEVEL3_REQUIRED_PRODUCTS"
             echo "- Stale products: ${{ steps.freshness.outputs.STALE_PRODUCTS || 'none' }}"
+            echo "- Stale required products: ${{ steps.freshness.outputs.STALE_REQUIRED_PRODUCTS || 'none' }}"
             echo "- Active publisher runs: ${{ steps.active.outputs.ACTIVE_COUNT }}"
             echo "- Would dispatch: ${{ steps.freshness.outputs.SHOULD_DISPATCH }}"
             echo "- Dry run: $DRY_RUN"

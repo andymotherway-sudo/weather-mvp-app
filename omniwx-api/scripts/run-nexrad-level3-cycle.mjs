@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +28,7 @@ function parseArgs(argv) {
     supersample: 1,
     maxRangeKm: null,
     python: process.env.OMNIWX_PYTHON || null,
+    allowEmptySkip: false,
     apply: false,
   };
 
@@ -45,6 +47,7 @@ function parseArgs(argv) {
     else if (arg === "--supersample" && argv[i + 1]) args.supersample = Math.max(1, Math.min(4, Math.floor(Number(argv[++i]) || args.supersample)));
     else if (arg === "--max-range-km" && argv[i + 1]) args.maxRangeKm = Math.max(25, Math.min(460, Number(argv[++i]) || 0));
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
+    else if (arg === "--allow-empty-skip") args.allowEmptySkip = true;
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -77,6 +80,7 @@ Options:
   --supersample <n>            Supersample factor. Default: 1
   --max-range-km <km>          Optional render radius cap
   --python <path>              Python executable
+  --allow-empty-skip           Treat zero-tile sparse products as no-op success
   --apply                      Actually write to R2. Default is dry-run
 `);
 }
@@ -122,9 +126,27 @@ function main() {
   if (args.python) tileArgs.push("--python", args.python);
   runStep("Render Level III XYZ tiles", process.execPath, tileArgs);
 
+  const manifestPath = join(tileDir, "manifest.json");
+  if (args.allowEmptySkip) {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const tileCount = Array.isArray(manifest.tiles) ? manifest.tiles.length : 0;
+    if (tileCount < args.minTiles) {
+      console.log(JSON.stringify({
+        ok: true,
+        skipped: true,
+        reason: "empty-level3-product",
+        site: args.site,
+        product: args.product,
+        tileCount,
+        minTiles: args.minTiles,
+      }, null, 2));
+      return;
+    }
+  }
+
   const publishArgs = [
     join(SCRIPT_DIR, "publish-nexrad-level3-proof.mjs"),
-    "--manifest", join(tileDir, "manifest.json"),
+    "--manifest", manifestPath,
     "--bucket", bucket,
     "--max-tiles", String(args.maxTiles),
     "--min-tiles", String(args.minTiles),

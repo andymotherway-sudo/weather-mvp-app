@@ -69,6 +69,11 @@ on:
         description: "Maximum stale Level III objects cleanup may delete per station/product"
         required: true
         default: "5000"
+      allow_empty_skip:
+        description: "Skip zero-tile products instead of failing the whole cycle"
+        required: true
+        default: true
+        type: boolean
       supersample:
         description: "Tile supersampling factor"
         required: true
@@ -107,11 +112,13 @@ jobs:
       LEVEL3_TARGET_ENV: ${{ inputs.target_env || 'production' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || inputs.site || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_PRODUCTS || 'N0B,N0S,EET') || inputs.products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
+      LEVEL3_REQUIRED_PRODUCTS: ${{ vars.LEVEL3_REQUIRED_PRODUCTS || 'N0B,N0S' }}
       LEVEL3_MIN_ZOOM: ${{ inputs.min_zoom || '7' }}
       LEVEL3_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
       LEVEL3_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
       LEVEL3_MAX_FRAME_AGE_MINUTES: ${{ inputs.max_frame_age_minutes || '120' }}
       LEVEL3_MAX_DELETES: ${{ inputs.max_deletes || vars.LEVEL3_MAX_DELETES || '5000' }}
+      LEVEL3_ALLOW_EMPTY_SKIP: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_empty_skip }}
       LEVEL3_SUPERSAMPLE: ${{ inputs.supersample || '1' }}
       LEVEL3_APPLY: ${{ github.event_name == 'schedule' && 'true' || inputs.apply }}
       LEVEL3_SMOKE_BASE_URL: ${{ (inputs.target_env || 'production') == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
@@ -160,6 +167,10 @@ jobs:
           set -euo pipefail
           IFS=',' read -ra sites <<< "$LEVEL3_SITES"
           IFS=',' read -ra products <<< "$LEVEL3_PRODUCTS"
+          succeeded="/tmp/level3-succeeded-products.txt"
+          skipped="/tmp/level3-skipped-products.txt"
+          : > "$succeeded"
+          : > "$skipped"
           for raw_site in "${sites[@]}"; do
             site="$(echo "$raw_site" | tr '[:lower:]' '[:upper:]' | sed -E 's/^K([A-Z0-9]{3})$/\1/' | xargs)"
             if [ -z "$site" ]; then
@@ -184,12 +195,27 @@ jobs:
                 --max-deletes "$LEVEL3_MAX_DELETES"
                 --supersample "$LEVEL3_SUPERSAMPLE"
               )
+              if [ "$LEVEL3_ALLOW_EMPTY_SKIP" = "true" ]; then
+                args+=(--allow-empty-skip)
+              fi
               if [ "$LEVEL3_APPLY" = "true" ]; then
                 args+=(--apply)
               else
                 echo "::warning::This product is a dry-run. It will render Level III tiles but will not write to R2."
               fi
-              npm run level3:cycle -- "${args[@]}"
+              output="$(mktemp)"
+              if npm run level3:cycle -- "${args[@]}" | tee "$output"; then
+                if grep -q '"skipped": true' "$output"; then
+                  echo "$site,$product" >> "$skipped"
+                  echo "::warning::Level III $site $product rendered no non-empty tiles; kept previous published timeline."
+                else
+                  echo "$site,$product" >> "$succeeded"
+                fi
+              else
+                exit_code="${PIPESTATUS[0]}"
+                cat "$output"
+                exit "$exit_code"
+              fi
               echo "::endgroup::"
             done
           done
@@ -201,6 +227,12 @@ jobs:
           set -euo pipefail
           IFS=',' read -ra sites <<< "$LEVEL3_SITES"
           IFS=',' read -ra products <<< "$LEVEL3_PRODUCTS"
+          required_products=",${LEVEL3_REQUIRED_PRODUCTS// /},"
+          succeeded="/tmp/level3-succeeded-products.txt"
+          skipped="/tmp/level3-skipped-products.txt"
+          is_required_product() {
+            [[ "$required_products" == *",$1,"* ]]
+          }
           for raw_site in "${sites[@]}"; do
             site="$(echo "$raw_site" | tr '[:lower:]' '[:upper:]' | sed -E 's/^K([A-Z0-9]{3})$/\1/' | xargs)"
             if [ -z "$site" ]; then
@@ -210,6 +242,18 @@ jobs:
               product="$(echo "$raw_product" | tr '[:lower:]' '[:upper:]' | xargs)"
               if [ -z "$product" ]; then
                 continue
+              fi
+              if [ -f "$skipped" ] && grep -qx "$site,$product" "$skipped"; then
+                if is_required_product "$product"; then
+                  echo "::error::Required Level III $site $product was skipped because it rendered no tiles."
+                  exit 1
+                fi
+                echo "::warning::Skipping smoke test for optional zero-tile Level III $site $product."
+                continue
+              fi
+              if [ -f "$succeeded" ] && ! grep -qx "$site,$product" "$succeeded"; then
+                echo "::error::Level III $site $product did not publish and was not recorded as skipped."
+                exit 1
               fi
               url="$LEVEL3_SMOKE_BASE_URL/v1/radar/level3/timeline?site=$site&product=$product"
               out="/tmp/level3-$site-$product-timeline.json"

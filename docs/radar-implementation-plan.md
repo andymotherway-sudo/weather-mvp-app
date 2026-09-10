@@ -363,6 +363,7 @@ First production proof result:
 - September 9, 2026: the Level III product-bundle workflow was hardened to reject stale live timelines, retain 12 frames by default, and recover with a dedicated watchdog.
 - September 10, 2026: scheduled production Level III timelines reached multiple retained frames. A renderer cleanup pass added weak-reflectivity decluttering for `N0B`/`N0Q`-style products by fading very low dBZ returns and removing isolated weak gates before XYZ tile generation.
 - September 10, 2026: expanded Level III beta publishing reached `IWA`, `MPX`, and `DLH` for `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`. The first expanded scheduled run exposed a cleanup safety-cap failure: stale prefix cleanup needed to delete 1,259 old objects for one station/product, but the old cap was 1,000. The Level III cycle now uses a configurable `max_deletes` cap with a 5,000 default, still scoped to the single station/product prefix being refreshed.
+- September 10, 2026: a later expanded cycle exposed a normal sparse-product case: `MPX EET` rendered zero non-empty tiles. The cycle now supports `allow_empty_skip`, so optional diagnostic products can no-op and keep their last good timeline instead of failing the entire Level III refresh. Core local products remain strict through `LEVEL3_REQUIRED_PRODUCTS` (`N0B,N0S` by default).
 
 ## Operating Cadences
 
