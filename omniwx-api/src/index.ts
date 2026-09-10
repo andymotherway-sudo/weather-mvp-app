@@ -10420,6 +10420,7 @@ type Level3LatestManifest = {
   totalBytes?: number;
   generatedAt?: string;
   byZoom?: unknown;
+  rendererCleanup?: unknown;
   frameCount?: number;
   retentionFrames?: number;
   maxFrameAgeMinutes?: number;
@@ -10442,6 +10443,7 @@ type Level3LatestManifest = {
     tileCount?: number;
     totalBytes?: number;
     byZoom?: unknown;
+    rendererCleanup?: unknown;
   }>;
 };
 
@@ -10511,6 +10513,7 @@ function slimLevel3FrameForTimeline(frame: Level3TimelineFrame) {
     tileCount: frame.tileCount,
     totalBytes: frame.totalBytes,
     byZoom: frame.byZoom,
+    rendererCleanup: frame.rendererCleanup,
   };
 }
 
