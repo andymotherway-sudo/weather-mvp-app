@@ -46,12 +46,21 @@ on:
       retain_frames:
         description: "Rolling retained frames per product"
         required: true
-        default: "6"
+        default: "12"
         type: choice
         options:
           - "3"
           - "6"
           - "12"
+      max_frame_age_minutes:
+        description: "Reject retained frames older than this"
+        required: true
+        default: "120"
+        type: choice
+        options:
+          - "60"
+          - "120"
+          - "360"
       supersample:
         description: "Tile supersampling factor"
         required: true
@@ -92,7 +101,8 @@ jobs:
       LEVEL3_PRODUCTS: ${{ inputs.products || 'N0B,N0S,EET' }}
       LEVEL3_MIN_ZOOM: ${{ inputs.min_zoom || '7' }}
       LEVEL3_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
-      LEVEL3_RETAIN_FRAMES: ${{ inputs.retain_frames || '6' }}
+      LEVEL3_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}
+      LEVEL3_MAX_FRAME_AGE_MINUTES: ${{ inputs.max_frame_age_minutes || '120' }}
       LEVEL3_SUPERSAMPLE: ${{ inputs.supersample || '1' }}
       LEVEL3_APPLY: ${{ github.event_name == 'schedule' && 'true' || inputs.apply }}
       LEVEL3_SMOKE_BASE_URL: ${{ (inputs.target_env || 'production') == 'dev' && 'https://omniwx-api.omniwx.workers.dev' || 'https://omniwx-api-production.omniwx.workers.dev' }}
@@ -155,6 +165,7 @@ jobs:
               --max-tiles 2000
               --min-tiles 1
               --retain-frames "$LEVEL3_RETAIN_FRAMES"
+              --max-frame-age-minutes "$LEVEL3_MAX_FRAME_AGE_MINUTES"
               --supersample "$LEVEL3_SUPERSAMPLE"
             )
             if [ "$LEVEL3_APPLY" = "true" ]; then
@@ -187,6 +198,15 @@ jobs:
           if (!timeline.ok) throw new Error(`Level III ${product} timeline did not report ok`);
           const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
           if (!frame) throw new Error(`Level III ${product} timeline has no frames`);
+          const validTimeMs = Date.parse(String(frame.validTime || frame.productTime || ""));
+          if (!Number.isFinite(validTimeMs)) {
+            throw new Error(`Level III ${product} newest frame has no parseable validTime`);
+          }
+          const ageMinutes = (Date.now() - validTimeMs) / 60_000;
+          const maxAgeMinutes = Number(process.env.LEVEL3_MAX_FRAME_AGE_MINUTES || 120);
+          if (ageMinutes > maxAgeMinutes) {
+            throw new Error(`Level III ${product} newest frame is ${Math.round(ageMinutes)} minutes old, expected <= ${maxAgeMinutes}`);
+          }
           if (frame.tileDelivery !== "worker-r2") {
             throw new Error(`Level III ${product} tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
           }

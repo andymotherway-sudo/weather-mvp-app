@@ -34,6 +34,7 @@ This file is the short source of truth for where the product and infrastructure 
 - Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. Production proofs now publish reflectivity, velocity, and echo tops for `IWA`.
 - Storm Scope now has an app-selectable `Owned L3` beta local source, but `IEM` remains the default and fallback until owned Level III has repeated fresh frames and broader station/product coverage.
 - Storm Scope's compact HUD labels owned Level III usage directly as `OWNED L3` when the app is actually rendering the Worker/R2 Level III source.
+- The `Owned L3` toggle now auto-selects the owned reflectivity product (`N0B`/`HREFL`) when the app was sitting on legacy `N0Q`/`REFL`, because `N0Q` is not currently part of the owned Level III product set.
 
 ## Cloudflare
 
@@ -54,17 +55,18 @@ This file is the short source of truth for where the product and infrastructure 
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
 - `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
-- `NEXRAD Level III cycle` can publish the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally.
+- `NEXRAD Level III cycle` publishes the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally; that variable is currently enabled for production beta.
+- `NEXRAD Level III cycle` now keeps up to 12 retained frames by default and fails the smoke test if the newest Worker timeline frame is older than the configured freshness ceiling.
+- `NEXRAD Level III watchdog` is a beta recovery workflow on offset `:11/:41` UTC cron slots. It checks live production Level III timelines and dispatches the bounded Level III cycle only when at least one product is stale and no Level III publisher run is already queued or running.
 - A dedicated radar runner is now the planned production-grade replacement for GitHub Actions once owned z10, multi-product MRMS, or recurring Level III becomes customer-critical.
 
 ## Not Done Yet
 
-- Finish committing the first deep-clean baseline after final review.
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
 - GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
-- Owned local NEXRAD/Level III rendering is not production-ready, but inventory and bounded R2 proof cycles can now be run repeatably in GitHub Actions.
+- Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, reduced clear-air/noise speckle, and broader station/product coverage before replacing IEM.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
 - Local NEXRAD/IEM tile-template generation was fixed on September 5, 2026 so MapLibre receives literal `{z}/{x}/{y}` placeholders instead of encoded `%7Bz%7D` paths.
 - IEM local product fallback now prefers current `N0B` reflectivity and `N0S` velocity scan history before older streams that may return empty lists.
@@ -86,3 +88,5 @@ This file is the short source of truth for where the product and infrastructure 
 - `IWA EET` also published successfully at z7-z10 with 62 non-empty sparse tiles and about 0.06 MB.
 - `IWA N0S` velocity now publishes successfully at z7-z10 after adding legacy 16-level velocity-bin decoding: 153 non-empty sparse tiles and about 0.46 MB.
 - The bundled `NEXRAD Level III cycle` workflow passed on September 5, 2026 for production `IWA` products `N0B,N0S,EET` at z7-z10 with retained-frame cleanup enabled. Live production timelines then reported `N0B` with 2 retained frames, `N0S` with 2 retained frames, and `EET` with 1 retained frame through `worker-r2`.
+- On September 9, 2026, the `LEVEL3_SCHEDULE_ENABLED` repository variable was enabled, production `IWA N0B/N0S/EET` were manually refreshed, and Storm Scope visibly rendered `HREFL - owned NOAA Level III` through the `Owned L3` beta path.
+- On September 9, 2026, the Level III publisher was hardened to retain 12 frames by default and reject stale green builds; a Level III watchdog was added to recover stale production timelines.

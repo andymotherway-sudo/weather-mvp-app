@@ -1,0 +1,153 @@
+name: NEXRAD Level III watchdog
+run-name: Level III watchdog production stale>${{ inputs.stale_after_minutes || '45' }}m
+
+on:
+  schedule:
+    # Recovery guard offset from the Level III publisher's 30-minute cadence.
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+    inputs:
+      stale_after_minutes:
+        description: "Dispatch Level III cycle if any live product is older than this"
+        required: true
+        default: "45"
+      dry_run:
+        description: "Report only; do not dispatch recovery workflow"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: level3-watchdog-production-iwa
+  cancel-in-progress: true
+
+jobs:
+  watchdog:
+    name: Check production Level III freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '45' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      LEVEL3_SITE: IWA
+      LEVEL3_PRODUCTS: N0B,N0S,EET
+      LEVEL3_BASE_URL: https://omniwx-api-production.omniwx.workers.dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check live Level III timelines
+        id: freshness
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE' > /tmp/level3-watchdog.env
+          const staleAfterMinutes = Math.max(10, Number(process.env.STALE_AFTER_MINUTES || 45));
+          const site = String(process.env.LEVEL3_SITE || "IWA").trim().toUpperCase();
+          const products = String(process.env.LEVEL3_PRODUCTS || "N0B,N0S,EET")
+            .split(",")
+            .map((value) => value.trim().toUpperCase())
+            .filter(Boolean);
+          const baseUrl = String(process.env.LEVEL3_BASE_URL || "").replace(/\/+$/, "");
+          const checks = [];
+
+          for (const product of products) {
+            const result = {
+              product,
+              ok: false,
+              ageMinutes: null,
+              frameCount: 0,
+              maxZoom: null,
+              reason: "unknown",
+            };
+            try {
+              const url = `${baseUrl}/v1/radar/level3/timeline?site=${encodeURIComponent(site)}&product=${encodeURIComponent(product)}`;
+              const res = await fetch(url, { headers: { accept: "application/json" } });
+              const text = await res.text();
+              if (!res.ok) throw new Error(`timeline ${res.status}: ${text.slice(0, 200)}`);
+              const json = JSON.parse(text);
+              const frame = Array.isArray(json.frames) && json.frames.length ? json.frames[0] : json;
+              const validTimeMs = Date.parse(String(frame?.validTime || frame?.productTime || ""));
+              result.ok = Boolean(json.ok && Number.isFinite(validTimeMs));
+              result.frameCount = Array.isArray(json.frames) ? json.frames.length : Number(json.frameCount || 0);
+              result.maxZoom = frame?.maxZoom ?? json.maxZoom ?? null;
+              result.ageMinutes = Number.isFinite(validTimeMs) ? Math.round((Date.now() - validTimeMs) / 60_000) : null;
+              result.reason = result.ok ? "freshness-read" : "timeline-missing-valid-frame";
+            } catch (error) {
+              result.reason = error instanceof Error ? error.message : String(error);
+            }
+            checks.push(result);
+          }
+
+          const stale = checks.filter((check) => !check.ok || check.ageMinutes == null || check.ageMinutes > staleAfterMinutes);
+          const shouldDispatch = stale.length > 0;
+          console.log(`SHOULD_DISPATCH=${shouldDispatch ? "true" : "false"}`);
+          console.log(`STALE_PRODUCTS=${stale.map((check) => check.product).join(",")}`);
+          console.log(`CHECKS_JSON=${JSON.stringify(checks)}`);
+          NODE
+          cat /tmp/level3-watchdog.env
+          cat /tmp/level3-watchdog.env >> "$GITHUB_OUTPUT"
+
+      - name: Check active Level III publisher runs
+        id: active
+        shell: bash
+        run: |
+          set -euo pipefail
+          active_count=$(
+            {
+              gh run list --workflow nexrad-level3-cycle.yml --status queued --limit 20 --json databaseId 2>/dev/null
+              gh run list --workflow nexrad-level3-cycle.yml --status in_progress --limit 20 --json databaseId 2>/dev/null
+            } | node -e '
+              const fs = require("node:fs");
+              const input = fs.readFileSync(0, "utf8").trim().split(/\n(?=\[)/).filter(Boolean);
+              let count = 0;
+              for (const chunk of input) {
+                try { count += JSON.parse(chunk).length; } catch {}
+              }
+              process.stdout.write(String(count));
+            '
+          )
+          echo "ACTIVE_COUNT=$active_count" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Dispatch bounded Level III recovery
+        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run nexrad-level3-cycle.yml \
+            -f target_env=production \
+            -f site="$LEVEL3_SITE" \
+            -f products="$LEVEL3_PRODUCTS" \
+            -f apply=true \
+            -f min_zoom=7 \
+            -f max_zoom=10 \
+            -f retain_frames=12 \
+            -f max_frame_age_minutes=120 \
+            -f supersample=1
+
+      - name: Report watchdog decision
+        shell: bash
+        env:
+          CHECKS_JSON: ${{ steps.freshness.outputs.CHECKS_JSON }}
+        run: |
+          {
+            echo "## Level III watchdog"
+            echo ""
+            echo "- Site: $LEVEL3_SITE"
+            echo "- Products: $LEVEL3_PRODUCTS"
+            echo "- Stale products: ${{ steps.freshness.outputs.STALE_PRODUCTS || 'none' }}"
+            echo "- Active publisher runs: ${{ steps.active.outputs.ACTIVE_COUNT }}"
+            echo "- Would dispatch: ${{ steps.freshness.outputs.SHOULD_DISPATCH }}"
+            echo "- Dry run: $DRY_RUN"
+            echo ""
+            echo '```json'
+            echo "$CHECKS_JSON"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
