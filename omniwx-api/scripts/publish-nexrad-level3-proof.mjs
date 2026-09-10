@@ -236,6 +236,7 @@ async function main() {
     tileCount: tiles.length,
     totalBytes: manifest.totalBytes,
     byZoom: manifest.byZoom,
+    rendererCleanup: manifest.rendererCleanup || null,
     tiles: tiles.map((tile) => ({ z: tile.z, x: tile.x, y: tile.y, bytes: tile.bytes })),
   };
 
