@@ -154,6 +154,7 @@ Initial bundle:
 Implementation:
 
 - `NEXRAD Level III cycle` accepts a comma-separated `sites` list and publishes each site/product combination through the same S3-compatible R2 path.
+- Scheduled Level III site scope is controlled by the GitHub repository variable `LEVEL3_SCHEDULE_SITES`; if the variable is missing, scheduled runs default back to `IWA` instead of silently expanding.
 - `NEXRAD Level III watchdog` checks the full Phase 1 bundle and dispatches one bounded recovery run only when at least one station/product is stale.
 - `/v1/radar/backend/status` exposes both the initial `IWA` health block and the Phase 1 multi-site health block.
 - Storm Scope reads the health block for the selected station when owned Level III is active.
