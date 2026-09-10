@@ -9761,7 +9761,8 @@ function buildRadarInfoPayload(env: Env) {
         timelineRoute: "/v1/radar/level3/timeline",
         tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
         source: "NOAA NEXRAD Level III",
-        initialProducts: ["N0B", "N0S", "EET"],
+        initialSite: LEVEL3_INITIAL_SITE,
+        initialProducts: LEVEL3_INITIAL_PRODUCTS,
       },
     },
     providers: {
@@ -9867,7 +9868,9 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         timelineRoute: "/v1/radar/level3/timeline",
         tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
         source: "NOAA NEXRAD Level III",
-        initialProducts: ["N0B", "N0S", "EET"],
+        initialSite: LEVEL3_INITIAL_SITE,
+        initialProducts: LEVEL3_INITIAL_PRODUCTS,
+        health: await buildLevel3HealthStatus(env, LEVEL3_INITIAL_SITE, LEVEL3_INITIAL_PRODUCTS),
       },
     },
     currentSource: {
@@ -10231,6 +10234,8 @@ async function evictOwnedRadarLocalTilesFromR2(
 
 const OWNED_LOCAL_RADAR_PRODUCTS = ["N0Q", "N0B"] as const;
 type OwnedLocalRadarProduct = typeof OWNED_LOCAL_RADAR_PRODUCTS[number];
+const LEVEL3_INITIAL_SITE = "IWA";
+const LEVEL3_INITIAL_PRODUCTS = ["N0B", "N0S", "EET"] as const;
 const OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN = 1;
 const OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN = 300;
 const OWNED_LOCAL_RADAR_MAX_EVICTIONS_PER_RUN = 60;
@@ -10556,6 +10561,71 @@ async function readLevel3LatestManifest(env: Env, site: string, product: string)
   } catch {
     return { ok: false as const, status: 502, error: "level3-latest-json-invalid", key };
   }
+}
+
+async function buildLevel3HealthStatus(env: Env, site: string, products: readonly string[]) {
+  if (!isLevel3Enabled(env)) {
+    return {
+      site,
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      reason: "level3-disabled",
+      products: products.map((product) => ({ product, ok: false, reason: "level3-disabled" })),
+    };
+  }
+
+  if (!env.RADAR_ASSETS) {
+    return {
+      site,
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      reason: "RADAR_ASSETS not bound",
+      products: products.map((product) => ({ product, ok: false, reason: "RADAR_ASSETS not bound" })),
+    };
+  }
+
+  const now = Date.now();
+  const statuses = [];
+  for (const product of products) {
+    const latest = await readLevel3LatestManifest(env, site, product);
+    if (!latest.ok) {
+      statuses.push({
+        product,
+        ok: false,
+        reason: latest.error,
+        key: latest.key ?? null,
+      });
+      continue;
+    }
+
+    const frame = Array.isArray(latest.manifest.frames) && latest.manifest.frames.length
+      ? latest.manifest.frames[0]
+      : latest.manifest;
+    const validTime = frame.validTime ?? frame.productTime ?? null;
+    const validTimeMs = Date.parse(String(validTime || ""));
+    const ageMinutes = Number.isFinite(validTimeMs) ? Math.round((now - validTimeMs) / 60_000) : null;
+    statuses.push({
+      product,
+      ok: true,
+      key: latest.key,
+      frame: frame.frame ?? null,
+      validTime,
+      ageMinutes,
+      frameCount: Array.isArray(latest.manifest.frames) ? latest.manifest.frames.length : Number(latest.manifest.frameCount || 1),
+      tileCount: frame.tileCount ?? null,
+      totalBytes: frame.totalBytes ?? null,
+      maxZoom: frame.maxZoom ?? latest.manifest.maxZoom ?? null,
+      rendererCleanup: frame.rendererCleanup ?? null,
+    });
+  }
+
+  return {
+    site,
+    ok: statuses.every((status) => status.ok),
+    checkedAt: new Date(now).toISOString(),
+    reason: statuses.every((status) => status.ok) ? "freshness-read" : "one-or-more-products-unhealthy",
+    products: statuses,
+  };
 }
 
 function selectMrmsFrame(manifest: MrmsLatestManifest, requestedFrame: string | null) {

@@ -113,7 +113,13 @@ describe('worker module', () => {
     expect(json.ownedPipeline?.level3?.enabled).toBe(true);
     expect(json.ownedPipeline?.level3?.latestPrefix).toBe('radar/level3/latest');
     expect(json.ownedPipeline?.level3?.proofPrefix).toBe('radar/level3/proof');
+    expect(json.ownedPipeline?.level3?.initialSite).toBe('IWA');
     expect(json.ownedPipeline?.level3?.initialProducts).toEqual(expect.arrayContaining(['N0B', 'N0S', 'EET']));
+    expect(json.ownedPipeline?.level3?.health?.site).toBe('IWA');
+    expect(Array.isArray(json.ownedPipeline?.level3?.health?.products)).toBe(true);
+    expect(json.ownedPipeline?.level3?.health?.products.map((product: any) => product.product)).toEqual(
+      expect.arrayContaining(['N0B', 'N0S', 'EET']),
+    );
   });
 
   it('validates owned Level III route parameters before reading storage', async () => {

@@ -58,6 +58,7 @@ This file is the short source of truth for where the product and infrastructure 
 - `NEXRAD Level III cycle` publishes the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally; that variable is currently enabled for production beta.
 - `NEXRAD Level III cycle` now keeps up to 12 retained frames by default and fails the smoke test if the newest Worker timeline frame is older than the configured freshness ceiling.
 - `NEXRAD Level III watchdog` is a beta recovery workflow on offset `:11/:41` UTC cron slots. It checks live production Level III timelines and dispatches the bounded Level III cycle only when at least one product is stale and no Level III publisher run is already queued or running.
+- `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
 - A dedicated radar runner is now the planned production-grade replacement for GitHub Actions once owned z10, multi-product MRMS, or recurring Level III becomes customer-critical.
 
 ## Not Done Yet
