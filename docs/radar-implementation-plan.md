@@ -308,7 +308,7 @@ Current proof status:
 - September 5, 2026 inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE. This supports moving to a small owned Level III tile-publish proof, still without replacing IEM/RIDGE in the app.
 - A bounded Level III publish path now exists for one station/product proof at a time. It writes to `radar/level3/proof/<site>/<product>/<frame>/...`, updates `radar/level3/latest/<site>/<product>.json`, and exposes the result through Worker routes.
 - The app can now expose owned Level III as an explicit Storm Scope beta source for comparison, while keeping IEM/RIDGE as the default and fallback.
-- Owned Level III should not become the default Storm Scope local source until at least one pilot station/product has repeated retained frames, clean animation, product-specific legends, reduced clear-air/noise speckle, and IEM/RIDGE fallback preserved.
+- Owned Level III should not become the default Storm Scope local source until at least one pilot station/product has repeated retained frames, clean animation, product-specific legends, continued clear-air/noise tuning, and IEM/RIDGE fallback preserved.
 - The production beta path now has `LEVEL3_SCHEDULE_ENABLED=true`, a recurring bounded `IWA` product-bundle publisher, and a watchdog that dispatches recovery only when live timelines go stale.
 - `Owned L3` is intentionally limited to the owned products currently published from NOAA Level III (`N0B`, `N0S`, `EET`). Legacy `REFL`/`N0Q` remains an upstream/IEM fallback product until we deliberately add an owned replacement.
 
@@ -334,6 +334,7 @@ First production proof result:
 - Storm Scope now has an `Owned L3` source toggle for supported proof products (`N0B`, `N0S`, `EET`). If the owned timeline is missing, stale, unsupported, or still loading, the app keeps the IEM local radar path alive instead of going blank.
 - September 9, 2026: production `IWA N0B/N0S/EET` refresh succeeded, and the app visibly rendered `HREFL - owned NOAA Level III`. This proves the end-to-end path, but animation remains latest-frame-only until repeated scheduled runs build retained history.
 - September 9, 2026: the Level III product-bundle workflow was hardened to reject stale live timelines, retain 12 frames by default, and recover with a dedicated watchdog.
+- September 10, 2026: scheduled production Level III timelines reached multiple retained frames. A renderer cleanup pass added weak-reflectivity decluttering for `N0B`/`N0Q`-style products by fading very low dBZ returns and removing isolated weak gates before XYZ tile generation.
 
 ## Operating Cadences
 
@@ -364,8 +365,8 @@ Paid-customer cadence:
 1. Let the scheduled z8 MRMS cycle run several times and verify the timeline keeps at least two fresh same-quality frames.
 2. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
 3. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
-4. Let the scheduled Level III `IWA` cycle run several times and verify `N0B/N0S/EET` retain multiple fresh frames instead of latest-frame-only playback.
-5. Reduce Level III clear-air/noise speckle in the renderer without hiding weak real echoes; validate against IEM/RIDGE and MRMS on active Phoenix weather.
+4. Let the scheduled Level III `IWA` cycle run several more times and verify `N0B/N0S/EET` retain enough fresh frames for useful playback.
+5. Validate the Level III renderer cleanup against IEM/RIDGE and MRMS on active Phoenix weather; tune thresholds only with side-by-side evidence.
 6. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
 7. Verify MRMS-auto across several US regions in internal testing.
 8. Keep RainViewer fallback active until Phase 4 hardening gates pass.

@@ -66,7 +66,7 @@ This file is the short source of truth for where the product and infrastructure 
 - GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
-- Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, reduced clear-air/noise speckle, and broader station/product coverage before replacing IEM.
+- Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
 - RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
 - Local NEXRAD/IEM tile-template generation was fixed on September 5, 2026 so MapLibre receives literal `{z}/{x}/{y}` placeholders instead of encoded `%7Bz%7D` paths.
 - IEM local product fallback now prefers current `N0B` reflectivity and `N0S` velocity scan history before older streams that may return empty lists.
@@ -90,3 +90,4 @@ This file is the short source of truth for where the product and infrastructure 
 - The bundled `NEXRAD Level III cycle` workflow passed on September 5, 2026 for production `IWA` products `N0B,N0S,EET` at z7-z10 with retained-frame cleanup enabled. Live production timelines then reported `N0B` with 2 retained frames, `N0S` with 2 retained frames, and `EET` with 1 retained frame through `worker-r2`.
 - On September 9, 2026, the `LEVEL3_SCHEDULE_ENABLED` repository variable was enabled, production `IWA N0B/N0S/EET` were manually refreshed, and Storm Scope visibly rendered `HREFL - owned NOAA Level III` through the `Owned L3` beta path.
 - On September 9, 2026, the Level III publisher was hardened to retain 12 frames by default and reject stale green builds; a Level III watchdog was added to recover stale production timelines.
+- On September 10, 2026, scheduled Level III production timelines started retaining multiple frames for `IWA N0B/N0S/EET`; a renderer cleanup pass reduced weak reflectivity clutter by fading low dBZ returns and dropping isolated weak speckles before tile generation.

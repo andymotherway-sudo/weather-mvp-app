@@ -10,8 +10,9 @@ from metpy.io import Level3File
 
 
 REFLECTIVITY_STOPS = [
-    (5.0, (47, 120, 255, 95)),
-    (15.0, (58, 204, 208, 130)),
+    (5.0, (47, 120, 255, 38)),
+    (10.0, (50, 155, 245, 72)),
+    (15.0, (58, 204, 208, 118)),
     (25.0, (49, 196, 92, 165)),
     (35.0, (145, 214, 17, 190)),
     (40.0, (255, 214, 36, 210)),
@@ -19,6 +20,10 @@ REFLECTIVITY_STOPS = [
     (60.0, (224, 36, 43, 240)),
     (70.0, (136, 41, 210, 245)),
 ]
+
+REFLECTIVITY_MIN_DBZ = 8.0
+REFLECTIVITY_WEAK_DBZ = 18.0
+REFLECTIVITY_MIN_WEAK_NEIGHBORS = 5
 
 VELOCITY_STOPS = [
     (-80.0, (66, 25, 128, 230)),
@@ -78,6 +83,27 @@ def decode_product_value(raw: np.ndarray, product_code: str) -> np.ndarray:
     return values
 
 
+def neighbor_count(mask: np.ndarray) -> np.ndarray:
+    padded = np.pad(mask.astype(np.uint8), 1, mode="constant", constant_values=0)
+    return (
+        padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:] +
+        padded[1:-1, :-2] + padded[1:-1, 2:] +
+        padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:]
+    )
+
+
+def clean_product_values(values: np.ndarray, product_code: str) -> np.ndarray:
+    if product_code not in {"N0B", "N0Q", "N0C", "N0X"}:
+        return values
+
+    cleaned = values.copy()
+    valid_echo = np.isfinite(cleaned) & (cleaned >= REFLECTIVITY_MIN_DBZ)
+    weak_echo = valid_echo & (cleaned < REFLECTIVITY_WEAK_DBZ)
+    isolated_weak_echo = weak_echo & (neighbor_count(valid_echo) < REFLECTIVITY_MIN_WEAK_NEIGHBORS)
+    cleaned[isolated_weak_echo] = np.nan
+    return cleaned
+
+
 def colorize(values: np.ndarray, product_code: str) -> np.ndarray:
     rgba = np.zeros((*values.shape, 4), dtype=np.uint8)
     valid = np.isfinite(values)
@@ -86,10 +112,10 @@ def colorize(values: np.ndarray, product_code: str) -> np.ndarray:
         valid = valid & (np.abs(values) >= 1)
     elif product_code in {"EET", "NET"}:
         stops = ECHO_TOP_STOPS
-        valid = valid & (values >= 5)
+        valid = valid & (values >= REFLECTIVITY_MIN_DBZ)
     else:
         stops = REFLECTIVITY_STOPS
-        valid = valid & (values >= 5)
+        valid = valid & (values >= REFLECTIVITY_MIN_DBZ)
 
     for lower, color in stops:
         rgba[(values >= lower) & valid] = color
@@ -149,7 +175,7 @@ def main():
     packet = level3.sym_block[0][0]
     raw, azimuths = packet_to_arrays(packet)
     product_code = input_path.name.split("_")[1] if "_" in input_path.name else str(level3.wmo_code or "")
-    values = decode_product_value(raw, product_code)
+    values = clean_product_values(decode_product_value(raw, product_code), product_code)
     max_range_km = float(args.max_range_km or level3.max_range or (raw.shape[1] * level3.ij_to_km))
     size = max(256, min(2048, int(args.size)))
     cart = render_cartesian(raw, values, azimuths, max_range_km, size)
@@ -177,6 +203,11 @@ def main():
         "productTime": iso_or_none(level3.metadata.get("prod_time")),
         "valueMin": float(np.nanmin(values)),
         "valueMax": float(np.nanmax(values)),
+        "rendererCleanup": {
+            "reflectivityMinDbz": REFLECTIVITY_MIN_DBZ,
+            "reflectivityWeakDbz": REFLECTIVITY_WEAK_DBZ,
+            "reflectivityMinWeakNeighbors": REFLECTIVITY_MIN_WEAK_NEIGHBORS,
+        },
         "nonTransparentPixels": int(np.count_nonzero(np.asarray(image)[:, :, 3])),
     }
 

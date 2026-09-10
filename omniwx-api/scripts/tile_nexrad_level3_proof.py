@@ -9,7 +9,15 @@ import numpy as np
 from PIL import Image
 from metpy.io import Level3File
 
-from render_nexrad_level3_proof import colorize, decode_product_value, packet_to_arrays
+from render_nexrad_level3_proof import (
+    REFLECTIVITY_MIN_DBZ,
+    REFLECTIVITY_MIN_WEAK_NEIGHBORS,
+    REFLECTIVITY_WEAK_DBZ,
+    clean_product_values,
+    colorize,
+    decode_product_value,
+    packet_to_arrays,
+)
 
 
 WEB_MERCATOR_MAX_LAT = 85.05112878
@@ -100,7 +108,7 @@ def main():
     packet = level3.sym_block[0][0]
     raw, azimuths = packet_to_arrays(packet)
     product_code = input_path.name.split("_")[1] if "_" in input_path.name else str(level3.wmo_code or "")
-    values = decode_product_value(raw, product_code)
+    values = clean_product_values(decode_product_value(raw, product_code), product_code)
     max_range_km = float(args.max_range_km or level3.max_range or (raw.shape[1] * level3.ij_to_km))
     finite_values = values[np.isfinite(values)]
     alpha_preview = np.asarray(colorize(values, product_code))[:, :, 3]
@@ -123,6 +131,11 @@ def main():
         "valueMin": float(np.min(finite_values)) if finite_values.size else None,
         "valueMax": float(np.max(finite_values)) if finite_values.size else None,
         "nonTransparentSourceCells": int(np.count_nonzero(alpha_preview)),
+        "rendererCleanup": {
+            "reflectivityMinDbz": REFLECTIVITY_MIN_DBZ,
+            "reflectivityWeakDbz": REFLECTIVITY_WEAK_DBZ,
+            "reflectivityMinWeakNeighbors": REFLECTIVITY_MIN_WEAK_NEIGHBORS,
+        },
         "validTime": iso_or_none(level3.metadata.get("vol_time")),
         "productTime": iso_or_none(level3.metadata.get("prod_time")),
         "tileSize": args.tile_size,
