@@ -5,7 +5,7 @@ import { API_BASE } from '../net/apiBase';
 import { NEXRAD_SITES } from './nexradSites';
 
 export type RadarScan = { iso: string; stamp: string };
-export type RadarProductId = 'N0Q' | 'N0B' | 'N0Z' | 'N0U' | 'N0S' | 'EET' | 'NET';
+export type RadarProductId = 'N0Q' | 'N0B' | 'N0Z' | 'N0U' | 'N0S' | 'EET' | 'NET' | 'N0C' | 'N0X' | 'DVL' | 'N0H';
 
 export type RadarFrameUnified = {
   iso: string;
@@ -257,6 +257,8 @@ async function fetchRidgeWithProductFallback(args: {
             ? ['EET', 'NET']
             : preferred === 'NET'
               ? ['NET']
+              : preferred === 'N0C' || preferred === 'N0X' || preferred === 'DVL' || preferred === 'N0H'
+                ? [preferred]
               : ['N0Z', 'N0Q', 'N0B'];
 
   for (const p of order) {

@@ -80,7 +80,7 @@ const RADAR_MODE_STORAGE_KEY = 'omniwx:maps:radarMode:v1';
 const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v2';
 const LEGACY_STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
-const OWNED_LEVEL3_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0S', 'EET']);
+const OWNED_LEVEL3_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0S', 'EET', 'N0C', 'N0X', 'DVL', 'N0H']);
 
 const MRMS_PRODUCT_OPTIONS: {
   id: MrmsProductId;
@@ -219,6 +219,46 @@ const RADAR_PRODUCT_META: Record<
     legendRight: 'HIGH TOPS',
     legendNote: 'Legacy echo top height fallback. This is height, not wind or rain intensity.',
   },
+  N0C: {
+    chipLabel: 'CC',
+    summaryLabel: 'Correlation coefficient',
+    legendStyle: 'reflectivity',
+    legendTitle: 'Correlation Coefficient',
+    legendLeft: 'Low CC',
+    legendMid: 'Mixed targets',
+    legendRight: 'High CC',
+    legendNote: 'Dual-pol target consistency. Lower values can highlight hail, debris, melting layers, or mixed precipitation.',
+  },
+  N0X: {
+    chipLabel: 'ZDR',
+    summaryLabel: 'Differential reflectivity',
+    legendStyle: 'reflectivity',
+    legendTitle: 'Differential Reflectivity',
+    legendLeft: 'Negative',
+    legendMid: 'Near zero',
+    legendRight: 'Positive',
+    legendNote: 'Dual-pol shape signal. Positive values often indicate flatter drops or hydrometeor shape differences.',
+  },
+  DVL: {
+    chipLabel: 'VIL',
+    summaryLabel: 'Vertically integrated liquid',
+    legendStyle: 'reflectivity',
+    legendTitle: 'VIL',
+    legendLeft: 'Low',
+    legendMid: 'Moderate',
+    legendRight: 'High',
+    legendNote: 'Vertically integrated liquid estimate. Useful for hail/heavy-core context, not surface rainfall.',
+  },
+  N0H: {
+    chipLabel: 'HCA',
+    summaryLabel: 'Hydrometeor classification',
+    legendStyle: 'reflectivity',
+    legendTitle: 'Hydrometeor Classification',
+    legendLeft: 'Light/mixed',
+    legendMid: 'Rain/hail',
+    legendRight: 'Ice/other',
+    legendNote: 'Experimental categorical hydrometeor classification from dual-pol Level III data.',
+  },
 };
 
 type StationRadarProduct = {
@@ -272,19 +312,19 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-storm-relative-velocity',
   },
   {
-    id: 'CC',
+    id: 'N0C',
     shortLabel: 'CC',
     label: 'Correlation Coef',
-    subtitle: 'Live source needed',
-    enabled: false,
+    subtitle: 'Dual-pol target consistency',
+    enabled: true,
     learnTopicId: 'radar-correlation-coefficient',
   },
   {
-    id: 'ZDR',
+    id: 'N0X',
     shortLabel: 'ZDR',
     label: 'Differential Refl',
-    subtitle: 'Live source needed',
-    enabled: false,
+    subtitle: 'Dual-pol shape signal',
+    enabled: true,
     learnTopicId: 'radar-differential-reflectivity',
   },
   {
@@ -296,18 +336,26 @@ const STATION_RADAR_PRODUCTS: StationRadarProduct[] = [
     learnTopicId: 'radar-echo-tops',
   },
   {
-    id: 'VIL',
+    id: 'DVL',
     shortLabel: 'VIL',
     label: 'VIL',
-    subtitle: 'Live source needed',
-    enabled: false,
+    subtitle: 'Integrated liquid',
+    enabled: true,
     learnTopicId: 'radar-vil',
+  },
+  {
+    id: 'N0H',
+    shortLabel: 'HCA',
+    label: 'Hydrometeor Class',
+    subtitle: 'Dual-pol classification',
+    enabled: true,
+    learnTopicId: 'radar-hydrometeor-classification',
   },
 ];
 
 const STATION_RANGE_RINGS_MI = [25, 50, 100, 150];
 const LIGHTNING_UNSUPPORTED_REASON =
-  'Not available from the current IEM/RIDGE radar source. Supported now: REFL, VEL, LVEL, SRV, and ET.';
+  'Not available from the current IEM/RIDGE radar source. Owned Level III beta supports HREFL, SRV, ET, CC, ZDR, VIL, and HCA where published.';
 const SKY_LEGEND_SWATCHES = [
   'rgba(255,92,92,0.88)',
   'rgba(255,146,82,0.84)',

@@ -30,7 +30,7 @@ type Level3TimelineResponse = {
 };
 
 const DEFAULT_LEVEL3_STALE_AFTER_MS = 6 * 60 * 60_000;
-const LEVEL3_PRODUCTS = new Set<RadarProductId>(['N0B', 'N0S', 'EET']);
+const LEVEL3_PRODUCTS = new Set<RadarProductId>(['N0B', 'N0S', 'EET', 'N0C', 'N0X', 'DVL', 'N0H']);
 
 let cachedFrames: Level3RadarFrame[] | null = null;
 let cachedExpiresAt = 0;

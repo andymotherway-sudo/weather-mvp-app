@@ -146,7 +146,7 @@ Goal: graduate local NEXRAD ownership from one `IWA` proof to a small, bounded b
 Initial bundle:
 
 - Sites: `IWA`, `MPX`, `DLH`.
-- Products: `N0B`, `N0S`, `EET`.
+- Products: `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, `N0H`.
 - Zoom: z7-z10 for local Storm Scope proofing.
 - Retention: 12 rolling frames per station/product.
 - Freshness ceiling: 120 minutes for publisher smoke checks.
@@ -154,14 +154,14 @@ Initial bundle:
 Implementation:
 
 - `NEXRAD Level III cycle` accepts a comma-separated `sites` list and publishes each site/product combination through the same S3-compatible R2 path.
-- Scheduled Level III site scope is controlled by the GitHub repository variable `LEVEL3_SCHEDULE_SITES`; if the variable is missing, scheduled runs default back to `IWA` instead of silently expanding.
+- Scheduled Level III site/product scope is controlled by the GitHub repository variables `LEVEL3_SCHEDULE_SITES` and `LEVEL3_SCHEDULE_PRODUCTS`; if either variable is missing, scheduled runs default back to the smaller `IWA` / `N0B,N0S,EET` set instead of silently expanding.
 - `NEXRAD Level III watchdog` checks the full Phase 1 bundle and dispatches one bounded recovery run only when at least one station/product is stale.
 - `/v1/radar/backend/status` exposes both the initial `IWA` health block and the Phase 1 multi-site health block.
 - Storm Scope reads the health block for the selected station when owned Level III is active.
 
 Done when:
 
-- `IWA`, `MPX`, and `DLH` each retain multiple fresh frames for `N0B`, `N0S`, and `EET`.
+- `IWA`, `MPX`, and `DLH` each retain multiple fresh frames for `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`.
 - Storage remains visibly bounded after repeated scheduled cycles.
 - The app shows owned health for the selected station and falls back to IEM when owned data is unavailable.
 - The visual quality is acceptable enough that owned Level III can become the preferred local source for those pilot stations.

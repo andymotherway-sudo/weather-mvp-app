@@ -1,5 +1,5 @@
 name: NEXRAD Level III cycle
-run-name: Level III ${{ inputs.target_env || 'production' }} ${{ inputs.sites || inputs.site || 'IWA,MPX,DLH' }} ${{ inputs.products || 'N0B,N0S,EET' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '7' }}-${{ inputs.max_zoom || '10' }}
+run-name: Level III ${{ inputs.target_env || 'production' }} ${{ inputs.sites || inputs.site || 'IWA,MPX,DLH' }} ${{ inputs.products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '7' }}-${{ inputs.max_zoom || '10' }}
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ on:
       products:
         description: "Comma-separated Level III products"
         required: true
-        default: "N0B,N0S,EET"
+        default: "N0B,N0S,EET,N0C,N0X,DVL,N0H"
       apply:
         description: "Write tiles to R2"
         required: true
@@ -102,7 +102,7 @@ jobs:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       LEVEL3_TARGET_ENV: ${{ inputs.target_env || 'production' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || inputs.site || 'IWA,MPX,DLH' }}
-      LEVEL3_PRODUCTS: ${{ inputs.products || 'N0B,N0S,EET' }}
+      LEVEL3_PRODUCTS: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_PRODUCTS || 'N0B,N0S,EET') || inputs.products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
       LEVEL3_MIN_ZOOM: ${{ inputs.min_zoom || '7' }}
       LEVEL3_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
       LEVEL3_RETAIN_FRAMES: ${{ inputs.retain_frames || '12' }}

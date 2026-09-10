@@ -47,6 +47,45 @@ ECHO_TOP_STOPS = [
     (65.0, (225, 75, 220, 245)),
 ]
 
+CORRELATION_COEFFICIENT_STOPS = [
+    (0.20, (92, 64, 153, 120)),
+    (0.50, (52, 120, 190, 150)),
+    (0.75, (44, 180, 170, 180)),
+    (0.88, (92, 205, 120, 210)),
+    (0.94, (230, 225, 80, 225)),
+    (0.98, (245, 245, 245, 238)),
+]
+
+DIFFERENTIAL_REFLECTIVITY_STOPS = [
+    (-6.0, (43, 87, 151, 230)),
+    (-3.0, (48, 140, 205, 215)),
+    (-1.0, (150, 205, 235, 180)),
+    (0.0, (210, 215, 220, 125)),
+    (1.0, (255, 228, 92, 185)),
+    (3.0, (245, 148, 50, 215)),
+    (6.0, (205, 55, 65, 235)),
+]
+
+VIL_STOPS = [
+    (1.0, (46, 120, 210, 90)),
+    (5.0, (42, 190, 190, 130)),
+    (10.0, (68, 205, 105, 170)),
+    (20.0, (255, 220, 75, 210)),
+    (40.0, (245, 130, 42, 230)),
+    (60.0, (220, 45, 65, 240)),
+]
+
+HYDROMETEOR_STOPS = [
+    (10.0, (70, 130, 210, 130)),
+    (20.0, (52, 190, 190, 165)),
+    (30.0, (80, 205, 105, 190)),
+    (40.0, (250, 220, 75, 210)),
+    (50.0, (245, 145, 45, 225)),
+    (60.0, (220, 50, 70, 235)),
+    (80.0, (180, 90, 220, 235)),
+    (100.0, (230, 230, 235, 230)),
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Render a transparent local NEXRAD Level III proof PNG.")
@@ -62,8 +101,12 @@ def decode_product_value(raw: np.ndarray, product_code: str) -> np.ndarray:
     values = raw.astype("float32")
     values[raw <= 1] = np.nan
 
-    if product_code in {"N0B", "N0Q", "N0C", "N0X"}:
+    if product_code in {"N0B", "N0Q"}:
         values = values / 2.0 - 32.0
+    elif product_code == "N0C":
+        values = np.clip(values / 255.0, 0.0, 1.0)
+    elif product_code == "N0X":
+        values = (values - 128.0) / 16.0
     elif product_code in {"N0S", "N0U"}:
         if raw.size and int(np.nanmax(raw)) <= 15:
             velocity_bins = np.array(
@@ -75,6 +118,10 @@ def decode_product_value(raw: np.ndarray, product_code: str) -> np.ndarray:
             values = values - 129.0
     elif product_code in {"EET", "NET"}:
         # Echo tops are encoded in kft-like bins for these Level III products.
+        values = values.astype("float32")
+    elif product_code == "DVL":
+        values = values.astype("float32")
+    elif product_code == "N0H":
         values = values.astype("float32")
     else:
         values = values / 2.0 - 32.0
@@ -93,7 +140,7 @@ def neighbor_count(mask: np.ndarray) -> np.ndarray:
 
 
 def clean_product_values(values: np.ndarray, product_code: str) -> np.ndarray:
-    if product_code not in {"N0B", "N0Q", "N0C", "N0X"}:
+    if product_code not in {"N0B", "N0Q"}:
         return values
 
     cleaned = values.copy()
@@ -113,6 +160,18 @@ def colorize(values: np.ndarray, product_code: str) -> np.ndarray:
     elif product_code in {"EET", "NET"}:
         stops = ECHO_TOP_STOPS
         valid = valid & (values >= REFLECTIVITY_MIN_DBZ)
+    elif product_code == "N0C":
+        stops = CORRELATION_COEFFICIENT_STOPS
+        valid = valid & (values >= 0.15)
+    elif product_code == "N0X":
+        stops = DIFFERENTIAL_REFLECTIVITY_STOPS
+        valid = valid & (np.abs(values) <= 8)
+    elif product_code == "DVL":
+        stops = VIL_STOPS
+        valid = valid & (values >= 1)
+    elif product_code == "N0H":
+        stops = HYDROMETEOR_STOPS
+        valid = valid & (values >= 10)
     else:
         stops = REFLECTIVITY_STOPS
         valid = valid & (values >= REFLECTIVITY_MIN_DBZ)
