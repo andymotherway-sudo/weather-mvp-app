@@ -138,6 +138,32 @@ Escalation triggers:
 
 - If GitHub Actions minutes become annoying, move rendering to a cheap external job runner or a paid runner later.
 - If Worker requests approach 100k/day, move hot tile delivery toward public R2/custom-domain CDN with a safe fallback strategy.
+
+## Phase 2A: Owned Level III Pilot Bundle
+
+Goal: graduate local NEXRAD ownership from one `IWA` proof to a small, bounded beta station bundle while keeping IEM fallback available.
+
+Initial bundle:
+
+- Sites: `IWA`, `MPX`, `DLH`.
+- Products: `N0B`, `N0S`, `EET`.
+- Zoom: z7-z10 for local Storm Scope proofing.
+- Retention: 12 rolling frames per station/product.
+- Freshness ceiling: 120 minutes for publisher smoke checks.
+
+Implementation:
+
+- `NEXRAD Level III cycle` accepts a comma-separated `sites` list and publishes each site/product combination through the same S3-compatible R2 path.
+- `NEXRAD Level III watchdog` checks the full Phase 1 bundle and dispatches one bounded recovery run only when at least one station/product is stale.
+- `/v1/radar/backend/status` exposes both the initial `IWA` health block and the Phase 1 multi-site health block.
+- Storm Scope reads the health block for the selected station when owned Level III is active.
+
+Done when:
+
+- `IWA`, `MPX`, and `DLH` each retain multiple fresh frames for `N0B`, `N0S`, and `EET`.
+- Storage remains visibly bounded after repeated scheduled cycles.
+- The app shows owned health for the selected station and falls back to IEM when owned data is unavailable.
+- The visual quality is acceptable enough that owned Level III can become the preferred local source for those pilot stations.
 - If R2 approaches 5 GB, reduce retention or cadence before adding products.
 
 Done when:

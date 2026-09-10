@@ -21,6 +21,18 @@ export type RadarBackendStatus = {
     checkedAt?: string | null;
     products?: Level3HealthProduct[];
   } | null;
+  level3Phase1?: {
+    ok?: boolean;
+    siteCount?: number | null;
+    productCount?: number | null;
+    sites?: Array<{
+      site?: string | null;
+      ok?: boolean;
+      reason?: string | null;
+      checkedAt?: string | null;
+      products?: Level3HealthProduct[];
+    }>;
+  } | null;
 };
 
 let cachedStatus: RadarBackendStatus | null = null;
@@ -40,6 +52,7 @@ export async function fetchRadarBackendStatus(args?: { ttlMs?: number }): Promis
   const json = JSON.parse(text);
   const status: RadarBackendStatus = {
     level3: json?.ownedPipeline?.level3?.health ?? null,
+    level3Phase1: json?.ownedPipeline?.level3?.phase1Health ?? null,
   };
   cachedStatus = status;
   cachedExpiresAt = now + ttlMs;

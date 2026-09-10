@@ -1,5 +1,5 @@
 name: NEXRAD Level III cycle
-run-name: Level III ${{ inputs.target_env || 'production' }} ${{ inputs.site || 'IWA' }} ${{ inputs.products || 'N0B,N0S,EET' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '7' }}-${{ inputs.max_zoom || '10' }}
+run-name: Level III ${{ inputs.target_env || 'production' }} ${{ inputs.sites || inputs.site || 'IWA,MPX,DLH' }} ${{ inputs.products || 'N0B,N0S,EET' }} apply=${{ inputs.apply || false }} z${{ inputs.min_zoom || '7' }}-${{ inputs.max_zoom || '10' }}
 
 on:
   workflow_dispatch:
@@ -13,9 +13,13 @@ on:
           - production
           - dev
       site:
-        description: "3-letter Level III site id"
+        description: "Legacy single 3-letter Level III site id"
         required: true
         default: "IWA"
+      sites:
+        description: "Comma-separated Level III site ids"
+        required: true
+        default: "IWA,MPX,DLH"
       products:
         description: "Comma-separated Level III products"
         required: true
@@ -77,7 +81,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: level3-cycle-${{ inputs.target_env || 'production' }}-${{ inputs.site || 'IWA' }}
+  group: level3-cycle-${{ inputs.target_env || 'production' }}-${{ inputs.sites || inputs.site || 'IWA,MPX,DLH' }}
   cancel-in-progress: true
 
 jobs:
@@ -97,7 +101,7 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       LEVEL3_TARGET_ENV: ${{ inputs.target_env || 'production' }}
-      LEVEL3_SITE: ${{ inputs.site || 'IWA' }}
+      LEVEL3_SITES: ${{ inputs.sites || inputs.site || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: ${{ inputs.products || 'N0B,N0S,EET' }}
       LEVEL3_MIN_ZOOM: ${{ inputs.min_zoom || '7' }}
       LEVEL3_MAX_ZOOM: ${{ inputs.max_zoom || '10' }}
@@ -149,32 +153,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          IFS=',' read -ra sites <<< "$LEVEL3_SITES"
           IFS=',' read -ra products <<< "$LEVEL3_PRODUCTS"
-          for raw_product in "${products[@]}"; do
-            product="$(echo "$raw_product" | tr '[:lower:]' '[:upper:]' | xargs)"
-            if [ -z "$product" ]; then
+          for raw_site in "${sites[@]}"; do
+            site="$(echo "$raw_site" | tr '[:lower:]' '[:upper:]' | sed -E 's/^K([A-Z0-9]{3})$/\1/' | xargs)"
+            if [ -z "$site" ]; then
               continue
             fi
-            echo "::group::Level III $LEVEL3_SITE $product"
-            args=(
-              --env "$LEVEL3_TARGET_ENV"
-              --site "$LEVEL3_SITE"
-              --product "$product"
-              --min-z "$LEVEL3_MIN_ZOOM"
-              --max-z "$LEVEL3_MAX_ZOOM"
-              --max-tiles 2000
-              --min-tiles 1
-              --retain-frames "$LEVEL3_RETAIN_FRAMES"
-              --max-frame-age-minutes "$LEVEL3_MAX_FRAME_AGE_MINUTES"
-              --supersample "$LEVEL3_SUPERSAMPLE"
-            )
-            if [ "$LEVEL3_APPLY" = "true" ]; then
-              args+=(--apply)
-            else
-              echo "::warning::This product is a dry-run. It will render Level III tiles but will not write to R2."
-            fi
-            npm run level3:cycle -- "${args[@]}"
-            echo "::endgroup::"
+            for raw_product in "${products[@]}"; do
+              product="$(echo "$raw_product" | tr '[:lower:]' '[:upper:]' | xargs)"
+              if [ -z "$product" ]; then
+                continue
+              fi
+              echo "::group::Level III $site $product"
+              args=(
+                --env "$LEVEL3_TARGET_ENV"
+                --site "$site"
+                --product "$product"
+                --min-z "$LEVEL3_MIN_ZOOM"
+                --max-z "$LEVEL3_MAX_ZOOM"
+                --max-tiles 2000
+                --min-tiles 1
+                --retain-frames "$LEVEL3_RETAIN_FRAMES"
+                --max-frame-age-minutes "$LEVEL3_MAX_FRAME_AGE_MINUTES"
+                --supersample "$LEVEL3_SUPERSAMPLE"
+              )
+              if [ "$LEVEL3_APPLY" = "true" ]; then
+                args+=(--apply)
+              else
+                echo "::warning::This product is a dry-run. It will render Level III tiles but will not write to R2."
+              fi
+              npm run level3:cycle -- "${args[@]}"
+              echo "::endgroup::"
+            done
           done
 
       - name: Smoke test Level III timelines
@@ -182,36 +193,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          IFS=',' read -ra sites <<< "$LEVEL3_SITES"
           IFS=',' read -ra products <<< "$LEVEL3_PRODUCTS"
-          for raw_product in "${products[@]}"; do
-            product="$(echo "$raw_product" | tr '[:lower:]' '[:upper:]' | xargs)"
-            if [ -z "$product" ]; then
+          for raw_site in "${sites[@]}"; do
+            site="$(echo "$raw_site" | tr '[:lower:]' '[:upper:]' | sed -E 's/^K([A-Z0-9]{3})$/\1/' | xargs)"
+            if [ -z "$site" ]; then
               continue
             fi
-            url="$LEVEL3_SMOKE_BASE_URL/v1/radar/level3/timeline?site=$LEVEL3_SITE&product=$product"
-            curl --fail --silent --show-error "$url" > "/tmp/level3-$product-timeline.json"
-            cat "/tmp/level3-$product-timeline.json"
-            PRODUCT="$product" node - <<'NODE'
+            for raw_product in "${products[@]}"; do
+              product="$(echo "$raw_product" | tr '[:lower:]' '[:upper:]' | xargs)"
+              if [ -z "$product" ]; then
+                continue
+              fi
+              url="$LEVEL3_SMOKE_BASE_URL/v1/radar/level3/timeline?site=$site&product=$product"
+              out="/tmp/level3-$site-$product-timeline.json"
+              curl --fail --silent --show-error "$url" > "$out"
+              cat "$out"
+              SITE="$site" PRODUCT="$product" node - <<'NODE'
           const fs = require("node:fs");
+          const site = process.env.SITE;
           const product = process.env.PRODUCT;
-          const timeline = JSON.parse(fs.readFileSync(`/tmp/level3-${product}-timeline.json`, "utf8"));
-          if (!timeline.ok) throw new Error(`Level III ${product} timeline did not report ok`);
+          const timeline = JSON.parse(fs.readFileSync(`/tmp/level3-${site}-${product}-timeline.json`, "utf8"));
+          if (!timeline.ok) throw new Error(`Level III ${site} ${product} timeline did not report ok`);
           const frame = Array.isArray(timeline.frames) ? timeline.frames[0] : null;
-          if (!frame) throw new Error(`Level III ${product} timeline has no frames`);
+          if (!frame) throw new Error(`Level III ${site} ${product} timeline has no frames`);
           const validTimeMs = Date.parse(String(frame.validTime || frame.productTime || ""));
           if (!Number.isFinite(validTimeMs)) {
-            throw new Error(`Level III ${product} newest frame has no parseable validTime`);
+            throw new Error(`Level III ${site} ${product} newest frame has no parseable validTime`);
           }
           const ageMinutes = (Date.now() - validTimeMs) / 60_000;
           const maxAgeMinutes = Number(process.env.LEVEL3_MAX_FRAME_AGE_MINUTES || 120);
           if (ageMinutes > maxAgeMinutes) {
-            throw new Error(`Level III ${product} newest frame is ${Math.round(ageMinutes)} minutes old, expected <= ${maxAgeMinutes}`);
+            throw new Error(`Level III ${site} ${product} newest frame is ${Math.round(ageMinutes)} minutes old, expected <= ${maxAgeMinutes}`);
           }
           if (frame.tileDelivery !== "worker-r2") {
-            throw new Error(`Level III ${product} tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
+            throw new Error(`Level III ${site} ${product} tileDelivery is ${frame.tileDelivery}, expected worker-r2`);
           }
           if (Number(frame.maxZoom || timeline.maxZoom || 0) < Number(process.env.LEVEL3_MAX_ZOOM || 0)) {
-            throw new Error(`Level III ${product} maxZoom is ${frame.maxZoom || timeline.maxZoom}, expected ${process.env.LEVEL3_MAX_ZOOM}`);
+            throw new Error(`Level III ${site} ${product} maxZoom is ${frame.maxZoom || timeline.maxZoom}, expected ${process.env.LEVEL3_MAX_ZOOM}`);
           }
           NODE
+            done
           done

@@ -9762,6 +9762,7 @@ function buildRadarInfoPayload(env: Env) {
         tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
         source: "NOAA NEXRAD Level III",
         initialSite: LEVEL3_INITIAL_SITE,
+        phase1Sites: LEVEL3_PHASE1_SITES,
         initialProducts: LEVEL3_INITIAL_PRODUCTS,
       },
     },
@@ -9869,8 +9870,10 @@ async function buildOwnedRadarStatusPayload(env: Env) {
         tileRoute: "/v1/radar/level3/tiles/{z}/{x}/{y}.png",
         source: "NOAA NEXRAD Level III",
         initialSite: LEVEL3_INITIAL_SITE,
+        phase1Sites: LEVEL3_PHASE1_SITES,
         initialProducts: LEVEL3_INITIAL_PRODUCTS,
         health: await buildLevel3HealthStatus(env, LEVEL3_INITIAL_SITE, LEVEL3_INITIAL_PRODUCTS),
+        phase1Health: await buildLevel3PhaseHealthStatus(env, LEVEL3_PHASE1_SITES, LEVEL3_INITIAL_PRODUCTS),
       },
     },
     currentSource: {
@@ -10235,6 +10238,7 @@ async function evictOwnedRadarLocalTilesFromR2(
 const OWNED_LOCAL_RADAR_PRODUCTS = ["N0Q", "N0B"] as const;
 type OwnedLocalRadarProduct = typeof OWNED_LOCAL_RADAR_PRODUCTS[number];
 const LEVEL3_INITIAL_SITE = "IWA";
+const LEVEL3_PHASE1_SITES = ["IWA", "MPX", "DLH"] as const;
 const LEVEL3_INITIAL_PRODUCTS = ["N0B", "N0S", "EET"] as const;
 const OWNED_LOCAL_RADAR_MAX_ACTIVE_SITES_PER_RUN = 1;
 const OWNED_LOCAL_RADAR_MAX_TILE_PUBLISHES_PER_RUN = 300;
@@ -10625,6 +10629,16 @@ async function buildLevel3HealthStatus(env: Env, site: string, products: readonl
     checkedAt: new Date(now).toISOString(),
     reason: statuses.every((status) => status.ok) ? "freshness-read" : "one-or-more-products-unhealthy",
     products: statuses,
+  };
+}
+
+async function buildLevel3PhaseHealthStatus(env: Env, sites: readonly string[], products: readonly string[]) {
+  const siteStatuses = await Promise.all(sites.map((site) => buildLevel3HealthStatus(env, site, products)));
+  return {
+    ok: siteStatuses.every((site) => site.ok),
+    siteCount: siteStatuses.length,
+    productCount: products.length,
+    sites: siteStatuses,
   };
 }
 

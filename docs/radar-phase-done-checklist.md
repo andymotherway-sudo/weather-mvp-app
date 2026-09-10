@@ -44,6 +44,7 @@ For phase 1, the owned national radar path should cover US beta users through MR
 - Unsupported products are either hidden, disabled, or clearly marked as unavailable.
 - Local NEXRAD product choices are backed by measured Level III availability or an explicit fallback source.
 - Legends and product descriptions match what the layer is actually showing.
+- The owned Level III pilot bundle has a documented station/product scope before it is treated as a user-facing replacement for IEM.
 
 ### 5. Storage and Cost Control
 

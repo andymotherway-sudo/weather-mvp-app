@@ -88,6 +88,11 @@ function latestRenderableTileFrameIndex(templates: Array<string | null>) {
   return templates.length ? templates.length - 1 : 0;
 }
 
+function normalizeLevel3SiteForHealth(site: string | null | undefined) {
+  const raw = String(site ?? '').trim().toUpperCase();
+  return raw.length === 4 && raw.startsWith('K') ? raw.slice(1) : raw.slice(-3);
+}
+
 function lonLatToMercatorMeters(lon: number, lat: number) {
   const x = (lon * 20037508.34) / 180;
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180);
@@ -457,6 +462,13 @@ export function useRadarController(args: {
   const level3Selected = effectiveTileProvider === 'level3';
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
   const usingLevel3 = level3Selected && !!level3Frames?.length;
+  const selectedLevel3Health = useMemo(() => {
+    const requestedSite = normalizeLevel3SiteForHealth(radarSiteId3);
+    const phaseSite = radarBackendStatus?.level3Phase1?.sites?.find(
+      (site) => normalizeLevel3SiteForHealth(site.site) === requestedSite,
+    );
+    return phaseSite ?? radarBackendStatus?.level3 ?? null;
+  }, [radarBackendStatus, radarSiteId3]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1516,7 +1528,7 @@ export function useRadarController(args: {
     level3Error,
     level3Loading,
     level3Supported,
-    level3Health: radarBackendStatus?.level3 ?? null,
+    level3Health: selectedLevel3Health,
     level3HealthError: radarBackendStatusError,
     usingLevel3,
     effectiveRadarProvider: effectiveTileProvider,

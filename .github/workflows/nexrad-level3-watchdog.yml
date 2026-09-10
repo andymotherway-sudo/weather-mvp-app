@@ -1,5 +1,5 @@
 name: NEXRAD Level III watchdog
-run-name: Level III watchdog production stale>${{ inputs.stale_after_minutes || '45' }}m
+run-name: Level III watchdog production ${{ inputs.sites || 'IWA,MPX,DLH' }} stale>${{ inputs.stale_after_minutes || '45' }}m
 
 on:
   schedule:
@@ -11,6 +11,10 @@ on:
         description: "Dispatch Level III cycle if any live product is older than this"
         required: true
         default: "45"
+      sites:
+        description: "Comma-separated Level III site ids"
+        required: true
+        default: "IWA,MPX,DLH"
       dry_run:
         description: "Report only; do not dispatch recovery workflow"
         required: true
@@ -22,7 +26,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: level3-watchdog-production-iwa
+  group: level3-watchdog-production-phase1
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +39,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '45' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-      LEVEL3_SITE: IWA
+      LEVEL3_SITES: ${{ inputs.sites || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: N0B,N0S,EET
       LEVEL3_BASE_URL: https://omniwx-api-production.omniwx.workers.dev
 
@@ -50,7 +54,10 @@ jobs:
           set -euo pipefail
           node - <<'NODE' > /tmp/level3-watchdog.env
           const staleAfterMinutes = Math.max(10, Number(process.env.STALE_AFTER_MINUTES || 45));
-          const site = String(process.env.LEVEL3_SITE || "IWA").trim().toUpperCase();
+          const sites = String(process.env.LEVEL3_SITES || "IWA,MPX,DLH")
+            .split(",")
+            .map((value) => value.trim().toUpperCase().replace(/^K([A-Z0-9]{3})$/, "$1"))
+            .filter(Boolean);
           const products = String(process.env.LEVEL3_PRODUCTS || "N0B,N0S,EET")
             .split(",")
             .map((value) => value.trim().toUpperCase())
@@ -58,38 +65,41 @@ jobs:
           const baseUrl = String(process.env.LEVEL3_BASE_URL || "").replace(/\/+$/, "");
           const checks = [];
 
-          for (const product of products) {
-            const result = {
-              product,
-              ok: false,
-              ageMinutes: null,
-              frameCount: 0,
-              maxZoom: null,
-              reason: "unknown",
-            };
-            try {
-              const url = `${baseUrl}/v1/radar/level3/timeline?site=${encodeURIComponent(site)}&product=${encodeURIComponent(product)}`;
-              const res = await fetch(url, { headers: { accept: "application/json" } });
-              const text = await res.text();
-              if (!res.ok) throw new Error(`timeline ${res.status}: ${text.slice(0, 200)}`);
-              const json = JSON.parse(text);
-              const frame = Array.isArray(json.frames) && json.frames.length ? json.frames[0] : json;
-              const validTimeMs = Date.parse(String(frame?.validTime || frame?.productTime || ""));
-              result.ok = Boolean(json.ok && Number.isFinite(validTimeMs));
-              result.frameCount = Array.isArray(json.frames) ? json.frames.length : Number(json.frameCount || 0);
-              result.maxZoom = frame?.maxZoom ?? json.maxZoom ?? null;
-              result.ageMinutes = Number.isFinite(validTimeMs) ? Math.round((Date.now() - validTimeMs) / 60_000) : null;
-              result.reason = result.ok ? "freshness-read" : "timeline-missing-valid-frame";
-            } catch (error) {
-              result.reason = error instanceof Error ? error.message : String(error);
+          for (const site of sites) {
+            for (const product of products) {
+              const result = {
+                site,
+                product,
+                ok: false,
+                ageMinutes: null,
+                frameCount: 0,
+                maxZoom: null,
+                reason: "unknown",
+              };
+              try {
+                const url = `${baseUrl}/v1/radar/level3/timeline?site=${encodeURIComponent(site)}&product=${encodeURIComponent(product)}`;
+                const res = await fetch(url, { headers: { accept: "application/json" } });
+                const text = await res.text();
+                if (!res.ok) throw new Error(`timeline ${res.status}: ${text.slice(0, 200)}`);
+                const json = JSON.parse(text);
+                const frame = Array.isArray(json.frames) && json.frames.length ? json.frames[0] : json;
+                const validTimeMs = Date.parse(String(frame?.validTime || frame?.productTime || ""));
+                result.ok = Boolean(json.ok && Number.isFinite(validTimeMs));
+                result.frameCount = Array.isArray(json.frames) ? json.frames.length : Number(json.frameCount || 0);
+                result.maxZoom = frame?.maxZoom ?? json.maxZoom ?? null;
+                result.ageMinutes = Number.isFinite(validTimeMs) ? Math.round((Date.now() - validTimeMs) / 60_000) : null;
+                result.reason = result.ok ? "freshness-read" : "timeline-missing-valid-frame";
+              } catch (error) {
+                result.reason = error instanceof Error ? error.message : String(error);
+              }
+              checks.push(result);
             }
-            checks.push(result);
           }
 
           const stale = checks.filter((check) => !check.ok || check.ageMinutes == null || check.ageMinutes > staleAfterMinutes);
           const shouldDispatch = stale.length > 0;
           console.log(`SHOULD_DISPATCH=${shouldDispatch ? "true" : "false"}`);
-          console.log(`STALE_PRODUCTS=${stale.map((check) => check.product).join(",")}`);
+          console.log(`STALE_PRODUCTS=${stale.map((check) => `${check.site}:${check.product}`).join(",")}`);
           console.log(`CHECKS_JSON=${JSON.stringify(checks)}`);
           NODE
           cat /tmp/level3-watchdog.env
@@ -123,7 +133,7 @@ jobs:
           set -euo pipefail
           gh workflow run nexrad-level3-cycle.yml \
             -f target_env=production \
-            -f site="$LEVEL3_SITE" \
+            -f sites="$LEVEL3_SITES" \
             -f products="$LEVEL3_PRODUCTS" \
             -f apply=true \
             -f min_zoom=7 \
@@ -140,7 +150,7 @@ jobs:
           {
             echo "## Level III watchdog"
             echo ""
-            echo "- Site: $LEVEL3_SITE"
+            echo "- Sites: $LEVEL3_SITES"
             echo "- Products: $LEVEL3_PRODUCTS"
             echo "- Stale products: ${{ steps.freshness.outputs.STALE_PRODUCTS || 'none' }}"
             echo "- Active publisher runs: ${{ steps.active.outputs.ACTIVE_COUNT }}"

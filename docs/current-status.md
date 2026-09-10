@@ -55,10 +55,10 @@ This file is the short source of truth for where the product and infrastructure 
 - `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
 - `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
 - `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
-- `NEXRAD Level III cycle` publishes the initial IWA product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally; that variable is currently enabled for production beta.
+- `NEXRAD Level III cycle` publishes the initial Phase 1 site bundle (`IWA`, `MPX`, `DLH`) and product bundle (`N0B`, `N0S`, `EET`) in one bounded run. Its cron is gated by the `LEVEL3_SCHEDULE_ENABLED` repository variable so recurring local radar does not start accidentally; that variable is currently enabled for production beta.
 - `NEXRAD Level III cycle` now keeps up to 12 retained frames by default and fails the smoke test if the newest Worker timeline frame is older than the configured freshness ceiling.
-- `NEXRAD Level III watchdog` is a beta recovery workflow on offset `:11/:41` UTC cron slots. It checks live production Level III timelines and dispatches the bounded Level III cycle only when at least one product is stale and no Level III publisher run is already queued or running.
-- `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
+- `NEXRAD Level III watchdog` is a beta recovery workflow on offset `:11/:41` UTC cron slots. It checks live production Level III timelines for the Phase 1 site/product bundle and dispatches the bounded Level III cycle only when at least one product is stale and no Level III publisher run is already queued or running.
+- `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle and the Phase 1 site bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
 - Storm Scope now consumes that status when owned Level III is selected and shows a compact owned-health line for the active product.
 - A dedicated radar runner is now the planned production-grade replacement for GitHub Actions once owned z10, multi-product MRMS, or recurring Level III becomes customer-critical.
 
