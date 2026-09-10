@@ -345,13 +345,14 @@ Owned local Level III now mirrors the MRMS proof pattern at a smaller station/pr
 - `NEXRAD Level III proof cycle` can dry-run or publish one site/product proof with bounded zoom, retention, and tile-count caps.
 - Empty Level III renders are refused by default with `--min-tiles 1`, so a blank product cannot replace a useful latest timeline.
 - Applied publishes delete stale frame objects under that station/product prefix after the retained playlist is written, so Level III proofs stay rolling instead of archival.
+- Expanded Level III beta products can create more than 1,000 stale objects per station/product cleanup when moving from older test settings to the current rolling retention. The cycle workflow now passes a configurable `max_deletes` value, defaulting to 5,000, so cleanup remains bounded but does not fail normal z7-z10 retention maintenance.
 
 Initial production proof posture:
 
 - Use `IWA N0B` first because Phoenix/Mesa is the main tester market.
 - Keep `retain_frames=3` until repeated runs prove cleanup/storage behavior.
 - Keep `max_zoom=10`, `max_tiles=2000`, and `supersample=1` for the zero-cost beta proof.
-- Keep cleanup enabled and capped with `--max-deletes` so a bad config cannot delete outside the scoped station/product prefix.
+- Keep cleanup enabled and capped with `--max-deletes` so a bad config cannot delete outside the scoped station/product prefix. For the expanded `IWA/MPX/DLH` beta bundle, use the workflow default of 5,000 deletes per station/product refresh unless live cleanup metrics show that should be lowered again.
 - Keep IEM/RIDGE local fallback in the app until owned Level III has smooth multi-frame playback.
 
 First production proof evidence:

@@ -41,6 +41,7 @@ jobs:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_PRODUCTS || 'N0B,N0S,EET') || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
+      LEVEL3_MAX_DELETES: ${{ vars.LEVEL3_MAX_DELETES || '5000' }}
       LEVEL3_BASE_URL: https://omniwx-api-production.omniwx.workers.dev
 
     steps:
@@ -140,6 +141,7 @@ jobs:
             -f max_zoom=10 \
             -f retain_frames=12 \
             -f max_frame_age_minutes=120 \
+            -f max_deletes="$LEVEL3_MAX_DELETES" \
             -f supersample=1
 
       - name: Report watchdog decision

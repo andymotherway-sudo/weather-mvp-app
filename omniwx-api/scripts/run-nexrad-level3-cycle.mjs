@@ -23,6 +23,7 @@ function parseArgs(argv) {
     minTiles: 1,
     retainFrames: 3,
     maxFrameAgeMinutes: 360,
+    maxDeletes: 5000,
     supersample: 1,
     maxRangeKm: null,
     python: process.env.OMNIWX_PYTHON || null,
@@ -40,6 +41,7 @@ function parseArgs(argv) {
     else if (arg === "--min-tiles" && argv[i + 1]) args.minTiles = Math.max(0, Math.floor(Number(argv[++i]) || args.minTiles));
     else if (arg === "--retain-frames" && argv[i + 1]) args.retainFrames = Math.max(1, Math.min(12, Math.floor(Number(argv[++i]) || args.retainFrames)));
     else if (arg === "--max-frame-age-minutes" && argv[i + 1]) args.maxFrameAgeMinutes = Math.max(5, Math.floor(Number(argv[++i]) || args.maxFrameAgeMinutes));
+    else if (arg === "--max-deletes" && argv[i + 1]) args.maxDeletes = Math.max(0, Math.floor(Number(argv[++i]) || args.maxDeletes));
     else if (arg === "--supersample" && argv[i + 1]) args.supersample = Math.max(1, Math.min(4, Math.floor(Number(argv[++i]) || args.supersample)));
     else if (arg === "--max-range-km" && argv[i + 1]) args.maxRangeKm = Math.max(25, Math.min(460, Number(argv[++i]) || 0));
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
@@ -71,6 +73,7 @@ Options:
   --max-tiles <n>              Publish safety cap. Default: 2000
   --min-tiles <n>              Minimum non-empty tiles required. Default: 1
   --retain-frames <n>          Retained frames. Default: 3
+  --max-deletes <n>            Stale object delete safety cap. Default: 5000
   --supersample <n>            Supersample factor. Default: 1
   --max-range-km <km>          Optional render radius cap
   --python <path>              Python executable
@@ -127,6 +130,7 @@ function main() {
     "--min-tiles", String(args.minTiles),
     "--retain-frames", String(args.retainFrames),
     "--max-frame-age-minutes", String(args.maxFrameAgeMinutes),
+    "--max-deletes", String(args.maxDeletes),
   ];
   if (args.apply) publishArgs.push("--apply");
   runStep(args.apply ? `Publish Level III ${args.site} ${args.product}` : `Dry-run Level III ${args.site} ${args.product}`, process.execPath, publishArgs);
