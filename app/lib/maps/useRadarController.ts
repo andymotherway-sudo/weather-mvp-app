@@ -5,6 +5,7 @@ import type { RadarOverlay, Region } from '../../../components/maps/MapRenderer'
 import { fetchLevel3Frames, supportsLevel3Product, type Level3RadarFrame } from './radar/providers/level3';
 import { fetchMrmsFrames, type MrmsRadarFrame } from './radar/providers/mrms';
 import { createRainViewerProvider } from './radar/providers/rainviewer';
+import { fetchRadarBackendStatus, type RadarBackendStatus } from './radar/providers/status';
 import type { RadarFrame } from './radar/providers/types';
 import {
   iemNationalMosaicTimestamps,
@@ -390,6 +391,8 @@ export function useRadarController(args: {
   const [level3Frames, setLevel3Frames] = useState<Level3RadarFrame[] | null>(null);
   const [level3Error, setLevel3Error] = useState<string | null>(null);
   const [level3Loading, setLevel3Loading] = useState(false);
+  const [radarBackendStatus, setRadarBackendStatus] = useState<RadarBackendStatus | null>(null);
+  const [radarBackendStatusError, setRadarBackendStatusError] = useState<string | null>(null);
   const autoRadarSelected = sheetValue.radarProvider === 'auto';
   const rainViewerFetchSelected =
     sheetValue.radarProvider === 'rainviewer' ||
@@ -454,6 +457,37 @@ export function useRadarController(args: {
   const level3Selected = effectiveTileProvider === 'level3';
   const usingRainViewer = rainViewerSelected && !!rvFrames?.length;
   const usingLevel3 = level3Selected && !!level3Frames?.length;
+
+  useEffect(() => {
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    async function run() {
+      if (!radarEnabled || !level3Requested) {
+        setRadarBackendStatus(null);
+        setRadarBackendStatusError(null);
+        return;
+      }
+
+      try {
+        const status = await fetchRadarBackendStatus();
+        if (cancelled) return;
+        setRadarBackendStatus(status);
+        setRadarBackendStatusError(null);
+      } catch (e: any) {
+        if (cancelled) return;
+        setRadarBackendStatusError(String(e?.message ?? e ?? 'Radar backend status failed'));
+      }
+    }
+
+    run();
+    if (radarEnabled && level3Requested) interval = setInterval(run, 60_000);
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
+  }, [level3Requested, radarEnabled]);
   const animationProfile = useMemo(() => {
     if (!mrmsSelected) return profile;
     const wideView = mapZoom < 8.5;
@@ -1482,6 +1516,8 @@ export function useRadarController(args: {
     level3Error,
     level3Loading,
     level3Supported,
+    level3Health: radarBackendStatus?.level3 ?? null,
+    level3HealthError: radarBackendStatusError,
     usingLevel3,
     effectiveRadarProvider: effectiveTileProvider,
     requestedRadarProvider: sheetValue.radarProvider,

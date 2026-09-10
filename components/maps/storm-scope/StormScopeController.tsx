@@ -53,6 +53,7 @@ export function StormScopeController(props: {
   productLine: string;
   metadataLine: string;
   sourceLine: string;
+  healthLine?: string | null;
   loadingMessage?: string | null;
   warningMessage?: string | null;
   stale: boolean;
@@ -172,6 +173,7 @@ export function StormScopeController(props: {
                   </View>
                 ) : null}
                 <ConsoleMetric label="Status" value={props.warningMessage ?? props.loadingMessage ?? props.sourceLine} />
+                {props.healthLine ? <ConsoleMetric label="Owned health" value={props.healthLine} /> : null}
               </SectionCard>
 
               <SectionCard title="Product" subtitle="Horizontal picker keeps unsupported products out of the way">

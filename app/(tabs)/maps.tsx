@@ -2334,7 +2334,32 @@ export default function MapsScreen() {
               ? 'single-site RIDGE'
               : stationProductUnavailable
               ? 'source unavailable'
-                : 'loading station scans';
+            : 'loading station scans';
+
+  const level3HealthProducts = radarCtl.level3Health?.products ?? [];
+  const level3HealthProduct = level3HealthProducts.find((item) => item.product === product) ?? null;
+  const stormScopeHealthLine =
+    ownedLevel3Requested && level3HealthProduct?.ok
+      ? [
+          `${product} healthy`,
+          typeof level3HealthProduct.ageMinutes === 'number'
+            ? `${level3HealthProduct.ageMinutes}m old`
+            : null,
+          typeof level3HealthProduct.frameCount === 'number'
+            ? `${level3HealthProduct.frameCount} frame${level3HealthProduct.frameCount === 1 ? '' : 's'}`
+            : null,
+          typeof level3HealthProduct.tileCount === 'number'
+            ? `${level3HealthProduct.tileCount} tiles`
+            : null,
+          typeof level3HealthProduct.maxZoom === 'number'
+            ? `z${level3HealthProduct.maxZoom}`
+            : null,
+        ].filter(Boolean).join(' · ')
+      : ownedLevel3Requested && level3HealthProduct && !level3HealthProduct.ok
+        ? `${product} unhealthy: ${level3HealthProduct.reason ?? 'status check failed'}`
+        : ownedLevel3Requested && radarCtl.level3HealthError
+          ? `Health check unavailable: ${radarCtl.level3HealthError}`
+          : null;
 
   const stormScopeMode: 'mosaic' | 'local' = stormScopeLocalZoom ? 'local' : 'mosaic';
   const stormScopeStatusLabel = stormScopeLocalZoom ? 'Local' : 'Mosaic';
@@ -5755,6 +5780,7 @@ export default function MapsScreen() {
                 productLine={stormScopeProductLine}
                 metadataLine={stormScopeMetadataLine}
                 sourceLine={stationProductSourceLabel}
+                healthLine={stormScopeHealthLine}
                 loadingMessage={stormScopeLoadingMessage}
                 warningMessage={stormScopeWarningMessage}
                 stale={stormScopeIsStale}
