@@ -34,6 +34,7 @@ jobs:
 
     env:
       GH_TOKEN: ${{ github.token }}
+      MRMS_SCHEDULE_ENABLED: ${{ vars.MRMS_SCHEDULE_ENABLED || 'true' }}
       STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '50' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       MRMS_TIMELINE_URL: https://omniwx-api-production.omniwx.workers.dev/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite
@@ -108,7 +109,7 @@ jobs:
           echo "ACTIVE_COUNT=$active_count" | tee -a "$GITHUB_OUTPUT"
 
       - name: Dispatch bounded MRMS recovery
-        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true'
+        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true' && env.MRMS_SCHEDULE_ENABLED != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -134,5 +135,6 @@ jobs:
             echo "- Reason: ${{ steps.freshness.outputs.REASON }}"
             echo "- Active publisher runs: ${{ steps.active.outputs.ACTIVE_COUNT }}"
             echo "- Would dispatch: ${{ steps.freshness.outputs.SHOULD_DISPATCH }}"
+            echo "- MRMS schedule enabled: $MRMS_SCHEDULE_ENABLED"
             echo "- Dry run: $DRY_RUN"
           } >> "$GITHUB_STEP_SUMMARY"

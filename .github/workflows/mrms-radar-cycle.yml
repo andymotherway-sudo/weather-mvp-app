@@ -92,6 +92,7 @@ jobs:
     name: Publish bounded MRMS radar
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    if: github.event_name == 'workflow_dispatch' || vars.MRMS_SCHEDULE_ENABLED != 'false'
 
     defaults:
       run:

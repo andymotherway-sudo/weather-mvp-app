@@ -97,6 +97,7 @@ Operational note:
 - GitHub scheduled workflow timing can vary, so MRMS freshness must be validated from the live timeline rather than assumed from the cron expression.
 - Scheduled runs fail if the live timeline does not expose the expected zoom or minimum frame count after publish.
 - Scheduled runs fail if the newest live MRMS frame is more than 90 minutes old after publish.
+- Set the GitHub repository variable `MRMS_SCHEDULE_ENABLED=false` to pause scheduled MRMS publishing without removing the workflow; manual runs stay available.
 - `MRMS radar watchdog` checks production MRMS on offset `:17`, `:37`, and `:57` UTC slots and dispatches the bounded z3-z8 MRMS cycle only when the live timeline is stale and no MRMS publisher run is already queued/running.
 - Manual z10 publishes remain available for QA, but scheduled z10 should wait for upload retry/resume protection because one z10 frame can require 6k+ R2 object writes.
 - Use the `MRMS z10 safety check` workflow for dry-run z10 render sizing before applying any z10 publish to R2.

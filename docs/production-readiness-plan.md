@@ -454,6 +454,7 @@ Radar is the biggest variable-cost risk because automated jobs can write thousan
 Required switches:
 
 - `MRMS_PUBLISH_ENABLED`
+- `MRMS_SCHEDULE_ENABLED`
 - `LEVEL3_SCHEDULE_ENABLED`
 - `OWNED_RADAR_ENABLED`
 - Product/station scope controls such as `LEVEL3_SCHEDULE_SITES` and `LEVEL3_SCHEDULE_PRODUCTS`.
