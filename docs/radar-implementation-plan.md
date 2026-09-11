@@ -27,6 +27,7 @@ OMNIwx implementation rules:
 
 - Keep R2 under 5 GB during beta unless deliberately approved.
 - Keep the absolute emergency ceiling under R2's 10 GB free tier.
+- Treat cost safety as a release requirement, not an operations afterthought; the paid-launch gate is tracked in [production-readiness-plan.md](production-readiness-plan.md#track-h-cost-safety-and-billing-blast-radius-control).
 - Store only non-empty rendered tiles.
 - Retain only recent frames.
 - Serve MRMS tiles through the Worker until fallback/cache behavior is fully proven.
@@ -201,6 +202,7 @@ Cost posture:
 - The GitHub watchdog is a beta safety net, not a substitute for the dedicated runner once radar freshness is customer-critical.
 - Add the dedicated runner when we need production-grade freshness, z10 by default, multiple MRMS products, or reliable recurring Level III products.
 - Keep D1 out of the radar hot path; use R2 manifests and object prefixes as the radar source of truth.
+- The dedicated runner must pass the cost-safety gate first: budget alerts, kill switches, bounded station/product scope, measured one-month estimate, and production rollback path.
 
 ## Phase 3: MRMS Product Expansion
 

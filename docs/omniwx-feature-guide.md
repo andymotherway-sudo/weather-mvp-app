@@ -136,6 +136,7 @@ The Storm Recap card scans recent official Local Storm Reports from the local NW
 - Latest report.
 - Strongest wind report and largest hail report when present.
 - Recent report rows with event type, location, source, and remarks.
+- A report detail browser for reading the selected official report without leaving the card for wxLearn.
 
 Local Storm Reports are reports of what happened, not forecasts or warnings. No recent reports does not mean no weather occurred.
 

@@ -4,7 +4,7 @@ Last updated: September 8, 2026
 
 This plan organizes the security, paid-customer, infrastructure, Storm Scope, cleanup, and professional-readiness notes into one execution path. It is intentionally practical: protect what exists, keep the app lovable, and add commercial capability only after the trust foundation is real.
 
-For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](current-status.md).
+For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](current-status.md). For the timeline view, see [project-gantt.md](project-gantt.md).
 
 ## North Star
 
@@ -419,6 +419,105 @@ Done when:
 - We know which cached layer is authoritative for each major data type.
 - Failed upstreams degrade gracefully instead of causing raw errors or broken UI.
 
+## Track H: Cost Safety And Billing Blast-Radius Control
+
+Goal: make it impossible, or at least very hard, for OMNIwx to accidentally create a surprise infrastructure bill while moving toward paid customers.
+
+This track is a paid-launch prerequisite. It should be handled before enabling subscriptions, before making owned radar a paid-customer promise, and before moving radar publishing to a dedicated runner.
+
+### H1. Budget And Billing Guardrails
+
+Required setup:
+
+- Cloudflare budget alerts at low thresholds such as `$5`, `$10`, `$25`, and `$50`.
+- Google Cloud budget alerts before enabling Cloud Run, Cloud Scheduler, Artifact Registry, or Secret Manager.
+- Separate dev and production projects/resources where practical.
+- Narrow service credentials for unattended jobs; no broad admin tokens in scheduled runners.
+- A documented emergency stop procedure for disabling radar publishing and expensive backend paths.
+
+Rules:
+
+- Billing alerts are not a hard safety boundary. They are a notification layer only.
+- Product limits and backend refusal rules must prevent runaway usage before billing alerts matter.
+- Any new paid cloud service must have a named owner, expected monthly range, budget alert, and rollback path.
+
+Done when:
+
+- Budget alerts exist for every cloud account used by OMNIwx.
+- The emergency stop procedure can be followed without a code deploy.
+- Cloud billing dashboards and alert recipients are documented outside source-controlled secret files.
+
+### H2. Radar Cost Kill Switches
+
+Radar is the biggest variable-cost risk because automated jobs can write thousands of tile objects per run.
+
+Required switches:
+
+- `MRMS_PUBLISH_ENABLED`
+- `LEVEL3_SCHEDULE_ENABLED`
+- `OWNED_RADAR_ENABLED`
+- Product/station scope controls such as `LEVEL3_SCHEDULE_SITES` and `LEVEL3_SCHEDULE_PRODUCTS`.
+- Per-run caps for `max_zoom`, `retain_frames`, `max_tiles`, `max_deletes`, and optional-product skip behavior.
+
+Rules:
+
+- Radar storage must stay rolling, not archival.
+- Publish jobs must refuse unbounded writes.
+- Cleanup must be scoped to the exact product/station prefix being refreshed.
+- Failed cleanup should fail closed rather than silently accumulating old frames.
+- Paid-tier radar expansion must have a measured storage estimate before it is enabled by default.
+
+Done when:
+
+- A non-code switch can stop routine MRMS and Level III publishing.
+- Each radar publish path reports retained frames, approximate retained bytes, stale objects, and deletes.
+- The app keeps fallback behavior when owned radar is disabled, stale, or warming.
+
+### H3. Tier And Usage Boundaries
+
+Paid subscriptions should not mean unlimited backend cost.
+
+Initial tier boundaries:
+
+- Limit saved locations per account.
+- Limit account/device sync frequency where needed.
+- Keep owned high-resolution radar products tied to explicit product/station scopes.
+- Avoid unlimited recording, unlimited radar history, or all-stations/all-products access until pricing and infrastructure can support it.
+- Keep D1 out of radar tile serving and radar ingest hot paths.
+
+Done when:
+
+- Free and paid tiers have written usage limits.
+- Entitlement checks are server-side for any feature that materially increases backend cost.
+- The app can explain unavailable premium radar coverage honestly without implying global owned radar exists.
+
+### H4. Dedicated Runner Cost Gate
+
+A dedicated runner is the right production-grade radar path, but it must not be introduced as an open-ended bill.
+
+Entry criteria:
+
+- GitHub Actions cadence is no longer acceptable for the beta or paid promise.
+- Current R2 object/byte growth is understood for the target products and stations.
+- A one-run and one-month estimate exists for the proposed cadence.
+- Budget alerts and kill switches are in place before the runner writes to production R2.
+
+First safe runner scope:
+
+- Level III required products only: `N0B` and `N0S`.
+- Pilot sites only: `IWA`, `MPX`, and `DLH`.
+- z7-z10.
+- 12 retained frames.
+- 10-15 minute cadence.
+- GitHub Actions retained as manual fallback until the runner is boring for several days.
+
+Done when:
+
+- The runner can be disabled without a deploy.
+- The runner refuses to exceed configured write, delete, frame, zoom, and storage caps.
+- A week of logs shows stable cadence, bounded R2 growth, and no manual rescues.
+- The monthly cost is still inside the approved paid-launch operating budget.
+
 ## Recommended Build Order
 
 ### Now
@@ -427,8 +526,9 @@ Done when:
 2. Add Worker security foundation.
 3. Add backend security docs and D1 schema/migration groundwork.
 4. Continue MRMS-auto validation and retention cleanup.
-5. Fix user-visible error boundary/reset path.
-6. Finish the first repository hygiene baseline and commit it as a small, reviewable cleanup.
+5. Add the cost-safety runbook, budget-alert checklist, and radar kill-switch inventory.
+6. Fix user-visible error boundary/reset path.
+7. Finish the first repository hygiene baseline and commit it as a small, reviewable cleanup.
 
 ### Next
 
@@ -437,7 +537,8 @@ Done when:
 3. Fix fire duplicate labels and legend consistency.
 4. Add backup/retention/BCP docs.
 5. Verify production release path remains boring.
-6. Plan the Expo/MapLibre/navigation security-upgrade branch for remaining audit findings.
+6. Define free/paid usage boundaries before implementing account entitlements.
+7. Plan the Expo/MapLibre/navigation security-upgrade branch for remaining audit findings.
 
 ### Later
 
@@ -446,8 +547,9 @@ Done when:
 3. Add cross-device saved locations and preferences.
 4. Create RevenueCat project and Google Play subscription.
 5. Add server-side entitlement enforcement.
-6. Add more MRMS products.
-7. Add local NEXRAD specialty renderer only after MRMS broad radar is stable.
+6. Add dedicated radar runner only after cost safety and bounded runner gates are complete.
+7. Add more MRMS products.
+8. Add local NEXRAD specialty renderer only after MRMS broad radar is stable.
 
 ## Definition Of Done For This Plan
 
@@ -460,5 +562,6 @@ This plan is done when:
 - MRMS-auto and RainViewer fallback are stable enough for internal testing.
 - Storm Scope has a clear implementation path and acceptance criteria.
 - Backup, retention, and recovery responsibilities are explicit.
+- Cost guardrails, billing alerts, kill switches, and usage boundaries are documented before paid launch.
 - The repository hygiene baseline is complete and future cleanup work is captured in small, auditable tasks.
 - The full release path is documented, repeatable, and followed for production builds.

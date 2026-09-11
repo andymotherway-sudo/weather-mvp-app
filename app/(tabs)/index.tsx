@@ -4011,8 +4011,9 @@ function StormRecapCard({
   const count = reports?.summary?.count ?? 0;
   const updated = reports?.updatedAt ? formatUpdatedTime(reports.updatedAt) : null;
   const office = reports?.office?.id ? `WFO ${reports.office.id}` : 'NWS office';
-  const recent = reports?.reports?.slice(0, 3) ?? [];
   const allReports = reports?.reports ?? [];
+  const recent = allReports.slice(0, 4);
+  const hiddenReportCount = Math.max(0, allReports.length - recent.length);
   const openReport = (report: NwsStormReport | null | undefined) => {
     if (!reports) return;
     setSelectedReport(report ?? null);
@@ -4031,6 +4032,8 @@ function StormRecapCard({
             style={[nwd.learnButton, !reports && nwd.disabledButton]}
             disabled={!reports}
             onPress={() => openReport(reports?.summary.latest ?? allReports[0] ?? null)}
+            accessibilityRole="button"
+            accessibilityLabel={count > 0 ? `Open ${count} local storm reports` : 'Open local storm report details'}
           >
             <Text style={nwd.learnButtonText}>{count > 0 ? 'Reports' : 'Details'}</Text>
           </Pressable>
@@ -4060,34 +4063,69 @@ function StormRecapCard({
           <Text style={nwd.headline}>
             {count > 0 ? `${count} official storm ${count === 1 ? 'report' : 'reports'} near this forecast office` : 'No recent official local storm reports'}
           </Text>
+          {count > 0 ? (
+            <Text style={nwd.reportHint}>Tap a summary tile or report row to read the full official report.</Text>
+          ) : null}
 
           <View style={nwd.factGrid}>
-            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.closest)}>
+            <Pressable
+              style={nwd.fact}
+              onPress={() => openReport(reports.summary.closest)}
+              accessibilityRole="button"
+              accessibilityLabel="Open closest local storm report"
+            >
               <Text style={nwd.factLabel}>Closest</Text>
-              <Text style={nwd.factValue} numberOfLines={3}>
-                {formatStormReport(reports.summary.closest)}
-              </Text>
+              <View style={nwd.factValueRow}>
+                <Text style={[nwd.factValue, nwd.factValueInline]} numberOfLines={3}>
+                  {formatStormReport(reports.summary.closest)}
+                </Text>
+                {reports.summary.closest ? <Ionicons name="chevron-forward" size={15} color="rgba(184,230,255,0.72)" /> : null}
+              </View>
             </Pressable>
-            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.latest)}>
+            <Pressable
+              style={nwd.fact}
+              onPress={() => openReport(reports.summary.latest)}
+              accessibilityRole="button"
+              accessibilityLabel="Open latest local storm report"
+            >
               <Text style={nwd.factLabel}>Latest</Text>
-              <Text style={nwd.factValue} numberOfLines={3}>
-                {formatStormReport(reports.summary.latest)}
-              </Text>
+              <View style={nwd.factValueRow}>
+                <Text style={[nwd.factValue, nwd.factValueInline]} numberOfLines={3}>
+                  {formatStormReport(reports.summary.latest)}
+                </Text>
+                {reports.summary.latest ? <Ionicons name="chevron-forward" size={15} color="rgba(184,230,255,0.72)" /> : null}
+              </View>
             </Pressable>
           </View>
 
           <View style={nwd.factGrid}>
-            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.strongestWind)}>
+            <Pressable
+              style={nwd.fact}
+              onPress={() => openReport(reports.summary.strongestWind)}
+              accessibilityRole="button"
+              accessibilityLabel="Open strongest wind local storm report"
+            >
               <Text style={nwd.factLabel}>Max Wind</Text>
-              <Text style={nwd.factValue} numberOfLines={2}>
-                {formatStormReport(reports.summary.strongestWind)}
-              </Text>
+              <View style={nwd.factValueRow}>
+                <Text style={[nwd.factValue, nwd.factValueInline]} numberOfLines={2}>
+                  {formatStormReport(reports.summary.strongestWind)}
+                </Text>
+                {reports.summary.strongestWind ? <Ionicons name="chevron-forward" size={15} color="rgba(184,230,255,0.72)" /> : null}
+              </View>
             </Pressable>
-            <Pressable style={nwd.fact} onPress={() => openReport(reports.summary.largestHail)}>
+            <Pressable
+              style={nwd.fact}
+              onPress={() => openReport(reports.summary.largestHail)}
+              accessibilityRole="button"
+              accessibilityLabel="Open largest hail local storm report"
+            >
               <Text style={nwd.factLabel}>Largest Hail</Text>
-              <Text style={nwd.factValue} numberOfLines={2}>
-                {formatStormReport(reports.summary.largestHail)}
-              </Text>
+              <View style={nwd.factValueRow}>
+                <Text style={[nwd.factValue, nwd.factValueInline]} numberOfLines={2}>
+                  {formatStormReport(reports.summary.largestHail)}
+                </Text>
+                {reports.summary.largestHail ? <Ionicons name="chevron-forward" size={15} color="rgba(184,230,255,0.72)" /> : null}
+              </View>
             </Pressable>
           </View>
 
@@ -4095,17 +4133,35 @@ function StormRecapCard({
             <View style={nwd.rawBox}>
               <View style={nwd.rawHeader}>
                 <Text style={nwd.rawTitle}>Recent reports</Text>
+                <Pressable onPress={() => openReport(reports.summary.latest ?? allReports[0])} hitSlop={8}>
+                  <Text style={nwd.rawActionText}>{allReports.length > recent.length ? `View all ${allReports.length}` : 'Open list'}</Text>
+                </Pressable>
               </View>
               <View style={nwd.reportList}>
                 {recent.map((report, index) => (
-                  <Pressable key={`${report.id ?? index}-${report.event}`} style={nwd.reportRow} onPress={() => openReport(report)}>
-                    <Text style={nwd.reportEvent}>{report.event}</Text>
+                  <Pressable
+                    key={`${report.id ?? index}-${report.event}`}
+                    style={nwd.reportRow}
+                    onPress={() => openReport(report)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${report.event} storm report`}
+                  >
+                    <View style={nwd.reportRowTop}>
+                      <Text style={nwd.reportEvent}>{report.event}</Text>
+                      <Ionicons name="chevron-forward" size={15} color="rgba(184,230,255,0.72)" />
+                    </View>
                     <Text style={nwd.reportDetail} numberOfLines={2}>
                       {describeStormReport(report)}
                     </Text>
                     {report.remarks ? <Text style={nwd.reportRemark} numberOfLines={2}>{report.remarks}</Text> : null}
                   </Pressable>
                 ))}
+                {hiddenReportCount ? (
+                  <Pressable style={nwd.reportMoreRow} onPress={() => openReport(reports.summary.latest ?? allReports[0])}>
+                    <Text style={nwd.reportMoreText}>Read {hiddenReportCount} more {hiddenReportCount === 1 ? 'report' : 'reports'}</Text>
+                    <Ionicons name="list" size={16} color="rgba(184,230,255,0.84)" />
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           ) : null}
@@ -4295,6 +4351,13 @@ const nwd = StyleSheet.create({
     fontWeight: '900',
     color: 'white',
   },
+  reportHint: {
+    marginTop: -4,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+    color: 'rgba(184,230,255,0.72)',
+  },
   summary: {
     fontSize: 14,
     lineHeight: 20,
@@ -4361,6 +4424,17 @@ const nwd = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.86)',
+  },
+  factValueRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  factValueInline: {
+    marginTop: 0,
+    flex: 1,
+    minWidth: 0,
   },
   factSub: {
     marginTop: 5,
@@ -4504,6 +4578,11 @@ const nwd = StyleSheet.create({
     fontWeight: '900',
     color: 'rgba(255,255,255,0.78)',
   },
+  rawActionText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(184,230,255,0.9)',
+  },
   rawText: {
     paddingHorizontal: 12,
     paddingBottom: 12,
@@ -4523,6 +4602,12 @@ const nwd = StyleSheet.create({
     paddingTop: 10,
     gap: 4,
   },
+  reportRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   reportEvent: {
     fontSize: 13,
     fontWeight: '900',
@@ -4539,6 +4624,24 @@ const nwd = StyleSheet.create({
     lineHeight: 15,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.68)',
+  },
+  reportMoreRow: {
+    marginTop: 2,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.20)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  reportMoreText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(184,230,255,0.92)',
   },
   reportModalRoot: {
     flex: 1,

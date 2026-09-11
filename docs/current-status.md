@@ -12,7 +12,10 @@ This file is the short source of truth for where the product and infrastructure 
 - The latest release slice targets a fresh `10267` AAB once the full release path build completes.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
 - Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
+- Local Storm Reports now open a report browser from the Storm Recap card so users can read official report details directly instead of being routed only to wxLearn.
 - Professional readiness is now tracked as a dedicated workstream in `docs/production-readiness-plan.md`.
+- Cost safety and billing blast-radius control are now explicit paid-launch gates in `docs/production-readiness-plan.md`.
+- The project timeline is tracked in `docs/project-gantt.md`.
 
 ## Backend
 
@@ -43,6 +46,7 @@ This file is the short source of truth for where the product and infrastructure 
 - The current target is zero cost, with a comfort ceiling well below the paid-overage threshold.
 - Worker-served MRMS tiles remain the safer app path for now because sparse/empty MRMS tiles need transparent responses and fallback handling.
 - Direct public R2/custom-domain tile delivery is the future scale path, but it needs careful cutover.
+- Before paid launch or a dedicated radar runner, budget alerts, radar kill switches, usage limits, and emergency disable steps must be in place.
 
 ## GitHub Actions
 
@@ -67,6 +71,7 @@ This file is the short source of truth for where the product and infrastructure 
 
 - MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
 - GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
+- Dedicated radar runner work should not start writing production R2 until the cost-safety gate is complete.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
