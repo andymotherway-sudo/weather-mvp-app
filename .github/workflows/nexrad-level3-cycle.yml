@@ -84,7 +84,8 @@ on:
           - "2"
 
   schedule:
-    - cron: "*/30 * * * *"
+    # Avoid top/bottom-of-hour GitHub Actions congestion. GitHub cron can drift or skip.
+    - cron: "13,43 * * * *"
 
 permissions:
   contents: read
