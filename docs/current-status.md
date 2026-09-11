@@ -6,10 +6,10 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Product
 
-- Current app release line: `1.1.250`
-- Current Android version code: `10267`
+- Current app release line: `1.1.251`
+- Current Android version code: `10268`
 - Internal testing is the active release channel.
-- The latest release slice targets a fresh `10267` AAB once the full release path build completes.
+- The latest release slice targets a fresh `10268` AAB once the full release path build completes.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
 - Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
 - Local Storm Reports now open a report browser from the Storm Recap card so users can read official report details directly instead of being routed only to wxLearn.

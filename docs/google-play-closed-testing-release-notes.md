@@ -1,51 +1,33 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.250**
-Android version code: **10267**
+Release: **OMNIwx 1.1.251**
+Android version code: **10268**
 Track: **Closed testing / internal testing candidate**
-Date: **September 8, 2026**
+Date: **September 11, 2026**
 
 ## Play Console Paste Notes
 
-Adds MRMS product previews and starts shared OMNIwx theme polish.
+Improves storm reports and radar reliability checks for internal testers.
 
 ## Tester Notes
 
-Please focus testing on Maps and regression safety:
+Please focus testing on Land wxLab and Maps:
 
-- Confirm wide radar opens as `MRMS auto` in US test locations when MRMS is healthy.
-- Confirm MRMS product chips appear for composite, lowest-altitude reflectivity, echo tops, and precip rate.
-- Confirm `Comp` remains the safest/default MRMS view and `Low`, `Tops`, and `Rate` can load their one-frame preview timelines when fresh.
-- Confirm Maps chips still fit cleanly after the shared chip styling migration.
-- Confirm the radar buttons can explicitly select `Auto`, `MRMS`, and `RainViewer`.
-- Confirm MRMS timestamps look current and are not shown as future local times.
-- Confirm MRMS no longer creates blank/error behavior when panning over clear-air areas.
-- Confirm MRMS playback feels smoother and less like a hard tile/frame flip when multiple frames are available.
-- Confirm MRMS loads production Worker/R2 tiles through the current production zoom ceiling inside the US beta footprint.
-- Confirm forced `MRMS` shows owned NOAA MRMS when the production timeline is fresh.
-- Confirm RainViewer fallback appears when MRMS is unavailable, stale, warming, or outside the US beta footprint.
-- Confirm Storm Scope can switch between `Auto`, `Mosaic`, and `Local`, and that Mosaic continues to show broad radar while inside Storm Scope.
-- Confirm Storm Scope uses one compact HUD by default and the expanded console no longer duplicates the main map controls.
-- Confirm Storm Scope local provider toggles can switch between `IEM` and `Owned L3` without breaking fallback behavior.
-- Confirm Storm Scope local `HREFL` / `N0B` visibly shows reflectivity in active Phoenix-area weather instead of opening to a blank map.
-- Confirm Storm Scope local `HREFL` / `N0B` shows animated local radar history where station scan history is available.
-- Confirm Storm Scope local velocity can fall back to storm-relative velocity history when base velocity history is unavailable.
-- Confirm WMS/latest-image fallback is no longer the default Storm Scope local reflectivity path.
-- Confirm Storm Scope/local radar products still use the existing local radar controls and are not replaced by MRMS.
-- Confirm the Wildfire view loads perimeters/incidents/smoke without hanging or silently disappearing on broad western-US views.
-- Confirm wildfire labels/details still show names, acres, containment, source, and update timing where available.
-- Confirm Astro map / Sky map still renders after panning and zooming.
-- Confirm Land and Hourly still show current conditions and forecast details after refresh/relaunch.
-- Confirm this Play build points at the production Worker and does not show dev-only backend behavior.
+- Confirm Local Storm Reports opens readable official report details from the Storm Recap card.
+- Confirm summary tiles like Closest, Latest, Max Wind, and Largest Hail open the report browser when reports exist.
+- Confirm Maps still shows MRMS broad radar when healthy and falls back cleanly when owned radar is stale or unavailable.
+- Confirm Storm Scope `Owned L3` still shows owned NOAA Level III products for Phoenix, Minneapolis, and Duluth pilot sites when fresh.
+- Confirm RainViewer and IEM fallback behavior still works where owned radar is unavailable.
+- Confirm Land, Hourly, Astro, and Maps still load normally after update/relaunch.
 
 ## Internal Release Checklist
 
-- App version: `1.1.250`
-- Android version code: `10267`
+- App version: `1.1.251`
+- Android version code: `10268`
 - Intended backend environment: `production`
-- Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building
+- Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building.
+- Run GitHub Actions -> `Radar health report` against production before upload when available.
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
-- Production worker deploy: GitHub Actions -> `Deploy Cloudflare Worker`
-- MRMS maintenance: GitHub Actions -> `MRMS radar maintenance`
+- Production worker deploy: not required unless Worker code changed.
 - Android build: `npm run build:android:prod`
