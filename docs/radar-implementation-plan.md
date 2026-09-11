@@ -396,15 +396,16 @@ Paid-customer cadence:
 ## Immediate Next Steps
 
 1. Let the scheduled z8 MRMS cycle run several times and verify the timeline keeps at least two fresh same-quality frames.
-2. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
-3. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
-4. Let the scheduled Level III `IWA` cycle run several more times and verify `N0B/N0S/EET` retain enough fresh frames for useful playback.
-5. Validate the Level III renderer cleanup against IEM/RIDGE and MRMS on active Phoenix weather; tune thresholds only with side-by-side evidence.
-6. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
-7. Verify MRMS-auto across several US regions in internal testing.
-8. Keep RainViewer fallback active until Phase 4 hardening gates pass.
-9. Design the dedicated radar runner before making z10/multi-product radar a paid-customer dependency.
-10. Expand Level III station coverage only after the IWA bundle shows stable freshness, acceptable visual quality, and predictable storage growth.
+2. Use `Radar health report` as the read-only first check before manual recovery, release validation, or deeper dashboard digging.
+3. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
+4. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
+5. Let the scheduled Level III `IWA` cycle run several more times and verify `N0B/N0S/EET` retain enough fresh frames for useful playback.
+6. Validate the Level III renderer cleanup against IEM/RIDGE and MRMS on active Phoenix weather; tune thresholds only with side-by-side evidence.
+7. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
+8. Verify MRMS-auto across several US regions in internal testing.
+9. Keep RainViewer fallback active until Phase 4 hardening gates pass.
+10. Design the dedicated radar runner before making z10/multi-product radar a paid-customer dependency.
+11. Expand Level III station coverage only after the IWA bundle shows stable freshness, acceptable visual quality, and predictable storage growth.
 
 ## Decision Log
 

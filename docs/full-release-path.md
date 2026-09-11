@@ -182,6 +182,8 @@ Examples:
 - production tile or API probes return expected behavior
 - the production backend is serving the data path needed by the release
 
+For radar releases or map changes, run GitHub Actions -> `Radar health report` against `production` with `fail_on_required_stale=true`. This reads live Worker timelines only; it does not publish tiles, delete R2 objects, or dispatch recovery jobs.
+
 If the backend is wrong, stop here and fix it before building.
 
 ### 7. Confirm The App Resolves To Production

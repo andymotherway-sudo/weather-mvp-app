@@ -1,0 +1,98 @@
+name: Radar health report
+run-name: Radar health ${{ inputs.target_env || 'production' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - dev
+      fail_on_required_stale:
+        description: "Fail workflow when required radar products are stale/unavailable"
+        required: true
+        default: true
+        type: boolean
+      mrms_stale_minutes:
+        description: "MRMS stale threshold"
+        required: true
+        default: "90"
+      level3_stale_minutes:
+        description: "Level III stale threshold"
+        required: true
+        default: "120"
+      level3_sites:
+        description: "Comma-separated Level III site ids"
+        required: true
+        default: "IWA,MPX,DLH"
+      level3_products:
+        description: "Comma-separated Level III products"
+        required: true
+        default: "N0B,N0S,EET,N0C,N0X,DVL,N0H"
+
+permissions:
+  contents: read
+
+jobs:
+  radar-health:
+    name: Read live radar health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: omniwx-api
+
+    env:
+      RADAR_TARGET_ENV: ${{ inputs.target_env || 'production' }}
+      RADAR_FAIL: ${{ inputs.fail_on_required_stale }}
+      RADAR_MRMS_STALE_MINUTES: ${{ inputs.mrms_stale_minutes || '90' }}
+      RADAR_LEVEL3_STALE_MINUTES: ${{ inputs.level3_stale_minutes || '120' }}
+      RADAR_LEVEL3_SITES: ${{ inputs.level3_sites || 'IWA,MPX,DLH' }}
+      RADAR_LEVEL3_PRODUCTS: ${{ inputs.level3_products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: omniwx-api/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Read live radar health
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --env "$RADAR_TARGET_ENV"
+            --mrms-stale-minutes "$RADAR_MRMS_STALE_MINUTES"
+            --level3-stale-minutes "$RADAR_LEVEL3_STALE_MINUTES"
+            --level3-sites "$RADAR_LEVEL3_SITES"
+            --level3-products "$RADAR_LEVEL3_PRODUCTS"
+          )
+          if [ "$RADAR_FAIL" = "true" ]; then
+            args+=(--fail)
+          fi
+          npm run radar:health -- "${args[@]}" | tee /tmp/radar-health.txt
+
+      - name: Write health summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Radar health report"
+            echo ""
+            echo '```text'
+            cat /tmp/radar-health.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
