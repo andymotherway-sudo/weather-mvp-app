@@ -22,6 +22,7 @@ import {
   type ExplainPayload,
 } from '../../components/common/NerdyExplainModal';
 import { OmniChip } from '../../components/common/OmniChip';
+import { OmniSectionHeader } from '../../components/common/OmniSectionHeader';
 
 import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
@@ -1289,12 +1290,10 @@ export default function SolarScreen() {
 
   const renderNightSkySection = () => (
     <>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Night Sky Context</Text>
-        <Text style={styles.sectionSubtitle}>
-          Location-based observing conditions and astronomy context
-        </Text>
-      </View>
+      <OmniSectionHeader
+        title="Night Sky Context"
+        subtitle="Location-based observing conditions and astronomy context"
+      />
 
       {showAstroLoading ? (
         <View style={styles.center}>
@@ -1376,12 +1375,10 @@ export default function SolarScreen() {
 
           {renderNightSkySection()}
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Solar Wx</Text>
-            <Text style={styles.sectionSubtitle}>
-              Current space weather, aurora context, upstream solar wind, and solar activity
-            </Text>
-          </View>
+          <OmniSectionHeader
+            title="Solar Wx"
+            subtitle="Current space weather, aurora context, upstream solar wind, and solar activity"
+          />
 
           {showSpaceWeatherLoading ? (
             <View style={styles.center}>
@@ -1460,12 +1457,10 @@ export default function SolarScreen() {
             </View>
           )}
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mars Weather Archive</Text>
-            <Text style={styles.sectionSubtitle}>
-              Retired InSight observations preserved as a historical Mars weather reference
-            </Text>
-          </View>
+          <OmniSectionHeader
+            title="Mars Weather Archive"
+            subtitle="Retired InSight observations preserved as a historical Mars weather reference"
+          />
 
           <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
@@ -1596,24 +1591,6 @@ const styles = StyleSheet.create({
 
   headerSubline: {
     ...typography.subtitle,
-  },
-
-  sectionHeader: {
-    marginTop: 4,
-    marginBottom: 14,
-  },
-
-  sectionTitle: {
-    color: '#F9FAFB',
-    fontSize: 18,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-
-  sectionSubtitle: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 12,
-    lineHeight: 16,
   },
 
   dashboardSection: {

@@ -1,20 +1,21 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.251**
-Android version code: **10268**
+Release: **OMNIwx 1.1.252**
+Android version code: **10269**
 Track: **Closed testing / internal testing candidate**
-Date: **September 11, 2026**
+Date: **September 12, 2026**
 
 ## Play Console Paste Notes
 
-Improves storm reports and radar reliability checks for internal testers.
+Improves storm report details and Space tab UI consistency.
 
 ## Tester Notes
 
-Please focus testing on Land wxLab and Maps:
+Please focus testing on Land, Space, and Maps:
 
 - Confirm Local Storm Reports opens readable official report details from the Storm Recap card.
 - Confirm summary tiles like Closest, Latest, Max Wind, and Largest Hail open the report browser when reports exist.
+- Confirm Space tab solar/earth selectors and wxLearn actions still work and match the shared OMNIwx chip/header styling.
 - Confirm Maps still shows MRMS broad radar when healthy and falls back cleanly when owned radar is stale or unavailable.
 - Confirm Storm Scope `Owned L3` still shows owned NOAA Level III products for Phoenix, Minneapolis, and Duluth pilot sites when fresh.
 - Confirm RainViewer and IEM fallback behavior still works where owned radar is unavailable.
@@ -22,8 +23,8 @@ Please focus testing on Land wxLab and Maps:
 
 ## Internal Release Checklist
 
-- App version: `1.1.251`
-- Android version code: `10268`
+- App version: `1.1.252`
+- Android version code: `10269`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building.
 - Run GitHub Actions -> `Radar health report` against production before upload when available.
