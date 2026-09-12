@@ -135,7 +135,7 @@ Adjust before implementation:
 ## Active Adoption Log
 
 - September 12, 2026: documented the full-app architecture and release safety flow so visual work has a clearer product/engineering context.
-- September 12, 2026: Space solar-disk and Earth-view selectors now use `OmniChip`, reducing one-off chip styling and aligning Space controls with Maps.
+- September 12, 2026: Space solar-disk selectors, Earth-view selectors, and wxLearn panel buttons now use `OmniChip`, reducing one-off chip styling and aligning Space controls with Maps.
 
 ## Next Low-Risk UI Targets
 

@@ -186,11 +186,7 @@ function LearnRow({
   label?: string;
   onPress: () => void;
 }) {
-  return (
-    <Pressable onPress={onPress} style={styles.learnBtn} hitSlop={10}>
-      <Text style={styles.learnBtnText}>{label}</Text>
-    </Pressable>
-  );
+  return <OmniChip label={label} size="compact" onPress={onPress} />;
 }
 
 type SolarViewOption = {
@@ -2061,21 +2057,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#E5E7EB',
-  },
-
-  learnBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-
-  learnBtnText: {
-    color: 'rgba(255,255,255,0.85)',
-    fontWeight: '900',
-    fontSize: 12,
   },
 
   row: {
