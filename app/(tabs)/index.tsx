@@ -4014,6 +4014,7 @@ function StormRecapCard({
   const allReports = reports?.reports ?? [];
   const recent = allReports.slice(0, 4);
   const hiddenReportCount = Math.max(0, allReports.length - recent.length);
+  const reportButtonLabel = count > 0 ? `View ${count}` : 'Details';
   const openReport = (report: NwsStormReport | null | undefined) => {
     if (!reports) return;
     setSelectedReport(report ?? null);
@@ -4035,7 +4036,7 @@ function StormRecapCard({
             accessibilityRole="button"
             accessibilityLabel={count > 0 ? `Open ${count} local storm reports` : 'Open local storm report details'}
           >
-            <Text style={nwd.learnButtonText}>{count > 0 ? 'Reports' : 'Details'}</Text>
+            <Text style={nwd.learnButtonText}>{reportButtonLabel}</Text>
           </Pressable>
           <Pressable style={nwd.iconButton} onPress={() => onOpenLearnTopic('local-storm-reports')} accessibilityLabel="Learn about local storm reports">
             <Ionicons name="help-circle-outline" size={17} color="rgba(255,255,255,0.82)" />
@@ -4064,13 +4065,14 @@ function StormRecapCard({
             {count > 0 ? `${count} official storm ${count === 1 ? 'report' : 'reports'} near this forecast office` : 'No recent official local storm reports'}
           </Text>
           {count > 0 ? (
-            <Text style={nwd.reportHint}>Tap a summary tile or report row to read the full official report.</Text>
+            <Text style={nwd.reportHint}>Tap View, a summary tile, or a report row to read the official report details.</Text>
           ) : null}
 
           <View style={nwd.factGrid}>
             <Pressable
-              style={nwd.fact}
+              style={[nwd.fact, !reports.summary.closest && nwd.factDisabled]}
               onPress={() => openReport(reports.summary.closest)}
+              disabled={!reports.summary.closest}
               accessibilityRole="button"
               accessibilityLabel="Open closest local storm report"
             >
@@ -4083,8 +4085,9 @@ function StormRecapCard({
               </View>
             </Pressable>
             <Pressable
-              style={nwd.fact}
+              style={[nwd.fact, !reports.summary.latest && nwd.factDisabled]}
               onPress={() => openReport(reports.summary.latest)}
+              disabled={!reports.summary.latest}
               accessibilityRole="button"
               accessibilityLabel="Open latest local storm report"
             >
@@ -4100,8 +4103,9 @@ function StormRecapCard({
 
           <View style={nwd.factGrid}>
             <Pressable
-              style={nwd.fact}
+              style={[nwd.fact, !reports.summary.strongestWind && nwd.factDisabled]}
               onPress={() => openReport(reports.summary.strongestWind)}
+              disabled={!reports.summary.strongestWind}
               accessibilityRole="button"
               accessibilityLabel="Open strongest wind local storm report"
             >
@@ -4114,8 +4118,9 @@ function StormRecapCard({
               </View>
             </Pressable>
             <Pressable
-              style={nwd.fact}
+              style={[nwd.fact, !reports.summary.largestHail && nwd.factDisabled]}
               onPress={() => openReport(reports.summary.largestHail)}
+              disabled={!reports.summary.largestHail}
               accessibilityRole="button"
               accessibilityLabel="Open largest hail local storm report"
             >
@@ -4403,6 +4408,9 @@ const nwd = StyleSheet.create({
     backgroundColor: GLASS_INSET_BG_SOFT,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
+  },
+  factDisabled: {
+    opacity: 0.62,
   },
   factFull: {
     flex: 0,
