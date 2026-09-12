@@ -183,6 +183,7 @@ Goal: replace GitHub Actions as the long-term radar scheduler/renderer before pa
 Why this matters:
 
 - GitHub Actions is good for beta automation, proof publishing, and manual recovery, but scheduled jobs can drift or skip.
+- September 12, 2026 production evidence: both publisher schedules and watchdog schedules skipped for multi-hour gaps, leaving MRMS stale even though manual recovery succeeded. Treat GitHub scheduled cadence as a beta convenience only.
 - Radar needs boring cadence: fetch, decode, render, upload, cleanup, and health checks should run continuously without waiting for a manually triggered workflow.
 - A dedicated runner lets us add z10, more MRMS products, and Level III station products with retry/resume protection instead of restarting a whole workflow after partial progress.
 
@@ -199,9 +200,9 @@ Production runner requirements:
 
 Cost posture:
 
-- Do not add a paid runner only to solve today's internal testing if GitHub Actions is good enough after cadence hardening.
+- Do not add a paid runner casually, but do not present GitHub scheduled radar as production-grade once testers or customers expect live owned radar.
 - The GitHub watchdog is a beta safety net, not a substitute for the dedicated runner once radar freshness is customer-critical.
-- Add the dedicated runner when we need production-grade freshness, z10 by default, multiple MRMS products, or reliable recurring Level III products.
+- Add the dedicated runner before MRMS/Level III are marketed as core paid features, before z10 becomes the normal production ceiling, and before multiple MRMS products/station bundles run on a 5-10 minute cadence.
 - Keep D1 out of the radar hot path; use R2 manifests and object prefixes as the radar source of truth.
 - The dedicated runner must pass the cost-safety gate first: budget alerts, kill switches, bounded station/product scope, measured one-month estimate, and production rollback path.
 
@@ -396,17 +397,16 @@ Paid-customer cadence:
 
 ## Immediate Next Steps
 
-1. Let the scheduled z8 MRMS cycle run several times and verify the timeline keeps at least two fresh same-quality frames.
-2. Use `Radar health report` as the read-only first check before manual recovery, release validation, or deeper dashboard digging.
-3. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
-4. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
-5. Let the scheduled Level III `IWA` cycle run several more times and verify `N0B/N0S/EET` retain enough fresh frames for useful playback.
-6. Validate the Level III renderer cleanup against IEM/RIDGE and MRMS on active Phoenix weather; tune thresholds only with side-by-side evidence.
-7. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
-8. Verify MRMS-auto across several US regions in internal testing.
-9. Keep RainViewer fallback active until Phase 4 hardening gates pass.
-10. Design the dedicated radar runner before making z10/multi-product radar a paid-customer dependency.
-11. Expand Level III station coverage only after the IWA bundle shows stable freshness, acceptable visual quality, and predictable storage growth.
+1. Use `Radar health report` as the read-only first check before manual recovery, release validation, or deeper dashboard digging.
+2. If MRMS or Level III are stale during tester sessions, manually run the bounded production cycle and then re-run `Radar health report`.
+3. Keep RainViewer/IEM fallback active until the dedicated runner has proven several days of boring freshness.
+4. Design the dedicated radar runner before making z10/multi-product radar a paid-customer dependency.
+5. Run `MRMS z10 safety check` for composite reflectivity, then only apply z10 if tile count/runtime/storage remain safe.
+6. Run manual MRMS cycle dry-runs for `EchoTop_18` and `PrecipRate`; inspect render output before publishing them.
+7. Validate the Level III renderer cleanup against IEM/RIDGE and MRMS on active Phoenix weather; tune thresholds only with side-by-side evidence.
+8. Run `MRMS radar maintenance` after canceled or interrupted publish runs to clean stale objects and report retained storage.
+9. Verify MRMS-auto across several US regions in internal testing.
+10. Expand Level III station coverage only after the IWA/MPX/DLH bundle shows stable freshness, acceptable visual quality, and predictable storage growth.
 
 ## Decision Log
 

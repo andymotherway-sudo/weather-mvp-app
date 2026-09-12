@@ -4,7 +4,7 @@ Last updated: September 8, 2026
 
 This plan organizes the security, paid-customer, infrastructure, Storm Scope, cleanup, and professional-readiness notes into one execution path. It is intentionally practical: protect what exists, keep the app lovable, and add commercial capability only after the trust foundation is real.
 
-For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](current-status.md). For the timeline view, see [project-gantt.md](project-gantt.md).
+For the short factual status of the live app, backend, radar, Cloudflare, and GitHub posture, see [current-status.md](current-status.md). For the timeline view, see [project-gantt.md](project-gantt.md). For the full platform view, see [app-architecture.md](app-architecture.md) and [radar-architecture.md](radar-architecture.md).
 
 ## North Star
 

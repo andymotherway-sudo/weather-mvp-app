@@ -84,6 +84,8 @@ Google Play uniqueness is controlled by Android `versionCode`. Keep these files 
 ## Documentation
 
 - `docs/omniwx-feature-guide.md`: user-facing feature guide.
+- `docs/app-architecture.md`: full-app architecture, feature data flow, and release safety flow.
+- `docs/radar-architecture.md`: owned radar and radar-runner architecture.
 - `docs/how-omniwx-works.md`: plain-English architecture guide.
 - `docs/omniwx-training-guide.md`: private builder/training guide.
 - `docs/google-play-closed-testing-release-notes.md`: tester-facing release notes for Play Console.
