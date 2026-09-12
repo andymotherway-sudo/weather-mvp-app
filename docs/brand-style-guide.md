@@ -21,10 +21,12 @@ The app should feel:
 Shared pieces that already exist:
 
 - `styles/theme.ts`: base dark navy palette, spacing, radius, and minimal shadow token.
+- `styles/theme.ts` semantic tokens: glass surfaces, state colors, score colors, and feature accents.
 - `app/lib/theme/appAppearance.ts`: user-selectable chrome modes for classic, grayscale, and high contrast.
 - `app/lib/theme/useAppChrome.ts`: hook that exposes the active chrome mode.
 - `styles/typography.ts`: reusable text roles plus a WxLab/system-style variant.
 - `components/common/Glass.tsx`: shared translucent card primitive.
+- `components/common/OmniChip.tsx`: shared chip/control primitive now used by Maps and adopted by Space view selectors.
 - `components/layout/Card.tsx`: reusable layout card tied to theme spacing/radius.
 - `app/lib/brand/assets.ts`: shared transparent OMNIwx logo asset and tab-logo sizing.
 - `components/backgrounds/AnimatedPageBackground.tsx` and weather backgrounds: atmospheric visual foundation.
@@ -34,7 +36,7 @@ Current consistency issues:
 - Many screens still define colors, spacing, radii, shadows, and typography directly inside local `StyleSheet.create` blocks.
 - There are many hard-coded `rgba(...)` glass values instead of named opacity tokens.
 - Tab-specific pages sometimes solve the same UI pattern differently: chips, metric tiles, section headers, learn buttons, legends, modals, and status pills.
-- The Space tab, Maps/Storm Scope, and Land cards are visually related, but their density and control hierarchy are not yet governed by shared component rules.
+- The Space tab, Maps/Storm Scope, and Land cards are visually related, but their density and control hierarchy are only partially governed by shared component rules.
 - Accessibility modes exist, but new UI work can bypass them if it uses raw colors instead of `useAppChrome` and shared semantic tokens.
 
 ## Core Tokens
@@ -124,11 +126,23 @@ Adjust before implementation:
 
 1. Freeze the brand guide as the design contract. Initial guide added September 8, 2026.
 2. Add semantic theme tokens for score colors, freshness states, glass opacity, control states, and feature accents. Initial tokens added September 8, 2026.
-3. Expand shared UI primitives as screens adopt them. `OmniChip` is the first adopted primitive; avoid adding unused shared components ahead of actual UI work.
+3. Expand shared UI primitives as screens adopt them. `OmniChip` is the first adopted primitive; it is now used in Maps and Space selectors. Avoid adding unused shared components ahead of actual UI work.
 4. Convert one screen section at a time, starting with low-risk duplicated patterns.
 5. Use Space as the first polished redesign target after radar stabilizes.
 6. Follow with Storm Scope controls, then Land/Hourly card consistency.
 7. Add lightweight screenshot QA notes for release builds so visual regressions are caught before Google Play.
+
+## Active Adoption Log
+
+- September 12, 2026: documented the full-app architecture and release safety flow so visual work has a clearer product/engineering context.
+- September 12, 2026: Space solar-disk and Earth-view selectors now use `OmniChip`, reducing one-off chip styling and aligning Space controls with Maps.
+
+## Next Low-Risk UI Targets
+
+- Convert Space segmented navigation and secondary product chips to `OmniChip` or a future segmented variant.
+- Define a shared `OmniSectionHeader` for page section title/subtitle patterns.
+- Define a shared metric tile recipe before touching Sky Score, Land wxLab, or Storm Scope diagnostic tiles.
+- Keep large Space mockup work behind small, testable sections rather than one broad page rewrite.
 
 ## Rules For Future Changes
 

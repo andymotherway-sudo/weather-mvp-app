@@ -21,6 +21,7 @@ import {
   NerdyExplainModal,
   type ExplainPayload,
 } from '../../components/common/NerdyExplainModal';
+import { OmniChip } from '../../components/common/OmniChip';
 
 import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
@@ -1090,23 +1091,13 @@ export default function SolarScreen() {
 
         <View style={styles.solarChipRow}>
           {SOLAR_VIEWS.map((view) => (
-            <Pressable
+            <OmniChip
               key={view.id}
+              label={view.label}
+              active={view.id === activeSolarView.id}
+              size="compact"
               onPress={() => setSolarViewId(view.id)}
-              style={[
-                styles.solarChip,
-                view.id === activeSolarView.id ? styles.solarChipActive : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.solarChipText,
-                  view.id === activeSolarView.id ? styles.solarChipTextActive : null,
-                ]}
-              >
-                {view.label}
-              </Text>
-            </Pressable>
+            />
           ))}
         </View>
 
@@ -1198,23 +1189,13 @@ export default function SolarScreen() {
 
         <View style={styles.solarChipRow}>
           {earthViewOptions.map((view) => (
-            <Pressable
+            <OmniChip
               key={view.id}
+              label={view.label}
+              active={earthDiskView === view.id}
+              size="compact"
               onPress={() => setEarthDiskView(view.id)}
-              style={[
-                styles.solarChip,
-                earthDiskView === view.id ? styles.solarChipActive : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.solarChipText,
-                  earthDiskView === view.id ? styles.solarChipTextActive : null,
-                ]}
-              >
-                {view.label}
-              </Text>
-            </Pressable>
+            />
           ))}
         </View>
 
@@ -1990,30 +1971,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 2,
     marginBottom: 12,
-  },
-
-  solarChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-
-  solarChipActive: {
-    borderColor: 'rgba(125,211,252,0.30)',
-    backgroundColor: 'rgba(56,189,248,0.12)',
-  },
-
-  solarChipText: {
-    color: 'rgba(255,255,255,0.76)',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  solarChipTextActive: {
-    color: '#E0F2FE',
   },
 
   solarImageFrame: {
