@@ -22,11 +22,12 @@ import {
   type ExplainPayload,
 } from '../../components/common/NerdyExplainModal';
 import { OmniChip } from '../../components/common/OmniChip';
+import { OmniMetricTile } from '../../components/common/OmniMetricTile';
 import { OmniSectionHeader } from '../../components/common/OmniSectionHeader';
 
 import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
-import { useLocationAstroForecast } from '../lib/astro/locationAstro';
+import { toLocalLabel, useLocationAstroForecast } from '../lib/astro/locationAstro';
 import { writeSkyScoreWidgetCache } from '../lib/astro/skyScoreCache';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 import {
@@ -199,6 +200,15 @@ type SolarViewOption = {
   topicId: string;
 };
 
+type SpaceMode = 'now' | 'hourly' | 'solar' | 'archive';
+
+const SPACE_MODES: Array<{ id: SpaceMode; label: string }> = [
+  { id: 'now', label: 'Now' },
+  { id: 'hourly', label: 'Hourly' },
+  { id: 'solar', label: 'Solar Activity' },
+  { id: 'archive', label: 'Mars' },
+];
+
 const SOLAR_VIEWS: SolarViewOption[] = [
   {
     id: 'continuum',
@@ -283,6 +293,7 @@ export default function SolarScreen() {
   const [explainPayload, setExplainPayload] = useState<ExplainPayload | null>(null);
   const [learnOpen, setLearnOpen] = useState(false);
   const [learnTopicId, setLearnTopicId] = useState<string | undefined>(undefined);
+  const [spaceMode, setSpaceMode] = useState<SpaceMode>('hourly');
   const [solarViewId, setSolarViewId] = useState<string>(SOLAR_VIEWS[0].id);
   const [solarImageState, setSolarImageState] = useState<Record<string, 'idle' | 'loading' | 'loaded' | 'error'>>(
     {}
@@ -294,6 +305,7 @@ export default function SolarScreen() {
   const [earthDiskImageState, setEarthDiskImageState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
   const [showAllSwpcAlerts, setShowAllSwpcAlerts] = useState(false);
+  const pageScrollRef = useRef<ScrollView>(null);
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -394,6 +406,99 @@ export default function SolarScreen() {
 
     return hours.slice(bestIndex, bestIndex + 72);
   }, [astro]);
+
+  const skyScoreTone = (score?: number | null) => {
+    if (score == null || !Number.isFinite(score)) return '#BAE6FD';
+    if (score >= 85) return '#22C55E';
+    if (score >= 70) return '#84CC16';
+    if (score >= 55) return '#FACC15';
+    if (score >= 35) return '#FB923C';
+    return '#EF4444';
+  };
+
+  const renderSpaceModeRail = () => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.spaceModeRail}
+      style={styles.spaceModeScroll}
+    >
+      {SPACE_MODES.map((mode) => (
+        <OmniChip
+          key={mode.id}
+          label={mode.label}
+          active={spaceMode === mode.id}
+          onPress={() => {
+            setSpaceMode(mode.id);
+            const yByMode: Record<SpaceMode, number> = {
+              now: 0,
+              hourly: 360,
+              solar: 1100,
+              archive: 2600,
+            };
+            pageScrollRef.current?.scrollTo({ y: yByMode[mode.id], animated: true });
+          }}
+        />
+      ))}
+    </ScrollView>
+  );
+
+  const renderSpaceOverviewCard = () => {
+    const peakScore = astro?.peakScore;
+    const bestWindow = astro?.bestStartTime
+      ? `${toLocalLabel(astro.bestStartTime, astro.timezone)}${astro.bestEndTime ? `-${toLocalLabel(astro.bestEndTime, astro.timezone)}` : ''}`
+      : 'Pending';
+    const kpValue = data?.kp != null && Number.isFinite(data.kp) ? data.kp.toFixed(1) : '--';
+    const auroraValue = data?.kp != null && Number.isFinite(data.kp) ? `${auroraChancePct(data.kp).toFixed(0)}%` : '--';
+
+    return (
+      <View style={[themedCard, styles.spaceOverviewCard]}>
+        <View style={styles.spaceOverviewTop}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.eyebrow}>SPACE WX COMMAND</Text>
+            <Text style={styles.spaceOverviewTitle}>Night sky and solar activity at a glance</Text>
+          </View>
+          <OmniChip
+            label="How it works"
+            size="compact"
+            onPress={() => openLearnTopic('astro-sky-score')}
+          />
+        </View>
+
+        <View style={styles.spaceOverviewGrid}>
+          <OmniMetricTile
+            label="Sky Score"
+            value={peakScore == null ? '--' : peakScore}
+            hint={astro?.peakLabel ?? 'Forecast pending'}
+            tone={skyScoreTone(peakScore)}
+          />
+          <OmniMetricTile
+            label="Best Window"
+            value={bestWindow}
+            hint={astro?.bestSummary ?? 'Tonight observing window'}
+            tone="#BAE6FD"
+          />
+        </View>
+        <View style={styles.spaceOverviewGrid}>
+          <OmniMetricTile
+            label="Kp"
+            value={kpValue}
+            hint={data ? kpNarrative(data.kp) : 'Space weather pending'}
+            tone="#FBBF24"
+          />
+          <OmniMetricTile
+            label="Aurora"
+            value={auroraValue}
+            hint="Simple viewing likelihood"
+            tone="#67E8F9"
+          />
+        </View>
+        <Text style={styles.spaceOverviewFooter}>
+          Current solar view: {activeSolarView.label} from {activeSolarView.source}. Use the mode rail to jump between Space sections.
+        </Text>
+      </View>
+    );
+  };
 
   const renderKpGauge = (kp: number) => {
     const segments = Array.from({ length: 9 }, (_, i) => i + 1);
@@ -1345,6 +1450,7 @@ export default function SolarScreen() {
       <SafeAreaView style={[styles.safe, { backgroundColor: chrome.background }]} edges={['top', 'left', 'right']}>
         <AnimatedPageBackground variant="space" />
         <ScrollView
+          ref={pageScrollRef}
           style={styles.container}
           contentContainerStyle={[styles.content, contentPad]}
           refreshControl={
@@ -1372,6 +1478,9 @@ export default function SolarScreen() {
               </Text>
             </View>
           ) : null}
+
+          {renderSpaceModeRail()}
+          {renderSpaceOverviewCard()}
 
           {renderNightSkySection()}
 
@@ -1591,6 +1700,52 @@ const styles = StyleSheet.create({
 
   headerSubline: {
     ...typography.subtitle,
+  },
+
+  spaceModeScroll: {
+    marginTop: 4,
+    marginBottom: 12,
+    overflow: 'visible',
+  },
+
+  spaceModeRail: {
+    gap: 8,
+    paddingRight: 12,
+  },
+
+  spaceOverviewCard: {
+    marginBottom: 18,
+    borderColor: 'rgba(34,211,238,0.24)',
+    backgroundColor: 'rgba(4,16,32,0.86)',
+  },
+
+  spaceOverviewTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  spaceOverviewTitle: {
+    color: '#F9FAFB',
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: '900',
+  },
+
+  spaceOverviewGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+
+  spaceOverviewFooter: {
+    marginTop: 12,
+    color: 'rgba(186,230,253,0.72)',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
 
   dashboardSection: {

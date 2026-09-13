@@ -4014,7 +4014,7 @@ function StormRecapCard({
   const allReports = reports?.reports ?? [];
   const recent = allReports.slice(0, 4);
   const hiddenReportCount = Math.max(0, allReports.length - recent.length);
-  const reportButtonLabel = count > 0 ? `View ${count}` : 'Details';
+  const reportButtonLabel = count > 0 ? `Reports ${count}` : 'Details';
   const openReport = (report: NwsStormReport | null | undefined) => {
     if (!reports) return;
     setSelectedReport(report ?? null);
@@ -4030,7 +4030,7 @@ function StormRecapCard({
         </View>
         <View style={nwd.headerActions}>
           <Pressable
-            style={[nwd.learnButton, !reports && nwd.disabledButton]}
+            style={[nwd.learnButton, nwd.reportPrimaryButton, !reports && nwd.disabledButton]}
             disabled={!reports}
             onPress={() => openReport(reports?.summary.latest ?? allReports[0] ?? null)}
             accessibilityRole="button"
@@ -4064,6 +4064,16 @@ function StormRecapCard({
           <Text style={nwd.headline}>
             {count > 0 ? `${count} official storm ${count === 1 ? 'report' : 'reports'} near this forecast office` : 'No recent official local storm reports'}
           </Text>
+          <View style={nwd.reportStatusRow}>
+            <View style={nwd.reportStatusPill}>
+              <Text style={nwd.reportStatusLabel}>Tap to read</Text>
+              <Text style={nwd.reportStatusValue}>{count > 0 ? 'Official LSR details' : 'No rows yet'}</Text>
+            </View>
+            <View style={nwd.reportStatusPill}>
+              <Text style={nwd.reportStatusLabel}>Office</Text>
+              <Text style={nwd.reportStatusValue}>{reports.office?.id ?? 'NWS'}</Text>
+            </View>
+          </View>
           {count > 0 ? (
             <Text style={nwd.reportHint}>Tap View, a summary tile, or a report row to read the official report details.</Text>
           ) : null}
@@ -4322,6 +4332,10 @@ const nwd = StyleSheet.create({
     fontWeight: '900',
     color: 'rgba(255,255,255,0.86)',
   },
+  reportPrimaryButton: {
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderColor: 'rgba(125,211,252,0.38)',
+  },
   disabledButton: {
     opacity: 0.55,
   },
@@ -4362,6 +4376,34 @@ const nwd = StyleSheet.create({
     lineHeight: 17,
     fontWeight: '800',
     color: 'rgba(184,230,255,0.72)',
+  },
+  reportStatusRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  reportStatusPill: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.18)',
+  },
+  reportStatusLabel: {
+    fontSize: 10,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontWeight: '900',
+    color: 'rgba(186,230,253,0.58)',
+  },
+  reportStatusValue: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.9)',
   },
   summary: {
     fontSize: 14,

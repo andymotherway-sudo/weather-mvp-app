@@ -28,6 +28,7 @@ Shared pieces that already exist:
 - `components/common/Glass.tsx`: shared translucent card primitive.
 - `components/common/OmniChip.tsx`: shared chip/control primitive now used by Maps and adopted by Space view selectors.
 - `components/common/OmniSectionHeader.tsx`: shared section title/subtitle primitive adopted by major Space sections.
+- `components/common/OmniMetricTile.tsx`: shared compact metric primitive adopted by the Space overview.
 - `components/layout/Card.tsx`: reusable layout card tied to theme spacing/radius.
 - `app/lib/brand/assets.ts`: shared transparent OMNIwx logo asset and tab-logo sizing.
 - `components/backgrounds/AnimatedPageBackground.tsx` and weather backgrounds: atmospheric visual foundation.
@@ -98,7 +99,7 @@ Create or formalize these components before large visual rewrites:
 - `OmniScreen`: safe-area screen shell with background, padding, and refresh behavior.
 - `OmniHero`: top card/header pattern with logo, title, subtitle, and primary action.
 - `OmniChip`: selected, unselected, disabled, segmented, and toggle variants.
-- Planned next: card and metric primitives should be added only when a screen adopts them.
+- Planned next: card primitives should be added only when a screen adopts them.
 - `OmniBottomSheet`: collapsed, half, expanded states for Maps/Storm Scope and dense tools.
 - `OmniLegend`: compact and expanded legends for radar/fire/sky score/data layers.
 
@@ -138,11 +139,12 @@ Adjust before implementation:
 - September 12, 2026: documented the full-app architecture and release safety flow so visual work has a clearer product/engineering context.
 - September 12, 2026: Space solar-disk selectors, Earth-view selectors, and wxLearn panel buttons now use `OmniChip`, reducing one-off chip styling and aligning Space controls with Maps.
 - September 12, 2026: Space major section headers now use `OmniSectionHeader`, reducing local title/subtitle styling before the larger Space redesign.
+- September 12, 2026: Space added a mode rail and command overview using `OmniMetricTile`, and Storm Recap now makes official report details more discoverable.
 
 ## Next Low-Risk UI Targets
 
 - Convert Space segmented navigation and secondary product chips to `OmniChip` or a future segmented variant.
-- Define a shared metric tile recipe before touching Sky Score, Land wxLab, or Storm Scope diagnostic tiles.
+- Reuse `OmniMetricTile` for Sky Score, Land wxLab, and Storm Scope diagnostic tiles before adding new one-off metric card styles.
 - Keep large Space mockup work behind small, testable sections rather than one broad page rewrite.
 
 ## Rules For Future Changes
