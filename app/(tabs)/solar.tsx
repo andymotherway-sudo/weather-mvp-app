@@ -416,6 +416,17 @@ export default function SolarScreen() {
     return '#EF4444';
   };
 
+  const cloudTone = (value?: number | null) => {
+    if (value == null || !Number.isFinite(value)) return '#BAE6FD';
+    if (value <= 20) return '#65F08A';
+    if (value <= 50) return '#FACC15';
+    if (value <= 75) return '#FB923C';
+    return '#EF4444';
+  };
+
+  const formatCloudPct = (value?: number | null) =>
+    value == null || !Number.isFinite(value) ? '--' : `${Math.round(value)}%`;
+
   const renderSpaceModeRail = () => (
     <ScrollView
       horizontal
@@ -448,6 +459,11 @@ export default function SolarScreen() {
     const bestWindow = astro?.bestStartTime
       ? `${toLocalLabel(astro.bestStartTime, astro.timezone)}${astro.bestEndTime ? `-${toLocalLabel(astro.bestEndTime, astro.timezone)}` : ''}`
       : 'Pending';
+    const cloudHour =
+      astro?.tonightHours?.find((hour) => hour.score === peakScore) ??
+      chartHours.find((hour) => hour.score === peakScore) ??
+      astro?.tonightHours?.[0] ??
+      chartHours[0];
     const kpValue = data?.kp != null && Number.isFinite(data.kp) ? data.kp.toFixed(1) : '--';
     const auroraValue = data?.kp != null && Number.isFinite(data.kp) ? `${auroraChancePct(data.kp).toFixed(0)}%` : '--';
 
@@ -492,6 +508,34 @@ export default function SolarScreen() {
             hint="Simple viewing likelihood"
             tone="#67E8F9"
           />
+        </View>
+        <View style={styles.spaceCloudPanel}>
+          <Text style={styles.spaceCloudTitle}>
+            Cloud layers {cloudHour?.timeLabel ? `near ${cloudHour.timeLabel}` : 'at best window'}
+          </Text>
+          <View style={styles.spaceCloudGrid}>
+            <OmniMetricTile
+              label="Low"
+              value={formatCloudPct(cloudHour?.cloudLow)}
+              hint="Blocks horizon and wide views"
+              tone={cloudTone(cloudHour?.cloudLow)}
+              style={styles.cloudLayerTile}
+            />
+            <OmniMetricTile
+              label="Mid"
+              value={formatCloudPct(cloudHour?.cloudMid)}
+              hint="Softens detail and contrast"
+              tone={cloudTone(cloudHour?.cloudMid)}
+              style={styles.cloudLayerTile}
+            />
+            <OmniMetricTile
+              label="High"
+              value={formatCloudPct(cloudHour?.cloudHigh)}
+              hint="Hurts transparency"
+              tone={cloudTone(cloudHour?.cloudHigh)}
+              style={styles.cloudLayerTile}
+            />
+          </View>
         </View>
         <Text style={styles.spaceOverviewFooter}>
           Current solar view: {activeSolarView.label} from {activeSolarView.source}. Use the mode rail to jump between Space sections.
@@ -1738,6 +1782,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 10,
+  },
+
+  spaceCloudPanel: {
+    marginTop: 12,
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+
+  spaceCloudTitle: {
+    color: 'rgba(224,242,254,0.88)',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+
+  spaceCloudGrid: {
+    marginTop: 9,
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  cloudLayerTile: {
+    minWidth: 0,
+    paddingHorizontal: 9,
+    paddingVertical: 10,
   },
 
   spaceOverviewFooter: {
