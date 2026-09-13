@@ -58,6 +58,19 @@ function scoreColor(score: number) {
   return '#EF4444';
 }
 
+function cloudColor(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return '#64748B';
+  if (value <= 20) return '#22C55E';
+  if (value <= 50) return '#FACC15';
+  if (value <= 75) return '#FB923C';
+  return '#EF4444';
+}
+
+function cloudPct(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return '--';
+  return `${Math.round(value)}%`;
+}
+
 function phaseLabel(hour: AstroHourRow) {
   if (hour.isTrueDark) return 'True dark';
   if (hour.isAstronomicalTwilight) return 'Astro twilight';
@@ -403,6 +416,45 @@ export function AstroForecastTimeline({
         </View>
         <Text style={styles.selectedQuality}>{selected.hour.label}</Text>
         <Text style={styles.selectedSummary}>{selected.hour.summary}</Text>
+        <View style={styles.cloudLayerPanel}>
+          <View style={styles.cloudLayerHeader}>
+            <Text style={styles.cloudLayerTitle}>Cloud layer profile</Text>
+            <Text style={styles.cloudLayerTotal}>
+              Total {cloudPct(selected.hour.cloudTotal)}
+            </Text>
+          </View>
+          <View style={styles.cloudLayerRow}>
+            {[
+              { label: 'Low', value: selected.hour.cloudLow, hint: 'horizon' },
+              { label: 'Mid', value: selected.hour.cloudMid, hint: 'detail' },
+              { label: 'High', value: selected.hour.cloudHigh, hint: 'transparency' },
+            ].map((layer) => {
+              const width = layer.value == null || !Number.isFinite(layer.value) ? 0 : Math.max(3, Math.min(100, layer.value));
+              return (
+                <View key={layer.label} style={styles.cloudLayerItem}>
+                  <View style={styles.cloudLayerItemTop}>
+                    <Text style={styles.cloudLayerLabel}>{layer.label}</Text>
+                    <Text style={[styles.cloudLayerValue, { color: cloudColor(layer.value) }]}>
+                      {cloudPct(layer.value)}
+                    </Text>
+                  </View>
+                  <View style={styles.cloudLayerTrack}>
+                    <View
+                      style={[
+                        styles.cloudLayerFill,
+                        {
+                          width: `${width}%`,
+                          backgroundColor: cloudColor(layer.value),
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.cloudLayerHint}>{layer.hint}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
         <View style={styles.selectedMetrics}>
           <Text style={styles.selectedMetric}>
             Clouds {selected.hour.cloudTotal == null ? '--' : `${Math.round(selected.hour.cloudTotal)}%`}
@@ -819,6 +871,73 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     marginTop: 4,
+  },
+  cloudLayerPanel: {
+    marginTop: 10,
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: 'rgba(15,23,42,0.52)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.12)',
+  },
+  cloudLayerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  cloudLayerTitle: {
+    color: '#E0F2FE',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  cloudLayerTotal: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  cloudLayerRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cloudLayerItem: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cloudLayerItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  cloudLayerLabel: {
+    color: '#CBD5E1',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  cloudLayerValue: {
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  cloudLayerTrack: {
+    height: 6,
+    marginTop: 5,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(148,163,184,0.18)',
+  },
+  cloudLayerFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  cloudLayerHint: {
+    marginTop: 4,
+    color: '#64748B',
+    fontSize: 8,
+    fontWeight: '800',
   },
   selectedMetrics: {
     flexDirection: 'row',

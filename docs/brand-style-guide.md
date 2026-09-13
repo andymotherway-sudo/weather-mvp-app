@@ -140,6 +140,7 @@ Adjust before implementation:
 - September 12, 2026: Space solar-disk selectors, Earth-view selectors, and wxLearn panel buttons now use `OmniChip`, reducing one-off chip styling and aligning Space controls with Maps.
 - September 12, 2026: Space major section headers now use `OmniSectionHeader`, reducing local title/subtitle styling before the larger Space redesign.
 - September 12, 2026: Space added a mode rail and command overview using `OmniMetricTile`, and Storm Recap now makes official report details more discoverable.
+- September 12, 2026: Space/Astro now exposes low, mid, and high cloud layers in overview and selected-hour details so Sky Score remains explainable.
 
 ## Next Low-Risk UI Targets
 
