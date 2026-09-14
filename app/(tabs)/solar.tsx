@@ -306,6 +306,7 @@ export default function SolarScreen() {
   const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
   const [showAllSwpcAlerts, setShowAllSwpcAlerts] = useState(false);
   const pageScrollRef = useRef<ScrollView>(null);
+  const sectionAnchorsRef = useRef<Partial<Record<SpaceMode, number>>>({});
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -427,6 +428,25 @@ export default function SolarScreen() {
   const formatCloudPct = (value?: number | null) =>
     value == null || !Number.isFinite(value) ? '--' : `${Math.round(value)}%`;
 
+  const recordSectionAnchor = (mode: SpaceMode, y: number) => {
+    sectionAnchorsRef.current[mode] = y;
+  };
+
+  const scrollToSpaceMode = (mode: SpaceMode) => {
+    setSpaceMode(mode);
+    const fallbackY: Record<SpaceMode, number> = {
+      now: 0,
+      hourly: 0,
+      solar: sectionAnchorsRef.current.hourly ?? 0,
+      archive: sectionAnchorsRef.current.solar ?? sectionAnchorsRef.current.hourly ?? 0,
+    };
+    const targetY = sectionAnchorsRef.current[mode] ?? fallbackY[mode] ?? 0;
+    pageScrollRef.current?.scrollTo({
+      y: Math.max(0, targetY - 18),
+      animated: true,
+    });
+  };
+
   const renderSpaceModeRail = () => (
     <ScrollView
       horizontal
@@ -439,16 +459,7 @@ export default function SolarScreen() {
           key={mode.id}
           label={mode.label}
           active={spaceMode === mode.id}
-          onPress={() => {
-            setSpaceMode(mode.id);
-            const yByMode: Record<SpaceMode, number> = {
-              now: 0,
-              hourly: 360,
-              solar: 1100,
-              archive: 2600,
-            };
-            pageScrollRef.current?.scrollTo({ y: yByMode[mode.id], animated: true });
-          }}
+          onPress={() => scrollToSpaceMode(mode.id)}
         />
       ))}
     </ScrollView>
@@ -956,7 +967,7 @@ export default function SolarScreen() {
 
   const contentPad = useMemo(
     () => ({
-      paddingTop: Math.max(12, insets.top * 0.25),
+      paddingTop: Math.max(20, insets.top * 0.4),
       paddingBottom: Math.max(18, insets.bottom + 18),
     }),
     [insets.top, insets.bottom]
@@ -1523,15 +1534,21 @@ export default function SolarScreen() {
             </View>
           ) : null}
 
-          {renderSpaceModeRail()}
-          {renderSpaceOverviewCard()}
+          <View onLayout={(event) => recordSectionAnchor('now', event.nativeEvent.layout.y)}>
+            {renderSpaceModeRail()}
+            {renderSpaceOverviewCard()}
+          </View>
 
-          {renderNightSkySection()}
+          <View onLayout={(event) => recordSectionAnchor('hourly', event.nativeEvent.layout.y)}>
+            {renderNightSkySection()}
+          </View>
 
-          <OmniSectionHeader
-            title="Solar Wx"
-            subtitle="Current space weather, aurora context, upstream solar wind, and solar activity"
-          />
+          <View onLayout={(event) => recordSectionAnchor('solar', event.nativeEvent.layout.y)}>
+            <OmniSectionHeader
+              title="Solar Wx"
+              subtitle="Current space weather, aurora context, upstream solar wind, and solar activity"
+            />
+          </View>
 
           {showSpaceWeatherLoading ? (
             <View style={styles.center}>
@@ -1610,10 +1627,12 @@ export default function SolarScreen() {
             </View>
           )}
 
-          <OmniSectionHeader
-            title="Mars Weather Archive"
-            subtitle="Retired InSight observations preserved as a historical Mars weather reference"
-          />
+          <View onLayout={(event) => recordSectionAnchor('archive', event.nativeEvent.layout.y)}>
+            <OmniSectionHeader
+              title="Mars Weather Archive"
+              subtitle="Retired InSight observations preserved as a historical Mars weather reference"
+            />
+          </View>
 
           <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
@@ -1722,7 +1741,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
     gap: 12,
   },
 
@@ -1747,7 +1766,7 @@ const styles = StyleSheet.create({
   },
 
   spaceModeScroll: {
-    marginTop: 4,
+    marginTop: 2,
     marginBottom: 12,
     overflow: 'visible',
   },
