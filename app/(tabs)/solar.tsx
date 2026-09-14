@@ -306,7 +306,6 @@ export default function SolarScreen() {
   const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
   const [showAllSwpcAlerts, setShowAllSwpcAlerts] = useState(false);
   const pageScrollRef = useRef<ScrollView>(null);
-  const sectionAnchorsRef = useRef<Partial<Record<SpaceMode, number>>>({});
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -428,22 +427,10 @@ export default function SolarScreen() {
   const formatCloudPct = (value?: number | null) =>
     value == null || !Number.isFinite(value) ? '--' : `${Math.round(value)}%`;
 
-  const recordSectionAnchor = (mode: SpaceMode, y: number) => {
-    sectionAnchorsRef.current[mode] = y;
-  };
-
   const scrollToSpaceMode = (mode: SpaceMode) => {
     setSpaceMode(mode);
-    const fallbackY: Record<SpaceMode, number> = {
-      now: 0,
-      hourly: 0,
-      solar: sectionAnchorsRef.current.hourly ?? 0,
-      archive: sectionAnchorsRef.current.solar ?? sectionAnchorsRef.current.hourly ?? 0,
-    };
-    const targetY = sectionAnchorsRef.current[mode] ?? fallbackY[mode] ?? 0;
-    pageScrollRef.current?.scrollTo({
-      y: Math.max(0, targetY - 18),
-      animated: true,
+    requestAnimationFrame(() => {
+      pageScrollRef.current?.scrollTo({ y: 0, animated: true });
     });
   };
 
@@ -549,7 +536,7 @@ export default function SolarScreen() {
           </View>
         </View>
         <Text style={styles.spaceOverviewFooter}>
-          Current solar view: {activeSolarView.label} from {activeSolarView.source}. Use the mode rail to jump between Space sections.
+          Current solar view: {activeSolarView.label} from {activeSolarView.source}. Use the mode rail to switch the Space focus.
         </Text>
       </View>
     );
@@ -1534,23 +1521,25 @@ export default function SolarScreen() {
             </View>
           ) : null}
 
-          <View onLayout={(event) => recordSectionAnchor('now', event.nativeEvent.layout.y)}>
+          <View>
             {renderSpaceModeRail()}
             {renderSpaceOverviewCard()}
           </View>
 
-          <View onLayout={(event) => recordSectionAnchor('hourly', event.nativeEvent.layout.y)}>
-            {renderNightSkySection()}
-          </View>
+          {spaceMode === 'hourly' ? renderNightSkySection() : null}
 
-          <View onLayout={(event) => recordSectionAnchor('solar', event.nativeEvent.layout.y)}>
-            <OmniSectionHeader
-              title="Solar Wx"
-              subtitle="Current space weather, aurora context, upstream solar wind, and solar activity"
-            />
-          </View>
+          {spaceMode === 'now' || spaceMode === 'solar' ? (
+            <>
+              <OmniSectionHeader
+                title={spaceMode === 'now' ? 'Current Space Wx' : 'Solar Wx'}
+                subtitle={
+                  spaceMode === 'now'
+                    ? 'Current space weather snapshot and active alerts'
+                    : 'Current space weather, aurora context, upstream solar wind, and solar activity'
+                }
+              />
 
-          {showSpaceWeatherLoading ? (
+              {showSpaceWeatherLoading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" />
               <Text style={styles.smallText}>Loading space weather...</Text>
@@ -1566,6 +1555,8 @@ export default function SolarScreen() {
               {renderStormSignal()}
               {renderSwpcAlerts()}
 
+              {spaceMode === 'solar' ? (
+                <>
               <View style={styles.dashboardSection}>
                 <Text style={styles.dashboardSectionTitle}>NOAA SPACE WEATHER SCALES</Text>
                 {renderNoaaScaleGrid()}
@@ -1609,6 +1600,8 @@ export default function SolarScreen() {
                   )}
                 </View>
               </View>
+                </>
+              ) : null}
 
               <View style={styles.footer}>
                 <Text style={styles.smallText}>
@@ -1625,9 +1618,13 @@ export default function SolarScreen() {
                 No space weather data available.
               </Text>
             </View>
-          )}
+              )}
+            </>
+          ) : null}
 
-          <View onLayout={(event) => recordSectionAnchor('archive', event.nativeEvent.layout.y)}>
+          {spaceMode === 'archive' ? (
+            <>
+          <View>
             <OmniSectionHeader
               title="Mars Weather Archive"
               subtitle="Retired InSight observations preserved as a historical Mars weather reference"
@@ -1709,6 +1706,8 @@ export default function SolarScreen() {
               </>
             ) : null}
           </View>
+            </>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
 
