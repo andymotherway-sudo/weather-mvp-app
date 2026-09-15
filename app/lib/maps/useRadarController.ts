@@ -985,14 +985,13 @@ export function useRadarController(args: {
 
   useEffect(() => {
     if (liveFrames.length) return;
-    if (!stormMode && !stationMode) return;
 
     setPlayFrames([]);
     setPlayTemplates([]);
     pendingFramesRef.current = null;
     pendingTemplatesRef.current = null;
     slotHoldRef.current = [null, null, null];
-  }, [liveFrames.length, stationMode, stormMode]);
+  }, [liveFrames.length]);
 
   useEffect(() => {
     if (!liveFrames.length) return;
@@ -1526,6 +1525,8 @@ export function useRadarController(args: {
     localError,
     mrmsError,
     mrmsLoading,
+    mrmsFrameCount: mrmsFrames?.length ?? 0,
+    mrmsTemplateAvailable: !!mrmsFrames?.some((frame) => !!frame.template),
     level3Error,
     level3Loading,
     level3Supported,

@@ -2180,7 +2180,11 @@ export default function MapsScreen() {
   const radarProductMeta = RADAR_PRODUCT_META[product];
   const wideMrmsProductMeta =
     MRMS_PRODUCT_OPTIONS.find((item) => item.id === wideMrmsProduct) ?? MRMS_PRODUCT_OPTIONS[0];
-  const showingSelectedMrmsProduct = activeRadarProvider === 'mrms' && !radarCtl.mrmsError;
+  const ownedMrmsFrameCount = radarCtl.mrmsFrameCount ?? (activeRadarProvider === 'mrms' ? frameCount : 0);
+  const ownedMrmsHasTemplate = !!radarCtl.mrmsTemplateAvailable || (
+    activeRadarProvider === 'mrms' && uiTemplates.some((template) => !!template)
+  );
+  const showingSelectedMrmsProduct = activeRadarProvider === 'mrms' && ownedMrmsFrameCount > 0 && ownedMrmsHasTemplate;
   const wideRadarLegendTitle = showingSelectedMrmsProduct ? wideMrmsProductMeta.title : 'Reflectivity';
   const wideRadarLegendLeft = showingSelectedMrmsProduct
     ? wideMrmsProduct === 'EchoTop_18'
@@ -3986,10 +3990,13 @@ export default function MapsScreen() {
       return 'Using RainViewer fallback';
     }
     if (activeRadarProvider === 'mrms' && radarCtl.mrmsLoading) return 'Refreshing MRMS preview';
-    if (effectiveRadarProvider === 'mrms' && radarCtl.mrmsError) return 'MRMS preview unavailable';
-    if (activeRadarProvider === 'mrms' && frameCount > 0 && frameCount < 3) {
+    if (activeRadarProvider === 'mrms' && ownedMrmsFrameCount > 2) {
+      return `${ownedMrmsFrameCount} frames / owned MRMS`;
+    }
+    if (activeRadarProvider === 'mrms' && ownedMrmsFrameCount > 0) {
       return 'Building MRMS history';
     }
+    if (effectiveRadarProvider === 'mrms' && radarCtl.mrmsError) return 'MRMS preview unavailable';
     if (frameCount > 1) return `${frameCount} frames / radar history`;
     if (frameCount === 1) return 'Latest radar frame only';
     if (radarCtl.iemLoading) return 'Loading radar history';
@@ -4003,6 +4010,7 @@ export default function MapsScreen() {
     radarCtl.localError,
     radarCtl.mrmsError,
     radarCtl.mrmsLoading,
+    ownedMrmsFrameCount,
     radarCtl.usingLocalImage,
     ownedLevel3Requested,
     radarCtl.level3Error,
@@ -5940,11 +5948,15 @@ export default function MapsScreen() {
                 />
                 <Text style={styles.legendCardMeta}>
                   {activeRadarProvider === 'mrms'
-                    ? radarCtl.mrmsError
-                      ? `MRMS preview unavailable: ${radarCtl.mrmsError}`
-                      : wideRadarProvider === 'auto'
+                    ? ownedMrmsFrameCount > 0 && ownedMrmsHasTemplate
+                      ? wideRadarProvider === 'auto'
                         ? `Auto radar is using owned NOAA MRMS ${wideMrmsProductMeta.title.toLowerCase()}. RainViewer stays warm as the fallback.`
-                        : `${wideMrmsProductMeta.note} Served through our Cloudflare radar path.`
+                        : `${wideMrmsProductMeta.note} Owned frames=${ownedMrmsFrameCount}; visible=${frameCount}.`
+                      : radarCtl.mrmsError
+                        ? `MRMS preview unavailable: ${radarCtl.mrmsError} | ownedFrames=${ownedMrmsFrameCount} | visible=${frameCount} | template=${ownedMrmsHasTemplate ? 'mrms' : 'missing'}`
+                        : ownedMrmsFrameCount > 0
+                          ? `MRMS is building tile templates. ownedFrames=${ownedMrmsFrameCount}; visible=${frameCount}.`
+                          : 'MRMS preview unavailable: no owned MRMS frames are loaded yet.'
                     : wideRadarProvider === 'auto'
                       ? mrmsBetaCoverage
                         ? radarCtl.mrmsError
