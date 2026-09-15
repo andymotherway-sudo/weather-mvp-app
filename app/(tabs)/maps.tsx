@@ -2351,16 +2351,31 @@ export default function MapsScreen() {
     uiTemplates,
   ]);
 
+  const ownedLevel3Requested = stormScopeLocalZoom && stormScopeLocalProvider === 'level3';
+  const ownedLevel3ProductSupported = OWNED_LEVEL3_PRODUCT_IDS.has(product);
   const stationProductLoading =
-    stormScopeLocalZoom && (radarCtl.iemLoading || radarCtl.level3Loading);
+    stormScopeLocalZoom &&
+    (
+      ownedLevel3Requested
+        ? radarCtl.level3Loading
+        : radarCtl.iemLoading
+    );
 
   const stationProductUnavailable =
     stormScopeLocalZoom && !stationProductLoading && frameCount <= 0;
 
-  const ownedLevel3Requested = stormScopeLocalZoom && stormScopeLocalProvider === 'level3';
-  const ownedLevel3ProductSupported = OWNED_LEVEL3_PRODUCT_IDS.has(product);
   const stationProductLatestOnly =
     product === 'N0Z' || product === 'EET' || product === 'NET';
+  const ownedLevel3HasTemplate = !!radarCtl.debug?.activeFrameTemplate?.includes('/v1/radar/level3/tiles/');
+  const ownedLevel3RenderLine = ownedLevel3Requested
+    ? [
+        `provider=${radarCtl.effectiveRadarProvider}`,
+        `requested=${radarCtl.requestedRadarProvider}`,
+        `frames=${frameCount}`,
+        `template=${ownedLevel3HasTemplate ? 'level3' : 'missing'}`,
+        radarCtl.level3Error ? `error=${radarCtl.level3Error}` : null,
+      ].filter(Boolean).join(' | ')
+    : null;
   const stationProductSourceLabel =
     !stormScopeEnabled
       ? 'Storm Scope off'
@@ -2402,12 +2417,13 @@ export default function MapsScreen() {
           typeof level3HealthProduct.maxZoom === 'number'
             ? `z${level3HealthProduct.maxZoom}`
             : null,
+          ownedLevel3RenderLine,
         ].filter(Boolean).join(' · ')
       : ownedLevel3Requested && level3HealthProduct && !level3HealthProduct.ok
         ? `${product} unhealthy: ${level3HealthProduct.reason ?? 'status check failed'}`
         : ownedLevel3Requested && radarCtl.level3HealthError
           ? `Health check unavailable: ${radarCtl.level3HealthError}`
-          : null;
+          : ownedLevel3RenderLine;
 
   const stormScopeMode: 'mosaic' | 'local' = stormScopeLocalZoom ? 'local' : 'mosaic';
   const stormScopeStatusLabel = stormScopeLocalZoom ? 'Local' : 'Mosaic';
@@ -3950,6 +3966,13 @@ export default function MapsScreen() {
     }
 
     if (stationRadarMode) {
+      if (ownedLevel3Requested) {
+        if (radarCtl.level3Loading) return 'Refreshing owned Level III';
+        if (radarCtl.level3Error) return 'Owned Level III unavailable';
+        if (frameCount > 1) return `${frameCount} frames / owned Level III`;
+        if (frameCount === 1) return 'Latest owned Level III frame only';
+        return 'Loading owned Level III';
+      }
       if (radarCtl.iemLoading) return 'Refreshing local radar history';
       if (radarCtl.iemError || radarCtl.localError) return 'Latest local radar only right now';
       if (radarCtl.usingLocalImage) return 'Latest local radar only right now';
@@ -3981,6 +4004,9 @@ export default function MapsScreen() {
     radarCtl.mrmsError,
     radarCtl.mrmsLoading,
     radarCtl.usingLocalImage,
+    ownedLevel3Requested,
+    radarCtl.level3Error,
+    radarCtl.level3Loading,
     stationProductLatestOnly,
     stationRadarMode,
     wideRadarProvider,
