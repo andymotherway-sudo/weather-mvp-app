@@ -1,29 +1,27 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.256**
-Android version code: **10273**
+Release: **OMNIwx 1.1.257**
+Android version code: **10274**
 Track: **Closed testing / internal testing candidate**
 Date: **September 14, 2026**
 
 ## Play Console Paste Notes
 
-Clarifies Storm Scope Owned L3 status so owned NOAA Level III frames are reported separately from IEM fallback frames.
+Fixes MRMS radar state handling so stale fallback frames do not make owned MRMS appear unavailable when fresh owned frames are loaded.
 
 ## Tester Notes
 
-Please focus testing on Maps Storm Scope, then smoke-test Space and Land:
+Please focus testing on Maps radar, then smoke-test Space and Land:
 
-- In Maps, open Storm Scope near Phoenix/KIWA and select `Local` + `Owned L3` + `HREFL`.
-- Confirm the Storm Scope health line reports `provider=level3`, `requested=level3`, `ownedFrames>0`, `visibleFrames`, and `template=level3`.
-- Confirm the bottom radar timeline says `owned Level III` rather than generic local/IEM history when Owned L3 is selected.
-- Confirm IEM fallback still works when switching the local provider back to `IEM`.
-- Confirm MRMS broad radar still loads or falls back cleanly when using the wide radar controls.
+- In Maps wide radar, select `MRMS` and confirm the bottom timeline reports owned MRMS history when frames are available.
+- If MRMS is unavailable, confirm the diagnostic text reports `ownedFrames`, `visible`, and `template` instead of silently mixing fallback history.
+- In Storm Scope near Phoenix/KIWA, confirm `Local` + `Owned L3` + `HREFL` still works and IEM fallback still works when selected.
 - Confirm Space, Land, Hourly, and Astro still load normally after update/relaunch.
 
 ## Internal Release Checklist
 
-- App version: `1.1.256`
-- Android version code: `10273`
+- App version: `1.1.257`
+- Android version code: `10274`
 - Intended backend environment: `production`
 - Confirm `npx expo config --json` resolves `extra.apiEnvironment=production`, the production API URL, and `extra.mrmsRadarPreviewEnabled=1` before building.
 - Run GitHub Actions -> `Radar health report` against production before upload when available.
