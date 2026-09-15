@@ -2367,12 +2367,14 @@ export default function MapsScreen() {
   const stationProductLatestOnly =
     product === 'N0Z' || product === 'EET' || product === 'NET';
   const ownedLevel3HasTemplate = !!radarCtl.debug?.activeFrameTemplate?.includes('/v1/radar/level3/tiles/');
+  const ownedLevel3FrameCount = radarCtl.level3FrameCount ?? (radarCtl.usingLevel3 ? frameCount : 0);
   const ownedLevel3RenderLine = ownedLevel3Requested
     ? [
         `provider=${radarCtl.effectiveRadarProvider}`,
         `requested=${radarCtl.requestedRadarProvider}`,
-        `frames=${frameCount}`,
-        `template=${ownedLevel3HasTemplate ? 'level3' : 'missing'}`,
+        `ownedFrames=${ownedLevel3FrameCount}`,
+        `visibleFrames=${frameCount}`,
+        `template=${radarCtl.level3TemplateAvailable || ownedLevel3HasTemplate ? 'level3' : 'missing'}`,
         radarCtl.level3Error ? `error=${radarCtl.level3Error}` : null,
       ].filter(Boolean).join(' | ')
     : null;
@@ -3961,18 +3963,15 @@ export default function MapsScreen() {
       return `${frameCount} latest snapshots / local radar`;
     }
 
-    if (frameCount > 1) {
-      return `${frameCount} frames / ${stationRadarMode ? 'local radar history' : 'radar history'}`;
-    }
-
     if (stationRadarMode) {
       if (ownedLevel3Requested) {
         if (radarCtl.level3Loading) return 'Refreshing owned Level III';
         if (radarCtl.level3Error) return 'Owned Level III unavailable';
-        if (frameCount > 1) return `${frameCount} frames / owned Level III`;
-        if (frameCount === 1) return 'Latest owned Level III frame only';
+        if (ownedLevel3FrameCount > 1) return `${ownedLevel3FrameCount} frames / owned Level III`;
+        if (ownedLevel3FrameCount === 1) return 'Latest owned Level III frame only';
         return 'Loading owned Level III';
       }
+      if (frameCount > 1) return `${frameCount} frames / local radar history`;
       if (radarCtl.iemLoading) return 'Refreshing local radar history';
       if (radarCtl.iemError || radarCtl.localError) return 'Latest local radar only right now';
       if (radarCtl.usingLocalImage) return 'Latest local radar only right now';
@@ -3991,6 +3990,7 @@ export default function MapsScreen() {
     if (activeRadarProvider === 'mrms' && frameCount > 0 && frameCount < 3) {
       return 'Building MRMS history';
     }
+    if (frameCount > 1) return `${frameCount} frames / radar history`;
     if (frameCount === 1) return 'Latest radar frame only';
     if (radarCtl.iemLoading) return 'Loading radar history';
     return 'Radar history unavailable';
@@ -4007,6 +4007,7 @@ export default function MapsScreen() {
     ownedLevel3Requested,
     radarCtl.level3Error,
     radarCtl.level3Loading,
+    ownedLevel3FrameCount,
     stationProductLatestOnly,
     stationRadarMode,
     wideRadarProvider,

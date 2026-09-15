@@ -1532,6 +1532,8 @@ export function useRadarController(args: {
     level3Health: selectedLevel3Health,
     level3HealthError: radarBackendStatusError,
     usingLevel3,
+    level3FrameCount: level3Frames?.length ?? 0,
+    level3TemplateAvailable: !!level3Frames?.some((frame) => !!frame.template),
     effectiveRadarProvider: effectiveTileProvider,
     requestedRadarProvider: sheetValue.radarProvider,
 

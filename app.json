@@ -2,7 +2,7 @@
   "expo": {
     "name": "OMNIwx",
     "slug": "weather-app",
-    "version": "1.1.255",
+    "version": "1.1.256",
     "owner": "andymotherway",
     "orientation": "default",
     "icon": "./assets/brand/icon.png",
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.anonymous.weatherapp",
-      "versionCode": 10272,
+      "versionCode": 10273,
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "backgroundColor": "#020617",
@@ -58,7 +58,7 @@
       "apiEnvironment": "build-time-managed",
       "supportUrl": "https://www.omni-wx.com/support",
       "privacyPolicyUrl": "https://www.omni-wx.com/privacy",
-      "buildLabel": "internal-test-aab-10272",
+      "buildLabel": "internal-test-aab-10273",
       "eas": {
         "projectId": "80344024-cac1-4b5a-9ab7-24c20b41cdf3",
         "almanacSafeMode": true
