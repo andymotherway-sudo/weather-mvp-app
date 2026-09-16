@@ -30,7 +30,7 @@ function parseArgs(argv) {
     level3Products: DEFAULT_LEVEL3_PRODUCTS,
     requiredLevel3Products: DEFAULT_REQUIRED_LEVEL3_PRODUCTS,
     mrmsStaleMinutes: 90,
-    level3StaleMinutes: 120,
+    level3StaleMinutes: 360,
     minMrmsFrames: 1,
     minLevel3Frames: 1,
     json: false,
@@ -59,7 +59,7 @@ function parseArgs(argv) {
 
   args.apiBase ||= API_BASES[args.env] || API_BASES.production;
   args.mrmsStaleMinutes = positiveNumber(args.mrmsStaleMinutes, 90);
-  args.level3StaleMinutes = positiveNumber(args.level3StaleMinutes, 120);
+  args.level3StaleMinutes = positiveNumber(args.level3StaleMinutes, 360);
   args.minMrmsFrames = Math.max(1, Math.floor(positiveNumber(args.minMrmsFrames, 1)));
   args.minLevel3Frames = Math.max(1, Math.floor(positiveNumber(args.minLevel3Frames, 1)));
   return args;
@@ -83,7 +83,7 @@ Options:
   --level3-products <csv>             Level III products to check
   --required-level3-products <csv>    Products that fail health when stale. Default: N0B,N0S
   --mrms-stale-minutes <n>            MRMS stale threshold. Default: 90
-  --level3-stale-minutes <n>          Level III stale threshold. Default: 120
+  --level3-stale-minutes <n>          Level III stale threshold. Default: 360
   --min-mrms-frames <n>               Minimum MRMS frames expected. Default: 1
   --min-level3-frames <n>             Minimum Level III frames expected. Default: 1
   --fail                              Exit non-zero if required health fails

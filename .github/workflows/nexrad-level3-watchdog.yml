@@ -1,5 +1,5 @@
 name: NEXRAD Level III watchdog
-run-name: Level III watchdog production ${{ inputs.sites || 'IWA,MPX,DLH' }} stale>${{ inputs.stale_after_minutes || '45' }}m
+run-name: Level III watchdog production ${{ inputs.sites || 'IWA,MPX,DLH' }} stale>${{ inputs.stale_after_minutes || '240' }}m
 
 on:
   schedule:
@@ -11,7 +11,7 @@ on:
       stale_after_minutes:
         description: "Dispatch Level III cycle if any live product is older than this"
         required: true
-        default: "45"
+        default: "240"
       sites:
         description: "Comma-separated Level III site ids"
         required: true
@@ -38,7 +38,7 @@ jobs:
 
     env:
       GH_TOKEN: ${{ github.token }}
-      STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '45' }}
+      STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || vars.LEVEL3_WATCHDOG_STALE_MINUTES || '240' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || 'IWA,MPX,DLH' }}
       LEVEL3_PRODUCTS: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_PRODUCTS || 'N0B,N0S,EET') || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
@@ -148,7 +148,7 @@ jobs:
             -f min_zoom=7 \
             -f max_zoom=10 \
             -f retain_frames=12 \
-            -f max_frame_age_minutes=120 \
+            -f max_frame_age_minutes=360 \
             -f max_deletes="$LEVEL3_MAX_DELETES" \
             -f allow_empty_skip=true \
             -f supersample=1
