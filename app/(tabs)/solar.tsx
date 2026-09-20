@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
+  LayoutChangeEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -306,6 +307,7 @@ export default function SolarScreen() {
   const [openDetailSections, setOpenDetailSections] = useState<Record<string, boolean>>({});
   const [showAllSwpcAlerts, setShowAllSwpcAlerts] = useState(false);
   const pageScrollRef = useRef<ScrollView>(null);
+  const sectionYRef = useRef<Partial<Record<SpaceMode, number>>>({});
   const earthDiskRefreshInFlightRef = useRef(false);
   const solarCaptureRunKeyRef = useRef<string | null>(null);
 
@@ -427,10 +429,15 @@ export default function SolarScreen() {
   const formatCloudPct = (value?: number | null) =>
     value == null || !Number.isFinite(value) ? '--' : `${Math.round(value)}%`;
 
+  const registerSpaceSection = (mode: SpaceMode) => (event: LayoutChangeEvent) => {
+    sectionYRef.current[mode] = event.nativeEvent.layout.y;
+  };
+
   const scrollToSpaceMode = (mode: SpaceMode) => {
     setSpaceMode(mode);
     requestAnimationFrame(() => {
-      pageScrollRef.current?.scrollTo({ y: 0, animated: true });
+      const targetY = sectionYRef.current[mode] ?? 0;
+      pageScrollRef.current?.scrollTo({ y: Math.max(0, targetY - 10), animated: true });
     });
   };
 
@@ -1526,17 +1533,15 @@ export default function SolarScreen() {
             {renderSpaceOverviewCard()}
           </View>
 
-          {spaceMode === 'hourly' ? renderNightSkySection() : null}
+          <View onLayout={registerSpaceSection('hourly')}>
+            {renderNightSkySection()}
+          </View>
 
-          {spaceMode === 'now' || spaceMode === 'solar' ? (
+          <View onLayout={registerSpaceSection('now')}>
             <>
               <OmniSectionHeader
-                title={spaceMode === 'now' ? 'Current Space Wx' : 'Solar Wx'}
-                subtitle={
-                  spaceMode === 'now'
-                    ? 'Current space weather snapshot and active alerts'
-                    : 'Current space weather, aurora context, upstream solar wind, and solar activity'
-                }
+                title="Current Space Wx"
+                subtitle="Current space weather snapshot and active alerts"
               />
 
               {showSpaceWeatherLoading ? (
@@ -1555,8 +1560,13 @@ export default function SolarScreen() {
               {renderStormSignal()}
               {renderSwpcAlerts()}
 
-              {spaceMode === 'solar' ? (
+              <View onLayout={registerSpaceSection('solar')}>
                 <>
+              <OmniSectionHeader
+                title="Solar Wx"
+                subtitle="Current space weather, aurora context, upstream solar wind, and solar activity"
+              />
+
               <View style={styles.dashboardSection}>
                 <Text style={styles.dashboardSectionTitle}>NOAA SPACE WEATHER SCALES</Text>
                 {renderNoaaScaleGrid()}
@@ -1601,7 +1611,7 @@ export default function SolarScreen() {
                 </View>
               </View>
                 </>
-              ) : null}
+              </View>
 
               <View style={styles.footer}>
                 <Text style={styles.smallText}>
@@ -1620,16 +1630,13 @@ export default function SolarScreen() {
             </View>
               )}
             </>
-          ) : null}
+          </View>
 
-          {spaceMode === 'archive' ? (
-            <>
-          <View>
+          <View onLayout={registerSpaceSection('archive')}>
             <OmniSectionHeader
               title="Mars Weather Archive"
               subtitle="Retired InSight observations preserved as a historical Mars weather reference"
             />
-          </View>
 
           <View style={themedCard}>
             <View style={styles.cardHeaderRow}>
@@ -1706,8 +1713,7 @@ export default function SolarScreen() {
               </>
             ) : null}
           </View>
-            </>
-          ) : null}
+          </View>
         </ScrollView>
       </SafeAreaView>
 
