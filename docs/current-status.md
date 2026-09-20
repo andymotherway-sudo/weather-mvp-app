@@ -1,15 +1,15 @@
 # OMNIwx Current Status
 
-Last updated: September 8, 2026
+Last updated: September 20, 2026
 
 This file is the short source of truth for where the product and infrastructure stand today. Deeper planning details live in the roadmap docs, but this file should stay factual and current.
 
 ## Product
 
-- Current app release line: `1.1.251`
-- Current Android version code: `10268`
+- Current app release line: `1.1.258`
+- Current Android version code: `10275`
 - Internal testing is the active release channel.
-- The latest release slice targets a fresh `10268` AAB once the full release path build completes.
+- The latest release slice targets a fresh `10275` AAB once the full release path build completes.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
 - Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
 - Local Storm Reports now open a report browser from the Storm Recap card so users can read official report details directly instead of being routed only to wxLearn.
@@ -29,7 +29,7 @@ This file is the short source of truth for where the product and infrastructure 
 - MRMS is the owned NOAA-backed national radar path for the US beta footprint.
 - RainViewer remains the fallback for stale, warming, missing, disabled, or out-of-scope MRMS.
 - IEM/RIDGE remains the local Storm Scope/NEXRAD fallback until owned NOAA Level III rendering is production-ready.
-- Production MRMS is currently bounded for cost: scheduled z3-z8, retained rolling frames, no archive.
+- Production MRMS is currently bounded for cost: dedicated Cloud Run scheduled z3-z8, retained rolling frames, no archive.
 - Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
 - The app now has wide-radar MRMS preview product chips for composite reflectivity, lowest-altitude reflectivity, echo tops, and precip rate. Composite remains the default; the other products require fresh published timelines before they render.
 - MRMS maintenance can now target a single MRMS product or `all`, skipping products that have not published a live timeline yet, which keeps preview-product experiments from leaving stale R2 objects behind.
@@ -46,14 +46,16 @@ This file is the short source of truth for where the product and infrastructure 
 - The current target is zero cost, with a comfort ceiling well below the paid-overage threshold.
 - Worker-served MRMS tiles remain the safer app path for now because sparse/empty MRMS tiles need transparent responses and fallback handling.
 - Direct public R2/custom-domain tile delivery is the future scale path, but it needs careful cutover.
-- Before paid launch or a dedicated radar runner, budget alerts, radar kill switches, usage limits, and emergency disable steps must be in place.
+- Budget alerts, radar kill switches, usage limits, and emergency disable steps remain required before paid launch or wider owned-radar scale-up.
 
-## GitHub Actions
+## Radar Automation
 
-- `MRMS radar cycle` is the current MRMS publisher.
-- Scheduled runs use production, apply writes, z3-z8, a small backfill, retained frames, smoke checks, and cleanup on staggered `:07/:27/:47` UTC cron slots.
-- Scheduled MRMS publishing can be paused by setting the GitHub repository variable `MRMS_SCHEDULE_ENABLED=false`; manual MRMS runs remain available for deliberate recovery.
-- GitHub schedule timing can vary; do not assume every cron run executes exactly on the 20-minute mark.
+- Dedicated Cloud Run is now the primary production radar cadence for owned MRMS and Level III publishing.
+- `omniwx-radar-mrms-runner` publishes production MRMS on Cloud Scheduler every 10 minutes with z3-z8, 12 retained frames, R2 cleanup, and production-write confirmation enabled.
+- `omniwx-radar-level3-runner` publishes the Phase 1 Level III bundle on Cloud Scheduler at `:02/:17/:32/:47` Phoenix time with `IWA`, `MPX`, `DLH` and `N0B,N0S,EET`.
+- The old combined Cloud Run schedule `omniwx-radar-runner-10min` is paused to prevent duplicate writes.
+- GitHub radar workflows remain available for manual recovery, QA, z10 sizing, and fallback operations, but they are no longer the primary production cadence.
+- GitHub schedule timing can vary; do not assume every cron run executes exactly on its configured minute.
 - The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
 - `MRMS radar watchdog` is a beta recovery workflow on offset `:17/:37/:57` UTC cron slots. It checks the live production timeline and dispatches the bounded MRMS cycle only when the timeline is stale and no MRMS publisher run is already queued or running.
 - Manual runs are still used for z10 QA, backfill, and recovery.
@@ -67,13 +69,13 @@ This file is the short source of truth for where the product and infrastructure 
 - `Radar health report` is a read-only manual workflow and local script (`npm --prefix omniwx-api run radar:health -- --env production`) for checking live MRMS and Level III freshness without publishing tiles, deleting R2 objects, or dispatching recovery jobs.
 - `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle and the Phase 1 site bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
 - Storm Scope now consumes that status when owned Level III is selected and shows a compact owned-health line for the active product.
-- A dedicated radar runner is now the planned production-grade replacement for GitHub Actions once owned z10, multi-product MRMS, or recurring Level III becomes customer-critical; the staggered GitHub cadence is a zero-cost beta hardening step, not an SLA-grade scheduler.
+- The dedicated radar runner is now live for the bounded beta cadence. It is still intentionally conservative: MRMS z8, Level III Phase 1 sites/products, rolling retention, and Cloud Scheduler cadence before any z10 or multi-product expansion.
 
 ## Not Done Yet
 
-- MRMS needs repeated production cycles to prove the richer multi-frame history actually stays fresh.
-- GitHub Actions remains the beta scheduler; a dedicated runner is still needed before treating owned radar freshness as a paid-customer SLA.
-- Dedicated radar runner work should not start writing production R2 until the cost-safety gate is complete.
+- MRMS needs repeated Cloud Run production cycles to prove the richer multi-frame history stays fresh without manual intervention.
+- Level III needs repeated split-runner cycles to prove the Phase 1 bundle stays fresh without overlapping jobs.
+- Dedicated radar runner writes are enabled for the bounded beta scope only; z10, more sites, and more products still require cost-safety review before expansion.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
@@ -104,3 +106,4 @@ This file is the short source of truth for where the product and infrastructure 
 - On September 10, 2026, the Phase 1 Level III production bundle published successfully for `IWA`, `MPX`, and `DLH` with products `N0B`, `N0S`, and `EET` at z7-z10. Live `/v1/radar/backend/status` reported all three sites healthy: `IWA` had 3 retained frames per product, while `MPX` and `DLH` each had 1 fresh retained frame per product after the first bundle run. The next expansion added the available dual-pol/local products `N0C`, `N0X`, `DVL`, and `N0H` as experimental owned Level III products.
 - The expanded Phase 1 Level III product run on September 10, 2026 succeeded for all 21 station/product combinations: `IWA`, `MPX`, and `DLH` x `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`. Live health reported every product fresh and z10-capable; largest latest frames were `MPX N0X` at about 2.75 MB / 401 tiles and `MPX N0C` at about 2.41 MB / 402 tiles.
 - On September 11, 2026, Level III schedule hardening moved the publisher to `:13/:43` UTC and increased watchdog opportunities to `:08/:23/:38/:53` UTC after GitHub skipped expected `*/30` schedule executions. The manually triggered production refresh completed successfully, confirming the pipeline was healthy while the cron cadence needed hardening.
+- On September 20, 2026, the dedicated Google Cloud radar runner went live. The combined job was split into `omniwx-radar-mrms-runner` and `omniwx-radar-level3-runner`; automatic MRMS and Level III Scheduler executions both completed successfully and refreshed production Worker timelines.

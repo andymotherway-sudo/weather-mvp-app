@@ -13,13 +13,40 @@ This runbook sets up a dedicated, bounded radar runner for OMNIwx. It is intende
 
 ```text
 Cloud Scheduler
-  -> Cloud Run Job: omniwx-radar-runner
-    -> NOAA MRMS / NOAA Level III
-    -> render tiles
+  -> Cloud Run Job: omniwx-radar-mrms-runner
+    -> NOAA MRMS
+    -> render national tiles
     -> upload to Cloudflare R2 through S3-compatible credentials
-    -> cleanup retained prefixes
-    -> Worker/app read existing R2 manifests and tiles
+    -> cleanup retained MRMS prefixes
+
+Cloud Scheduler
+  -> Cloud Run Job: omniwx-radar-level3-runner
+    -> NOAA NEXRAD Level III
+    -> render local station/product tiles
+    -> upload to Cloudflare R2 through S3-compatible credentials
+    -> cleanup retained Level III prefixes
+
+Cloudflare Worker / app
+  -> read R2 manifests and tiles through existing Worker routes
 ```
+
+## Live Production Posture
+
+As of September 20, 2026, production uses split jobs rather than the original combined job:
+
+- `omniwx-radar-mrms-runner`
+  - Scheduler: `omniwx-radar-mrms-10min`
+  - Cadence: every 10 minutes
+  - Scope: `MergedReflectivityQCComposite`, z3-z8, 12 retained frames
+- `omniwx-radar-level3-runner`
+  - Scheduler: `omniwx-radar-level3-15min`
+  - Cadence: `:02`, `:17`, `:32`, and `:47`
+  - Scope: `IWA`, `MPX`, `DLH` x `N0B`, `N0S`, `EET`, z7-z10, 12 retained frames
+- `omniwx-radar-runner-10min`
+  - Original combined schedule
+  - State: paused to avoid duplicate writes
+
+The combined Cloud Run job may still exist for manual fallback, but it should not be scheduled while the split jobs are active.
 
 ## Safety Defaults
 
@@ -40,8 +67,10 @@ Replace placeholders before running commands.
 export PROJECT_ID="omniwx-radar-runner"
 export REGION="us-central1"
 export ARTIFACT_REPO="omniwx"
-export JOB_NAME="omniwx-radar-runner"
-export SCHEDULER_NAME="omniwx-radar-runner-5min"
+export MRMS_JOB_NAME="omniwx-radar-mrms-runner"
+export LEVEL3_JOB_NAME="omniwx-radar-level3-runner"
+export MRMS_SCHEDULER_NAME="omniwx-radar-mrms-10min"
+export LEVEL3_SCHEDULER_NAME="omniwx-radar-level3-15min"
 export SERVICE_ACCOUNT="omniwx-radar-runner@${PROJECT_ID}.iam.gserviceaccount.com"
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}/omniwx-radar-runner:latest"
 ```
@@ -70,6 +99,15 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member "serviceAccount:${SERVICE_ACCOUNT}" \
   --role "roles/secretmanager.secretAccessor"
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member "serviceAccount:${SERVICE_ACCOUNT}" \
+  --role "roles/run.developer"
+
+gcloud iam service-accounts add-iam-policy-binding "$SERVICE_ACCOUNT" \
+  --project "$PROJECT_ID" \
+  --member "serviceAccount:service-PROJECT_NUMBER@gcp-sa-cloudscheduler.iam.gserviceaccount.com" \
+  --role "roles/iam.serviceAccountTokenCreator"
 ```
 
 ## Store R2 Secrets
@@ -100,10 +138,10 @@ gcloud builds submit ./omniwx-api \
   --substitutions "_IMAGE=${IMAGE}"
 ```
 
-Create or update the job in dry-run mode first:
+Create or update the MRMS job in dry-run mode first:
 
 ```bash
-gcloud run jobs deploy "$JOB_NAME" \
+gcloud run jobs deploy "$MRMS_JOB_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
   --image "$IMAGE" \
@@ -112,20 +150,54 @@ gcloud run jobs deploy "$JOB_NAME" \
   --max-retries "0" \
   --cpu "2" \
   --memory "4Gi" \
-  --set-env-vars "RADAR_RUNNER_ENABLED=true,RADAR_RUNNER_TARGET_ENV=production,RADAR_RUNNER_APPLY=false,RADAR_RUNNER_MRMS_ENABLED=true,RADAR_RUNNER_LEVEL3_ENABLED=true,MRMS_MAX_ZOOM=8,MRMS_RETAIN_FRAMES=12,LEVEL3_SITES=IWA,MPX,DLH,LEVEL3_PRODUCTS=N0B,N0S,EET,LEVEL3_MAX_ZOOM=10,LEVEL3_RETAIN_FRAMES=12" \
+  --set-env-vars "RADAR_RUNNER_ENABLED=true,RADAR_RUNNER_TARGET_ENV=production,RADAR_RUNNER_APPLY=false,RADAR_RUNNER_MRMS_ENABLED=true,RADAR_RUNNER_LEVEL3_ENABLED=false,MRMS_MAX_ZOOM=8,MRMS_RETAIN_FRAMES=12,MRMS_BACKFILL_FRAMES=1" \
   --set-secrets "R2_ACCOUNT_ID=R2_ACCOUNT_ID:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,R2_ENDPOINT=R2_ENDPOINT:latest"
 ```
 
-Run one dry-run execution:
+Create or update the Level III job in dry-run mode first. Use an env-vars file so comma-separated site/product lists are passed safely.
 
 ```bash
-gcloud run jobs execute "$JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --wait
+cat > /tmp/omniwx-level3-runner-env.yaml <<'YAML'
+RADAR_RUNNER_ENABLED: "true"
+RADAR_RUNNER_TARGET_ENV: "production"
+RADAR_RUNNER_APPLY: "false"
+RADAR_RUNNER_MRMS_ENABLED: "false"
+RADAR_RUNNER_LEVEL3_ENABLED: "true"
+LEVEL3_SITES: "IWA,MPX,DLH"
+LEVEL3_PRODUCTS: "N0B,N0S,EET"
+LEVEL3_MAX_ZOOM: "10"
+LEVEL3_RETAIN_FRAMES: "12"
+YAML
+
+gcloud run jobs deploy "$LEVEL3_JOB_NAME" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --image "$IMAGE" \
+  --service-account "$SERVICE_ACCOUNT" \
+  --task-timeout "45m" \
+  --max-retries "0" \
+  --cpu "2" \
+  --memory "4Gi" \
+  --env-vars-file /tmp/omniwx-level3-runner-env.yaml \
+  --set-secrets "R2_ACCOUNT_ID=R2_ACCOUNT_ID:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,R2_ENDPOINT=R2_ENDPOINT:latest"
+```
+
+Run one dry-run execution for each job:
+
+```bash
+gcloud run jobs execute "$MRMS_JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --wait
+gcloud run jobs execute "$LEVEL3_JOB_NAME" --project "$PROJECT_ID" --region "$REGION" --wait
 ```
 
 Only after dry-run logs are clean, enable writes:
 
 ```bash
-gcloud run jobs update "$JOB_NAME" \
+gcloud run jobs update "$MRMS_JOB_NAME" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --update-env-vars "RADAR_RUNNER_APPLY=true,RADAR_RUNNER_CONFIRM=production-radar-writes"
+
+gcloud run jobs update "$LEVEL3_JOB_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
   --update-env-vars "RADAR_RUNNER_APPLY=true,RADAR_RUNNER_CONFIRM=production-radar-writes"
@@ -133,29 +205,46 @@ gcloud run jobs update "$JOB_NAME" \
 
 ## Create The Scheduler
 
-Cloud Scheduler calls the Cloud Run Jobs API every five minutes.
+Cloud Scheduler calls the Cloud Run Jobs API on separate cadences so MRMS freshness is not dragged down by heavier Level III work.
 
 ```bash
-gcloud scheduler jobs create http "$SCHEDULER_NAME" \
+gcloud scheduler jobs create http "$MRMS_SCHEDULER_NAME" \
   --project "$PROJECT_ID" \
   --location "$REGION" \
-  --schedule "*/5 * * * *" \
-  --time-zone "Etc/UTC" \
-  --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${JOB_NAME}:run" \
+  --schedule "*/10 * * * *" \
+  --time-zone "America/Phoenix" \
+  --uri "https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${MRMS_JOB_NAME}:run" \
   --http-method POST \
-  --oauth-service-account-email "$SERVICE_ACCOUNT"
+  --oauth-service-account-email "$SERVICE_ACCOUNT" \
+  --oauth-token-scope "https://www.googleapis.com/auth/cloud-platform"
+
+gcloud scheduler jobs create http "$LEVEL3_SCHEDULER_NAME" \
+  --project "$PROJECT_ID" \
+  --location "$REGION" \
+  --schedule "2,17,32,47 * * * *" \
+  --time-zone "America/Phoenix" \
+  --uri "https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/${LEVEL3_JOB_NAME}:run" \
+  --http-method POST \
+  --oauth-service-account-email "$SERVICE_ACCOUNT" \
+  --oauth-token-scope "https://www.googleapis.com/auth/cloud-platform"
 ```
 
 Pause immediately if anything looks wrong:
 
 ```bash
-gcloud scheduler jobs pause "$SCHEDULER_NAME" --project "$PROJECT_ID" --location "$REGION"
+gcloud scheduler jobs pause "$MRMS_SCHEDULER_NAME" --project "$PROJECT_ID" --location "$REGION"
+gcloud scheduler jobs pause "$LEVEL3_SCHEDULER_NAME" --project "$PROJECT_ID" --location "$REGION"
 ```
 
 Disable writes without deleting the job:
 
 ```bash
-gcloud run jobs update "$JOB_NAME" \
+gcloud run jobs update "$MRMS_JOB_NAME" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --update-env-vars "RADAR_RUNNER_APPLY=false,RADAR_RUNNER_CONFIRM=disabled"
+
+gcloud run jobs update "$LEVEL3_JOB_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
   --update-env-vars "RADAR_RUNNER_APPLY=false,RADAR_RUNNER_CONFIRM=disabled"
