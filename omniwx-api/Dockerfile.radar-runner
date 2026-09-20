@@ -1,0 +1,27 @@
+FROM node:22-bookworm-slim
+
+ENV NODE_ENV=production \
+    OMNIWX_PYTHON=python3 \
+    PYTHONPATH=/app/tmp/mrms-pydeps:/app/tmp/level3-pydeps
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      python3 \
+      python3-pip \
+      libeccodes0 \
+      libeccodes-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+RUN mkdir -p ./tmp/mrms-pydeps ./tmp/level3-pydeps \
+    && python3 -m pip install --break-system-packages --target ./tmp/mrms-pydeps cfgrib eccodes xarray numpy pillow \
+    && python3 -m pip install --break-system-packages --target ./tmp/level3-pydeps metpy numpy pillow
+
+COPY scripts ./scripts
+
+CMD ["node", "./scripts/run-radar-runner.mjs"]
