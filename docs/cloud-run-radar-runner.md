@@ -37,7 +37,7 @@ The runner is intentionally conservative:
 Replace placeholders before running commands.
 
 ```bash
-export PROJECT_ID="YOUR_GCP_PROJECT_ID"
+export PROJECT_ID="omniwx-radar-runner"
 export REGION="us-central1"
 export ARTIFACT_REPO="omniwx"
 export JOB_NAME="omniwx-radar-runner"
