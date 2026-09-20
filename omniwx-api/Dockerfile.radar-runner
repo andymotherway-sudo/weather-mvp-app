@@ -17,9 +17,9 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 
-RUN mkdir -p ./tmp/mrms-pydeps ./tmp/level3-pydeps \
-    && python3 -m pip install --break-system-packages --target ./tmp/mrms-pydeps cfgrib eccodes xarray numpy pillow \
-    && python3 -m pip install --break-system-packages --target ./tmp/level3-pydeps metpy numpy pillow
+RUN mkdir -p /tmp/mrms-pydeps /tmp/level3-pydeps \
+    && python3 -m pip install --break-system-packages --target /tmp/mrms-pydeps cfgrib eccodes xarray numpy pillow \
+    && python3 -m pip install --break-system-packages --target /tmp/level3-pydeps metpy numpy pillow
 
 COPY scripts ./scripts
 
