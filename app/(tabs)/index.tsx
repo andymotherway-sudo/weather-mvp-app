@@ -4014,7 +4014,7 @@ function StormRecapCard({
   const allReports = reports?.reports ?? [];
   const recent = allReports.slice(0, 4);
   const hiddenReportCount = Math.max(0, allReports.length - recent.length);
-  const reportButtonLabel = count > 0 ? `Reports ${count}` : 'Details';
+  const reportButtonLabel = count > 0 ? `Read ${count}` : 'Details';
   const openReport = (report: NwsStormReport | null | undefined) => {
     if (!reports) return;
     setSelectedReport(report ?? null);
@@ -4075,7 +4075,7 @@ function StormRecapCard({
             </View>
           </View>
           {count > 0 ? (
-            <Text style={nwd.reportHint}>Tap View, a summary tile, or a report row to read the official report details.</Text>
+            <Text style={nwd.reportHint}>Tap Read, a summary tile, or any report row to open the official details. The ? button is only the wxLearn explainer.</Text>
           ) : null}
 
           <View style={nwd.factGrid}>
@@ -4214,6 +4214,10 @@ function StormReportDetailsModal({
   const selected = selectedReport ?? reports.summary.latest ?? reports.reports[0] ?? null;
   const updated = reports.updatedAt ? formatUpdatedTime(reports.updatedAt) : null;
   const selectedTime = formatStormReportTime(selected?.issuedAt);
+  const selectedIndex = selected
+    ? reports.reports.findIndex((report) => report === selected || (!!selected.id && selected.id === report.id))
+    : -1;
+  const selectedPosition = selectedIndex >= 0 ? `${selectedIndex + 1} of ${reports.reports.length}` : null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -4238,10 +4242,22 @@ function StormReportDetailsModal({
               <View style={nwd.reportDetailCard}>
                 <View style={nwd.reportDetailTop}>
                   <Text style={nwd.reportDetailEvent}>{selected.event}</Text>
-                  {selectedTime ? <Text style={nwd.reportTime}>{selectedTime}</Text> : null}
+                  <View style={nwd.reportDetailBadges}>
+                    {selectedPosition ? <Text style={nwd.reportCountBadge}>{selectedPosition}</Text> : null}
+                    {selectedTime ? <Text style={nwd.reportTime}>{selectedTime}</Text> : null}
+                  </View>
                 </View>
                 <Text style={nwd.reportDetailLine}>{describeStormReport(selected) || 'Official NWS report'}</Text>
-                {selected.magnitude && selected.magnitude !== '0' ? <Text style={nwd.reportMagnitude}>Magnitude: {selected.magnitude}</Text> : null}
+                <View style={nwd.reportDetailFactRow}>
+                  <View style={nwd.reportDetailFact}>
+                    <Text style={nwd.reportStatusLabel}>Magnitude</Text>
+                    <Text style={nwd.reportStatusValue}>{selected.magnitude && selected.magnitude !== '0' ? selected.magnitude : 'Not listed'}</Text>
+                  </View>
+                  <View style={nwd.reportDetailFact}>
+                    <Text style={nwd.reportStatusLabel}>Source</Text>
+                    <Text style={nwd.reportStatusValue}>{selected.source ?? 'NWS report'}</Text>
+                  </View>
+                </View>
                 {selected.remarks ? <Text style={nwd.reportFullRemarks}>{selected.remarks}</Text> : <Text style={nwd.muted}>No remarks were included with this report.</Text>}
               </View>
             ) : (
@@ -4252,7 +4268,7 @@ function StormReportDetailsModal({
             )}
 
             <View style={nwd.reportModalListHeader}>
-              <Text style={nwd.rawTitle}>{reports.reports.length ? `${reports.reports.length} reports` : 'No report rows'}</Text>
+              <Text style={nwd.rawTitle}>{reports.reports.length ? `Tap a report to read it` : 'No report rows'}</Text>
               <Pressable onPress={onOpenLearn} style={nwd.reportLearnLink}>
                 <Text style={nwd.reportLearnText}>What is an LSR?</Text>
               </Pressable>
@@ -4779,17 +4795,42 @@ const nwd = StyleSheet.create({
     fontWeight: '900',
     color: 'rgba(186,230,253,0.76)',
   },
+  reportDetailBadges: {
+    alignItems: 'flex-end',
+    gap: 5,
+  },
+  reportCountBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(56,189,248,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.30)',
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    color: 'rgba(224,242,254,0.92)',
+  },
   reportDetailLine: {
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.68)',
   },
-  reportMagnitude: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.88)',
+  reportDetailFactRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  reportDetailFact: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(3,8,20,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   reportFullRemarks: {
     fontSize: 13,
