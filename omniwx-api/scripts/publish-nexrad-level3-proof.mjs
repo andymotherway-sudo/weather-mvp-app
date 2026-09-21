@@ -139,6 +139,46 @@ async function readR2Json(client, bucket, key) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(attempt) {
+  return Math.min(8_000, 500 * (2 ** Math.max(0, attempt - 1)));
+}
+
+function retryableR2Error(error) {
+  const status = Number(error?.$metadata?.httpStatusCode);
+  const name = String(error?.name || "");
+  const message = String(error?.message || "");
+  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  return /internal error|timeout|timed out|socket|econnreset|streaming request|slowdown|temporar/i.test(`${name} ${message}`);
+}
+
+async function withR2Retry(label, operation, maxAttempts = 4) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !retryableR2Error(error)) throw error;
+      const delayMs = retryDelayMs(attempt);
+      console.warn(JSON.stringify({
+        ok: false,
+        retrying: true,
+        label,
+        attempt,
+        nextAttempt: attempt + 1,
+        delayMs,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
+
 async function uploadObjects(client, bucket, uploads, concurrency) {
   const { PutObjectCommand } = await import("@aws-sdk/client-s3");
   let nextIndex = 0;
@@ -146,13 +186,15 @@ async function uploadObjects(client, bucket, uploads, concurrency) {
     while (nextIndex < uploads.length) {
       const index = nextIndex++;
       const upload = uploads[index];
-      await client.send(new PutObjectCommand({
-        Bucket: bucket,
-        Key: upload.key,
-        Body: createReadStream(upload.localPath),
-        ContentType: upload.key.endsWith(".json") ? "application/json; charset=utf-8" : "image/png",
-        CacheControl: upload.key.endsWith(".json") ? "public, max-age=30" : "public, max-age=300, stale-while-revalidate=1800",
-      }));
+      await withR2Retry(`put:${upload.key}`, async () => {
+        await client.send(new PutObjectCommand({
+          Bucket: bucket,
+          Key: upload.key,
+          Body: createReadStream(upload.localPath),
+          ContentType: upload.key.endsWith(".json") ? "application/json; charset=utf-8" : "image/png",
+          CacheControl: upload.key.endsWith(".json") ? "public, max-age=30" : "public, max-age=300, stale-while-revalidate=1800",
+        }));
+      });
     }
   }
   await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), uploads.length) }, () => worker()));
@@ -191,7 +233,10 @@ async function deleteKeys(client, bucket, keys, concurrency) {
   async function worker() {
     while (nextIndex < keys.length) {
       const index = nextIndex++;
-      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys[index] }));
+      const key = keys[index];
+      await withR2Retry(`delete:${key}`, async () => {
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      });
     }
   }
   await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), keys.length) }, () => worker()));
