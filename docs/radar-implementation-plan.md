@@ -224,6 +224,7 @@ Implementation:
 - Add one MRMS product at a time.
 - Start each product at low zoom or low retention.
 - The MRMS cycle workflow can now be manually run for `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, or `PrecipRate`.
+- The dedicated Cloud Run MRMS runner now accepts `MRMS_PRODUCTS`, allowing the national beta package to be scheduled as one bounded job while still retaining per-product R2 prefixes.
 - The renderer has product-aware palettes for reflectivity, echo tops, and precip rate.
 - Use separate prefixes:
   - `radar/mrms/proof/<product>/<frame>/...`
@@ -257,6 +258,7 @@ Done when:
 - The app offers 2-3 MRMS products that feel useful and distinct.
 - Each product has a clear legend and timestamp.
 - Product storage remains separately inspectable and bounded.
+- Production health checks include every scheduled MRMS product, not only composite reflectivity.
 
 ## Phase 4: RainViewer Replacement Hardening
 

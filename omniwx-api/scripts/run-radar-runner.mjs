@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 
 const BOOL_TRUE = new Set(["1", "true", "yes", "on"]);
+const DEFAULT_MRMS_PRODUCTS = "MergedReflectivityQCComposite";
 const DEFAULT_LEVEL3_SITES = "IWA,MPX,DLH";
 const DEFAULT_LEVEL3_PRODUCTS = "N0B,N0S,EET";
 
@@ -59,21 +60,39 @@ function runMrms({ targetEnv, apply }) {
     return;
   }
 
-  const args = [
-    "./scripts/run-mrms-cycle.mjs",
-    "--env", targetEnv,
-    "--product", envString("MRMS_PRODUCT", "MergedReflectivityQCComposite"),
-    "--min-z", String(envInt("MRMS_MIN_ZOOM", 3, 0, 10)),
-    "--max-z", String(envInt("MRMS_MAX_ZOOM", 8, 0, 10)),
-    "--max-tiles", String(envInt("MRMS_MAX_TILES", 12000, 1)),
-    "--retain-frames", String(envInt("MRMS_RETAIN_FRAMES", 12, 1, 12)),
-    "--max-frame-age-minutes", String(envInt("MRMS_MAX_FRAME_AGE_MINUTES", 360, 5)),
-    "--backfill-frames", String(envInt("MRMS_BACKFILL_FRAMES", 1, 1, 3)),
-    "--uploader", envString("RADAR_RUNNER_UPLOADER", "s3"),
-    "--upload-concurrency", String(envInt("MRMS_UPLOAD_CONCURRENCY", 6, 1, 24)),
-  ];
-  if (apply) args.push("--apply");
-  run("MRMS cycle", args);
+  const products = splitCsv(envString("MRMS_PRODUCTS", envString("MRMS_PRODUCT", DEFAULT_MRMS_PRODUCTS)))
+    .filter((product) => /^[A-Za-z0-9_-]{3,80}$/.test(product));
+  if (!products.length) {
+    console.log("MRMS runner has no valid products.");
+    return;
+  }
+
+  const minZoom = String(envInt("MRMS_MIN_ZOOM", 3, 0, 10));
+  const maxZoom = String(envInt("MRMS_MAX_ZOOM", 8, 0, 10));
+  const maxTiles = String(envInt("MRMS_MAX_TILES", 12000, 1));
+  const retainFrames = String(envInt("MRMS_RETAIN_FRAMES", 12, 1, 12));
+  const maxFrameAgeMinutes = String(envInt("MRMS_MAX_FRAME_AGE_MINUTES", 360, 5));
+  const backfillFrames = String(envInt("MRMS_BACKFILL_FRAMES", 1, 1, 3));
+  const uploader = envString("RADAR_RUNNER_UPLOADER", "s3");
+  const uploadConcurrency = String(envInt("MRMS_UPLOAD_CONCURRENCY", 6, 1, 24));
+
+  for (const product of products) {
+    const args = [
+      "./scripts/run-mrms-cycle.mjs",
+      "--env", targetEnv,
+      "--product", product,
+      "--min-z", minZoom,
+      "--max-z", maxZoom,
+      "--max-tiles", maxTiles,
+      "--retain-frames", retainFrames,
+      "--max-frame-age-minutes", maxFrameAgeMinutes,
+      "--backfill-frames", backfillFrames,
+      "--uploader", uploader,
+      "--upload-concurrency", uploadConcurrency,
+    ];
+    if (apply) args.push("--apply");
+    run(`MRMS ${product}`, args);
+  }
 }
 
 function runLevel3({ targetEnv, apply }) {
@@ -147,7 +166,10 @@ function main() {
     targetEnv: normalizedEnv,
     apply,
     mrmsEnabled: envFlag("RADAR_RUNNER_MRMS_ENABLED", true),
+    mrmsProducts: splitCsv(envString("MRMS_PRODUCTS", envString("MRMS_PRODUCT", DEFAULT_MRMS_PRODUCTS))),
     level3Enabled: envFlag("RADAR_RUNNER_LEVEL3_ENABLED", true),
+    level3Sites: splitCsv(envString("LEVEL3_SITES", DEFAULT_LEVEL3_SITES)),
+    level3Products: splitCsv(envString("LEVEL3_PRODUCTS", DEFAULT_LEVEL3_PRODUCTS)),
   }, null, 2));
 
   runMrms({ targetEnv: normalizedEnv, apply });

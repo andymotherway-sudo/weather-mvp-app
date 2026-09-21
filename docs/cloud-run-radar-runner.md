@@ -37,11 +37,13 @@ As of September 20, 2026, production uses split jobs rather than the original co
 - `omniwx-radar-mrms-runner`
   - Scheduler: `omniwx-radar-mrms-10min`
   - Cadence: every 10 minutes
-  - Scope: `MergedReflectivityQCComposite`, z3-z8, 12 retained frames
+  - Current conservative scope: `MergedReflectivityQCComposite`, z3-z8, 12 retained frames
+  - Beta package scope when deliberately enabled: `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, `PrecipRate`, z3-z8, rolling retention
 - `omniwx-radar-level3-runner`
   - Scheduler: `omniwx-radar-level3-15min`
   - Cadence: `:02`, `:17`, `:32`, and `:47`
-  - Scope: `IWA`, `MPX`, `DLH` x `N0B`, `N0S`, `EET`, z7-z10, 12 retained frames
+  - Current conservative scope: `IWA`, `MPX`, `DLH` x `N0B`, `N0S`, `EET`, z7-z10, 12 retained frames
+  - Beta package scope when deliberately enabled: `IWA`, `MPX`, `DLH` x `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, `N0H`, z7-z10, rolling retention
 - `omniwx-radar-runner-10min`
   - Original combined schedule
   - State: paused to avoid duplicate writes
@@ -55,6 +57,7 @@ The runner is intentionally conservative:
 - `RADAR_RUNNER_APPLY=false` by default.
 - Production writes require `RADAR_RUNNER_CONFIRM=production-radar-writes`.
 - MRMS defaults to z3-z8, 12 retained frames, 1 backfill frame.
+- MRMS multi-product publishing is opt-in through `MRMS_PRODUCTS`; the single-product fallback remains `MRMS_PRODUCT` or `MergedReflectivityQCComposite`.
 - Level III defaults to `IWA,MPX,DLH` and `N0B,N0S,EET`.
 - Level III empty optional products can skip without failing the whole run.
 - Existing Worker fallback to RainViewer/IEM remains active.
@@ -154,6 +157,15 @@ gcloud run jobs deploy "$MRMS_JOB_NAME" \
   --set-secrets "R2_ACCOUNT_ID=R2_ACCOUNT_ID:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,R2_ENDPOINT=R2_ENDPOINT:latest"
 ```
 
+Use this update when intentionally enabling the national MRMS beta package:
+
+```bash
+gcloud run jobs update "$MRMS_JOB_NAME" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --update-env-vars "MRMS_PRODUCTS=MergedReflectivityQCComposite,ReflectivityAtLowestAltitude,EchoTop_18,PrecipRate,MRMS_MAX_ZOOM=8,MRMS_RETAIN_FRAMES=12,MRMS_BACKFILL_FRAMES=1"
+```
+
 Create or update the Level III job in dry-run mode first. Use an env-vars file so comma-separated site/product lists are passed safely.
 
 ```bash
@@ -180,6 +192,15 @@ gcloud run jobs deploy "$LEVEL3_JOB_NAME" \
   --memory "4Gi" \
   --env-vars-file /tmp/omniwx-level3-runner-env.yaml \
   --set-secrets "R2_ACCOUNT_ID=R2_ACCOUNT_ID:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,R2_ENDPOINT=R2_ENDPOINT:latest"
+```
+
+Use this update when intentionally enabling the Phase 1 local Level III beta package:
+
+```bash
+gcloud run jobs update "$LEVEL3_JOB_NAME" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --update-env-vars "LEVEL3_SITES=IWA,MPX,DLH,LEVEL3_PRODUCTS=N0B,N0S,EET,N0C,N0X,DVL,N0H,LEVEL3_MAX_ZOOM=10,LEVEL3_RETAIN_FRAMES=12,LEVEL3_ALLOW_EMPTY_SKIP=true,LEVEL3_MAX_DELETES=5000"
 ```
 
 Run one dry-run execution for each job:
@@ -258,7 +279,7 @@ Do these before enabling production writes:
 - Set alert thresholds low at first, for example 50%, 90%, and 100% of a small monthly budget.
 - Keep Cloudflare R2 visible in the Cloudflare dashboard and verify object count/storage after the first runs.
 - Keep `MRMS_MAX_ZOOM=8` until z10 runtime/storage are measured under Cloud Run.
-- Keep `LEVEL3_PRODUCTS=N0B,N0S,EET` until freshness and storage are boring.
+- Keep `LEVEL3_PRODUCTS=N0B,N0S,EET` until freshness and storage are boring; then expand to `N0B,N0S,EET,N0C,N0X,DVL,N0H` for the `IWA,MPX,DLH` beta package and watch R2 storage after several cycles.
 - Keep GitHub radar workflows available as manual fallback, not primary cadence.
 
 ## Validation
@@ -267,7 +288,9 @@ After each applied run:
 
 ```bash
 curl "https://omniwx-api-production.omniwx.workers.dev/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite"
+curl "https://omniwx-api-production.omniwx.workers.dev/v1/radar/mrms/timeline?product=EchoTop_18"
 curl "https://omniwx-api-production.omniwx.workers.dev/v1/radar/level3/timeline?site=IWA&product=N0B"
+curl "https://omniwx-api-production.omniwx.workers.dev/v1/radar/level3/timeline?site=MPX&product=N0C"
 ```
 
 Expected:

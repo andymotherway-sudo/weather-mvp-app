@@ -21,6 +21,15 @@ function parseCsv(value, fallback) {
   return parsed.length ? parsed : fallback;
 }
 
+function parseMrmsCsv(value, fallback) {
+  if (!value) return fallback;
+  const parsed = String(value)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return parsed.length ? parsed : fallback;
+}
+
 function parseArgs(argv) {
   const args = {
     env: "production",
@@ -41,7 +50,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--env" && argv[i + 1]) args.env = argv[++i].trim().toLowerCase();
     else if (arg === "--api-base" && argv[i + 1]) args.apiBase = argv[++i].replace(/\/+$/g, "");
-    else if (arg === "--mrms-products" && argv[i + 1]) args.mrmsProducts = parseCsv(argv[++i], DEFAULT_MRMS_PRODUCTS);
+    else if (arg === "--mrms-products" && argv[i + 1]) args.mrmsProducts = parseMrmsCsv(argv[++i], DEFAULT_MRMS_PRODUCTS);
     else if (arg === "--level3-sites" && argv[i + 1]) args.level3Sites = parseCsv(argv[++i], DEFAULT_LEVEL3_SITES);
     else if (arg === "--level3-products" && argv[i + 1]) args.level3Products = parseCsv(argv[++i], DEFAULT_LEVEL3_PRODUCTS);
     else if (arg === "--required-level3-products" && argv[i + 1]) args.requiredLevel3Products = parseCsv(argv[++i], DEFAULT_REQUIRED_LEVEL3_PRODUCTS);

@@ -21,6 +21,10 @@ on:
         description: "MRMS stale threshold"
         required: true
         default: "90"
+      mrms_products:
+        description: "Comma-separated MRMS products"
+        required: true
+        default: "MergedReflectivityQCComposite"
       level3_stale_minutes:
         description: "Level III stale threshold"
         required: true
@@ -51,6 +55,7 @@ jobs:
       RADAR_TARGET_ENV: ${{ inputs.target_env || 'production' }}
       RADAR_FAIL: ${{ inputs.fail_on_required_stale }}
       RADAR_MRMS_STALE_MINUTES: ${{ inputs.mrms_stale_minutes || '90' }}
+      RADAR_MRMS_PRODUCTS: ${{ inputs.mrms_products || 'MergedReflectivityQCComposite' }}
       RADAR_LEVEL3_STALE_MINUTES: ${{ inputs.level3_stale_minutes || '360' }}
       RADAR_LEVEL3_SITES: ${{ inputs.level3_sites || 'IWA,MPX,DLH' }}
       RADAR_LEVEL3_PRODUCTS: ${{ inputs.level3_products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
@@ -76,6 +81,7 @@ jobs:
           args=(
             --env "$RADAR_TARGET_ENV"
             --mrms-stale-minutes "$RADAR_MRMS_STALE_MINUTES"
+            --mrms-products "$RADAR_MRMS_PRODUCTS"
             --level3-stale-minutes "$RADAR_LEVEL3_STALE_MINUTES"
             --level3-sites "$RADAR_LEVEL3_SITES"
             --level3-products "$RADAR_LEVEL3_PRODUCTS"

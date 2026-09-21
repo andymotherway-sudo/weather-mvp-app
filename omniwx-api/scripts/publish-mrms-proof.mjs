@@ -139,6 +139,7 @@ function r2S3Config() {
 function resolveUploader(args) {
   if (args.uploader === "wrangler") return "wrangler";
   const config = r2S3Config();
+  if (args.dryRun && args.uploader === "s3") return "s3";
   if (args.uploader === "s3" && !config) {
     throw new Error("S3 uploader requested but R2 S3 credentials are missing. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY.");
   }
