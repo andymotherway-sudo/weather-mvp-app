@@ -52,7 +52,7 @@ This file is the short source of truth for where the product and infrastructure 
 
 - Dedicated Cloud Run is now the primary production radar cadence for owned MRMS and Level III publishing.
 - `omniwx-radar-mrms-runner` publishes production MRMS on Cloud Scheduler every 10 minutes with z3-z8, 12 retained frames, R2 cleanup, and production-write confirmation enabled.
-- `omniwx-radar-level3-runner` publishes the Phase 1 Level III bundle on Cloud Scheduler at `:02/:17/:32/:47` Phoenix time with `IWA`, `MPX`, `DLH` and `N0B,N0S,EET`.
+- `omniwx-radar-level3-runner` publishes the Phase 1 Level III bundle on Cloud Scheduler at `:02/:17/:32/:47` Phoenix time with `IWA`, `MPX`, `DLH` and `N0B,N0S,EET,N0C,N0X,DVL,N0H`.
 - The old combined Cloud Run schedule `omniwx-radar-runner-10min` is paused to prevent duplicate writes.
 - GitHub radar workflows remain available for manual recovery, QA, z10 sizing, and fallback operations, but they are no longer the primary production cadence.
 - GitHub schedule timing can vary; do not assume every cron run executes exactly on its configured minute.
@@ -69,7 +69,7 @@ This file is the short source of truth for where the product and infrastructure 
 - `Radar health report` is a read-only manual workflow and local script (`npm --prefix omniwx-api run radar:health -- --env production`) for checking live MRMS and Level III freshness without publishing tiles, deleting R2 objects, or dispatching recovery jobs.
 - `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle and the Phase 1 site bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
 - Storm Scope now consumes that status when owned Level III is selected and shows a compact owned-health line for the active product.
-- The dedicated radar runner is now live for the bounded beta cadence. It is still intentionally conservative: MRMS z8, Level III Phase 1 sites/products, rolling retention, and Cloud Scheduler cadence before any z10 or multi-product expansion.
+- The dedicated radar runner is now live for the bounded beta cadence. It is still intentionally conservative: MRMS z8, Level III Phase 1 sites with the expanded product package, rolling retention, and Cloud Scheduler cadence before any broader site expansion.
 
 ## Not Done Yet
 
@@ -109,3 +109,4 @@ This file is the short source of truth for where the product and infrastructure 
 - On September 20, 2026, the dedicated Google Cloud radar runner went live. The combined job was split into `omniwx-radar-mrms-runner` and `omniwx-radar-level3-runner`; automatic MRMS and Level III Scheduler executions both completed successfully and refreshed production Worker timelines.
 - On September 21, 2026, the runner gained opt-in multi-product MRMS package support through `MRMS_PRODUCTS`.
 - On September 22, 2026, the production Cloud Run MRMS job was rebuilt and updated to publish the national MRMS package: `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, and `PrecipRate` at z3-z8 with 12-frame rolling retention. The first applied package run completed successfully; composite retained 12 frames, while the newly scheduled products started with 1 fresh frame and should build retention through subsequent scheduler cycles. Latest first-run frame sizes were about 1.29 MB, 1.03 MB, 0.46 MB, and 1.07 MB respectively.
+- On September 22, 2026, the production Cloud Run Level III job was updated to publish the full Phase 1 package for `IWA`, `MPX`, and `DLH`: `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H` at z7-z10 with 12-frame rolling retention. The first dedicated-runner full-package execution completed successfully; core products retained 12 frames, and newly added products started with 2 fresh frames.
