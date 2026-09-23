@@ -30,6 +30,7 @@ Manual publisher workflows still exist after the stop. That is intentional: we c
 
 - Run `Radar health report` to capture the current live state.
 - Check Cloudflare R2 bucket size and object counts.
+- Run `npm --prefix omniwx-api run radar:storage-health -- --env production --fail --warn-storage-mb 500 --fail-storage-mb 5000 --warn-stale-objects 0 --fail-stale-mb 50` with R2 S3 credentials available to verify tracked owned-radar prefixes are bounded and stale frame storage is not accumulating.
 - Confirm no publisher runs are queued or in progress.
 - Confirm the intended scheduled scope:
   - MRMS: z3-z8, 12 retained frames, composite reflectivity only.

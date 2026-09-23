@@ -17,6 +17,7 @@
 		"mrms:cleanup-retained": "node ./scripts/cleanup-mrms-retained.mjs",
 		"mrms:storage-status": "node ./scripts/mrms-storage-status.mjs",
 		"radar:health": "node ./scripts/radar-health-report.mjs",
+		"radar:storage-health": "node ./scripts/radar-storage-health.mjs",
 		"radar:runner": "node ./scripts/run-radar-runner.mjs",
 		"level3:discover": "node ./scripts/discover-nexrad-level3.mjs",
 		"level3:download": "node ./scripts/download-nexrad-level3.mjs",
