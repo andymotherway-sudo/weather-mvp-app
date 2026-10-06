@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +28,10 @@ function parseArgs(argv) {
     uploader: "auto",
     uploadConcurrency: 6,
     sampling: "bilinear",
+    delivery: "tiles",
+    targetEnv: "dev",
+    maxClassAOps: 4,
+    confirm: "",
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -48,6 +53,10 @@ function parseArgs(argv) {
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
     else if (arg === "--sampling" && argv[i + 1]) args.sampling = argv[++i].trim().toLowerCase();
+    else if (arg === "--delivery" && argv[i + 1]) args.delivery = argv[++i].trim().toLowerCase();
+    else if (arg === "--target-env" && argv[i + 1]) args.targetEnv = argv[++i].trim().toLowerCase();
+    else if (arg === "--max-class-a-ops" && argv[i + 1]) args.maxClassAOps = Math.max(0, Math.floor(Number(argv[++i]) || args.maxClassAOps));
+    else if (arg === "--confirm" && argv[i + 1]) args.confirm = argv[++i];
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -62,6 +71,9 @@ function parseArgs(argv) {
   args.maxZoom = Math.max(args.minZoom, Math.min(10, Number.isFinite(args.maxZoom) ? args.maxZoom : args.minZoom));
   if (!["bilinear", "nearest"].includes(args.sampling)) {
     throw new Error(`Unsupported sampling mode "${args.sampling}". Use bilinear or nearest.`);
+  }
+  if (!["tiles", "packed"].includes(args.delivery)) {
+    throw new Error(`Unsupported delivery mode "${args.delivery}". Use tiles or packed.`);
   }
   return args;
 }
@@ -91,6 +103,10 @@ Options:
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
   --upload-concurrency <n> S3 upload concurrency. Default: 6
   --sampling <mode>    Raster sampling mode: bilinear or nearest. Default: bilinear
+  --delivery <mode>    Publish mode: tiles or packed. Default: tiles
+  --target-env <env>   Packed publish environment guard. Default: dev
+  --max-class-a-ops <n> Packed publish Class A cap. Default: 4
+  --confirm <phrase>   Packed publish confirmation phrase when --apply is used
   --apply              Actually write to dev R2. Default is dry-run
 `);
 }
@@ -102,6 +118,20 @@ function runStep(label, command, args) {
   if (result.status !== 0) {
     throw new Error(`${label} failed with exit code ${result.status ?? 1}`);
   }
+}
+
+function normalizeUtcIso(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function frameKey(manifest) {
+  const iso = normalizeUtcIso(manifest.validTime || manifest.productTime || manifest.time);
+  if (iso) return iso.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z").replace("Z", "").slice(0, 15);
+  return String(manifest.input || "frame").replace(/[^0-9A-Za-z]+/g, "").slice(-32) || "frame";
 }
 
 function main() {
@@ -150,6 +180,51 @@ function main() {
   if (args.python) tileArgs.push("--python", args.python);
   if (args.pydeps) tileArgs.push("--pydeps", args.pydeps);
   runStep("Render non-empty MRMS XYZ tiles", process.execPath, tileArgs);
+
+  if (args.delivery === "packed") {
+    const renderedManifest = JSON.parse(readFileSync(manifest, "utf8"));
+    const frame = frameKey(renderedManifest);
+    const tilePackKey = `radar/mrms/packed/${args.product}/${frame}/frame.owxpack`;
+    const packPath = resolve(outputDir, "frame.owxpack");
+    const latestPackedPath = resolve(outputDir, "latest-packed.json");
+    runStep("Build packed MRMS tile artifact", process.execPath, [
+      join(SCRIPT_DIR, "build-radar-tile-pack.mjs"),
+      "--manifest",
+      manifest,
+      "--output",
+      packPath,
+      "--latest-out",
+      latestPackedPath,
+      "--tile-pack-key",
+      tilePackKey,
+    ]);
+
+    const publishPackedArgs = [
+      join(SCRIPT_DIR, "publish-radar-tile-pack.mjs"),
+      "--latest",
+      latestPackedPath,
+      "--latest-key",
+      `${args.latestPrefix}/${args.product}.json`,
+      "--pack-file",
+      packPath,
+      "--tile-pack-key",
+      tilePackKey,
+      "--bucket",
+      args.bucket,
+      "--target-env",
+      args.targetEnv,
+      "--retain-frames",
+      String(args.retainFrames),
+      "--max-frame-age-minutes",
+      String(args.maxFrameAgeMinutes),
+      "--max-class-a-ops",
+      String(args.maxClassAOps),
+    ];
+    if (args.confirm) publishPackedArgs.push("--confirm", args.confirm);
+    if (args.apply) publishPackedArgs.push("--apply");
+    runStep(args.apply ? `Publish packed MRMS latest to ${args.bucket}` : `Dry-run packed MRMS publish to ${args.bucket}`, process.execPath, publishPackedArgs);
+    return;
+  }
 
   const publishArgs = [
     join(SCRIPT_DIR, "publish-mrms-proof.mjs"),

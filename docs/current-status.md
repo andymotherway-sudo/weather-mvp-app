@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Last updated: September 20, 2026
+Last updated: October 6, 2026
 
 This file is the short source of truth for where the product and infrastructure stand today. Deeper planning details live in the roadmap docs, but this file should stay factual and current.
 
@@ -50,10 +50,11 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Radar Automation
 
-- Dedicated Cloud Run is now the primary production radar cadence for owned MRMS and Level III publishing.
-- `omniwx-radar-mrms-runner` publishes production MRMS on Cloud Scheduler every 10 minutes with z3-z8, 12 retained frames, R2 cleanup, and production-write confirmation enabled.
-- `omniwx-radar-level3-runner` publishes the Phase 1 Level III bundle on Cloud Scheduler at `:02/:17/:32/:47` Phoenix time with `IWA`, `MPX`, `DLH` and `N0B,N0S,EET,N0C,N0X,DVL,N0H`.
-- The old combined Cloud Run schedule `omniwx-radar-runner-10min` is paused to prevent duplicate writes.
+- Production radar automation is intentionally paused after the September 24, 2026 R2 Class A operation cost incident.
+- The old tile-per-object Cloud Run cadence must not be re-enabled for production scheduled radar.
+- The dedicated Cloud Run jobs still exist as the runner foundation, but production `apply=true` is now guarded to require packed delivery and `RADAR_RUNNER_CONFIRM=packed-radar-writes`.
+- `RADAR_RUNNER_DELIVERY=packed` is the required production direction: render locally, publish one `.owxpack` object plus one latest manifest, preserve a rollback latest when possible, and delete old whole-pack objects only.
+- `omniwx-radar-mrms-runner`, `omniwx-radar-level3-runner`, `omniwx-radar-level3-southwest-runner`, `omniwx-radar-level3-midwest-runner`, and the old combined `omniwx-radar-runner-10min` schedule should remain paused until packed MRMS and packed Level III manual production proofs pass.
 - GitHub radar workflows remain available for manual recovery, QA, z10 sizing, and fallback operations, but they are no longer the primary production cadence.
 - GitHub schedule timing can vary; do not assume every cron run executes exactly on its configured minute.
 - The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
@@ -70,13 +71,15 @@ This file is the short source of truth for where the product and infrastructure 
 - `Radar storage health` is a read-only local script (`npm --prefix omniwx-api run radar:storage-health -- --env production`) for checking tracked MRMS/Level III R2 object count, total MB, retained frames, and stale frame objects against storage guardrails.
 - `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle and the Phase 1 site bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
 - Storm Scope now consumes that status when owned Level III is selected and shows a compact owned-health line for the active product.
-- The dedicated radar runner is now live for the bounded beta cadence. It is still intentionally conservative: MRMS z8, Level III Phase 1 sites with the expanded product package, rolling retention, and Cloud Scheduler cadence before any broader site expansion.
+- The dedicated radar runner is no longer live for automatic publishing while the packed-artifact cutover is in progress.
+- Level III expansion is now split into regional Cloud Run jobs rather than added to the existing Phase 1 job. Inventory confirmed useful current data for `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, `ARX`, `GRB`, and `LOT`; `TWC` returned no current Level III files for the tested product set and should be skipped for now.
+- `FSX N0B` dry-ran successfully on September 23, 2026 at z7-z10 with 152 non-empty tiles, about 0.99 MB for one frame, and no R2 writes. The Southwest and Midwest regional runner jobs then completed their first applied production executions successfully on September 24, 2026.
 
 ## Not Done Yet
 
-- MRMS needs repeated Cloud Run production cycles to prove the richer multi-frame history stays fresh without manual intervention.
-- Level III needs repeated split-runner cycles to prove the Phase 1 bundle stays fresh without overlapping jobs.
-- Dedicated radar runner writes are enabled for the bounded beta scope only; z10, more sites, and more products still require cost-safety review before expansion.
+- Packed MRMS needs a manual production proof before MRMS scheduling resumes.
+- Packed Level III needs a manual production proof before Level III scheduling resumes.
+- Dedicated radar runner writes must stay disabled until packed delivery, rollback, freshness gates, retention cleanup, and operation caps are validated.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
@@ -112,3 +115,8 @@ This file is the short source of truth for where the product and infrastructure 
 - On September 22, 2026, the production Cloud Run MRMS job was rebuilt and updated to publish the national MRMS package: `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, and `PrecipRate` at z3-z8 with 12-frame rolling retention. The first applied package run completed successfully; composite retained 12 frames, while the newly scheduled products started with 1 fresh frame and should build retention through subsequent scheduler cycles. Latest first-run frame sizes were about 1.29 MB, 1.03 MB, 0.46 MB, and 1.07 MB respectively.
 - On September 22, 2026, the production Cloud Run Level III job was updated to publish the full Phase 1 package for `IWA`, `MPX`, and `DLH`: `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H` at z7-z10 with 12-frame rolling retention. The first dedicated-runner full-package execution completed successfully; core products retained 12 frames, and newly added products started with 2 fresh frames.
 - On September 23, 2026, production R2 storage for tracked owned radar prefixes was about 220 MB after MRMS and Level III both reached 12 retained frames. The new storage guardrail can report transient stale frame objects during active publish/cleanup windows, but the observed stale storage stayed well below the 50 MB failure threshold and total tracked storage stayed far below the 5 GB beta comfort ceiling.
+- On September 24, 2026, the Southwest and Midwest Level III regional runners were deployed, manually executed successfully, and scheduled. A production health check passed for `IWA`, `MPX`, `DLH`, `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, and `ARX` across `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`; the new regional sites started with 1 retained frame and should build toward 12 frames through Scheduler.
+- On September 24, 2026, expanded tracked R2 storage across MRMS plus all nine Level III sites was about 368 MB with no storage-health failures, still far below the 5 GB beta comfort ceiling. Stale-object warnings were observed during active publish/cleanup windows but remained below the 50 MB failure threshold.
+- Later on September 24, 2026, all radar Cloud Scheduler jobs were paused and all Cloud Run radar jobs had `RADAR_RUNNER_APPLY=false` and `RADAR_RUNNER_CONFIRM=disabled` after Cloudflare billing showed R2 Class A operations were the cost driver. Storage was not the issue; tile-per-object publishing created too many write/list/delete operations.
+- The new radar architecture direction is packed artifacts: a local MRMS z3-z10 proof reduced one frame from 4,530 would-be R2 objects to 2 publish objects while preserving Worker tile-serving compatibility. The packed publisher now dry-runs the two-object publish plan with a Class A operation cap, but no scheduled radar should be re-enabled until a manually approved packed proof and rollback path are validated.
+- On September 25, 2026, the first dev packed MRMS proof was published to `omniwx-radar-assets-dev` with exactly 2 planned Class A writes. The dev Worker timeline reported `tileDelivery=worker-r2-pack`, and a real tile request returned `200 OK`, `image/png`, `x-omni-radar-source: r2-mrms-pack`. Production radar schedules remain paused and production writes remain disabled.

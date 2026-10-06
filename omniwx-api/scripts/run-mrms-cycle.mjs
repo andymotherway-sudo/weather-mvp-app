@@ -28,6 +28,10 @@ function parseArgs(argv) {
     uploader: "auto",
     uploadConcurrency: 6,
     sampling: "bilinear",
+    delivery: "tiles",
+    targetEnv: "dev",
+    maxClassAOps: 4,
+    confirm: "",
     apply: false,
     skipCleanup: false,
   };
@@ -47,6 +51,10 @@ function parseArgs(argv) {
     else if (arg === "--uploader" && argv[i + 1]) args.uploader = argv[++i].trim().toLowerCase();
     else if (arg === "--upload-concurrency" && argv[i + 1]) args.uploadConcurrency = Math.max(1, Math.floor(Number(argv[++i]) || args.uploadConcurrency));
     else if (arg === "--sampling" && argv[i + 1]) args.sampling = argv[++i].trim().toLowerCase();
+    else if (arg === "--delivery" && argv[i + 1]) args.delivery = argv[++i].trim().toLowerCase();
+    else if (arg === "--target-env" && argv[i + 1]) args.targetEnv = argv[++i].trim().toLowerCase();
+    else if (arg === "--max-class-a-ops" && argv[i + 1]) args.maxClassAOps = Math.max(0, Math.floor(Number(argv[++i]) || args.maxClassAOps));
+    else if (arg === "--confirm" && argv[i + 1]) args.confirm = argv[++i];
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--skip-cleanup") args.skipCleanup = true;
     else if (arg === "--help" || arg === "-h") {
@@ -63,6 +71,9 @@ function parseArgs(argv) {
   }
   if (!["bilinear", "nearest"].includes(args.sampling)) {
     throw new Error(`Unsupported sampling mode "${args.sampling}". Use bilinear or nearest.`);
+  }
+  if (!["tiles", "packed"].includes(args.delivery)) {
+    throw new Error(`Unsupported delivery mode "${args.delivery}". Use tiles or packed.`);
   }
   args.maxZoom = Math.max(args.minZoom, args.maxZoom);
   if (args.minRetainedMaxZoom == null || !Number.isFinite(args.minRetainedMaxZoom)) {
@@ -94,6 +105,10 @@ Options:
   --uploader <auto|s3|wrangler> Upload transport. Default: auto
   --upload-concurrency <n>   S3 upload concurrency. Default: 6
   --sampling <mode>          Raster sampling mode: bilinear or nearest. Default: bilinear
+  --delivery <mode>          Publish mode: tiles or packed. Default: tiles
+  --target-env <env>         Packed publish environment guard. Default: dev
+  --max-class-a-ops <n>      Packed publish Class A cap. Default: 4
+  --confirm <phrase>         Packed publish confirmation phrase when --apply is used
   --skip-cleanup             Skip retained cleanup request
   --apply                    Actually write to R2. Default is dry-run
 `);
@@ -172,7 +187,14 @@ function publishFrame(args, bucket, workerEnv, frame = null) {
     args.uploader,
     "--upload-concurrency",
     String(args.uploadConcurrency),
+    "--delivery",
+    args.delivery,
+    "--target-env",
+    args.targetEnv,
+    "--max-class-a-ops",
+    String(args.maxClassAOps),
   ];
+  if (args.confirm) updateArgs.push("--confirm", args.confirm);
   if (frameUrl) updateArgs.push("--frame-url", frameUrl);
   if (frameLabel) updateArgs.push("--frame-label", frameLabel);
   if (args.python) updateArgs.push("--python", args.python);

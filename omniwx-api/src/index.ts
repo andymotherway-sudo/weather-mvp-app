@@ -10378,6 +10378,9 @@ type MrmsLatestManifest = {
   time?: string | null;
   frame?: string;
   tileBasePrefix?: string;
+  tilePackKey?: string | null;
+  packFormat?: string | null;
+  tileIndex?: Record<string, { offset?: number; length?: number; contentType?: string }>;
   tileSize?: number;
   minZoom?: number;
   maxZoom?: number;
@@ -10396,6 +10399,9 @@ type MrmsLatestManifest = {
     time?: string | null;
     generatedAt?: string | null;
     tileBasePrefix?: string;
+    tilePackKey?: string | null;
+    packFormat?: string | null;
+    tileIndex?: Record<string, { offset?: number; length?: number; contentType?: string }>;
     tileSize?: number;
     minZoom?: number;
     maxZoom?: number;
@@ -10418,6 +10424,9 @@ type Level3LatestManifest = {
   productTime?: string | null;
   frame?: string;
   tileBasePrefix?: string;
+  tilePackKey?: string | null;
+  packFormat?: string | null;
+  tileIndex?: Record<string, { offset?: number; length?: number; contentType?: string }>;
   tileSize?: number;
   minZoom?: number;
   maxZoom?: number;
@@ -10442,6 +10451,9 @@ type Level3LatestManifest = {
     productTime?: string | null;
     generatedAt?: string | null;
     tileBasePrefix?: string;
+    tilePackKey?: string | null;
+    packFormat?: string | null;
+    tileIndex?: Record<string, { offset?: number; length?: number; contentType?: string }>;
     tileSize?: number;
     minZoom?: number;
     maxZoom?: number;
@@ -10494,6 +10506,31 @@ function parseLevel3TilePath(pathname: string) {
   return { z, x, y };
 }
 
+function tileIndexKey(tile: { z: string; x: string; y: string }) {
+  return `${tile.z}/${tile.x}/${tile.y}`;
+}
+
+async function readPackedRadarTile(
+  env: Env,
+  frame: { tilePackKey?: string | null; tileIndex?: Record<string, { offset?: number; length?: number; contentType?: string }> | null },
+  tile: { z: string; x: string; y: string },
+) {
+  if (!env.RADAR_ASSETS || !frame.tilePackKey || !frame.tileIndex) return null;
+  const entry = frame.tileIndex[tileIndexKey(tile)];
+  const offset = Number(entry?.offset);
+  const length = Number(entry?.length);
+  if (!Number.isFinite(offset) || !Number.isFinite(length) || offset < 0 || length <= 0) return null;
+  const object = await env.RADAR_ASSETS.get(frame.tilePackKey, {
+    range: { offset, length },
+  });
+  if (!object?.body) return null;
+  return {
+    body: object.body,
+    contentType: entry?.contentType || object.httpMetadata?.contentType || "image/png",
+    cacheControl: object.httpMetadata?.cacheControl || "public, max-age=300, stale-while-revalidate=1800",
+  };
+}
+
 function selectLevel3Frame(manifest: Level3LatestManifest, requestedFrame: string | null) {
   if (!requestedFrame) return manifest;
   if (!/^[0-9A-Za-z]{8,32}$/.test(requestedFrame)) return null;
@@ -10510,8 +10547,10 @@ function slimLevel3FrameForTimeline(frame: Level3TimelineFrame) {
     productTime: frame.productTime ?? null,
     generatedAt: frame.generatedAt ?? null,
     tileBasePrefix: frame.tileBasePrefix,
+    tilePackKey: frame.tilePackKey ?? null,
+    packFormat: frame.packFormat ?? null,
     tileTemplate: null,
-    tileDelivery: "worker-r2",
+    tileDelivery: frame.tilePackKey ? "worker-r2-pack" : "worker-r2",
     tileSize: frame.tileSize,
     minZoom: frame.minZoom,
     maxZoom: frame.maxZoom,
@@ -10558,7 +10597,7 @@ async function readLevel3LatestManifest(env: Env, site: string, product: string)
 
   try {
     const manifest = (await object.json()) as Level3LatestManifest;
-    if (!manifest?.tileBasePrefix || !manifest?.site || !manifest?.product) {
+    if ((!manifest?.tileBasePrefix && !manifest?.tilePackKey) || !manifest?.site || !manifest?.product) {
       return { ok: false as const, status: 502, error: "level3-latest-invalid", key };
     }
     return { ok: true as const, key, manifest };
@@ -10663,8 +10702,10 @@ function slimMrmsFrameForTimeline(env: Env, frame: MrmsTimelineFrame) {
     time: frame.time ?? null,
     generatedAt: frame.generatedAt ?? null,
     tileBasePrefix: frame.tileBasePrefix,
+    tilePackKey: frame.tilePackKey ?? null,
+    packFormat: frame.packFormat ?? null,
     tileTemplate,
-    tileDelivery: tileTemplate ? "public-r2" : "worker-r2",
+    tileDelivery: frame.tilePackKey ? "worker-r2-pack" : tileTemplate ? "public-r2" : "worker-r2",
     tileSize: frame.tileSize,
     minZoom: frame.minZoom,
     maxZoom: frame.maxZoom,
@@ -10708,7 +10749,7 @@ async function readMrmsLatestManifest(env: Env, product: string) {
 
   try {
     const manifest = (await object.json()) as MrmsLatestManifest;
-    if (!manifest?.tileBasePrefix || !manifest?.product) {
+    if ((!manifest?.tileBasePrefix && !manifest?.tilePackKey) || !manifest?.product) {
       return { ok: false as const, status: 502, error: "mrms-latest-invalid", key };
     }
     return { ok: true as const, key, manifest };
@@ -12487,10 +12528,35 @@ async function handleWorkerRequest(
       }
 
       const selectedFrame = selectMrmsFrame(latest.manifest, url.searchParams.get("frame"));
-      if (!selectedFrame?.tileBasePrefix) {
+      if (!selectedFrame?.tileBasePrefix && !selectedFrame?.tilePackKey) {
         return new Response(JSON.stringify({ ok: false, error: "mrms-frame-not-found", frame: url.searchParams.get("frame") }), {
           status: 404,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const packedTile = await readPackedRadarTile(env, selectedFrame, tile);
+      if (packedTile) {
+        return new Response(packedTile.body, {
+          status: 200,
+          headers: withCors({
+            "content-type": packedTile.contentType,
+            "cache-control": packedTile.cacheControl,
+            "x-omni-radar-source": "r2-mrms-pack",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
+        });
+      }
+
+      if (!selectedFrame.tileBasePrefix) {
+        return new Response(TRANSPARENT_PNG_1X1, {
+          status: 200,
+          headers: withCors({
+            "content-type": "image/png",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
+            "x-omni-radar-source": "r2-mrms-empty",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
         });
       }
 
@@ -12586,10 +12652,35 @@ async function handleWorkerRequest(
       }
 
       const selectedFrame = selectLevel3Frame(latest.manifest, url.searchParams.get("frame"));
-      if (!selectedFrame?.tileBasePrefix) {
+      if (!selectedFrame?.tileBasePrefix && !selectedFrame?.tilePackKey) {
         return new Response(JSON.stringify({ ok: false, error: "level3-frame-not-found", frame: url.searchParams.get("frame") }), {
           status: 404,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+        });
+      }
+
+      const packedTile = await readPackedRadarTile(env, selectedFrame, tile);
+      if (packedTile) {
+        return new Response(packedTile.body, {
+          status: 200,
+          headers: withCors({
+            "content-type": packedTile.contentType,
+            "cache-control": packedTile.cacheControl,
+            "x-omni-radar-source": "r2-level3-pack",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
+        });
+      }
+
+      if (!selectedFrame.tileBasePrefix) {
+        return new Response(TRANSPARENT_PNG_1X1, {
+          status: 200,
+          headers: withCors({
+            "content-type": "image/png",
+            "cache-control": "public, max-age=300, stale-while-revalidate=1800",
+            "x-omni-radar-source": "r2-level3-empty",
+            "x-omni-radar-frame": String(selectedFrame.frame || selectedFrame.validTime || ""),
+          }),
         });
       }
 

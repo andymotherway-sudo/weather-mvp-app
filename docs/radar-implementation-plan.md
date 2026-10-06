@@ -170,7 +170,58 @@ Done when:
 - The visual quality is acceptable enough that owned Level III can become the preferred local source for those pilot stations.
 - If R2 approaches 5 GB, reduce retention or cadence before adding products.
 
+## Phase 2A.1: Split Regional Level III Expansion
+
+Goal: expand owned local Level III coverage without turning one Cloud Run job into a slow, overlapping publisher.
+
+Why this matters:
+
+- The `IWA,MPX,DLH` Phase 1 job already publishes 21 station/product combinations at z7-z10.
+- Adding every new station to that one job risks runtime exceeding the 15-minute target cadence.
+- Separate regional jobs let OMNIwx grow coverage while keeping failures isolated and storage easier to reason about.
+
+Phase 1B station candidates:
+
+- Southwest: `FSX`, `YUX`, `EMX`.
+- Midwest: `FSD`, `DMX`, `ARX`.
+- Next candidates after stable runtime/storage: `GRB`, `LOT`.
+- Skip for now: `TWC`, because September 23, 2026 inventory found no current files for the tested product package.
+
+Product package:
+
+- Keep the same current owned Level III package: `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, `N0H`.
+- Keep `N0B` and `N0S` as core required products.
+- Let sparse optional products skip rather than fail the whole regional run.
+
+Current evidence:
+
+- September 23, 2026 inventory confirmed current files for the full tested package at `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, `ARX`, `GRB`, and `LOT`.
+- `FSX N0B` dry-ran successfully at z7-z10 with 152 non-empty tiles and about 0.99 MB for one frame.
+
+Implementation:
+
+- Keep `omniwx-radar-level3-runner` scoped to `IWA,MPX,DLH`.
+- Add `omniwx-radar-level3-southwest-runner` scoped to `FSX,YUX,EMX`.
+- Add `omniwx-radar-level3-midwest-runner` scoped to `FSD,DMX,ARX`.
+- Stagger schedules so regional jobs do not start on the same minute.
+- Run each job manually once before enabling the scheduler.
+- Re-run `radar:storage-health` after the first applied regional runs.
+
+Current status:
+
+- `omniwx-radar-level3-southwest-runner` and `omniwx-radar-level3-midwest-runner` were deployed on September 24, 2026.
+- First applied manual executions completed successfully for both regional jobs.
+- Production Worker health checks confirmed fresh z10 timelines for `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, and `ARX` across the current Level III product package.
+- Staggered Cloud Scheduler jobs were briefly enabled for both regional runners, then paused after R2 Class A operation billing showed tile-per-object publishing was not operation-safe.
+
 Done when:
+
+- Phase 1B jobs publish fresh timelines for required products without overlapping their next scheduled invocation.
+- Storage remains far below the 5 GB beta comfort ceiling.
+- The app can show owned local Level III at the expanded regional sites while preserving IEM fallback.
+- Regional failures do not affect MRMS or the original `IWA,MPX,DLH` bundle.
+
+Phase 2 overall done when:
 
 - MRMS stays fresh during beta without manual clicks.
 - Storage remains bounded after several days.
@@ -205,6 +256,47 @@ Cost posture:
 - Add the dedicated runner before MRMS/Level III are marketed as core paid features, before z10 becomes the normal production ceiling, and before multiple MRMS products/station bundles run on a 5-10 minute cadence.
 - Keep D1 out of the radar hot path; use R2 manifests and object prefixes as the radar source of truth.
 - The dedicated runner must pass the cost-safety gate first: budget alerts, kill switches, bounded station/product scope, measured one-month estimate, and production rollback path.
+
+## Phase 2C: Packed Radar Artifacts
+
+Goal: make owned radar operation-safe by reducing R2 Class A operations before any scheduled publisher is re-enabled.
+
+Why this became required:
+
+- September 24, 2026 billing evidence showed R2 Class A operations, not storage, were the cost driver.
+- Tile-per-object publishing does not scale for `sites x products x frames x tiles`.
+- Storage was still small, but writes/list/deletes crossed the free Class A operation tier quickly.
+
+New publishing rule:
+
+- Do not publish radar as one R2 object per XYZ tile for scheduled production cadence.
+- Publish one packed artifact per product/frame plus one latest manifest update.
+- Keep app-facing tile URLs stable by having the Worker read the requested tile from the packed artifact.
+
+Current proof:
+
+- `radar:build-tile-pack` builds a local `.owxpack` from an existing tile manifest without writing to R2.
+- `radar:publish-tile-pack` can now dry-run the packed publish plan and refuses apply mode unless the Class A operation cap and `--confirm packed-radar-writes` are both satisfied.
+- Packed apply mode now rejects stale source frames, rejects environment/bucket mismatches, rejects production pack keys that look like examples/proofs, writes a rollback copy of the previous latest manifest when possible, merges retained packed frames, and deletes old whole-pack objects instead of deleting thousands of tile objects.
+- The Worker can read packed tile metadata from latest manifests and serve individual tiles through the existing MRMS and Level III tile routes using R2 range reads.
+- A small MRMS z3-z4 proof collapsed 12 would-be R2 objects into 2 publish objects.
+- A larger MRMS z3-z10 proof collapsed 4,530 would-be R2 objects into 2 publish objects for an 8.27 MB packed frame.
+- The first dev R2 packed proof published to `omniwx-radar-assets-dev` on September 25, 2026 with exactly 2 planned Class A writes. The dev Worker served a tile from the packed object via range read and returned `x-omni-radar-source: r2-mrms-pack`.
+- `run-radar-runner` now requires `RADAR_RUNNER_DELIVERY=packed` and `RADAR_RUNNER_CONFIRM=packed-radar-writes` for production `apply=true`, preventing accidental return to the old tile-per-object scheduled publisher.
+
+Implementation needed before re-enabling scheduled radar:
+
+- Validate one fresh production packed MRMS publish manually.
+- Validate one fresh production packed Level III publish manually.
+- Re-enable schedules one job/product at a time only after manual packed proofs pass.
+- Keep all existing radar schedules paused until packed publishing is validated end-to-end.
+
+Done when:
+
+- MRMS can publish a packed frame and serve tiles through the existing app URL.
+- Level III can publish a packed frame and serve tiles through the existing app URL.
+- A full scheduled cycle has a known Class A operation estimate before it starts.
+- The runner refuses to publish when an operation budget would be exceeded.
 
 ## Phase 3: MRMS Product Expansion
 

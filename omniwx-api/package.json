@@ -18,6 +18,8 @@
 		"mrms:storage-status": "node ./scripts/mrms-storage-status.mjs",
 		"radar:health": "node ./scripts/radar-health-report.mjs",
 		"radar:storage-health": "node ./scripts/radar-storage-health.mjs",
+		"radar:build-tile-pack": "node ./scripts/build-radar-tile-pack.mjs",
+		"radar:publish-tile-pack": "node ./scripts/publish-radar-tile-pack.mjs",
 		"radar:runner": "node ./scripts/run-radar-runner.mjs",
 		"level3:discover": "node ./scripts/discover-nexrad-level3.mjs",
 		"level3:download": "node ./scripts/download-nexrad-level3.mjs",

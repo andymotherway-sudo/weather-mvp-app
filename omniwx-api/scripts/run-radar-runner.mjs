@@ -43,18 +43,23 @@ function run(label, args) {
   console.log(`== ${label} completed in ${elapsedSeconds}s ==`);
 }
 
-function requireApplyConfirmation({ targetEnv, apply }) {
+function requireApplyConfirmation({ targetEnv, apply, delivery }) {
   if (!apply) return;
   if (targetEnv !== "production") return;
-  const confirm = envString("RADAR_RUNNER_CONFIRM", "");
-  if (confirm !== "production-radar-writes") {
+  if (delivery !== "packed") {
     throw new Error(
-      "Refusing production R2 writes. Set RADAR_RUNNER_CONFIRM=production-radar-writes after budget/storage guardrails are configured."
+      "Refusing production radar writes with tile-per-object delivery. Set RADAR_RUNNER_DELIVERY=packed after packed rollback/freshness guardrails are validated."
+    );
+  }
+  const confirm = envString("RADAR_RUNNER_CONFIRM", "");
+  if (confirm !== "packed-radar-writes") {
+    throw new Error(
+      "Refusing production packed R2 writes. Set RADAR_RUNNER_CONFIRM=packed-radar-writes after budget/storage guardrails are configured."
     );
   }
 }
 
-function runMrms({ targetEnv, apply }) {
+function runMrms({ targetEnv, apply, delivery, confirm, maxClassAOps }) {
   if (!envFlag("RADAR_RUNNER_MRMS_ENABLED", true)) {
     console.log("MRMS runner disabled by RADAR_RUNNER_MRMS_ENABLED.");
     return;
@@ -89,13 +94,17 @@ function runMrms({ targetEnv, apply }) {
       "--backfill-frames", backfillFrames,
       "--uploader", uploader,
       "--upload-concurrency", uploadConcurrency,
+      "--delivery", delivery,
+      "--target-env", targetEnv,
+      "--max-class-a-ops", maxClassAOps,
     ];
+    if (confirm) args.push("--confirm", confirm);
     if (apply) args.push("--apply");
     run(`MRMS ${product}`, args);
   }
 }
 
-function runLevel3({ targetEnv, apply }) {
+function runLevel3({ targetEnv, apply, delivery, confirm, maxClassAOps }) {
   if (!envFlag("RADAR_RUNNER_LEVEL3_ENABLED", true)) {
     console.log("Level III runner disabled by RADAR_RUNNER_LEVEL3_ENABLED.");
     return;
@@ -136,8 +145,11 @@ function runLevel3({ targetEnv, apply }) {
         "--max-frame-age-minutes", maxFrameAgeMinutes,
         "--max-deletes", maxDeletes,
         "--supersample", supersample,
+        "--delivery", delivery,
+        "--max-class-a-ops", maxClassAOps,
       ];
       if (allowEmptySkip) args.push("--allow-empty-skip");
+      if (confirm) args.push("--confirm", confirm);
       if (apply) args.push("--apply");
       run(`Level III ${site} ${product}`, args);
     }
@@ -156,7 +168,13 @@ function main() {
   }
   const normalizedEnv = targetEnv === "prod" ? "production" : targetEnv === "development" ? "dev" : targetEnv;
   const apply = envFlag("RADAR_RUNNER_APPLY", false);
-  requireApplyConfirmation({ targetEnv: normalizedEnv, apply });
+  const delivery = envString("RADAR_RUNNER_DELIVERY", "packed").toLowerCase();
+  if (!["packed", "tiles"].includes(delivery)) {
+    throw new Error(`Unsupported RADAR_RUNNER_DELIVERY=${delivery}. Use packed or tiles.`);
+  }
+  const confirm = envString("RADAR_RUNNER_CONFIRM", "");
+  const maxClassAOps = String(envInt("RADAR_RUNNER_MAX_CLASS_A_OPS", 4, 0));
+  requireApplyConfirmation({ targetEnv: normalizedEnv, apply, delivery });
 
   const startedAt = new Date();
   console.log(JSON.stringify({
@@ -165,6 +183,8 @@ function main() {
     startedAt: startedAt.toISOString(),
     targetEnv: normalizedEnv,
     apply,
+    delivery,
+    maxClassAOps: Number(maxClassAOps),
     mrmsEnabled: envFlag("RADAR_RUNNER_MRMS_ENABLED", true),
     mrmsProducts: splitCsv(envString("MRMS_PRODUCTS", envString("MRMS_PRODUCT", DEFAULT_MRMS_PRODUCTS))),
     level3Enabled: envFlag("RADAR_RUNNER_LEVEL3_ENABLED", true),
@@ -172,8 +192,8 @@ function main() {
     level3Products: splitCsv(envString("LEVEL3_PRODUCTS", DEFAULT_LEVEL3_PRODUCTS)),
   }, null, 2));
 
-  runMrms({ targetEnv: normalizedEnv, apply });
-  runLevel3({ targetEnv: normalizedEnv, apply });
+  runMrms({ targetEnv: normalizedEnv, apply, delivery, confirm, maxClassAOps });
+  runLevel3({ targetEnv: normalizedEnv, apply, delivery, confirm, maxClassAOps });
 
   console.log(JSON.stringify({
     ok: true,

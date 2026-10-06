@@ -29,6 +29,9 @@ function parseArgs(argv) {
     maxRangeKm: null,
     python: process.env.OMNIWX_PYTHON || null,
     allowEmptySkip: false,
+    delivery: "tiles",
+    maxClassAOps: 4,
+    confirm: "",
     apply: false,
   };
 
@@ -48,6 +51,9 @@ function parseArgs(argv) {
     else if (arg === "--max-range-km" && argv[i + 1]) args.maxRangeKm = Math.max(25, Math.min(460, Number(argv[++i]) || 0));
     else if (arg === "--python" && argv[i + 1]) args.python = argv[++i];
     else if (arg === "--allow-empty-skip") args.allowEmptySkip = true;
+    else if (arg === "--delivery" && argv[i + 1]) args.delivery = argv[++i].trim().toLowerCase();
+    else if (arg === "--max-class-a-ops" && argv[i + 1]) args.maxClassAOps = Math.max(0, Math.floor(Number(argv[++i]) || args.maxClassAOps));
+    else if (arg === "--confirm" && argv[i + 1]) args.confirm = argv[++i];
     else if (arg === "--apply") args.apply = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -58,6 +64,7 @@ function parseArgs(argv) {
   if (!(args.env in BUCKETS)) throw new Error(`Unsupported env "${args.env}". Use dev or production.`);
   if (!/^[A-Z0-9]{3}$/.test(args.site)) throw new Error(`Invalid Level III site: ${args.site}`);
   if (!/^[A-Z0-9]{3}$/.test(args.product)) throw new Error(`Invalid Level III product: ${args.product}`);
+  if (!["tiles", "packed"].includes(args.delivery)) throw new Error(`Unsupported delivery mode "${args.delivery}". Use tiles or packed.`);
   args.maxZoom = Math.max(args.minZoom, Math.min(12, args.maxZoom));
   return args;
 }
@@ -81,6 +88,9 @@ Options:
   --max-range-km <km>          Optional render radius cap
   --python <path>              Python executable
   --allow-empty-skip           Treat zero-tile sparse products as no-op success
+  --delivery <mode>            Publish mode: tiles or packed. Default: tiles
+  --max-class-a-ops <n>        Packed publish Class A cap. Default: 4
+  --confirm <phrase>           Packed publish confirmation phrase when --apply is used
   --apply                      Actually write to R2. Default is dry-run
 `);
 }
@@ -100,6 +110,20 @@ function runStepCapture(label, command, args) {
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.status !== 0) throw new Error(`${label} failed with exit code ${result.status ?? 1}`);
   return result.stdout || "";
+}
+
+function normalizeUtcIso(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}Z`;
+  const ms = Date.parse(normalized);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+function frameKey(manifest) {
+  const iso = normalizeUtcIso(manifest.validTime || manifest.productTime || manifest.time);
+  if (iso) return iso.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z").replace("Z", "").slice(0, 15);
+  return String(manifest.input || "frame").replace(/[^0-9A-Za-z]+/g, "").slice(-32) || "frame";
 }
 
 function main() {
@@ -142,6 +166,39 @@ function main() {
       }, null, 2));
       return;
     }
+  }
+
+  if (args.delivery === "packed") {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const frame = frameKey(manifest);
+    const tilePackKey = `radar/level3/packed/${args.site}/${args.product}/${frame}/frame.owxpack`;
+    const packPath = join(tileDir, "frame.owxpack");
+    const latestPackedPath = join(tileDir, "latest-packed.json");
+    runStep("Build packed Level III tile artifact", process.execPath, [
+      join(SCRIPT_DIR, "build-radar-tile-pack.mjs"),
+      "--manifest", manifestPath,
+      "--output", packPath,
+      "--latest-out", latestPackedPath,
+      "--tile-pack-key", tilePackKey,
+    ]);
+
+    const targetEnv = args.env === "production" || args.env === "prod" ? "production" : "dev";
+    const publishPackedArgs = [
+      join(SCRIPT_DIR, "publish-radar-tile-pack.mjs"),
+      "--latest", latestPackedPath,
+      "--latest-key", `radar/level3/latest/${args.site}/${args.product}.json`,
+      "--pack-file", packPath,
+      "--tile-pack-key", tilePackKey,
+      "--bucket", bucket,
+      "--target-env", targetEnv,
+      "--retain-frames", String(args.retainFrames),
+      "--max-frame-age-minutes", String(args.maxFrameAgeMinutes),
+      "--max-class-a-ops", String(args.maxClassAOps),
+    ];
+    if (args.confirm) publishPackedArgs.push("--confirm", args.confirm);
+    if (args.apply) publishPackedArgs.push("--apply");
+    runStep(args.apply ? `Publish packed Level III ${args.site} ${args.product}` : `Dry-run packed Level III ${args.site} ${args.product}`, process.execPath, publishPackedArgs);
+    return;
   }
 
   const publishArgs = [
