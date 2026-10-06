@@ -50,11 +50,11 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Radar Automation
 
-- Production radar automation is intentionally paused after the September 24, 2026 R2 Class A operation cost incident.
+- Production radar automation is intentionally paused after the September 24, 2026 R2 Class A operation cost incident. Manual packed production proofs passed on October 6, 2026, but schedules should remain paused until the Cloud Run job env vars and Scheduler jobs are deliberately re-enabled one at a time.
 - The old tile-per-object Cloud Run cadence must not be re-enabled for production scheduled radar.
 - The dedicated Cloud Run jobs still exist as the runner foundation, but production `apply=true` is now guarded to require packed delivery and `RADAR_RUNNER_CONFIRM=packed-radar-writes`.
 - `RADAR_RUNNER_DELIVERY=packed` is the required production direction: render locally, publish one `.owxpack` object plus one latest manifest, preserve a rollback latest when possible, and delete old whole-pack objects only.
-- `omniwx-radar-mrms-runner`, `omniwx-radar-level3-runner`, `omniwx-radar-level3-southwest-runner`, `omniwx-radar-level3-midwest-runner`, and the old combined `omniwx-radar-runner-10min` schedule should remain paused until packed MRMS and packed Level III manual production proofs pass.
+- `omniwx-radar-mrms-runner`, `omniwx-radar-level3-runner`, `omniwx-radar-level3-southwest-runner`, `omniwx-radar-level3-midwest-runner`, and the old combined `omniwx-radar-runner-10min` schedule should remain paused until packed Cloud Run production jobs are reconfigured with operation caps and tested one at a time.
 - GitHub radar workflows remain available for manual recovery, QA, z10 sizing, and fallback operations, but they are no longer the primary production cadence.
 - GitHub schedule timing can vary; do not assume every cron run executes exactly on its configured minute.
 - The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
@@ -77,9 +77,9 @@ This file is the short source of truth for where the product and infrastructure 
 
 ## Not Done Yet
 
-- Packed MRMS needs a manual production proof before MRMS scheduling resumes.
-- Packed Level III needs a manual production proof before Level III scheduling resumes.
-- Dedicated radar runner writes must stay disabled until packed delivery, rollback, freshness gates, retention cleanup, and operation caps are validated.
+- Packed MRMS manual production proof passed on October 6, 2026: `MergedReflectivityQCComposite` published as one `.owxpack` plus latest manifest, 3 Class A writes including rollback, `tileDelivery=worker-r2-pack`, and a live tile returned `x-omni-radar-source: r2-mrms-pack`.
+- Packed Level III manual production proof passed on October 6, 2026: `IWA N0B`/HREFL published as one `.owxpack` plus latest manifest, 3 Class A writes including rollback, `tileDelivery=worker-r2-pack`, and a live tile returned `x-omni-radar-source: r2-level3-pack`.
+- Dedicated radar runner writes must stay disabled until packed Cloud Run job env vars, freshness gates, operation caps, and one-job-at-a-time Scheduler re-enablement are validated.
 - z10 production posture is not fully settled.
 - Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
 - Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
@@ -120,3 +120,5 @@ This file is the short source of truth for where the product and infrastructure 
 - Later on September 24, 2026, all radar Cloud Scheduler jobs were paused and all Cloud Run radar jobs had `RADAR_RUNNER_APPLY=false` and `RADAR_RUNNER_CONFIRM=disabled` after Cloudflare billing showed R2 Class A operations were the cost driver. Storage was not the issue; tile-per-object publishing created too many write/list/delete operations.
 - The new radar architecture direction is packed artifacts: a local MRMS z3-z10 proof reduced one frame from 4,530 would-be R2 objects to 2 publish objects while preserving Worker tile-serving compatibility. The packed publisher now dry-runs the two-object publish plan with a Class A operation cap, but no scheduled radar should be re-enabled until a manually approved packed proof and rollback path are validated.
 - On September 25, 2026, the first dev packed MRMS proof was published to `omniwx-radar-assets-dev` with exactly 2 planned Class A writes. The dev Worker timeline reported `tileDelivery=worker-r2-pack`, and a real tile request returned `200 OK`, `image/png`, `x-omni-radar-source: r2-mrms-pack`. Production radar schedules remain paused and production writes remain disabled.
+- On October 6, 2026, the production Worker was deployed with packed tile range-read support. A guarded packed MRMS production publish wrote `radar/mrms/packed/MergedReflectivityQCComposite/20261006T225400/frame.owxpack` and updated `radar/mrms/latest/MergedReflectivityQCComposite.json`; source age was 2 minutes, `maxZoom=8`, and the live tile route returned `x-omni-radar-source: r2-mrms-pack`.
+- On October 6, 2026, a guarded packed Level III production publish wrote `radar/level3/packed/IWA/N0B/20261006T225257/frame.owxpack` and updated `radar/level3/latest/IWA/N0B.json`; source age was 6 minutes, `maxZoom=10`, and the live tile route returned `x-omni-radar-source: r2-level3-pack`.

@@ -286,9 +286,9 @@ Current proof:
 
 Implementation needed before re-enabling scheduled radar:
 
-- Validate one fresh production packed MRMS publish manually.
-- Validate one fresh production packed Level III publish manually.
-- Re-enable schedules one job/product at a time only after manual packed proofs pass.
+- Validated one fresh production packed MRMS publish manually on October 6, 2026: 3 Class A writes including rollback, live timeline `tileDelivery=worker-r2-pack`, and tile header `x-omni-radar-source: r2-mrms-pack`.
+- Validated one fresh production packed Level III publish manually on October 6, 2026 for `IWA N0B`/HREFL: 3 Class A writes including rollback, live timeline `tileDelivery=worker-r2-pack`, and tile header `x-omni-radar-source: r2-level3-pack`.
+- Re-enable schedules one job/product at a time only after Cloud Run job env vars are updated to packed delivery with operation caps.
 - Keep all existing radar schedules paused until packed publishing is validated end-to-end.
 
 Done when:
