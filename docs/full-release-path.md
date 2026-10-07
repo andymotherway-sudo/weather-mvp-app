@@ -184,6 +184,8 @@ Examples:
 
 For radar releases or map changes, run GitHub Actions -> `Radar health report` against `production` with `fail_on_required_stale=true`. This reads live Worker timelines only; it does not publish tiles, delete R2 objects, or dispatch recovery jobs.
 
+For packed-radar cutovers, also set `expected_delivery=worker-r2-pack`. Do not treat owned radar as fully cut over while required MRMS or Level III timelines still report `worker-r2`.
+
 If the backend is wrong, stop here and fix it before building.
 
 ### 7. Confirm The App Resolves To Production

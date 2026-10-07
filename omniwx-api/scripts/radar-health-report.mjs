@@ -42,6 +42,7 @@ function parseArgs(argv) {
     level3StaleMinutes: 360,
     minMrmsFrames: 1,
     minLevel3Frames: 1,
+    expectedDelivery: null,
     json: false,
     fail: false,
   };
@@ -58,6 +59,7 @@ function parseArgs(argv) {
     else if (arg === "--level3-stale-minutes" && argv[i + 1]) args.level3StaleMinutes = Number(argv[++i]);
     else if (arg === "--min-mrms-frames" && argv[i + 1]) args.minMrmsFrames = Number(argv[++i]);
     else if (arg === "--min-level3-frames" && argv[i + 1]) args.minLevel3Frames = Number(argv[++i]);
+    else if (arg === "--expected-delivery" && argv[i + 1]) args.expectedDelivery = String(argv[++i]).trim() || null;
     else if (arg === "--json") args.json = true;
     else if (arg === "--fail") args.fail = true;
     else if (arg === "--help" || arg === "-h") {
@@ -95,6 +97,7 @@ Options:
   --level3-stale-minutes <n>          Level III stale threshold. Default: 360
   --min-mrms-frames <n>               Minimum MRMS frames expected. Default: 1
   --min-level3-frames <n>             Minimum Level III frames expected. Default: 1
+  --expected-delivery <value>          Require timeline tileDelivery, for example worker-r2-pack
   --fail                              Exit non-zero if required health fails
   --json                              Print machine-readable JSON only
 `);
@@ -140,6 +143,10 @@ async function checkMrmsProduct(apiBase, product, args) {
     if (age == null) failures.push("missing-valid-time");
     else if (age > args.mrmsStaleMinutes) failures.push(`stale>${args.mrmsStaleMinutes}m`);
     if (frameCount < args.minMrmsFrames) failures.push(`frames<${args.minMrmsFrames}`);
+    const tileDelivery = frame?.tileDelivery || timeline.tileDelivery || null;
+    if (args.expectedDelivery && tileDelivery !== args.expectedDelivery) {
+      failures.push(`delivery=${tileDelivery ?? "unknown"} expected=${args.expectedDelivery}`);
+    }
     return {
       kind: "mrms",
       product,
@@ -151,7 +158,7 @@ async function checkMrmsProduct(apiBase, product, args) {
       ageMinutes: age,
       frameCount,
       maxZoom: timeline.maxZoom ?? frame?.maxZoom ?? null,
-      tileDelivery: frame?.tileDelivery || timeline.tileDelivery || null,
+      tileDelivery,
     };
   } catch (error) {
     return {
@@ -186,6 +193,10 @@ async function checkLevel3Product(apiBase, site, product, args) {
     if (age == null) failures.push("missing-valid-time");
     else if (age > args.level3StaleMinutes) failures.push(`stale>${args.level3StaleMinutes}m`);
     if (frameCount < args.minLevel3Frames) failures.push(`frames<${args.minLevel3Frames}`);
+    const tileDelivery = frame?.tileDelivery || timeline.tileDelivery || null;
+    if (args.expectedDelivery && tileDelivery !== args.expectedDelivery) {
+      failures.push(`delivery=${tileDelivery ?? "unknown"} expected=${args.expectedDelivery}`);
+    }
     return {
       kind: "level3",
       site,
@@ -198,7 +209,7 @@ async function checkLevel3Product(apiBase, site, product, args) {
       ageMinutes: age,
       frameCount,
       maxZoom: frame?.maxZoom ?? timeline.maxZoom ?? null,
-      tileDelivery: frame?.tileDelivery || timeline.tileDelivery || null,
+      tileDelivery,
       tileCount: frame?.tileCount ?? null,
       totalMb: frame?.totalBytes ? Math.round((Number(frame.totalBytes) / 1024 / 1024) * 100) / 100 : null,
     };
@@ -238,7 +249,7 @@ function printHuman(report) {
   console.log("Level III");
   for (const check of report.level3) {
     const label = `${check.site} ${check.product}${check.required ? " required" : " optional"}`;
-    console.log(`- ${check.ok ? "OK" : check.required ? "FAIL" : "WARN"} ${label}: ${check.ageMinutes ?? "?"}m old, ${check.frameCount} frame(s), z${check.maxZoom ?? "?"}, ${check.tileCount ?? "?"} tiles${check.failures.length ? ` (${check.failures.join(", ")})` : ""}`);
+    console.log(`- ${check.ok ? "OK" : check.required ? "FAIL" : "WARN"} ${label}: ${check.ageMinutes ?? "?"}m old, ${check.frameCount} frame(s), z${check.maxZoom ?? "?"}, ${check.tileCount ?? "?"} tiles, ${check.tileDelivery ?? "unknown"}${check.failures.length ? ` (${check.failures.join(", ")})` : ""}`);
   }
   console.log("");
 
@@ -280,6 +291,7 @@ async function main() {
       level3StaleMinutes: args.level3StaleMinutes,
       minMrmsFrames: args.minMrmsFrames,
       minLevel3Frames: args.minLevel3Frames,
+      expectedDelivery: args.expectedDelivery,
       requiredLevel3Products: args.requiredLevel3Products,
     },
     mrms,

@@ -37,6 +37,10 @@ on:
         description: "Comma-separated Level III products"
         required: true
         default: "N0B,N0S,EET,N0C,N0X,DVL,N0H"
+      expected_delivery:
+        description: "Optional required tileDelivery value, for example worker-r2-pack"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -59,6 +63,7 @@ jobs:
       RADAR_LEVEL3_STALE_MINUTES: ${{ inputs.level3_stale_minutes || '360' }}
       RADAR_LEVEL3_SITES: ${{ inputs.level3_sites || 'IWA,MPX,DLH' }}
       RADAR_LEVEL3_PRODUCTS: ${{ inputs.level3_products || 'N0B,N0S,EET,N0C,N0X,DVL,N0H' }}
+      RADAR_EXPECTED_DELIVERY: ${{ inputs.expected_delivery || '' }}
 
     steps:
       - name: Checkout
@@ -88,6 +93,9 @@ jobs:
           )
           if [ "$RADAR_FAIL" = "true" ]; then
             args+=(--fail)
+          fi
+          if [ -n "$RADAR_EXPECTED_DELIVERY" ]; then
+            args+=(--expected-delivery "$RADAR_EXPECTED_DELIVERY")
           fi
           npm run radar:health -- "${args[@]}" | tee /tmp/radar-health.txt
 
