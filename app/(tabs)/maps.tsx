@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -81,6 +82,7 @@ const STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v2';
 const LEGACY_STATION_PRODUCT_STORAGE_KEY = 'omniwx:maps:stationProduct:v1';
 const STATION_PRODUCT_IDS = new Set<RadarProductId>(['N0Q', 'N0B', 'N0U', 'N0Z', 'N0S', 'EET']);
 const OWNED_LEVEL3_PRODUCT_IDS = new Set<RadarProductId>(['N0B', 'N0S', 'EET', 'N0C', 'N0X', 'DVL', 'N0H']);
+type MapChromeDensity = 'comfortable' | 'compact' | 'ultraCompact';
 
 const MRMS_PRODUCT_OPTIONS: {
   id: MrmsProductId;
@@ -1349,6 +1351,16 @@ function buildFavoriteTemperatureGeoJson(args: {
 export default function MapsScreen() {
   const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const fontScale = PixelRatio.getFontScale();
+  const usableMapHeight = Math.max(1, viewportHeight - insets.top - insets.bottom);
+  const mapChromeDensity: MapChromeDensity =
+    usableMapHeight < 560 || fontScale >= 1.35 || viewportWidth < 340
+      ? 'ultraCompact'
+      : usableMapHeight < 680 || fontScale >= 1.18
+        ? 'compact'
+        : 'comfortable';
+  const mapChromeBudget = Math.round(usableMapHeight * 0.42);
+  const mapChromeIsConstrained = mapChromeDensity !== 'comfortable';
   const params = useLocalSearchParams<{
     view?: string;
     lat?: string;
@@ -1402,6 +1414,8 @@ export default function MapsScreen() {
   const [pendingStationProduct, setPendingStationProduct] = useState<RadarProductId | null>(null);
   const [stationPanelCollapsed, setStationPanelCollapsed] = useState(false);
   const [stormScopeConsoleOpen, setStormScopeConsoleOpen] = useState(false);
+  const [radarChooserOpen, setRadarChooserOpen] = useState<'source' | 'product' | null>(null);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [stormScopeSourceMode, setStormScopeSourceMode] = useState<'auto' | 'mosaic' | 'local'>('auto');
   const [stormScopeLocalProvider, setStormScopeLocalProvider] = useState<'iem' | 'level3'>('iem');
   const [stormScopeRangeRingsEnabled, setStormScopeRangeRingsEnabled] = useState(true);
@@ -3928,8 +3942,10 @@ export default function MapsScreen() {
     trueColorFrameStatus,
   ]);
   const dockBottom = 12 + insets.bottom;
-  const DOCK_ESTIMATED_HEIGHT = satelliteLoadStatus ? 154 : 102;
+  const timelineDockExpanded = timelineExpanded && mapChromeDensity !== 'ultraCompact';
+  const DOCK_ESTIMATED_HEIGHT = timelineDockExpanded ? (satelliteLoadStatus ? 174 : 132) : 58;
   const legendBottom = showTimeline ? dockBottom + DOCK_ESTIMATED_HEIGHT + 10 : dockBottom + 6;
+  const showPhoneZoomButtons = !mapChromeIsConstrained && mapChromeBudget > 260;
 
   const accentBg = getViewAccent(String(state.viewId));
   const activeOverlayCount = activeLayerSummary.count ?? 0;
@@ -4534,6 +4550,8 @@ export default function MapsScreen() {
                 lastPanMarkRef.current = now;
                 setCameraDebugLabel('user-pan');
               }
+              setRadarChooserOpen(null);
+              if (mapChromeIsConstrained) setTimelineExpanded(false);
           }}
           onRegionChangeComplete={(nextRegion: Region, meta?: { isUserInteraction: boolean }) => {
             const zFloat =
@@ -5845,7 +5863,7 @@ export default function MapsScreen() {
             <View style={styles.quickActions}>
               <LayersButton count={activeOverlayCount} active={layersSheetOpen} onPress={() => setLayersSheetOpen(true)} />
               <LocationButton onPress={recenterToGps} />
-              <ZoomButtons onZoomIn={() => handleMapZoomButton(1)} onZoomOut={() => handleMapZoomButton(-1)} />
+              {showPhoneZoomButtons ? <ZoomButtons onZoomIn={() => handleMapZoomButton(1)} onZoomOut={() => handleMapZoomButton(-1)} /> : null}
             </View>
           </View>
         )}
@@ -5890,52 +5908,30 @@ export default function MapsScreen() {
                   setLearnTopicId(topic ?? 'radar-base-reflectivity');
                   setLearnOpen(true);
                 }}
+                density={mapChromeDensity}
               />
             ) : (
-              <Glass style={[styles.legendCard, { gap: 10 }]}>
+              <Glass style={[styles.legendCard, styles.radarCompactCard, mapChromeDensity === 'ultraCompact' ? styles.radarCompactCardUltra : null]}>
                 {radarViewActive ? (
-                  <View style={styles.radarModeHeader}>
-                    <View style={styles.radarModeRow}>
-                      <MiniToggle
-                        label="Storm Scope"
-                        active={stormMode}
-                        onPress={handleStormScopePress}
-                      />
-                      {MRMS_RADAR_PREVIEW_ENABLED ? (
-                        <>
-                          <MiniToggle
-                            label="Auto"
-                            active={wideRadarProvider === 'auto'}
-                            onPress={() => setWideRadarProvider('auto')}
-                          />
-                          <MiniToggle
-                            label="MRMS"
-                            active={wideRadarProvider === 'mrms'}
-                            onPress={() => setWideRadarProvider('mrms')}
-                          />
-                          <MiniToggle
-                            label="RainViewer"
-                            active={wideRadarProvider === 'rainviewer'}
-                            onPress={() => setWideRadarProvider('rainviewer')}
-                          />
-                        </>
-                      ) : null}
-                    </View>
+                  <View style={styles.radarCompactHeader}>
+                    <Pressable onPress={handleStormScopePress} style={[styles.radarCompactPill, stormMode ? styles.radarCompactPillActive : null]}>
+                      <Text style={styles.radarCompactPillText} numberOfLines={1}>Storm Scope</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setRadarChooserOpen((current) => (current === 'source' ? null : 'source'))}
+                      style={[styles.radarCompactPill, radarChooserOpen === 'source' ? styles.radarCompactPillActive : null]}
+                    >
+                      <Text style={styles.radarCompactPillText} numberOfLines={1}>{providerLabel.replace(' preview', '').replace(' auto', '')} ▾</Text>
+                    </Pressable>
                     {MRMS_RADAR_PREVIEW_ENABLED ? (
-                      <View style={styles.radarModeRow}>
-                        {MRMS_PRODUCT_OPTIONS.map((item) => (
-                          <MiniToggle
-                            key={item.id}
-                            label={item.label}
-                            active={wideMrmsProduct === item.id}
-                            onPress={() => {
-                              setWideMrmsProduct(item.id);
-                              if (wideRadarProvider === 'rainviewer') setWideRadarProvider('auto');
-                            }}
-                          />
-                        ))}
-                      </View>
+                      <Pressable
+                        onPress={() => setRadarChooserOpen((current) => (current === 'product' ? null : 'product'))}
+                        style={[styles.radarCompactPill, radarChooserOpen === 'product' ? styles.radarCompactPillActive : null]}
+                      >
+                        <Text style={styles.radarCompactPillText} numberOfLines={1}>{wideMrmsProductMeta.label} ▾</Text>
+                      </Pressable>
                     ) : null}
+                    <Text style={styles.radarDensityHint} numberOfLines={1}>{mapChromeDensity === 'comfortable' ? zoomLabel : mapChromeDensity}</Text>
                   </View>
                 ) : null}
                 <RadarLegend
@@ -5946,6 +5942,29 @@ export default function MapsScreen() {
                   rightLabel={wideRadarLegendRight}
                   compact
                 />
+                {radarChooserOpen === 'source' && MRMS_RADAR_PREVIEW_ENABLED ? (
+                  <View style={styles.radarChooserPanel}>
+                    <MiniToggle label="Auto" active={wideRadarProvider === 'auto'} onPress={() => { setWideRadarProvider('auto'); setRadarChooserOpen(null); }} />
+                    <MiniToggle label="MRMS" active={wideRadarProvider === 'mrms'} onPress={() => { setWideRadarProvider('mrms'); setRadarChooserOpen(null); }} />
+                    <MiniToggle label="RainViewer" active={wideRadarProvider === 'rainviewer'} onPress={() => { setWideRadarProvider('rainviewer'); setRadarChooserOpen(null); }} />
+                  </View>
+                ) : null}
+                {radarChooserOpen === 'product' && MRMS_RADAR_PREVIEW_ENABLED ? (
+                  <View style={styles.radarChooserPanel}>
+                    {MRMS_PRODUCT_OPTIONS.map((item) => (
+                      <MiniToggle
+                        key={item.id}
+                        label={item.label}
+                        active={wideMrmsProduct === item.id}
+                        onPress={() => {
+                          setWideMrmsProduct(item.id);
+                          if (wideRadarProvider === 'rainviewer') setWideRadarProvider('auto');
+                          setRadarChooserOpen(null);
+                        }}
+                      />
+                    ))}
+                  </View>
+                ) : null}
                 <Text style={styles.legendCardMeta}>
                   {activeRadarProvider === 'mrms'
                     ? ownedMrmsFrameCount > 0 && ownedMrmsHasTemplate
@@ -6209,7 +6228,7 @@ export default function MapsScreen() {
             center={
               <View style={styles.timelineStack}>
                 <Glass style={styles.timelineDock}>
-                  {(radarEnabled || animatedSatelliteEnabled) ? (
+                  {(radarEnabled || animatedSatelliteEnabled) && timelineDockExpanded ? (
                     <View style={styles.satelliteLoopControls}>
                       <Text style={styles.satelliteLoopLabel}>{radarEnabled ? 'Range' : 'Loop'}</Text>
                       <View style={styles.satelliteLoopChips}>
@@ -6292,6 +6311,9 @@ export default function MapsScreen() {
                     onRecord={handleAnimationRecordPress}
                     recordBusy={animationExporting}
                     recordDisabled={animationExporting || animationExportFrames.length < 2}
+                    density={mapChromeDensity}
+                    expanded={timelineDockExpanded}
+                    onToggleExpanded={() => setTimelineExpanded((current) => !current)}
                     onSetFrame={(frameIndex) => {
                       if (atmosphericTimelineActive) {
                         const targetIso = timelineFrames[clampIndex(frameIndex, timelineFrames.length)]?.iso ?? null;
@@ -8342,6 +8364,54 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
     gap: 6,
+  },
+  radarCompactCard: {
+    width: 330,
+    maxWidth: '100%',
+    paddingVertical: 7,
+  },
+  radarCompactCardUltra: {
+    width: 288,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  radarCompactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  radarCompactPill: {
+    minHeight: 30,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarCompactPillActive: {
+    borderColor: 'rgba(125,211,252,0.34)',
+    backgroundColor: 'rgba(37,99,235,0.30)',
+  },
+  radarCompactPillText: {
+    color: 'rgba(255,255,255,0.94)',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  radarDensityHint: {
+    marginLeft: 'auto',
+    color: 'rgba(191,219,254,0.58)',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  radarChooserPanel: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingTop: 2,
   },
   wildfireLegendCard: {
     width: 304,

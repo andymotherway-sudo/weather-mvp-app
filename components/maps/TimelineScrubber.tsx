@@ -76,6 +76,9 @@ type TimelineScrubberProps = {
   onSetFrame: (frameIndex: number) => void;
   onSetPlaying: (playing: boolean) => void;
   onSetPlaybackRate?: (playbackRate: number) => void;
+  density?: 'comfortable' | 'compact' | 'ultraCompact';
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 };
 
 function TimelineScrubberInner(props: TimelineScrubberProps) {
@@ -91,6 +94,9 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
     onSetFrame,
     onSetPlaying,
     onSetPlaybackRate,
+    density = 'comfortable',
+    expanded = true,
+    onToggleExpanded,
   } = props;
 
   const fallbackFrames = useMemo(() => buildFallbackFrames({ minutesBack: 120, stepMinutes: 5 }), []);
@@ -209,8 +215,49 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
     });
   }, [frameCount, trackW]);
 
+  if (!expanded) {
+    return (
+      <View style={styles.collapsedContainer}>
+        <Pressable
+          accessibilityLabel={playing ? 'Pause radar loop' : 'Play radar loop'}
+          onPress={() => onSetPlaying(!playing)}
+          disabled={playDisabled}
+          style={[styles.collapsedPlayButton, playing ? styles.controlButtonActive : null, playDisabled ? styles.disabled : null]}
+        >
+          <Text style={styles.collapsedPlayText}>{playing ? 'II' : '>'}</Text>
+        </Pressable>
+
+        <Text style={styles.collapsedTimeLabel} numberOfLines={1}>
+          {label}
+        </Text>
+
+        <View style={styles.collapsedTrackWrap}>
+          <View onLayout={onTrackLayout} {...panResponder.panHandlers} style={styles.collapsedTrack}>
+            <View pointerEvents="none" style={[styles.trackProgress, { width: progressWidth }]} />
+            <View pointerEvents="none" style={[styles.collapsedKnob, { left: Math.max(0, knobLeft - 8) }]} />
+          </View>
+        </View>
+
+        <Text style={styles.collapsedNowLabel} numberOfLines={1}>
+          {idxForUI === latestIndex ? 'NOW' : activeFrameAge}
+        </Text>
+
+        {onToggleExpanded ? (
+          <Pressable onPress={onToggleExpanded} style={styles.expandButton} accessibilityLabel="Expand radar playback controls">
+            <Text style={styles.expandButtonText}>^</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
+      {onToggleExpanded ? (
+        <Pressable onPress={onToggleExpanded} style={styles.sheetHandle} accessibilityLabel="Collapse radar playback controls">
+          <View style={styles.sheetHandleBar} />
+        </Pressable>
+      ) : null}
       <View style={styles.topRow}>
         <View style={styles.controlsRow}>
           <ControlButton
@@ -265,7 +312,7 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
         </View>
       </View>
 
-      {onSetPlaybackRate ? (
+      {onSetPlaybackRate && density !== 'ultraCompact' ? (
         <View style={styles.rateRow}>
           {[0.5, 1, 1.5, 2].map((rate) => (
             <ControlButton
@@ -305,6 +352,88 @@ function TimelineScrubberInner(props: TimelineScrubberProps) {
 const styles = StyleSheet.create({
   container: {
     gap: 8,
+  },
+  sheetHandle: {
+    alignItems: 'center',
+    paddingBottom: 2,
+  },
+  sheetHandleBar: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  collapsedContainer: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsedPlayButton: {
+    width: 38,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  collapsedPlayText: {
+    color: 'rgba(255,255,255,0.96)',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  collapsedTimeLabel: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 54,
+  },
+  collapsedTrackWrap: {
+    flex: 1,
+  },
+  collapsedTrack: {
+    height: 16,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  collapsedKnob: {
+    position: 'absolute',
+    top: 1,
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: '#bfdbfe',
+  },
+  collapsedNowLabel: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 10,
+    fontWeight: '900',
+    minWidth: 32,
+    textAlign: 'right',
+  },
+  expandButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  expandButtonText: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 17,
   },
   topRow: {
     flexDirection: 'row',

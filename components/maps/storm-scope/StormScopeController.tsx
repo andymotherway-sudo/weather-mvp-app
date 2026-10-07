@@ -65,9 +65,12 @@ export function StormScopeController(props: {
   onSelectProduct: (id: string) => void;
   onOpenLearn: () => void;
   onExitStormScope: () => void;
+  density?: 'comfortable' | 'compact' | 'ultraCompact';
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const [radarSitesExpanded, setRadarSitesExpanded] = useState(false);
+  const density = props.density ?? 'comfortable';
 
   useEffect(() => {
     if (!notice) return;
@@ -103,6 +106,8 @@ export function StormScopeController(props: {
   const productLabel = activeProduct?.shortLabel ?? 'REFL';
   const modeLabel = props.mode === 'local' ? 'LOCAL' : 'MOSAIC';
   const attentionLine = props.loadingMessage ?? props.warningMessage ?? props.sourceLine;
+  const visibleRadarSites = radarSitesExpanded ? props.radarSites : props.radarSites.slice(0, density === 'comfortable' ? 3 : 2);
+  const hiddenRadarSiteCount = Math.max(0, props.radarSites.length - visibleRadarSites.length);
 
   const handleProductPress = (item: ProductOption) => {
     if (item.active && item.loading) return;
@@ -125,6 +130,7 @@ export function StormScopeController(props: {
         siteTitle={props.siteTitle}
         stale={props.stale}
         statusLabel={props.statusLabel}
+        density={density}
         onOpen={() => props.onSetConsoleOpen(true)}
       />
 
@@ -139,7 +145,7 @@ export function StormScopeController(props: {
               paddingHorizontal: 14,
               paddingTop: 12,
               paddingBottom: 18,
-              maxHeight: '86%',
+              maxHeight: density === 'ultraCompact' ? '94%' : density === 'compact' ? '90%' : '86%',
             }}
           >
             <View style={{ alignItems: 'center', marginBottom: 10 }}>
@@ -203,11 +209,16 @@ export function StormScopeController(props: {
                 />
               </SectionCard>
 
-              <SectionCard title="Nearby Radars" subtitle="Pick a station without losing the current map view">
+              <SectionCard title="Nearby Radars" subtitle={hiddenRadarSiteCount ? `${hiddenRadarSiteCount} more nearby radars hidden` : 'Pick a station without losing the current map view'}>
                 <View style={{ gap: 8 }}>
-                  {props.radarSites.map((site) => (
+                  {visibleRadarSites.map((site) => (
                     <RadarSiteRow key={site.id} site={site} />
                   ))}
+                  {hiddenRadarSiteCount ? (
+                    <PillButton label={`+ ${hiddenRadarSiteCount} more`} onPress={() => setRadarSitesExpanded(true)} />
+                  ) : radarSitesExpanded && props.radarSites.length > 2 ? (
+                    <PillButton label="Show fewer radars" onPress={() => setRadarSitesExpanded(false)} />
+                  ) : null}
                 </View>
               </SectionCard>
 
@@ -234,6 +245,7 @@ function CompactHud(props: {
   siteTitle: string;
   stale: boolean;
   statusLabel: string;
+  density: 'comfortable' | 'compact' | 'ultraCompact';
   onOpen: () => void;
 }) {
   const sourceBadge =
@@ -247,9 +259,9 @@ function CompactHud(props: {
     <Glass
       style={{
         minHeight: 74,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 22,
+        paddingHorizontal: props.density === 'ultraCompact' ? 10 : 12,
+        paddingVertical: props.density === 'ultraCompact' ? 8 : 10,
+        borderRadius: props.density === 'ultraCompact' ? 18 : 22,
         backgroundColor: props.stale ? 'rgba(146,64,14,0.28)' : 'rgba(15,23,42,0.20)',
         width: '100%',
       }}
@@ -257,16 +269,16 @@ function CompactHud(props: {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Pressable onPress={props.onOpen} style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: props.density === 'ultraCompact' ? 9 : 10, fontWeight: '900', letterSpacing: 1.2 }} numberOfLines={1}>
               STORM SCOPE
             </Text>
             <SmallPill label={sourceBadge} accent={sourceBadge === 'OWNED L3' ? 'cyan' : 'slate'} />
             {props.stale ? <SmallPill label={`! ${props.ageLabel}`} accent="amber" /> : null}
           </View>
-          <Text style={{ color: 'white', fontSize: 17, fontWeight: '900' }} numberOfLines={1}>
+          <Text style={{ color: 'white', fontSize: props.density === 'ultraCompact' ? 15 : 17, fontWeight: '900' }} numberOfLines={1}>
             {props.siteTitle}
           </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '800', marginTop: 3 }} numberOfLines={1}>
+          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: props.density === 'ultraCompact' ? 10 : 11, fontWeight: '800', marginTop: 3 }} numberOfLines={1}>
             {props.productLabel} - {props.sourceLine}
           </Text>
         </Pressable>
