@@ -1375,7 +1375,6 @@ export default function MapsScreen() {
   const isFocused = useIsFocused();
   const {
     active: activePlace,
-    favorites: placeFavorites,
     setActive: setPlaceActive,
   } = usePlace();
 
@@ -1387,8 +1386,8 @@ export default function MapsScreen() {
   const { baseMapStyle, tempUnit } = useSettings();
   const permission = 'granted' as const;
   const mapFavoriteLocations = useMemo(
-    () => dedupeFavoriteLocations([...(loc.state.favorites ?? []), ...(placeFavorites ?? [])]),
-    [loc.state.favorites, placeFavorites],
+    () => dedupeFavoriteLocations(loc.state.favorites ?? []),
+    [loc.state.favorites],
   );
   const favoriteTemperatures = useFavoriteTemperatures(mapFavoriteLocations, tempUnit);
 

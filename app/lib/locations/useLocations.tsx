@@ -21,19 +21,21 @@ export type FavoriteLocation = {
 export type ActiveLocation = { kind: 'current' } | { kind: 'favorite'; id: string };
 
 type Coords = { lat: number; lon: number };
+type CurrentLocationSource = 'gps' | 'search';
 
 type State = {
   favorites: FavoriteLocation[];
   active: ActiveLocation;
   currentCoords: Coords | null;
   currentLabel: string | null;
+  currentSource: CurrentLocationSource;
   hydrated: boolean;
 };
 
 type Action =
-  | { type: 'HYDRATE'; favorites: FavoriteLocation[]; lastCoords: Coords | null; lastLabel: string | null }
+  | { type: 'HYDRATE'; favorites: FavoriteLocation[]; lastCoords: Coords | null; lastLabel: string | null; lastSource: CurrentLocationSource }
   | { type: 'SET_ACTIVE'; active: ActiveLocation }
-  | { type: 'SET_CURRENT'; coords: Coords; label?: string | null }
+  | { type: 'SET_CURRENT'; coords: Coords; label?: string | null; source?: CurrentLocationSource }
   | { type: 'UPSERT_FAVORITE'; favorite: FavoriteLocation; makeActive?: boolean }
   | { type: 'REMOVE_FAVORITE'; id: string };
 
@@ -45,6 +47,7 @@ const initialState: State = {
   active: { kind: 'current' },
   currentCoords: null,
   currentLabel: null,
+  currentSource: 'gps',
   hydrated: false,
 };
 
@@ -56,6 +59,7 @@ function reducer(state: State, action: Action): State {
         favorites: action.favorites ?? [],
         currentCoords: action.lastCoords ?? state.currentCoords,
         currentLabel: action.lastLabel ?? state.currentLabel,
+        currentSource: action.lastSource,
         hydrated: true,
       };
 
@@ -67,6 +71,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         currentCoords: action.coords,
         currentLabel: action.label === undefined ? state.currentLabel : action.label,
+        currentSource: action.source ?? state.currentSource,
       };
 
     case 'UPSERT_FAVORITE': {
@@ -96,14 +101,48 @@ function makeId(lat: number, lon: number) {
   return `fav:${lat.toFixed(4)},${lon.toFixed(4)}`;
 }
 
+function normalizedName(name: string) {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function dedupeFavorites(list: FavoriteLocation[]) {
+  const out: FavoriteLocation[] = [];
+  const seenCoords = new Set<string>();
+  const seenNames = new Set<string>();
+
+  for (const item of list) {
+    const lat = Number(item.lat);
+    const lon = Number(item.lon);
+    if (!item.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const nameKey = normalizedName(item.name);
+    const coordKey = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+    const cityKey = nameKey ? `${nameKey}:${lat.toFixed(1)},${lon.toFixed(1)}` : '';
+
+    if (seenCoords.has(coordKey) || (cityKey && seenNames.has(cityKey))) continue;
+    seenCoords.add(coordKey);
+    if (cityKey) seenNames.add(cityKey);
+
+    out.push({ ...item, lat, lon, name: item.name.trim() || 'Saved location' });
+  }
+
+  return out.slice(0, 30);
+}
+
 function upsertFavorite(list: FavoriteLocation[], item: FavoriteLocation) {
-  const idx = list.findIndex((f) => f.id === item.id);
+  const itemName = normalizedName(item.name);
+  const idx = list.findIndex(
+    (f) =>
+      f.id === item.id ||
+      (near(f.lat, item.lat) && near(f.lon, item.lon)) ||
+      (itemName && normalizedName(f.name) === itemName && near(f.lat, item.lat, 0.1) && near(f.lon, item.lon, 0.1))
+  );
   if (idx >= 0) {
     const copy = list.slice();
     copy[idx] = { ...copy[idx], ...item };
-    return copy;
+    return dedupeFavorites(copy);
   }
-  return [item, ...list];
+  return dedupeFavorites([item, ...list]);
 }
 
 function safeJsonParse<T>(s: string | null): T | null {
@@ -121,14 +160,14 @@ async function loadFavorites(): Promise<FavoriteLocation[]> {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    return dedupeFavorites(parsed
       .map((x) => ({
         id: String(x.id ?? ''),
         name: String(x.name ?? ''),
         lat: Number(x.lat),
         lon: Number(x.lon),
       }))
-      .filter((x) => x.id && Number.isFinite(x.lat) && Number.isFinite(x.lon));
+      .filter((x) => x.id && Number.isFinite(x.lat) && Number.isFinite(x.lon)));
   } catch {
     return [];
   }
@@ -167,13 +206,24 @@ async function loadLastLabel(): Promise<string | null> {
   }
 }
 
-async function saveLastCoords(coords: Coords, label?: string | null) {
+async function loadLastSource(): Promise<CurrentLocationSource> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_COORDS_KEY);
+    const parsed = safeJsonParse<any>(raw);
+    return parsed?.source === 'search' ? 'search' : 'gps';
+  } catch {
+    return 'gps';
+  }
+}
+
+async function saveLastCoords(coords: Coords, label?: string | null, source: CurrentLocationSource = 'gps') {
   try {
     await AsyncStorage.setItem(
       LAST_COORDS_KEY,
       JSON.stringify({
         ...coords,
         label: typeof label === 'string' && label.trim() ? label.trim() : undefined,
+        source,
       })
     );
   } catch {
@@ -211,13 +261,14 @@ function useLocationsImpl() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [favs, lastCoords, lastLabel] = await Promise.all([
+      const [favs, lastCoords, lastLabel, lastSource] = await Promise.all([
         loadFavorites(),
         loadLastCoords(),
         loadLastLabel(),
+        loadLastSource(),
       ]);
       if (!mounted) return;
-      dispatch({ type: 'HYDRATE', favorites: favs, lastCoords, lastLabel });
+      dispatch({ type: 'HYDRATE', favorites: favs, lastCoords, lastLabel, lastSource });
     })();
     return () => {
       mounted = false;
@@ -231,6 +282,14 @@ function useLocationsImpl() {
 
   const setActiveCurrent = useCallback(() => {
     dispatch({ type: 'SET_ACTIVE', active: { kind: 'current' } });
+  }, []);
+
+  const setCurrentLocation = useCallback((name: string, lat: number, lon: number) => {
+    const coords: Coords = { lat, lon };
+    const label = name.trim() || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+    dispatch({ type: 'SET_CURRENT', coords, label, source: 'search' });
+    dispatch({ type: 'SET_ACTIVE', active: { kind: 'current' } });
+    saveLastCoords(coords, label, 'search');
   }, []);
 
   const setActiveFavorite = useCallback((id: string) => {
@@ -256,8 +315,8 @@ function useLocationsImpl() {
         label = null;
       }
 
-      dispatch({ type: 'SET_CURRENT', coords, label });
-      saveLastCoords(coords, label);
+      dispatch({ type: 'SET_CURRENT', coords, label, source: 'gps' });
+      saveLastCoords(coords, label, 'gps');
       return coords;
     } catch {
       // ignore
@@ -314,6 +373,7 @@ function useLocationsImpl() {
     activeLabel,
 
     refreshCurrentLocation,
+    setCurrentLocation,
     setActiveCurrent,
     setActiveFavorite,
 
@@ -332,7 +392,9 @@ export function LocationsProvider({ children }: { children: React.ReactNode }) {
     if (!api.state.hydrated) return;
 
     warmedRef.current = true;
-    api.refreshCurrentLocation();
+    if (api.state.currentSource !== 'search') {
+      api.refreshCurrentLocation();
+    }
   }, [api]);
 
   return <LocationsContext.Provider value={api}>{children}</LocationsContext.Provider>;

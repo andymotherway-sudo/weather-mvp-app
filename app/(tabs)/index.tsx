@@ -6220,12 +6220,6 @@ export default function LandWeatherScreen() {
 
   const placeCtx = usePlace() as any;
 
-  const placeSetActive =
-    (typeof placeCtx?.setActive === 'function' && placeCtx.setActive) ||
-    (typeof placeCtx?.setActivePlace === 'function' && placeCtx.setActivePlace) ||
-    (typeof placeCtx?.setPlace === 'function' && placeCtx.setPlace) ||
-    null;
-
   const placeSetCurrent =
     (typeof placeCtx?.setActiveCurrent === 'function' && placeCtx.setActiveCurrent) ||
     (typeof placeCtx?.setCurrent === 'function' && placeCtx.setCurrent) ||
@@ -6235,30 +6229,6 @@ export default function LandWeatherScreen() {
     (typeof placeCtx?.refreshCurrentLocation === 'function' && placeCtx.refreshCurrentLocation) ||
     (typeof placeCtx?.refreshCurrent === 'function' && placeCtx.refreshCurrent) ||
     null;
-
-  const pushPlaceToContext = (
-  name: string,
-  lat: number,
-  lon: number,
-  meta?: { admin1?: string; country?: string }
-) => {
-  if (!placeSetActive) return;
-
-  const cleaned = formatCompactLocation({
-    name,
-    admin1: meta?.admin1,
-    country: meta?.country,
-  });
-
-  placeSetActive({
-    name: cleaned,
-    lat,
-    lon,
-    source: 'land',
-    kind: 'saved',
-    id: `geo:${lat.toFixed(4)},${lon.toFixed(4)}`,
-  });
-};
 
   const setWxLab =
     (typeof wxLabCtx?.setWxLab === 'function' && wxLabCtx.setWxLab) ||
@@ -6303,7 +6273,16 @@ export default function LandWeatherScreen() {
   const isSunrise = hour >= 6 && hour < 8;
   const isSunset = hour >= 17 && hour < 19;
 
-  const { activeCoords, activeLabel, state: locState, refreshCurrentLocation, addOrActivateFavorite, setActiveCurrent } =
+  const {
+    activeCoords,
+    activeLabel,
+    state: locState,
+    refreshCurrentLocation,
+    addOrActivateFavorite,
+    setActiveCurrent,
+    setActiveFavorite,
+    setCurrentLocation,
+  } =
     useLocations();
 
   const coords = useMemo(() => {
@@ -6315,11 +6294,6 @@ export default function LandWeatherScreen() {
     if (raw) return formatLocLabel({ name: raw });
     return coords ? `${coords.lat.toFixed(2)}, ${coords.lon.toFixed(2)}` : 'Getting location...';
   }, [activeLabel, coords]);
-
-  useEffect(() => {
-    if (!coords) return;
-    pushPlaceToContext(locationLabel, coords.lat, coords.lon);
-  }, [coords?.lat, coords?.lon, locationLabel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isFavorited = useMemo(() => {
     if (!coords) return false;
@@ -6335,8 +6309,15 @@ export default function LandWeatherScreen() {
 
   const onPickLocation = (loc: SavedLocation) => {
     const label = formatLocLabel(loc);
-    addOrActivateFavorite(label, loc.lat, loc.lon);
-    pushPlaceToContext(label, loc.lat, loc.lon);
+    const existing = (locState.favorites ?? []).find(
+      (fav) => fav.id === loc.id || (near(fav.lat, loc.lat) && near(fav.lon, loc.lon)),
+    );
+
+    if (existing) {
+      setActiveFavorite(existing.id);
+    } else {
+      setCurrentLocation(label, loc.lat, loc.lon);
+    }
     setPickerOpen(false);
   };
 

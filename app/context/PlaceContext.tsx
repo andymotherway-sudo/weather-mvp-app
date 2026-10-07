@@ -12,7 +12,7 @@ export type Place = {
   name: string; // display name
   lat: number;
   lon: number;
-  source: 'gps' | 'favorite' | 'search';
+  source: 'gps' | 'favorite' | 'search' | 'land';
 };
 
 type PlaceState = {
@@ -58,6 +58,50 @@ function makeId(lat: number, lon: number) {
 }
 function nearlySame(a: number, b: number, eps = 0.0002) {
   return Math.abs(a - b) <= eps;
+}
+
+function normalizeName(name: string) {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizePlace(raw: any): Place | null {
+  const lat = Number(raw?.lat);
+  const lon = Number(raw?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const source = raw?.source === 'gps' || raw?.source === 'favorite' || raw?.source === 'search' || raw?.source === 'land'
+    ? raw.source
+    : 'search';
+
+  return {
+    id: String(raw?.id ?? makeId(lat, lon)),
+    name: String(raw?.name ?? 'Location').trim() || 'Location',
+    lat,
+    lon,
+    source,
+  };
+}
+
+function dedupePlaces(items: any[]) {
+  const out: Place[] = [];
+  const seenCoords = new Set<string>();
+  const seenNames = new Set<string>();
+
+  for (const raw of items) {
+    const place = normalizePlace(raw);
+    if (!place) continue;
+
+    const coordKey = `${place.lat.toFixed(3)},${place.lon.toFixed(3)}`;
+    const nameKey = normalizeName(place.name);
+    const cityKey = nameKey ? `${nameKey}:${place.lat.toFixed(1)},${place.lon.toFixed(1)}` : '';
+
+    if (seenCoords.has(coordKey) || (cityKey && seenNames.has(cityKey))) continue;
+    seenCoords.add(coordKey);
+    if (cityKey) seenNames.add(cityKey);
+    out.push(place);
+  }
+
+  return out.slice(0, 30);
 }
 
 // Detect the old “Brookings default” (and related OR/CA coast defaults) so we don’t honor it on boot.
@@ -167,6 +211,7 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
     activeLabel,
     addOrActivateFavorite,
     refreshCurrentLocation,
+    setCurrentLocation,
     setActiveCurrent,
     state: locState,
   } = useLocations();
@@ -208,8 +253,8 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
         if (!rawPlace) return;
 
         const parsed = JSON.parse(rawPlace);
-        const persistedFavs = Array.isArray(parsed?.favorites) ? parsed.favorites : [];
-        const persistedActive = parsed?.active ?? null;
+        const persistedFavs = dedupePlaces(Array.isArray(parsed?.favorites) ? parsed.favorites : []);
+        const persistedActive = normalizePlace(parsed?.active);
 
         setFavorites(persistedFavs);
 
@@ -290,7 +335,8 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydratedRef.current || !locState.hydrated || !activeCoords) return;
 
-    const source: Place['source'] = locActive.kind === 'current' ? 'gps' : 'favorite';
+    const source: Place['source'] =
+      locActive.kind === 'current' ? (locState.currentSource === 'gps' ? 'gps' : 'search') : 'favorite';
     const name =
       activeLabel?.trim() ||
       (source === 'gps' ? 'Current Location' : active?.name?.trim()) ||
@@ -329,17 +375,21 @@ export function PlaceProvider({ children }: { children: React.ReactNode }) {
         setActiveCurrent();
         return;
       }
-      addOrActivateFavorite(p.name, p.lat, p.lon);
+      if (p.source === 'favorite') {
+        addOrActivateFavorite(p.name, p.lat, p.lon);
+        return;
+      }
+      setCurrentLocation(p.name, p.lat, p.lon);
     },
-    [addOrActivateFavorite, setActiveCurrent]
+    [addOrActivateFavorite, setActiveCurrent, setCurrentLocation]
   );
 
   const addFavorite = (p: Place) => {
     const fav: Place = { ...p, source: 'favorite' };
     setFavorites((prev) => {
-      const exists = prev.some((x) => x.id === fav.id);
+      const exists = prev.some((x) => x.id === fav.id || (nearlySame(x.lat, fav.lat, 0.001) && nearlySame(x.lon, fav.lon, 0.001)));
       const next = exists ? prev : [fav, ...prev];
-      return next.slice(0, 30);
+      return dedupePlaces(next);
     });
     setActiveState(fav);
     addOrActivateFavorite(fav.name, fav.lat, fav.lon);
