@@ -5,6 +5,7 @@ export type MrmsRadarFrame = {
   template: string;
   maxZ: number;
   label: string;
+  tileDelivery: string | null;
 };
 
 const DEFAULT_MRMS_STALE_AFTER_MS = 90 * 60_000;
@@ -17,16 +18,18 @@ type MrmsTimelineResponse = {
   frame?: string;
   minZoom?: number;
   maxZoom?: number;
-  tileCount?: number;
-  totalBytes?: number;
-  maxFrameAgeMinutes?: number;
-  frames?: Array<{
-    frame?: string;
-    validTime?: string | null;
-    time?: string | null;
-    maxZoom?: number;
-    tileTemplate?: string | null;
-  }>;
+    tileCount?: number;
+    totalBytes?: number;
+    maxFrameAgeMinutes?: number;
+    tileDelivery?: string | null;
+    frames?: Array<{
+      frame?: string;
+      validTime?: string | null;
+      time?: string | null;
+      maxZoom?: number;
+      tileTemplate?: string | null;
+      tileDelivery?: string | null;
+    }>;
 };
 
 let cachedFrame: MrmsRadarFrame[] | null = null;
@@ -97,6 +100,7 @@ export async function fetchMrmsFrames(args?: { product?: string; ttlMs?: number;
         template: buildMrmsTileTemplate(product, frame.frame),
         maxZ: safeMaxZoom(frame.maxZoom ?? json.maxZoom),
         label: `MRMS ${frame.frame || iso}`,
+        tileDelivery: frame.tileDelivery ?? json.tileDelivery ?? null,
       };
     })
     .filter((frame): frame is MrmsRadarFrame => !!frame)

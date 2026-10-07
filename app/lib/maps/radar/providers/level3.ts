@@ -8,6 +8,7 @@ export type Level3RadarFrame = {
   label: string;
   site: string;
   product: RadarProductId;
+  tileDelivery: string | null;
 };
 
 type Level3TimelineResponse = {
@@ -19,6 +20,7 @@ type Level3TimelineResponse = {
   frame?: string;
   maxZoom?: number;
   maxFrameAgeMinutes?: number;
+  tileDelivery?: string | null;
   frames?: Array<{
     frame?: string;
     site?: string;
@@ -26,6 +28,7 @@ type Level3TimelineResponse = {
     validTime?: string | null;
     productTime?: string | null;
     maxZoom?: number;
+    tileDelivery?: string | null;
   }>;
 };
 
@@ -113,6 +116,7 @@ export async function fetchLevel3Frames(args: {
         label: `Owned Level III ${site} ${product} ${frame.frame || iso}`,
         site,
         product,
+        tileDelivery: frame.tileDelivery ?? json.tileDelivery ?? null,
       } satisfies Level3RadarFrame;
     })
     .filter((frame): frame is Level3RadarFrame => !!frame)

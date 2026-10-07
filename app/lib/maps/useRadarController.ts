@@ -1527,6 +1527,7 @@ export function useRadarController(args: {
     mrmsLoading,
     mrmsFrameCount: mrmsFrames?.length ?? 0,
     mrmsTemplateAvailable: !!mrmsFrames?.some((frame) => !!frame.template),
+    mrmsTileDelivery: mrmsFrames?.[mrmsFrames.length - 1]?.tileDelivery ?? null,
     level3Error,
     level3Loading,
     level3Supported,
@@ -1535,6 +1536,7 @@ export function useRadarController(args: {
     usingLevel3,
     level3FrameCount: level3Frames?.length ?? 0,
     level3TemplateAvailable: !!level3Frames?.some((frame) => !!frame.template),
+    level3TileDelivery: level3Frames?.[level3Frames.length - 1]?.tileDelivery ?? null,
     effectiveRadarProvider: effectiveTileProvider,
     requestedRadarProvider: sheetValue.radarProvider,
 

@@ -2391,6 +2391,7 @@ export default function MapsScreen() {
         `requested=${radarCtl.requestedRadarProvider}`,
         `ownedFrames=${ownedLevel3FrameCount}`,
         `visibleFrames=${frameCount}`,
+        radarCtl.level3TileDelivery ? `delivery=${radarCtl.level3TileDelivery}` : null,
         `template=${radarCtl.level3TemplateAvailable || ownedLevel3HasTemplate ? 'level3' : 'missing'}`,
         radarCtl.level3Error ? `error=${radarCtl.level3Error}` : null,
       ].filter(Boolean).join(' | ')
@@ -5968,8 +5969,8 @@ export default function MapsScreen() {
                   {activeRadarProvider === 'mrms'
                     ? ownedMrmsFrameCount > 0 && ownedMrmsHasTemplate
                       ? wideRadarProvider === 'auto'
-                        ? `Auto radar is using owned NOAA MRMS ${wideMrmsProductMeta.title.toLowerCase()}. RainViewer stays warm as the fallback.`
-                        : `${wideMrmsProductMeta.note} Owned frames=${ownedMrmsFrameCount}; visible=${frameCount}.`
+                        ? `Auto radar is using owned NOAA MRMS ${wideMrmsProductMeta.title.toLowerCase()} (${radarCtl.mrmsTileDelivery ?? 'delivery unknown'}). RainViewer stays warm as the fallback.`
+                        : `${wideMrmsProductMeta.note} Owned frames=${ownedMrmsFrameCount}; visible=${frameCount}; delivery=${radarCtl.mrmsTileDelivery ?? 'unknown'}.`
                       : radarCtl.mrmsError
                         ? `MRMS preview unavailable: ${radarCtl.mrmsError} | ownedFrames=${ownedMrmsFrameCount} | visible=${frameCount} | template=${ownedMrmsHasTemplate ? 'mrms' : 'missing'}`
                         : ownedMrmsFrameCount > 0
