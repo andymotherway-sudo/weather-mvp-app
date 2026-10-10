@@ -1770,10 +1770,9 @@ export default function MapsScreen() {
   });
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
-  const satellitePlaybackFrames =
-    goesTrueColorEnabled && trueColorFrames.length > 0
-      ? trueColorFrames
-      : goesEastIrEnabled && infraredFrames.length > 1
+  const satellitePlaybackFrames = goesTrueColorEnabled
+    ? trueColorFrames
+    : goesEastIrEnabled && infraredFrames.length > 1
         ? infraredFrames
         : satelliteFrames;
   const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
@@ -3078,21 +3077,6 @@ export default function MapsScreen() {
       });
     }
 
-    if (isFocused && geoColorNeedsImageFallback) {
-      // The rendered NESDIS GeoColor catalog can lag. Keep a current GOES thermal view
-      // above the daily VIIRS backdrop until the live color loop has real frames again.
-      list.push({
-        id: 'goes-geocolor-live-fallback',
-        url: goesWmsEndpoint('east'),
-        layers: 'conus_ch13',
-        opacity: Math.max(0, Math.min(1, Number(goesTrueColorOpacity) * 0.72)),
-        zIndex: 62.1,
-        enabled: true,
-        format: 'image/png',
-        transparent: true,
-      });
-    }
-
     if (isFocused && globalPrecipEnabled) {
       list.push({
         id: 'gibs-global-precip',
@@ -3961,7 +3945,7 @@ export default function MapsScreen() {
           : status === 'stale'
             ? `${product} live loop is delayed`
             : status === 'unavailable'
-              ? `${product} imagery is unavailable`
+            ? `${product} live loop is unavailable`
             : sparse
               ? `${product} source coverage is limited`
               : `${product} source ready`,
@@ -3975,7 +3959,9 @@ export default function MapsScreen() {
           : status === 'stale'
             ? `Showing the last verified image${trueColorSourceAgeMinutes != null ? ` (${Math.round(trueColorSourceAgeMinutes / 60)}h old)` : ''}; no synthetic loop is shown.`
             : status === 'unavailable'
-              ? `No verified ${product} image is available from ${source} right now.`
+              ? product === 'GeoColor'
+                ? 'No verified live GeoColor frame is available from NESDIS. Showing a daily true-color reference, not infrared.'
+                : `No verified ${product} image is available from ${source} right now.`
             : sparse
               ? `${satelliteFrameCount} frames are available for this ${satelliteLoopHours}h window right now.`
               : `${satelliteFrameCount} frames loaded for this ${satelliteLoopHours}h window.`,
