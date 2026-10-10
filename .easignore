@@ -2,6 +2,14 @@
 .expo
 .vscode
 node_modules
+.env
+.env.*
+!.env.example
+credentials.json
+*.jks
+*.keystore
+android/signing/
+android/app/upload.properties
 /.gradle
 /android/.gradle
 /android/.kotlin

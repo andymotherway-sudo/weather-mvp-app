@@ -10281,6 +10281,29 @@ function isMrmsMaintenanceEnabled(env: Env) {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function fixedTimeEquals(left: string, right: string) {
+  const length = Math.max(left.length, right.length);
+  let mismatch = left.length ^ right.length;
+  for (let index = 0; index < length; index += 1) {
+    mismatch |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+  }
+  return mismatch === 0;
+}
+
+function isRadarMaintenanceAuthorized(request: Request, env: Env) {
+  const expected = String(env.RADAR_MAINTENANCE_TOKEN ?? "").trim();
+  const authorization = request.headers.get("authorization") ?? "";
+  const provided = authorization.replace(/^Bearer\s+/i, "").trim();
+  return Boolean(expected) && fixedTimeEquals(provided, expected);
+}
+
+function radarMaintenanceUnauthorizedResponse() {
+  return new Response(JSON.stringify({ ok: false, error: "radar-maintenance-unauthorized" }), {
+    status: 401,
+    headers: withCors({ "content-type": "application/json; charset=utf-8" }),
+  });
+}
+
 function isLevel3Enabled(env: Env) {
   const raw = String((env as any).LEVEL3_ENABLED ?? "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
@@ -12731,6 +12754,9 @@ async function handleWorkerRequest(
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
       }
+      if (!isRadarMaintenanceAuthorized(request, env)) {
+        return radarMaintenanceUnauthorizedResponse();
+      }
       if (url.searchParams.get("confirm") !== MRMS_MAINTENANCE_CONFIRM) {
         return new Response(JSON.stringify({ ok: false, error: "confirmation required" }), {
           status: 400,
@@ -12773,6 +12799,9 @@ async function handleWorkerRequest(
           status: 405,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
+      }
+      if (!isRadarMaintenanceAuthorized(request, env)) {
+        return radarMaintenanceUnauthorizedResponse();
       }
       if (url.searchParams.get("confirm") !== MRMS_MAINTENANCE_CONFIRM) {
         return new Response(JSON.stringify({ ok: false, error: "confirmation required" }), {
@@ -12864,6 +12893,10 @@ async function handleWorkerRequest(
         });
       }
 
+      if (!isRadarMaintenanceAuthorized(request, env)) {
+        return radarMaintenanceUnauthorizedResponse();
+      }
+
       const confirm = url.searchParams.get("confirm") ?? "";
       if (confirm !== RADAR_R2_MAINTENANCE_CONFIRM) {
         return new Response(JSON.stringify({ ok: false, error: "confirmation phrase required" }), {
@@ -12897,6 +12930,10 @@ async function handleWorkerRequest(
           status: 405,
           headers: withCors({ "content-type": "application/json; charset=utf-8" }),
         });
+      }
+
+      if (!isRadarMaintenanceAuthorized(request, env)) {
+        return radarMaintenanceUnauthorizedResponse();
       }
 
       const confirm = url.searchParams.get("confirm") ?? "";

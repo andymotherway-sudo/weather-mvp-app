@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.car
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
@@ -43,6 +44,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import com.anonymous.weatherapp.BuildConfig
 import java.net.HttpURLConnection
 import java.net.UnknownHostException
 import java.net.URL
@@ -65,7 +67,11 @@ private const val DEFAULT_CITY_STORAGE_KEY = "omniwx:profile:defaultCity"
 private const val WIDGET_STATE_PREFS = "omniwx_widget_data"
 private const val ACTIVE_PLACE_JSON = "activePlaceJson"
 private const val RAINVIEWER_TIMELINE_URL = "https://api.rainviewer.com/public/weather-maps.json"
-private const val OMNIWX_RADAR_WORKER_BASE = "https://omniwx-api.omniwx.workers.dev"
+private val OMNIWX_RADAR_WORKER_BASE = if (BuildConfig.DEBUG) {
+  "https://omniwx-api.omniwx.workers.dev"
+} else {
+  "https://omniwx-api-production.omniwx.workers.dev"
+}
 private const val CAR_RADAR_RETRY_MS = 2 * 60 * 1000L
 
 /*
@@ -85,10 +91,15 @@ private const val CAR_RADAR_RETRY_MS = 2 * 60 * 1000L
  */
 class OmniWeatherCarAppService : CarAppService() {
   override fun createHostValidator(): HostValidator {
-    // Development-friendly validator. In a more locked-down production car app,
-    // this can be replaced with a validator that only accepts known Android Auto
-    // hosts signed by Google/OEMs.
-    return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+    if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+      return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+    }
+
+    // Android's maintained sample list includes the known Android Auto and
+    // Automotive OS template hosts, including their certificate digests.
+    return HostValidator.Builder(this)
+      .addAllowedHosts(androidx.car.app.R.array.hosts_allowlist_sample)
+      .build()
   }
 
   override fun onCreateSession(sessionInfo: SessionInfo): Session {

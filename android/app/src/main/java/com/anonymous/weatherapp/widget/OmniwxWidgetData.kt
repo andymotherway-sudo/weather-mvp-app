@@ -16,6 +16,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import com.anonymous.weatherapp.BuildConfig
 import com.anonymous.weatherapp.MainActivity
 import java.net.HttpURLConnection
 import java.net.URL
@@ -40,7 +41,11 @@ private const val AVIATION_WIDGET_SELECTION_KEY = "omniwx:widget:aviation:select
 private const val CLIMO_CACHE_PREFIX = "omniwx:climo:v8"
 private const val RECORDS_CACHE_PREFIX = "omniwx:records:v10"
 private const val SKY_SCORE_CACHE_PREFIX = "omniwx:skyScore:v1"
-private const val OMNIWX_API_BASE = "https://omniwx-api.omniwx.workers.dev"
+private val OMNIWX_API_BASE = if (BuildConfig.DEBUG) {
+  "https://omniwx-api.omniwx.workers.dev"
+} else {
+  "https://omniwx-api-production.omniwx.workers.dev"
+}
 private const val WIDGET_WEATHER_CACHE_TTL_MS = 10L * 60L * 1000L
 private const val WIDGET_DATA_PREFS = "omniwx_widget_data"
 private const val LAST_WEATHER_JSON = "lastWeatherJson"

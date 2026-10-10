@@ -51,7 +51,7 @@
 		"MRMS_PROOF_PREFIX": "radar/mrms/proof",
 		"MRMS_LATEST_PREFIX": "radar/mrms/latest",
 		"MRMS_PUBLIC_TILE_BASE_URL": "",
-		"MRMS_MAINTENANCE_ENABLED": "1",
+		"MRMS_MAINTENANCE_ENABLED": "0",
 		"LEVEL3_ENABLED": "1",
 		"LEVEL3_PROOF_PREFIX": "radar/level3/proof",
 		"LEVEL3_LATEST_PREFIX": "radar/level3/latest",
