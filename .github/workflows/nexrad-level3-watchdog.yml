@@ -35,9 +35,13 @@ jobs:
     name: Check production Level III freshness
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Scheduled recovery may publish to R2, so it shares the publisher's
+    # explicit opt-in flag. Manual diagnostic runs remain possible.
+    if: github.event_name == 'workflow_dispatch' || vars.LEVEL3_SCHEDULE_ENABLED == 'true'
 
     env:
       GH_TOKEN: ${{ github.token }}
+      LEVEL3_SCHEDULE_ENABLED: ${{ vars.LEVEL3_SCHEDULE_ENABLED || 'false' }}
       STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || vars.LEVEL3_WATCHDOG_STALE_MINUTES || '240' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       LEVEL3_SITES: ${{ github.event_name == 'schedule' && (vars.LEVEL3_SCHEDULE_SITES || 'IWA') || inputs.sites || 'IWA,MPX,DLH' }}
@@ -136,7 +140,7 @@ jobs:
           echo "ACTIVE_COUNT=$active_count" | tee -a "$GITHUB_OUTPUT"
 
       - name: Dispatch bounded Level III recovery
-        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true'
+        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true' && env.LEVEL3_SCHEDULE_ENABLED == 'true'
         shell: bash
         run: |
           set -euo pipefail

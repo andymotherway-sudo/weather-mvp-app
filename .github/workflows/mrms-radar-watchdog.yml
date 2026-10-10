@@ -31,10 +31,13 @@ jobs:
     name: Check production MRMS freshness
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Do not let a scheduled watchdog re-enable publishing through a recovery
+    # dispatch. Manual dry-runs remain available for operational diagnosis.
+    if: github.event_name == 'workflow_dispatch' || vars.MRMS_SCHEDULE_ENABLED == 'true'
 
     env:
       GH_TOKEN: ${{ github.token }}
-      MRMS_SCHEDULE_ENABLED: ${{ vars.MRMS_SCHEDULE_ENABLED || 'true' }}
+      MRMS_SCHEDULE_ENABLED: ${{ vars.MRMS_SCHEDULE_ENABLED || 'false' }}
       STALE_AFTER_MINUTES: ${{ inputs.stale_after_minutes || '50' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       MRMS_TIMELINE_URL: https://omniwx-api-production.omniwx.workers.dev/v1/radar/mrms/timeline?product=MergedReflectivityQCComposite
@@ -109,7 +112,7 @@ jobs:
           echo "ACTIVE_COUNT=$active_count" | tee -a "$GITHUB_OUTPUT"
 
       - name: Dispatch bounded MRMS recovery
-        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true' && env.MRMS_SCHEDULE_ENABLED != 'false'
+        if: steps.freshness.outputs.SHOULD_DISPATCH == 'true' && steps.active.outputs.ACTIVE_COUNT == '0' && env.DRY_RUN != 'true' && env.MRMS_SCHEDULE_ENABLED == 'true'
         shell: bash
         run: |
           set -euo pipefail

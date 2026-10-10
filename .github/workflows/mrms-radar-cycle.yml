@@ -92,7 +92,9 @@ jobs:
     name: Publish bounded MRMS radar
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: github.event_name == 'workflow_dispatch' || vars.MRMS_SCHEDULE_ENABLED != 'false'
+    # Scheduled publishing is opt-in. A missing repository variable must never
+    # resume R2 writes after containment or during a repository migration.
+    if: github.event_name == 'workflow_dispatch' || vars.MRMS_SCHEDULE_ENABLED == 'true'
 
     defaults:
       run:
