@@ -400,83 +400,54 @@ export function AstroForecastTimeline({
       </View>
       <Text style={styles.siteSource}>{formatSiteSource(forecast)}</Text>
 
-      <View style={[styles.selectedHour, { borderColor: chrome.border }]}>
-        <View style={styles.selectedTopRow}>
-          <View>
-            <Text style={styles.selectedEyebrow}>SELECTED HOUR</Text>
-            <Text style={styles.selectedTime}>{selected.hour.timeLabel}</Text>
-            <Text style={styles.selectedPhase}>{phaseLabel(selected.hour)}</Text>
-          </View>
-          <View style={[styles.selectedScore, { borderColor: scoreColor(selected.hour.score) }]}>
-            <Text style={[styles.selectedScoreValue, { color: scoreColor(selected.hour.score) }]}>
-              {selected.hour.score}
-            </Text>
-            <Text style={styles.selectedScoreLabel}>SKY SCORE</Text>
-          </View>
-        </View>
-        <Text style={styles.selectedQuality}>{selected.hour.label}</Text>
-        <Text style={styles.selectedSummary}>{selected.hour.summary}</Text>
-        <View style={styles.cloudLayerPanel}>
-          <View style={styles.cloudLayerHeader}>
+      <View style={[styles.cloudLayerPanel, styles.forecastCloudProfile]}>
+        <View style={styles.cloudLayerHeader}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.cloudLayerTitle}>Cloud layer profile</Text>
-            <Text style={styles.cloudLayerTotal}>
-              Total {cloudPct(selected.hour.cloudTotal)}
+            <Text style={styles.cloudLayerContext}>
+              {selected.hour.timeLabel} · {phaseLabel(selected.hour)} · {selected.hour.label}
             </Text>
           </View>
-          <View style={styles.cloudLayerRow}>
-            {[
-              { label: 'Low', value: selected.hour.cloudLow, hint: 'horizon' },
-              { label: 'Mid', value: selected.hour.cloudMid, hint: 'detail' },
-              { label: 'High', value: selected.hour.cloudHigh, hint: 'transparency' },
-            ].map((layer) => {
-              const width = layer.value == null || !Number.isFinite(layer.value) ? 0 : Math.max(3, Math.min(100, layer.value));
-              return (
-                <View key={layer.label} style={styles.cloudLayerItem}>
-                  <View style={styles.cloudLayerItemTop}>
-                    <Text style={styles.cloudLayerLabel}>{layer.label}</Text>
-                    <Text style={[styles.cloudLayerValue, { color: cloudColor(layer.value) }]}>
-                      {cloudPct(layer.value)}
-                    </Text>
-                  </View>
-                  <View style={styles.cloudLayerTrack}>
-                    <View
-                      style={[
-                        styles.cloudLayerFill,
-                        {
-                          width: `${width}%`,
-                          backgroundColor: cloudColor(layer.value),
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.cloudLayerHint}>{layer.hint}</Text>
-                </View>
-              );
-            })}
-          </View>
+          <Text style={styles.cloudLayerTotal}>
+            Total {cloudPct(selected.hour.cloudTotal)}
+          </Text>
         </View>
-        <View style={styles.selectedMetrics}>
-          <Text style={styles.selectedMetric}>
-            Clouds {selected.hour.cloudTotal == null ? '--' : `${Math.round(selected.hour.cloudTotal)}%`}
-          </Text>
-          <Text style={styles.selectedMetric}>
-            {selected.hour.moonIsUp
-              ? `Moon ${selected.hour.moonIlluminationPct == null ? 'up' : `${Math.round(selected.hour.moonIlluminationPct)}%`}`
-              : 'Moon down'}
-          </Text>
-          <Text style={styles.selectedMetric}>Visibility {visibilityLabel(selected.hour.visibilityM)}</Text>
-          <Text style={styles.selectedMetric}>Wind {windMph(selected.hour.windMps)}</Text>
-          <Text style={styles.selectedMetric}>Temperature {temperatureF(selected.hour.temperatureC)}</Text>
-          <Text style={styles.selectedMetric}>
-            Kp {selected.kpSample == null ? '--' : selected.kpSample.kp.toFixed(1)}
-          </Text>
-          <Text style={styles.selectedMetric}>Aurora view {selected.auroraPotential}%</Text>
+        <View style={styles.cloudLayerRow}>
+          {[
+            { label: 'Low', value: selected.hour.cloudLow, hint: 'horizon' },
+            { label: 'Mid', value: selected.hour.cloudMid, hint: 'detail' },
+            { label: 'High', value: selected.hour.cloudHigh, hint: 'transparency' },
+          ].map((layer) => {
+            const width = layer.value == null || !Number.isFinite(layer.value) ? 0 : Math.max(3, Math.min(100, layer.value));
+            return (
+              <View key={layer.label} style={styles.cloudLayerItem}>
+                <View style={styles.cloudLayerItemTop}>
+                  <Text style={styles.cloudLayerLabel}>{layer.label}</Text>
+                  <Text style={[styles.cloudLayerValue, { color: cloudColor(layer.value) }]}>
+                    {cloudPct(layer.value)}
+                  </Text>
+                </View>
+                <View style={styles.cloudLayerTrack}>
+                  <View
+                    style={[
+                      styles.cloudLayerFill,
+                      {
+                        width: `${width}%`,
+                        backgroundColor: cloudColor(layer.value),
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.cloudLayerHint}>{layer.hint}</Text>
+              </View>
+            );
+          })}
         </View>
       </View>
 
       <View style={styles.trackLabelRow}>
-        <Text style={styles.trackLabel}>SCROLL THE FORECAST</Text>
-        <Text style={styles.trackHint}>Tap an hour to inspect</Text>
+        <Text style={styles.trackLabel}>HOURLY FORECAST</Text>
+        <Text style={styles.trackHint}>Tap an hour to update clouds</Text>
       </View>
 
       <ScrollView ref={trackRef} horizontal showsHorizontalScrollIndicator={false}>
@@ -880,6 +851,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(125,211,252,0.12)',
   },
+  forecastCloudProfile: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+  },
   cloudLayerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -893,6 +868,13 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.7,
     textTransform: 'uppercase',
+  },
+  cloudLayerContext: {
+    color: '#94A3B8',
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '800',
+    marginTop: 3,
   },
   cloudLayerTotal: {
     color: '#94A3B8',

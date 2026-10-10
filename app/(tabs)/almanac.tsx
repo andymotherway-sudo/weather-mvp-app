@@ -880,7 +880,9 @@ const hasNormals = chartNormals.length > 0;
                     <View style={styles.recordsBox}>
                       <Text style={styles.recordsTitle}>{recordsTitle}</Text>
                       <Text style={styles.recordsItem}>
-                        {rErr ? 'Couldn’t load records yet.' : 'No record data for this date.'}
+                        {rErr
+                          ? 'Daily records from the nearby NOAA climate station are not available right now. Forecasts and normals still work.'
+                          : 'No record data for this date.'}
                       </Text>
                       <View style={styles.actionRowTight}>
                         <Pressable onPress={() => (records as any).refresh?.()} style={styles.btn}>

@@ -1814,13 +1814,11 @@ export default function MapsScreen() {
           setSatelliteFrameIndex(frames.length - 1);
           setTrueColorFrameStatus('ready');
         } else {
-          setTrueColorFrames([]);
           setTrueColorFrameStatus('fallback');
         }
       })
       .catch(() => {
         if (cancelled) return;
-        setTrueColorFrames([]);
         setTrueColorFrameStatus('fallback');
       });
 
@@ -1846,13 +1844,11 @@ export default function MapsScreen() {
           setSatelliteFrameIndex(frames.length - 1);
           setInfraredFrameStatus('ready');
         } else {
-          setInfraredFrames([]);
           setInfraredFrameStatus('fallback');
         }
       })
       .catch(() => {
         if (cancelled) return;
-        setInfraredFrames([]);
         setInfraredFrameStatus('fallback');
       });
 

@@ -469,6 +469,8 @@ export default function SolarScreen() {
       chartHours.find((hour) => hour.score === peakScore) ??
       astro?.tonightHours?.[0] ??
       chartHours[0];
+    const cloudProfileTime = cloudHour?.timeLabel ? `${cloudHour.timeLabel} profile` : 'Best-window profile';
+    const cloudTotal = formatCloudPct(cloudHour?.cloudTotal);
     const kpValue = data?.kp != null && Number.isFinite(data.kp) ? data.kp.toFixed(1) : '--';
     const auroraValue = data?.kp != null && Number.isFinite(data.kp) ? `${auroraChancePct(data.kp).toFixed(0)}%` : '--';
 
@@ -477,7 +479,7 @@ export default function SolarScreen() {
         <View style={styles.spaceOverviewTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.eyebrow}>SPACE WX COMMAND</Text>
-            <Text style={styles.spaceOverviewTitle}>Night sky and solar activity at a glance</Text>
+            <Text style={styles.spaceOverviewTitle}>Tonight observing setup</Text>
           </View>
           <OmniChip
             label="How it works"
@@ -515,9 +517,10 @@ export default function SolarScreen() {
           />
         </View>
         <View style={styles.spaceCloudPanel}>
-          <Text style={styles.spaceCloudTitle}>
-            Cloud layers {cloudHour?.timeLabel ? `near ${cloudHour.timeLabel}` : 'at best window'}
-          </Text>
+          <View style={styles.spaceCloudHeader}>
+            <Text style={styles.spaceCloudTitle}>Cloud layer profile</Text>
+            <Text style={styles.spaceCloudMeta}>{cloudProfileTime} · Total {cloudTotal}</Text>
+          </View>
           <View style={styles.spaceCloudGrid}>
             <OmniMetricTile
               label="Low"
@@ -542,9 +545,6 @@ export default function SolarScreen() {
             />
           </View>
         </View>
-        <Text style={styles.spaceOverviewFooter}>
-          Current solar view: {activeSolarView.label} from {activeSolarView.source}. Use the mode rail to switch the Space focus.
-        </Text>
       </View>
     );
   };
@@ -1817,6 +1817,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
 
+  spaceCloudHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
   spaceCloudTitle: {
     color: 'rgba(224,242,254,0.88)',
     fontSize: 12,
@@ -1824,6 +1831,15 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+  },
+
+  spaceCloudMeta: {
+    color: 'rgba(186,230,253,0.68)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    textAlign: 'right',
+    flexShrink: 1,
   },
 
   spaceCloudGrid: {

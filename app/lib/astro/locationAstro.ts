@@ -591,6 +591,7 @@ type WorkerAstroPayload = {
     visibilityM?: Array<number | null>;
     windMps?: Array<number | null>;
     gustMps?: Array<number | null>;
+    [key: string]: unknown;
   };
   site?: {
     elevationM?: number | null;
@@ -611,6 +612,20 @@ type WorkerAstroPayload = {
     aerosolSource?: string | null;
   };
 };
+
+function readHourlyNumber(
+  hourly: WorkerAstroPayload['hourly'],
+  idx: number,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const values = hourly[key];
+    if (!Array.isArray(values)) continue;
+    const value = values[idx];
+    if (isFiniteNumber(value)) return value;
+  }
+  return null;
+}
 
 async function fetchLocationAstroForecast(args: {
   lat: number;
@@ -764,33 +779,26 @@ async function fetchLocationAstroForecast(args: {
       isNight,
     });
 
+    const cloudLow = readHourlyNumber(payload.hourly, idx, ['cloudLow', 'cloud_cover_low', 'cloudCoverLow']);
+    const cloudMid = readHourlyNumber(payload.hourly, idx, ['cloudMid', 'cloud_cover_mid', 'cloudCoverMid']);
+    const cloudHigh = readHourlyNumber(payload.hourly, idx, ['cloudHigh', 'cloud_cover_high', 'cloudCoverHigh']);
+    const cloudTotal = readHourlyNumber(payload.hourly, idx, ['cloudTotal', 'cloud_cover', 'cloudCover', 'cloudCoverTotal']);
+    const visibilityM = readHourlyNumber(payload.hourly, idx, ['visibilityM', 'visibility', 'visibility_m']);
+    const windMps = readHourlyNumber(payload.hourly, idx, ['windMps', 'wind_speed_10m', 'windSpeedMps']);
+    const gustMps = readHourlyNumber(payload.hourly, idx, ['gustMps', 'wind_gusts_10m', 'windGustMps']);
+    const humidityPct = readHourlyNumber(payload.hourly, idx, ['humidityPct', 'relative_humidity_2m', 'humidity']);
+
     const input: AstroInputs = {
       lat: payload.lat,
       lon: payload.lon,
-      cloudLow: isFiniteNumber(payload.hourly.cloudLow?.[idx])
-        ? payload.hourly.cloudLow![idx]!
-        : null,
-      cloudMid: isFiniteNumber(payload.hourly.cloudMid?.[idx])
-        ? payload.hourly.cloudMid![idx]!
-        : null,
-      cloudHigh: isFiniteNumber(payload.hourly.cloudHigh?.[idx])
-        ? payload.hourly.cloudHigh![idx]!
-        : null,
-      cloudTotal: isFiniteNumber(payload.hourly.cloudTotal?.[idx])
-        ? payload.hourly.cloudTotal![idx]!
-        : null,
-      visibilityM: isFiniteNumber(payload.hourly.visibilityM?.[idx])
-        ? payload.hourly.visibilityM![idx]!
-        : null,
-      windMps: isFiniteNumber(payload.hourly.windMps?.[idx])
-        ? payload.hourly.windMps![idx]!
-        : null,
-      gustMps: isFiniteNumber(payload.hourly.gustMps?.[idx])
-        ? payload.hourly.gustMps![idx]!
-        : null,
-      humidityPct: isFiniteNumber(payload.hourly.humidityPct?.[idx])
-        ? payload.hourly.humidityPct![idx]!
-        : null,
+      cloudLow,
+      cloudMid,
+      cloudHigh,
+      cloudTotal,
+      visibilityM,
+      windMps,
+      gustMps,
+      humidityPct,
       elevationM: payload.site?.elevationM ?? null,
       aerosolIndex: payload.aerosols?.index ?? null,
       bortleClass: payload.site?.bortleClass ?? null,
@@ -842,9 +850,7 @@ async function fetchLocationAstroForecast(args: {
       temperatureC: isFiniteNumber(payload.hourly.temperatureC?.[idx])
         ? payload.hourly.temperatureC![idx]!
         : null,
-      humidityPct: isFiniteNumber(payload.hourly.humidityPct?.[idx])
-        ? payload.hourly.humidityPct![idx]!
-        : null,
+      humidityPct,
 
       moonIsUp,
       moonIlluminationPct,
