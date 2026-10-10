@@ -3078,6 +3078,21 @@ export default function MapsScreen() {
       });
     }
 
+    if (isFocused && geoColorNeedsImageFallback) {
+      // The rendered NESDIS GeoColor catalog can lag. Keep a current GOES thermal view
+      // above the daily VIIRS backdrop until the live color loop has real frames again.
+      list.push({
+        id: 'goes-geocolor-live-fallback',
+        url: goesWmsEndpoint('east'),
+        layers: 'conus_ch13',
+        opacity: Math.max(0, Math.min(1, Number(goesTrueColorOpacity) * 0.72)),
+        zIndex: 62.1,
+        enabled: true,
+        format: 'image/png',
+        transparent: true,
+      });
+    }
+
     if (isFocused && globalPrecipEnabled) {
       list.push({
         id: 'gibs-global-precip',

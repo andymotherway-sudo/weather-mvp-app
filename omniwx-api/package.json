@@ -21,6 +21,7 @@
 		"radar:build-tile-pack": "node ./scripts/build-radar-tile-pack.mjs",
 		"radar:publish-tile-pack": "node ./scripts/publish-radar-tile-pack.mjs",
 		"radar:runner": "node ./scripts/run-radar-runner.mjs",
+		"goes:discover": "node ./scripts/discover-goes-cmi.mjs",
 		"level3:discover": "node ./scripts/discover-nexrad-level3.mjs",
 		"level3:download": "node ./scripts/download-nexrad-level3.mjs",
 		"level3:inventory": "node ./scripts/inventory-nexrad-level3.mjs",
