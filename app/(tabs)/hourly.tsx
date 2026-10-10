@@ -19,6 +19,7 @@ import { useWxLab } from '../context/WxLabContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
+import { buildForecastNuance, type ForecastNuance } from '../lib/weather/forecastNuance';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -352,75 +353,6 @@ function buildWxLabHeroNarrative(hour: any) {
   return parts.slice(0, 4).join(' • ');
 }
 
-function angleDeltaDeg(a: number | null, b: number | null) {
-  if (a == null || b == null) return null;
-  const diff = Math.abs((((b - a) % 360) + 540) % 360 - 180);
-  return Number.isFinite(diff) ? diff : null;
-}
-
-function buildHourlyContextInsight(hours: any[], timeZone?: string | null) {
-  const window = hours.slice(0, 8);
-  if (window.length < 3) return null;
-
-  const temps = window.map((hour) => safeNum(hour?.temperatureF)).filter((value): value is number => value != null);
-  const precip = window.map((hour) => safeNum(hour?.precipChancePct)).filter((value): value is number => value != null);
-  const winds = window.map((hour) => safeNum(hour?.windMph)).filter((value): value is number => value != null);
-  const gusts = window.map((hour) => safeNum(hour?.windGustMph)).filter((value): value is number => value != null);
-  const codes = window.map((hour) => safeNum(hour?.weatherCode)).filter((value): value is number => value != null);
-
-  const first = window[0];
-  const later = window[Math.min(window.length - 1, 5)];
-  const firstTemp = safeNum(first?.temperatureF);
-  const laterTemp = safeNum(later?.temperatureF);
-  const tempDrop = firstTemp != null && laterTemp != null ? firstTemp - laterTemp : null;
-  const firstWind = safeNum(first?.windMph);
-  const maxWind = winds.length ? Math.max(...winds) : null;
-  const maxGust = gusts.length ? Math.max(...gusts) : null;
-  const windIncrease = firstWind != null && maxWind != null ? maxWind - firstWind : null;
-  const dirShift = angleDeltaDeg(safeNum(first?.windDirDeg), safeNum(later?.windDirDeg));
-  const maxPrecip = precip.length ? Math.max(...precip) : null;
-  const minTemp = temps.length ? Math.min(...temps) : null;
-  const hasConvectiveCode = codes.some((code) => [80, 81, 82, 95, 96, 99].includes(code));
-  const slot = formatHourSlot(first?.time, timeZone ?? undefined);
-
-  const outflowSignal =
-    (tempDrop != null && tempDrop >= 8) ||
-    (windIncrease != null && windIncrease >= 8) ||
-    (maxGust != null && maxGust >= 20) ||
-    (dirShift != null && dirShift >= 70);
-
-  if (!outflowSignal && !hasConvectiveCode) return null;
-
-  if ((maxPrecip ?? 0) <= 25 && outflowSignal) {
-    const signalParts = [
-      tempDrop != null && tempDrop >= 8 ? `temps may fall about ${Math.round(tempDrop)} degrees` : null,
-      maxGust != null && maxGust >= 20 ? `gusts may reach ${Math.round(maxGust)} mph` : null,
-      dirShift != null && dirShift >= 70 ? `winds may shift ${Math.round(dirShift)} degrees` : null,
-    ].filter(Boolean);
-    const signalText = signalParts.length
-      ? `${String(signalParts.join(', ')).replace(/^./, (char) => char.toUpperCase())}.`
-      : 'The short-range pattern is changing quickly.';
-
-    return {
-      title: 'Low rain chance, active nearby pattern',
-      body: `${signalText} Direct rain odds stay near ${Math.round(maxPrecip ?? 0)}%, so this looks more like outflow or nearby-storm influence than a guaranteed hit.`,
-      meta: `${slot.short} forward - ${minTemp != null ? `low near ${Math.round(minTemp)} degrees` : 'watch local changes'}`,
-      icon: 'git-branch-outline' as keyof typeof Ionicons.glyphMap,
-    };
-  }
-
-  if (hasConvectiveCode) {
-    return {
-      title: 'Storms are possible, but timing is conditional',
-      body: `The hourly model flags convective weather nearby while point rain odds peak near ${Math.round(maxPrecip ?? 0)}%. Watch radar and wind shifts for whether storms reach your spot.`,
-      meta: `${slot.short} forward - isolated storm setup`,
-      icon: 'thunderstorm-outline' as keyof typeof Ionicons.glyphMap,
-    };
-  }
-
-  return null;
-}
-
 function formatHeroMetricValue(value: number | null, suffix = '', digits = 0) {
   if (value == null) return '—';
   return `${digits > 0 ? value.toFixed(digits) : Math.round(value)}${suffix}`;
@@ -558,7 +490,7 @@ function buildHourlyDetailRows(hour: any) {
   ];
 }
 
-function HourlyContextInsightCard({ insight }: { insight: ReturnType<typeof buildHourlyContextInsight> }) {
+function HourlyContextInsightCard({ insight }: { insight: ForecastNuance | null }) {
   if (!insight) return null;
   return (
     <View style={styles.contextInsightCard}>
@@ -585,7 +517,7 @@ function HourlySimpleTimeline({
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const insight = useMemo(() => buildHourlyContextInsight(hours, timeZone), [hours, timeZone]);
+  const insight = useMemo(() => buildForecastNuance(hours, timeZone), [hours, timeZone]);
 
   if (!featured) return null;
 
@@ -722,7 +654,7 @@ function HourlySimpleTimelineExpanded({
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const insight = useMemo(() => buildHourlyContextInsight(hours, timeZone), [hours, timeZone]);
+  const insight = useMemo(() => buildForecastNuance(hours, timeZone), [hours, timeZone]);
 
   if (!featured) return null;
 
@@ -936,7 +868,7 @@ function HourlyWithCoords({
   const heroGust = safeNum(leadHour.windGustMph);
   const heroPressure = safeNum(leadHour.pressureHpa);
   const modelLabel = forecastModelLabel(forecastModel);
-  const contextInsight = buildHourlyContextInsight(visibleHourly, forecastTimeZone);
+  const contextInsight = buildForecastNuance(visibleHourly, forecastTimeZone);
 
   if (!wxLab) {
     return (

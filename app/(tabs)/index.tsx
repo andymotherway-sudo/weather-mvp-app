@@ -33,6 +33,7 @@ import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
+import { buildForecastNuance, type ForecastNuance } from '../lib/weather/forecastNuance';
 import { useHomeSummaryBundle } from '../lib/weather/useHomeSummaryBundle';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -3540,6 +3541,24 @@ function NerdyDeepDive({
   );
 }
 
+function ForecastNuanceCard({ nuance }: { nuance: ForecastNuance | null }) {
+  if (!nuance) return null;
+
+  return (
+    <View style={nd.forecastNuanceCard}>
+      <View style={nd.forecastNuanceIcon}>
+        <Ionicons name={nuance.icon} size={18} color="#BAE6FD" />
+      </View>
+      <View style={nd.forecastNuanceBody}>
+        <Text style={nd.forecastNuanceKicker}>Forecast nuance</Text>
+        <Text style={nd.forecastNuanceTitle}>{nuance.title}</Text>
+        <Text style={nd.forecastNuanceText}>{nuance.body}</Text>
+        <Text style={nd.forecastNuanceMeta}>{nuance.meta}</Text>
+      </View>
+    </View>
+  );
+}
+
 function NerdySunMoonPanel({
   astro,
   sunrise,
@@ -4909,6 +4928,52 @@ const nd = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.55)',
   },
+  forecastNuanceCard: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: GLASS_PANEL_BG,
+  },
+  forecastNuanceIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.14)',
+  },
+  forecastNuanceBody: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  forecastNuanceKicker: {
+    fontSize: 9,
+    letterSpacing: 1.15,
+    textTransform: 'uppercase',
+    color: 'rgba(186,230,253,0.82)',
+    fontWeight: '900',
+  },
+  forecastNuanceTitle: {
+    fontSize: 15,
+    lineHeight: 19,
+    color: 'white',
+    fontWeight: '900',
+  },
+  forecastNuanceText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(255,255,255,0.76)',
+    fontWeight: '700',
+  },
+  forecastNuanceMeta: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '800',
+  },
   heroShell: {
     borderRadius: 18,
     paddingVertical: 12,
@@ -5610,6 +5675,10 @@ function LandWeatherWithCoords({
   }, [hourlyRaw]);
 
   const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now(), forecastTimeZone), [hourly, forecastTimeZone]);
+  const forecastNuance = useMemo(
+    () => buildForecastNuance(hourly, forecastTimeZone),
+    [hourly, forecastTimeZone],
+  );
   const modelForecastNow = useMemo(
     () => ({
       temperatureF:
@@ -6016,34 +6085,37 @@ function LandWeatherWithCoords({
           {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
         </Card>
       ) : (
-        <NerdyDeepDive
-          condition={condition}
-          heroSummary={heroSummary}
-          updatedText={updatedText}
-          dewpointF={dewpointF}
-          humidityPct={humidityPct}
-          dpBand={dpBand}
-          spreadF={spreadF}
-          tempF={tempF}
-          feelsLikeF={feelsLikeF}
-          windMph={windMph}
-          gustMph={gustMph}
-          windDirDeg={windDirDeg}
-          gf={gf}
-          cloudCoverPct={cloudCoverPct}
-          uvIndex={uvIndex}
-          airQualityLabel={airQualityLabel}
-          airQualityIndex={airQualityIndex}
-          precipChancePct={precipChancePct}
-          visibilityMi={visibilityMi}
-          pressureHpa={pressureHpa}
-          pressureInHg={pressureInHg}
-          pressureTrend={pressureTrend}
-          feelsDriverLabel={feelsDriver.label}
-          feelsDriverValue={feelsDriver.value}
-          feelsDriverTopicId={feelsDriver.topicId}
-          onOpenLearnTopic={openLearnTopic}
-        />
+        <>
+          <NerdyDeepDive
+            condition={condition}
+            heroSummary={heroSummary}
+            updatedText={updatedText}
+            dewpointF={dewpointF}
+            humidityPct={humidityPct}
+            dpBand={dpBand}
+            spreadF={spreadF}
+            tempF={tempF}
+            feelsLikeF={feelsLikeF}
+            windMph={windMph}
+            gustMph={gustMph}
+            windDirDeg={windDirDeg}
+            gf={gf}
+            cloudCoverPct={cloudCoverPct}
+            uvIndex={uvIndex}
+            airQualityLabel={airQualityLabel}
+            airQualityIndex={airQualityIndex}
+            precipChancePct={precipChancePct}
+            visibilityMi={visibilityMi}
+            pressureHpa={pressureHpa}
+            pressureInHg={pressureInHg}
+            pressureTrend={pressureTrend}
+            feelsDriverLabel={feelsDriver.label}
+            feelsDriverValue={feelsDriver.value}
+            feelsDriverTopicId={feelsDriver.topicId}
+            onOpenLearnTopic={openLearnTopic}
+          />
+          <ForecastNuanceCard nuance={forecastNuance} />
+        </>
       )}
 
       {wxLab && daily.length > 0 && !isLandscape ? (
