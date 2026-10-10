@@ -1,15 +1,15 @@
 # OMNIwx Current Status
 
-Last updated: October 6, 2026
+Last updated: October 9, 2026
 
 This file is the short source of truth for where the product and infrastructure stand today. Deeper planning details live in the roadmap docs, but this file should stay factual and current.
 
 ## Product
 
-- Current app release line: `1.1.258`
-- Current Android version code: `10275`
+- Current app release line: `1.1.259`
+- Current Android version code: `10276`
 - Internal testing is the active release channel.
-- The latest release slice targets a fresh `10275` AAB once the full release path build completes.
+- A signed production-targeted `10276` AAB was built on October 9 with Space cloud-profile cleanup, clearer Almanac records availability, and retained satellite frames during catalog failures. Play upload and device validation are pending.
 - Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
 - Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
 - Local Storm Reports now open a report browser from the Storm Recap card so users can read official report details directly instead of being routed only to wxLearn.

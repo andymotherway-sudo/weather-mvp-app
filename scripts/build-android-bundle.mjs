@@ -24,6 +24,13 @@ if (!(target in targetConfig)) {
 const selected = targetConfig[target];
 const androidDir = path.join(process.cwd(), 'android');
 const gradleCmd = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
+const javaToolOptions = process.env.JAVA_TOOL_OPTIONS || '';
+// Windows desktop app hosts can break Java's Unix-domain selector pipe.
+// NUL cannot hold socket files, so Java falls back to local TCP for this build.
+const windowsJavaEnv = process.platform === 'win32'
+  && !javaToolOptions.includes('-Djdk.net.unixdomain.tmpdir=')
+  ? { JAVA_TOOL_OPTIONS: `${javaToolOptions} -Djdk.net.unixdomain.tmpdir=NUL`.trim() }
+  : {};
 
 const result = spawnSync(gradleCmd, ['bundleRelease', '--console=plain'], {
   cwd: androidDir,
@@ -31,6 +38,7 @@ const result = spawnSync(gradleCmd, ['bundleRelease', '--console=plain'], {
   shell: process.platform === 'win32',
   env: {
     ...process.env,
+    ...windowsJavaEnv,
     NODE_ENV: process.env.NODE_ENV || 'production',
     OMNIWX_API_ENV: selected.apiEnvironment,
     EXPO_PUBLIC_API_BASE: selected.apiBase,

@@ -229,6 +229,8 @@ Run the production-targeted release build:
 npm run build:android:prod
 ```
 
+On Windows, the build script sets `jdk.net.unixdomain.tmpdir=NUL` for its Java child processes unless an explicit override is already present. This makes Java use its local TCP fallback for selector pipes and avoids the `Unable to establish loopback connection` error observed when Gradle runs from a Windows desktop app host. It does not change system Java settings or the app's networking. For a direct Gradle diagnostic in PowerShell, set `$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=NUL'` in that shell first.
+
 Artifact:
 
 - [android/app/build/outputs/bundle/release/app-release.aab](../android/app/build/outputs/bundle/release/app-release.aab)
