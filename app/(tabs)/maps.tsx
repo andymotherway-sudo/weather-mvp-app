@@ -446,6 +446,12 @@ type SatelliteFrame = {
   rasterId?: number;
 };
 
+type NesdisFramesResponse = {
+  frames: SatelliteFrame[];
+  fallbackFrame: SatelliteFrame | null;
+  sourceAgeMinutes: number | null;
+};
+
 const SATELLITE_LOOP_MINUTES_BACK = 120;
 const SATELLITE_FRAME_STEP_MINUTES = 5;
 const GOES_WMS_FRAME_STEP_MINUTES = 15;
@@ -739,7 +745,10 @@ function buildSatelliteFrames(opts?: { minutesBack?: number; stepMinutes?: numbe
   });
 }
 
-async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: number): Promise<SatelliteFrame[]> {
+async function fetchNesdisImageServerFrames(
+  exportUrl: string,
+  minutesBack: number,
+): Promise<NesdisFramesResponse> {
   const framesUrl =
     exportUrl === NESDIS_ABI13_ARCHIVE_EXPORT_URL
       ? `${API_BASE}/v1/satellite/nesdis/abi13/frames`
@@ -750,14 +759,18 @@ async function fetchNesdisImageServerFrames(exportUrl: string, minutesBack: numb
   const res = await fetchWithTimeout(query.toString(), 14000);
   if (!res.ok) throw new Error(`NESDIS catalog returned ${res.status}.`);
   const json = await res.json();
-  return Array.isArray(json?.frames) ? (json.frames as SatelliteFrame[]) : [];
+  return {
+    frames: Array.isArray(json?.frames) ? (json.frames as SatelliteFrame[]) : [],
+    fallbackFrame: json?.fallbackFrame && typeof json.fallbackFrame.iso === 'string' ? json.fallbackFrame : null,
+    sourceAgeMinutes: Number.isFinite(json?.sourceAgeMinutes) ? Number(json.sourceAgeMinutes) : null,
+  };
 }
 
-async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<SatelliteFrame[]> {
+async function fetchNesdisGeoColorFrames(minutesBack: number): Promise<NesdisFramesResponse> {
   return fetchNesdisImageServerFrames(NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL, minutesBack);
 }
 
-async function fetchNesdisAbi13Frames(minutesBack: number): Promise<SatelliteFrame[]> {
+async function fetchNesdisAbi13Frames(minutesBack: number): Promise<NesdisFramesResponse> {
   return fetchNesdisImageServerFrames(NESDIS_ABI13_ARCHIVE_EXPORT_URL, minutesBack);
 }
 
@@ -1742,9 +1755,10 @@ export default function MapsScreen() {
     buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }),
   );
   const [trueColorFrames, setTrueColorFrames] = useState<SatelliteFrame[]>([]);
-  const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
+  const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'stale' | 'unavailable'>('idle');
+  const [trueColorSourceAgeMinutes, setTrueColorSourceAgeMinutes] = useState<number | null>(null);
   const [infraredFrames, setInfraredFrames] = useState<SatelliteFrame[]>([]);
-  const [infraredFrameStatus, setInfraredFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
+  const [infraredFrameStatus, setInfraredFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'stale' | 'unavailable'>('idle');
   const [satelliteFrameIndex, setSatelliteFrameIndex] = useState(() =>
     Math.max(0, buildSatelliteFrames({ minutesBack: SATELLITE_LOOP_MINUTES_BACK }).length - 1),
   );
@@ -1757,7 +1771,7 @@ export default function MapsScreen() {
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
   const satellitePlaybackFrames =
-    goesTrueColorEnabled && trueColorFrames.length > 1
+    goesTrueColorEnabled && trueColorFrames.length > 0
       ? trueColorFrames
       : goesEastIrEnabled && infraredFrames.length > 1
         ? infraredFrames
@@ -1801,25 +1815,37 @@ export default function MapsScreen() {
     if (!goesTrueColorEnabled) {
       setTrueColorFrames([]);
       setTrueColorFrameStatus('idle');
+      setTrueColorSourceAgeMinutes(null);
       return;
     }
 
     let cancelled = false;
     setTrueColorFrameStatus('loading');
     fetchNesdisGeoColorFrames(satelliteLoopMinutes)
-      .then((frames) => {
+      .then(({ frames, fallbackFrame, sourceAgeMinutes }) => {
         if (cancelled) return;
         if (frames.length > 1) {
           setTrueColorFrames(frames);
           setSatelliteFrameIndex(frames.length - 1);
           setTrueColorFrameStatus('ready');
+          setTrueColorSourceAgeMinutes(sourceAgeMinutes);
+        } else if (fallbackFrame) {
+          // Render the newest verified raster as a static image; never animate invented timestamps.
+          setTrueColorFrames([fallbackFrame]);
+          setSatelliteFrameIndex(0);
+          setTrueColorFrameStatus('stale');
+          setTrueColorSourceAgeMinutes(sourceAgeMinutes);
         } else {
-          setTrueColorFrameStatus('fallback');
+          setTrueColorFrames([]);
+          setTrueColorFrameStatus('unavailable');
+          setTrueColorSourceAgeMinutes(null);
         }
       })
       .catch(() => {
         if (cancelled) return;
-        setTrueColorFrameStatus('fallback');
+        setTrueColorFrames([]);
+        setTrueColorFrameStatus('unavailable');
+        setTrueColorSourceAgeMinutes(null);
       });
 
     return () => {
@@ -1837,19 +1863,25 @@ export default function MapsScreen() {
     let cancelled = false;
     setInfraredFrameStatus('loading');
     fetchNesdisAbi13Frames(satelliteLoopMinutes)
-      .then((frames) => {
+      .then(({ frames, fallbackFrame }) => {
         if (cancelled) return;
         if (frames.length > 1) {
           setInfraredFrames(frames);
           setSatelliteFrameIndex(frames.length - 1);
           setInfraredFrameStatus('ready');
+        } else if (fallbackFrame) {
+          setInfraredFrames([fallbackFrame]);
+          setSatelliteFrameIndex(0);
+          setInfraredFrameStatus('stale');
         } else {
-          setInfraredFrameStatus('fallback');
+          setInfraredFrames([]);
+          setInfraredFrameStatus('unavailable');
         }
       })
       .catch(() => {
         if (cancelled) return;
-        setInfraredFrameStatus('fallback');
+        setInfraredFrames([]);
+        setInfraredFrameStatus('unavailable');
       });
 
     return () => {
@@ -2856,6 +2888,8 @@ export default function MapsScreen() {
     const goesWmsQuality = goesWmsQualityForZoom(mapZoom);
     const gibsDailyDate = latestGibsDailyDate();
     const gibsPrecipTime = latestGibsImergTime();
+    const geoColorNeedsImageFallback =
+      goesTrueColorEnabled && (trueColorFrameStatus === 'stale' || trueColorFrameStatus === 'unavailable');
 
     const shared = {
       enabled: true,
@@ -2960,7 +2994,7 @@ export default function MapsScreen() {
       frames?: SatelliteFrame[];
     }) => {
       const opacity = Math.max(0, Math.min(1, Number(args.opacity)));
-      const productFrames = args.frames && args.frames.length > 1 ? args.frames : satellitePlaybackFrames;
+      const productFrames = args.frames && args.frames.length > 0 ? args.frames : satellitePlaybackFrames;
       const alignFrame = (driverFrame: SatelliteFrame | null | undefined) => {
         if (!driverFrame) return null;
         const productIndex = nearestFrameIndexByIso(productFrames, driverFrame.iso);
@@ -3020,9 +3054,9 @@ export default function MapsScreen() {
       pushFrame('', currentFrame, opacity, 0.01);
     };
 
-    if (isFocused && globalTrueColorEnabled) {
+    if (isFocused && (globalTrueColorEnabled || geoColorNeedsImageFallback)) {
       list.push({
-        id: 'gibs-global-truecolor',
+        id: globalTrueColorEnabled ? 'gibs-global-truecolor' : 'gibs-geocolor-fallback',
         tileUrlTemplates: [
           gibsWmtsTileTemplate({
             layer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
@@ -3031,8 +3065,11 @@ export default function MapsScreen() {
             extension: 'jpeg',
           }),
         ],
-        opacity: Math.max(0, Math.min(1, Number(globalTrueColorOpacity))),
-        zIndex: 58,
+        opacity: Math.max(
+          0,
+          Math.min(1, Number(globalTrueColorEnabled ? globalTrueColorOpacity : goesTrueColorOpacity)),
+        ),
+        zIndex: geoColorNeedsImageFallback ? 62 : 58,
         enabled: true,
         tileSize: 256,
         maxZoomLevel: 9,
@@ -3062,7 +3099,7 @@ export default function MapsScreen() {
       });
     }
 
-    if (goesTrueColorEnabled) {
+    if (goesTrueColorEnabled && trueColorFrameStatus === 'ready' && trueColorFrames.length > 0) {
       addAnimatedArcGisImageServer({
         id: 'goes-truecolor',
         url: NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL,
@@ -3254,6 +3291,7 @@ export default function MapsScreen() {
     synchronizedSatelliteBlend.to,
     synchronizedSatelliteFrameIndex,
     trueColorFrames,
+    trueColorFrameStatus,
   ]);
 
   const renderedOverlays = useMemo(() => {
@@ -3865,12 +3903,13 @@ export default function MapsScreen() {
           : 'Visible satellite';
     const source = goesTrueColorEnabled || goesEastIrEnabled ? 'NESDIS catalog' : 'satellite timeline';
     const status = goesTrueColorEnabled ? trueColorFrameStatus : goesEastIrEnabled ? infraredFrameStatus : 'ready';
+    const availableFrameCount = goesTrueColorEnabled ? trueColorFrames.length : goesEastIrEnabled ? infraredFrames.length : satelliteFrameCount;
     const expectedFrames = goesTrueColorEnabled
       ? Math.max(2, Math.floor(satelliteLoopMinutes / 30))
       : goesEastIrEnabled
         ? Math.max(2, Math.floor(satelliteLoopMinutes / 10))
         : Math.max(2, Math.floor(satelliteLoopMinutes / satelliteFrameStepMinutes));
-    const coverage = Math.max(0, Math.min(1, satelliteFrameCount / expectedFrames));
+    const coverage = Math.max(0, Math.min(1, availableFrameCount / expectedFrames));
     const bufferedProduct = bufferedSatelliteKind != null;
     const bufferedReady =
       (satellitePrimaryBufferStatus?.ready ?? 0) +
@@ -3885,6 +3924,8 @@ export default function MapsScreen() {
     const percent =
       status === 'loading'
         ? 0.18
+        : status === 'stale' || status === 'unavailable'
+          ? 0
         : bufferedProduct && satellitePrimaryBufferStatus
           ? Math.max(0.2, Math.min(1, bufferCoverage))
           : coverage;
@@ -3902,8 +3943,10 @@ export default function MapsScreen() {
           ? `Loading ${product} source imagery`
           : buffering
             ? `Buffering ${product} animation`
-          : status === 'fallback'
-            ? `${product} source is slow`
+          : status === 'stale'
+            ? `${product} live loop is delayed`
+            : status === 'unavailable'
+              ? `${product} imagery is unavailable`
             : sparse
               ? `${product} source coverage is limited`
               : `${product} source ready`,
@@ -3914,8 +3957,10 @@ export default function MapsScreen() {
             ? `${bufferedReady} of ${bufferedTotal} viewport frames are ready. Playback holds the current image until the next frame is available.`
           : bufferedFailed > 0
             ? `${bufferedReady} frames are ready; ${bufferedFailed} unavailable source frames will be skipped.`
-          : status === 'fallback'
-            ? `Using a fallback timeline while ${source} catches up.`
+          : status === 'stale'
+            ? `Showing the last verified image${trueColorSourceAgeMinutes != null ? ` (${Math.round(trueColorSourceAgeMinutes / 60)}h old)` : ''}; no synthetic loop is shown.`
+            : status === 'unavailable'
+              ? `No verified ${product} image is available from ${source} right now.`
             : sparse
               ? `${satelliteFrameCount} frames are available for this ${satelliteLoopHours}h window right now.`
               : `${satelliteFrameCount} frames loaded for this ${satelliteLoopHours}h window.`,
@@ -3926,6 +3971,7 @@ export default function MapsScreen() {
     goesTrueColorEnabled,
     goesWestWvEnabled,
     infraredFrameStatus,
+    infraredFrames.length,
     bufferedSatelliteKind,
     bufferedPlaybackNeedsSecondary,
     satellitePrimaryBufferStatus,
@@ -3935,7 +3981,9 @@ export default function MapsScreen() {
     satelliteLoopHours,
     satelliteLoopMinutes,
     satelliteTimelineActive,
+    trueColorFrames.length,
     trueColorFrameStatus,
+    trueColorSourceAgeMinutes,
   ]);
   const dockBottom = 12 + insets.bottom;
   const timelineDockExpanded = timelineExpanded && mapChromeDensity !== 'ultraCompact';

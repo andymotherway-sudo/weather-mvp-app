@@ -11952,31 +11952,40 @@ async function fetchNesdisFrames(queryUrl: string, minutesBack: number) {
   const cutoff = Date.now() - Math.max(30, minutesBack + 30) * 60_000;
   const seen = new Set<string>();
 
-  const frames = features
+  const candidates = features
     .map((feature: any) => {
       const attrs = feature?.attributes ?? {};
       const objectId = Number(attrs.objectid ?? attrs.OBJECTID ?? attrs.ObjectID);
       const start = Number(attrs.start_time ?? attrs.Start_Time);
       const end = Number(attrs.end_time ?? attrs.End_Time);
       const name = String(attrs.name ?? attrs.Name ?? "");
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end < cutoff) return null;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
 
       const midpoint = start + Math.max(0, Math.min(end - start, 4 * 60_000));
       const key = name || String(end);
       if (seen.has(key)) return null;
       seen.add(key);
       return {
-        index: 0,
-        iso: new Date(midpoint).toISOString(),
-        sourceName: name || undefined,
-        rasterId: Number.isFinite(objectId) ? objectId : undefined,
-      } satisfies NesdisFrameDescriptor;
+        end,
+        frame: {
+          index: 0,
+          iso: new Date(midpoint).toISOString(),
+          sourceName: name || undefined,
+          rasterId: Number.isFinite(objectId) ? objectId : undefined,
+        } satisfies NesdisFrameDescriptor,
+      };
     })
-    .filter(Boolean) as NesdisFrameDescriptor[];
+    .filter(Boolean) as Array<{ end: number; frame: NesdisFrameDescriptor }>;
 
-  return frames
-    .sort((a, b) => new Date(a.iso).getTime() - new Date(b.iso).getTime())
-    .map((frame, index) => ({ ...frame, index }));
+  const sorted = candidates.sort((a, b) => new Date(a.frame.iso).getTime() - new Date(b.frame.iso).getTime());
+  const latest = sorted.at(-1) ?? null;
+  const frames = sorted
+    .filter((candidate) => candidate.end >= cutoff)
+    .map((candidate, index) => ({ ...candidate.frame, index }));
+  const sourceAgeMinutes = latest ? Math.max(0, Math.round((Date.now() - latest.end) / 60_000)) : null;
+  const fallbackFrame = latest && sourceAgeMinutes != null && sourceAgeMinutes <= 72 * 60 ? { ...latest.frame, index: 0 } : null;
+
+  return { frames, fallbackFrame, sourceAgeMinutes };
 }
 
 function iemWmsEndpointForProduct(base: string, product: "N0Q" | "N0B" | "N0Z") {
@@ -13085,7 +13094,7 @@ async function handleWorkerRequest(
       cacheUrl.searchParams.set("minutesBack", String(parsed.minutesBack));
       const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 60, 300, async () => ({
         ok: true,
-        frames: await fetchNesdisFrames(parsed.service.queryUrl, parsed.minutesBack),
+        ...(await fetchNesdisFrames(parsed.service.queryUrl, parsed.minutesBack)),
       }));
 
       return new Response(JSON.stringify(payload), {
