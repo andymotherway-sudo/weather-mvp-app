@@ -33,7 +33,6 @@ import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
-import { buildForecastNuance, type ForecastNuance } from '../lib/weather/forecastNuance';
 import { useHomeSummaryBundle } from '../lib/weather/useHomeSummaryBundle';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -3541,24 +3540,6 @@ function NerdyDeepDive({
   );
 }
 
-function ForecastNuanceCard({ nuance }: { nuance: ForecastNuance | null }) {
-  if (!nuance) return null;
-
-  return (
-    <View style={nd.forecastNuanceCard}>
-      <View style={nd.forecastNuanceIcon}>
-        <Ionicons name={nuance.icon} size={18} color="#BAE6FD" />
-      </View>
-      <View style={nd.forecastNuanceBody}>
-        <Text style={nd.forecastNuanceKicker}>Forecast nuance</Text>
-        <Text style={nd.forecastNuanceTitle}>{nuance.title}</Text>
-        <Text style={nd.forecastNuanceText}>{nuance.body}</Text>
-        <Text style={nd.forecastNuanceMeta}>{nuance.meta}</Text>
-      </View>
-    </View>
-  );
-}
-
 function NerdySunMoonPanel({
   astro,
   sunrise,
@@ -4909,7 +4890,7 @@ const nwd = StyleSheet.create({
 });
 
 const nd = StyleSheet.create({
-  wrap: { marginTop: 8, gap: 8 },
+  wrap: { marginTop: 6, gap: 6 },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -4928,138 +4909,92 @@ const nd = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.55)',
   },
-  forecastNuanceCard: {
-    flexDirection: 'row',
-    gap: 10,
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: GLASS_PANEL_BG,
-  },
-  forecastNuanceIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(56,189,248,0.14)',
-  },
-  forecastNuanceBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 3,
-  },
-  forecastNuanceKicker: {
-    fontSize: 9,
-    letterSpacing: 1.15,
-    textTransform: 'uppercase',
-    color: 'rgba(186,230,253,0.82)',
-    fontWeight: '900',
-  },
-  forecastNuanceTitle: {
-    fontSize: 15,
-    lineHeight: 19,
-    color: 'white',
-    fontWeight: '900',
-  },
-  forecastNuanceText: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: 'rgba(255,255,255,0.76)',
-    fontWeight: '700',
-  },
-  forecastNuanceMeta: {
-    marginTop: 2,
-    fontSize: 10,
-    lineHeight: 13,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: '800',
-  },
   heroShell: {
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    borderRadius: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     backgroundColor: GLASS_PANEL_BG,
     borderWidth: 0,
-    gap: 10,
+    gap: 7,
   },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 8,
   },
   heroTemp: {
-    fontSize: 56,
-    lineHeight: 58,
+    fontSize: 48,
+    lineHeight: 50,
     fontWeight: '900',
     color: 'white',
   },
   heroCopy: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 8,
+    paddingTop: 5,
   },
   heroCondition: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     color: 'white',
   },
   heroSummary: {
-    marginTop: 4,
-    fontSize: 14,
+    marginTop: 2,
+    fontSize: 12,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.78)',
   },
   heroFeelsBlock: {
     alignItems: 'flex-end',
-    paddingTop: 6,
-    minWidth: 60,
+    paddingTop: 4,
+    minWidth: 54,
   },
   heroFeelsLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.54)',
   },
   heroFeelsValue: {
-    marginTop: 2,
-    fontSize: 28,
+    marginTop: 1,
+    fontSize: 24,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.92)',
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
   },
   chip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 999,
     backgroundColor: GLASS_INSET_BG,
     borderWidth: 1,
     borderColor: GLASS_BORDER_SOFT,
   },
   chipText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.88)',
   },
-  panelGrid: { gap: 8 },
+  panelGrid: { gap: 6 },
   section: { gap: 10 },
   sectionTitle: { fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', color: 'rgba(255,255,255,0.64)', fontWeight: '900' },
   sectionBody: { gap: 10 },
   panelRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     alignItems: 'stretch',
   },
   panelHalf: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+    paddingVertical: 7,
+    paddingHorizontal: 9,
+    borderRadius: 15,
     backgroundColor: GLASS_PANEL_BG,
     borderWidth: 0,
-    gap: 8,
+    gap: 5,
     overflow: 'hidden',
   },
   panelFull: {
@@ -5074,8 +5009,8 @@ const nd = StyleSheet.create({
     flexShrink: 1,
     flexGrow: 1,
     minWidth: 0,
-    fontSize: 12,
-    letterSpacing: 1.2,
+    fontSize: 10,
+    letterSpacing: 0.9,
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.68)',
     fontWeight: '900',
@@ -5083,8 +5018,8 @@ const nd = StyleSheet.create({
   panelHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 18,
+    gap: 4,
+    minHeight: 15,
   },
   panelHeroBlock: {
     gap: 0,
@@ -5095,16 +5030,16 @@ const nd = StyleSheet.create({
   panelHeroValue: {
     width: '100%',
     color: 'white',
-    fontSize: 36,
-    lineHeight: 40,
+    fontSize: 28,
+    lineHeight: 31,
     fontWeight: '900',
     letterSpacing: 0,
     includeFontPadding: false,
   },
   windHeroValue: {
     color: 'white',
-    fontSize: 36,
-    lineHeight: 40,
+    fontSize: 28,
+    lineHeight: 31,
     fontWeight: '900',
     letterSpacing: 0,
     includeFontPadding: false,
@@ -5113,8 +5048,8 @@ const nd = StyleSheet.create({
   },
   panelHeroLabel: {
     color: 'rgba(255,255,255,0.62)',
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 13,
     fontWeight: '800',
   },
   panelRule: {
@@ -5126,14 +5061,14 @@ const nd = StyleSheet.create({
     gap: 0,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.10)',
-    paddingTop: 8,
+    paddingTop: 4,
   },
   metricGrid2Tall: {
     flexDirection: 'row',
     gap: 0,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.10)',
-    paddingTop: 8,
+    paddingTop: 4,
   },
   metricGrid3: {
     flexDirection: 'row',
@@ -5155,33 +5090,33 @@ const nd = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: 0,
-    minHeight: 46,
+    minHeight: 35,
     paddingVertical: 0,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     borderRadius: 0,
     backgroundColor: 'transparent',
     borderWidth: 0,
     justifyContent: 'center',
     alignItems: 'flex-start',
-    gap: 3,
+    gap: 1,
   },
   metricCellDivider: {
     borderRightWidth: 1,
     borderRightColor: 'rgba(255,255,255,0.12)',
   },
   metricTallCard: {
-    minHeight: 48,
+    minHeight: 36,
   },
   metricDialCard: {
-    minHeight: 48,
+    minHeight: 36,
     alignItems: 'flex-start',
     justifyContent: 'center',
     borderRightWidth: 1,
     borderRightColor: 'rgba(255,255,255,0.12)',
   },
   metricWideCard: {
-    minHeight: 54,
-    paddingVertical: 8,
+    minHeight: 43,
+    paddingVertical: 5,
     paddingHorizontal: 0,
     borderRadius: 0,
     backgroundColor: 'transparent',
@@ -5201,7 +5136,7 @@ const nd = StyleSheet.create({
   metricCardFull: {
     width: '100%',
     flexBasis: '100%',
-    minHeight: 46,
+    minHeight: 35,
     paddingHorizontal: 0,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.10)',
@@ -5216,31 +5151,31 @@ const nd = StyleSheet.create({
     width: '100%',
     flexShrink: 0,
     paddingRight: 3,
-    fontSize: 9,
-    letterSpacing: 0.45,
+    fontSize: 8,
+    letterSpacing: 0.3,
     color: 'rgba(255,255,255,0.52)',
     fontWeight: '900',
-    lineHeight: 11,
+    lineHeight: 10,
     includeFontPadding: false,
   },
   metricValue: {
     width: '100%',
-    fontSize: 18,
-    lineHeight: 21,
+    fontSize: 15,
+    lineHeight: 17,
     fontWeight: '900',
     color: 'white',
     includeFontPadding: false,
   },
   metricValueSmall: {
     width: '100%',
-    fontSize: 16,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 16,
     fontWeight: '900',
     color: 'white',
   },
   metricWideValue: {
     minWidth: 42,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     color: 'white',
   },
@@ -5248,23 +5183,23 @@ const nd = StyleSheet.create({
     marginTop: 2,
   },
   metricHint: {
-    fontSize: 11,
-    lineHeight: 13,
+    fontSize: 9,
+    lineHeight: 11,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.58)',
   },
   directionMain: {
     width: '100%',
-    fontSize: 22,
-    lineHeight: 24,
+    fontSize: 18,
+    lineHeight: 20,
     fontWeight: '900',
     color: 'white',
     textAlign: 'left',
     includeFontPadding: false,
   },
   directionSub: {
-    marginTop: 4,
-    fontSize: 12,
+    marginTop: 2,
+    fontSize: 10,
     fontWeight: '800',
     color: 'rgba(255,255,255,0.58)',
   },
@@ -5286,7 +5221,7 @@ const nd = StyleSheet.create({
     backgroundColor: 'rgba(120, 180, 255, 0.72)',
   },
   pressureHeroCard: {
-    minHeight: 92,
+    minHeight: 64,
     paddingVertical: 0,
     paddingHorizontal: 0,
     borderRadius: 0,
@@ -5675,10 +5610,6 @@ function LandWeatherWithCoords({
   }, [hourlyRaw]);
 
   const nearestHourly = useMemo(() => findClosestHour(hourly, Date.now(), forecastTimeZone), [hourly, forecastTimeZone]);
-  const forecastNuance = useMemo(
-    () => buildForecastNuance(hourly, forecastTimeZone),
-    [hourly, forecastTimeZone],
-  );
   const modelForecastNow = useMemo(
     () => ({
       temperatureF:
@@ -6114,7 +6045,6 @@ function LandWeatherWithCoords({
             feelsDriverTopicId={feelsDriver.topicId}
             onOpenLearnTopic={openLearnTopic}
           />
-          <ForecastNuanceCard nuance={forecastNuance} />
         </>
       )}
 

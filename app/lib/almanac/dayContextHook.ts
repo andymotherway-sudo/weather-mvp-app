@@ -97,7 +97,7 @@ export function useOpenMeteoDayContext({
       const cacheKey = keyFor(latKey, lonKey, date);
 
       try {
-        if (preferCache) {
+        if (preferCache && mode !== 'refresh') {
           const raw = await AsyncStorage.getItem(cacheKey);
           if (raw) {
             const parsed = JSON.parse(raw) as { savedAt: number; data: DayContext };

@@ -25,7 +25,6 @@ import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useOpenMeteoDayContext } from '../lib/almanac/dayContextHook';
-import { isAlmanacAreaDownloaded, markAlmanacAreaDownloaded } from '../lib/almanac/downloadManifest';
 import { useDailyRecords } from '../lib/almanac/useDailyRecordsHook';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 import { useClimatologyNormals } from '../lib/climatology/hook';
@@ -198,32 +197,10 @@ export default function ClimoTab() {
     return Math.abs(coords.lat - preload.coords.lat) < 0.0001 && Math.abs(coords.lon - preload.coords.lon) < 0.0001;
   }, [coords?.lat, coords?.lon, preload?.coords?.lat, preload?.coords?.lon]);
 
-  const [areaDownloaded, setAreaDownloaded] = useState(false);
-  const [areaDownloadRequested, setAreaDownloadRequested] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    setAreaDownloadRequested(false);
-    setAreaDownloaded(false);
-
-    if (!coords) {
-      return;
-    }
-
-    isAlmanacAreaDownloaded(coords.lat, coords.lon)
-      .then((downloaded) => {
-        if (mounted) setAreaDownloaded(downloaded);
-      })
-      .catch(() => {
-        if (mounted) setAreaDownloaded(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [coords?.lat, coords?.lon]);
-
-  const shouldLoadAreaAlmanac = !!coords && (preloadMatches || areaDownloaded || areaDownloadRequested);
+  // Opening Almanac is an explicit request for its records and normals. The
+  // underlying hooks cache their results, so this must not be gated behind a
+  // separate, invisible "downloaded" flag.
+  const shouldLoadAreaAlmanac = !!coords;
 
   const locationLabel = useMemo(() => {
     return active?.name ? active.name : 'Select a location…';
@@ -366,16 +343,6 @@ export default function ClimoTab() {
     enabled: hasPlace && !!coords && !preloadMatches && shouldLoadAreaAlmanac,
   });
   const records = preloadMatches && preload?.records ? preload.records : localRecords;
-
-  useEffect(() => {
-    if (!coords) return;
-    const normalsReady = Array.isArray(climo.data?.normals) && climo.data.normals.length > 0;
-    const rawRecords = (records as any)?.records;
-    const recordsReady = !!rawRecords && typeof rawRecords === 'object' && Object.keys(rawRecords).length > 0;
-    if (!normalsReady || !recordsReady) return;
-    setAreaDownloaded(true);
-    markAlmanacAreaDownloaded(coords.lat, coords.lon).catch(() => {});
-  }, [coords?.lat, coords?.lon, climo.data?.normals, (records as any)?.records]);
 
   const recordsMap = useMemo(() => {
     const raw = (records as any)?.records;
@@ -592,12 +559,18 @@ const hasNormals = chartNormals.length > 0;
       forecast.refresh?.();
     } catch {}
 
-    if (shouldLoadAreaAlmanac) {
-      try {
-        (records as any).refresh?.();
-      } catch {}
-    }
-  }, [forecast, hasPlace, coords, records, shouldLoadAreaAlmanac]);
+    try {
+      climo.refresh?.();
+    } catch {}
+
+    try {
+      dayCtx.refresh?.();
+    } catch {}
+
+    try {
+      (records as any).refresh?.();
+    } catch {}
+  }, [climo, coords, dayCtx, forecast, hasPlace, records]);
 
   const anyLoading =
     hasPlace &&
@@ -606,7 +579,12 @@ const hasNormals = chartNormals.length > 0;
       (mode === 'observed' && dayCtx.loading && !dayCtx.data));
 
   const recordsRefreshing = !!(records as any)?.refreshing || !!(records as any)?.loading;
-  const anyRefreshing = hasPlace && (!!forecast.refreshing || recordsRefreshing);
+  const anyRefreshing = hasPlace && (
+    !!forecast.refreshing ||
+    !!climo.refreshing ||
+    !!dayCtx.refreshing ||
+    recordsRefreshing
+  );
 
   const markerLabel = useMemo(
     () => (selectedIso === todayIso ? 'Today' : fmtMonDay(selectedIso)),
@@ -815,21 +793,6 @@ const hasNormals = chartNormals.length > 0;
               </View>
 
               {(() => {
-                if (!shouldLoadAreaAlmanac) {
-                  return (
-                    <View style={styles.recordsBox}>
-                      <Text style={styles.recordsTitle}>Area data</Text>
-                      <Text style={styles.recordsItem}>Records and climate normals are not downloaded for this area yet.</Text>
-                      <Text style={styles.recordsHint}>Download once, then future visits load from saved Almanac data.</Text>
-                      <View style={styles.actionRowTight}>
-                        <Pressable onPress={() => setAreaDownloadRequested(true)} style={styles.primaryBtn}>
-                          <Text style={styles.primaryBtnText}>Download Almanac Data</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  );
-                }
-
                 const showWarmup = !recordsEverResolved || (rLoading && !recordsEverResolved);
 
                 if (showWarmup || rLoading) {
@@ -881,7 +844,9 @@ const hasNormals = chartNormals.length > 0;
                       <Text style={styles.recordsTitle}>{recordsTitle}</Text>
                       <Text style={styles.recordsItem}>
                         {rErr
-                          ? 'Daily records from the nearby NOAA climate station are not available right now. Forecasts and normals still work.'
+                          ? String(rErr).toLowerCase().includes('token parameter provided is not valid')
+                            ? 'NOAA daily records are temporarily unavailable because the production NOAA credential needs to be renewed. Forecasts and normals still work.'
+                            : `NOAA daily records could not load: ${String(rErr).replace(/\s+/g, ' ').slice(0, 180)}`
                           : 'No record data for this date.'}
                       </Text>
                       <View style={styles.actionRowTight}>

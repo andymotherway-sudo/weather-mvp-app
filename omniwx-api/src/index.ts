@@ -845,7 +845,10 @@ function sanitizeNceiCdoParams(input: URLSearchParams) {
     const cleanKey = key.toLowerCase();
     if (!NCEI_ALLOWED_QUERY_PARAMS.has(cleanKey)) return;
     if (value.length > 240) return;
-    output.set(cleanKey, value);
+    // NCEI accepts several datatypeid filters. Preserve those repeated values
+    // rather than silently forwarding only the final one.
+    if (cleanKey === "datatypeid") output.append(cleanKey, value);
+    else output.set(cleanKey, value);
   });
 
   const limit = Number(output.get("limit") || "1000");

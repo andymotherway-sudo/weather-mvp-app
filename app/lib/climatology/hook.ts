@@ -248,7 +248,7 @@ export function useClimatologyNormals({
       });
 
    try {
-      if (preferCache) {
+      if (preferCache && mode !== 'refresh') {
         let cachedRaw: ClimatologyResult | null = null;
         try {
           cachedRaw = await readClimoCache(lat, lon);

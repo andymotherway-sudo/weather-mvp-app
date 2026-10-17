@@ -2887,8 +2887,6 @@ export default function MapsScreen() {
     const goesWmsQuality = goesWmsQualityForZoom(mapZoom);
     const gibsDailyDate = latestGibsDailyDate();
     const gibsPrecipTime = latestGibsImergTime();
-    const geoColorNeedsImageFallback =
-      goesTrueColorEnabled && (trueColorFrameStatus === 'stale' || trueColorFrameStatus === 'unavailable');
 
     const shared = {
       enabled: true,
@@ -3053,9 +3051,9 @@ export default function MapsScreen() {
       pushFrame('', currentFrame, opacity, 0.01);
     };
 
-    if (isFocused && (globalTrueColorEnabled || geoColorNeedsImageFallback)) {
+    if (isFocused && globalTrueColorEnabled) {
       list.push({
-        id: globalTrueColorEnabled ? 'gibs-global-truecolor' : 'gibs-geocolor-fallback',
+        id: 'gibs-global-truecolor',
         tileUrlTemplates: [
           gibsWmtsTileTemplate({
             layer: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
@@ -3064,11 +3062,8 @@ export default function MapsScreen() {
             extension: 'jpeg',
           }),
         ],
-        opacity: Math.max(
-          0,
-          Math.min(1, Number(globalTrueColorEnabled ? globalTrueColorOpacity : goesTrueColorOpacity)),
-        ),
-        zIndex: geoColorNeedsImageFallback ? 62 : 58,
+        opacity: Math.max(0, Math.min(1, Number(globalTrueColorOpacity))),
+        zIndex: 58,
         enabled: true,
         tileSize: 256,
         maxZoomLevel: 9,
@@ -3960,7 +3955,7 @@ export default function MapsScreen() {
             ? `Showing the last verified image${trueColorSourceAgeMinutes != null ? ` (${Math.round(trueColorSourceAgeMinutes / 60)}h old)` : ''}; no synthetic loop is shown.`
             : status === 'unavailable'
               ? product === 'GeoColor'
-                ? 'No verified live GeoColor frame is available from NESDIS. Showing a daily true-color reference, not infrared.'
+                ? 'No verified live GeoColor frame is available from NESDIS. No still-image or infrared substitute is shown.'
                 : `No verified ${product} image is available from ${source} right now.`
             : sparse
               ? `${satelliteFrameCount} frames are available for this ${satelliteLoopHours}h window right now.`
@@ -6309,7 +6304,7 @@ export default function MapsScreen() {
                                   ? ' / catalog'
                                   : trueColorFrameStatus === 'loading'
                                     ? ' / loading'
-                                    : ' / fallback'
+                                    : ' / unavailable'
                                 : goesEastIrEnabled
                                   ? infraredUsingCatalog
                                     ? ' / catalog'
