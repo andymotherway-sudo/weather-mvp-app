@@ -6,7 +6,6 @@ import Svg, { Circle, Line, Path, Polyline, Rect, Text as SvgText } from 'react-
 import {
   type AstroHourRow,
   type LocationAstroForecast,
-  toLocalLabel,
 } from '../../app/lib/astro/locationAstro';
 import type { KpForecastSample } from '../../app/lib/spaceweather/types';
 import { useAppChrome } from '../../app/lib/theme/useAppChrome';
@@ -151,43 +150,6 @@ function auroraViewingPotential(kp: number | null, latitude: number, hour: Astro
   return Math.round(activity * latitudeFit * Math.max(0, Math.min(1, hour.score / 100)));
 }
 
-function formatWindow(start?: string | null, end?: string | null, timeZone?: string | null) {
-  if (!start) return '--';
-  if (!end) return toLocalLabel(start, timeZone);
-  return `${toLocalLabel(start, timeZone)}-${toLocalLabel(end, timeZone)}`;
-}
-
-function formatBortle(forecast: LocationAstroForecast) {
-  const cls = forecast.site?.bortleClass;
-  const label = forecast.site?.bortleLabel;
-  if (cls == null && !label) return 'Pending';
-  if (cls != null && label) return `Bortle ${cls} / ${label}`;
-  return cls != null ? `Bortle ${cls}` : label ?? 'Pending';
-}
-
-function formatAerosols(forecast: LocationAstroForecast) {
-  const idx = forecast.aerosols?.index;
-  const label = forecast.aerosols?.label;
-  if (typeof idx === 'number' && Number.isFinite(idx)) {
-    return `${label ? `${label} / ` : ''}${idx.toFixed(2)}`;
-  }
-  return label ?? 'Pending';
-}
-
-function formatElevation(forecast: LocationAstroForecast) {
-  const elevationM = forecast.site?.elevationM;
-  if (typeof elevationM !== 'number' || !Number.isFinite(elevationM)) return 'Pending';
-  return `${Math.round(elevationM).toLocaleString()} m / ${Math.round(elevationM * 3.28084).toLocaleString()} ft`;
-}
-
-function formatSiteSource(forecast: LocationAstroForecast) {
-  const source = forecast.diagnostics?.siteSource ?? '';
-  if (source.includes('wa2016')) {
-    return 'Site context: World Atlas 2016, with sky brightness derived from Bortle class.';
-  }
-  return source ? `Site context: ${source}` : 'Site context source pending.';
-}
-
 export function AstroForecastTimeline({
   hours,
   latitude,
@@ -324,12 +286,6 @@ export function AstroForecastTimeline({
 
   if (!model) return null;
   const selected = model.enrichedHours[Math.min(selectedIndex, model.enrichedHours.length - 1)];
-  const bestWindow = formatWindow(forecast.bestStartTime, forecast.bestEndTime, forecast.timezone);
-  const darkestWindow = formatWindow(
-    forecast.darkestStartTime,
-    forecast.darkestEndTime,
-    forecast.timezone,
-  );
   const openAstroMap = () =>
     router.push({
       pathname: '/(tabs)/astro-map',
@@ -361,44 +317,9 @@ export function AstroForecastTimeline({
           </View>
         </View>
         <Text style={styles.subtitle}>
-          Sky score, darkness, moonlight, clouds, visibility, temperature, and wind
+          Tap an hour to inspect its cloud layers. The dashboard above carries tonight&apos;s overall verdict.
         </Text>
       </View>
-
-      <View style={[styles.tonightSummary, { borderColor: chrome.border }]}>
-        <View style={styles.tonightScore}>
-          <Text style={[styles.tonightScoreValue, { color: scoreColor(forecast.peakScore) }]}>
-            {forecast.peakScore}
-          </Text>
-          <Text style={styles.tonightScoreLabel}>TONIGHT PEAK</Text>
-        </View>
-        <View style={styles.tonightWindows}>
-          <Text style={styles.tonightQuality}>{forecast.peakLabel}</Text>
-          <Text style={styles.tonightSummaryText}>
-            {forecast.bestSummary ?? 'Observing conditions available for tonight.'}
-          </Text>
-          <Text style={styles.contextLabel}>Best window</Text>
-          <Text style={styles.contextValue}>{bestWindow}</Text>
-          <Text style={styles.contextLabel}>Darkest window</Text>
-          <Text style={styles.contextValue}>{darkestWindow}</Text>
-        </View>
-      </View>
-
-      <View style={styles.siteContext}>
-        <View style={styles.siteContextItem}>
-          <Text style={styles.contextLabel}>SKY BRIGHTNESS</Text>
-          <Text style={styles.siteContextValue}>{formatBortle(forecast)}</Text>
-        </View>
-        <View style={styles.siteContextItem}>
-          <Text style={styles.contextLabel}>AEROSOLS</Text>
-          <Text style={styles.siteContextValue}>{formatAerosols(forecast)}</Text>
-        </View>
-        <View style={styles.siteContextItem}>
-          <Text style={styles.contextLabel}>ELEVATION</Text>
-          <Text style={styles.siteContextValue}>{formatElevation(forecast)}</Text>
-        </View>
-      </View>
-      <Text style={styles.siteSource}>{formatSiteSource(forecast)}</Text>
 
       <View style={[styles.cloudLayerPanel, styles.forecastCloudProfile]}>
         <View style={styles.cloudLayerHeader}>
@@ -604,9 +525,6 @@ export function AstroForecastTimeline({
                 </View>
                 <Text style={styles.hourQuality}>{hour.label}</Text>
                 <Text style={styles.phase}>{phaseLabel(hour)}</Text>
-                <Text style={styles.hourSummary} numberOfLines={3}>
-                  {hour.summary}
-                </Text>
                 <View style={styles.metricGrid}>
                   <Text style={styles.metric}>Clouds {hour.cloudTotal == null ? '--' : `${Math.round(hour.cloudTotal)}%`}</Text>
                   <Text style={styles.metric}>
@@ -697,152 +615,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 4,
   },
-  tonightSummary: {
-    marginHorizontal: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: 'rgba(2,6,23,0.42)',
-  },
-  tonightScore: {
-    width: 84,
-    minHeight: 84,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.035)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tonightScoreValue: {
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  tonightScoreLabel: {
-    color: '#64748B',
-    fontSize: 7,
-    fontWeight: '900',
-  },
-  tonightWindows: {
-    flex: 1,
-  },
-  tonightQuality: {
-    color: '#F8FAFC',
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  tonightSummaryText: {
-    color: '#94A3B8',
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 2,
-    marginBottom: 7,
-  },
-  contextLabel: {
-    color: '#64748B',
-    fontSize: 8,
-    fontWeight: '900',
-    marginTop: 3,
-  },
-  contextValue: {
-    color: '#E2E8F0',
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 1,
-  },
-  siteContext: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    marginBottom: 7,
-  },
-  siteContextItem: {
-    flex: 1,
-    minHeight: 64,
-    borderRadius: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(148,163,184,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.09)',
-  },
-  siteContextValue: {
-    color: '#CBD5E1',
-    fontSize: 9,
-    lineHeight: 13,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  siteSource: {
-    color: '#475569',
-    fontSize: 8,
-    lineHeight: 11,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  selectedHour: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 13,
-    backgroundColor: 'rgba(2,6,23,0.40)',
-  },
-  selectedTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  selectedTime: {
-    color: '#F8FAFC',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-  selectedEyebrow: {
-    color: '#64748B',
-    fontSize: 8,
-    fontWeight: '900',
-    marginBottom: 3,
-  },
-  selectedPhase: {
-    color: '#7DD3FC',
-    fontSize: 10,
-    fontWeight: '800',
-    marginTop: 3,
-  },
-  selectedScore: {
-    minWidth: 78,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-  },
-  selectedScoreValue: {
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  selectedScoreLabel: {
-    color: '#64748B',
-    fontSize: 8,
-    fontWeight: '900',
-  },
-  selectedQuality: {
-    color: '#E2E8F0',
-    fontSize: 13,
-    fontWeight: '900',
-    marginTop: 8,
-  },
-  selectedSummary: {
-    color: '#94A3B8',
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 4,
-  },
   cloudLayerPanel: {
     marginTop: 10,
     borderRadius: 12,
@@ -921,21 +693,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '800',
   },
-  selectedMetrics: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-    marginTop: 10,
-  },
-  selectedMetric: {
-    color: '#CBD5E1',
-    fontSize: 9,
-    fontWeight: '800',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: 'rgba(148,163,184,0.09)',
-  },
   trackLabelRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -986,9 +743,9 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   hourColumn: {
-    minHeight: 214,
-    paddingHorizontal: 11,
-    paddingVertical: 12,
+    minHeight: 168,
+    paddingHorizontal: 9,
+    paddingVertical: 10,
     borderTopWidth: 1,
     borderRightWidth: 1,
     backgroundColor: 'rgba(2,6,23,0.34)',
@@ -1020,17 +777,10 @@ const styles = StyleSheet.create({
     marginTop: 3,
     minHeight: 14,
   },
-  hourSummary: {
-    color: '#94A3B8',
-    fontSize: 9,
-    lineHeight: 13,
-    minHeight: 39,
-    marginTop: 7,
-  },
   metricGrid: {
     gap: 5,
-    marginTop: 12,
-    paddingTop: 9,
+    marginTop: 8,
+    paddingTop: 7,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.07)',
   },

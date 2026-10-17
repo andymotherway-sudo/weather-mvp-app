@@ -75,11 +75,6 @@ function auroraChancePct(kp?: number) {
   return 98;
 }
 
-function clamp(x: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, x));
-}
-
-
 function extractIsoWallClockParts(value: unknown) {
   if (typeof value !== 'string') return null;
 
@@ -429,6 +424,18 @@ export default function SolarScreen() {
   const formatCloudPct = (value?: number | null) =>
     value == null || !Number.isFinite(value) ? '--' : `${Math.round(value)}%`;
 
+  const formatTemperature = (value?: number | null) =>
+    value == null || !Number.isFinite(value) ? '--' : `${Math.round((value * 9) / 5 + 32)}°F`;
+
+  const formatWind = (value?: number | null) =>
+    value == null || !Number.isFinite(value) ? '--' : `${Math.round(value * 2.23694)} mph`;
+
+  const formatVisibility = (value?: number | null) => {
+    if (value == null || !Number.isFinite(value)) return '--';
+    const miles = value / 1609.344;
+    return miles >= 10 ? '10+ mi' : `${miles.toFixed(miles < 2 ? 1 : 0)} mi`;
+  };
+
   const registerSpaceSection = (mode: SpaceMode) => (event: LayoutChangeEvent) => {
     sectionYRef.current[mode] = event.nativeEvent.layout.y;
   };
@@ -473,13 +480,20 @@ export default function SolarScreen() {
     const cloudTotal = formatCloudPct(cloudHour?.cloudTotal);
     const kpValue = data?.kp != null && Number.isFinite(data.kp) ? data.kp.toFixed(1) : '--';
     const auroraValue = data?.kp != null && Number.isFinite(data.kp) ? `${auroraChancePct(data.kp).toFixed(0)}%` : '--';
+    const skyGlow = astro?.site?.bortleClass != null
+      ? `Bortle ${astro.site.bortleClass}`
+      : astro?.site?.bortleLabel ?? '--';
+    const aerosols = astro?.aerosols?.label ?? (astro?.aerosols?.index != null ? astro.aerosols.index.toFixed(2) : '--');
+    const moon = cloudHour?.moonIsUp
+      ? `${cloudHour.moonIlluminationPct == null ? 'Up' : `${Math.round(cloudHour.moonIlluminationPct)}% up`}`
+      : 'Down';
 
     return (
       <View style={[themedCard, styles.spaceOverviewCard]}>
         <View style={styles.spaceOverviewTop}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.eyebrow}>SPACE WX COMMAND</Text>
-            <Text style={styles.spaceOverviewTitle}>Tonight observing setup</Text>
+            <Text style={styles.eyebrow}>OBSERVING DASHBOARD</Text>
+            <Text style={styles.spaceOverviewTitle}>Tonight&apos;s observing outlook</Text>
           </View>
           <OmniChip
             label="How it works"
@@ -488,62 +502,57 @@ export default function SolarScreen() {
           />
         </View>
 
-        <View style={styles.spaceOverviewGrid}>
-          <OmniMetricTile
-            label="Sky Score"
-            value={peakScore == null ? '--' : peakScore}
-            hint={astro?.peakLabel ?? 'Forecast pending'}
-            tone={skyScoreTone(peakScore)}
-          />
-          <OmniMetricTile
-            label="Best Window"
-            value={bestWindow}
-            hint={astro?.bestSummary ?? 'Tonight observing window'}
-            tone="#BAE6FD"
-          />
+        <View style={styles.spaceHeroGrid}>
+          <View style={[styles.spaceScorePanel, { borderColor: skyScoreTone(peakScore) }]}>
+            <Text style={styles.spaceHeroLabel}>SKY SCORE</Text>
+            <Text style={[styles.spaceScoreValue, { color: skyScoreTone(peakScore) }]}>
+              {peakScore == null ? '--' : peakScore}
+            </Text>
+            <Text style={styles.spaceScoreSuffix}>/100</Text>
+            <Text style={styles.spaceHeroHint}>{astro?.peakLabel ?? 'Forecast pending'}</Text>
+          </View>
+          <View style={styles.spaceWindowPanel}>
+            <Text style={styles.spaceHeroLabel}>TONIGHT&apos;S BEST VIEWING</Text>
+            <Text style={styles.spaceWindowValue} numberOfLines={1}>{bestWindow}</Text>
+            <Text style={styles.spaceWindowHint} numberOfLines={2}>
+              {astro?.bestSummary ?? 'Waiting for a local observing forecast.'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.spaceOverviewGrid}>
-          <OmniMetricTile
-            label="Kp"
-            value={kpValue}
-            hint={data ? kpNarrative(data.kp) : 'Space weather pending'}
-            tone="#FBBF24"
-          />
-          <OmniMetricTile
-            label="Aurora"
-            value={auroraValue}
-            hint="Simple viewing likelihood"
-            tone="#67E8F9"
-          />
-        </View>
+
         <View style={styles.spaceCloudPanel}>
           <View style={styles.spaceCloudHeader}>
             <Text style={styles.spaceCloudTitle}>Cloud layer profile</Text>
             <Text style={styles.spaceCloudMeta}>{cloudProfileTime} · Total {cloudTotal}</Text>
           </View>
           <View style={styles.spaceCloudGrid}>
-            <OmniMetricTile
-              label="Low"
-              value={formatCloudPct(cloudHour?.cloudLow)}
-              hint="Blocks horizon and wide views"
-              tone={cloudTone(cloudHour?.cloudLow)}
-              style={styles.cloudLayerTile}
-            />
-            <OmniMetricTile
-              label="Mid"
-              value={formatCloudPct(cloudHour?.cloudMid)}
-              hint="Softens detail and contrast"
-              tone={cloudTone(cloudHour?.cloudMid)}
-              style={styles.cloudLayerTile}
-            />
-            <OmniMetricTile
-              label="High"
-              value={formatCloudPct(cloudHour?.cloudHigh)}
-              hint="Hurts transparency"
-              tone={cloudTone(cloudHour?.cloudHigh)}
-              style={styles.cloudLayerTile}
-            />
+            <OmniMetricTile label="Low" value={formatCloudPct(cloudHour?.cloudLow)} hint="Horizon" tone={cloudTone(cloudHour?.cloudLow)} style={styles.cloudLayerTile} />
+            <OmniMetricTile label="Mid" value={formatCloudPct(cloudHour?.cloudMid)} hint="Detail" tone={cloudTone(cloudHour?.cloudMid)} style={styles.cloudLayerTile} />
+            <OmniMetricTile label="High" value={formatCloudPct(cloudHour?.cloudHigh)} hint="Transparency" tone={cloudTone(cloudHour?.cloudHigh)} style={styles.cloudLayerTile} />
           </View>
+        </View>
+
+        <View style={styles.spaceMetricGrid}>
+          <OmniMetricTile label="Transparency" value={aerosols} hint="Aerosol context" tone="#67E8F9" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile label="Visibility" value={formatVisibility(cloudHour?.visibilityM)} hint="At best window" tone="#93C5FD" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile label="Wind" value={formatWind(cloudHour?.windMps)} hint={cloudHour?.gustMps != null ? `Gusts ${formatWind(cloudHour.gustMps)}` : 'At best window'} tone="#7DD3FC" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile label="Temperature" value={formatTemperature(cloudHour?.temperatureC)} hint={cloudHour?.humidityPct != null ? `${Math.round(cloudHour.humidityPct)}% humidity` : 'At best window'} tone="#FB923C" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile label="Sky glow" value={skyGlow} hint={astro?.site?.bortleLabel ?? 'Site context'} tone="#C4B5FD" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile label="Moon" value={moon} hint={astro?.moonPhaseLabel ?? 'Moonlight'} tone="#E2E8F0" style={styles.spaceDashboardMetric} />
+          <OmniMetricTile
+            label="Kp"
+            value={kpValue}
+            hint={data ? kpNarrative(data.kp) : 'Space weather pending'}
+            tone="#FBBF24"
+            style={styles.spaceDashboardMetric}
+          />
+          <OmniMetricTile
+            label="Aurora"
+            value={auroraValue}
+            hint="Simple viewing likelihood"
+            tone="#67E8F9"
+            style={styles.spaceDashboardMetric}
+          />
         </View>
       </View>
     );
@@ -1808,6 +1817,76 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  spaceHeroGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  spaceScorePanel: {
+    width: 126,
+    minHeight: 132,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.045)',
+  },
+
+  spaceWindowPanel: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 132,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: 'rgba(125,211,252,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.18)',
+  },
+
+  spaceHeroLabel: {
+    color: 'rgba(186,230,253,0.72)',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+
+  spaceScoreValue: {
+    fontSize: 44,
+    lineHeight: 49,
+    fontWeight: '900',
+    marginTop: 7,
+  },
+
+  spaceScoreSuffix: {
+    color: 'rgba(226,232,240,0.7)',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: -2,
+  },
+
+  spaceHeroHint: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    marginTop: 7,
+  },
+
+  spaceWindowValue: {
+    color: '#F8FAFC',
+    fontSize: 21,
+    lineHeight: 27,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+
+  spaceWindowHint: {
+    color: 'rgba(226,232,240,0.76)',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
+    marginTop: 7,
+  },
+
   spaceCloudPanel: {
     marginTop: 12,
     borderRadius: 18,
@@ -1850,8 +1929,23 @@ const styles = StyleSheet.create({
 
   cloudLayerTile: {
     minWidth: 0,
-    paddingHorizontal: 9,
-    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+
+  spaceMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+
+  spaceDashboardMetric: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
 
   spaceOverviewFooter: {
