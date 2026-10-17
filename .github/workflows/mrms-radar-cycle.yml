@@ -2,11 +2,6 @@ name: MRMS radar cycle
 run-name: MRMS ${{ github.event.inputs.target_env || 'production' }} ${{ github.event.inputs.product || 'MergedReflectivityQCComposite' }} apply=${{ github.event_name == 'schedule' && 'true' || github.event.inputs.apply || false }} z${{ github.event.inputs.min_zoom || '3' }}-${{ github.event.inputs.max_zoom || '8' }} backfill=${{ github.event.inputs.backfill_frames || '2' }}
 
 on:
-  schedule:
-    # Keep beta MRMS fresh without building a large archive. Staggered slots
-    # avoid the busiest top-of-hour GitHub Actions schedule windows.
-    # Scheduled runs use z8 until z10 has retry/resume protection.
-    - cron: "7,27,47 * * * *"
   workflow_dispatch:
     inputs:
       target_env:

@@ -2,10 +2,6 @@ name: NEXRAD Level III watchdog
 run-name: Level III watchdog production ${{ inputs.sites || 'IWA,MPX,DLH' }} stale>${{ inputs.stale_after_minutes || '240' }}m
 
 on:
-  schedule:
-    # Recovery guard offset from the Level III publisher's 30-minute cadence.
-    # Runs more often because GitHub scheduled workflows can drift or skip.
-    - cron: "8,23,38,53 * * * *"
   workflow_dispatch:
     inputs:
       stale_after_minutes:

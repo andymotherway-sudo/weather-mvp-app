@@ -2,10 +2,6 @@ name: MRMS radar watchdog
 run-name: MRMS watchdog production stale>${{ inputs.stale_after_minutes || '50' }}m
 
 on:
-  schedule:
-    # Offset from the MRMS publisher's :07/:27/:47 slots. This is a recovery
-    # guard, not the primary ingest cadence.
-    - cron: "17,37,57 * * * *"
   workflow_dispatch:
     inputs:
       stale_after_minutes:
