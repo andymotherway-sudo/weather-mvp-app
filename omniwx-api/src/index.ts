@@ -16,6 +16,7 @@ import { handleUserRoute } from "./routes/user";
 import { publicCorsHeaders } from "./security/cors";
 import { Buffer } from "node:buffer";
 import { JpxImage } from "jpeg2000";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { RequestContext } from "./types/api";
 import type { OmniwxEnv } from "./types/env";
 
@@ -23,6 +24,17 @@ const LAND_EXTREMES_POINTS_VERSION = `${LAND_POINTS_VERSION}-global-scan-curated
 const OWNED_LOCAL_RADAR_PUBLISH_PIPELINE_KEY = "owned-local-publish" as const;
 
 export interface Env extends OmniwxEnv {}
+
+const CLOUDFLARE_ACCESS_JWKS = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+let goesRendererIdToken: { token: string; expiresAt: number } | null = null;
+
+function cloudflareAccessJwks(teamDomain: string) {
+  const existing = CLOUDFLARE_ACCESS_JWKS.get(teamDomain);
+  if (existing) return existing;
+  const jwks = createRemoteJWKSet(new URL(`${teamDomain}/cdn-cgi/access/certs`));
+  CLOUDFLARE_ACCESS_JWKS.set(teamDomain, jwks);
+  return jwks;
+}
 
 type Unit = "F" | "C";
 type Units = "imperial" | "metric";
@@ -9548,6 +9560,7 @@ type NesdisFrameDescriptor = {
   index: number;
   iso: string;
   sourceName?: string;
+  sourceId?: string;
   rasterId?: number;
 };
 
@@ -11484,6 +11497,117 @@ function resolveNesdisService(pathname: string) {
   return null;
 }
 
+function goesRendererUrl(env: Env) {
+  const raw = String(env.GOES_RENDERER_URL ?? "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function goesIdentityUrl(env: Env) {
+  const raw = String(env.CLOUDFLARE_ACCESS_GOES_IDENTITY_URL ?? "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getGoesRendererIdToken(env: Env, rendererUrl: URL) {
+  if (goesRendererIdToken && goesRendererIdToken.expiresAt > Date.now()) return goesRendererIdToken.token;
+
+  const identityUrl = goesIdentityUrl(env);
+  const clientId = String(env.CLOUDFLARE_ACCESS_GOES_SERVICE_TOKEN_ID ?? "").trim();
+  const clientSecret = String(env.CLOUDFLARE_ACCESS_GOES_SERVICE_TOKEN_SECRET ?? "").trim();
+  if (!identityUrl || !clientId || !clientSecret) throw new Error("GOES renderer federation is not configured");
+
+  const identityHeaders = new Headers({ "User-Agent": "omniwx-worker/1.0" });
+  identityHeaders.set("CF-Access-Client-Id", clientId);
+  identityHeaders.set("CF-Access-Client-Secret", clientSecret);
+  const identityResponse = await fetch(new Request(identityUrl.toString(), { headers: identityHeaders }));
+  if (!identityResponse.ok) {
+    // Access can return an HTML edge page; retain only its short human-readable title for diagnostics.
+    const body = await identityResponse.text();
+    const title = body.match(/<title>\s*([^<]+?)\s*<\/title>/i)?.[1]?.trim();
+    throw new Error(`Cloudflare Access identity request failed (${identityResponse.status})${title ? `: ${title}` : ""}`);
+  }
+  const identityPayload = await identityResponse.json() as { assertion?: unknown };
+  const assertion = typeof identityPayload.assertion === "string" ? identityPayload.assertion : "";
+  if (!assertion) throw new Error("Cloudflare Access identity response contained no assertion");
+
+  const stsBody = new URLSearchParams({
+    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+    audience: "//iam.googleapis.com/projects/1026045478053/locations/global/workloadIdentityPools/omniwx-cloudflare/providers/cloudflare-access",
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+    requested_token_type: "urn:ietf:params:oauth:token-type:access_token",
+    subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+    subject_token: assertion,
+  });
+  const stsResponse = await fetch("https://sts.googleapis.com/v1/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: stsBody.toString(),
+  });
+  const stsPayload = await stsResponse.json() as { access_token?: unknown };
+  const accessToken = typeof stsPayload.access_token === "string" ? stsPayload.access_token : "";
+  if (!stsResponse.ok || !accessToken) throw new Error(`Google token exchange failed (${stsResponse.status})`);
+
+  const serviceAccount = "omniwx-goes-worker@omniwx-radar-runner.iam.gserviceaccount.com";
+  const mintResponse = await fetch(
+    `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(serviceAccount)}:generateIdToken`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ audience: rendererUrl.origin, includeEmail: true }),
+    },
+  );
+  const mintPayload = await mintResponse.json() as { token?: unknown };
+  const idToken = typeof mintPayload.token === "string" ? mintPayload.token : "";
+  if (!mintResponse.ok || !idToken) throw new Error(`Cloud Run identity token request failed (${mintResponse.status})`);
+
+  // Short cache avoids a token exchange per image while keeping revocation latency bounded.
+  goesRendererIdToken = { token: idToken, expiresAt: Date.now() + 5 * 60_000 };
+  return idToken;
+}
+
+async function fetchGoesRenderer(url: string, env: Env) {
+  const renderer = goesRendererUrl(env);
+  if (!renderer) throw new Error("GOES renderer URL is not configured");
+  try {
+    const idToken = await getGoesRendererIdToken(env, renderer);
+    return fetch(url, { headers: { authorization: `Bearer ${idToken}`, "User-Agent": "omniwx-worker/1.0" } });
+  } catch (error) {
+    console.error("GOES renderer federation failed", error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+function buildGoesRendererExportRequest(url: URL, env: Env) {
+  const renderer = goesRendererUrl(env);
+  const frame = String(url.searchParams.get("ciraFrame") ?? "").trim();
+  if (!renderer || !/^20\d{9}$/.test(frame)) return null;
+
+  const upstream = new URL("render", `${renderer.toString().replace(/\/$/, "")}/`);
+  upstream.searchParams.set("frame", frame);
+  upstream.searchParams.set("bbox", String(url.searchParams.get("bbox") ?? ""));
+  const [width, height] = String(url.searchParams.get("size") ?? "960,960").split(",", 2);
+  upstream.searchParams.set("width", width || "960");
+  upstream.searchParams.set("height", height || width || "960");
+
+  const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
+  cacheUrl.searchParams.set("ciraFrame", frame);
+  cacheUrl.searchParams.set("bbox", upstream.searchParams.get("bbox") ?? "");
+  cacheUrl.searchParams.set("width", upstream.searchParams.get("width") ?? "960");
+  cacheUrl.searchParams.set("height", upstream.searchParams.get("height") ?? "960");
+  return { upstreamUrl: upstream.toString(), cacheKey: new Request(cacheUrl.toString(), { method: "GET" }) };
+}
+
 function buildNesdisExportImageRequest(url: URL) {
   const service = resolveNesdisService(url.pathname);
   if (!service) return { ok: false as const, error: "unknown NESDIS export route" };
@@ -12411,6 +12535,57 @@ async function handleWorkerRequest(
     const healthResponse = handleHealthRoute(url, requestContext);
     if (healthResponse) return healthResponse;
 
+    if (url.pathname === "/internal/goes-identity") {
+      if (request.method !== "GET") {
+        return new Response(JSON.stringify({ ok: false, error: "method-not-allowed" }), {
+          status: 405,
+          headers: { "allow": "GET", "content-type": "application/json; charset=utf-8" },
+        });
+      }
+
+      // Cloudflare Access injects this only after its policy has authenticated the caller.
+      const assertion = request.headers.get("cf-access-jwt-assertion");
+      if (!assertion) {
+        return new Response(JSON.stringify({ ok: false, error: "access-assertion-required" }), {
+          status: 403,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      const teamDomain = String(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN ?? "").trim().replace(/\/+$/, "");
+      const audience = String(env.CLOUDFLARE_ACCESS_GOES_AUD ?? "").trim();
+      const serviceTokenId = String(env.CLOUDFLARE_ACCESS_GOES_SERVICE_TOKEN_ID ?? "").trim();
+      if (!teamDomain || !audience || !serviceTokenId) {
+        return new Response(JSON.stringify({ ok: false, error: "access-validation-not-configured" }), {
+          status: 503,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      try {
+        const { payload } = await jwtVerify(assertion, cloudflareAccessJwks(teamDomain), {
+          issuer: teamDomain,
+          audience,
+        });
+        if (payload.type !== "app" || payload.common_name !== serviceTokenId) {
+          return new Response(JSON.stringify({ ok: false, error: "access-service-token-required" }), {
+            status: 403,
+            headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "access-assertion-invalid" }), {
+          status: 403,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true, assertion }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+
     const userResponse = await handleUserRoute(request, url, requestContext);
     if (userResponse) return userResponse;
 
@@ -13130,12 +13305,20 @@ async function handleWorkerRequest(
         });
       }
 
+      const renderer = url.pathname.includes("/geocolor/") ? goesRendererUrl(env) : null;
       const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
       cacheUrl.searchParams.set("minutesBack", String(parsed.minutesBack));
-      const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 60, 300, async () => ({
-        ok: true,
-        ...(await fetchNesdisFrames(parsed.service.queryUrl, parsed.minutesBack)),
-      }));
+      const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 60, 300, async () => {
+        if (renderer) {
+          const upstream = new URL("frames", `${renderer.toString().replace(/\/$/, "")}/`);
+          upstream.searchParams.set("minutesBack", String(parsed.minutesBack));
+          const response = await fetchGoesRenderer(upstream.toString(), env);
+          const payload = await response.json() as { frames?: unknown };
+          if (!response.ok || !Array.isArray(payload.frames)) throw new Error("GOES renderer returned no frames");
+          return payload;
+        }
+        return { ok: true, ...(await fetchNesdisFrames(parsed.service.queryUrl, parsed.minutesBack)) };
+      });
 
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -13147,6 +13330,19 @@ async function handleWorkerRequest(
     }
 
     if (url.pathname === "/v1/satellite/nesdis/geocolor/exportImage" || url.pathname === "/v1/satellite/nesdis/abi13/exportImage") {
+      const rendererRequest = url.pathname.includes("/geocolor/") ? buildGoesRendererExportRequest(url, env) : null;
+      if (rendererRequest) {
+        return swrFetchJson(request, ctx, {
+          cacheKey: rendererRequest.cacheKey,
+          ttlSeconds: 120,
+          staleSeconds: 600,
+          fetchUpstream: async () => {
+            const response = await fetchGoesRenderer(rendererRequest.upstreamUrl, env);
+            const contentType = response.headers.get("content-type") || "image/png";
+            return new Response(await response.arrayBuffer(), { status: response.status, headers: { "content-type": contentType } });
+          },
+        });
+      }
       const built = buildNesdisExportImageRequest(url);
       if (!built.ok) {
         return new Response(JSON.stringify({ ok: false, error: built.error }), {

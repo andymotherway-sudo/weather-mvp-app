@@ -13,6 +13,9 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"triggers": {
+		"crons": []
+	},
 	"workers_dev": true,
 	"preview_urls": false,
 	"d1_databases": [
@@ -103,7 +106,12 @@
 				"RADAR_R2_LOCAL_COVERAGE_RADIUS_MI": "90",
 				"RADAR_R2_LOCAL_IMAGE_HISTORY_FRAMES": "2",
 				"RADAR_R2_LOCAL_IMAGE_MIN_ZOOM": "7",
-				"RADAR_R2_LOCAL_IMAGE_MAX_ZOOM": "8"
+				"RADAR_R2_LOCAL_IMAGE_MAX_ZOOM": "8",
+				"CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://blue-rain-dd67.cloudflareaccess.com",
+				"CLOUDFLARE_ACCESS_GOES_AUD": "69b25b558fdeca0662ea245fd76bd078cd9d190807c7520f7278e1d7f1b23942",
+				"CLOUDFLARE_ACCESS_GOES_SERVICE_TOKEN_ID": "b0b59ba20f159c3f707441f5a76a5e01.access",
+				"CLOUDFLARE_ACCESS_GOES_IDENTITY_URL": "https://goes-identity.omni-wx.com",
+				"GOES_RENDERER_URL": "https://omniwx-goes-renderer-uilw4ikz7q-uc.a.run.app"
 			}
 		}
 	}

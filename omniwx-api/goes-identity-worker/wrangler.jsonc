@@ -1,0 +1,12 @@
+{
+  "name": "omniwx-goes-identity",
+  "main": "index.ts",
+  "compatibility_date": "2026-02-12",
+  "workers_dev": true,
+  "triggers": {
+    "crons": []
+  },
+  "observability": {
+    "enabled": true
+  }
+}

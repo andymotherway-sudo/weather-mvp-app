@@ -443,6 +443,7 @@ type SatelliteFrame = {
   index: number;
   iso: string;
   sourceName?: string;
+  sourceId?: string;
   rasterId?: number;
 };
 
@@ -485,18 +486,20 @@ function arcGisImageServerTileTemplate(
   iso?: string | null,
   tileSize = 512,
   rasterId?: number | null,
+  sourceId?: string | null,
   extraParams?: Record<string, string>,
 ) {
   const timeMs = iso ? new Date(iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
   const mosaicParam = arcGisLockedRasterParam(rasterId);
+  const sourceParam = sourceId ? `&ciraFrame=${encodeURIComponent(sourceId)}` : '';
   const extraParamString = extraParams
     ? Object.entries(extraParams)
         .map(([key, value]) => `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('')
     : '';
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}${extraParamString}&f=image`;
+  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}${extraParamString}&f=image`;
 }
 
 function isoDateDaysAgo(daysAgo: number, now = new Date()) {
@@ -665,15 +668,17 @@ function buildArcGisImageExportUrl(args: {
   region: Region;
   iso?: string | null;
   rasterId?: number | null;
+  sourceId?: string | null;
   width: number;
   height: number;
 }) {
   const timeMs = args.iso ? new Date(args.iso).getTime() : Number.NaN;
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
   const mosaicParam = arcGisLockedRasterParam(args.rasterId);
+  const sourceParam = args.sourceId ? `&ciraFrame=${encodeURIComponent(args.sourceId)}` : '';
   return `${args.baseUrl}?bbox=${encodeURIComponent(mercatorBbox(args.region))}&bboxSR=3857&imageSR=3857&size=${Math.round(
     args.width,
-  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}&f=image`;
+  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}&f=image`;
 }
 
 function buildGoesWmsImageUrl(args: {
@@ -3022,6 +3027,7 @@ export default function MapsScreen() {
               frame.iso,
               satelliteQuality.tileSize,
               frame.rasterId ?? null,
+              frame.sourceId ?? null,
             ),
           ],
           opacity: frameOpacity,
@@ -3172,7 +3178,7 @@ export default function MapsScreen() {
       list.push({
         id: 'nws-heatrisk',
         tileUrlTemplates: [
-          arcGisImageServerTileTemplate(NWS_HEATRISK_IMAGE_SERVER_URL, null, 512, null, {
+          arcGisImageServerTileTemplate(NWS_HEATRISK_IMAGE_SERVER_URL, null, 512, null, null, {
             renderingRule: NWS_HEATRISK_RENDERING_RULE,
           }),
         ],
@@ -3289,12 +3295,12 @@ export default function MapsScreen() {
   ]);
 
   const renderedOverlays = useMemo(() => {
+    // A downloaded local frame is not proof that MapLibre has painted it yet.
+    // Keep the live raster source visible beneath normal buffered playback.
     const hiddenAnimationKind =
       animationCompositorKind && animationCompositorKind !== 'radar'
         ? animationCompositorKind
-        : bufferedSatelliteReady
-          ? bufferedSatelliteKind
-          : null;
+        : null;
     if (!hiddenAnimationKind) return overlays;
 
     if (hiddenAnimationKind === 'truecolor') {
@@ -4141,6 +4147,7 @@ export default function MapsScreen() {
           id: `${index}-${frame.iso}`,
           iso: frame.iso,
           rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
+          sourceId: typeof frame.sourceId === 'string' ? frame.sourceId : undefined,
         })),
     [animationFrameSource],
   );
@@ -4162,6 +4169,7 @@ export default function MapsScreen() {
           id: `${index}-${frame.iso}`,
           iso: frame.iso,
           rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
+          sourceId: typeof frame.sourceId === 'string' ? frame.sourceId : undefined,
         })),
     [satellitePlaybackFrames],
   );
@@ -4246,7 +4254,7 @@ export default function MapsScreen() {
   const buildAnimationUrl = useCallback(
     (
       source: 'radar' | 'geocolor' | 'goes-east-ir' | 'goes-west-ir' | 'goes-east-wv' | 'goes-west-wv' | 'goes-east-visible' | 'goes-west-visible',
-      frame: { iso: string; rasterId?: number },
+      frame: { iso: string; rasterId?: number; sourceId?: string },
       width: number,
       height: number,
     ) => {
@@ -4266,6 +4274,7 @@ export default function MapsScreen() {
           region: animationExportRegion,
           iso: frame.iso,
           rasterId: frame.rasterId,
+          sourceId: frame.sourceId,
           width,
           height,
         });
