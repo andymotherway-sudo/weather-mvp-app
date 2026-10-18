@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
 Release: **OMNIwx 1.1.263**
-Android version code: **10280**
+Android version code: **10281**
 Track: **Closed testing / internal testing candidate**
 Date: **October 18, 2026**
 
@@ -22,7 +22,7 @@ Please focus testing on wxLab, Almanac, and Maps:
 ## Internal Release Checklist
 
 - App version: `1.1.263`
-- Android version code: `10280`
+- Android version code: `10281`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
