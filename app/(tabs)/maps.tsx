@@ -464,6 +464,7 @@ const RADAR_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
+const GEOCOLOR_RENDER_VERSION = '2';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/exportImage`;
@@ -493,13 +494,14 @@ function arcGisImageServerTileTemplate(
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
   const mosaicParam = arcGisLockedRasterParam(rasterId);
   const sourceParam = sourceId ? `&ciraFrame=${encodeURIComponent(sourceId)}` : '';
+  const renderVersionParam = baseUrl === NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL ? `&renderVersion=${GEOCOLOR_RENDER_VERSION}` : '';
   const extraParamString = extraParams
     ? Object.entries(extraParams)
         .map(([key, value]) => `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
         .join('')
     : '';
   const size = Math.max(512, Math.min(1024, Math.round(tileSize)));
-  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}${extraParamString}&f=image`;
+  return `${baseUrl}?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=${size},${size}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}${renderVersionParam}${extraParamString}&f=image`;
 }
 
 function isoDateDaysAgo(daysAgo: number, now = new Date()) {
@@ -676,9 +678,10 @@ function buildArcGisImageExportUrl(args: {
   const timeParam = Number.isFinite(timeMs) ? `&time=${Math.round(timeMs)}` : '';
   const mosaicParam = arcGisLockedRasterParam(args.rasterId);
   const sourceParam = args.sourceId ? `&ciraFrame=${encodeURIComponent(args.sourceId)}` : '';
+  const renderVersionParam = args.baseUrl === NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL ? `&renderVersion=${GEOCOLOR_RENDER_VERSION}` : '';
   return `${args.baseUrl}?bbox=${encodeURIComponent(mercatorBbox(args.region))}&bboxSR=3857&imageSR=3857&size=${Math.round(
     args.width,
-  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}&f=image`;
+  )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}${renderVersionParam}&f=image`;
 }
 
 function buildGoesWmsImageUrl(args: {
@@ -1806,7 +1809,6 @@ export default function MapsScreen() {
     (satelliteSecondaryBufferStatus?.buffering === false &&
       satelliteSecondaryReadyCount >= Math.min(2, satelliteSecondaryTotal || 2));
   const bufferedSatelliteCandidate =
-    trueColorUsingCatalog ||
     infraredUsingCatalog ||
     goesEastWvEnabled ||
     goesWestWvEnabled ||
@@ -2824,9 +2826,10 @@ export default function MapsScreen() {
     preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
   const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
     !animationRecordMode && isFocused
-      ? trueColorUsingCatalog
-        ? 'truecolor'
-        : infraredUsingCatalog
+      // GeoColor must stay on the native raster-tile path. The full-viewport
+      // cache is intentionally low-resolution to control memory and becomes
+      // visibly blocky when MapLibre stretches it over the map.
+      ? infraredUsingCatalog
           ? 'ir'
           : goesEastWvEnabled
             ? 'wv-east'
@@ -4190,10 +4193,8 @@ export default function MapsScreen() {
               ? goesWestWvOpacity
               : cloudsOpacity;
   const bufferedSatelliteOpacity =
-    bufferedSatelliteKind === 'truecolor'
-      ? goesTrueColorOpacity
-      : bufferedSatelliteKind === 'ir'
-        ? goesEastIrOpacity
+    bufferedSatelliteKind === 'ir'
+      ? goesEastIrOpacity
         : bufferedSatelliteKind === 'wv-east'
           ? goesEastWvOpacity
           : bufferedSatelliteKind === 'wv-west'
@@ -4640,13 +4641,11 @@ export default function MapsScreen() {
               frameIndex={synchronizedSatelliteFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
               opacity={bufferedSatelliteOpacity}
-              blendMs={bufferedSatelliteKind === 'truecolor' ? 680 : 460}
+              blendMs={460}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
-                  bufferedSatelliteKind === 'truecolor'
-                    ? 'geocolor'
-                    : bufferedSatelliteKind === 'ir'
-                      ? 'goes-east-ir'
+                  bufferedSatelliteKind === 'ir'
+                    ? 'goes-east-ir'
                       : bufferedSatelliteKind === 'wv-west'
                         ? 'goes-west-wv'
                         : bufferedSatelliteKind === 'wv-east'

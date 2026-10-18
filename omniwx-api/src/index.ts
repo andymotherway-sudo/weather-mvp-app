@@ -27,6 +27,7 @@ export interface Env extends OmniwxEnv {}
 
 const CLOUDFLARE_ACCESS_JWKS = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 let goesRendererIdToken: { token: string; expiresAt: number } | null = null;
+const GOES_GEOCOLOR_RENDER_VERSION = "2";
 
 function cloudflareAccessJwks(teamDomain: string) {
   const existing = CLOUDFLARE_ACCESS_JWKS.get(teamDomain);
@@ -11601,6 +11602,9 @@ function buildGoesRendererExportRequest(url: URL, env: Env) {
   upstream.searchParams.set("height", height || width || "960");
 
   const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
+  // GeoColor v2 switched from NOAA's 1808px preview to the 5424px product.
+  // Keep old low-resolution images from being reused under an identical tile key.
+  cacheUrl.searchParams.set("renderVersion", GOES_GEOCOLOR_RENDER_VERSION);
   cacheUrl.searchParams.set("ciraFrame", frame);
   cacheUrl.searchParams.set("bbox", upstream.searchParams.get("bbox") ?? "");
   cacheUrl.searchParams.set("width", upstream.searchParams.get("width") ?? "960");

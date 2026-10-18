@@ -12,6 +12,7 @@ from functools import lru_cache
 from io import BytesIO
 import os
 import re
+from threading import BoundedSemaphore, Lock
 from typing import Any
 
 from flask import Flask, Response, jsonify, request
@@ -22,9 +23,23 @@ import requests
 app = Flask(__name__)
 
 STAR_PAGE = "https://www.star.nesdis.noaa.gov/GOES/fulldisk_band.php?band=GEOCOLOR&dim=1&length=48&sat=G19"
-STAR_IMAGE = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/{frame}_GOES19-ABI-FD-GEOCOLOR-1808x1808.jpg"
+# NOAA STAR publishes the same CIRA GeoColor frame at several resolutions.
+# The 1808px preview is suitable for a full-disk web animation, but it falls
+# apart at regional map zoom. 5424px keeps the renderer within Cloud Run's
+# memory envelope while supplying enough source detail for a 512px map tile.
+STAR_IMAGE = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/{frame}_GOES19-ABI-FD-GEOCOLOR-5424x5424.jpg"
+# The STAR loop manifest references its 1808px preview. The timestamp is
+# shared by every published size, so use that preview only for discovery and
+# request the matching 5424px asset for rendering.
 FRAME_RE = re.compile(r"(20\d{9})_GOES19-ABI-FD-GEOCOLOR-1808x1808\.jpg")
 FRAME_ID_RE = re.compile(r"^20\d{9}$")
+# A fixed lock stripe avoids accumulating one lock for every historical scan
+# while still coalescing the concurrent requests for an individual frame.
+IMAGE_FRAME_LOCKS = tuple(Lock() for _ in range(16))
+# Two distinct 5424px decodes can run safely inside the 1 GiB Cloud Run
+# allocation. More would improve a cold loop only marginally while making
+# memory consumption and upstream bandwidth much less predictable.
+IMAGE_LOAD_LIMIT = BoundedSemaphore(2)
 
 # GOES-R fixed-grid geometry. The rendered GeoColor image is the full disk
 # resampled to a square, retaining ABI's +/- 0.151844 radian scan angle range.
@@ -71,15 +86,26 @@ def refreshable_frames() -> tuple[str, ...]:
     return fetch_frames()
 
 
-@lru_cache(maxsize=8)
-def fetch_image(frame: str) -> np.ndarray:
-    if not FRAME_ID_RE.fullmatch(frame):
-        raise ValueError("invalid frame")
+@lru_cache(maxsize=3)
+def load_image(frame: str) -> np.ndarray:
     url = STAR_IMAGE.format(frame=frame)
-    response = requests.get(url, timeout=30, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
+    response = requests.get(url, timeout=45, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
     response.raise_for_status()
     with Image.open(BytesIO(response.content)) as image:
         return np.asarray(image.convert("RGB"))
+
+
+def fetch_image(frame: str) -> np.ndarray:
+    if not FRAME_ID_RE.fullmatch(frame):
+        raise ValueError("invalid frame")
+    # A 5424px decoded RGB frame occupies roughly 85 MiB. Requests for the
+    # same frame share one load, while the semaphore permits only two distinct
+    # decodes at once. That keeps cold animations responsive without allowing
+    # an unbounded playback burst to consume the container's memory.
+    frame_lock = IMAGE_FRAME_LOCKS[hash(frame) % len(IMAGE_FRAME_LOCKS)]
+    with frame_lock:
+        with IMAGE_LOAD_LIMIT:
+            return load_image(frame)
 
 
 def mercator_to_lat_lon(bbox: tuple[float, float, float, float], width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
@@ -103,8 +129,8 @@ def goes_pixel_coordinates(lon_deg: np.ndarray, lat_deg: np.ndarray, source_widt
     scan_x = np.arctan2(-sy, sx)
     scan_y = np.arctan2(sz, np.sqrt(sx * sx + sy * sy))
     visible = sx > 0
-    px = np.rint((scan_x + SCAN_LIMIT) / (2 * SCAN_LIMIT) * (source_width - 1)).astype(np.int32)
-    py = np.rint((SCAN_LIMIT - scan_y) / (2 * SCAN_LIMIT) * (source_height - 1)).astype(np.int32)
+    px = (scan_x + SCAN_LIMIT) / (2 * SCAN_LIMIT) * (source_width - 1)
+    py = (SCAN_LIMIT - scan_y) / (2 * SCAN_LIMIT) * (source_height - 1)
     visible &= (px >= 0) & (px < source_width) & (py >= 0) & (py < source_height)
     return px, py, visible
 
@@ -115,7 +141,19 @@ def render(frame: str, bbox: tuple[float, float, float, float], width: int, heig
     px, py, visible = goes_pixel_coordinates(lon, lat, source.shape[1], source.shape[0])
     output = np.zeros((height, width, 4), dtype=np.uint8)
     output[..., 3] = np.where(visible, 255, 0)
-    output[visible, :3] = source[py[visible], px[visible], :3]
+    # Bilinear sampling prevents the blocky nearest-neighbor look when the
+    # requested Web-Mercator pixels do not fall exactly on ABI source pixels.
+    source_x = px[visible]
+    source_y = py[visible]
+    x0 = np.floor(source_x).astype(np.int32)
+    y0 = np.floor(source_y).astype(np.int32)
+    x1 = np.minimum(x0 + 1, source.shape[1] - 1)
+    y1 = np.minimum(y0 + 1, source.shape[0] - 1)
+    x_weight = (source_x - x0)[:, np.newaxis]
+    y_weight = (source_y - y0)[:, np.newaxis]
+    top = source[y0, x0].astype(np.float32) * (1 - x_weight) + source[y0, x1].astype(np.float32) * x_weight
+    bottom = source[y1, x0].astype(np.float32) * (1 - x_weight) + source[y1, x1].astype(np.float32) * x_weight
+    output[visible, :3] = (top * (1 - y_weight) + bottom * y_weight).astype(np.uint8)
     image = Image.fromarray(output, "RGBA")
     encoded = BytesIO()
     image.save(encoded, format="PNG", optimize=True)
