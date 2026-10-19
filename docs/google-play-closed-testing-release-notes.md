@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.263**
-Android version code: **10281**
+Release: **OMNIwx 1.1.264**
+Android version code: **10282**
 Track: **Closed testing / internal testing candidate**
 Date: **October 18, 2026**
 
 ## Play Console Paste Notes
 
-Makes wxLab substantially more information-dense, removes the Land-page Forecast Nuance card, fixes Almanac pull-to-refresh, and restores verified live animated GeoColor through the private production renderer. GeoColor stays visible while the local animation cache is preparing, avoiding a blank map between valid frame load and native map paint.
+Improves Maps GeoColor with sharper high-resolution GOES imagery, smoother animation, and more reliable frame handling. The renderer now uses the official full-resolution source and keeps capacity bounded for a dependable production experience.
 
 ## Tester Notes
 
@@ -15,14 +15,15 @@ Please focus testing on wxLab, Almanac, and Maps:
 
 - In Land wxLab, verify the denser cells remain readable and tappable with default and increased Android font/display scaling.
 - In Almanac, pull down to refresh and verify the updated state changes for forecast, normals, selected-day context, and records.
-- In Maps, select GeoColor. It must show verified live GeoColor frames and animate when multiple fresh frames are available. While the local animation cache initializes, the visible live raster must remain on screen rather than going blank.
+- In Maps, select GeoColor and zoom around the Southwest. Imagery should be crisp rather than blocky, and the map must not substitute infrared imagery for GeoColor.
+- Let GeoColor load for a 2-hour loop, then scrub and play it. Valid frames should animate smoothly; if an individual official source frame is unavailable, the app should retain the valid imagery rather than blanking the map.
 - Test Infrared separately; thermal imagery must remain labeled Infrared.
 - Smoke-test Land, Hourly, Space, Almanac, Maps, and Astro after update/relaunch.
 
 ## Internal Release Checklist
 
-- App version: `1.1.263`
-- Android version code: `10281`
+- App version: `1.1.264`
+- Android version code: `10282`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -33,5 +34,6 @@ Please focus testing on wxLab, Almanac, and Maps:
 
 - Production Worker fixes were deployed on October 17. The default Worker no longer reports a cron schedule, and production was deployed explicitly.
 - The production NOAA CDO credential currently returns `400: The token parameter provided is not valid`. The app now explains this state accurately; renew `NOAA_NCEI_TOKEN` in the production Worker before expecting records to load.
-- GeoColor frames now come from the private production renderer through Cloudflare Access federation. The app does not substitute infrared or a daily still image if that verified live source is unavailable.
+- GeoColor frames now come from the private production renderer through Cloudflare Access federation. It fetches the official 5424px GOES GeoColor source, renders regional map tiles with bilinear sampling, and does not substitute infrared or a daily still image.
+- Rendering capacity is intentionally bounded to two Cloud Run instances with four concurrent requests each. This preserves app responsiveness while preventing unbounded operations growth.
 - Radar publisher and watchdog schedules remain disabled or fail closed; this release does not enable radar publishing.
