@@ -1,6 +1,6 @@
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, useWindowDimensions } from 'react-native';
+import { Animated, PixelRatio, useWindowDimensions } from 'react-native';
 
 import { cacheAtmosphericFrame } from '../../app/lib/maps/animationFrameCache';
 
@@ -34,6 +34,9 @@ type Props = {
   coordinates: ImageCorners;
   opacity: number;
   blendMs: number;
+  pixelRatioCap?: number;
+  maxImageWidth?: number;
+  maxImageHeight?: number;
   buildUrl: (frame: FrameLike, width: number, height: number) => string;
   onBufferStatus?: (status: AnimationBufferStatus) => void;
   onDisplayReady?: (ready: boolean) => void;
@@ -66,14 +69,18 @@ export function BufferedAtmosphericLayer(props: Props) {
     coordinates,
     opacity,
     blendMs,
+    pixelRatioCap = 1,
+    maxImageWidth = 1152,
+    maxImageHeight = 1408,
     buildUrl,
     onBufferStatus,
     onDisplayReady,
   } = props;
   const window = useWindowDimensions();
   const frameScale = frames.length >= 18 ? 1.02 : frames.length >= 12 ? 1.12 : 1.28;
-  const imageWidth = Math.max(576, Math.min(1152, Math.round(window.width * frameScale)));
-  const imageHeight = Math.max(640, Math.min(1408, Math.round(window.height * frameScale)));
+  const deviceScale = Math.min(Math.max(1, PixelRatio.get()), Math.max(1, pixelRatioCap));
+  const imageWidth = Math.max(576, Math.min(maxImageWidth, Math.round(window.width * frameScale * deviceScale)));
+  const imageHeight = Math.max(640, Math.min(maxImageHeight, Math.round(window.height * frameScale * deviceScale)));
   const buildUrlRef = useRef(buildUrl);
   const onBufferStatusRef = useRef(onBufferStatus);
   const onDisplayReadyRef = useRef(onDisplayReady);

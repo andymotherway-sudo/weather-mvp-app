@@ -764,7 +764,9 @@ async function fetchNesdisImageServerFrames(
   const query = new URL(framesUrl);
   query.searchParams.set('minutesBack', String(minutesBack));
 
-  const res = await fetchWithTimeout(query.toString(), 14000);
+  // The first private renderer request can include a Cloud Run cold start.
+  // A short timeout turns that recoverable delay into an empty satellite map.
+  const res = await fetchWithTimeout(query.toString(), 30000);
   if (!res.ok) throw new Error(`NESDIS catalog returned ${res.status}.`);
   const json = await res.json();
   return {
@@ -1809,6 +1811,7 @@ export default function MapsScreen() {
     (satelliteSecondaryBufferStatus?.buffering === false &&
       satelliteSecondaryReadyCount >= Math.min(2, satelliteSecondaryTotal || 2));
   const bufferedSatelliteCandidate =
+    trueColorUsingCatalog ||
     infraredUsingCatalog ||
     goesEastWvEnabled ||
     goesWestWvEnabled ||
@@ -2826,11 +2829,13 @@ export default function MapsScreen() {
     preferBufferedWideRadar && !radarCtl.usingLocalImage && frameCount > 1;
   const bufferedSatelliteKind: Exclude<AnimationCompositorKind, 'radar'> | null =
     !animationRecordMode && isFocused
-      // GeoColor must stay on the native raster-tile path. The full-viewport
-      // cache is intentionally low-resolution to control memory and becomes
-      // visibly blocky when MapLibre stretches it over the map.
-      ? infraredUsingCatalog
-          ? 'ir'
+      // GeoColor uses a high-density viewport image. MapLibre's Android tile
+      // path can silently fail after a cold launch; this compositor path is
+      // reliable and requests enough pixels for the physical display.
+      ? trueColorUsingCatalog
+          ? 'truecolor'
+          : infraredUsingCatalog
+            ? 'ir'
           : goesEastWvEnabled
             ? 'wv-east'
             : goesWestWvEnabled
@@ -4193,7 +4198,9 @@ export default function MapsScreen() {
               ? goesWestWvOpacity
               : cloudsOpacity;
   const bufferedSatelliteOpacity =
-    bufferedSatelliteKind === 'ir'
+    bufferedSatelliteKind === 'truecolor'
+      ? goesTrueColorOpacity
+      : bufferedSatelliteKind === 'ir'
       ? goesEastIrOpacity
         : bufferedSatelliteKind === 'wv-east'
           ? goesEastWvOpacity
@@ -4642,9 +4649,14 @@ export default function MapsScreen() {
               coordinates={bufferedPlaybackCoordinates}
               opacity={bufferedSatelliteOpacity}
               blendMs={460}
+              pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 2 : 1}
+              maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 1600 : undefined}
+              maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2000 : undefined}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
-                  bufferedSatelliteKind === 'ir'
+                  bufferedSatelliteKind === 'truecolor'
+                    ? 'geocolor'
+                    : bufferedSatelliteKind === 'ir'
                     ? 'goes-east-ir'
                       : bufferedSatelliteKind === 'wv-west'
                         ? 'goes-west-wv'

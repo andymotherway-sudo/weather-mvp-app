@@ -295,9 +295,41 @@ export function MapRenderer(props: MapRendererProps) {
   const [liveZoom, setLiveZoom] = useState<number>(initialCamera.zoomLevel);
   const liveZoomRef = useRef<number>(initialCamera.zoomLevel);
   const lastRegionRef = useRef<Region>(mountInitialRegionRef.current);
+  const [mapMountKey, setMapMountKey] = useState(0);
+  const mapLoadedRef = useRef(false);
+  const mapRetryCountRef = useRef(0);
+  const mapLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [degradedUntil, setDegradedUntil] = useState<number>(0);
   const burstRef = useRef<{ t0: number; n: number }>({ t0: 0, n: 0 });
+
+  const clearMapLoadTimer = useCallback(() => {
+    if (!mapLoadTimerRef.current) return;
+    clearTimeout(mapLoadTimerRef.current);
+    mapLoadTimerRef.current = null;
+  }, []);
+
+  const retryInitialMapLoad = useCallback(() => {
+    if (mapLoadedRef.current || mapRetryCountRef.current >= 1) return;
+    mapRetryCountRef.current += 1;
+    clearMapLoadTimer();
+    // MapLibre can occasionally miss its first Android surface/style load
+    // after a cold app launch. A single remount restores the map without
+    // leaving the user on a black screen or retrying indefinitely.
+    setMapMountKey((current) => current + 1);
+  }, [clearMapLoadTimer]);
+
+  const markMapLoaded = useCallback(() => {
+    mapLoadedRef.current = true;
+    clearMapLoadTimer();
+  }, [clearMapLoadTimer]);
+
+  useEffect(() => {
+    mapLoadedRef.current = false;
+    clearMapLoadTimer();
+    mapLoadTimerRef.current = setTimeout(retryInitialMapLoad, 10_000);
+    return clearMapLoadTimer;
+  }, [clearMapLoadTimer, mapMountKey, retryInitialMapLoad]);
 
   useEffect(() => {
     if (!(MapLibreGL as any)?.Logger?.setLogCallback) return;
@@ -541,6 +573,7 @@ export function MapRenderer(props: MapRendererProps) {
       style={{ flex: 1 }}
     >
       <MapLibreGL.MapView
+        key={`maplibre-${mapMountKey}`}
         style={{ flex: 1 }}
         mapStyle={mapStyleUrl}
         logoEnabled={false}
@@ -552,6 +585,8 @@ export function MapRenderer(props: MapRendererProps) {
         onRegionWillChange={handleRegionWillChange}
         onRegionDidChange={handleRegionDidChange}
         onPress={onMapPress}
+        onDidFinishLoadingMap={markMapLoaded}
+        onDidFailLoadingMap={retryInitialMapLoad}
       >
         <MapLibreGL.Camera
           ref={cameraRef}

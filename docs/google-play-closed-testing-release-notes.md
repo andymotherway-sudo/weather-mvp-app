@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.264**
-Android version code: **10282**
+Release: **OMNIwx 1.1.265**
+Android version code: **10283**
 Track: **Closed testing / internal testing candidate**
 Date: **October 18, 2026**
 
 ## Play Console Paste Notes
 
-Improves Maps GeoColor with sharper high-resolution GOES imagery, smoother animation, and more reliable frame handling. The renderer now uses the official full-resolution source and keeps capacity bounded for a dependable production experience.
+Fixes Maps startup reliability and GeoColor loading. Maps automatically recovers from a rare black screen after a cold launch, and GeoColor now allows the private source time to wake before reporting a failure.
 
 ## Tester Notes
 
@@ -17,13 +17,14 @@ Please focus testing on wxLab, Almanac, and Maps:
 - In Almanac, pull down to refresh and verify the updated state changes for forecast, normals, selected-day context, and records.
 - In Maps, select GeoColor and zoom around the Southwest. Imagery should be crisp rather than blocky, and the map must not substitute infrared imagery for GeoColor.
 - Let GeoColor load for a 2-hour loop, then scrub and play it. Valid frames should animate smoothly; if an individual official source frame is unavailable, the app should retain the valid imagery rather than blanking the map.
+- Force-stop and relaunch the app, then open Maps. The initial map should render without requiring a second app restart.
 - Test Infrared separately; thermal imagery must remain labeled Infrared.
 - Smoke-test Land, Hourly, Space, Almanac, Maps, and Astro after update/relaunch.
 
 ## Internal Release Checklist
 
-- App version: `1.1.264`
-- Android version code: `10282`
+- App version: `1.1.265`
+- Android version code: `10283`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
