@@ -22,7 +22,7 @@ import requests
 
 app = Flask(__name__)
 
-STAR_PAGE = "https://www.star.nesdis.noaa.gov/GOES/fulldisk_band.php?band=GEOCOLOR&dim=1&length=48&sat=G19"
+STAR_PAGE = "https://www.star.nesdis.noaa.gov/GOES/fulldisk_band.php?band=GEOCOLOR&dim=1&length=48&sat=G19&refresh=true"
 # NOAA STAR publishes the same CIRA GeoColor frame at several resolutions.
 # The 1808px preview is suitable for a full-disk web animation, but it falls
 # apart at regional map zoom. 5424px keeps the renderer within Cloud Run's
@@ -66,7 +66,15 @@ def iso(frame: str) -> str:
 
 @lru_cache(maxsize=1)
 def fetch_frames() -> tuple[str, ...]:
-    response = requests.get(STAR_PAGE, timeout=20, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
+    # STAR may serve a stale loop manifest at its bare URL for days. `refresh`
+    # requests the current loop and a changing query value prevents an
+    # intermediary cache from replaying an old manifest to the renderer.
+    response = requests.get(
+        STAR_PAGE,
+        params={"_": int(datetime.now(timezone.utc).timestamp())},
+        timeout=20,
+        headers={"User-Agent": "omniwx-goes-renderer/1.0", "Cache-Control": "no-cache"},
+    )
     response.raise_for_status()
     seen: set[str] = set()
     frames: list[str] = []

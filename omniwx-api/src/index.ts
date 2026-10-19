@@ -13312,6 +13312,10 @@ async function handleWorkerRequest(
       const renderer = url.pathname.includes("/geocolor/") ? goesRendererUrl(env) : null;
       const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
       cacheUrl.searchParams.set("minutesBack", String(parsed.minutesBack));
+      // Keep a changed renderer/catalog contract from inheriting an old
+      // manifest. Without this, a stale frame list can hide the map controls
+      // even after the private renderer has recovered.
+      if (renderer) cacheUrl.searchParams.set("renderVersion", GOES_GEOCOLOR_RENDER_VERSION);
       const payload = await swrFetchObject(ctx, new Request(cacheUrl.toString(), { method: "GET" }), 60, 300, async () => {
         if (renderer) {
           const upstream = new URL("frames", `${renderer.toString().replace(/\/$/, "")}/`);
