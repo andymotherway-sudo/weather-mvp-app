@@ -4651,7 +4651,9 @@ export default function MapsScreen() {
               blendMs={460}
               pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 2 : 1}
               maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 1600 : undefined}
-              maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2000 : undefined}
+              // The private GeoColor renderer bounds each output axis at 1600px.
+              // Requesting 2000px made every tall Android viewport fail with HTTP 400.
+              maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 1600 : undefined}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
                   bufferedSatelliteKind === 'truecolor'

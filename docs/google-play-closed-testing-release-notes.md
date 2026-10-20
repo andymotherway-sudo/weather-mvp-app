@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.265**
-Android version code: **10283**
+Release: **OMNIwx 1.1.266**
+Android version code: **10284**
 Track: **Closed testing / internal testing candidate**
 Date: **October 19, 2026**
 
 ## Play Console Paste Notes
 
-Fixes Maps startup reliability and GeoColor loading. Maps automatically recovers from a rare black screen after a cold launch, and GeoColor now allows the private source time to wake before reporting a failure.
+Fixes GeoColor on tall Android displays. The app now keeps its high-density request within the private renderer's supported image dimensions, so true-color frames load instead of failing silently. Maps also retains the cold-start recovery from the prior build.
 
 ## Tester Notes
 
@@ -23,8 +23,8 @@ Please focus testing on wxLab, Almanac, and Maps:
 
 ## Internal Release Checklist
 
-- App version: `1.1.265`
-- Android version code: `10283`
+- App version: `1.1.266`
+- Android version code: `10284`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
