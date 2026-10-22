@@ -15,6 +15,7 @@ type FrameLike = {
   id: string;
   iso: string;
   rasterId?: number;
+  sourceId?: string;
 };
 
 type ImageCorners = [[number, number], [number, number], [number, number], [number, number]];
@@ -34,6 +35,7 @@ type Props = {
   coordinates: ImageCorners;
   opacity: number;
   blendMs: number;
+  transitionMode?: 'crossfade' | 'cut';
   pixelRatioCap?: number;
   maxImageWidth?: number;
   maxImageHeight?: number;
@@ -69,6 +71,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     coordinates,
     opacity,
     blendMs,
+    transitionMode = 'crossfade',
     pixelRatioCap = 1,
     maxImageWidth = 1152,
     maxImageHeight = 1408,
@@ -79,8 +82,13 @@ export function BufferedAtmosphericLayer(props: Props) {
   const window = useWindowDimensions();
   const frameScale = frames.length >= 18 ? 1.02 : frames.length >= 12 ? 1.12 : 1.28;
   const deviceScale = Math.min(Math.max(1, PixelRatio.get()), Math.max(1, pixelRatioCap));
-  const imageWidth = Math.max(576, Math.min(maxImageWidth, Math.round(window.width * frameScale * deviceScale)));
-  const imageHeight = Math.max(640, Math.min(maxImageHeight, Math.round(window.height * frameScale * deviceScale)));
+  const requestedWidth = Math.max(576, Math.round(window.width * frameScale * deviceScale));
+  const requestedHeight = Math.max(640, Math.round(window.height * frameScale * deviceScale));
+  // Clamp the long edge without changing the viewport aspect ratio. Independent
+  // caps stretch a viewport image when MapLibre projects it onto the map.
+  const imageScale = Math.min(1, maxImageWidth / requestedWidth, maxImageHeight / requestedHeight);
+  const imageWidth = Math.max(128, Math.round(requestedWidth * imageScale));
+  const imageHeight = Math.max(128, Math.round(requestedHeight * imageScale));
   const buildUrlRef = useRef(buildUrl);
   const onBufferStatusRef = useRef(onBufferStatus);
   const onDisplayReadyRef = useRef(onDisplayReady);
@@ -300,15 +308,21 @@ export function BufferedAtmosphericLayer(props: Props) {
     }
 
     // The file is already downloaded. Give the native image source one render
-    // beat to bind the local URI before changing opacity. This effect depends
-    // only on the requested frame's URI, so unrelated buffer progress cannot
-    // cancel an in-flight crossfade.
+    // beat to bind the local URI before changing opacity.
     const warmTimer = setTimeout(() => {
       if (transitionTokenRef.current !== token) return;
       const safeOpacity = Math.max(0, Math.min(1, opacity));
       activeFadeRef.current?.stop();
       slotOpacities[currentFront].setValue(safeOpacity);
       slotOpacities[nextFront].setValue(0);
+      if (transitionMode === 'cut') {
+        displayedRequestIdRef.current = desiredRequest.requestId;
+        transitioningRequestIdRef.current = null;
+        frontSlotRef.current = nextFront;
+        slotOpacities[currentFront].setValue(0);
+        slotOpacities[nextFront].setValue(safeOpacity);
+        return;
+      }
       const fade = Animated.parallel([
         Animated.timing(slotOpacities[currentFront], {
           toValue: 0,
@@ -331,7 +345,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[currentFront].setValue(0);
         slotOpacities[nextFront].setValue(safeOpacity);
       });
-    }, 48);
+    }, transitionMode === 'cut' ? 32 : 48);
 
     return () => {
       clearTimeout(warmTimer);
@@ -345,7 +359,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[heldFront === 0 ? 1 : 0].setValue(0);
       }
     };
-  }, [blendMs, coordinates, desiredLocalUri, desiredRequest, enabled, opacity]);
+  }, [blendMs, coordinates, desiredLocalUri, desiredRequest, enabled, opacity, transitionMode]);
 
   useEffect(() => {
     if (!enabled) return;

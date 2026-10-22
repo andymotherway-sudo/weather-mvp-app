@@ -27,7 +27,7 @@ export interface Env extends OmniwxEnv {}
 
 const CLOUDFLARE_ACCESS_JWKS = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 let goesRendererIdToken: { token: string; expiresAt: number } | null = null;
-const GOES_GEOCOLOR_RENDER_VERSION = "2";
+const GOES_GEOCOLOR_RENDER_VERSION = "3";
 
 function cloudflareAccessJwks(teamDomain: string) {
   const existing = CLOUDFLARE_ACCESS_JWKS.get(teamDomain);

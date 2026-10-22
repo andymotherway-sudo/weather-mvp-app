@@ -464,7 +464,7 @@ const RADAR_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
-const GEOCOLOR_RENDER_VERSION = '2';
+const GEOCOLOR_RENDER_VERSION = '3';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/exportImage`;
@@ -4649,11 +4649,10 @@ export default function MapsScreen() {
               coordinates={bufferedPlaybackCoordinates}
               opacity={bufferedSatelliteOpacity}
               blendMs={460}
-              pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 2 : 1}
-              maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 1600 : undefined}
-              // The private GeoColor renderer bounds each output axis at 1600px.
-              // Requesting 2000px made every tall Android viewport fail with HTTP 400.
-              maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 1600 : undefined}
+              transitionMode={bufferedSatelliteKind === 'truecolor' ? 'cut' : 'crossfade'}
+              pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 3 : 1}
+              maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
+              maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
                   bufferedSatelliteKind === 'truecolor'

@@ -180,8 +180,8 @@ def parse_bbox(value: str | None) -> tuple[float, float, float, float]:
 def parse_dimension(name: str, default: int) -> int:
     raw = request.args.get(name, str(default))
     value = int(raw)
-    if value < 128 or value > 1600:
-        raise ValueError(f"{name} must be between 128 and 1600")
+    if value < 128 or value > 2048:
+        raise ValueError(f"{name} must be between 128 and 2048")
     return value
 
 

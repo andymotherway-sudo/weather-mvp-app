@@ -1,13 +1,13 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.267**
-Android version code: **10285**
+Release: **OMNIwx 1.1.268**
+Android version code: **10286**
 Track: **Closed testing / internal testing candidate**
 Date: **October 19, 2026**
 
 ## Play Console Paste Notes
 
-Fixes the release API target for Maps GeoColor. This build is pinned to the production Worker that serves the private true-color renderer, and the Android build now rejects an unconfigured release command before it can create a development-targeted AAB.
+Improves Maps GeoColor playback and sharpness. True-color imagery now keeps its geographic aspect ratio at high density instead of stretching, and preloaded frames switch cleanly without an opacity fade. The private renderer now supports the larger bounded mobile viewport needed for crisp state-level views.
 
 ## Tester Notes
 
@@ -23,8 +23,8 @@ Please focus testing on wxLab, Almanac, and Maps:
 
 ## Internal Release Checklist
 
-- App version: `1.1.267`
-- Android version code: `10285`
+- App version: `1.1.268`
+- Android version code: `10286`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
