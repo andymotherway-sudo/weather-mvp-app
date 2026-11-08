@@ -113,7 +113,7 @@ export function BufferedAtmosphericLayer(props: Props) {
 
   const viewportKey = coordinateKey(coordinates);
   const framesKey = useMemo(
-    () => frames.map((frame) => `${frame.id}:${frame.iso}:${frame.rasterId ?? ''}`).join('|'),
+    () => frames.map((frame) => `${frame.id}:${frame.iso}:${frame.rasterId ?? ''}:${frame.sourceId ?? ''}`).join('|'),
     [frames],
   );
   const requests = useMemo(
@@ -297,14 +297,42 @@ export function BufferedAtmosphericLayer(props: Props) {
     });
 
     const firstFrame = displayedRequestIdRef.current == null;
-    if (firstFrame) {
+    const completeCut = () => {
+      if (transitionTokenRef.current !== token) return;
+      const safeOpacity = Math.max(0, Math.min(1, opacity));
       displayedRequestIdRef.current = desiredRequest.requestId;
       transitioningRequestIdRef.current = null;
       frontSlotRef.current = nextFront;
       slotOpacities[currentFront].setValue(0);
-      slotOpacities[nextFront].setValue(Math.max(0, Math.min(1, opacity)));
-      onDisplayReadyRef.current?.(true);
-      return;
+      slotOpacities[nextFront].setValue(safeOpacity);
+      if (firstFrame) onDisplayReadyRef.current?.(true);
+    };
+
+    if (transitionMode === 'cut') {
+      // A cached file is not necessarily attached to MapLibre yet. Keep the
+      // current source fully visible while the inactive source mounts, then
+      // swap after later render commits and a short local decode window. This
+      // is deliberately not a fade: the outgoing frame remains fully visible.
+      let secondFrame: number | null = null;
+      let decodeTimer: ReturnType<typeof setTimeout> | null = null;
+      const firstFrameHandle = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          decodeTimer = setTimeout(completeCut, 120);
+        });
+      });
+
+      return () => {
+        cancelAnimationFrame(firstFrameHandle);
+        if (secondFrame != null) cancelAnimationFrame(secondFrame);
+        if (decodeTimer != null) clearTimeout(decodeTimer);
+        if (transitionTokenRef.current === token) {
+          transitioningRequestIdRef.current = null;
+          const heldFront = frontSlotRef.current;
+          const safeOpacity = Math.max(0, Math.min(1, opacity));
+          slotOpacities[heldFront].setValue(safeOpacity);
+          slotOpacities[heldFront === 0 ? 1 : 0].setValue(0);
+        }
+      };
     }
 
     // The file is already downloaded. Give the native image source one render
@@ -315,14 +343,6 @@ export function BufferedAtmosphericLayer(props: Props) {
       activeFadeRef.current?.stop();
       slotOpacities[currentFront].setValue(safeOpacity);
       slotOpacities[nextFront].setValue(0);
-      if (transitionMode === 'cut') {
-        displayedRequestIdRef.current = desiredRequest.requestId;
-        transitioningRequestIdRef.current = null;
-        frontSlotRef.current = nextFront;
-        slotOpacities[currentFront].setValue(0);
-        slotOpacities[nextFront].setValue(safeOpacity);
-        return;
-      }
       const fade = Animated.parallel([
         Animated.timing(slotOpacities[currentFront], {
           toValue: 0,
@@ -345,7 +365,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[currentFront].setValue(0);
         slotOpacities[nextFront].setValue(safeOpacity);
       });
-    }, transitionMode === 'cut' ? 32 : 48);
+    }, 48);
 
     return () => {
       clearTimeout(warmTimer);
@@ -383,14 +403,14 @@ export function BufferedAtmosphericLayer(props: Props) {
         if (!slot) return null;
         return (
           <MapLibreGL.ImageSource
-            id={`${id}-slot-${slotIndex}-source`}
-            key={`${id}-slot-${slotIndex}`}
+            id={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
+            key={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
             url={slot.localUri}
             coordinates={slot.coordinates}
           >
             <MapLibreGL.Animated.RasterLayer
-              id={`${id}-slot-${slotIndex}-layer`}
-              sourceID={`${id}-slot-${slotIndex}-source`}
+              id={`${id}-slot-${slotIndex}-layer-${slot.requestId}`}
+              sourceID={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
               style={{
                 rasterOpacity: slotOpacityRefs.current[slotIndex],
                 rasterFadeDuration: 0,
