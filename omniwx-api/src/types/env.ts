@@ -53,4 +53,7 @@ export interface OmniwxEnv {
   CLOUDFLARE_ACCESS_GOES_SERVICE_TOKEN_SECRET?: string;
   CLOUDFLARE_ACCESS_GOES_IDENTITY_URL?: string;
   GOES_RENDERER_URL?: string;
+  GEOCOLOR_RENDER_LIMITER?: {
+    limit(args: { key: string; delta?: number }): Promise<{ success: boolean }>;
+  };
 }

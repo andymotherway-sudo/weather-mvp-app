@@ -10,6 +10,7 @@ import { pruneRadarManifests, readLatestRadarManifest, upsertRadarManifest } fro
 import { readRadarPipelineRun, recordRadarPipelineRun } from "./services/radarPipelineStatus";
 import { readRecentRadarSiteActivity, recordRadarSiteActivity } from "./services/radarSiteActivity";
 import { withErrorBoundary } from "./middleware/errorHandler";
+import { checkRateLimit, requestRateLimitSubject } from "./middleware/rateLimit";
 import { createRequestContext } from "./middleware/requestId";
 import { handleHealthRoute } from "./routes/health";
 import { handleUserRoute } from "./routes/user";
@@ -28,6 +29,7 @@ export interface Env extends OmniwxEnv {}
 const CLOUDFLARE_ACCESS_JWKS = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 let goesRendererIdToken: { token: string; expiresAt: number } | null = null;
 const GOES_GEOCOLOR_RENDER_VERSION = "3";
+const GEOCOLOR_RENDER_RETRY_AFTER_SECONDS = 60;
 
 function cloudflareAccessJwks(teamDomain: string) {
   const existing = CLOUDFLARE_ACCESS_JWKS.get(teamDomain);
@@ -11596,20 +11598,41 @@ function buildGoesRendererExportRequest(url: URL, env: Env) {
 
   const upstream = new URL("render", `${renderer.toString().replace(/\/$/, "")}/`);
   upstream.searchParams.set("frame", frame);
-  upstream.searchParams.set("bbox", String(url.searchParams.get("bbox") ?? ""));
-  const [width, height] = String(url.searchParams.get("size") ?? "960,960").split(",", 2);
-  upstream.searchParams.set("width", width || "960");
-  upstream.searchParams.set("height", height || width || "960");
+  const bbox = String(url.searchParams.get("bbox") ?? "");
+  upstream.searchParams.set("bbox", bbox);
+  const [rawWidth, rawHeight] = String(url.searchParams.get("size") ?? "960,960").split(",", 2);
+  const width = clampInt(Number(rawWidth), 128, 2048);
+  const height = clampInt(Number(rawHeight || rawWidth), 128, 2048);
+  upstream.searchParams.set("width", String(width));
+  upstream.searchParams.set("height", String(height));
 
   const cacheUrl = new URL(`https://cache.omniwx.internal${url.pathname}`);
   // GeoColor v2 switched from NOAA's 1808px preview to the 5424px product.
   // Keep old low-resolution images from being reused under an identical tile key.
   cacheUrl.searchParams.set("renderVersion", GOES_GEOCOLOR_RENDER_VERSION);
   cacheUrl.searchParams.set("ciraFrame", frame);
-  cacheUrl.searchParams.set("bbox", upstream.searchParams.get("bbox") ?? "");
-  cacheUrl.searchParams.set("width", upstream.searchParams.get("width") ?? "960");
-  cacheUrl.searchParams.set("height", upstream.searchParams.get("height") ?? "960");
+  // A map gesture often changes bounds by only a few floating-point digits.
+  // Quantizing the cache key, not the requested render, lets nearby users
+  // share a result without moving imagery on the map itself.
+  const parsedBbox = parseBbox3857(bbox);
+  const cacheBbox = parsedBbox ? roundBboxKey(parsedBbox, 250) : null;
+  cacheUrl.searchParams.set(
+    "bbox",
+    cacheBbox ? `${cacheBbox.minx},${cacheBbox.miny},${cacheBbox.maxx},${cacheBbox.maxy}` : bbox,
+  );
+  cacheUrl.searchParams.set("width", String(width));
+  cacheUrl.searchParams.set("height", String(height));
   return { upstreamUrl: upstream.toString(), cacheKey: new Request(cacheUrl.toString(), { method: "GET" }) };
+}
+
+function geoColorRateLimitedResponse() {
+  return new Response(JSON.stringify({ ok: false, error: "GeoColor is busy. Please retry shortly." }), {
+    status: 429,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "retry-after": String(GEOCOLOR_RENDER_RETRY_AFTER_SECONDS),
+    },
+  });
 }
 
 function buildNesdisExportImageRequest(url: URL) {
@@ -13345,6 +13368,13 @@ async function handleWorkerRequest(
           ttlSeconds: 120,
           staleSeconds: 600,
           fetchUpstream: async () => {
+            const limit = await checkRateLimit(
+              env.GEOCOLOR_RENDER_LIMITER,
+              requestRateLimitSubject(request, "geocolor-render"),
+              { retryAfterSeconds: GEOCOLOR_RENDER_RETRY_AFTER_SECONDS },
+            );
+            if (!limit.allowed) return geoColorRateLimitedResponse();
+
             const response = await fetchGoesRenderer(rendererRequest.upstreamUrl, env);
             const contentType = response.headers.get("content-type") || "image/png";
             return new Response(await response.arrayBuffer(), { status: response.status, headers: { "content-type": contentType } });

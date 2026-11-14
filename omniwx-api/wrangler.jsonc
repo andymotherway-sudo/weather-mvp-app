@@ -16,6 +16,16 @@
 	"triggers": {
 		"crons": []
 	},
+	"ratelimits": [
+		{
+			"name": "GEOCOLOR_RENDER_LIMITER",
+			"namespace_id": "2026111301",
+			"simple": {
+				"limit": 60,
+				"period": 60
+			}
+		}
+	],
 	"workers_dev": true,
 	"preview_urls": false,
 	"d1_databases": [
@@ -64,6 +74,16 @@
 	},
 	"env": {
 		"production": {
+			"ratelimits": [
+				{
+					"name": "GEOCOLOR_RENDER_LIMITER",
+					"namespace_id": "2026111302",
+					"simple": {
+						"limit": 60,
+						"period": 60
+					}
+				}
+			],
 			"d1_databases": [
 				{
 					"binding": "DB",
