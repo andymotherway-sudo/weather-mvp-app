@@ -1,6 +1,6 @@
 # Full Release Path
 
-This is the standard OMNIwx release path as of September 5, 2026.
+This is the standard OMNIwx release path, reviewed October 9, 2026.
 
 It exists to prevent one easy mistake:
 
@@ -9,6 +9,16 @@ It exists to prevent one easy mistake:
 Because OMNIwx can only be fully validated through Google Play internal testing, the internal-testing release should be treated as the real staging gate. That means backend and app environment choices must be deliberate.
 
 Before starting a release, compare the intended change against [current-status.md](current-status.md) so stale planning notes do not drive a production build.
+
+## Release States And Build Lessons
+
+Report these states separately: code checked, AAB built, artifact verified, uploaded to Play, installed/tested, and approved for wider release. Never call the full release complete while upload or device acceptance is outstanding.
+
+The October 9 build failed in Java's selector socket setup before app compilation. Changing Java versions and IPv4 flags did not fix it; the process-scoped Windows TCP fallback in the build script did. Before recommending a reinstall or WSL migration, reproduce the failure with `gradlew help`, identify whether it occurs before compilation, and test the documented workaround. WSL has been used for backend tooling; it is not a verified Android build environment for this repository.
+
+After a successful bundle build, verify the actual AAB's embedded `base/assets/app.config`, native version metadata, and upload signing certificate against the previous release. Record the artifact timestamp/hash. An older AAB at the expected filename does not prove the current build succeeded.
+
+Radar checks must report frame ages, product coverage, and delivery mode alongside pass/fail. The existing six-hour Level III beta tolerance is not a real-time service target. Packed cutover checks must assert `worker-r2-pack` and fetch real tiles. Confirm the state of every publisher independently; a historical paused-state note is not operational evidence.
 
 ## Environment Roles
 
@@ -132,6 +142,8 @@ Do not proceed to AAB upload with unresolved high-severity findings. If a findin
 For backend, Android/native, auth, payment, radar, environment-config, or release-metadata changes, run the review after metadata/docs are updated so the skill can check the whole release slice.
 
 ### 5. Promote The Worker To Production
+
+For an app-only change with no Worker/config/migration changes, a new Worker deploy is not required. Record that decision and run the production probes in step 6. Deploy explicitly when the release changes the backend.
 
 Do not assume the last deploy was prod.
 
@@ -269,7 +281,7 @@ If internal testing passes, the same backend/app pairing becomes the candidate f
 - Release notes and affected docs updated or explicitly marked unchanged
 - `$omniwx-sentry` release-safety review completed
 - High-severity findings resolved or explicitly accepted
-- Worker explicitly deployed to production
+- Worker explicitly deployed to production when changed, or app-only deployment omission documented
 - Production bindings confirmed
 - Production backend probes passed
 - `npx expo config --json` confirmed production resolution

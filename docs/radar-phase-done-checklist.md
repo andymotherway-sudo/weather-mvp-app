@@ -2,6 +2,8 @@
 
 This document defines what "done" means for the current OMNIwx radar phase.
 
+October 9, 2026: this phase is NOT complete. Product renderers, runner jobs, packed manual proofs, and responsive controls exist, but legacy GitHub writes remain active, packed delivery is not universal, and build `10276` still needs device acceptance. The discovery-only scope below is historical; use [current-status.md](current-status.md) for the implemented product package.
+
 The goal of this phase is not to become a full national radar data company. The goal is to ship a reliable, owned, production-usable radar foundation that feels strong to users and stays within current cost constraints.
 
 ## Success Statement
@@ -48,10 +50,13 @@ For phase 1, the owned national radar path should cover US beta users through MR
 
 ### 5. Storage and Cost Control
 
+- Every production writer, including watchdog/manual recovery, uses packed artifacts; no legacy publisher can overwrite the packed timeline.
+- Stop controls cover GitHub, Cloud Scheduler, Cloud Run executions, and local processes, and their behavior has been tested.
+- Per-pack limits are aggregated across products, stations, backfills, retries, overlapping jobs, and cadence; measured costs fit an explicitly approved budget.
 - Radar storage is rolling and bounded.
 - Retention is defined for the current owned radar scope.
 - R2 growth does not increase without limit during normal ingest/publish operation.
-- Current radar architecture remains effectively near-zero cost at today's scale.
+- Current measured operation, storage, and compute costs fit the approved beta budget; available storage alone is not sufficient evidence.
 - Expanding MRMS retention, cadence, zoom, or products does not break the current bounded-storage posture.
 
 ### 6. Production Safety
@@ -104,6 +109,8 @@ Radar phase work should be treated as done only when all four gates below are sa
 
 ### Gate 2. Owned Publish And Retention Are Stable
 
+- Required timelines and real tiles prove packed delivery throughout a week of scheduled runs, with no competing legacy writer.
+- Measured scan ages meet product-specific targets; the six-hour beta health tolerance is not a freshness acceptance target.
 - Owned MRMS publish is working for the supported reflectivity product.
 - Rolling retention and bounded storage are confirmed.
 - Fallback rules are understood and not accidental.

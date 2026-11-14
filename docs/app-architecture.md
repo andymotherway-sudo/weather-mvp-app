@@ -2,7 +2,7 @@
 
 Last updated: September 12, 2026
 
-This is the full-app architecture view. The radar subsystem has its own deeper diagram in [radar-architecture.md](radar-architecture.md).
+This is the full-app architecture view. The file-level route/import/native/backend relationship map lives in [file-relationship-architecture.md](file-relationship-architecture.md), and the radar subsystem has its own deeper diagram in [radar-architecture.md](radar-architecture.md).
 
 ## Current Architecture
 
@@ -163,6 +163,7 @@ flowchart TB
 - Android release build: `android/`.
 - Automation: `.github/workflows/`.
 - User-facing docs and plans: `docs/`.
+- File relationship architecture: [file-relationship-architecture.md](file-relationship-architecture.md).
 - Radar architecture: [radar-architecture.md](radar-architecture.md).
 - Release checklist: [full-release-path.md](full-release-path.md).
 - Production readiness: [production-readiness-plan.md](production-readiness-plan.md).

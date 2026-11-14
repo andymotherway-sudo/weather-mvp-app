@@ -1,5 +1,7 @@
 # Cloudflare Radar Storage Rollout
 
+October 9, 2026 status override: this is historical storage/route setup guidance. Small storage usage did not prevent the Class A cost incident. Packed artifacts are the target, while the audit still found active legacy GitHub writes. Do not treat the old tile/public-origin commands below as authorization to resume schedules or as proof of completed packed cutover. See [current-status.md](current-status.md) and [radar-cost-safety-runbook.md](radar-cost-safety-runbook.md).
+
 This is the storage foundation for moving OMNIwx radar toward owned NOAA/MRMS assets while keeping third-party fallback paths available.
 
 Current direction: owned national radar should move through MRMS, not the older RainViewer-backed national overview image cache. Keep the tiny timeline manifest path available for compatibility, but do not publish legacy overview image tiles unless we intentionally re-enable that experiment.

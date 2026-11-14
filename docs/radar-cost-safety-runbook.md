@@ -1,62 +1,54 @@
 # Radar Cost Safety Runbook
 
-Last updated: September 11, 2026
+Last updated: October 9, 2026
 
-This runbook is the practical safety layer for owned radar. It is designed for the current zero/near-zero-cost beta posture: keep radar rolling, bounded, and recoverable without building an archive or accidentally creating a large storage/write bill.
+Keep radar operations, compute, retention, and recovery bounded. Small R2 storage usage is not evidence of a safe operation rate. This document describes procedures; it does not assert that they have already been executed.
 
-## Normal Posture
+## Verified Gap
 
-- MRMS scheduled publisher: enabled unless `MRMS_SCHEDULE_ENABLED=false`.
-- Level III scheduled publisher: enabled only when `LEVEL3_SCHEDULE_ENABLED=true`.
-- MRMS scheduled zoom ceiling: z8.
-- Level III pilot zoom ceiling: z10 for the small Phase 1 site/product bundle.
-- R2 retention: rolling recent frames only.
-- D1: not in the radar hot path.
-- RainViewer/IEM: remain fallback while owned radar is beta.
+The October 9 audit found active GitHub MRMS and Level III publishing, despite older docs saying all automation was paused. `LEVEL3_SCHEDULE_ENABLED` was `true`; the repository had no `MRMS_SCHEDULE_ENABLED` override and the workflow defaults to enabled. The Level III watchdog currently bypasses the Level III schedule switch by dispatching an applied manual publisher run. Cloud Run/Scheduler state was not verified in that audit.
 
 ## Emergency Stop
 
-Use this if R2 storage, object writes, GitHub workflow noise, or unexpected radar behavior starts climbing.
+1. Set GitHub repository variables `MRMS_SCHEDULE_ENABLED=false` and `LEVEL3_SCHEDULE_ENABLED=false`.
+2. Disable BOTH publisher workflows and BOTH recovery watchdog workflows in GitHub Actions. Disabling only the Level III schedule variable does not stop its watchdog. Disable any other workflow with an automatic write trigger found during inventory.
+3. Inspect queued and running GitHub runs; cancel affected publisher/recovery/maintenance runs. Schedule changes do not cancel already-running work. Review manual proof/maintenance workflows separately before allowing any writes.
+4. List Cloud Scheduler jobs in project `omniwx-radar-runner`, region `us-central1`; pause every radar schedule, including the old combined schedule and both regional schedules. Use the exact names returned by the inventory, not inferred job names.
+5. For every Cloud Run radar job, set `RADAR_RUNNER_APPLY=false` and `RADAR_RUNNER_CONFIRM=disabled`. List and cancel active radar executions separately: changing the job template does not change executions already running.
+6. Stop any local publisher processes. If an unidentified writer continues after containment, revoke its R2 write credential after identifying dependent services; serving fallback imagery should remain available.
+7. Verify no new applied executions or write events across all providers. Compare time-stamped logs and Cloudflare operation metrics over more than one former schedule interval. Billing totals can be delayed; stale timeline data or one flat dashboard reading is not proof of shutdown.
 
-1. In GitHub repository variables, set `MRMS_SCHEDULE_ENABLED=false`.
-2. In GitHub repository variables, set `LEVEL3_SCHEDULE_ENABLED=false`.
-3. Leave the app fallbacks enabled so users continue to get RainViewer/IEM where available.
-4. Run GitHub Actions -> `Radar health report` with `fail_on_required_stale=false` to confirm the live timelines are stale/paused rather than still publishing.
-5. Run storage maintenance only if needed; do not start new publish cycles until object counts and retained prefixes are understood.
+Useful read-only inventories:
 
-Manual publisher workflows still exist after the stop. That is intentional: we can recover with a deliberate manual run without re-enabling scheduled writes.
+```powershell
+gh workflow list --all
+gh variable list
+gh run list --status in_progress
+gh run list --status queued
+gcloud scheduler jobs list --project omniwx-radar-runner --location us-central1
+gcloud run jobs list --project omniwx-radar-runner --region us-central1
+gcloud run jobs executions list --project omniwx-radar-runner --region us-central1
+```
+
+Avoid printing secret values from job configs. Preserve app RainViewer/IEM fallback during containment. Do not delete R2 data as a substitute for stopping writers.
 
 ## Before Re-Enabling
 
-- Run `Radar health report` to capture the current live state.
-- Check Cloudflare R2 bucket size and object counts.
-- Run `npm --prefix omniwx-api run radar:storage-health -- --env production --fail --warn-storage-mb 500 --fail-storage-mb 5000 --warn-stale-objects 0 --fail-stale-mb 50` with R2 S3 credentials available to verify tracked owned-radar prefixes are bounded and stale frame storage is not accumulating.
-- Confirm no publisher runs are queued or in progress.
-- Confirm the intended scheduled scope:
-  - MRMS: z3-z8, 12 retained frames, composite reflectivity only.
-  - Level III: approved sites/products only, 12 retained frames, required products strict.
-- Re-enable one scheduler at a time.
+1. Make every scheduled and recovery writer default to disabled unless explicitly enabled. Close the Level III watchdog bypass and block legacy production tile-per-object writes, including manually dispatched recovery.
+2. Check the deployed container digest and permitted job environment. Production writes require `RADAR_RUNNER_DELIVERY=packed`, `RADAR_RUNNER_APPLY=true`, and `RADAR_RUNNER_CONFIRM=packed-radar-writes`; the operation cap must be explicit.
+3. Estimate total operations and compute for all product/station combinations, cadence, backfills, retries, and overlap. `RADAR_RUNNER_MAX_CLASS_A_OPS` is passed to each packed publish; it is not a whole-job, daily, or account-wide cap. The publisher's conservative estimate currently also counts stale-pack deletions, so its label is not an exact billing measure.
+4. Capture read-only timeline health and bounded storage evidence. The storage-health script lists R2 objects and can itself consume Class A operations; do not poll it frequently.
+5. Prove one MRMS composite and one IWA N0B packed publish manually, with fresh source data, expected pack headers on real tiles, rollback, and bounded retention.
+6. Require `--expected-delivery worker-r2-pack` in the health check. A generic green result or an old manual pack proof does not establish current delivery mode. Define product-specific freshness targets separately from the existing 360-minute beta failure tolerance.
+7. Enable one schedule, observe real operation and runtime measurements, and verify no second writer replaces its manifest with `worker-r2`. Add scope only after a week of stable observations and an approved aggregate budget.
 
-## Kill Switches And Scope Controls
+## Cost Interpretation
 
-- `MRMS_SCHEDULE_ENABLED=false`: stops scheduled MRMS publishing while keeping manual MRMS runs available.
-- `LEVEL3_SCHEDULE_ENABLED=false`: stops scheduled Level III publishing while keeping manual Level III runs available.
-- `LEVEL3_SCHEDULE_SITES`: limits scheduled Level III station scope.
-- `LEVEL3_SCHEDULE_PRODUCTS`: limits scheduled Level III product scope.
-- `LEVEL3_REQUIRED_PRODUCTS`: controls which Level III products must be fresh for watchdog recovery.
-- `LEVEL3_MAX_DELETES`: caps per-product cleanup deletes.
+- Track Class A requests separately from storage bytes, Class B reads, Worker requests, and Cloud Run runtime. Budget notifications are not enforced spending caps.
+- Writes and listings are Class A operations. `DeleteObject` is free under the current R2 pricing schedule; cleanup can still incur billable listings and carries data-loss risk. Do not describe all deletes as Class A charges. See [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/), checked October 9, 2026.
+- Packed artifacts reduce per-tile writes, but do not eliminate read/compute costs, backfill multiplication, or unsafe parallel publishers.
+- Keep rolling retention; increase only one of cadence, zoom, products, stations, or history at a time.
 
-## What Not To Do
+## Exit Evidence
 
-- Do not delete R2 prefixes manually unless the prefix and retention impact are clear.
-- Do not raise z10, retention, station count, or product count in the same change.
-- Do not disable RainViewer/IEM fallback during owned-radar instability.
-- Do not put radar object manifests or tile inventories into D1.
-
-## Recovery Order
-
-1. Read-only health check.
-2. Storage status/maintenance check.
-3. Single manual MRMS or Level III publish with narrow scope.
-4. Confirm app fallback/source labels.
-5. Re-enable schedule only after the manual path is boring.
+Record timestamps, workflow/run IDs, deployed image digest, actual schedule states, frame ages, `tileDelivery`, real tile response headers, operation counts, runtime, and rollback outcome. Use [current-status.md](current-status.md) for the latest observed state and [cloud-run-radar-runner.md](cloud-run-radar-runner.md) for runner configuration.

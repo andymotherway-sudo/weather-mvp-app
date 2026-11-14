@@ -32,7 +32,9 @@ Cloudflare Worker / app
 
 ## Live Production Posture
 
-As of September 24, 2026, all radar schedules are paused and Cloud Run radar writes are disabled. Production previously used split jobs rather than the original combined job:
+October 9 audit: GitHub MRMS and Level III legacy publishers are active, and the Level III watchdog bypasses its schedule switch. The current Cloud Run/Scheduler state was not verified. The September 24 stop below is historical/intended posture, not evidence that everything is off now. See [current-status.md](current-status.md) and the complete [emergency runbook](radar-cost-safety-runbook.md).
+
+The September 24 incident response called for pausing schedules and disabling Cloud Run writes. Production previously used split jobs rather than the original combined job:
 
 - `omniwx-radar-mrms-runner`
   - Scheduler: `omniwx-radar-mrms-10min`
@@ -68,8 +70,8 @@ Emergency stop state:
 Reason:
 
 - September 24, 2026 billing showed R2 Class A operations, not storage, were the cost driver.
-- Tile-per-object publishing created too many write/list/delete operations for scheduled multi-product radar.
-- Storage stayed small enough that deleting existing objects would create unnecessary additional Class A operations.
+- Tile-per-object publishing created too many writes and listings for scheduled multi-product radar.
+- Storage stayed small; deletion was not a substitute for stopping publishers. R2 `DeleteObject` is free, while listings used to locate objects can incur Class A charges; see [R2 pricing](https://developers.cloudflare.com/r2/pricing/).
 
 ## Level III Regional Expansion Plan
 
@@ -365,6 +367,8 @@ gcloud run jobs update "$LEVEL3_JOB_NAME" \
 ```
 
 ## Cost Guardrails Before Apply=true
+
+The runner forwards `RADAR_RUNNER_MAX_CLASS_A_OPS` to each packed publish. It is not a total-job or billing-period limit. Include every station/product, backfill frame, retry, overlapping job, and legacy GitHub writer in the aggregate budget. The current publisher conservatively includes stale-pack deletion count in that estimate, which is not an exact count of billable Class A requests.
 
 Do these before enabling production writes:
 

@@ -1,5 +1,8 @@
 # Documentation Guidelines
 
+For the current documentation map and ownership rules, see
+[README.md](README.md). This file defines what belongs in version control.
+
 This is the OMNIwx documentation rule set.
 
 The goal is simple:
@@ -45,6 +48,10 @@ Good examples:
 
 ## Best Practices
 
+- Separate implementation, deployment, live health, device acceptance, and release completion. Each needs its own evidence.
+- Date operational observations and cite run IDs or checks. Mark unverified scheduler, billing, and account state as unknown rather than carrying forward old assertions.
+- Keep historical rollout commands clearly labeled; current safety gates in `current-status.md` and the cost runbook take precedence.
+- Rebaseline the Gantt when work ships or an incident changes dependencies; dates are planning estimates, not completion evidence.
 - If a doc is only useful to you personally, put it in an ignored docs folder first.
 - If a doc explains the product, release flow, architecture, or tester expectations, keep it tracked.
 - If a private note becomes genuinely reusable, promote it into a tracked doc later.

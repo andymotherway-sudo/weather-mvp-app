@@ -1,124 +1,61 @@
 # OMNIwx Current Status
 
-Last updated: October 9, 2026
+Last verified: November 13, 2026 (Arizona time)
 
-This file is the short source of truth for where the product and infrastructure stand today. Deeper planning details live in the roadmap docs, but this file should stay factual and current.
+This is the factual operating snapshot. It is not a backlog. For priority and
+sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
-## Product
+## Product And Release
 
-- Current app release line: `1.1.259`
-- Current Android version code: `10276`
-- Internal testing is the active release channel.
-- A signed production-targeted `10276` AAB was built on October 9 with Space cloud-profile cleanup, clearer Almanac records availability, and retained satellite frames during catalog failures. Play upload and device validation are pending.
-- Brand/theme consistency is now tracked in `docs/brand-style-guide.md`, including the Space page mockup read and the path toward shared UI primitives.
-- Initial shared brand primitive now exists for new work: `OmniChip`. Broader card, metric, and section primitives remain planned until they are adopted by real screens.
-- Local Storm Reports now open a report browser from the Storm Recap card so users can read official report details directly instead of being routed only to wxLearn.
-- Professional readiness is now tracked as a dedicated workstream in `docs/production-readiness-plan.md`.
-- Cost safety and billing blast-radius control are now explicit paid-launch gates in `docs/production-readiness-plan.md`.
-- The project timeline is tracked in `docs/project-gantt.md`.
+- Current release line: `1.1.270` / Android version code `10288`.
+- Internal testing is the active release channel. A build is not release-ready
+  until it is uploaded, installed from Play, and accepted on physical devices.
+- Maps and GeoColor remain the highest-risk user-facing area. Validate blank
+  first-open behavior, imagery availability, sharpness at state zoom, timeline
+  controls, and seamless frame motion on every maps-related release.
+- The authoritative release procedure is
+  [full-release-path.md](full-release-path.md).
 
-## Backend
+## Request-Serving Infrastructure
 
-- Production Worker is live and is the app's stable backend edge.
-- Home summary, alerts, wildfire, and radar backend routes are expected to work through the Worker.
-- D1 exists for future account, entitlement, paid-tier, and saved-user-data work.
-- D1 should not be used for radar traffic by default while Cloudflare free-tier daily limits are a concern.
+- The production Cloudflare Worker is the app-facing backend. It serves cached
+  and normalized weather/radar endpoints; it is not a radar publisher.
+- GeoColor frames and rendered images are cached at the Worker. Production
+  render misses are bounded by the `GEOCOLOR_RENDER_LIMITER`; cached responses
+  do not consume that allowance.
+- `omniwx-goes-renderer` is capped at two Cloud Run instances with concurrency
+  four. This is a deliberate cost and upstream-protection limit, not a scale
+  target. See [scaling-and-cost-controls.md](scaling-and-cost-controls.md).
+- The live GeoColor frame catalog returned 12 frames in the verified two-hour
+  window. A render followed by the same request returned a Worker cache hit.
 
-## Radar
+## Radar And Automation
 
-- MRMS is the owned NOAA-backed national radar path for the US beta footprint.
-- RainViewer remains the fallback for stale, warming, missing, disabled, or out-of-scope MRMS.
-- IEM/RIDGE remains the local Storm Scope/NEXRAD fallback until owned NOAA Level III rendering is production-ready.
-- Production MRMS is currently bounded for cost: dedicated Cloud Run scheduled z3-z8, retained rolling frames, no archive.
-- Scheduled MRMS runs publish a small backfill by default so the app can build a smoother short loop even when GitHub schedule timing drifts.
-- The app now has wide-radar MRMS preview product chips for composite reflectivity, lowest-altitude reflectivity, echo tops, and precip rate. Composite remains the default; the other products require fresh published timelines before they render.
-- MRMS maintenance can now target a single MRMS product or `all`, skipping products that have not published a live timeline yet, which keeps preview-product experiments from leaving stale R2 objects behind.
-- Manual z10 MRMS publishes are useful for QA, but z10 should not become the routine production default until the `MRMS z10 safety check` workflow stays boring across several weather patterns.
-- Owned Level III local radar has a proof publish path for NOAA NEXRAD products (`N0B`, `N0S`, `EET`) using bounded R2 prefixes, retained-frame cleanup, and Worker timeline/tile routes. Production proofs now publish reflectivity, velocity, and echo tops for `IWA`.
-- Storm Scope now has an app-selectable `Owned L3` beta local source, but `IEM` remains the default and fallback until owned Level III has repeated fresh frames and broader station/product coverage.
-- Storm Scope's compact HUD labels owned Level III usage directly as `OWNED L3` when the app is actually rendering the Worker/R2 Level III source.
-- The `Owned L3` toggle now auto-selects the owned reflectivity product (`N0B`/`HREFL`) when the app was sitting on legacy `N0Q`/`REFL`, because `N0Q` is not currently part of the owned Level III product set.
+- MRMS is the owned national radar path for supported US coverage. RainViewer
+  remains its fallback; IEM/RIDGE remains the local Storm Scope fallback.
+- Cloud Scheduler radar jobs are paused. The checked GitHub variables were
+  `MRMS_SCHEDULE_ENABLED=false` and `LEVEL3_SCHEDULE_ENABLED=false`; no queued
+  or running publisher job was observed in the verification window.
+- Do not re-enable a publisher based only on a green build or old frame data.
+  Use the containment and re-enablement evidence in
+  [radar-cost-safety-runbook.md](radar-cost-safety-runbook.md).
+- Packed artifacts are the only acceptable direction for resumed owned-radar
+  writes. Legacy tile-per-object publishing is not an approved scheduled path.
 
-## Cloudflare
+## Active Gates
 
-- R2 stores bounded MRMS tile frames and latest timeline artifacts.
-- R2 must stay rolling, not archival.
-- The current target is zero cost, with a comfort ceiling well below the paid-overage threshold.
-- Worker-served MRMS tiles remain the safer app path for now because sparse/empty MRMS tiles need transparent responses and fallback handling.
-- Direct public R2/custom-domain tile delivery is the future scale path, but it needs careful cutover.
-- Budget alerts, radar kill switches, usage limits, and emergency disable steps remain required before paid launch or wider owned-radar scale-up.
+1. Complete Maps/GeoColor device acceptance with evidence from a Play-installed
+   build before expanding imagery scope or marketing the feature.
+2. Create GCP billing alerts and assign recipients before raising Cloud Run
+   capacity or enabling shared-source caching.
+3. Re-enable any radar writer only through a one-publisher packed pilot with a
+   measured aggregate operations and runtime budget.
+4. Complete security, provider-use, account ownership, and entitlement gates
+   before paid subscriptions.
 
-## Radar Automation
+## Evidence Discipline
 
-- Production radar automation is intentionally paused after the September 24, 2026 R2 Class A operation cost incident. Manual packed production proofs passed on October 6, 2026, but schedules should remain paused until the Cloud Run job env vars and Scheduler jobs are deliberately re-enabled one at a time.
-- The old tile-per-object Cloud Run cadence must not be re-enabled for production scheduled radar.
-- The dedicated Cloud Run jobs still exist as the runner foundation, but production `apply=true` is now guarded to require packed delivery and `RADAR_RUNNER_CONFIRM=packed-radar-writes`.
-- `RADAR_RUNNER_DELIVERY=packed` is the required production direction: render locally, publish one `.owxpack` object plus one latest manifest, preserve a rollback latest when possible, and delete old whole-pack objects only.
-- `omniwx-radar-mrms-runner`, `omniwx-radar-level3-runner`, `omniwx-radar-level3-southwest-runner`, `omniwx-radar-level3-midwest-runner`, and the old combined `omniwx-radar-runner-10min` schedule should remain paused until packed Cloud Run production jobs are reconfigured with operation caps and tested one at a time.
-- GitHub radar workflows remain available for manual recovery, QA, z10 sizing, and fallback operations, but they are no longer the primary production cadence.
-- GitHub schedule timing can vary; do not assume every cron run executes exactly on its configured minute.
-- The app and workflow now both treat MRMS older than 90 minutes as unhealthy for the owned radar path.
-- `MRMS radar watchdog` is a beta recovery workflow on offset `:17/:37/:57` UTC cron slots. It checks the live production timeline and dispatches the bounded MRMS cycle only when the timeline is stale and no MRMS publisher run is already queued or running.
-- Manual runs are still used for z10 QA, backfill, and recovery.
-- `MRMS z10 safety check` dry-runs z3-z10 without R2 writes.
-- `NEXRAD Level III inventory` checks current NOAA Level III station/product availability without R2 writes.
-- `NEXRAD Level III proof cycle` can dry-run or publish a tiny bounded station/product proof to R2 for Worker verification.
-- `NEXRAD Level III cycle` publishes the initial Phase 1 site bundle (`IWA`, `MPX`, `DLH`) and product bundle (`N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, `N0H`) in one bounded run. Its cron is gated by `LEVEL3_SCHEDULE_ENABLED`; scheduled site/product scope is controlled by `LEVEL3_SCHEDULE_SITES` and `LEVEL3_SCHEDULE_PRODUCTS`, defaulting safely to the smaller `IWA` / `N0B,N0S,EET` set if variables are missing.
-- `NEXRAD Level III cycle` now keeps up to 12 retained frames by default and fails the smoke test if the newest Worker timeline frame is older than the configured freshness ceiling. The beta ceiling is 360 minutes so a temporary NOAA station/source lull does not create false failed-run noise while the app can still use owned frames.
-- `NEXRAD Level III cycle` is scheduled on staggered `:13/:43` UTC slots instead of exact top/bottom-of-hour slots because GitHub scheduled workflow timing can drift or skip under load.
-- `NEXRAD Level III watchdog` is a beta recovery workflow on offset `:08/:23/:38/:53` UTC cron slots. It checks live production Level III timelines for the Phase 1 site/product bundle and dispatches the bounded Level III cycle only when at least one required product is stale beyond the beta recovery threshold and no Level III publisher run is already queued or running.
-- `Radar health report` is a read-only manual workflow and local script (`npm --prefix omniwx-api run radar:health -- --env production`) for checking live MRMS and Level III freshness without publishing tiles, deleting R2 objects, or dispatching recovery jobs.
-- `Radar storage health` is a read-only local script (`npm --prefix omniwx-api run radar:storage-health -- --env production`) for checking tracked MRMS/Level III R2 object count, total MB, retained frames, and stale frame objects against storage guardrails.
-- `/v1/radar/backend/status` now reports Level III live health for the initial `IWA` product bundle and the Phase 1 site bundle, including frame count, newest frame age, tile count, total bytes, and renderer cleanup metadata when R2 is bound.
-- Storm Scope now consumes that status when owned Level III is selected and shows a compact owned-health line for the active product.
-- The dedicated radar runner is no longer live for automatic publishing while the packed-artifact cutover is in progress.
-- Level III expansion is now split into regional Cloud Run jobs rather than added to the existing Phase 1 job. Inventory confirmed useful current data for `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, `ARX`, `GRB`, and `LOT`; `TWC` returned no current Level III files for the tested product set and should be skipped for now.
-- `FSX N0B` dry-ran successfully on September 23, 2026 at z7-z10 with 152 non-empty tiles, about 0.99 MB for one frame, and no R2 writes. The Southwest and Midwest regional runner jobs then completed their first applied production executions successfully on September 24, 2026.
-
-## Not Done Yet
-
-- Packed MRMS manual production proof passed on October 6, 2026: `MergedReflectivityQCComposite` published as one `.owxpack` plus latest manifest, 3 Class A writes including rollback, `tileDelivery=worker-r2-pack`, and a live tile returned `x-omni-radar-source: r2-mrms-pack`.
-- Packed Level III manual production proof passed on October 6, 2026: `IWA N0B`/HREFL published as one `.owxpack` plus latest manifest, 3 Class A writes including rollback, `tileDelivery=worker-r2-pack`, and a live tile returned `x-omni-radar-source: r2-level3-pack`.
-- Dedicated radar runner writes must stay disabled until packed Cloud Run job env vars, freshness gates, operation caps, and one-job-at-a-time Scheduler re-enablement are validated.
-- z10 production posture is not fully settled.
-- Echo tops and precip rate are now supported by workflow/product rendering paths, but they are not polished user-facing layers yet.
-- Owned local NEXRAD/Level III rendering is not production-ready: it needs repeated retained frames, smoother animation, continued renderer tuning, and broader station/product coverage before replacing IEM.
-- RainViewer and IEM should stay enabled until owned MRMS plus owned local products are visibly reliable.
-- Local NEXRAD/IEM tile-template generation was fixed on September 5, 2026 so MapLibre receives literal `{z}/{x}/{y}` placeholders instead of encoded `%7Bz%7D` paths.
-- IEM local product fallback now prefers current `N0B` reflectivity and `N0S` velocity scan history before older streams that may return empty lists.
-
-## Latest Radar Evidence
-
-- A bounded production MRMS cycle on September 5, 2026 published fresh z3-z8 composite reflectivity and left the live timeline with 7 retained frames.
-- On September 6, 2026, the MRMS watchdog dry-run correctly detected a stale production timeline at 131 minutes old with no active publisher run.
-- The live watchdog recovery path then dispatched `MRMS radar cycle`, which completed successfully and refreshed production MRMS to newest frame `20260906T142800`, newest age 6 minutes, 6 retained frames, z3-z8, and `worker-r2` tile delivery.
-- The same recovery run reported 4,708 retained MRMS objects, 12.26 MB under the production MRMS prefix, 6 retained frame prefixes, and 0 stale objects.
-- The fresh z8 composite frame measured 838 non-empty tiles and about 2.54 MB.
-- The z10 safety dry-run for composite reflectivity passed without R2 writes: 6,552 non-empty tiles, about 13.78 MB, and 6,554 would-be uploads for one frame.
-- ReflectivityAtLowestAltitude was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 559 non-empty tiles, about 1.66 MB, and `worker-r2` tile delivery.
-- EchoTop_18 was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 521 non-empty tiles, about 0.76 MB, and `worker-r2` tile delivery.
-- PrecipRate was first published to production on September 8, 2026 as a bounded z3-z8 MRMS preview product with 1 retained frame, 531 non-empty tiles, about 1.58 MB, and `worker-r2` tile delivery.
-- Level III inventory confirmed current N0B/N0S/EET availability for IWA, MPX, DLH, TLX, and CAE.
-- Level III Worker proof endpoints are `/v1/radar/level3/timeline?site=IWA&product=N0B` and `/v1/radar/level3/tiles/{z}/{x}/{y}.png?site=IWA&product=N0B`.
-- First production Level III proof published `IWA N0B` at z7-z10 with 179 non-empty sparse tiles and about 0.52 MB. A live tile returned `200 OK`, `image/png`, and `x-omni-radar-source: r2-level3`.
-- `IWA EET` also published successfully at z7-z10 with 62 non-empty sparse tiles and about 0.06 MB.
-- `IWA N0S` velocity now publishes successfully at z7-z10 after adding legacy 16-level velocity-bin decoding: 153 non-empty sparse tiles and about 0.46 MB.
-- The bundled `NEXRAD Level III cycle` workflow passed on September 5, 2026 for production `IWA` products `N0B,N0S,EET` at z7-z10 with retained-frame cleanup enabled. Live production timelines then reported `N0B` with 2 retained frames, `N0S` with 2 retained frames, and `EET` with 1 retained frame through `worker-r2`.
-- On September 9, 2026, the `LEVEL3_SCHEDULE_ENABLED` repository variable was enabled, production `IWA N0B/N0S/EET` were manually refreshed, and Storm Scope visibly rendered `HREFL - owned NOAA Level III` through the `Owned L3` beta path.
-- On September 9, 2026, the Level III publisher was hardened to retain 12 frames by default and reject stale green builds; a Level III watchdog was added to recover stale production timelines.
-- On September 10, 2026, scheduled Level III production timelines started retaining multiple frames for `IWA N0B/N0S/EET`; a renderer cleanup pass reduced weak reflectivity clutter by fading low dBZ returns and dropping isolated weak speckles before tile generation.
-- On September 10, 2026, the Phase 1 Level III production bundle published successfully for `IWA`, `MPX`, and `DLH` with products `N0B`, `N0S`, and `EET` at z7-z10. Live `/v1/radar/backend/status` reported all three sites healthy: `IWA` had 3 retained frames per product, while `MPX` and `DLH` each had 1 fresh retained frame per product after the first bundle run. The next expansion added the available dual-pol/local products `N0C`, `N0X`, `DVL`, and `N0H` as experimental owned Level III products.
-- The expanded Phase 1 Level III product run on September 10, 2026 succeeded for all 21 station/product combinations: `IWA`, `MPX`, and `DLH` x `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`. Live health reported every product fresh and z10-capable; largest latest frames were `MPX N0X` at about 2.75 MB / 401 tiles and `MPX N0C` at about 2.41 MB / 402 tiles.
-- On September 11, 2026, Level III schedule hardening moved the publisher to `:13/:43` UTC and increased watchdog opportunities to `:08/:23/:38/:53` UTC after GitHub skipped expected `*/30` schedule executions. The manually triggered production refresh completed successfully, confirming the pipeline was healthy while the cron cadence needed hardening.
-- On September 20, 2026, the dedicated Google Cloud radar runner went live. The combined job was split into `omniwx-radar-mrms-runner` and `omniwx-radar-level3-runner`; automatic MRMS and Level III Scheduler executions both completed successfully and refreshed production Worker timelines.
-- On September 21, 2026, the runner gained opt-in multi-product MRMS package support through `MRMS_PRODUCTS`.
-- On September 22, 2026, the production Cloud Run MRMS job was rebuilt and updated to publish the national MRMS package: `MergedReflectivityQCComposite`, `ReflectivityAtLowestAltitude`, `EchoTop_18`, and `PrecipRate` at z3-z8 with 12-frame rolling retention. The first applied package run completed successfully; composite retained 12 frames, while the newly scheduled products started with 1 fresh frame and should build retention through subsequent scheduler cycles. Latest first-run frame sizes were about 1.29 MB, 1.03 MB, 0.46 MB, and 1.07 MB respectively.
-- On September 22, 2026, the production Cloud Run Level III job was updated to publish the full Phase 1 package for `IWA`, `MPX`, and `DLH`: `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H` at z7-z10 with 12-frame rolling retention. The first dedicated-runner full-package execution completed successfully; core products retained 12 frames, and newly added products started with 2 fresh frames.
-- On September 23, 2026, production R2 storage for tracked owned radar prefixes was about 220 MB after MRMS and Level III both reached 12 retained frames. The new storage guardrail can report transient stale frame objects during active publish/cleanup windows, but the observed stale storage stayed well below the 50 MB failure threshold and total tracked storage stayed far below the 5 GB beta comfort ceiling.
-- On September 24, 2026, the Southwest and Midwest Level III regional runners were deployed, manually executed successfully, and scheduled. A production health check passed for `IWA`, `MPX`, `DLH`, `FSX`, `YUX`, `EMX`, `FSD`, `DMX`, and `ARX` across `N0B`, `N0S`, `EET`, `N0C`, `N0X`, `DVL`, and `N0H`; the new regional sites started with 1 retained frame and should build toward 12 frames through Scheduler.
-- On September 24, 2026, expanded tracked R2 storage across MRMS plus all nine Level III sites was about 368 MB with no storage-health failures, still far below the 5 GB beta comfort ceiling. Stale-object warnings were observed during active publish/cleanup windows but remained below the 50 MB failure threshold.
-- Later on September 24, 2026, all radar Cloud Scheduler jobs were paused and all Cloud Run radar jobs had `RADAR_RUNNER_APPLY=false` and `RADAR_RUNNER_CONFIRM=disabled` after Cloudflare billing showed R2 Class A operations were the cost driver. Storage was not the issue; tile-per-object publishing created too many write/list/delete operations.
-- The new radar architecture direction is packed artifacts: a local MRMS z3-z10 proof reduced one frame from 4,530 would-be R2 objects to 2 publish objects while preserving Worker tile-serving compatibility. The packed publisher now dry-runs the two-object publish plan with a Class A operation cap, but no scheduled radar should be re-enabled until a manually approved packed proof and rollback path are validated.
-- On September 25, 2026, the first dev packed MRMS proof was published to `omniwx-radar-assets-dev` with exactly 2 planned Class A writes. The dev Worker timeline reported `tileDelivery=worker-r2-pack`, and a real tile request returned `200 OK`, `image/png`, `x-omni-radar-source: r2-mrms-pack`. Production radar schedules remain paused and production writes remain disabled.
-- On October 6, 2026, the production Worker was deployed with packed tile range-read support. A guarded packed MRMS production publish wrote `radar/mrms/packed/MergedReflectivityQCComposite/20261006T225400/frame.owxpack` and updated `radar/mrms/latest/MergedReflectivityQCComposite.json`; source age was 2 minutes, `maxZoom=8`, and the live tile route returned `x-omni-radar-source: r2-mrms-pack`.
-- On October 6, 2026, a guarded packed Level III production publish wrote `radar/level3/packed/IWA/N0B/20261006T225257/frame.owxpack` and updated `radar/level3/latest/IWA/N0B.json`; source age was 6 minutes, `maxZoom=10`, and the live tile route returned `x-omni-radar-source: r2-level3-pack`.
+Record release version, production deployment version, test device/OS, route or
+job, UTC timestamp, outcome, and relevant frame age/cache/delivery metadata.
+If a console, scheduler, billing, or provider state has not been checked, mark
+it unknown rather than carrying forward a previous claim.

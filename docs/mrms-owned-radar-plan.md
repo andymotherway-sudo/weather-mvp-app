@@ -1,5 +1,7 @@
 # MRMS owned radar plan
 
+October 9, 2026 status override: this document contains historical tile-per-object development and rollout commands. Do not use those examples to restore production scheduling. The runner and Level III renderers now exist; manual packed proofs passed, but live GitHub publishers still use legacy delivery. Follow [current-status.md](current-status.md), the [cost-safety runbook](radar-cost-safety-runbook.md), and the packed runner gate before any production writes.
+
 This is the new phase 1 owned radar path for OMNIwx. The goal is to replace the broad national radar mosaic first, while keeping local Storm Scope/NEXRAD products on the existing external fallback path until a real station renderer exists.
 
 MRMS and local NEXRAD are related but separate workstreams:
