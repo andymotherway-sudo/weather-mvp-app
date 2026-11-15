@@ -1,6 +1,6 @@
 # OMNIwx Academy: learn your own codebase
 
-This is a repository-aware, read-only coding tutor, not a feature of the consumer weather app. It is designed for GitHub Copilot custom-agent environments that recognize `.github/agents/*.agent.md`.
+This is a repository-aware, read-only coding tutor for OMNIwx maintainers and contributors, not a feature of the consumer weather app. It is designed for GitHub Copilot custom-agent environments that recognize `.github/agents/*.agent.md`.
 
 ## Start
 
