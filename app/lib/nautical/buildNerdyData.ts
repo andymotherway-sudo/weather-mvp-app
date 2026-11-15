@@ -164,23 +164,38 @@ function computeRiskScore(args: {
   windGustKts: number | null;
   breakingRisk: WaveMechanics['breakingRisk'];
   regime: WindWaveInteraction['regime'];
-}): { score: number; level: 'Low' | 'Moderate' | 'High' | 'Extreme' } {
-  const H = args.waveHeightM ?? 0;
-  const T = args.periodS ?? 0;
-  const W = args.windSpeedKts ?? 0;
-  const G = args.windGustKts ?? 0;
+}): { score: number; level: 'Low' | 'Moderate' | 'High' | 'Extreme' } | null {
+  if (args.waveHeightM == null && args.windSpeedKts == null && args.windGustKts == null) {
+    return null;
+  }
 
-  // Normalize components into 0–1 ranges
-  const waveN = clamp(H / 4.0, 0, 1);         // 0–4m
-  const periodN = clamp((T - 6) / 10, 0, 1);  // 6–16s
-  const windN = clamp(W / 35, 0, 1);          // 0–35kt
-  const gustN = clamp((G - W) / 20, 0, 1);    // gust factor
+  const components: Array<{ value: number; weight: number }> = [];
 
-  let score01 =
-    0.45 * waveN +
-    0.15 * periodN +
-    0.30 * windN +
-    0.10 * gustN;
+  if (args.waveHeightM != null) {
+    components.push({ value: clamp(args.waveHeightM / 4.0, 0, 1), weight: 0.45 });
+  }
+  if (args.periodS != null) {
+    components.push({ value: clamp((args.periodS - 6) / 10, 0, 1), weight: 0.15 });
+  }
+  if (args.windSpeedKts != null) {
+    components.push({ value: clamp(args.windSpeedKts / 35, 0, 1), weight: 0.30 });
+  } else if (args.windGustKts != null) {
+    components.push({ value: clamp(args.windGustKts / 35, 0, 1), weight: 0.30 });
+  }
+  if (args.windGustKts != null && args.windSpeedKts != null) {
+    components.push({
+      value: clamp((args.windGustKts - args.windSpeedKts) / 20, 0, 1),
+      weight: 0.10,
+    });
+  }
+
+  if (!components.length) return null;
+
+  const totalWeight = components.reduce((sum, component) => sum + component.weight, 0);
+  let score01 = components.reduce(
+    (sum, component) => sum + component.value * component.weight,
+    0,
+  ) / totalWeight;
 
   // Adjustments
   if (args.regime === 'Opposing') score01 += 0.08;
@@ -220,12 +235,18 @@ function computePrimaryHazard(args: {
 // Confidence scoring: simple & explainable.
 function computeConfidence(args: {
   hasBuoy: boolean;
+  hasWave: boolean;
+  hasWind: boolean;
   obsAgeMin: number | null;
   modelDeltaM: number | null;
   hasCrossSea: boolean;
 }): { level: ConfidenceLevel; score01: number; drivers: string[] } {
-  let score = 0.55;
+  const inputCount = Number(args.hasWave) + Number(args.hasWind);
+  let score = inputCount === 2 ? 0.55 : inputCount === 1 ? 0.38 : 0.2;
   const drivers: string[] = [];
+
+  if (inputCount === 0) drivers.push('Wind and wave inputs unavailable');
+  else if (inputCount === 1) drivers.push('Only one of wind or wave height is available');
 
   if (args.hasBuoy) {
     score += 0.2;
@@ -378,6 +399,8 @@ export function buildNerdyData({
 
   const conf = computeConfidence({
     hasBuoy,
+    hasWave: waveHeightM != null,
+    hasWind: windSpeedKts != null || windGustKts != null,
     obsAgeMin,
     modelDeltaM: model?.deltaWaveHeightM ?? null,
     hasCrossSea,
@@ -457,8 +480,8 @@ export function buildNerdyData({
     // If your NerdyData type doesn't include these yet, add them there too.
     tallestSetM: tallestSetM ?? undefined,
     primaryHazard,
-    riskScore: risk.score,
-    riskLevel: risk.level,
+    riskScore: risk?.score,
+    riskLevel: risk?.level,
     stability: stability.label,
     deltaTAirSeaC: stability.deltaTC,
 

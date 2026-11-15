@@ -18,6 +18,7 @@ here instead of treating every planning document as current.
 | How accounts and paid access will work | [paid-user-architecture.md](paid-user-architecture.md) | Proposed freemium catalog, profiles, provider responsibilities, billing lifecycle, and launch gates. |
 | Whether the product can launch commercially | [commercial-readiness.md](commercial-readiness.md) | Evidence-based commercial, provider, cost, reliability, identity, and billing audit. |
 | Which features belong in Free or Plus | [freemium-feature-matrix.md](freemium-feature-matrix.md) | Provisional feature, provider, cost, rights, and release-gate matrix. |
+| Where OMNIwx can differentiate | [competitive-differentiation-audit.md](competitive-differentiation-audit.md) | Screen-level implementation audit, competitor boundaries, five decision-product opportunities, acceptance criteria, shared foundations, and 90-day roadmap. |
 | How commercial work is sequenced | [launch-roadmap.md](launch-roadmap.md) | Safe phases from the free beta through a bounded paid beta. |
 | How the app is built | [app-architecture.md](app-architecture.md) | Feature ownership, data flow, and runtime boundaries. |
 | How the files relate | [file-relationship-architecture.md](file-relationship-architecture.md) | Onboarding and dependency navigation. |

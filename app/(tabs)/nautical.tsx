@@ -28,6 +28,7 @@ import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
+import { getMarineConditionSignal } from '../lib/nautical/conditionSignal';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -131,44 +132,6 @@ function getBeaufort(
   if (v < 56) return { force: 10, label: 'Storm' };
   if (v < 64) return { force: 11, label: 'Violent storm' };
   return { force: 12, label: 'Hurricane force' };
-}
-
-/** Combined risk based on sea state + wind */
-function getSeaRisk(
-  waveM: number | null | undefined,
-  windKts: number | null | undefined,
-): {
-  level: 'Low' | 'Moderate' | 'High' | 'Extreme';
-  text: string;
-} {
-  const ft = waveM != null ? waveM * 3.28084 : null;
-  const w = windKts ?? 0;
-
-  if ((ft == null || ft < 3) && w < 15) {
-    return {
-      level: 'Low',
-      text: 'Generally safe for most small craft, fair weather.',
-    };
-  }
-
-  if (ft != null && ft < 6 && w < 25) {
-    return {
-      level: 'Moderate',
-      text: 'Choppy / moderate seas. Experience recommended for small craft.',
-    };
-  }
-
-  if ((ft != null && ft < 10) || w < 35) {
-    return {
-      level: 'High',
-      text: 'Rough conditions. Caution for all but well-prepared vessels.',
-    };
-  }
-
-  return {
-    level: 'Extreme',
-    text: 'Very dangerous. Avoid unless absolutely necessary.',
-  };
 }
 
 function formatTemp(c: number | null | undefined, unit: 'F' | 'C'): string {
@@ -971,7 +934,11 @@ export default function NauticalScreen() {
 
   const seaLabel = seaStateLabel(waveHeightM);
   const beaufort = getBeaufort(windSpeedKts);
-  const seaRisk = getSeaRisk(waveHeightM, windSpeedKts);
+  const seaRisk = getMarineConditionSignal({
+    waveM: waveHeightM,
+    windKts: windSpeedKts,
+    gustKts: windGustKts,
+  });
 
   const observedTs = buoyData?.updatedAt ?? conditions?.observedAt ?? null;
 
@@ -981,7 +948,9 @@ export default function NauticalScreen() {
   const forecastSourceLabel = forecast?.source?.includes('Open-Meteo') ? forecast.source : 'Official marine forecast';
 
   const riskStyle =
-    seaRisk.level === 'Low'
+    seaRisk.level === 'Unknown'
+      ? styles.riskUnknown
+      : seaRisk.level === 'Low'
       ? styles.riskLow
       : seaRisk.level === 'Moderate'
         ? styles.riskModerate
@@ -1877,6 +1846,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.textPrimary,
     marginBottom: 8,
+  },
+  riskUnknown: {
+    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    borderColor: '#94A3B8',
   },
   nerdySummaryGrid: {
     flexDirection: 'row',

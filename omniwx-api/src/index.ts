@@ -742,6 +742,8 @@ type SkyGridPoint = {
   weather01: number;
   darkness01: number;
   transparency01?: number;
+  surfaceStability01?: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01?: number;
   moon01?: number;
   aerosols01?: number;
@@ -796,6 +798,8 @@ type AstroInspectPayload = {
   weather01: number;
   darkness01: number;
   transparency01: number;
+  surfaceStability01: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01: number;
   moon01: number;
   aerosols01: number;
@@ -8467,6 +8471,8 @@ type SkyScoredPoint = SkyImagePoint & {
   weather01: number;
   darkness01: number;
   transparency01: number;
+  surfaceStability01: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01: number;
   moon01: number;
   aerosols01: number;
@@ -8648,6 +8654,13 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 function computeCloudPenaltyCanonical(p: SkyImagePoint) {
+  const hasCloudInput =
+    p.cloudTotal != null ||
+    p.cloudLow != null ||
+    p.cloudMid != null ||
+    p.cloudHigh != null;
+  if (!hasCloudInput) return 0.5;
+
   const low = pct01Sky(p.cloudLow) ?? 0;
   const mid = pct01Sky(p.cloudMid) ?? 0;
   const high = pct01Sky(p.cloudHigh) ?? 0;
@@ -8691,15 +8704,23 @@ function computeTransparency01Canonical(p: SkyImagePoint) {
   return transparency01;
 }
 
-function computeSeeing01Canonical(p: SkyImagePoint) {
-  const wind = p.windMps ?? 0;
-  const gust = p.gustMps ?? wind;
+function computeSurfaceStability01Canonical(p: SkyImagePoint) {
+  const penalties: number[] = [];
 
-  const sustainedPenalty = clamp01((wind - 4) / 10) * 0.42;
-  const gustPenalty = clamp01((gust - 6) / 14) * 0.50;
-  const humidityPenalty = p.humidityPct == null ? 0 : clamp01((p.humidityPct - 85) / 15) * 0.08;
+  if (p.windMps != null) {
+    penalties.push(clamp01((p.windMps - 4) / 10) * 0.42);
+  }
+  if (p.gustMps != null) {
+    penalties.push(clamp01((p.gustMps - 6) / 14) * 0.50);
+  }
+  if (p.humidityPct != null) {
+    penalties.push(clamp01((p.humidityPct - 85) / 15) * 0.08);
+  }
 
-  return clamp01(1 - (sustainedPenalty + gustPenalty + humidityPenalty));
+  if (!penalties.length) return 0.5;
+  const observedScore = clamp01(1 - penalties.reduce((sum, value) => sum + value, 0));
+  const coverage = penalties.length / 3;
+  return clamp01(0.5 + (observedScore - 0.5) * coverage);
 }
 
 function computeMoonScore01Canonical(args: {
@@ -8719,7 +8740,7 @@ function computeMoonScore01Canonical(args: {
 
 function computeAerosolScore01Canonical(p: SkyImagePoint) {
   const aerosolIndex = p.aerosolIndex ?? null;
-  if (aerosolIndex == null) return 0.75;
+  if (aerosolIndex == null) return 0.5;
   return clamp01(1 - clamp01(aerosolIndex));
 }
 
@@ -9242,7 +9263,7 @@ async function buildSkyScoreGridPayload(args: {
 
   const scored: SkyScoredPoint[] = points.map((p) => {
     const transparency01 = computeTransparency01Canonical(p);
-    const seeing01 = computeSeeing01Canonical(p);
+    const surfaceStability01 = computeSurfaceStability01Canonical(p);
     const darkness01 = computeDarknessScoreForHour({
       hourOffset: args.hourOffset,
       pointDate0,
@@ -9272,7 +9293,7 @@ async function buildSkyScoreGridPayload(args: {
 
     const weather01 = clamp01(
       transparency01 * 0.40 +
-      seeing01 * 0.16 +
+      surfaceStability01 * 0.16 +
       darkness01 * 0.20 +
       moon01 * 0.12 +
       aerosols01 * 0.12
@@ -9287,7 +9308,8 @@ async function buildSkyScoreGridPayload(args: {
       weather01,
       darkness01,
       transparency01,
-      seeing01,
+      surfaceStability01,
+      seeing01: surfaceStability01,
       moon01,
       aerosols01,
       siteScore01,
@@ -9336,6 +9358,7 @@ async function buildSkyScoreGridPayload(args: {
           weather01: p.weather01,
           darkness01: p.darkness01,
           transparency01: p.transparency01,
+          surfaceStability01: p.surfaceStability01,
           seeing01: p.seeing01,
           moon01: p.moon01,
           aerosols01: p.aerosols01,
@@ -9449,7 +9472,7 @@ async function buildAstroInspectPayload(args: {
   const offset = "+00:00";
 
   const transparency01 = computeTransparency01Canonical(point);
-  const seeing01 = computeSeeing01Canonical(point);
+  const surfaceStability01 = computeSurfaceStability01Canonical(point);
   const darkness01 = computeDarknessScoreForHour({
     hourOffset,
     pointDate0,
@@ -9479,7 +9502,7 @@ async function buildAstroInspectPayload(args: {
 
   const weather01 = clamp01(
     transparency01 * 0.40 +
-    seeing01 * 0.16 +
+    surfaceStability01 * 0.16 +
     darkness01 * 0.20 +
     moon01 * 0.12 +
     aerosols01 * 0.12
@@ -9497,7 +9520,8 @@ async function buildAstroInspectPayload(args: {
     weather01,
     darkness01,
     transparency01,
-    seeing01,
+    surfaceStability01,
+    seeing01: surfaceStability01,
     moon01,
     aerosols01,
     siteScore01,

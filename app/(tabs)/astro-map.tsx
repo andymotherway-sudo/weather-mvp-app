@@ -961,6 +961,8 @@ type SkyGridPoint = {
   weather01: number;
   darkness01: number;
   transparency01?: number;
+  surfaceStability01?: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01?: number;
   moon01?: number;
   aerosols01?: number;
@@ -1010,6 +1012,8 @@ type AstroInspectPayload = {
   weather01: number;
   darkness01: number;
   transparency01: number;
+  surfaceStability01: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01: number;
   moon01: number;
   aerosols01: number;
