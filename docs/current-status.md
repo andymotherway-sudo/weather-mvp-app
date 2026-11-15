@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 15, 2026 (Arizona time).
+Release artifact verified: November 15, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -9,9 +9,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 ## Product And Release
 
 - Current internal-testing candidate: `1.1.272` / Android version code `10290`.
-- Release metadata and tester notes are aligned. Fresh production AAB build,
-  embedded-config inspection, signature verification, Play upload, and
-  physical-device acceptance are pending.
+- The November 15 production AAB build succeeded. Embedded native metadata and
+  Expo config agree on the version and production API target. TypeScript and
+  lint passed; bundle signature verification passed and matches the configured
+  upload keystore. Play upload and physical-device acceptance are pending.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready

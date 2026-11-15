@@ -5,9 +5,8 @@ OMNIwx is an Android-first weather workstation that brings daily forecasts, rada
 Current internal-testing candidate: **OMNIwx 1.1.272**
 Current Android version code: **10290**
 
-The production-targeted release metadata is prepared. Fresh AAB build evidence,
-Play upload, and physical-device acceptance are pending; see
-[current status](docs/current-status.md).
+The signed production-targeted AAB is built and locally verified. Play upload and
+physical-device acceptance are still pending; see [current status](docs/current-status.md).
 
 ## Product Shape
 

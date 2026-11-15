@@ -67,7 +67,19 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending fresh production AAB build and verification.
+- Build: `npm run build:android:prod`, successful in 4m 18s; 999 actionable
+  tasks (91 executed, 908 up-to-date).
+- Artifact: `android/app/build/outputs/bundle/release/app-release.aab`,
+  170843093 bytes; modified `2026-11-15T16:38:25.6321870Z`.
+- SHA-256: `94D260DA2B421136BECDA98C5D4E0FA2C7764A14365665CE91A78983428FFE57`.
+- Native manifest: `com.anonymous.weatherapp`, version `1.1.272`, version code
+  `10290`.
+- Embedded Expo config: `1.1.272 / 10290`, `production`,
+  `https://omniwx-api-production.omniwx.workers.dev`, build label
+  `internal-test-aab-10290`.
+- `jarsigner -verify -certs` passed. Signer SHA-256 is
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`, matching the configured upload
+  certificate used by the previous candidate.
 
 ## Remaining Acceptance
 
