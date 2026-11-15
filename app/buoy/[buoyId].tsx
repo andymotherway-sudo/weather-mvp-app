@@ -4,7 +4,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,11 +11,13 @@ import {
   View,
 } from 'react-native';
 
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
 import { useBuoyDetail } from '../lib/buoys/detailHooks';
+import { useAppChrome } from '../lib/theme/useAppChrome';
 
 function degToCompass(deg: number | null | undefined): string {
   if (deg == null || isNaN(deg)) return '—';
@@ -55,6 +56,7 @@ export default function BuoyDetailScreen() {
   }>();
 
   const { tempUnit } = useSettings();
+  const { chrome } = useAppChrome();
 
   const id = buoyId ?? '';
   const {
@@ -68,8 +70,14 @@ export default function BuoyDetailScreen() {
   // simple guards
   if (!id) {
     return (
-      <View style={styles.center}>
-        <Text style={typography.body}>No buoy selected.</Text>
+      <View style={[styles.container, { backgroundColor: chrome.background }]}>
+        <View style={styles.content}>
+          <OmniStatusCard
+            tone="empty"
+            title="No buoy selected"
+            message="Choose a buoy from Nautical or Maps to view live observations."
+          />
+        </View>
       </View>
     );
   }
@@ -88,15 +96,15 @@ export default function BuoyDetailScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: chrome.background }]}
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl refreshing={!!refreshing} onRefresh={refresh} />
       }
     >
       <View style={styles.header}>
-        <Text style={typography.title}>{displayName}</Text>
-        <Text style={typography.subtitle}>NOAA buoy · {id}</Text>
+        <Text style={[typography.title, { color: chrome.textPrimary }]}>{displayName}</Text>
+        <Text style={[typography.subtitle, { color: chrome.textSecondary }]}>NOAA buoy · {id}</Text>
         {data && (
           <Text style={styles.meta}>
             {formatLatLon(data.lat, data.lon)}
@@ -111,17 +119,21 @@ export default function BuoyDetailScreen() {
       </View>
 
       {loading && !data && (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={typography.small}>Loading buoy data…</Text>
-        </View>
+        <OmniStatusCard
+          tone="loading"
+          title="Loading buoy observations"
+          message={`Requesting the latest available report for ${id}.`}
+        />
       )}
 
       {error && (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Error</Text>
-          <Text style={styles.errorText}>{error}</Text>
-        </Card>
+        <OmniStatusCard
+          tone="error"
+          title="Buoy observations unavailable"
+          message={error}
+          actionLabel="Try again"
+          onAction={refresh}
+        />
       )}
 
       {data && (
@@ -185,11 +197,13 @@ export default function BuoyDetailScreen() {
       )}
 
       {!loading && !error && !data && (
-        <View style={styles.center}>
-          <Text style={typography.small}>
-            No observations found for this buoy.
-          </Text>
-        </View>
+        <OmniStatusCard
+          tone="empty"
+          title="No observations found"
+          message="This buoy did not return a current observation. The station may be offline or between reports."
+          actionLabel="Try again"
+          onAction={refresh}
+        />
       )}
     </ScrollView>
   );
@@ -198,7 +212,6 @@ export default function BuoyDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   content: {
     padding: theme.spacing.lg,
@@ -210,27 +223,6 @@ const styles = StyleSheet.create({
   meta: {
     fontSize: 12,
     color: theme.colors.textSecondary,
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: theme.spacing.lg,
-  },
-  errorCard: {
-    backgroundColor: theme.colors.errorBg,
-    borderColor: theme.colors.errorBg,
-    marginBottom: theme.spacing.lg,
-  },
-  errorTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.errorText,
-    marginBottom: 4,
-  },
-  errorText: {
-    fontSize: 13,
-    color: theme.colors.errorText,
   },
   card: {
     marginBottom: theme.spacing.lg,

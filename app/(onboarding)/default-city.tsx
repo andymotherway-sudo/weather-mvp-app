@@ -312,6 +312,9 @@ export default function DefaultCityScreen() {
         <Text style={styles.subtitle}>This becomes your default place across the app.</Text>
 
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Use my current GPS city"
+          accessibilityState={{ disabled: gpsLoading || navigatingRef.current, busy: gpsLoading }}
           style={[styles.gpsButton, (gpsLoading || navigatingRef.current) && styles.gpsButtonDisabled]}
           onPress={useMyCurrentGpsCity}
           disabled={gpsLoading || navigatingRef.current}
@@ -330,6 +333,7 @@ export default function DefaultCityScreen() {
       <View style={styles.searchCard}>
         <Text style={styles.searchLabel}>Search</Text>
         <TextInput
+          accessibilityLabel="Search for a home city"
           placeholder="Try “Phoenix”, “London”, “Tokyo”…"
           placeholderTextColor="rgba(255,255,255,0.45)"
           value={query}
@@ -351,7 +355,7 @@ export default function DefaultCityScreen() {
           </View>
         )}
 
-        {!!err && !loading && !gpsLoading && <Text style={styles.err}>{err}</Text>}
+        {!!err && !loading && !gpsLoading && <Text accessibilityRole="alert" style={styles.err}>{err}</Text>}
       </View>
 
       <FlatList
@@ -360,7 +364,14 @@ export default function DefaultCityScreen() {
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => void selectCity(item)} disabled={navigatingRef.current}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Choose ${formatCompactLocation(item)}`}
+            accessibilityState={{ disabled: navigatingRef.current }}
+            style={styles.row}
+            onPress={() => void selectCity(item)}
+            disabled={navigatingRef.current}
+          >
             <View style={styles.pin}>
               <Text style={styles.pinText}>⌁</Text>
             </View>

@@ -7090,7 +7090,14 @@ export default function MapsScreen() {
 
 function LayersButton(props: { count: number; active?: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={props.onPress} style={[styles.layerButton, props.active ? styles.layerButtonActive : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open map layers${props.count ? `, ${props.count} active` : ''}`}
+      accessibilityState={{ expanded: props.active }}
+      hitSlop={4}
+      onPress={props.onPress}
+      style={[styles.layerButton, props.active ? styles.layerButtonActive : null]}
+    >
       <View style={styles.layerGlyph}>
         <View style={[styles.layerGlyphLine, styles.layerGlyphLineTop]} />
         <View style={styles.layerGlyphLine} />
@@ -7108,7 +7115,13 @@ function LayersButton(props: { count: number; active?: boolean; onPress: () => v
 
 function LocationButton(props: { onPress: () => void }) {
   return (
-    <Pressable onPress={props.onPress} style={styles.locationButton}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Center map on current location"
+      hitSlop={4}
+      onPress={props.onPress}
+      style={styles.locationButton}
+    >
       <View style={styles.locationRing}>
         <View style={styles.locationDot} />
       </View>
@@ -7119,10 +7132,10 @@ function LocationButton(props: { onPress: () => void }) {
 function ZoomButtons(props: { onZoomIn: () => void; onZoomOut: () => void }) {
   return (
     <View style={styles.zoomButtonStack}>
-      <Pressable onPress={props.onZoomIn} style={styles.zoomButton} accessibilityLabel="Zoom map in">
+      <Pressable accessibilityRole="button" hitSlop={4} onPress={props.onZoomIn} style={styles.zoomButton} accessibilityLabel="Zoom map in">
         <Text style={styles.zoomButtonText}>+</Text>
       </Pressable>
-      <Pressable onPress={props.onZoomOut} style={styles.zoomButton} accessibilityLabel="Zoom map out">
+      <Pressable accessibilityRole="button" hitSlop={4} onPress={props.onZoomOut} style={styles.zoomButton} accessibilityLabel="Zoom map out">
         <Text style={styles.zoomButtonText}>-</Text>
       </Pressable>
     </View>

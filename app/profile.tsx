@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, T
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LearnMoreModal } from '../components/common/LearnMoreModal';
+import { OmniStatusCard } from '../components/common/OmniStatusCard';
 import { usePlace, type Place } from './context/PlaceContext';
 import { useEntitlements } from './context/EntitlementContext';
 import { useSettings } from './context/SettingsContext';
@@ -166,8 +167,14 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: chrome.background }]}>
-        <ActivityIndicator color="white" />
+      <View style={[styles.center, styles.loadingState, { backgroundColor: chrome.background }]}>
+        <OmniStatusCard
+          compact
+          tone="loading"
+          title="Loading your settings"
+          message="Preparing saved locations, preferences, and account status."
+          style={styles.loadingCard}
+        />
       </View>
     );
   }
@@ -538,6 +545,8 @@ const styles = StyleSheet.create({
   },
   container: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28 },
   center: { flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' },
+  loadingState: { paddingHorizontal: 18 },
+  loadingCard: { width: '100%', maxWidth: 520 },
 
   hero: { marginBottom: 14 },
   backButton: {

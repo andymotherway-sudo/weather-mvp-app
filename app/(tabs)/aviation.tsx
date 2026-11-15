@@ -1168,10 +1168,10 @@ export default function AviationScreen() {
   );
 }
 function Label({ text }: { text: string }) { return <Text style={s.label}>{text}</Text>; }
-function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={[s.seg, active ? s.segOn : null]}><Text style={[s.segText, active ? s.segTextOn : null]}>{label}</Text></Pressable>; }
-function Learn({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={s.learn}><Text style={s.learnText}>{label}</Text></Pressable>; }
-function Primary({ label, onPress, loading }: { label: string; onPress: () => void; loading: boolean }) { return <Pressable onPress={onPress} disabled={loading} style={[s.primary, loading ? s.dim : null]}>{loading ? <ActivityIndicator color="white" /> : <Text style={s.primaryText}>{label}</Text>}</Pressable>; }
-function Secondary({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={s.secondary}><Text style={s.secondaryText}>{label}</Text></Pressable>; }
+function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: active }} onPress={onPress} style={[s.seg, active ? s.segOn : null]}><Text style={[s.segText, active ? s.segTextOn : null]}>{label}</Text></Pressable>; }
+function Learn({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={`Learn about ${label}`} onPress={onPress} style={s.learn}><Text style={s.learnText}>{label}</Text></Pressable>; }
+function Primary({ label, onPress, loading }: { label: string; onPress: () => void; loading: boolean }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: loading, busy: loading }} onPress={onPress} disabled={loading} style={[s.primary, loading ? s.dim : null]}>{loading ? <ActivityIndicator color="white" /> : <Text style={s.primaryText}>{label}</Text>}</Pressable>; }
+function Secondary({ label, onPress }: { label: string; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={s.secondary}><Text style={s.secondaryText}>{label}</Text></Pressable>; }
 function Stat({ label, value }: { label: string; value: string }) { return <Glass style={s.stat}><Text style={s.statLabel}>{label}</Text><Text style={s.statValue}>{value}</Text></Glass>; }
 function Row({ label, value }: { label: string; value: string }) { return <View style={s.row}><Text style={s.rowLabel}>{label}</Text><Text style={s.rowValue}>{value}</Text></View>; }
 

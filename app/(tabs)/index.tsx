@@ -43,7 +43,9 @@ import { useLocations } from '../lib/locations/useLocations';
 
 import { Ionicons } from '@expo/vector-icons';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { ModeToggle } from '../../components/common/ModeToggle';
 import { NerdyExplainModal, type ExplainPayload } from '../../components/common/NerdyExplainModal';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -5893,17 +5895,21 @@ function LandWeatherWithCoords({
         ) : null}
 
         {loading && !hasUsableWeatherData ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.smallText}>Loading weather...</Text>
-          </View>
+          <OmniStatusCard
+            tone="loading"
+            title="Loading weather"
+            message="Preparing current conditions and the forecast for this location."
+          />
         ) : null}
 
         {displayWeatherError ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Weather temporarily unavailable</Text>
-            <Text style={styles.errorText}>{displayWeatherError}</Text>
-          </Card>
+          <OmniStatusCard
+            tone="error"
+            title="Weather temporarily unavailable"
+            message={displayWeatherError}
+            actionLabel="Try again"
+            onAction={onRefresh}
+          />
         ) : null}
 
         <SimpleDailyOverview
@@ -5965,17 +5971,21 @@ function LandWeatherWithCoords({
       ) : null}
 
       {loading && !hasUsableWeatherData ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.smallText}>Loading weather…</Text>
-        </View>
+        <OmniStatusCard
+          tone="loading"
+          title="Loading weather"
+          message="Preparing current conditions and wxLab detail for this location."
+        />
       ) : null}
 
       {displayWeatherError ? (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Weather temporarily unavailable</Text>
-          <Text style={styles.errorText}>{displayWeatherError}</Text>
-        </Card>
+        <OmniStatusCard
+          tone="error"
+          title="Weather temporarily unavailable"
+          message={displayWeatherError}
+          actionLabel="Try again"
+          onAction={onRefresh}
+        />
       ) : null}
 
       {!wxLab ? (
@@ -6431,49 +6441,30 @@ export default function LandWeatherScreen() {
                   </Pressable>
                 </View>
 
-                <View style={[styles.headerModeToggle, { backgroundColor: chrome.pill, borderColor: chrome.border }]}>
-                  <Pressable
-                    onPress={() => setWxLab?.(false)}
-                    style={[
-                      styles.headerModeBtn,
-                      !wxLab ? styles.dailyModeBtnActive : null,
-                      !wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
-                    ]}
-                  >
-                    <Text style={[styles.headerModeText, !wxLab ? styles.dailyModeTextActive : null]}>Simple</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      if (toggleWxLab && !wxLab) return toggleWxLab();
-                      return setWxLab?.(true);
-                    }}
-                    style={[
-                      styles.headerModeBtn,
-                      wxLab ? styles.dailyModeBtnActive : null,
-                      wxLab ? { backgroundColor: chrome.pillActive, borderColor: chrome.borderStrong } : null,
-                    ]}
-                  >
-                    <Text style={[styles.headerModeText, wxLab ? styles.dailyModeTextActive : null]}>wxLab</Text>
-                  </Pressable>
-                </View>
+                <ModeToggle
+                  compact
+                  mode={wxLab ? 'nerdy' : 'simple'}
+                  onChange={(mode) => {
+                    if (mode === 'simple') return setWxLab?.(false);
+                    if (toggleWxLab && !wxLab) return toggleWxLab();
+                    return setWxLab?.(true);
+                  }}
+                />
               </View>
 
             </View>
           </View>
 
           {!coords ? (
-            <Card style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Getting your location…</Text>
-              <Text style={styles.errorText}>Enable GPS or pick a place to load weather.</Text>
-              <View style={{ marginTop: 12, flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-                <Pressable onPress={refreshCurrentLocation} style={styles.quickNavBtn}>
-                  <Text style={styles.quickNavText}>Try again</Text>
-                </Pressable>
-                <Pressable onPress={() => setPickerOpen(true)} style={styles.quickNavBtn}>
-                  <Text style={styles.quickNavText}>Choose location</Text>
-                </Pressable>
-              </View>
-            </Card>
+            <OmniStatusCard
+              tone="unavailable"
+              title="Location needed"
+              message="Enable location access or choose a saved place to load weather."
+              actionLabel="Try location again"
+              onAction={refreshCurrentLocation}
+              secondaryActionLabel="Choose location"
+              onSecondaryAction={() => setPickerOpen(true)}
+            />
           ) : (
             <>
               <View pointerEvents="none" style={{ height: 0 }}>
@@ -6624,34 +6615,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-
-  headerModeToggle: {
-    width: 108,
-    flexShrink: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    padding: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: GLASS_PANEL_BG,
-  },
-
-  headerModeBtn: {
-    flex: 1,
-    minHeight: 30,
-    paddingHorizontal: 4,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  headerModeText: {
-    color: 'rgba(255,255,255,0.64)',
-    fontSize: 10,
-    fontWeight: '900',
   },
 
   actionRow: {
@@ -7276,17 +7239,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dailyModeBtnActive: {
-    borderWidth: 1,
-    borderColor: 'rgba(145,205,255,0.35)',
-  },
   dailyModeText: {
     color: 'rgba(255,255,255,0.64)',
     fontSize: 12,
     fontWeight: '900',
-  },
-  dailyModeTextActive: {
-    color: 'white',
   },
   dailyAstroHeroRow: {
     marginTop: 16,

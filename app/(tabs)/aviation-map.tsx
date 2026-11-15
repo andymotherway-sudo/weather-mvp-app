@@ -485,7 +485,11 @@ export default function AviationMapScreen() {
           )}
         </Rail>
 
-        {aviation.error ? <Text style={styles.errorText}>{aviation.error}</Text> : null}
+        {aviation.error ? (
+          <Text accessibilityRole="alert" style={styles.errorText}>
+            {aviation.error}
+          </Text>
+        ) : null}
       </View>
 
       <View pointerEvents="box-none" style={[styles.bottomPanel, { paddingBottom: Math.max(14, insets.bottom + 8) }]}>
@@ -548,7 +552,21 @@ function AltitudeSlider({ value, onChange }: { value: number; onChange: (value: 
   );
 
   return (
-    <View style={styles.sliderWrap} onLayout={(event) => setWidth(event.nativeEvent.layout.width)} {...pan.panHandlers}>
+    <View
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel="Flight level"
+      accessibilityValue={{ min: FL_LEVELS[0], max: FL_LEVELS[FL_LEVELS.length - 1], now: value, text: `FL${String(value).padStart(3, '0')}` }}
+      accessibilityActions={[{ name: 'increment', label: 'Increase flight level' }, { name: 'decrement', label: 'Decrease flight level' }]}
+      onAccessibilityAction={(event) => {
+        const offset = event.nativeEvent.actionName === 'increment' ? 1 : event.nativeEvent.actionName === 'decrement' ? -1 : 0;
+        if (!offset) return;
+        onChange(FL_LEVELS[Math.max(0, Math.min(FL_LEVELS.length - 1, idx + offset))]);
+      }}
+      style={styles.sliderWrap}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      {...pan.panHandlers}
+    >
       <View style={styles.sliderTrack} />
       <View style={[styles.sliderFill, { width: 14 + usableWidth * pct }]} />
       {FL_LEVELS.map((level, levelIdx) => {
@@ -581,7 +599,13 @@ function Rail({ title, children }: { title: string; children: React.ReactNode })
 
 function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.chip, active && styles.chipActive]}
+    >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
   );

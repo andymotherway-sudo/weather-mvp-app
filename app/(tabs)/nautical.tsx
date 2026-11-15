@@ -6,7 +6,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Keyboard,
   Modal,
@@ -22,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mode, ModeToggle } from '../../components/common/ModeToggle';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
@@ -1208,18 +1208,22 @@ export default function NauticalScreen() {
 
         {/* Loading */}
         {!searchActive && loading && !data && (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={typography.small}>Loading marine data...</Text>
-          </View>
+          <OmniStatusCard
+            tone="loading"
+            title="Loading marine conditions"
+            message="Checking the selected station, nearby buoy, tides, and forecast products."
+          />
         )}
 
         {/* Error */}
         {!searchActive && error && (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Error</Text>
-            <Text style={styles.errorText}>{error}</Text>
-          </Card>
+          <OmniStatusCard
+            tone="error"
+            title="Marine conditions unavailable"
+            message={error}
+            actionLabel="Try again"
+            onAction={refresh}
+          />
         )}
 
         {/* SEA STATE */}
@@ -1593,34 +1597,40 @@ export default function NauticalScreen() {
         )}
 
         {!forecast && forecastLoading && forecastZoneId && (
-          <Card style={styles.mainCard}>
-            <Text style={styles.sectionLabel}>Coastal &amp; Offshore Forecast</Text>
-            <Text style={styles.simpleMeta}>Loading marine forecast...</Text>
-          </Card>
+          <OmniStatusCard
+            compact
+            tone="loading"
+            title="Loading official marine forecast"
+            message="Checking the coastal or offshore bulletin for this zone."
+          />
         )}
 
         {!forecast && forecastError && forecastZoneId && (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Marine forecast</Text>
-            <Text style={styles.errorText}>{forecastError}</Text>
-          </Card>
+          <OmniStatusCard
+            compact
+            tone="error"
+            title="Official marine forecast unavailable"
+            message={forecastError}
+          />
         )}
 
         {!forecast && !forecastLoading && !forecastError && !forecastZoneId && (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Marine forecast</Text>
-            <Text style={styles.errorText}>
-              Marine forecast not yet configured for this marine area.
-            </Text>
-          </Card>
+          <OmniStatusCard
+            compact
+            tone="unavailable"
+            title="Official forecast not available"
+            message="This marine area does not map to an official bulletin yet. Model-based conditions remain available above."
+          />
         )}
 
         {!loading && !error && !data && !buoyData && (
-          <View style={styles.center}>
-            <Text style={typography.small}>
-              No nautical data available for this station.
-            </Text>
-          </View>
+          <OmniStatusCard
+            tone="empty"
+            title="No marine observations returned"
+            message="No current station or buoy observations were available for this selection."
+            actionLabel="Try again"
+            onAction={refresh}
+          />
         )}
       </ScrollView>
     </View>

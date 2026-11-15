@@ -25,6 +25,7 @@ import {
 import { OmniChip } from '../../components/common/OmniChip';
 import { OmniMetricTile } from '../../components/common/OmniMetricTile';
 import { OmniSectionHeader } from '../../components/common/OmniSectionHeader';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 
 import { usePlace } from '../context/PlaceContext';
 import { typography } from '../../styles/typography';
@@ -1459,15 +1460,19 @@ export default function SolarScreen() {
       />
 
       {showAstroLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.smallText}>Loading astro forecast...</Text>
-        </View>
+        <OmniStatusCard
+          tone="loading"
+          title="Loading night-sky forecast"
+          message="Preparing clouds, transparency, moonlight, darkness, and observing conditions."
+        />
       ) : astroError && !astro ? (
-        <View style={themedErrorCard}>
-          <Text style={styles.cardTitle}>Astro Forecast Error</Text>
-          <Text style={styles.cardValue}>{renderable(astroError)}</Text>
-        </View>
+        <OmniStatusCard
+          tone="error"
+          title="Night-sky forecast unavailable"
+          message={renderable(astroError)}
+          actionLabel="Try again"
+          onAction={refreshAstro}
+        />
       ) : astroReady ? (
         <>
           <AstroForecastTimeline
@@ -1528,13 +1533,11 @@ export default function SolarScreen() {
           </View>
 
           {!active ? (
-            <View style={themedCard}>
-              <Text style={styles.cardTitle}>No selected location</Text>
-              <Text style={styles.cardBody}>
-                Choose a location in OMNIwx to load an astro forecast for that
-                place.
-              </Text>
-            </View>
+            <OmniStatusCard
+              tone="unavailable"
+              title="Location needed"
+              message="Choose a location in Land to load night-sky and astronomy conditions for that place."
+            />
           ) : null}
 
           <View>
@@ -1554,15 +1557,19 @@ export default function SolarScreen() {
               />
 
               {showSpaceWeatherLoading ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={styles.smallText}>Loading space weather...</Text>
-            </View>
+            <OmniStatusCard
+              tone="loading"
+              title="Loading space weather"
+              message="Checking NOAA space-weather scales, solar wind, aurora context, and active alerts."
+            />
           ) : error ? (
-            <View style={themedErrorCard}>
-              <Text style={styles.cardTitle}>Error</Text>
-              <Text style={styles.cardValue}>{renderable(error)}</Text>
-            </View>
+            <OmniStatusCard
+              tone="error"
+              title="Space weather unavailable"
+              message={renderable(error)}
+              actionLabel="Try again"
+              onAction={refresh}
+            />
           ) : data ? (
             <>
               {renderSpaceWeatherNowCard()}
