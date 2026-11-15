@@ -15,6 +15,7 @@ import { AlmanacWarmupProvider } from '../components/boot/AlmanacWarmup';
 import { LocationsProvider } from './lib/locations/useLocations';
 
 import { PlaceProvider } from './context/PlaceContext';
+import { EntitlementProvider } from './context/EntitlementContext';
 import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { WxLabProvider } from './context/WxLabContext';
 import { appChrome } from './lib/theme/appAppearance';
@@ -58,6 +59,7 @@ export default function RootLayout() {
         <AppChromeFrame>
         <LocationsProvider>
           <PlaceProvider>
+            <EntitlementProvider>
             <WxLabProvider>
               <AppBoot>
                 <AlmanacWarmupProvider>
@@ -73,6 +75,7 @@ export default function RootLayout() {
                 </AlmanacWarmupProvider>
               </AppBoot>
             </WxLabProvider>
+            </EntitlementProvider>
           </PlaceProvider>
         </LocationsProvider>
         </AppChromeFrame>

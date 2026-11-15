@@ -3790,17 +3790,30 @@ export default function MapsScreen() {
       const latitudeDelta =
         region?.latitudeDelta && Number.isFinite(region.latitudeDelta) ? region.latitudeDelta : stableInitialRegion.latitudeDelta;
 
-      locateSeedRegionRef.current = {
+      const nextRegion = {
         latitude: cachedCoords.lat,
         longitude: cachedCoords.lon,
         latitudeDelta,
         longitudeDelta,
       };
       setCameraDebugLabel(`locate-reset:${cachedCoords.lat.toFixed(2)},${cachedCoords.lon.toFixed(2)}`);
-      setMapResetKey((value) => value + 1);
-      requestAnimationFrame(() => {
-        locateSeedRegionRef.current = null;
-      });
+      setRegion(nextRegion);
+      const currentZoom = Number.isFinite(mapZoom)
+        ? mapZoom
+        : approxZoomFromLongitudeDelta(longitudeDelta);
+      if (mapCameraRef.current?.setCamera) {
+        mapCameraRef.current.setCamera({
+          centerCoordinate: [cachedCoords.lon, cachedCoords.lat],
+          zoomLevel: currentZoom,
+          animationDuration: 260,
+        });
+      } else {
+        locateSeedRegionRef.current = nextRegion;
+        setMapResetKey((value) => value + 1);
+        requestAnimationFrame(() => {
+          locateSeedRegionRef.current = null;
+        });
+      }
       return;
     }
     setCameraDebugLabel('locate-unavailable');
@@ -3821,14 +3834,22 @@ export default function MapsScreen() {
       zoom: nextZoom,
     };
 
-    zoomButtonSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     setMapZoom(nextZoom);
-    setCameraDebugLabel(`zoom-reset:${nextZoom.toFixed(2)}`);
-    setMapResetKey((value) => value + 1);
-    requestAnimationFrame(() => {
-      zoomButtonSeedRegionRef.current = null;
-    });
+    setCameraDebugLabel(`zoom-camera:${nextZoom.toFixed(2)}`);
+    if (mapCameraRef.current?.setCamera) {
+      mapCameraRef.current.setCamera({
+        centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
+        zoomLevel: nextZoom,
+        animationDuration: 180,
+      });
+    } else {
+      zoomButtonSeedRegionRef.current = nextRegion;
+      setMapResetKey((value) => value + 1);
+      requestAnimationFrame(() => {
+        zoomButtonSeedRegionRef.current = null;
+      });
+    }
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers

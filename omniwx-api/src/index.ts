@@ -12613,7 +12613,7 @@ async function handleWorkerRequest(
       });
     }
 
-    const userResponse = await handleUserRoute(request, url, requestContext);
+    const userResponse = await handleUserRoute(request, url, requestContext, env);
     if (userResponse) return userResponse;
 
     if (url.pathname === "/v1/radar/info") {

@@ -7,7 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LearnMoreModal } from '../components/common/LearnMoreModal';
 import { usePlace, type Place } from './context/PlaceContext';
+import { useEntitlements } from './context/EntitlementContext';
 import { useSettings } from './context/SettingsContext';
+import { trackAnalyticsEvent } from './lib/analytics/events';
 import { formatCompactLocation } from './lib/locations/formats';
 import { NOTIFICATION_CATEGORIES } from './lib/notifications/preferences';
 import { useNotificationPreferences } from './lib/notifications/useNotificationPreferences';
@@ -18,6 +20,8 @@ const DEFAULT_CITY_KEY = 'omniwx:profile:defaultCity';
 const PRIVACY_POLICY_URL = 'https://www.omni-wx.com/privacy';
 const SUPPORT_URL = 'https://www.omni-wx.com/support';
 const SUPPORT_EMAIL_URL = 'mailto:admin@omni-wx.com?subject=OMNIwx%20support';
+const FEEDBACK_EMAIL_URL =
+  'mailto:admin@omni-wx.com?subject=OMNIwx%20beta%20feedback&body=What%20I%20was%20doing%3A%0A%0AWhat%20I%20expected%3A%0A%0AWhat%20happened%3A%0A';
 
 type DefaultCity = { name: string; lat: number; lon: number; country?: string; admin1?: string };
 
@@ -59,6 +63,7 @@ export default function ProfileScreen() {
   const OMNI_MARK = useMemo(() => require('../assets/brand/omniwx-logo-transparent.png'), []);
   const chrome = useMemo(() => appChrome(appColorMode), [appColorMode]);
   const notificationSettings = useNotificationPreferences();
+  const entitlements = useEntitlements();
   const [defaultCity, setDefaultCity] = useState<DefaultCity | null>(null);
   const [loading, setLoading] = useState(true);
   const [solarCaptureEnabled, setSolarCaptureEnabled] = useState(false);
@@ -134,6 +139,11 @@ export default function ProfileScreen() {
   const openLearnTopic = (topicId?: string) => {
     setLearnTopicId(topicId ?? undefined);
     setLearnOpen(true);
+  };
+
+  const openFeedback = () => {
+    trackAnalyticsEvent({ name: 'user_feedback_opened', properties: { surface: 'settings' } });
+    Linking.openURL(FEEDBACK_EMAIL_URL).catch(() => Linking.openURL(SUPPORT_EMAIL_URL).catch(() => undefined));
   };
 
   const activeLabel =
@@ -425,6 +435,29 @@ export default function ProfileScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.label}>Membership</Text>
+              <Text style={styles.value}>{entitlements.isPlus ? 'OMNIwx Plus' : 'OMNIwx Free'}</Text>
+              <Text style={styles.helperText}>
+                Free forecasts, standard radar, essential alerts, astronomy, and marine weather remain available without an account.
+              </Text>
+            </View>
+            <View
+              style={styles.membershipBadge}
+              accessibilityLabel={`Current plan ${entitlements.isPlus ? 'OMNIwx Plus' : 'OMNIwx Free'}`}
+            >
+              <Text style={styles.membershipBadgeText}>{entitlements.isPlus ? 'PLUS' : 'FREE'}</Text>
+            </View>
+          </View>
+          {!entitlements.isPlus ? (
+            <Text style={styles.membershipNote}>
+              Plus is planned at $5.99 monthly or $49.99 annually. Accounts and purchases are not enabled in this build, so no charge can occur.
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={[styles.card, { backgroundColor: chrome.card, borderColor: chrome.border }]}>
           <Text style={styles.label}>Legal & Support</Text>
           <Text style={styles.value}>Privacy, support, and safety notes</Text>
           <Text style={styles.helperText}>
@@ -448,6 +481,14 @@ export default function ProfileScreen() {
               onPress={() => Linking.openURL(SUPPORT_URL).catch(() => Linking.openURL(SUPPORT_EMAIL_URL).catch(() => undefined))}
             >
               <Text style={styles.pillText}>Support</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Email OMNIwx beta feedback"
+              style={pillStyle(false, styles.compactPill)}
+              onPress={openFeedback}
+            >
+              <Text style={styles.pillText}>Beta Feedback</Text>
             </Pressable>
           </View>
         </View>
@@ -632,6 +673,25 @@ const styles = StyleSheet.create({
   },
   notificationTitle: { color: 'white', fontSize: 13, fontWeight: '900' },
   notificationHelp: { color: 'rgba(255,255,255,0.58)', fontSize: 10.5, lineHeight: 15, marginTop: 3 },
+  membershipBadge: {
+    minWidth: 52,
+    minHeight: 32,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.34)',
+  },
+  membershipBadgeText: { color: '#BAE6FD', fontSize: 11, fontWeight: '900', letterSpacing: 0.8 },
+  membershipNote: {
+    marginTop: 12,
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
   checkDot: {
     minWidth: 42,
     height: 28,
