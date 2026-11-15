@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const target = String(process.argv[2] || 'production').trim().toLowerCase();
@@ -23,6 +24,7 @@ if (!(target in targetConfig)) {
 
 const selected = targetConfig[target];
 const androidDir = path.join(process.cwd(), 'android');
+const bundlePath = path.join(androidDir, 'app', 'build', 'outputs', 'bundle', 'release', 'app-release.aab');
 const gradleCmd = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
 const javaToolOptions = process.env.JAVA_TOOL_OPTIONS || '';
 // Windows desktop app hosts can break Java's Unix-domain selector pipe.
@@ -32,6 +34,7 @@ const windowsJavaEnv = process.platform === 'win32'
   ? { JAVA_TOOL_OPTIONS: `${javaToolOptions} -Djdk.net.unixdomain.tmpdir=NUL`.trim() }
   : {};
 
+const buildStartedAt = Date.now();
 const result = spawnSync(gradleCmd, ['bundleRelease', '--console=plain'], {
   cwd: androidDir,
   stdio: 'inherit',
@@ -52,4 +55,13 @@ if (result.error) {
   process.exit(1);
 }
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+// A failed or up-to-date Gradle invocation can leave an older AAB at the
+// standard path. Refuse to present that stale artifact as this release.
+if (!fs.existsSync(bundlePath) || fs.statSync(bundlePath).mtimeMs < buildStartedAt) {
+  console.error(`Release AAB was not freshly written: ${bundlePath}`);
+  process.exit(1);
+}
+
+console.log(`Fresh release AAB: ${bundlePath}`);

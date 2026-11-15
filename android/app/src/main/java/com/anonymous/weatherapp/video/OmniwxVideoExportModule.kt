@@ -566,8 +566,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     canvas.drawText(rightLabel, width - pad - 24f - rightWidth, top + height * 0.062f, cyanPaint)
 
     canvas.drawRoundRect(RectF(pad, height - pad - 48f, width - pad, height - pad), 20f, 20f, panelPaint)
-    canvas.drawText("OMNIwx cinematic export", pad + 24f, height - pad - 17f, smallPaint)
-    val scaleText = "cached frames • crossfaded MP4"
+    canvas.drawText("OMNIwx", pad + 24f, height - pad - 17f, smallPaint)
+    val scaleText = "Animated weather loop"
     canvas.drawText(scaleText, width - pad - 24f - smallPaint.measureText(scaleText), height - pad - 17f, smallPaint)
   }
 

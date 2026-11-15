@@ -19,7 +19,6 @@ import { useWxLab } from '../context/WxLabContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
-import { buildForecastNuance, type ForecastNuance } from '../lib/weather/forecastNuance';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -490,23 +489,6 @@ function buildHourlyDetailRows(hour: any) {
   ];
 }
 
-function HourlyContextInsightCard({ insight }: { insight: ForecastNuance | null }) {
-  if (!insight) return null;
-  return (
-    <View style={styles.contextInsightCard}>
-      <View style={styles.contextInsightIcon}>
-        <Ionicons name={insight.icon} size={20} color="#BAE6FD" />
-      </View>
-      <View style={styles.contextInsightBody}>
-        <Text style={styles.contextInsightKicker}>Forecast nuance</Text>
-        <Text style={styles.contextInsightTitle}>{insight.title}</Text>
-        <Text style={styles.contextInsightText}>{insight.body}</Text>
-        <Text style={styles.contextInsightMeta}>{insight.meta}</Text>
-      </View>
-    </View>
-  );
-}
-
 function HourlySimpleTimeline({
   hours,
   timeZone,
@@ -517,8 +499,6 @@ function HourlySimpleTimeline({
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const insight = useMemo(() => buildForecastNuance(hours, timeZone), [hours, timeZone]);
-
   if (!featured) return null;
 
   const featuredSlot = formatHourSlot(featured.time, timeZone);
@@ -608,8 +588,6 @@ function HourlySimpleTimeline({
         </View>
       </View>
 
-      <HourlyContextInsightCard insight={insight} />
-
       {rest.map((hour, idx) => {
         const slot = formatHourSlot(hour.time, timeZone);
         return (
@@ -654,8 +632,6 @@ function HourlySimpleTimelineExpanded({
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const insight = useMemo(() => buildForecastNuance(hours, timeZone), [hours, timeZone]);
-
   if (!featured) return null;
 
   const featuredSlot = formatHourSlot(featured.time, timeZone);
@@ -707,8 +683,6 @@ function HourlySimpleTimelineExpanded({
           ))}
         </View>
       </View>
-
-      <HourlyContextInsightCard insight={insight} />
 
       {rest.map((hour, idx) => {
         const slot = formatHourSlot(hour.time, timeZone);
@@ -868,8 +842,6 @@ function HourlyWithCoords({
   const heroGust = safeNum(leadHour.windGustMph);
   const heroPressure = safeNum(leadHour.pressureHpa);
   const modelLabel = forecastModelLabel(forecastModel);
-  const contextInsight = buildForecastNuance(visibleHourly, forecastTimeZone);
-
   if (!wxLab) {
     return (
       <>
@@ -947,8 +919,6 @@ function HourlyWithCoords({
           </Text>
         ) : null}
       </View>
-
-      <HourlyContextInsightCard insight={contextInsight} />
 
       {!wxLab ? <Text style={styles.sectionLead}>Next 72 hours</Text> : null}
 
@@ -1279,59 +1249,6 @@ const styles = StyleSheet.create({
     backgroundColor: GLASS_SURFACE_BG_STRONG,
     borderWidth: 1,
     borderColor: GLASS_SURFACE_BORDER,
-  },
-
-  contextInsightCard: {
-    marginBottom: theme.spacing.lg,
-    padding: theme.spacing.md,
-    borderRadius: 22,
-    backgroundColor: 'rgba(10,18,32,0.64)',
-    borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
-    flexDirection: 'row',
-    gap: 12,
-  },
-  contextInsightIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(14,165,233,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
-  },
-  contextInsightBody: {
-    flex: 1,
-    minWidth: 0,
-  },
-  contextInsightKicker: {
-    color: 'rgba(186,230,253,0.82)',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  contextInsightTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 19,
-    fontWeight: '900',
-  },
-  contextInsightText: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '700',
-    marginTop: 6,
-  },
-  contextInsightMeta: {
-    color: 'rgba(186,230,253,0.72)',
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '800',
-    marginTop: 8,
   },
 
   cardGlow: {

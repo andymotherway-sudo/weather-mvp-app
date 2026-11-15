@@ -164,7 +164,11 @@ def render(frame: str, bbox: tuple[float, float, float, float], width: int, heig
     output[visible, :3] = (top * (1 - y_weight) + bottom * y_weight).astype(np.uint8)
     image = Image.fromarray(output, "RGBA")
     encoded = BytesIO()
-    image.save(encoded, format="PNG", optimize=True)
+    # ``optimize=True`` performs an expensive exhaustive PNG pass for every
+    # cache miss. GeoColor frames are transient viewport images, so prioritize
+    # first-frame latency; Cloudflare and the on-device cache amortize the
+    # modestly larger fast-encoded payload for subsequent viewers.
+    image.save(encoded, format="PNG", compress_level=1)
     return encoded.getvalue()
 
 

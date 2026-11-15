@@ -311,13 +311,15 @@ export function BufferedAtmosphericLayer(props: Props) {
     if (transitionMode === 'cut') {
       // A cached file is not necessarily attached to MapLibre yet. Keep the
       // current source fully visible while the inactive source mounts, then
-      // swap after later render commits and a short local decode window. This
-      // is deliberately not a fade: the outgoing frame remains fully visible.
+      // swap only after later render commits and a decode window. This is
+      // deliberately not a fade: the outgoing frame remains fully visible.
+      // Android needs more than a single render beat for high-density GeoColor
+      // rasters; changing opacity earlier causes a black or flashing frame.
       let secondFrame: number | null = null;
       let decodeTimer: ReturnType<typeof setTimeout> | null = null;
       const firstFrameHandle = requestAnimationFrame(() => {
         secondFrame = requestAnimationFrame(() => {
-          decodeTimer = setTimeout(completeCut, 120);
+          decodeTimer = setTimeout(completeCut, Math.max(180, Math.min(360, blendMs)));
         });
       });
 
@@ -403,14 +405,17 @@ export function BufferedAtmosphericLayer(props: Props) {
         if (!slot) return null;
         return (
           <MapLibreGL.ImageSource
-            id={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
-            key={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
+            // Keep the two native sources mounted for the lifetime of the
+            // layer. Recreating them per frame makes Android hitch between
+            // otherwise already-buffered GeoColor images.
+            id={`${id}-slot-${slotIndex}-source`}
+            key={`${id}-slot-${slotIndex}-source`}
             url={slot.localUri}
             coordinates={slot.coordinates}
           >
             <MapLibreGL.Animated.RasterLayer
-              id={`${id}-slot-${slotIndex}-layer-${slot.requestId}`}
-              sourceID={`${id}-slot-${slotIndex}-source-${slot.requestId}`}
+              id={`${id}-slot-${slotIndex}-layer`}
+              sourceID={`${id}-slot-${slotIndex}-source`}
               style={{
                 rasterOpacity: slotOpacityRefs.current[slotIndex],
                 rasterFadeDuration: 0,

@@ -1,13 +1,20 @@
 # OMNIwx Current Status
 
-Last verified: November 13, 2026 (Arizona time)
+Release artifact verified: November 14, 2026 (Arizona time).
+Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
 sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release line: `1.1.270` / Android version code `10288`.
+- Current internal-testing candidate: `1.1.271` / Android version code `10289`.
+- The November 14 production AAB build succeeded. Embedded native metadata and
+  Expo config agree on the version and production API target. TypeScript and lint
+  passed; bundle signature verification passed and matches the configured upload
+  keystore. Play upload and physical-device acceptance are pending.
+- Artifact evidence, signing caveat, and tester steps are recorded in
+  [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
   until it is uploaded, installed from Play, and accepted on physical devices.
 - Maps and GeoColor remain the highest-risk user-facing area. Validate blank
@@ -46,8 +53,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 1. Complete Maps/GeoColor device acceptance with evidence from a Play-installed
    build before expanding imagery scope or marketing the feature.
-2. Create GCP billing alerts and assign recipients before raising Cloud Run
-   capacity or enabling shared-source caching.
+2. Existing GCP budget alerts were shown in the user's November 14 screenshot.
+   Confirm recipients and delivery before raising Cloud Run capacity or enabling
+   shared-source caching; alerts must not be treated as a hard spending cap.
 3. Re-enable any radar writer only through a one-publisher packed pilot with a
    measured aggregate operations and runtime budget.
 4. Complete security, provider-use, account ownership, and entitlement gates

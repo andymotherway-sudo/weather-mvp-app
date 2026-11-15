@@ -18,6 +18,16 @@ The October 9 build failed in Java's selector socket setup before app compilatio
 
 After a successful bundle build, verify the actual AAB's embedded `base/assets/app.config`, native version metadata, and upload signing certificate against the previous release. Record the artifact timestamp/hash. An older AAB at the expected filename does not prove the current build succeeded.
 
+Freeze application/native source files while a release build is running. Capture
+the build process exit status and final log; a resident Gradle daemon alone is not
+evidence that a build is active or stalled. Do not routinely use `--rerun-tasks`
+or clean all native outputs: both discard incremental work. The bundle script
+rejects an unchanged artifact timestamp, but timestamp checks do not replace
+embedded-version, environment, and signing verification. If an identical build is
+up to date, verify the existing artifact explicitly rather than starting repeated
+full rebuilds. Release evidence/docs can be finalized after verification without
+rebuilding an unchanged app.
+
 Radar checks must report frame ages, product coverage, and delivery mode alongside pass/fail. The existing six-hour Level III beta tolerance is not a real-time service target. Packed cutover checks must assert `worker-r2-pack` and fetch real tiles. Confirm the state of every publisher independently; a historical paused-state note is not operational evidence.
 
 ## Environment Roles

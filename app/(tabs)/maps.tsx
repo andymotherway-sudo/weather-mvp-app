@@ -473,7 +473,6 @@ const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
-const EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE = 'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png';
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -4442,7 +4441,6 @@ export default function MapsScreen() {
             buildAnimationUrl('geocolor', frame, width, height),
             ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'truecolor' }),
           ],
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4456,7 +4454,6 @@ export default function MapsScreen() {
             buildAnimationUrl('goes-east-ir', frame, width, height),
             ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'ir' }),
           ],
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4470,7 +4467,6 @@ export default function MapsScreen() {
             buildAnimationUrl('goes-west-wv', frame, width, height),
             ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-west' }),
           ],
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4484,7 +4480,6 @@ export default function MapsScreen() {
             buildAnimationUrl('goes-east-wv', frame, width, height),
             ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-east' }),
           ],
-          basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4498,8 +4493,7 @@ export default function MapsScreen() {
           buildAnimationUrl('goes-west-visible', frame, width, height),
           ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'clouds' }),
         ],
-        basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_SATELLITE,
-        region: animationExportRegion,
+          region: animationExportRegion,
         zoom: mapZoom,
         windSegments,
         windOpacity: windParticlesOpacity,
@@ -4560,8 +4554,7 @@ export default function MapsScreen() {
         fps: 30,
         secondsPerSourceFrame:
           !activeAnimationKind ? 0.12 : activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
-        transitionSeconds:
-          !activeAnimationKind ? 0.04 : activeAnimationKind === 'truecolor' ? 0.44 : 0.24,
+          transitionSeconds: 0,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
