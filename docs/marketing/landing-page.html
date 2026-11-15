@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="OMNIwx pairs quick everyday forecasts with deeper radar, astronomy, marine and climate tools for Android.">
+  <title>OMNIwx | Everyday weather, deeper insight</title>
+  <style>
+    :root { --ink:#04111f; --panel:#0b2237; --line:#27465e; --sky:#62d6ff; --mint:#69efb4; --sun:#ffc968; --text:#f5fbff; --muted:#b8c9d7; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; background:var(--ink); }
+    body { margin:0; color:var(--text); background:radial-gradient(circle at 85% 5%,#164563 0,transparent 32rem),radial-gradient(circle at 5% 55%,#123a32 0,transparent 28rem),var(--ink); font-family:"Avenir Next","Trebuchet MS",sans-serif; line-height:1.55; }
+    a { color:inherit; }
+    .wrap { width:min(1160px,calc(100% - 36px)); margin:auto; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:24px 0; }
+    .brand { display:flex; align-items:center; gap:11px; font-weight:900; letter-spacing:.08em; }
+    .orbit { width:38px; height:38px; border:2px solid var(--sky); border-radius:50%; position:relative; transform:rotate(-20deg); box-shadow:0 0 30px #62d6ff55; }
+    .orbit:after { content:""; position:absolute; width:9px; height:9px; border-radius:50%; background:var(--mint); top:-3px; right:4px; }
+    nav a { text-decoration:none; color:var(--muted); margin-left:22px; font-weight:700; }
+    .hero { min-height:72vh; display:grid; grid-template-columns:1.2fr .8fr; align-items:center; gap:54px; padding:62px 0 90px; }
+    .eyebrow { color:var(--mint); text-transform:uppercase; letter-spacing:.18em; font-size:.78rem; font-weight:900; }
+    h1 { font-size:clamp(3.1rem,7vw,6.6rem); line-height:.93; letter-spacing:-.06em; margin:16px 0 25px; max-width:12ch; }
+    .lead { color:var(--muted); font-size:clamp(1.05rem,2vw,1.35rem); max-width:650px; }
+    .actions { display:flex; flex-wrap:wrap; gap:13px; margin-top:32px; }
+    .button { display:inline-block; padding:14px 19px; border-radius:14px; text-decoration:none; font-weight:900; border:1px solid var(--line); }
+    .primary { background:linear-gradient(110deg,var(--sky),var(--mint)); color:#00131e; border:0; }
+    .device { border:1px solid #45647a; border-radius:34px; padding:18px; background:#06131fcc; box-shadow:0 36px 90px #0008; transform:rotate(2deg); }
+    .screen { min-height:500px; border-radius:22px; padding:24px; background:linear-gradient(#0c263ddd,#0b1c2ee8),radial-gradient(circle at 50% 20%,#2a6a88,transparent 50%); display:flex; flex-direction:column; justify-content:space-between; }
+    .weather-number { font-size:5rem; line-height:1; font-weight:900; }
+    .mini-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+    .mini { padding:13px; background:#ffffff0d; border:1px solid #ffffff18; border-radius:14px; }
+    section { padding:88px 0; }
+    h2 { font-size:clamp(2rem,4vw,3.5rem); line-height:1.05; letter-spacing:-.04em; max-width:16ch; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:34px; }
+    .card { background:#0b2237b8; border:1px solid var(--line); border-radius:20px; padding:24px; }
+    .card strong { color:var(--sky); }
+    .card p,.muted { color:var(--muted); }
+    .beta { display:grid; grid-template-columns:1fr auto; gap:30px; align-items:center; padding:36px; border-radius:25px; background:linear-gradient(120deg,#17384f,#0d342d); border:1px solid #4b7a78; }
+    footer { padding:40px 0 55px; color:var(--muted); font-size:.9rem; }
+    @media (max-width:800px) { nav { display:none; } .hero { grid-template-columns:1fr; padding-top:40px; } .device { max-width:430px; margin:auto; transform:none; } .grid { grid-template-columns:1fr; } .beta { grid-template-columns:1fr; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header><div class="brand"><span class="orbit" aria-hidden="true"></span>OMNIwx</div><nav><a href="#features">Explore</a><a href="#beta">Beta</a></nav></header>
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Android weather, built to go deeper</div>
+          <h1>The quick answer. The weather behind it.</h1>
+          <p class="lead">OMNIwx brings everyday forecasts together with radar, astronomy, marine conditions, climate context and wxLearn. Start simple. Open the deeper tools when they matter.</p>
+          <div class="actions"><a class="button primary" href="mailto:admin@omni-wx.com?subject=OMNIwx%20Android%20beta">Ask to join the Android beta</a><a class="button" href="#features">See what it covers</a></div>
+        </div>
+        <div class="device" aria-label="Stylized OMNIwx app preview">
+          <div class="screen"><div><div class="eyebrow">Mesa, AZ | current conditions</div><div class="weather-number">72 F</div><p>Clear | Updated moments ago</p></div><div class="mini-grid"><div class="mini"><strong>Hourly</strong><br>Timing at a glance</div><div class="mini"><strong>Maps</strong><br>Source-aware layers</div><div class="mini"><strong>Space</strong><br>Night-sky context</div><div class="mini"><strong>wxLab</strong><br>Technical detail</div></div></div>
+        </div>
+      </section>
+      <section id="features">
+        <div class="eyebrow">One app, two depths</div><h2>Useful every day. Rewarding when you explore.</h2>
+        <div class="grid"><article class="card"><strong>Everyday weather</strong><p>Current, hourly and daily conditions with official alerts and a fast Simple view.</p></article><article class="card"><strong>Maps and radar</strong><p>Explore weather layers with visible source, timing and fallback context.</p></article><article class="card"><strong>Specialist lenses</strong><p>Astronomy, marine, climatology, aviation context, space weather and wxLearn.</p></article></div>
+      </section>
+      <section id="beta"><div class="beta"><div><div class="eyebrow">Private beta</div><h2>Help shape a weather app with real depth.</h2><p class="muted">Testing is free. OMNIwx Plus is proposed at $5.99/month or $49.99/year, but purchases are not active. We want honest feedback about what is useful, confusing, slow or unreliable.</p></div><a class="button primary" href="mailto:admin@omni-wx.com?subject=OMNIwx%20Android%20beta&body=Android%20model%3A%0AWeather%20interests%3A">Request beta access</a></div></section>
+    </main>
+    <footer>OMNIwx is not a substitute for official life-safety, marine or aviation decision systems. Data availability varies by source and location. (c) OMNIwx.</footer>
+  </div>
+</body>
+</html>

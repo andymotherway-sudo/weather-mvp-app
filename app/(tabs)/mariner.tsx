@@ -1,13 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { Redirect } from 'expo-router';
 
 export default function MarinerLink() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Replace so the "link page" doesn't stay in history
-    router.replace({ pathname: '/maps', params: { view: 'mariner' } });
-  }, [router]);
-
-  return null;
+  return <Redirect href={{ pathname: '/maps', params: { view: 'mariner' } }} />;
 }

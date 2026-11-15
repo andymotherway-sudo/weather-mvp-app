@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 
 import { Card } from '../../components/layout/Card';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
 import { useSettings } from '../context/SettingsContext';
@@ -943,17 +944,21 @@ export default function ExtremesScreen() {
 
       {/* Loading / Error for marine */}
       {mode === 'marine' && loading && !data ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={typography.small}>Scanning global buoys…</Text>
-        </View>
+        <OmniStatusCard
+          tone="loading"
+          title="Scanning global buoys"
+          message="Comparing the latest available wave, wind, and water-temperature reports."
+        />
       ) : null}
 
       {mode === 'marine' && error ? (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Error</Text>
-          <Text style={styles.errorText}>{error}</Text>
-        </Card>
+        <OmniStatusCard
+          tone="error"
+          title="Marine extremes unavailable"
+          message={error}
+          actionLabel="Try again"
+          onAction={onRefresh}
+        />
       ) : null}
 
       {/* MARINE */}
@@ -987,9 +992,13 @@ export default function ExtremesScreen() {
           <MarineSection title="Coldest Water" subtitle="Sea surface temperature" items={withColdWater} renderValue={(b) => formatTemp(b.waterTempC, tempUnit)} />
 
           {!buoys.length ? (
-            <View style={styles.center}>
-              <Text style={typography.small}>No buoy data available right now.</Text>
-            </View>
+            <OmniStatusCard
+              tone="empty"
+              title="No current buoy reports"
+              message="No usable global buoy observations were returned for this update."
+              actionLabel="Try again"
+              onAction={onRefresh}
+            />
           ) : null}
         </>
       ) : null}
@@ -998,17 +1007,21 @@ export default function ExtremesScreen() {
       {mode === 'land' ? (
         <>
           {land.error ? (
-            <Card style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Error</Text>
-              <Text style={styles.errorText}>{land.error}</Text>
-            </Card>
+            <OmniStatusCard
+              tone="error"
+              title="Land extremes unavailable"
+              message={land.error}
+              actionLabel="Try again"
+              onAction={onRefresh}
+            />
           ) : null}
 
           {land.loading ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={typography.small}>Scanning land extremes...</Text>
-            </View>
+            <OmniStatusCard
+              tone="loading"
+              title="Scanning land extremes"
+              message="Comparing current reports across the available station set."
+            />
           ) : null}
 
           {!land.loading && !land.error ? (
@@ -1023,12 +1036,13 @@ export default function ExtremesScreen() {
                       <LandSection key={`land-${g.title}`} title={g.title} subtitle={g.subtitle} items={g.items} />
                     ))
                   ) : (
-                    <Card style={styles.sectionCard}>
-                      <View style={styles.emptyBox}>
-                        <Text style={styles.emptyTitle}>No land extremes yet</Text>
-                        <Text style={styles.emptyText}>Pull to refresh. The Worker may still be warming up.</Text>
-                      </View>
-                    </Card>
+                    <OmniStatusCard
+                      tone="empty"
+                      title="No land extremes yet"
+                      message="The comparison service may still be warming up."
+                      actionLabel="Try again"
+                      onAction={onRefresh}
+                    />
                   )}
 
                   <SavedPlacesExtremeSection
@@ -1048,17 +1062,21 @@ export default function ExtremesScreen() {
       {mode === 'space' ? (
         <>
           {mars.error ? (
-            <Card style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Error</Text>
-              <Text style={styles.errorText}>{mars.error}</Text>
-            </Card>
+            <OmniStatusCard
+              tone="error"
+              title="Mars archive unavailable"
+              message={mars.error}
+              actionLabel="Try again"
+              onAction={onRefresh}
+            />
           ) : null}
 
           {mars.loading && !mars.data ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" />
-              <Text style={typography.small}>Checking Mars conditions…</Text>
-            </View>
+            <OmniStatusCard
+              tone="loading"
+              title="Checking the Mars archive"
+              message="Loading the latest available archived InSight weather report."
+            />
           ) : null}
 
           {!mars.loading && mars.data ? (

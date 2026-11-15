@@ -3790,17 +3790,30 @@ export default function MapsScreen() {
       const latitudeDelta =
         region?.latitudeDelta && Number.isFinite(region.latitudeDelta) ? region.latitudeDelta : stableInitialRegion.latitudeDelta;
 
-      locateSeedRegionRef.current = {
+      const nextRegion = {
         latitude: cachedCoords.lat,
         longitude: cachedCoords.lon,
         latitudeDelta,
         longitudeDelta,
       };
       setCameraDebugLabel(`locate-reset:${cachedCoords.lat.toFixed(2)},${cachedCoords.lon.toFixed(2)}`);
-      setMapResetKey((value) => value + 1);
-      requestAnimationFrame(() => {
-        locateSeedRegionRef.current = null;
-      });
+      setRegion(nextRegion);
+      const currentZoom = Number.isFinite(mapZoom)
+        ? mapZoom
+        : approxZoomFromLongitudeDelta(longitudeDelta);
+      if (mapCameraRef.current?.setCamera) {
+        mapCameraRef.current.setCamera({
+          centerCoordinate: [cachedCoords.lon, cachedCoords.lat],
+          zoomLevel: currentZoom,
+          animationDuration: 260,
+        });
+      } else {
+        locateSeedRegionRef.current = nextRegion;
+        setMapResetKey((value) => value + 1);
+        requestAnimationFrame(() => {
+          locateSeedRegionRef.current = null;
+        });
+      }
       return;
     }
     setCameraDebugLabel('locate-unavailable');
@@ -3821,14 +3834,22 @@ export default function MapsScreen() {
       zoom: nextZoom,
     };
 
-    zoomButtonSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     setMapZoom(nextZoom);
-    setCameraDebugLabel(`zoom-reset:${nextZoom.toFixed(2)}`);
-    setMapResetKey((value) => value + 1);
-    requestAnimationFrame(() => {
-      zoomButtonSeedRegionRef.current = null;
-    });
+    setCameraDebugLabel(`zoom-camera:${nextZoom.toFixed(2)}`);
+    if (mapCameraRef.current?.setCamera) {
+      mapCameraRef.current.setCamera({
+        centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
+        zoomLevel: nextZoom,
+        animationDuration: 180,
+      });
+    } else {
+      zoomButtonSeedRegionRef.current = nextRegion;
+      setMapResetKey((value) => value + 1);
+      requestAnimationFrame(() => {
+        zoomButtonSeedRegionRef.current = null;
+      });
+    }
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
@@ -7069,7 +7090,14 @@ export default function MapsScreen() {
 
 function LayersButton(props: { count: number; active?: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={props.onPress} style={[styles.layerButton, props.active ? styles.layerButtonActive : null]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open map layers${props.count ? `, ${props.count} active` : ''}`}
+      accessibilityState={{ expanded: props.active }}
+      hitSlop={4}
+      onPress={props.onPress}
+      style={[styles.layerButton, props.active ? styles.layerButtonActive : null]}
+    >
       <View style={styles.layerGlyph}>
         <View style={[styles.layerGlyphLine, styles.layerGlyphLineTop]} />
         <View style={styles.layerGlyphLine} />
@@ -7087,7 +7115,13 @@ function LayersButton(props: { count: number; active?: boolean; onPress: () => v
 
 function LocationButton(props: { onPress: () => void }) {
   return (
-    <Pressable onPress={props.onPress} style={styles.locationButton}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Center map on current location"
+      hitSlop={4}
+      onPress={props.onPress}
+      style={styles.locationButton}
+    >
       <View style={styles.locationRing}>
         <View style={styles.locationDot} />
       </View>
@@ -7098,10 +7132,10 @@ function LocationButton(props: { onPress: () => void }) {
 function ZoomButtons(props: { onZoomIn: () => void; onZoomOut: () => void }) {
   return (
     <View style={styles.zoomButtonStack}>
-      <Pressable onPress={props.onZoomIn} style={styles.zoomButton} accessibilityLabel="Zoom map in">
+      <Pressable accessibilityRole="button" hitSlop={4} onPress={props.onZoomIn} style={styles.zoomButton} accessibilityLabel="Zoom map in">
         <Text style={styles.zoomButtonText}>+</Text>
       </Pressable>
-      <Pressable onPress={props.onZoomOut} style={styles.zoomButton} accessibilityLabel="Zoom map out">
+      <Pressable accessibilityRole="button" hitSlop={4} onPress={props.onZoomOut} style={styles.zoomButton} accessibilityLabel="Zoom map out">
         <Text style={styles.zoomButtonText}>-</Text>
       </Pressable>
     </View>

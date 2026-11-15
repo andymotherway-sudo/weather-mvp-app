@@ -592,6 +592,8 @@ function TimelineSlider(props: { value: number; onChange: (v: number) => void })
 
       <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Previous forecast hour"
           onPress={() => set(v - 1)}
           style={{
             paddingVertical: 6,
@@ -606,6 +608,15 @@ function TimelineSlider(props: { value: number; onChange: (v: number) => void })
         </Pressable>
 
         <View
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel="Forecast hour"
+          accessibilityValue={{ min: 0, max: 24, now: v, text: formatHourLabel(v) }}
+          accessibilityActions={[{ name: 'decrement' }, { name: 'increment' }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'decrement') set(v - 1);
+            if (event.nativeEvent.actionName === 'increment') set(v + 1);
+          }}
           style={{ flex: 1, height: 26, justifyContent: 'center' }}
           onLayout={(e) => {
             trackWRef.current = e.nativeEvent.layout.width || 1;
@@ -638,6 +649,8 @@ function TimelineSlider(props: { value: number; onChange: (v: number) => void })
         </View>
 
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Next forecast hour"
           onPress={() => set(v + 1)}
           style={{
             paddingVertical: 6,
@@ -765,6 +778,9 @@ function BottomSheet(props: {
           <View style={{ alignItems: 'center', paddingBottom: 8 }}>
             <View {...(pan ? pan.panHandlers : {})}>
               <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={snap === 'collapsed' ? 'Expand sky details' : 'Collapse sky details'}
+                accessibilityState={{ expanded: snap !== 'collapsed' }}
                 onPress={toggleSnap}
                 style={{ paddingVertical: 6, paddingHorizontal: 20, alignItems: 'center' }}
                 hitSlop={12}
@@ -865,6 +881,9 @@ function ToggleChip(props: { label: string; active?: boolean; onPress: () => voi
   const active = !!props.active;
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      accessibilityState={{ selected: active }}
       onPress={props.onPress}
       style={{
         paddingVertical: 6,
@@ -942,6 +961,8 @@ type SkyGridPoint = {
   weather01: number;
   darkness01: number;
   transparency01?: number;
+  surfaceStability01?: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01?: number;
   moon01?: number;
   aerosols01?: number;
@@ -991,6 +1012,8 @@ type AstroInspectPayload = {
   weather01: number;
   darkness01: number;
   transparency01: number;
+  surfaceStability01: number;
+  /** @deprecated Compatibility alias for surfaceStability01. */
   seeing01: number;
   moon01: number;
   aerosols01: number;
@@ -2498,6 +2521,8 @@ useEffect(() => {
               </View>
 
               <Text
+                accessibilityLiveRegion={errorLine ? 'assertive' : 'polite'}
+                accessibilityRole={errorLine ? 'alert' : 'summary'}
                 style={{
                   marginTop: 5,
                   color: errorLine ? 'rgba(255,140,140,0.95)' : 'rgba(170,255,210,0.85)',
@@ -2552,6 +2577,8 @@ useEffect(() => {
                 </View>
 
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Return to the previous screen"
                   onPress={() => router.back()}
                   style={{
                     paddingVertical: 8,

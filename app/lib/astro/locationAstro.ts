@@ -806,12 +806,13 @@ async function fetchLocationAstroForecast(args: {
 
     const moonIsUp = moonIsUpAt(time, moonrise, moonset);
 
-    const finalScore = computeSkyScorePoint({
+    const scoreResult = computeSkyScorePoint({
       input,
       darknessScore,
-      moonIsUp,
+      moonIsUp: moonrise || moonset ? moonIsUp : undefined,
       moonIlluminationPct,
-    }).score;
+    });
+    const finalScore = scoreResult.score;
 
     const label = skyScoreLabel(finalScore);
     const summary = skyScoreSummary({
@@ -826,6 +827,7 @@ async function fetchLocationAstroForecast(args: {
       moonIlluminationPct,
       aerosolIndex: input.aerosolIndex,
       bortleClass: input.bortleClass,
+      dataQuality: scoreResult.quality,
     });
 
     return {

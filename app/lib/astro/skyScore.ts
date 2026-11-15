@@ -11,13 +11,22 @@ function pct01(p: number | null | undefined) {
 
 export type SkyScoreParts = {
   transparency: number;
+  /** @deprecated Compatibility alias. This is a surface-stability proxy, not astronomical seeing. */
   seeing: number;
+  surfaceStability: number;
   darkness: number;
   moon: number;
   aerosols: number;
   site: number;
   weather: number;
   observer: number;
+};
+
+export type SkyScoreDataQuality = {
+  status: 'complete' | 'partial' | 'insufficient';
+  coverage: number;
+  missing: string[];
+  seeingBasis: 'surface-stability-proxy';
 };
 
 export type SkyScorePoint = {
@@ -30,9 +39,41 @@ export type SkyScorePoint = {
 export type SkyScoreSingleResult = {
   score: number;
   parts: SkyScoreParts;
+  quality: SkyScoreDataQuality;
 };
 
+export function assessSkyScoreDataQuality(input: AstroInputs): SkyScoreDataQuality {
+  const hasCloud =
+    input.cloudTotal != null ||
+    input.cloudLow != null ||
+    input.cloudMid != null ||
+    input.cloudHigh != null;
+  const checks = [
+    { label: 'cloud forecast', available: hasCloud },
+    { label: 'visibility', available: input.visibilityM != null },
+    { label: 'humidity', available: input.humidityPct != null },
+    { label: 'surface wind', available: input.windMps != null || input.gustMps != null },
+  ];
+  const availableCount = checks.filter((check) => check.available).length;
+  const missing = checks.filter((check) => !check.available).map((check) => check.label);
+  const coverage = availableCount / checks.length;
+
+  return {
+    status: !hasCloud ? 'insufficient' : availableCount === checks.length ? 'complete' : 'partial',
+    coverage,
+    missing,
+    seeingBasis: 'surface-stability-proxy',
+  };
+}
+
 function computeCloudPenalty(input: AstroInputs) {
+  const hasCloudInput =
+    input.cloudTotal != null ||
+    input.cloudLow != null ||
+    input.cloudMid != null ||
+    input.cloudHigh != null;
+  if (!hasCloudInput) return { cloudPenalty: 0.5 };
+
   const low = pct01(input.cloudLow) ?? 0;
   const mid = pct01(input.cloudMid) ?? 0;
   const high = pct01(input.cloudHigh) ?? 0;
@@ -89,16 +130,23 @@ function computeTransparency01(input: AstroInputs) {
   return transparency01;
 }
 
-function computeSeeing01(input: AstroInputs) {
-  const wind = input.windMps ?? 0;
-  const gust = input.gustMps ?? wind;
+function computeSurfaceStability01(input: AstroInputs) {
+  const penalties: number[] = [];
 
-  const sustainedPenalty = clamp((wind - 4) / 10, 0, 1) * 0.42;
-  const gustPenalty = clamp((gust - 6) / 14, 0, 1) * 0.5;
-  const humidityPenalty =
-    input.humidityPct == null ? 0 : clamp((input.humidityPct - 85) / 15, 0, 1) * 0.08;
+  if (input.windMps != null) {
+    penalties.push(clamp((input.windMps - 4) / 10, 0, 1) * 0.42);
+  }
+  if (input.gustMps != null) {
+    penalties.push(clamp((input.gustMps - 6) / 14, 0, 1) * 0.5);
+  }
+  if (input.humidityPct != null) {
+    penalties.push(clamp((input.humidityPct - 85) / 15, 0, 1) * 0.08);
+  }
 
-  return clamp(1 - (sustainedPenalty + gustPenalty + humidityPenalty), 0, 1);
+  if (!penalties.length) return 0.5;
+  const observedScore = clamp(1 - penalties.reduce((sum, value) => sum + value, 0), 0, 1);
+  const coverage = penalties.length / 3;
+  return clamp(0.5 + (observedScore - 0.5) * coverage, 0, 1);
 }
 
 function computeMoonScore01(args: {
@@ -107,6 +155,7 @@ function computeMoonScore01(args: {
   darknessScore?: number;
 }) {
   const { moonIsUp, moonIlluminationPct, darknessScore } = args;
+  if (moonIsUp == null) return 0.5;
   if (!moonIsUp) return 1;
 
   const illum01 = clamp((moonIlluminationPct ?? 0) / 100, 0, 1);
@@ -119,7 +168,7 @@ function computeMoonScore01(args: {
 
 function computeAerosolScore01(input: AstroInputs) {
   const aerosolIndex = input.aerosolIndex ?? null;
-  if (aerosolIndex == null) return 0.75;
+  if (aerosolIndex == null) return 0.5;
 
   // Expect 0..1, where higher = dirtier sky.
   return clamp(1 - clamp(aerosolIndex, 0, 1), 0, 1);
@@ -167,7 +216,8 @@ export function computeSkyScorePoint(args: {
   const darkness01 = clamp(args.darknessScore ?? 1, 0, 1);
 
   const transparency01 = computeTransparency01(input);
-  const seeing01 = computeSeeing01(input);
+  const surfaceStability01 = computeSurfaceStability01(input);
+  const quality = assessSkyScoreDataQuality(input);
   const moon01 = computeMoonScore01({
     moonIsUp: args.moonIsUp,
     moonIlluminationPct: args.moonIlluminationPct,
@@ -178,7 +228,7 @@ export function computeSkyScorePoint(args: {
 
   const weather01 = clamp(
     transparency01 * 0.4 +
-      seeing01 * 0.16 +
+      surfaceStability01 * 0.16 +
       darkness01 * 0.20 +
       moon01 * 0.12 +
       aerosols01 * 0.12,
@@ -193,7 +243,8 @@ export function computeSkyScorePoint(args: {
     score,
     parts: {
       transparency: transparency01,
-      seeing: seeing01,
+      seeing: surfaceStability01,
+      surfaceStability: surfaceStability01,
       darkness: darkness01,
       moon: moon01,
       aerosols: aerosols01,
@@ -201,6 +252,7 @@ export function computeSkyScorePoint(args: {
       weather: weather01,
       observer: observer01,
     },
+    quality,
   };
 }
 
@@ -214,8 +266,8 @@ export function computeSkyScoreGrid(args: {
     const result = computeSkyScorePoint({
       input: p,
       darknessScore: darknessScoreAt(p.lat, p.lon),
-      moonIsUp: false,
-      moonIlluminationPct: 0,
+      moonIsUp: undefined,
+      moonIlluminationPct: null,
     });
 
     return {
@@ -255,6 +307,7 @@ export function skyScoreSummary(args: {
   moonIlluminationPct?: number | null;
   bortleClass?: number | null;
   aerosolIndex?: number | null;
+  dataQuality?: SkyScoreDataQuality;
 }) {
   const {
     score,
@@ -268,7 +321,12 @@ export function skyScoreSummary(args: {
     moonIlluminationPct,
     bortleClass,
     aerosolIndex,
+    dataQuality,
   } = args;
+
+  if (dataQuality?.status === 'insufficient') {
+    return 'Cloud forecast unavailable; SkyScore confidence is limited';
+  }
 
   if ((cloudTotal ?? 0) >= 95) return 'Overcast skies block observing';
   if ((cloudTotal ?? 0) >= 85) return 'Mostly cloudy skies limit observing';

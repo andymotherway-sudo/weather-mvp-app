@@ -15,6 +15,11 @@ here instead of treating every planning document as current.
 | How radar changes are delivered | [radar-implementation-plan.md](radar-implementation-plan.md) | Bounded engineering phases and migration work. |
 | How to stop or safely restart radar writes | [radar-cost-safety-runbook.md](radar-cost-safety-runbook.md) | Incident containment and re-enablement evidence. |
 | How growth is controlled | [scaling-and-cost-controls.md](scaling-and-cost-controls.md) | Request serving, GeoColor, Cloud Run, R2, alerts, and capacity changes. |
+| How accounts and paid access will work | [paid-user-architecture.md](paid-user-architecture.md) | Proposed freemium catalog, profiles, provider responsibilities, billing lifecycle, and launch gates. |
+| Whether the product can launch commercially | [commercial-readiness.md](commercial-readiness.md) | Evidence-based commercial, provider, cost, reliability, identity, and billing audit. |
+| Which features belong in Free or Plus | [freemium-feature-matrix.md](freemium-feature-matrix.md) | Provisional feature, provider, cost, rights, and release-gate matrix. |
+| Where OMNIwx can differentiate | [competitive-differentiation-audit.md](competitive-differentiation-audit.md) | Screen-level implementation audit, competitor boundaries, five decision-product opportunities, acceptance criteria, shared foundations, and 90-day roadmap. |
+| How commercial work is sequenced | [launch-roadmap.md](launch-roadmap.md) | Safe phases from the free beta through a bounded paid beta. |
 | How the app is built | [app-architecture.md](app-architecture.md) | Feature ownership, data flow, and runtime boundaries. |
 | How the files relate | [file-relationship-architecture.md](file-relationship-architecture.md) | Onboarding and dependency navigation. |
 
@@ -29,6 +34,11 @@ here instead of treating every planning document as current.
 - [how-omniwx-works.md](how-omniwx-works.md) and [omniwx-training-guide.md](omniwx-training-guide.md): Builder/onboarding guides.
 - [brand-style-guide.md](brand-style-guide.md): Brand and UI-system direction.
 - [paid-user-architecture.md](paid-user-architecture.md) and [privacy-policy.md](privacy-policy.md): Commercial and policy foundations.
+- [freemium-architecture.md](freemium-architecture.md): Centralized client and server entitlement design.
+- [analytics-event-catalog.md](analytics-event-catalog.md): Privacy-safe event naming and allowed properties.
+- [launch-blockers.md](launch-blockers.md): Evidence still required before public, account, and paid launches.
+- [subscription-support-runbook.md](subscription-support-runbook.md): Customer-support preparation for future purchases and account deletion.
+- [marketing/](marketing/): Unpublished strategy, first-tester plan, content calendar, and landing-page source.
 
 ## Document Rules
 

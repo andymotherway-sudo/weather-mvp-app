@@ -30,6 +30,7 @@
 		"level3:publish-proof": "node ./scripts/publish-nexrad-level3-proof.mjs",
 		"level3:cycle": "node ./scripts/run-nexrad-level3-cycle.mjs",
 		"test": "vitest",
+		"test:unit": "vitest --config vitest.unit.config.mts --run",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {

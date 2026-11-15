@@ -1140,7 +1140,7 @@ export const LEARN_TOPICS: LearnTopic[] = [
       'The darkest window is the part of the night when moonlight and solar twilight combine to produce the lowest sky brightness.',
     bullets: [
       'Darkest does not always mean best if clouds or haze are worse then.',
-      'This can differ from the best observing window when transparency, cloud cover, or seeing shift.',
+      'This can differ from the best observing window when transparency, cloud cover, or the surface-stability proxy shifts.',
       'It is especially useful for faint-object observers who care about the absolute darkest sky.',
     ],
     body:

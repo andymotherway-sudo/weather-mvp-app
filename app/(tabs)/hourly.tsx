@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Image,
   Pressable,
@@ -24,9 +23,10 @@ import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
 import WeatherVideoBackground from '../../components/background/WeatherVideoBackground';
 import { LearnMoreModal } from '../../components/common/LearnMoreModal';
+import { ModeToggle } from '../../components/common/ModeToggle';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { HourlyCharts72h } from '../../components/land/HourlyCharts72h';
 import { NerdyHourlyTimeline } from '../../components/land/NerdyHourlyTimeline';
-import { Card } from '../../components/layout/Card';
 import { PremiumWeatherIcon } from '../../components/weather/PremiumWeatherIcon';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -812,23 +812,37 @@ function HourlyWithCoords({
 
   if (loading && !data) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.small}>Loading hourly forecast...</Text>
-      </View>
+      <OmniStatusCard
+        tone="loading"
+        title="Loading hourly forecast"
+        message="Preparing the next 72 hours for this location."
+      />
     );
   }
 
   if (error) {
     return (
-      <Card style={styles.errorCard}>
-        <Text style={styles.errorTitle}>Error</Text>
-        <Text style={styles.errorText}>{String(error)}</Text>
-      </Card>
+      <OmniStatusCard
+        tone="error"
+        title="Hourly forecast unavailable"
+        message={String(error)}
+        actionLabel="Try again"
+        onAction={() => refresh()}
+      />
     );
   }
 
-  if (!visibleHourly.length || !leadHour) return null;
+  if (!visibleHourly.length || !leadHour) {
+    return (
+      <OmniStatusCard
+        tone="empty"
+        title="No hourly forecast returned"
+        message="The provider returned no usable forecast hours for this location."
+        actionLabel="Try again"
+        onAction={() => refresh()}
+      />
+    );
+  }
 
   const tzLabel = formatTzLabel(forecastTimeZone);
   const heroTemp = safeNum(leadHour.temperatureF);
@@ -1059,38 +1073,28 @@ export default function HourlyTab() {
                 </View>
 
                 <View style={styles.hourlyHeaderActions}>
-                  <View style={styles.headerModeWrap}>
-                  <Pressable
-                    onPress={() => setWxLab?.(false)}
-                    style={[styles.headerModeBtn, !wxLab ? styles.headerModeBtnActive : null]}
-                  >
-                    <Text style={[styles.headerModeText, !wxLab ? styles.headerModeTextActive : null]}>Simple</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
+                  <ModeToggle
+                    compact
+                    mode={wxLab ? 'nerdy' : 'simple'}
+                    onChange={(mode) => {
+                      if (mode === 'simple') return setWxLab?.(false);
                       if (toggleWxLab && !wxLab) return toggleWxLab();
                       return setWxLab?.(true);
                     }}
-                    style={[styles.headerModeBtn, wxLab ? styles.headerModeBtnActive : null]}
-                  >
-                    <Text style={[styles.headerModeText, wxLab ? styles.headerModeTextActive : null]}>wxLab</Text>
-                  </Pressable>
-                </View>
+                  />
                 </View>
               </View>
             </View>
           </View>
 
           {!coords ? (
-            <Card style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Getting your location...</Text>
-              <Text style={styles.errorText}>Enable GPS or pick a place in Land Wx.</Text>
-              <View style={{ marginTop: 12 }}>
-                <Pressable onPress={refreshCurrentLocation} style={styles.retryBtn}>
-                  <Text style={styles.retryText}>Try again</Text>
-                </Pressable>
-              </View>
-            </Card>
+            <OmniStatusCard
+              tone="unavailable"
+              title="Location needed"
+              message="Enable location access or choose a place in Land to load the hourly forecast."
+              actionLabel="Try location again"
+              onAction={refreshCurrentLocation}
+            />
           ) : (
             <>
               <View pointerEvents="none" style={{ height: 0 }}>
@@ -1207,38 +1211,6 @@ const styles = StyleSheet.create({
 
   locationPrimary: { fontSize: 13, fontWeight: '900', color: 'white' },
 
-  headerModeWrap: {
-    width: 108,
-    flexShrink: 0,
-    flexDirection: 'row',
-    gap: 3,
-    padding: 3,
-    borderRadius: 999,
-    backgroundColor: GLASS_SURFACE_INSET,
-    borderWidth: 1,
-    borderColor: GLASS_SURFACE_BORDER_SOFT,
-  },
-  headerModeBtn: {
-    flex: 1,
-    minHeight: 30,
-    paddingHorizontal: 4,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerModeBtnActive: {
-    backgroundColor: 'rgba(37,99,235,0.35)',
-    borderWidth: 1,
-    borderColor: 'rgba(147,197,253,0.55)',
-  },
-  headerModeText: {
-    color: 'rgba(255,255,255,0.64)',
-    fontWeight: '900',
-    fontSize: 10,
-  },
-  headerModeTextActive: {
-    color: '#E9FFF8',
-  },
   heroCard: {
     position: 'relative',
     overflow: 'hidden',
@@ -1706,38 +1678,4 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(160,220,255,0.08)',
   },
 
-  center: { marginTop: theme.spacing['2xl'], alignItems: 'center' },
-  small: { ...typography.small, marginTop: theme.spacing.sm },
-
-  errorCard: {
-    backgroundColor: theme.colors.errorBg,
-    borderColor: theme.colors.errorBg,
-    marginBottom: theme.spacing.lg,
-  },
-  errorTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: theme.colors.errorText,
-    marginBottom: 4,
-  },
-  errorText: {
-    fontSize: 13,
-    color: theme.colors.errorText,
-  },
-
-  retryBtn: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  retryText: {
-    color: 'white',
-    fontWeight: '900',
-    fontSize: 12,
-    opacity: 0.9,
-  },
 });

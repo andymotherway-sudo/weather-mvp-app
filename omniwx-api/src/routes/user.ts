@@ -2,6 +2,7 @@ import { authenticateRequest, requireAuthenticatedUser } from "../middleware/aut
 import { publicCorsHeaders } from "../security/cors";
 import { getEntitlementsForUser } from "../services/subscriptions";
 import type { RequestContext } from "../types/api";
+import type { OmniwxEnv } from "../types/env";
 
 const USER_ROUTE_PREFIXES = [
   "/v1/user",
@@ -9,7 +10,12 @@ const USER_ROUTE_PREFIXES = [
   "/v1/devices",
 ];
 
-export async function handleUserRoute(request: Request, url: URL, context: RequestContext): Promise<Response | null> {
+export async function handleUserRoute(
+  request: Request,
+  url: URL,
+  context: RequestContext,
+  env: Pick<OmniwxEnv, "DB">,
+): Promise<Response | null> {
   if (!USER_ROUTE_PREFIXES.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) {
     return null;
   }
@@ -18,7 +24,7 @@ export async function handleUserRoute(request: Request, url: URL, context: Reque
   const user = requireAuthenticatedUser(auth);
 
   if (url.pathname === "/v1/subscriptions/entitlements") {
-    const entitlements = await getEntitlementsForUser(user);
+    const entitlements = await getEntitlementsForUser(user, env.DB);
     return new Response(JSON.stringify({ success: true, data: entitlements, requestId: context.requestId }), {
       headers: {
         "content-type": "application/json; charset=utf-8",

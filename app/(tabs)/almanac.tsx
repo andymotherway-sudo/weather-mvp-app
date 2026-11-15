@@ -1,7 +1,6 @@
 // app/(tabs)/almanac.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -21,6 +20,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAlmanacPreload } from '../../components/boot/AlmanacWarmup';
 import { AnimatedPageBackground } from '../../components/backgrounds/AnimatedPageBackground';
 import { ClimatologyChart } from '../../components/land/ClimatologyChart';
+import { OmniStatusCard } from '../../components/common/OmniStatusCard';
 import { Card } from '../../components/layout/Card';
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
@@ -682,43 +682,39 @@ const hasNormals = chartNormals.length > 0;
         </View>
 
         {!hasPlace ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Select a location</Text>
-            <Text style={styles.errorText}>
-              Go to Land Wx and pick a location (or enable GPS). Almanac will update automatically.
-            </Text>
-          </Card>
+          <OmniStatusCard
+            tone="unavailable"
+            title="Location needed"
+            message="Choose a location in Land or enable location access. Almanac will update automatically."
+          />
         ) : null}
 
         {anyLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" />
-            <Text style={styles.small}>Loading almanac…</Text>
-          </View>
+          <OmniStatusCard
+            tone="loading"
+            title="Loading almanac"
+            message="Preparing forecast context, observations, climate normals, and records."
+          />
         ) : null}
 
         {forecast.error ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Forecast unavailable</Text>
-            <Text style={styles.errorText}>{String(forecast.error)}</Text>
-            <View style={styles.actionRow}>
-              <Pressable onPress={() => forecast.refresh?.()} style={styles.btn}>
-                <Text style={styles.btnText}>Retry</Text>
-              </Pressable>
-            </View>
-          </Card>
+          <OmniStatusCard
+            tone="error"
+            title="Forecast context unavailable"
+            message={String(forecast.error)}
+            actionLabel="Try again"
+            onAction={() => forecast.refresh?.()}
+          />
         ) : null}
 
         {dayCtx.error && mode === 'observed' ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>Observed day unavailable</Text>
-            <Text style={styles.errorText}>{String(dayCtx.error)}</Text>
-            <View style={styles.actionRow}>
-              <Pressable onPress={() => dayCtx.refresh?.()} style={styles.btn}>
-                <Text style={styles.btnText}>Retry</Text>
-              </Pressable>
-            </View>
-          </Card>
+          <OmniStatusCard
+            tone="error"
+            title="Observed day unavailable"
+            message={String(dayCtx.error)}
+            actionLabel="Try again"
+            onAction={() => dayCtx.refresh?.()}
+          />
         ) : null}
 
         {hasPlace ? (
@@ -937,28 +933,19 @@ const hasNormals = chartNormals.length > 0;
             />
           </View>
         ) : hasPlace && shouldLoadAreaAlmanac ? (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorTitle}>
-              {normalsFailed ? 'Climate normals need a retry' : 'Downloading climate normals'}
-            </Text>
-            <Text style={styles.errorText}>
-              {normalsFailed
-                ? 'Climate normals could not be downloaded for this area. You can retry, or keep using forecasts and records.'
+          <OmniStatusCard
+            tone={normalsFailed ? 'error' : normalsLoading ? 'loading' : 'unavailable'}
+            title={normalsFailed ? 'Climate normals need a retry' : normalsLoading ? 'Downloading climate normals' : 'Climate normals not downloaded'}
+            message={`${
+              normalsFailed
+                ? 'Climate normals could not be downloaded for this area. Forecasts and records remain available.'
                 : normalsLoading
-                  ? 'Monthly normals are downloading for this area. First download can take a minute for a new climate station.'
-                  : 'Download climate normals and records for this area to unlock the full Almanac chart.'}
-            </Text>
-            <Text style={styles.errorText}>
-              Normals: {chartNormals.length} / 12 - DOY: {safeSelectedDoy}
-            </Text>
-            {normalsFailed ? (
-              <View style={styles.actionRow}>
-                <Pressable onPress={() => climo.refresh?.()} style={styles.btn}>
-                  <Text style={styles.btnText}>Retry Normals</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </Card>
+                  ? 'The first download for a new climate station can take a minute.'
+                  : 'Download climate normals and records to unlock the full Almanac chart.'
+            } Normals: ${chartNormals.length} / 12.`}
+            actionLabel={normalsFailed ? 'Retry normals' : undefined}
+            onAction={normalsFailed ? () => climo.refresh?.() : undefined}
+          />
         ) : null}
         <View style={{ height: Math.max(24, insets.bottom) }} />
       </ScrollView>
