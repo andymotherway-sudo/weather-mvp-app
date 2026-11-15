@@ -1,6 +1,6 @@
 # OMNIwx Production Readiness Plan
 
-Last updated: November 13, 2026
+Last updated: November 14, 2026
 
 ## Purpose
 
@@ -23,8 +23,9 @@ incident actions live in [radar-cost-safety-runbook.md](radar-cost-safety-runboo
    acceptance and production probes are separate gates.
 4. Scale only after measuring a narrower configuration. Storage size alone does
    not prove request, operation, or compute cost safety.
-5. Accounts and billing are downstream of reliability, security, and clear
-   provider-use boundaries.
+5. Account design and billing sandbox engineering may proceed alongside
+   reliability work. Public account collection requires security/privacy/deletion
+   gates; charging remains downstream of reliability and provider-use acceptance.
 
 ## Gate 1: Reliable Release And Maps Experience
 
@@ -113,6 +114,11 @@ Required evidence:
 **Owner documents:** [paid-user-architecture.md](paid-user-architecture.md),
 [privacy-policy.md](privacy-policy.md), and [app-architecture.md](app-architecture.md).
 
+The commercial document now contains the proposed Free + Plus catalog, profile
+scope, Firebase/Play Billing/RevenueCat responsibilities, ownership and billing
+lifecycle design, and phased acceptance. Those choices are proposals pending
+owner confirmation; no login, paywall, or recurring charge is enabled by the plan.
+
 ## Gate 5: Paid Beta Decision
 
 **Goal:** decide deliberately whether to invite a broader or paid beta.
@@ -132,8 +138,10 @@ exists.
 3. Keep radar automation paused while proving one packed publisher at a time.
 4. Complete security/provider-use/backup review alongside the controlled radar
    observation window.
-5. Add account ownership and cross-device sync only after those trust gates.
-6. Add subscriptions and paid entitlements only after account ownership works.
+5. Design and develop accounts/sync in a private environment alongside reliability
+   work; open signup only after account security, privacy and deletion gates pass.
+6. Add subscription sandbox flows after account ownership works; enable real
+   charges only after reliability, provider-use and payment lifecycle acceptance.
 7. Make the paid-beta go/no-go decision from evidence, not the calendar.
 
 ## Plan Maintenance
