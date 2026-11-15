@@ -53,6 +53,10 @@ __pycache__/
 tmp/
 .tools/
 
+# Local Codex runtime artifacts and personal reviewer presets
+.codex/**/*.log
+.codex/skills/omniwx-sentry/agents/weather-snob.yaml
+
 # Private/local documentation notes
 docs/private/
 docs/local/
