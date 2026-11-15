@@ -30,9 +30,9 @@ This audit covers every user-facing Expo route in `app/` and the shared controls
 | `app/(tabs)/aviation.tsx` | Aviation overview | Segmented, help, primary, and secondary controls expose roles and interaction state. | Disabled flows, dense cards, aviation-source freshness. |
 | `app/(tabs)/extremes.tsx` | Land, marine, and Mars extremes | Standardized provider loading, error, and empty states across feature sections. | Cross-provider partial failure and narrow-screen card flow. |
 | `app/(tabs)/aviation-map.tsx` | Aviation hazards map | Slider and chips expose adjustable/selected semantics; live errors are announced. | Map gestures, time-slider precision, overlay contrast. |
-| `app/(tabs)/astro-map.tsx` | Sky-score map | Audited for shared navigation and map-shell compatibility; no broad redesign applied. | Camera persistence, map control spacing, data-freshness labels. |
-| `app/(tabs)/astronomer.tsx` | Advanced astronomy | Audited for feature-depth preservation; no broad redesign applied. | Information hierarchy, empty states, large-font behavior. |
-| `app/(tabs)/mariner.tsx` | Advanced marine tools | Audited for feature-depth preservation; no broad redesign applied. | Control density, empty states, source/freshness language. |
+| `app/(tabs)/astro-map.tsx` | Sky-score map | Timeline, detail sheet, filter chips, status announcements, and Back action expose accessible interaction state. | Camera persistence, map control spacing, data-freshness labels. |
+| `app/(tabs)/astronomer.tsx` | Advanced astronomy entry | Uses an immediate declarative redirect instead of rendering a transient blank route. | Destination information hierarchy, empty states, large-font behavior. |
+| `app/(tabs)/mariner.tsx` | Advanced marine entry | Uses an immediate declarative redirect instead of rendering a transient blank route. | Destination control density, empty states, source/freshness language. |
 | `app/profile.tsx` | Settings, account, subscription | Startup now uses the shared loading treatment; existing account and notification activity indicators remain local to their controls. | Account-state transitions, purchase/restore states, large text. |
 | `app/buoy/[buoyId].tsx` | Buoy detail | Standardized missing-ID, loading, error, and empty-observation states. | Long station names, stale observations, chart responsiveness. |
 | `app/nautical/zone/[zoneId].tsx` | Marine-zone detail | Standardized loading, failure, unsupported-zone, content card, and navigation treatment. | Long bulletins, refresh behavior, screen-reader reading order. |
@@ -45,6 +45,7 @@ This audit covers every user-facing Expo route in `app/` and the shared controls
 - Simple/wxLab selection is presented consistently on Land and Hourly and can be reused by other feature families.
 - Maps no longer opt into automatic unmounting when another tab is selected, reducing unnecessary camera and loading resets.
 - Map, aviation, onboarding, and profile controls received targeted accessibility semantics without changing their core workflows.
+- Sky-map timeline and sheet controls now expose their adjustable, expanded, and selected states; specialty entry routes no longer depend on a post-render navigation effect.
 - Marine and buoy detail routes now distinguish unavailable data from operational failures.
 
 ### Intentionally not claimed complete
