@@ -58,9 +58,15 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: omniwx-api/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            omniwx-api/package-lock.json
 
-      - name: Install dependencies
+      - name: Install app dependencies for shared-domain tests
+        working-directory: .
+        run: npm ci
+
+      - name: Install Worker dependencies
         run: npm ci
 
       - name: Type check
