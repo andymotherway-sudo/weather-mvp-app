@@ -4575,7 +4575,8 @@ export default function MapsScreen() {
         fps: 30,
         secondsPerSourceFrame:
           !activeAnimationKind ? 0.12 : activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
-          transitionSeconds: 0,
+        transitionSeconds: 0,
+        minimumDurationSeconds: 12,
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
@@ -4667,6 +4668,8 @@ export default function MapsScreen() {
               pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 3 : 1}
               maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
               maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
+              previewMaxImageWidth={bufferedSatelliteKind === 'truecolor' ? 720 : undefined}
+              previewMaxImageHeight={bufferedSatelliteKind === 'truecolor' ? 960 : undefined}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
                   bufferedSatelliteKind === 'truecolor'

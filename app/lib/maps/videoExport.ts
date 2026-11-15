@@ -31,6 +31,7 @@ export type AnimationVideoExportOptions = {
   fps?: number;
   secondsPerSourceFrame?: number;
   transitionSeconds?: number;
+  minimumDurationSeconds?: number;
 };
 
 export type AnimationVideoExportResult = {
@@ -101,5 +102,6 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     fps: options.fps ?? 30,
     secondsPerSourceFrame: options.secondsPerSourceFrame ?? 0.52,
     transitionSeconds: options.transitionSeconds ?? 0.22,
+    minimumDurationSeconds: options.minimumDurationSeconds ?? 12,
   });
 }

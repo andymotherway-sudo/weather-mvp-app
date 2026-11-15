@@ -79,6 +79,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         val fps = options.optInt("fps", 30).coerceIn(12, 30)
         val secondsPerSourceFrame = options.optDouble("secondsPerSourceFrame", 0.52).coerceIn(0.25, 2.0)
         val transitionSeconds = options.optDouble("transitionSeconds", 0.22).coerceIn(0.0, secondsPerSourceFrame)
+        val minimumDurationSeconds = options.optDouble("minimumDurationSeconds", 12.0).coerceIn(4.0, 30.0)
         val title = options.optString("title", "OMNIwx")
         val subtitle = options.optString("subtitle", "Weather animation")
         val product = options.optString("productLabel", "Weather loop")
@@ -99,6 +100,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           fps = fps,
           secondsPerSourceFrame = secondsPerSourceFrame,
           transitionSeconds = transitionSeconds,
+          minimumDurationSeconds = minimumDurationSeconds,
           title = title,
           subtitle = subtitle,
           product = product,
@@ -127,6 +129,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     fps: Int,
     secondsPerSourceFrame: Double,
     transitionSeconds: Double,
+    minimumDurationSeconds: Double,
     title: String,
     subtitle: String,
     product: String,
@@ -158,39 +161,43 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       val holdFrames = max(1, (secondsPerSourceFrame * fps).roundToInt())
       val transitionFrames = min(holdFrames - 1, (transitionSeconds * fps).roundToInt())
       val solidFrames = max(1, holdFrames - transitionFrames)
+      val sourceLoopSeconds = frames.size * holdFrames.toDouble() / fps.toDouble()
+      val loopCount = kotlin.math.ceil(minimumDurationSeconds / sourceLoopSeconds).toInt().coerceIn(1, 60)
 
-      frames.forEachIndexed { index, current ->
-        // Forward loop: after the last frame, blend back to the first. This
-        // matches user expectation better than ping-pong playback for weather.
-        val next = frames[(index + 1) % frames.size]
-        repeat(solidFrames) {
-          val bitmap = composeFrame(width, height, current, null, 0f, title, subtitle, product)
-          presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
-            drainEncoder(codec, muxer, bufferInfo, false) {
-              if (!muxerStarted) {
-                trackIndex = muxer.addTrack(codec.outputFormat)
-                muxer.start()
-                muxerStarted = true
+      repeat(loopCount) {
+        frames.forEachIndexed { index, current ->
+          // Forward loops reuse prepared scenes. Longer shareable videos do not
+          // trigger additional downloads or GeoColor render requests.
+          val next = frames[(index + 1) % frames.size]
+          repeat(solidFrames) {
+            val bitmap = composeFrame(width, height, current, null, 0f, title, subtitle, product)
+            presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
+              drainEncoder(codec, muxer, bufferInfo, false) {
+                if (!muxerStarted) {
+                  trackIndex = muxer.addTrack(codec.outputFormat)
+                  muxer.start()
+                  muxerStarted = true
+                }
+                trackIndex
               }
-              trackIndex
             }
+            bitmap.recycle()
           }
-          bitmap.recycle()
-        }
-        for (step in 1..transitionFrames) {
-          val blend = step.toFloat() / (transitionFrames + 1).toFloat()
-          val bitmap = composeFrame(width, height, current, next, blend, title, subtitle, product)
-          presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
-            drainEncoder(codec, muxer, bufferInfo, false) {
-              if (!muxerStarted) {
-                trackIndex = muxer.addTrack(codec.outputFormat)
-                muxer.start()
-                muxerStarted = true
+          for (step in 1..transitionFrames) {
+            val blend = step.toFloat() / (transitionFrames + 1).toFloat()
+            val bitmap = composeFrame(width, height, current, next, blend, title, subtitle, product)
+            presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
+              drainEncoder(codec, muxer, bufferInfo, false) {
+                if (!muxerStarted) {
+                  trackIndex = muxer.addTrack(codec.outputFormat)
+                  muxer.start()
+                  muxerStarted = true
+                }
+                trackIndex
               }
-              trackIndex
             }
+            bitmap.recycle()
           }
-          bitmap.recycle()
         }
       }
 

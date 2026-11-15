@@ -27,10 +27,10 @@ STAR_PAGE = "https://www.star.nesdis.noaa.gov/GOES/fulldisk_band.php?band=GEOCOL
 # The 1808px preview is suitable for a full-disk web animation, but it falls
 # apart at regional map zoom. 5424px keeps the renderer within Cloud Run's
 # memory envelope while supplying enough source detail for a 512px map tile.
-STAR_IMAGE = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/{frame}_GOES19-ABI-FD-GEOCOLOR-5424x5424.jpg"
-# The STAR loop manifest references its 1808px preview. The timestamp is
-# shared by every published size, so use that preview only for discovery and
-# request the matching 5424px asset for rendering.
+STAR_IMAGE = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/{frame}_GOES19-ABI-FD-GEOCOLOR-{size}x{size}.jpg"
+# The STAR loop manifest references its 1808px preview. The timestamp is shared
+# by every published size, so the renderer can use 1808px for a temporary phone
+# preview and the matching 5424px asset for sharp map and export frames.
 FRAME_RE = re.compile(r"(20\d{9})_GOES19-ABI-FD-GEOCOLOR-1808x1808\.jpg")
 FRAME_ID_RE = re.compile(r"^20\d{9}$")
 # A fixed lock stripe avoids accumulating one lock for every historical scan
@@ -95,25 +95,25 @@ def refreshable_frames() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=3)
-def load_image(frame: str) -> np.ndarray:
-    url = STAR_IMAGE.format(frame=frame)
+def load_image(frame: str, source_size: int) -> np.ndarray:
+    url = STAR_IMAGE.format(frame=frame, size=source_size)
     response = requests.get(url, timeout=45, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
     response.raise_for_status()
     with Image.open(BytesIO(response.content)) as image:
         return np.asarray(image.convert("RGB"))
 
 
-def fetch_image(frame: str) -> np.ndarray:
+def fetch_image(frame: str, source_size: int) -> np.ndarray:
     if not FRAME_ID_RE.fullmatch(frame):
         raise ValueError("invalid frame")
-    # A 5424px decoded RGB frame occupies roughly 85 MiB. Requests for the
-    # same frame share one load, while the semaphore permits only two distinct
-    # decodes at once. That keeps cold animations responsive without allowing
-    # an unbounded playback burst to consume the container's memory.
+    # A 5424px decoded RGB frame occupies roughly 85 MiB. Requests for the same
+    # frame and source size share one load, while the semaphore permits only two
+    # distinct decodes at once. That keeps cold animations responsive without
+    # allowing an unbounded playback burst to consume the container's memory.
     frame_lock = IMAGE_FRAME_LOCKS[hash(frame) % len(IMAGE_FRAME_LOCKS)]
     with frame_lock:
         with IMAGE_LOAD_LIMIT:
-            return load_image(frame)
+            return load_image(frame, source_size)
 
 
 def mercator_to_lat_lon(bbox: tuple[float, float, float, float], width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
@@ -144,7 +144,11 @@ def goes_pixel_coordinates(lon_deg: np.ndarray, lat_deg: np.ndarray, source_widt
 
 
 def render(frame: str, bbox: tuple[float, float, float, float], width: int, height: int) -> bytes:
-    source = fetch_image(frame)
+    # A temporary phone preview does not benefit from decoding the 5424px
+    # source. NOAA publishes the same frame at 1808px, which reaches the user
+    # sooner; high-resolution map and export requests keep the 5424px source.
+    source_size = 1808 if max(width, height) <= 960 else 5424
+    source = fetch_image(frame, source_size)
     lon, lat = mercator_to_lat_lon(bbox, width, height)
     px, py, visible = goes_pixel_coordinates(lon, lat, source.shape[1], source.shape[0])
     output = np.zeros((height, width, 4), dtype=np.uint8)

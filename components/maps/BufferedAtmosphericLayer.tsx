@@ -39,6 +39,8 @@ type Props = {
   pixelRatioCap?: number;
   maxImageWidth?: number;
   maxImageHeight?: number;
+  previewMaxImageWidth?: number;
+  previewMaxImageHeight?: number;
   buildUrl: (frame: FrameLike, width: number, height: number) => string;
   onBufferStatus?: (status: AnimationBufferStatus) => void;
   onDisplayReady?: (ready: boolean) => void;
@@ -75,6 +77,8 @@ export function BufferedAtmosphericLayer(props: Props) {
     pixelRatioCap = 1,
     maxImageWidth = 1152,
     maxImageHeight = 1408,
+    previewMaxImageWidth,
+    previewMaxImageHeight,
     buildUrl,
     onBufferStatus,
     onDisplayReady,
@@ -89,6 +93,12 @@ export function BufferedAtmosphericLayer(props: Props) {
   const imageScale = Math.min(1, maxImageWidth / requestedWidth, maxImageHeight / requestedHeight);
   const imageWidth = Math.max(128, Math.round(requestedWidth * imageScale));
   const imageHeight = Math.max(128, Math.round(requestedHeight * imageScale));
+  const previewScale =
+    previewMaxImageWidth && previewMaxImageHeight
+      ? Math.min(1, previewMaxImageWidth / imageWidth, previewMaxImageHeight / imageHeight)
+      : 1;
+  const previewWidth = Math.max(128, Math.round(imageWidth * previewScale));
+  const previewHeight = Math.max(128, Math.round(imageHeight * previewScale));
   const buildUrlRef = useRef(buildUrl);
   const onBufferStatusRef = useRef(onBufferStatus);
   const onDisplayReadyRef = useRef(onDisplayReady);
@@ -135,6 +145,11 @@ export function BufferedAtmosphericLayer(props: Props) {
 
   const [cachedUris, setCachedUris] = useState<Map<string, string>>(() => new Map());
   const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
+  const [previewSlot, setPreviewSlot] = useState<{
+    sourceRequestId: string;
+    requestId: string;
+    localUri: string;
+  } | null>(null);
   const [slots, setSlots] = useState<[Slot | null, Slot | null]>([null, null]);
   const frontSlotRef = useRef<0 | 1>(0);
   const displayedRequestIdRef = useRef<string | null>(null);
@@ -150,6 +165,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     transitionTokenRef.current += 1;
     setCachedUris(new Map());
     setFailedIds(new Set());
+    setPreviewSlot(null);
     setSlots([null, null]);
     activeFadeRef.current?.stop();
     activeFadeRef.current = null;
@@ -164,6 +180,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     if (!enabled || !requests.length) {
       setCachedUris(new Map());
       setFailedIds(new Set());
+      setPreviewSlot(null);
       setSlots([null, null]);
       activeFadeRef.current?.stop();
       activeFadeRef.current = null;
@@ -240,11 +257,39 @@ export function BufferedAtmosphericLayer(props: Props) {
     };
 
     const queue = [...order];
-    void Promise.all([worker(queue), worker(queue)]);
+    const warmPreviewThenBuffer = async () => {
+      const previewEnabled = previewScale < 1;
+      const firstRequest = requests[desired];
+
+      if (previewEnabled && firstRequest) {
+        const previewRemoteUrl = buildUrlRef.current(firstRequest.frame, previewWidth, previewHeight);
+        const previewRequestId = `${firstRequest.frame.id}:preview:${shortHash(previewRemoteUrl)}`;
+        try {
+          // Give the lightweight current frame the first download/render slot.
+          // Once it is visible, the existing bounded workers fetch the sharp
+          // frame and remaining loop without raising renderer concurrency.
+          const localUri = await cacheAtmosphericFrame(previewRemoteUrl);
+          if (cancelled) return;
+          setPreviewSlot({
+            sourceRequestId: firstRequest.requestId,
+            requestId: previewRequestId,
+            localUri,
+          });
+        } catch {
+          // Preview is an optimization only; full-resolution buffering remains
+          // the source of truth and can recover independently.
+        }
+      }
+
+      if (!cancelled) await Promise.all([worker(queue), worker(queue)]);
+    };
+
+    setPreviewSlot(null);
+    void warmPreviewThenBuffer();
     return () => {
       cancelled = true;
     };
-  }, [enabled, requests]);
+  }, [enabled, previewHeight, previewScale, previewWidth, requests]);
 
   useEffect(() => {
     const requestIds = new Set(requests.map((request) => request.requestId));
@@ -267,25 +312,31 @@ export function BufferedAtmosphericLayer(props: Props) {
 
   const desiredIndex = clampIndex(frameIndex, requests.length);
   const desiredRequest = requests[desiredIndex] ?? null;
-  const desiredLocalUri = desiredRequest ? cachedUris.get(desiredRequest.requestId) ?? null : null;
+  const fullResolutionUri = desiredRequest ? cachedUris.get(desiredRequest.requestId) ?? null : null;
+  const desiredPreview =
+    desiredRequest && previewSlot?.sourceRequestId === desiredRequest.requestId ? previewSlot : null;
+  const desiredLocalUri = fullResolutionUri ?? desiredPreview?.localUri ?? null;
+  const desiredDisplayRequestId = fullResolutionUri
+    ? desiredRequest?.requestId ?? null
+    : desiredPreview?.requestId ?? null;
 
   useEffect(() => {
-    if (!enabled || !desiredRequest || !desiredLocalUri) return;
+    if (!enabled || !desiredRequest || !desiredLocalUri || !desiredDisplayRequestId) return;
     const desiredFrame = desiredRequest.frame;
     if (
-      displayedRequestIdRef.current === desiredRequest.requestId ||
-      transitioningRequestIdRef.current === desiredRequest.requestId
+      displayedRequestIdRef.current === desiredDisplayRequestId ||
+      transitioningRequestIdRef.current === desiredDisplayRequestId
     ) return;
 
     const token = transitionTokenRef.current + 1;
     transitionTokenRef.current = token;
-    transitioningRequestIdRef.current = desiredRequest.requestId;
+    transitioningRequestIdRef.current = desiredDisplayRequestId;
     const slotOpacities = slotOpacityRefs.current;
     const currentFront = frontSlotRef.current;
     const nextFront: 0 | 1 = currentFront === 0 ? 1 : 0;
     const nextSlot: Slot = {
       frameId: desiredFrame.id,
-      requestId: desiredRequest.requestId,
+      requestId: desiredDisplayRequestId,
       localUri: desiredLocalUri,
       coordinates,
     };
@@ -300,7 +351,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     const completeCut = () => {
       if (transitionTokenRef.current !== token) return;
       const safeOpacity = Math.max(0, Math.min(1, opacity));
-      displayedRequestIdRef.current = desiredRequest.requestId;
+      displayedRequestIdRef.current = desiredDisplayRequestId;
       transitioningRequestIdRef.current = null;
       frontSlotRef.current = nextFront;
       slotOpacities[currentFront].setValue(0);
@@ -361,7 +412,7 @@ export function BufferedAtmosphericLayer(props: Props) {
       fade.start(({ finished }) => {
         if (!finished || transitionTokenRef.current !== token) return;
         activeFadeRef.current = null;
-        displayedRequestIdRef.current = desiredRequest.requestId;
+        displayedRequestIdRef.current = desiredDisplayRequestId;
         transitioningRequestIdRef.current = null;
         frontSlotRef.current = nextFront;
         slotOpacities[currentFront].setValue(0);
@@ -381,7 +432,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         slotOpacities[heldFront === 0 ? 1 : 0].setValue(0);
       }
     };
-  }, [blendMs, coordinates, desiredLocalUri, desiredRequest, enabled, opacity, transitionMode]);
+  }, [blendMs, coordinates, desiredDisplayRequestId, desiredLocalUri, desiredRequest, enabled, opacity, transitionMode]);
 
   useEffect(() => {
     if (!enabled) return;
