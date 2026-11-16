@@ -385,7 +385,6 @@ function LayerRow(props: {
   layer: LayerCatalogItem;
   state: MapRuntimeState;
   expanded: boolean;
-  forceDetails?: boolean;
   onToggleExpanded: () => void;
   onToggleLayer: (enabled: boolean) => void;
   onSetOpacity: (opacity: number) => void;
@@ -397,7 +396,7 @@ function LayerRow(props: {
   const opacity = runtime?.opacity ?? props.layer.defaultOpacity ?? 1;
   const { supportsOpacity, supportsLegend, supportsSourceInfo } = resolveSupports(props.layer);
   const canExpand = supportsOpacity || supportsLegend || supportsSourceInfo;
-  const showDetails = props.forceDetails || props.expanded;
+  const showDetails = props.expanded;
 
   return (
     <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
@@ -555,11 +554,6 @@ export function LayerSheet(props: Props) {
 
   const categories = props.mode === 'aviation' ? [AVIATION_CATEGORY] : STANDARD_CATEGORIES;
 
-  const activeLayers = useMemo(
-    () => visibleLayers.filter((layer) => props.state.layers?.[layer.id]?.enabled),
-    [props.state.layers, visibleLayers],
-  );
-
   const activeCounts = useMemo(() => {
     const counts: Partial<Record<CategoryId, number>> = {};
     categories.forEach((category) => {
@@ -589,44 +583,6 @@ export function LayerSheet(props: Props) {
 
   return (
     <View style={{ gap: 14, paddingBottom: 8 }}>
-      {activeLayers.length ? (
-        <View
-          style={{
-            borderWidth: 1,
-            borderColor: 'rgba(125,211,252,0.22)',
-            backgroundColor: 'rgba(96,165,250,0.08)',
-            borderRadius: 22,
-            overflow: 'hidden',
-          }}
-        >
-          <View style={{ paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 }}>
-            <Text style={{ color: 'white', fontSize: 14, fontWeight: '900' }}>Active Layers</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.60)', fontSize: 11, fontWeight: '700', marginTop: 2 }}>
-              Quick access to layers that are already on.
-            </Text>
-          </View>
-
-          <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' }}>
-            {activeLayers.map((layer, index) => (
-              <View key={`active-${layer.id}`}>
-                {index > 0 ? <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginHorizontal: 12 }} /> : null}
-                <LayerRow
-                  layer={layer}
-                  state={props.state}
-                  expanded
-                  forceDetails
-                  onToggleExpanded={() => {}}
-                  onToggleLayer={(enabled) => props.onToggleLayer(layer.id, enabled)}
-                  onSetOpacity={(opacity) => props.onSetOpacity(layer.id, opacity)}
-                  onOpenLegend={props.onOpenLegend ? () => props.onOpenLegend?.(layer.id) : undefined}
-                  onOpenSourceInfo={props.onOpenSourceInfo ? () => props.onOpenSourceInfo?.(layer.id) : undefined}
-                />
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
       {categories.map((category) => {
         const items = categoryMap[category.id] ?? [];
         if (!items.length) return null;

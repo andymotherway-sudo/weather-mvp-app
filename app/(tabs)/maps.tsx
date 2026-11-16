@@ -787,10 +787,6 @@ function approxZoomFromLongitudeDelta(lonDelta: number) {
   return Math.round(Math.log2(360 / lonDelta));
 }
 
-function lonDeltaFromZoomLevel(zoom: number) {
-  return 360 / Math.pow(2, zoom);
-}
-
 function isNexradSite(site: NexradSite) {
   return String(site.ownerType ?? '').toUpperCase() === 'NEXRAD';
 }
@@ -1480,7 +1476,6 @@ export default function MapsScreen() {
 
   const mapCameraRef = useRef<any>(null);
   const locateSeedRegionRef = useRef<Region | null>(null);
-  const zoomButtonSeedRegionRef = useRef<Region | null>(null);
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
@@ -3824,32 +3819,12 @@ export default function MapsScreen() {
     const requestedZoom = Number.isFinite(mapZoom) ? mapZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
-    const nextLongitudeDelta = lonDeltaFromZoomLevel(nextZoom);
-    const nextLatitudeDelta = Math.max(0.0001, nextLongitudeDelta * 0.6);
-    const nextRegion: Region = {
-      latitude: targetRegion.latitude,
-      longitude: targetRegion.longitude,
-      latitudeDelta: nextLatitudeDelta,
-      longitudeDelta: nextLongitudeDelta,
-      zoom: nextZoom,
-    };
-
-    setRegion(nextRegion);
     setMapZoom(nextZoom);
     setCameraDebugLabel(`zoom-camera:${nextZoom.toFixed(2)}`);
-    if (mapCameraRef.current?.setCamera) {
-      mapCameraRef.current.setCamera({
-        centerCoordinate: [targetRegion.longitude, targetRegion.latitude],
-        zoomLevel: nextZoom,
-        animationDuration: 180,
-      });
-    } else {
-      zoomButtonSeedRegionRef.current = nextRegion;
-      setMapResetKey((value) => value + 1);
-      requestAnimationFrame(() => {
-        zoomButtonSeedRegionRef.current = null;
-      });
-    }
+    // A zoom control must never become a recenter control. Omitting the center
+    // keeps MapLibre anchored to its live viewport, including immediately after
+    // a user pan, and avoiding a remount prevents fallback to a saved location.
+    mapCameraRef.current?.zoomTo?.(nextZoom, 180);
   }, [mapZoom, region, stableInitialRegion]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
@@ -4605,7 +4580,6 @@ export default function MapsScreen() {
             regionEventMode="settled"
             initialRegion={
               routeFocusSeedRegionRef.current ??
-              zoomButtonSeedRegionRef.current ??
               locateSeedRegionRef.current ??
               radarStationSeedRegionRef.current ??
               stableInitialRegion
