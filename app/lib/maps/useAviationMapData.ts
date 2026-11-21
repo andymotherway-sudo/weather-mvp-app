@@ -369,13 +369,35 @@ function decorateHazard(fc: GeoJsonFeatureCollection, fallbackLabel: string) {
 }
 
 function decoratePireps(fc: GeoJsonFeatureCollection) {
-  return decorateFeatures(fc, (feature) => {
+  return decorateFeatures(fc, (feature, idx) => {
+    const props = feature?.properties ?? {};
     const text = featureText(feature);
     const urgency = text.includes('uua') || text.includes('urgent');
     const meta = iconMetaFromText(text, urgency ? 'UUA' : 'UA');
+    const { hazardKey, hazardType, hazardShort } = hazardMeta(props, text);
+    const { baseFt, topFt } = deriveAltitudes(props);
+    const validFrom = parseIso(props?.validTimeFrom ?? props?.validTime ?? props?.receiptTime);
+    const validTime = parseIso(props?.validTime ?? props?.validTimeFrom ?? props?.receiptTime);
+    const expiresTime = parseIso(props?.validTimeTo ?? props?.expireTime ?? props?.expirationTime);
+    const issuedTime = parseIso(props?.issueTime ?? props?.issuedTime ?? props?.receiptTime);
+    const rawFeatureId = String(feature?.id ?? props?.id ?? props?.reportId ?? `pirep-${idx}`);
 
     return {
       ...meta,
+      sourceProduct: 'PIREP',
+      productKey: 'pirep',
+      hazardKey,
+      hazardType,
+      baseFt,
+      topFt,
+      altitudeLabel: altitudeLabel(baseFt, topFt),
+      issuedTime,
+      validFrom,
+      validTime,
+      expiresTime,
+      validKey: validTime ?? validFrom ?? expiresTime ?? issuedTime ?? rawFeatureId,
+      rawFeatureId,
+      iconLabel: hazardShort === 'OTHER' ? (urgency ? 'UUA' : 'UA') : hazardShort,
       iconRadius: urgency ? 8 : 7,
       iconStrokeColor: urgency ? '#fde68a' : 'rgba(2,6,23,0.95)',
       iconStrokeWidth: urgency ? 1.6 : 1.2,
@@ -605,14 +627,21 @@ export function useAviationMapData(enabled: boolean) {
       }),
     [gairmet, airsigmet, cwa]
   );
+  const allAdvisories = useMemo(
+    () => ({
+      type: 'FeatureCollection' as const,
+      features: [...allHazards.features, ...pireps.features],
+    }),
+    [allHazards, pireps],
+  );
   const validTimes = useMemo(() => {
     const values = new Set<string>();
-    allHazards.features.forEach((feature) => {
+    allAdvisories.features.forEach((feature) => {
       const key = feature?.properties?.validKey;
       if (typeof key === 'string' && Number.isFinite(Date.parse(key))) values.add(key);
     });
     return Array.from(values).sort((a, b) => Date.parse(a) - Date.parse(b));
-  }, [allHazards]);
+  }, [allAdvisories]);
 
   return {
     loading,
@@ -624,6 +653,7 @@ export function useAviationMapData(enabled: boolean) {
     pireps,
     metars,
     allHazards,
+    allAdvisories,
     validTimes,
   };
 }

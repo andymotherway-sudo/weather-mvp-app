@@ -18,6 +18,7 @@ import { useWxLab } from '../context/WxLabContext';
 import { useLocations } from '../lib/locations/useLocations';
 import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { useAppChrome } from '../lib/theme/useAppChrome';
+import { displayTemperature, displayWind, type TemperatureUnit } from '../lib/weather/displayUnits';
 
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -204,6 +205,7 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       pressureHpa,
       pressureInHg: pressureHpa != null ? pressureHpa * 0.029529983071445 : null,
       temperatureF,
+      tempC: temperatureF == null ? null : (temperatureF - 32) * (5 / 9),
       apparentTemperatureF,
       precipChancePct,
       windMph,
@@ -211,6 +213,7 @@ function normalizeHourly(hourlyRaw: any[], timeZone: string | null) {
       windDirDeg,
       weatherCode,
       dewpointF,
+      dewC: dewpointF == null ? null : (dewpointF - 32) * (5 / 9),
       humidityPct,
       cloudCoverPct,
       airQualityUsAqi,
@@ -318,13 +321,13 @@ function getClockState(timeZone?: string | null): Omit<VisualState, 'weatherCode
   };
 }
 
-function formatHeroSummary(hour: any) {
+function formatHeroSummary(hour: any, tempUnit: TemperatureUnit = 'F') {
   const precipChance = safeNum(hour?.precipChancePct);
   const windMph = safeNum(hour?.windMph);
   const parts: string[] = [];
 
   if (precipChance != null) parts.push(`${Math.round(precipChance)}% precip chance`);
-  if (windMph != null) parts.push(`${Math.round(windMph)} mph wind`);
+  if (windMph != null) parts.push(`${displayWind(windMph, tempUnit)} wind`);
 
   return parts.length ? parts.join(' • ') : 'Forecast details ready';
 }
@@ -436,16 +439,16 @@ function MetricBarRow({
   );
 }
 
-function buildHourlyDetailRows(hour: any) {
+function buildHourlyDetailRows(hour: any, tempUnit: TemperatureUnit = 'F') {
   return [
     {
       label: 'Feels like',
-      value: formatHeroMetricValue(safeNum(hour?.apparentTemperatureF), '°'),
+      value: displayTemperature(safeNum(hour?.apparentTemperatureF), tempUnit),
       percent: metricBarPercent(safeNum(hour?.apparentTemperatureF), 120),
     },
     {
       label: 'Dew point',
-      value: formatHeroMetricValue(safeNum(hour?.dewpointF), '°'),
+      value: displayTemperature(safeNum(hour?.dewpointF), tempUnit),
       percent: metricBarPercent(safeNum(hour?.dewpointF), 80),
     },
     {
@@ -470,12 +473,12 @@ function buildHourlyDetailRows(hour: any) {
     },
     {
       label: 'Wind',
-      value: formatHeroMetricValue(safeNum(hour?.windMph), ' mph'),
+      value: displayWind(safeNum(hour?.windMph), tempUnit),
       percent: metricBarPercent(safeNum(hour?.windMph), 40),
     },
     {
       label: 'Wind gusts',
-      value: formatHeroMetricValue(safeNum(hour?.windGustMph), ' mph'),
+      value: displayWind(safeNum(hour?.windGustMph), tempUnit),
       percent: metricBarPercent(safeNum(hour?.windGustMph), 50),
     },
     {
@@ -625,9 +628,11 @@ function HourlySimpleTimeline({
 function HourlySimpleTimelineExpanded({
   hours,
   timeZone,
+  tempUnit,
 }: {
   hours: any[];
   timeZone?: string | null;
+  tempUnit: TemperatureUnit;
 }) {
   const featured = hours[0] ?? null;
   const rest = hours.slice(1);
@@ -635,7 +640,7 @@ function HourlySimpleTimelineExpanded({
   if (!featured) return null;
 
   const featuredSlot = formatHourSlot(featured.time, timeZone);
-  const detailRows = buildHourlyDetailRows(featured);
+  const detailRows = buildHourlyDetailRows(featured, tempUnit);
 
   return (
     <View style={styles.hourlySimpleWrap}>
@@ -651,7 +656,7 @@ function HourlySimpleTimelineExpanded({
               <PremiumWeatherIcon code={safeNum(featured.weatherCode)} size={42} variant="hero" style={styles.hourlyFeatureIconBadge} />
               <View style={styles.hourlyFeatureSummaryText}>
                 <Text style={styles.hourlyFeatureTemp}>
-                  {safeNum(featured.temperatureF) != null ? `${Math.round(safeNum(featured.temperatureF) as number)}°` : '—'}
+                  {displayTemperature(safeNum(featured.temperatureF), tempUnit)}
                 </Text>
                 <Text
                   style={styles.hourlyFeatureCondition}
@@ -661,7 +666,7 @@ function HourlySimpleTimelineExpanded({
                 >
                   {weatherCodeToLabel(safeNum(featured.weatherCode))}
                 </Text>
-                <Text style={styles.hourlyFeatureMeta}>{formatHeroSummary(featured)}</Text>
+                <Text style={styles.hourlyFeatureMeta}>{formatHeroSummary(featured, tempUnit)}</Text>
               </View>
             </View>
           </View>
@@ -688,7 +693,7 @@ function HourlySimpleTimelineExpanded({
         const slot = formatHourSlot(hour.time, timeZone);
         const rowKey = String(hour.time ?? idx);
         const isOpen = expandedKey === rowKey;
-        const miniDetailRows = buildHourlyDetailRows(hour);
+        const miniDetailRows = buildHourlyDetailRows(hour, tempUnit);
 
         return (
           <Pressable
@@ -706,12 +711,12 @@ function HourlySimpleTimelineExpanded({
                 <PremiumWeatherIcon code={safeNum(hour.weatherCode)} size={28} variant="inline" style={styles.hourlyMiniIconBadge} />
                 <View style={styles.hourlyMiniSummary}>
                   <Text style={styles.hourlyMiniTemp}>
-                    {safeNum(hour.temperatureF) != null ? `${Math.round(safeNum(hour.temperatureF) as number)}°` : '—'}
+                    {displayTemperature(safeNum(hour.temperatureF), tempUnit)}
                   </Text>
                   <Text style={styles.hourlyMiniCondition}>
                     {weatherCodeToLabel(safeNum(hour.weatherCode))}
                   </Text>
-                  <Text style={styles.hourlyMiniMeta}>{formatHeroSummary(hour)}</Text>
+                  <Text style={styles.hourlyMiniMeta}>{formatHeroSummary(hour, tempUnit)}</Text>
                 </View>
               </View>
 
@@ -768,8 +773,8 @@ function HourlyWithCoords({
   onVisualStateChange: (state: VisualState) => void;
   enabled: boolean;
 }) {
-  const units: UnitSystem = 'us';
-  const { forecastModel } = useSettings();
+  const { forecastModel, tempUnit } = useSettings();
+  const units: UnitSystem = tempUnit === 'C' ? 'metric' : 'us';
 
   const { data, loading, error, refreshing, refresh } = useOpenMeteoForecast({
     lat: coords.lat,
@@ -848,7 +853,7 @@ function HourlyWithCoords({
   const heroTemp = safeNum(leadHour.temperatureF);
   const heroFeels = safeNum(leadHour.apparentTemperatureF);
   const heroCondition = weatherCodeToLabel(safeNum(leadHour.weatherCode));
-  const heroSummary = formatHeroSummary(leadHour);
+  const heroSummary = formatHeroSummary(leadHour, tempUnit);
   const heroNarrative = buildWxLabHeroNarrative(leadHour);
   const heroSlot = formatHourSlot(leadHour.time, forecastTimeZone ?? undefined);
   const heroPrecip = safeNum(leadHour.precipChancePct);
@@ -866,6 +871,7 @@ function HourlyWithCoords({
         <HourlySimpleTimelineExpanded
           hours={visibleHourly}
           timeZone={forecastTimeZone ?? undefined}
+          tempUnit={tempUnit}
         />
       </>
     );
@@ -889,13 +895,13 @@ function HourlyWithCoords({
                 <PremiumWeatherIcon code={safeNum(leadHour.weatherCode)} size={58} variant="hero" style={styles.heroIconBadge} />
               </View>
               <View style={styles.heroPrimaryText}>
-                <Text style={styles.heroTemp}>{heroTemp != null ? `${Math.round(heroTemp)}°` : '—'}</Text>
+                <Text style={styles.heroTemp}>{displayTemperature(heroTemp, tempUnit)}</Text>
                 <Text style={styles.heroCondition} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.82}>{heroCondition}</Text>
                 <Text style={styles.heroNarrative} numberOfLines={4} adjustsFontSizeToFit minimumFontScale={0.84}>{heroNarrative || heroSummary}</Text>
                 <View style={styles.heroInlineMeta}>
                   <Text style={styles.heroInlineMetaText}>{formatHeroMetricValue(heroPrecip, '%')} precip chance</Text>
                   <Text style={styles.heroInlineMetaDot}>•</Text>
-                  <Text style={styles.heroInlineMetaText}>{formatHeroMetricValue(heroWind, ' mph')} wind</Text>
+                  <Text style={styles.heroInlineMetaText}>{displayWind(heroWind, tempUnit)} wind</Text>
                 </View>
                 <Text style={styles.heroModelText}>Model: {modelLabel}</Text>
               </View>
@@ -904,7 +910,7 @@ function HourlyWithCoords({
 
           <View style={styles.heroRightCard}>
             <Text style={styles.heroMiniLabel}>Feels like</Text>
-            <Text style={styles.heroMiniValue}>{heroFeels != null ? `${Math.round(heroFeels)}°` : '—'}</Text>
+            <Text style={styles.heroMiniValue}>{displayTemperature(heroFeels, tempUnit)}</Text>
           </View>
         </View>
 
@@ -915,11 +921,11 @@ function HourlyWithCoords({
           </View>
           <View style={styles.heroQuickStat}>
             <Text style={styles.heroQuickLabel}>Wind</Text>
-            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroWind, ' mph')}</Text>
+            <Text style={styles.heroQuickValue}>{displayWind(heroWind, tempUnit)}</Text>
           </View>
           <View style={styles.heroQuickStat}>
             <Text style={styles.heroQuickLabel}>Gust</Text>
-            <Text style={styles.heroQuickValue}>{formatHeroMetricValue(heroGust, ' mph')}</Text>
+            <Text style={styles.heroQuickValue}>{displayWind(heroGust, tempUnit)}</Text>
           </View>
           <View style={[styles.heroQuickStat, styles.heroQuickStatLast]}>
             <Text style={styles.heroQuickLabel}>Pressure</Text>
@@ -955,6 +961,7 @@ function HourlyWithCoords({
         maxHours={72}
         timeZone={forecastTimeZone ?? undefined}
         defaultMode={wxLab ? 'wxlab' : 'simple'}
+        tempUnit={tempUnit}
         onExplain={(payload) => onOpenLearn(payload.learnTopicId)}
       />
     </>

@@ -202,7 +202,7 @@ export function HourlyCharts72h({
                 ) : null}
               </View>
               {landscapeMode === 'daily' && dailySlice.length ? (
-                <DailyRangeChart daily={dailySlice} landscape chartHeight={landscapeChartHeight} />
+                <DailyRangeChart daily={dailySlice} unitsLabel={units === 'metric' ? '°C' : '°F'} landscape chartHeight={landscapeChartHeight} />
               ) : (
                 <HourlyRangeChart
                   hours={slice}

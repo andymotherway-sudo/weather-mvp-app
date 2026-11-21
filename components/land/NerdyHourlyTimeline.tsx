@@ -11,6 +11,7 @@ import {
 
 import { theme } from '../../styles/theme';
 import { typography } from '../../styles/typography';
+import { displayTemperature, displayWind, type TemperatureUnit } from '../../app/lib/weather/displayUnits';
 import { PremiumMetricIcon, PremiumWeatherIcon } from '../weather/PremiumWeatherIcon';
 
 type Mode = 'simple' | 'wxlab';
@@ -286,12 +287,14 @@ export function NerdyHourlyTimeline({
   timeZone,
   onExplain,
   defaultMode = 'simple',
+  tempUnit = 'F',
 }: {
   hours: any[];
   maxHours?: number;
   timeZone?: string;
   onExplain?: (payload: HourlyExplainPayload) => void;
   defaultMode?: Mode;
+  tempUnit?: TemperatureUnit;
 }) {
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -409,14 +412,14 @@ export function NerdyHourlyTimeline({
             </View>
 
             <View style={styles.mid}>
-              <Text style={styles.temp}>{chip(item.tF, '°')}</Text>
+              <Text style={styles.temp}>{displayTemperature(item.tF, tempUnit)}</Text>
               <Text style={styles.conditionText}>{item.conditionLabel}</Text>
             </View>
 
             <View style={styles.centerMeta}>
-              <Text style={styles.metaLine}>Feels {chip(item.feelsF, '°')} • Dew {chip(item.dpF, '°')}</Text>
+              <Text style={styles.metaLine}>Feels {displayTemperature(item.feelsF, tempUnit)} • Dew {displayTemperature(item.dpF, tempUnit)}</Text>
               <Text style={styles.metaLine}>
-                Wind {item.wind == null ? '—' : `${item.wind} mph`} • Gust {item.gust == null ? '—' : `${item.gust} mph`}
+                Wind {displayWind(item.wind, tempUnit)} • Gust {displayWind(item.gust, tempUnit)}
               </Text>
             </View>
 
@@ -456,9 +459,9 @@ export function NerdyHourlyTimeline({
                 <View style={styles.metricStripDivider} />
                 <View style={styles.metricStripItem}>
                   <PremiumMetricIcon kind="wind" size={18} variant="inline" />
-                  <Text style={styles.metricStripValue}>{item.wind == null ? '—' : `${item.wind} mph`}</Text>
+                  <Text style={styles.metricStripValue}>{displayWind(item.wind, tempUnit)}</Text>
                   <Text style={styles.metricStripLabel}>Wind</Text>
-                  <Text style={styles.metricStripSub}>{item.gust == null ? 'Gust —' : `Gust ${item.gust} mph`}</Text>
+                  <Text style={styles.metricStripSub}>{item.gust == null ? 'Gust —' : `Gust ${displayWind(item.gust, tempUnit)}`}</Text>
                 </View>
               </View>
 
@@ -466,11 +469,11 @@ export function NerdyHourlyTimeline({
                 <View style={styles.simpleExpanded}>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Feels like</Text>
-                    <Text style={styles.simpleStatValue}>{chip(item.feelsF, '°')}</Text>
+                    <Text style={styles.simpleStatValue}>{displayTemperature(item.feelsF, tempUnit)}</Text>
                   </View>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Dew point</Text>
-                    <Text style={styles.simpleStatValue}>{chip(item.dpF, '°')}</Text>
+                    <Text style={styles.simpleStatValue}>{displayTemperature(item.dpF, tempUnit)}</Text>
                   </View>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Humidity</Text>
@@ -488,7 +491,7 @@ export function NerdyHourlyTimeline({
                   </View>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Wind gusts</Text>
-                    <Text style={styles.simpleStatValue}>{item.gust == null ? '—' : `${item.gust} mph`}</Text>
+                    <Text style={styles.simpleStatValue}>{displayWind(item.gust, tempUnit)}</Text>
                   </View>
                   <View style={styles.simpleStatRow}>
                     <Text style={styles.simpleStatLabel}>Wind feel</Text>
@@ -499,14 +502,14 @@ export function NerdyHourlyTimeline({
                 <View style={styles.wxlab}>
                   <LearnableWxRow
                     label="Dew point"
-                    value={chip(item.dpF, '°')}
+                    value={displayTemperature(item.dpF, tempUnit)}
                     helper={`RH ${fmtPct(item.rh)}`}
                     topicId="dewpoint"
                     onExplain={onExplain}
                   />
                   <LearnableWxRow
                     label="Spread (temp - dew)"
-                    value={item.spread == null ? '—' : `${item.spread}°F`}
+                    value={item.spread == null ? '—' : `${Math.round(tempUnit === 'C' ? item.spread * (5 / 9) : item.spread)}°${tempUnit}`}
                     helper={formatSpreadBucket(item.spread)}
                     topicId="spread_temp_dew"
                     onExplain={onExplain}
@@ -526,8 +529,8 @@ export function NerdyHourlyTimeline({
                   />
                   <LearnableWxRow
                     label="Wind"
-                    value={item.wind == null ? '—' : `${arrow} ${item.wind} mph`}
-                    helper={item.gust == null ? 'Gust —' : `Gust ${item.gust} mph`}
+                    value={item.wind == null ? '—' : `${arrow} ${displayWind(item.wind, tempUnit)}`}
+                    helper={item.gust == null ? 'Gust —' : `Gust ${displayWind(item.gust, tempUnit)}`}
                     topicId="wind"
                     onExplain={onExplain}
                   />

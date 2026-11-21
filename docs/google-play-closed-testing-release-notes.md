@@ -1,17 +1,22 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.272**
-Android version code: **10290**
+Release: **OMNIwx 1.1.273**
+Android version code: **10291**
 Track: **Closed testing / internal testing candidate**
-Date: **November 15, 2026**
+Date: **November 16, 2026**
 
 ## Play Console Paste Notes
 
-Improves consistency and recovery states across Land, Hourly, Almanac, Maps,
-astronomy, marine, aviation, and extremes. Refines astronomy seeing language and
-marine condition signals so derived guidance is clearer about its inputs and
-limitations. Adds a safe, inactive foundation for future OMNIwx Free and Plus
-accounts; purchases and paid feature enforcement are not enabled in this build.
+Improves GeoColor startup by showing a lightweight current-frame preview before
+the sharp full-resolution image and animation finish buffering. Saved weather
+videos now run for at least 12 seconds while reusing already-prepared imagery,
+so the longer clip does not create additional renderer or source-frame requests.
+The overlay selector no longer inserts a duplicate active-layers card, and map
+zoom buttons now preserve the live viewport instead of recentering the map.
+The aviation selector now exposes CWA, observation, and other advisory types,
+and PIREPs retain their product, hazard, altitude, and valid-time metadata when
+the map applies filters. Temperature settings now convert the Land and Hourly
+forecast display, including charted values and wind speed labels.
 
 ## Tester Notes
 
@@ -26,9 +31,21 @@ Please focus on these areas:
   location context update without retaining stale content from the prior place.
 - In Maps, pan and zoom before changing products. Verify the camera remains
   stable and missing data is represented as unavailable rather than current.
-- Exercise standard radar and GeoColor playback. Report blank first-open maps,
-  unexpected camera resets, stale source labels, flashing, frame jumps, or slow
-  recovery after a failed frame.
+- Pan away from the selected or GPS location, then use the map `+` and `-`
+  buttons repeatedly. Verify only zoom changes and the map never recenters.
+- In Aviation, select every product and hazard, then change altitude and valid
+  time. Verify CWA and PIREP reports remain discoverable when their filters are
+  selected and no product silently falls into an unselectable category.
+- Change Settings from Fahrenheit to Celsius, then revisit Land and Hourly.
+  Verify temperatures, dew points, wind/gust labels, and forecast graphs use
+  Celsius and km/h where shown; switching back must restore Fahrenheit and mph.
+- Toggle several overlays while scrolled within the selector. Verify the list
+  stays at the same position and no active-layers card appears above it.
+- Exercise standard radar and GeoColor playback. Confirm the first preview
+  appears promptly, sharpens without moving the camera, and the loop continues
+  without blank frames, flashing, or stale source labels.
+- Save GeoColor and radar videos. Confirm gallery playback lasts at least 12
+  seconds, retains the expected animation speed, and loops without a blank cut.
 - Review astronomy seeing and marine condition labels. Confirm they describe
   estimated or derived guidance and remain cautious when inputs are missing.
 - Open Profile and confirm the OMNIwx Free status is informational. No purchase,
@@ -36,19 +53,19 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.272`
-- Android version code: `10290`
+- App version: `1.1.273`
+- Android version code: `10291`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
 - Lint check: `npm run lint -- --quiet`
-- Worker focused tests: `npm run test:unit`
+- Worker tests: `npm test -- --run`
 - Android build: `npm run build:android:prod`
 
 ## Release Verification Notes
 
-- App lint and TypeScript checks pass locally.
-- Worker TypeScript and 12 focused unit tests pass locally.
+- App lint and TypeScript checks must pass locally before artifact creation.
+- Worker tests and the GeoColor renderer syntax check must pass before production promotion.
 - The full Worker integration harness cannot run on the local Windows ARM64
   host because `workerd` does not support that platform. A Linux GitHub CI gate
   now runs the full Worker suite before integration.
@@ -60,26 +77,18 @@ Please focus on these areas:
   status.
 - This release does not resume MRMS or Level III publishers. Existing radar
   fallbacks remain required while owned timelines are paused or stale.
-- Production Worker deployment is not part of the app build step. Backend and D1
-  activation require a separate approved deployment and migration procedure.
+- The Cloudflare Worker contract is unchanged. The bounded private GeoColor
+  Cloud Run renderer must be promoted before building this paired app release;
+  no D1 migration or radar-publisher activation is part of this release.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
 ## Built Artifact Evidence
 
-- Build: `npm run build:android:prod`, successful in 4m 18s; 999 actionable
-  tasks (91 executed, 908 up-to-date).
-- Artifact: `android/app/build/outputs/bundle/release/app-release.aab`,
-  170843093 bytes; modified `2026-11-15T16:38:25.6321870Z`.
-- SHA-256: `94D260DA2B421136BECDA98C5D4E0FA2C7764A14365665CE91A78983428FFE57`.
-- Native manifest: `com.anonymous.weatherapp`, version `1.1.272`, version code
-  `10290`.
-- Embedded Expo config: `1.1.272 / 10290`, `production`,
-  `https://omniwx-api-production.omniwx.workers.dev`, build label
-  `internal-test-aab-10290`.
-- `jarsigner -verify -certs` passed. Signer SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`, matching the configured upload
-  certificate used by the previous candidate.
+Pending production renderer promotion, fresh AAB build, embedded metadata
+inspection, checksum, and signing verification. The local Gradle daemon must
+first be able to establish its loopback IPC connection. Do not upload an older
+artifact left at the standard output path.
 
 ## Remaining Acceptance
 

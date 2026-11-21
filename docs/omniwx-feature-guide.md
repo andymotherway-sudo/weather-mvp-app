@@ -255,7 +255,7 @@ Radar playback also keeps a warm next-frame raster slot mounted when a follow-up
 
 ### Animation Export
 
-On Android, OMNIwx can export animated map loops as MP4 files through the native video export module. Recording preserves the visible animated weather stack, including radar, visible clouds, GOES true color, infrared, water vapor, and animated wind flow when those layers are enabled. Wind flow can also be recorded by itself. Export uses prepared animation frames, preserves the recording region, and saves through Android media APIs.
+On Android, OMNIwx can export animated map loops as MP4 files through the native video export module. Recording preserves the visible animated weather stack, including radar, visible clouds, GOES true color, infrared, water vapor, and animated wind flow when those layers are enabled. Wind flow can also be recorded by itself. Export uses prepared animation frames, preserves the recording region, and saves through Android media APIs. Short source loops repeat prepared scenes to produce at least 12 seconds of video without downloading or rendering the source imagery again.
 
 ### Map Interaction
 

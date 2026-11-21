@@ -64,6 +64,10 @@ function clamp(n: number, a: number, b: number) {
 function clampInt(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, Math.round(n)));
 }
+
+function fahrenheitToCelsius(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? (value - 32) * (5 / 9) : value ?? null;
+}
 function aqiLabelCenterY(
   pointY: number,
   nearbyYs: Array<number | null>,
@@ -167,7 +171,21 @@ export function DailyRangeChart({
   const { wxLab } = useWxLab();
   const T = useMemo(() => getTypography({ wxLab }), [wxLab]);
 
-  const data = useMemo(() => (daily ?? []).filter((d) => d?.date).slice(0, 15), [daily]);
+  const data = useMemo(() => {
+    const base = (daily ?? []).filter((d) => d?.date).slice(0, 15);
+    if (unitsLabel !== '°C') return base;
+
+    // Daily values arrive in the app's canonical Fahrenheit contract. Convert the
+    // plotting data too, not just the label, so metric graphs remain truthful.
+    return base.map((day) => ({
+      ...day,
+      tempMaxF: fahrenheitToCelsius(day.tempMaxF),
+      tempMinF: fahrenheitToCelsius(day.tempMinF),
+      apparentTempMaxF: fahrenheitToCelsius(day.apparentTempMaxF),
+      apparentTempMinF: fahrenheitToCelsius(day.apparentTempMinF),
+      dewPointMaxF: fahrenheitToCelsius(day.dewPointMaxF),
+    }));
+  }, [daily, unitsLabel]);
 
   const [selIdx, setSelIdx] = useState(0);
   const [viewportW, setViewportW] = useState(0);

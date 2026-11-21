@@ -990,7 +990,7 @@ Mental model:
 - The cache downloads a small ready-ahead set and keeps a bounded set of recent frames on disk.
 - The buffered layer keeps two stable native image slots and crossfades them without rerendering the full Maps screen on every animation step.
 - Record-mode preview reuses the same compositor instead of maintaining a separate playback implementation.
-- The native exporter downloads frames, composites them into bitmaps, blends transitions, draws optional animated wind trails, encodes H.264, and saves an MP4.
+- The native exporter downloads frames once, composites them into bitmaps, blends transitions, draws optional animated wind trails, repeats prepared scenes when needed for a minimum 12-second clip, encodes H.264, and saves an MP4.
 - Recorder frames reflect the enabled animated stack: radar can include visible clouds, true color, infrared, water vapor, and wind flow; satellite products can include wind flow; and wind particles can be exported without another animated layer.
 - Live wind particles use midpoint advection, deterministic reseeding, tapered fading trails, and moving heads. The native exporter uses the same graded trail data so saved videos resemble the map.
 

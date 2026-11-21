@@ -20,6 +20,7 @@ const PRODUCTS: Array<{ key: AviationProductType; label: string }> = [
   { key: 'gairmet', label: 'G-AIRMET' },
   { key: 'sigmet', label: 'SIGMET' },
   { key: 'convectiveSigmet', label: 'Conv SIGMET' },
+  { key: 'cwa', label: 'CWA' },
   { key: 'pirep', label: 'PIREP' },
 ];
 
@@ -30,6 +31,8 @@ const HAZARDS: Array<{ key: AviationHazardType; label: string }> = [
   { key: 'ifr', label: 'IFR/MTN' },
   { key: 'mtnObscuration', label: 'MTN OBS' },
   { key: 'ts', label: 'TS' },
+  { key: 'obs', label: 'OBS' },
+  { key: 'unknown', label: 'Other' },
 ];
 
 if (Platform.OS === 'android') {

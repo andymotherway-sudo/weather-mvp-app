@@ -1456,6 +1456,8 @@ export default function MapsScreen() {
     'gairmet',
     'sigmet',
     'convectiveSigmet',
+    'cwa',
+    'pirep',
   ]);
   const [selectedAviationHazards, setSelectedAviationHazards] = useState<AviationHazardType[]>([
     'ice',
@@ -1464,6 +1466,8 @@ export default function MapsScreen() {
     'ifr',
     'mtnObscuration',
     'ts',
+    'obs',
+    'unknown',
   ]);
   const [selectedAviationAltitudeFt, setSelectedAviationAltitudeFt] = useState<number | null>(null);
   const [selectedAviationValidTime, setSelectedAviationValidTime] = useState<Date>(new Date());

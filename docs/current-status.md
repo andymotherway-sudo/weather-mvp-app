@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release artifact verified: November 15, 2026 (Arizona time).
+Release preparation updated: November 16, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -8,11 +8,15 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.272` / Android version code `10290`.
-- The November 15 production AAB build succeeded. Embedded native metadata and
-  Expo config agree on the version and production API target. TypeScript and
-  lint passed; bundle signature verification passed and matches the configured
-  upload keystore. Play upload and physical-device acceptance are pending.
+- Current internal-testing candidate: `1.1.273` / Android version code `10291`.
+- This candidate adds progressive GeoColor startup and a minimum 12-second MP4
+  export duration without increasing steady-state renderer concurrency or
+  source-frame requests. It also keeps the overlay catalog stationary when
+  layers are toggled and makes map zoom buttons change zoom only, never center
+  or location-follow state. The aviation filter now retains PIREP metadata and
+  exposes CWA/observation categories; Land and Hourly now honor Celsius display
+  selection. Artifact evidence is recorded in the release notes only after the
+  production renderer and AAB pass their release gates.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
@@ -20,6 +24,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - Maps and GeoColor remain the highest-risk user-facing area. Validate blank
   first-open behavior, imagery availability, sharpness at state zoom, timeline
   controls, and seamless frame motion on every maps-related release.
+- The current local Android build gate is blocked by Gradle's localhost IPC
+  (`Unable to establish loopback connection`) before compilation starts. This is
+  an environment failure, not evidence of an app compile failure; do not mark
+  the candidate built until a successful clean release build is recorded.
 - The authoritative release procedure is
   [full-release-path.md](full-release-path.md).
 

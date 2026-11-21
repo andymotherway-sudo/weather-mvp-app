@@ -33,6 +33,7 @@ import { useOpenMeteoForecast } from '../lib/openmeteo/hooks';
 import { fetchFavoritePreviewBatch, fetchHourlyForecastBatch, nearestTimeIndex } from '../lib/weather/batch';
 import { useAppChrome } from '../lib/theme/useAppChrome';
 import { useCurrentWeather } from '../lib/weather/hooks';
+import { displayTemperature, displayWind, type TemperatureUnit } from '../lib/weather/displayUnits';
 import { useHomeSummaryBundle } from '../lib/weather/useHomeSummaryBundle';
 import { OMNI_MARK_WORD, OMNI_TAB_LOGO_STYLE } from '../lib/brand/assets';
 
@@ -2658,6 +2659,7 @@ function SimpleDailyOverview({
   hourly,
   moonDays,
   timeZone,
+  tempUnit,
 }: {
   tempF: number | null;
   condition: string;
@@ -2684,6 +2686,7 @@ function SimpleDailyOverview({
     moonPhaseLabel?: string | null;
   }>;
   timeZone?: string | null;
+  tempUnit: TemperatureUnit;
 }) {
   const { chrome } = useAppChrome();
   const today = daily[0] ?? null;
@@ -2694,7 +2697,7 @@ function SimpleDailyOverview({
     [moonDays]
   );
   const todaySplit = buildDayNightSummary(today?.date ?? today?.time, hourly);
-  const fmtWind = (v: number | null) => (v != null ? `${Math.round(v)} mph` : '—');
+  const fmtWind = (v: number | null) => displayWind(v, tempUnit);
   const todayHi =
     safeNum(today?.tempMaxF ?? today?.temperatureMaxF ?? today?.temperature_2m_max ?? today?.maxTempF ?? today?.highF) ?? null;
   const todayLo =
@@ -2726,15 +2729,15 @@ function SimpleDailyOverview({
     .join(' • ');
   const currentAqiValue = airQualityIndex != null ? `${Math.round(airQualityIndex)}` : '—';
   const currentAqiSub = airQualityLabel?.replace(/^AQI\s*:?\s*/i, '').trim() || undefined;
-  const todayWindSub = gustMph != null ? `Gust ${Math.round(gustMph)} mph` : '—';
-  const tonightWindSub = todaySplit.night.gust != null ? `Gust ${Math.round(todaySplit.night.gust)} mph` : '—';
+  const todayWindSub = gustMph != null ? `Gust ${displayWind(gustMph, tempUnit)}` : '—';
+  const tonightWindSub = todaySplit.night.gust != null ? `Gust ${displayWind(todaySplit.night.gust, tempUnit)}` : '—';
   const pressureMbValue = pressureHpa != null ? `${Math.round(pressureHpa)} mb` : '—';
   const currentMetrics = [
     { value: humidityPct != null ? `${Math.round(humidityPct)}%` : '—', label: 'RH' },
-    { value: dewpointF != null ? `${Math.round(dewpointF)}°` : '—', label: 'DP' },
+    { value: displayTemperature(dewpointF, tempUnit), label: 'DP' },
     { value: uvIndex != null ? `${Math.round(uvIndex)}` : '—', label: 'UV index' },
     { value: pressureMbValue, label: 'Baro', sub: pressureTrend.label },
-    { value: windMph != null ? `${Math.round(windMph)} mph` : '—', label: 'Wind', sub: todayWindSub.replace('???', '—') },
+    { value: displayWind(windMph, tempUnit), label: 'Wind', sub: todayWindSub.replace('???', '—') },
     { value: currentAqiValue.replace('???', '—'), label: 'AQI', sub: currentAqiSub },
   ];
   const dailyCurrentSummaryText =
@@ -2750,7 +2753,7 @@ function SimpleDailyOverview({
         </View>
         <View style={styles.dailyCurrentTop}>
           <PremiumWeatherIcon code={displayTodayCode} size={48} variant="hero" style={styles.dailyCurrentIconBadge} />
-          <Text style={styles.dailyCurrentTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+          <Text style={styles.dailyCurrentTemp}>{displayTemperature(tempF, tempUnit)}</Text>
           <View style={styles.dailyCurrentText}>
             <Text
               style={styles.dailyCurrentCondition}
@@ -2771,22 +2774,22 @@ function SimpleDailyOverview({
           <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>Low</Text>
             <Text style={styles.dailyRangeStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
-              {todayLo != null ? `${Math.round(todayLo)}°` : '—'}
+              {displayTemperature(todayLo, tempUnit)}
             </Text>
           </View>
           <View style={styles.dailyRangeStat}>
             <Text style={styles.dailyRangeStatLabel}>High</Text>
             <Text style={styles.dailyRangeStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>
-              {todayHi != null ? `${Math.round(todayHi)}°` : '—'}
+              {displayTemperature(todayHi, tempUnit)}
             </Text>
           </View>
         </View>
 
         <View style={styles.dailyTempRangeBlock}>
           <View style={styles.dailyTempRangeLabels}>
-            <Text style={styles.dailyTempRangeEndpoint}>{todayLo != null ? `${Math.round(todayLo)}°` : '—'}</Text>
+            <Text style={styles.dailyTempRangeEndpoint}>{displayTemperature(todayLo, tempUnit)}</Text>
             <Text style={[styles.dailyTempRangeEndpoint, styles.dailyTempRangeEndpointHigh]}>
-              {todayHi != null ? `${Math.round(todayHi)}°` : '—'}
+              {displayTemperature(todayHi, tempUnit)}
             </Text>
           </View>
           <View style={styles.dailyTempRangeTrack}>
@@ -5931,6 +5934,7 @@ function LandWeatherWithCoords({
           hourly={hourly}
           moonDays={astroData?.moonDays}
           timeZone={forecastTimeZone}
+          tempUnit={tempUnit}
         />
 
         {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -6061,7 +6065,7 @@ function LandWeatherWithCoords({
       {wxLab && daily.length > 0 && !isLandscape ? (
         <Card style={styles.forecastCard}>
           <Text style={styles.cardTitle}>Daily Forecast</Text>
-          <DailyRangeChart daily={daily} />
+          <DailyRangeChart daily={daily} unitsLabel={tempUnit === 'C' ? '°C' : '°F'} />
           <Text style={styles.updatedText}>Model: {forecastModelLabel(forecastModel)}</Text>
           <Text style={styles.updatedText}>Source: Open-Meteo</Text>
         </Card>
@@ -6153,7 +6157,7 @@ function LandWeatherWithCoords({
                 </View>
 
                 <View style={styles.landscapeGraphBody}>
-                  <DailyRangeChart daily={daily} landscape chartHeight={landscapeChartHeight} />
+                  <DailyRangeChart daily={daily} unitsLabel={tempUnit === 'C' ? '°C' : '°F'} landscape chartHeight={landscapeChartHeight} />
                 </View>
 
                 <Text style={styles.landscapeGraphSource}>
