@@ -2405,6 +2405,7 @@ function SimpleSummary({
   pressureTrend,
   narrative,
   hideWind,
+  tempUnit,
 }: {
   dewpointF: number | null;
   humidityPct: number | null;
@@ -2419,6 +2420,7 @@ function SimpleSummary({
   pressureTrend: { arrow: '↑' | '↓' | '→'; label: 'Rising' | 'Falling' | 'Steady'; deltaHpa: number | null };
   narrative?: string;
   hideWind?: boolean;
+  tempUnit: TemperatureUnit;
 }) {
   const hasMoisture = dewpointF != null || humidityPct != null;
   const hasWind = !hideWind && (windMph != null || gustMph != null || windDirDeg != null);
@@ -2455,7 +2457,7 @@ function SimpleSummary({
           <View style={ss.grid2}>
             <View style={ss.cell}>
               <Text style={ss.k}>Dew Point</Text>
-              <Text style={ss.v}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
+              <Text style={ss.v}>{displayTemperature(dewpointF, tempUnit)}</Text>
             </View>
             <View style={ss.cell}>
               <Text style={ss.k}>RH</Text>
@@ -2479,13 +2481,13 @@ function SimpleSummary({
             <View style={ss.cell}>
               <Text style={ss.k}>Speed</Text>
               <Text style={ss.v}>
-                {windMph != null ? `${Math.round(windMph)} mph` : '—'}{' '}
+                {displayWind(windMph, tempUnit)}{' '}
                 <Text style={{ opacity: 0.7 }}>{windDirText}</Text>
               </Text>
             </View>
             <View style={ss.cell}>
               <Text style={ss.k}>Gusts</Text>
-              <Text style={ss.v}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
+              <Text style={ss.v}>{displayWind(gustMph, tempUnit)}</Text>
             </View>
           </View>
         </View>
@@ -3330,6 +3332,7 @@ function NerdyDeepDive({
   feelsDriverValue,
   feelsDriverTopicId,
   onOpenLearnTopic,
+  tempUnit,
 }: {
   condition: string;
   heroSummary: string;
@@ -3357,6 +3360,7 @@ function NerdyDeepDive({
   feelsDriverValue: string;
   feelsDriverTopicId: string;
   onOpenLearnTopic: (topicId?: string) => void;
+  tempUnit: TemperatureUnit;
 }) {
   const dir = dirToCompass(windDirDeg);
   const dirHeading = dir ?? '\u2014';
@@ -3384,7 +3388,7 @@ function NerdyDeepDive({
 
       <View style={nd.heroShell}>
         <View style={nd.heroRow}>
-          <Text style={nd.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+          <Text style={nd.heroTemp}>{displayTemperature(tempF, tempUnit)}</Text>
 
           <View style={nd.heroCopy}>
             <Text style={nd.heroCondition}>{condition}</Text>
@@ -3422,7 +3426,7 @@ function NerdyDeepDive({
             <View style={nd.metricGrid2}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('dewpoint')}>
                 <Text style={nd.metricLabel}>DEW PT</Text>
-                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{dewpointF != null ? `${Math.round(dewpointF)}°F` : '—'}</Text>
+                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{displayTemperature(dewpointF, tempUnit)}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('humidity')}>
                 <Text style={nd.metricLabel}>RH</Text>
@@ -3436,7 +3440,7 @@ function NerdyDeepDive({
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('spread_temp_dew')}>
                 <Text style={nd.metricLabel}>SPREAD</Text>
-                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{spreadF != null ? `${Math.round(spreadF)}°F` : '—'}</Text>
+                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{spreadF != null ? `${Math.round(tempUnit === 'C' ? spreadF * (5 / 9) : spreadF)}°${tempUnit}` : '—'}</Text>
               </Pressable>
             </View>
             <Pressable style={nd.metricHiddenCard} onPress={() => onOpenLearnTopic('dewpoint')}>
@@ -3460,11 +3464,11 @@ function NerdyDeepDive({
             <View style={nd.metricGrid2}>
               <Pressable style={[nd.metricCard, nd.metricCellDivider]} onPress={() => onOpenLearnTopic('wind')}>
                 <Text style={nd.metricLabel}>SPEED</Text>
-                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{windMph != null ? `${Math.round(windMph)} mph` : '—'}</Text>
+                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{displayWind(windMph, tempUnit)}</Text>
               </Pressable>
               <Pressable style={nd.metricCard} onPress={() => onOpenLearnTopic('gusts')}>
                 <Text style={nd.metricLabel}>GUSTS</Text>
-                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{gustMph != null ? `${Math.round(gustMph)} mph` : '—'}</Text>
+                <Text style={nd.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.56}>{displayWind(gustMph, tempUnit)}</Text>
               </Pressable>
             </View>
             <View style={nd.metricGrid2Tall}>
@@ -5781,8 +5785,8 @@ function LandWeatherWithCoords({
   const spreadF = tempF != null && dewpointF != null ? tempF - dewpointF : null;
 
   const feelsDriver = useMemo(() => {
-    if (hi != null) return { label: 'Heat Index', value: `${Math.round(hi)}°F`, topicId: 'heat-index', conf: 'high' as const };
-    if (wc != null) return { label: 'Wind Chill', value: `${Math.round(wc)}°F`, topicId: 'wind-chill', conf: 'high' as const };
+    if (hi != null) return { label: 'Heat Index', value: displayTemperature(hi, tempUnit), topicId: 'heat-index', conf: 'high' as const };
+    if (wc != null) return { label: 'Wind Chill', value: displayTemperature(wc, tempUnit), topicId: 'wind-chill', conf: 'high' as const };
     const useHeatIndex = tempF == null ? true : tempF >= 60;
     return {
       label: useHeatIndex ? 'Heat Index' : 'Wind Chill',
@@ -5790,7 +5794,7 @@ function LandWeatherWithCoords({
       topicId: useHeatIndex ? 'heat-index' : 'wind-chill',
       conf: undefined,
     };
-  }, [hi, wc, tempF]);
+  }, [hi, wc, tempF, tempUnit]);
 
   const updatedTimeLabel = observationTime ? formatUpdatedTime(observationTime, forecastTimeZone) : null;
   const updatedText = updatedTimeLabel ? `Updated ${updatedTimeLabel}` : null;
@@ -5998,7 +6002,7 @@ function LandWeatherWithCoords({
 
           <View style={styles.heroTopRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroTemp}>{tempF != null ? `${Math.round(tempF)}°` : '—'}</Text>
+              <Text style={styles.heroTemp}>{displayTemperature(tempF, tempUnit)}</Text>
               <Text style={styles.heroCondition}>{condition}</Text>
               <Text style={styles.heroSummary} numberOfLines={1}>
                 {heroSummary}
@@ -6007,7 +6011,7 @@ function LandWeatherWithCoords({
 
             <View style={styles.heroRight}>
               <Text style={styles.heroMiniLabel}>Feels</Text>
-              <Text style={styles.heroMiniValue}>{feelsLikeF != null ? `${Math.round(feelsLikeF)}°` : '—'}</Text>
+              <Text style={styles.heroMiniValue}>{displayTemperature(feelsLikeF, tempUnit)}</Text>
             </View>
           </View>
 
@@ -6025,6 +6029,7 @@ function LandWeatherWithCoords({
             pressureTrend={pressureTrend}
             narrative={moistureHint ?? undefined}
             hideWind
+            tempUnit={tempUnit}
           />
 
           {updatedText ? <Text style={styles.updatedText}>{updatedText}</Text> : null}
@@ -6058,6 +6063,7 @@ function LandWeatherWithCoords({
             feelsDriverValue={feelsDriver.value}
             feelsDriverTopicId={feelsDriver.topicId}
             onOpenLearnTopic={openLearnTopic}
+            tempUnit={tempUnit}
           />
         </>
       )}
