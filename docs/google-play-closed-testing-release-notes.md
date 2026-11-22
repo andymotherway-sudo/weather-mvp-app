@@ -7,16 +7,10 @@ Date: **November 21, 2026**
 
 ## Play Console Paste Notes
 
-Improves GeoColor startup by showing a lightweight current-frame preview before
-the sharp full-resolution image and animation finish buffering. Saved weather
-videos now run for at least 12 seconds while reusing already-prepared imagery,
-so the longer clip does not create additional renderer or source-frame requests.
-The overlay selector no longer inserts a duplicate active-layers card, and map
-zoom buttons now preserve the live viewport instead of recentering the map.
-The aviation selector now exposes CWA, observation, and other advisory types,
-and PIREPs retain their product, hazard, altitude, and valid-time metadata when
-the map applies filters. Temperature settings now convert the Land and Hourly
-forecast display, including charted values and wind speed labels.
+Faster GeoColor startup and smoother saved weather videos. Map zoom now stays
+on your chosen area, and overlay selection no longer shifts while browsing.
+Aviation filters now include PIREPs, CWAs, and observations. Land and Hourly
+screens now honor Celsius and metric wind settings.
 
 ## Tester Notes
 
