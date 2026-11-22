@@ -36,6 +36,16 @@ confirmation, a four-operation cap, one MRMS composite, and Level III disabled.
 All five Cloud Scheduler radar jobs were rechecked as `PAUSED` afterward. Keep
 them paused until the full re-enablement evidence below is complete.
 
+One explicitly approved follow-up packed MRMS publish completed at
+`20261122T190000` under the same four-operation cap. The production timeline
+then reported two retained `worker-r2-pack` frames: the new `19:00Z` frame and
+the prior `18:08Z` frame. Real Worker probes for both the current tile and the
+specific retained prior frame returned `200 image/png` with
+`x-omni-radar-source: r2-mrms-pack`. The job was immediately restored to
+`RADAR_RUNNER_APPLY=false` and disabled confirmation; all five schedules were
+rechecked as paused. This proves a two-frame packed retention cycle, not a
+safe unattended cadence or Level III readiness.
+
 ## Emergency Stop
 
 1. Set GitHub repository variables `MRMS_SCHEDULE_ENABLED=false` and `LEVEL3_SCHEDULE_ENABLED=false`.

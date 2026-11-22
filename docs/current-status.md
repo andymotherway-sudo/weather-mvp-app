@@ -82,6 +82,12 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   was deployed with writes disabled and its one-task dry-run succeeded. No
   follow-up publish, Level III run, or scheduler activation is authorized by
   that verification alone.
+- A second, manually approved packed MRMS publish then succeeded at
+  `20261122T190000` while bounded by the four-operation cap. The live timeline
+  retained both that newest frame and the prior `20261122T180800` frame; Worker
+  probes for each returned `200 image/png` with `r2-mrms-pack`. The MRMS job
+  was restored to no-write mode immediately afterward, and all five scheduler
+  jobs were rechecked as `PAUSED`.
 
 ## Active Gates
 
