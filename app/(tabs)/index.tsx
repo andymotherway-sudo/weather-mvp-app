@@ -96,15 +96,19 @@ function formatSurfaceVisibility(valueMi: number | null) {
 
 function isTemporaryWeatherError(message?: string | null) {
   if (!message) return false;
-  return /\bHTTP\s+5\d\d\b/i.test(message) || /timeout|timed out|network request failed|failed to fetch/i.test(message);
+  return /\b(?:HTTP\s+)?(?:429|5\d\d)\b/i.test(message) || /rate[ -]?limit|timeout|timed out|network request failed|failed to fetch/i.test(message);
 }
 
 function formatWeatherError(message?: string | null) {
   if (!message) return null;
+  if (/\b(?:HTTP\s+)?429\b|rate[ -]?limit/i.test(message)) {
+    return 'Weather data is temporarily busy. Please try again in a minute.';
+  }
   if (/\bHTTP\s+502\b/i.test(message)) return 'A weather service returned a temporary bad gateway response. Please try again.';
   if (/\bHTTP\s+5\d\d\b/i.test(message)) return 'A weather service is temporarily unavailable. Please try again.';
   if (/timeout|timed out/i.test(message)) return 'The weather request timed out. Please try again.';
   if (/network request failed|failed to fetch/i.test(message)) return 'The weather service could not be reached. Please check your connection.';
+  if (/^\s*[\[{]/.test(message)) return 'Weather data could not be loaded. Please try again.';
   return message;
 }
 

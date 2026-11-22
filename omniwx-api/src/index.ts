@@ -14840,10 +14840,16 @@ async function handleWorkerRequest(
               headers: { accept: "application/json" },
             });
             if (!res.ok) {
-              const text = await res.text().catch(() => "");
+              const retryAfter = res.headers.get("retry-after");
               return new Response(
-                JSON.stringify({ ok: false, error: "Home summary forecast failed", status: res.status, body: text.slice(0, 200) }),
-                { status: res.status, headers: { "content-type": "application/json; charset=utf-8" } },
+                JSON.stringify({ ok: false, error: "Home summary forecast failed", status: res.status }),
+                {
+                  status: res.status,
+                  headers: {
+                    "content-type": "application/json; charset=utf-8",
+                    ...(retryAfter ? { "retry-after": retryAfter } : {}),
+                  },
+                },
               );
             }
             return res;
@@ -14855,18 +14861,30 @@ async function handleWorkerRequest(
       ]);
 
       if (!currentRes.ok) {
-        const text = await currentRes.text().catch(() => "");
+        const retryAfter = currentRes.headers.get("retry-after");
         return new Response(
-          JSON.stringify({ ok: false, error: "Home summary current failed", status: currentRes.status, body: text.slice(0, 200) }),
-          { status: currentRes.status, headers: { "content-type": "application/json; charset=utf-8" } },
+          JSON.stringify({ ok: false, error: "Home summary current failed", status: currentRes.status }),
+          {
+            status: currentRes.status,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              ...(retryAfter ? { "retry-after": retryAfter } : {}),
+            },
+          },
         );
       }
 
       if (!forecastRes.ok) {
-        const text = await forecastRes.text().catch(() => "");
+        const retryAfter = forecastRes.headers.get("retry-after");
         return new Response(
-          JSON.stringify({ ok: false, error: "Home summary forecast failed", status: forecastRes.status, body: text.slice(0, 200) }),
-          { status: forecastRes.status, headers: { "content-type": "application/json; charset=utf-8" } },
+          JSON.stringify({ ok: false, error: "Home summary forecast failed", status: forecastRes.status }),
+          {
+            status: forecastRes.status,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              ...(retryAfter ? { "retry-after": retryAfter } : {}),
+            },
+          },
         );
       }
 
