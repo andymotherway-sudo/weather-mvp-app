@@ -85,29 +85,25 @@ Please focus on these areas:
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
-## Previous Artifact Evidence
+## Built Artifact Evidence
 
 - Built successfully with `npm run build:android:prod` on November 22, 2026.
   The documented Windows Java local-TCP fallback was applied by the release
   script.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,845,002` bytes. Build timestamp: `2026-11-22T16:39:23Z`.
-- SHA-256: `27CBD153FE857CC353E1B1BF1C5E749821576AE5DC6EDF2EB9794451836B62B8`
-- Embedded configuration confirms app version `1.1.276`, Android version code
-  `10294`, build label `internal-test-aab-10294`, and the production Worker URL.
+- Size: `170,852,458` bytes. Build timestamp: `2026-11-22T18:33:38Z`.
+- SHA-256: `BE3B972D8AFA0B2C5FF3A6CA50258BED8C9E827672D3F8E9549A42D6FC6F59AE`
+- Embedded configuration confirms app version `1.1.277`, Android version code
+  `10295`, build label `internal-test-aab-10295`, and the production Worker URL.
 - The signing certificate SHA-256 is
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
-- Post-build production checks returned HTTP 200 for Worker health and radar
-  status. The actual GeoColor catalog route returned 11 NOAA STAR / CIRA frames;
-  aviation overlays returned G-AIRMET, AIRMET/SIGMET, CWA, PIREP, and METAR with
-  no provider errors.
+- Pre-build production checks returned HTTP 200 for Worker health and the real
+  packed MRMS tile route (`image/png`, `x-omni-radar-source: r2-mrms-pack`).
 - This is an app-only release: no Worker deployment, D1 migration, or radar
-  publisher change was made. The local Windows ARM64 Worker integration suite
-  was not rerun because `workerd` is unsupported on this host; Linux CI remains
-  the full Worker-test gate.
-- That evidence applies only to the prior `10294` candidate. Replace this
-  section with the `10295` artifact hash, timestamp, embedded configuration,
-  and signing verification after this release build completes.
+  publisher activation was made. The local Windows ARM64 Worker integration
+  suite cannot run because `workerd` is unsupported on this host; the focused
+  Worker unit suite passed and Linux CI remains the full integration gate.
+- Upload only this version-code `10295` AAB. Do not reuse or upload `10294`.
 
 ## Remaining Acceptance
 

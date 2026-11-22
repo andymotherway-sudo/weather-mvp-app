@@ -20,9 +20,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   renderer output so state-scale
   imagery is never presented as ready while soft. GeoColor now retries failed
   sharp-frame downloads before skipping them and serializes its expensive
-  prefetch queue. The prior `1.1.276` AAB was built and inspected on November
-  22; the current `1.1.277` candidate is being prepared through the same
-  production-targeted release path.
+  prefetch queue. A fresh `1.1.277` AAB was built and inspected on November
+  22; its artifact evidence is recorded in the release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
