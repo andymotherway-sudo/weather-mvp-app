@@ -7,6 +7,7 @@ export type EntitlementTier = "free" | "plus";
 
 export type EntitlementRecord = {
   entitlement_key: string;
+  provider: string;
   status: string;
   expires_at: string | null;
   latest_event_at: string | null;
@@ -32,14 +33,28 @@ const PLUS_FEATURES = [
   "extended_climatology",
   "enhanced_saved_locations",
   "advanced_personalization",
+  "video_export",
+  "extremes",
 ] as const;
 
 const ACCESS_STATUSES = new Set(["active", "trialing", "grace_period", "cancelled", "canceled"]);
+const GRANDFATHER_PROVIDER = "omniwx_grandfather";
+const GRANDFATHER_STATUS = "grandfathered";
 
 function isFuture(value: string | null, nowMs: number) {
   if (!value) return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed > nowMs;
+}
+
+function grantsPlusAccess(record: EntitlementRecord, nowMs: number) {
+  const provider = record.provider.trim().toLowerCase();
+  const status = record.status.trim().toLowerCase();
+
+  // Lifetime access can only be issued by our server-side grandfathering process.
+  // Ordinary active records must retain a verified expiry from the billing provider.
+  if (provider === GRANDFATHER_PROVIDER && status === GRANDFATHER_STATUS) return true;
+  return ACCESS_STATUSES.has(status) && isFuture(record.expires_at, nowMs);
 }
 
 export function resolveEntitlementSnapshot(
@@ -50,8 +65,7 @@ export function resolveEntitlementSnapshot(
   const nowMs = now.getTime();
   const activePlus = records
     .filter((record) => record.entitlement_key === OMNIWX_PLUS_ENTITLEMENT)
-    .filter((record) => ACCESS_STATUSES.has(record.status.trim().toLowerCase()))
-    .filter((record) => isFuture(record.expires_at, nowMs))
+    .filter((record) => grantsPlusAccess(record, nowMs))
     .sort((a, b) => Date.parse(b.expires_at ?? "9999-12-31") - Date.parse(a.expires_at ?? "9999-12-31"))[0];
 
   const active = Boolean(activePlus);
@@ -76,7 +90,7 @@ export async function getEntitlementsForUser(
   }
 
   const result = await db.prepare(`
-    SELECT entitlement_key, status, expires_at, latest_event_at
+    SELECT entitlement_key, provider, status, expires_at, latest_event_at
     FROM subscription_entitlements
     WHERE user_id = ?
     ORDER BY updated_at DESC

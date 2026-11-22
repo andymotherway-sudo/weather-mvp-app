@@ -44,6 +44,7 @@ A free registered account is an identity state, not a third subscription tier.
 | Advanced wxLab analysis and specialty planning tools | Preview at the point of use | Included only for launch-accepted features |
 | Advanced map layers/presets and GeoColor playback | Limited preview, only if cost-safe | Included only after device/cost acceptance |
 | High-resolution animation export and advanced customization | Not included in proposed paid launch | Included after provider/export review |
+| Extremes dashboard | Not included | Included after source, freshness, and cost review |
 | Basic widgets | Included | Included; advanced customization can be Plus |
 | Advertising | No ad network planned for initial launch | No ad network planned |
 
@@ -147,6 +148,16 @@ Keep feature authorization separate from marketing labels. Use stable capability
 keys, for example `advanced_maps`, `wxlab_tools`, and `video_export`, and a bounded
 saved-location allowance. Monthly and annual products unlock the same entitlement
 `omniwx_plus`. Product IDs are proposed, not yet registered in the store.
+
+### Grandfathered Early Users
+
+Grandfathering is an account-bound permanent Plus grant, not a discounted
+subscription or a client-side bypass. Once identity is live, an approved
+server-side support/admin process may add exactly one `subscription_entitlements`
+record with `provider = omniwx_grandfather`, `status = grandfathered`, and no
+expiry for an eligible user. The resolver accepts only that exact combination;
+all normal subscription grants still require a future verified expiry. Keep the
+eligibility list and grant audit outside the client, never in source control.
 
 ## Billing And Entitlement Lifecycle
 

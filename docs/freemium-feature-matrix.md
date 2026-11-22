@@ -20,6 +20,7 @@ must be recorded from current provider terms before that feature can support Plu
 | Detailed astronomy and sky score | Plus | Forecast models, NOAA/NASA, derived calculations | Medium | Blocked by forecast commercial plan; document scoring methodology and limitations. |
 | Advanced marine analysis | Plus | NOAA/NWS/NDBC/CO-OPS plus derived analysis | Medium | Manual provider/product review and life-safety wording required. |
 | Extended climatology and records | Plus | NOAA/NCEI, Open-Meteo archive | Medium/API tokens | Verify NCEI token/limits and Open-Meteo commercial archive rights before gating. |
+| Extremes dashboard | Plus | NOAA/NDBC buoys, Worker land-extremes, saved-location comparisons | Medium/API fan-out | Validate commercial rights, freshness labels, and bounded batch behavior before enforcement. |
 | Enhanced saved locations | Plus, proposed limit 25 | D1 | Low | Requires sync conflict, downgrade and deletion behavior. |
 | High-resolution video export / recording | Plus | Map/imagery providers + native encoder | High render/third-party tiles | **Manual approval:** exported redistribution rights for every included layer/basemap. Do not enforce or advertise as purchasable until this review and device reliability acceptance pass. |
 | Advanced personalization | Plus | D1 profile/preferences | Low | Avoid sensitive profiling; account remains private and data-minimized. |
@@ -36,6 +37,21 @@ must be recorded from current provider terms before that feature can support Plu
    third-party layer terms, one source at a time.
 5. Attribution design that remains visible in-app and in exported media where
    required, without implying government/provider endorsement.
+
+## Grandfathering Plan
+
+Early testers may receive a permanent OMNIwx Plus grant once accounts are live.
+This is not a coupon and does not require a payment method. After an eligible
+tester signs in, a reviewed server-side operation will create one D1
+`subscription_entitlements` record with provider `omniwx_grandfather`, status
+`grandfathered`, and no expiration. The entitlement resolver accepts that exact
+combination only; an ordinary subscription record without a verified expiration
+still fails closed.
+
+Create this operational flow only after identity is configured and the initial
+eligible-user list, support process, and audit record are approved. RevenueCat
+and Google Play subscriptions come later for paying users; neither service should
+be used as a makeshift coupon system before account ownership is established.
 
 Official sources checked for the two confirmed blockers:
 

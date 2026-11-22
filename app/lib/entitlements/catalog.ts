@@ -18,6 +18,7 @@ export const OMNIWX_FEATURES = {
   ENHANCED_SAVED_LOCATIONS: 'enhanced_saved_locations',
   ADVANCED_PERSONALIZATION: 'advanced_personalization',
   VIDEO_EXPORT: 'video_export',
+  EXTREMES: 'extremes',
 } as const;
 
 export type OmniwxFeature = (typeof OMNIWX_FEATURES)[keyof typeof OMNIWX_FEATURES];
