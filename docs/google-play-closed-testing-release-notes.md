@@ -1,14 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.276**
-Android version code: **10294**
+Release: **OMNIwx 1.1.277**
+Android version code: **10295**
 Track: **Closed testing / internal testing candidate**
 Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-GeoColor retries transient sharp-frame failures and buffers frames one at a
-time, preventing skipped timelines and blank maps. Map zoom never recenters.
+Map fixes improve overlay stability, imagery handling, and aviation controls.
+This build retains safe radar fallbacks while the owned-radar pilot remains
+paused for verification.
 
 ## Tester Notes
 
@@ -52,8 +53,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.276`
-- Android version code: `10294`
+- App version: `1.1.277`
+- Android version code: `10295`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -74,15 +75,17 @@ Please focus on these areas:
 - Existing free weather remains available without account creation. The client
   contains no local premium override and does not trust client-provided paid
   status.
-- This release does not resume MRMS or Level III publishers. Existing radar
-  fallbacks remain required while owned timelines are paused or stale.
+- This release does not resume MRMS or Level III publishers. A single packed
+  MRMS pilot frame is serving through the Worker, but its corrected no-write
+  runner has not yet been deployed; schedules remain paused and existing
+  fallbacks remain required.
 - The Cloudflare Worker contract is unchanged. The bounded private GeoColor
   Cloud Run renderer must be promoted before building this paired app release;
   no D1 migration or radar-publisher activation is part of this release.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
-## Built Artifact Evidence
+## Previous Artifact Evidence
 
 - Built successfully with `npm run build:android:prod` on November 22, 2026.
   The documented Windows Java local-TCP fallback was applied by the release
@@ -102,7 +105,9 @@ Please focus on these areas:
   publisher change was made. The local Windows ARM64 Worker integration suite
   was not rerun because `workerd` is unsupported on this host; Linux CI remains
   the full Worker-test gate.
-- Upload only this version-code `10294` AAB. Do not reuse or upload `10293`.
+- That evidence applies only to the prior `10294` candidate. Replace this
+  section with the `10295` artifact hash, timestamp, embedded configuration,
+  and signing verification after this release build completes.
 
 ## Remaining Acceptance
 
