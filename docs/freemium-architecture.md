@@ -16,6 +16,10 @@ screens.
 - Official safety alerts and the basic daily weather loop are never paywalled.
 - Feature assignments remain provisional until the provider/cost matrix and user
   validation approve them.
+- High-resolution map-animation recording and MP4 export are designated as a
+  Plus capability. The existing export path remains ungated until verified
+  account, purchase, and provider-rights work is complete; a client-only lock
+  would be both bypassable and unfair to existing testers.
 
 ## Centralized Access Model
 

@@ -458,9 +458,19 @@ export default function ProfileScreen() {
             </View>
           </View>
           {!entitlements.isPlus ? (
-            <Text style={styles.membershipNote}>
-              Plus is planned at $5.99 monthly or $49.99 annually. Accounts and purchases are not enabled in this build, so no charge can occur.
-            </Text>
+            <>
+              <Text style={styles.membershipNote}>
+                Plus is planned at $5.99 monthly or $49.99 annually. Accounts and purchases are not enabled in this build, so no charge can occur.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Explore OMNIwx Plus plans"
+                style={styles.membershipAction}
+                onPress={() => router.push('/plus' as any)}
+              >
+                <Text style={styles.membershipActionText}>Explore OMNIwx Plus</Text>
+              </Pressable>
+            </>
           ) : null}
         </View>
 
@@ -701,6 +711,17 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600',
   },
+  membershipAction: {
+    marginTop: 12,
+    minHeight: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.48)',
+  },
+  membershipActionText: { color: '#E0F2FE', fontSize: 13, fontWeight: '900' },
   checkDot: {
     minWidth: 42,
     height: 28,

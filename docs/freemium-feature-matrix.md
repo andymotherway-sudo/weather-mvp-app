@@ -21,7 +21,7 @@ must be recorded from current provider terms before that feature can support Plu
 | Advanced marine analysis | Plus | NOAA/NWS/NDBC/CO-OPS plus derived analysis | Medium | Manual provider/product review and life-safety wording required. |
 | Extended climatology and records | Plus | NOAA/NCEI, Open-Meteo archive | Medium/API tokens | Verify NCEI token/limits and Open-Meteo commercial archive rights before gating. |
 | Enhanced saved locations | Plus, proposed limit 25 | D1 | Low | Requires sync conflict, downgrade and deletion behavior. |
-| High-resolution video export | Plus candidate | Map/imagery providers + native encoder | High render/third-party tiles | **Manual approval:** exported redistribution rights for every included layer/basemap. |
+| High-resolution video export / recording | Plus | Map/imagery providers + native encoder | High render/third-party tiles | **Manual approval:** exported redistribution rights for every included layer/basemap. Do not enforce or advertise as purchasable until this review and device reliability acceptance pass. |
 | Advanced personalization | Plus | D1 profile/preferences | Low | Avoid sensitive profiling; account remains private and data-minimized. |
 | Aviation data | Free core; Plus analysis undecided | AviationWeather.gov / NOAA | Medium | Product and redistribution review; not for operational flight decisions. |
 | Wildfire/air quality layers | Undecided | NASA FIRMS, USFS/BLM/ArcGIS, AirNow | Medium | Manual terms, key, attribution and cache review per source. |
