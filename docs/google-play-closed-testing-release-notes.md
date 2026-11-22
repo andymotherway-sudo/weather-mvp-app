@@ -84,11 +84,25 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending fresh `1.1.276` / `10294` production AAB build, embedded metadata
-inspection, checksum, signing-certificate inspection, and post-build production
-probes. This is an app-only release: no Worker deployment, D1 migration, or
-radar publisher change is required. Do not reuse or upload the prior `10293`
-artifact.
+- Built successfully with `npm run build:android:prod` on November 22, 2026.
+  The documented Windows Java local-TCP fallback was applied by the release
+  script.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170,845,002` bytes. Build timestamp: `2026-11-22T16:39:23Z`.
+- SHA-256: `27CBD153FE857CC353E1B1BF1C5E749821576AE5DC6EDF2EB9794451836B62B8`
+- Embedded configuration confirms app version `1.1.276`, Android version code
+  `10294`, build label `internal-test-aab-10294`, and the production Worker URL.
+- The signing certificate SHA-256 is
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+- Post-build production checks returned HTTP 200 for Worker health and radar
+  status. The actual GeoColor catalog route returned 11 NOAA STAR / CIRA frames;
+  aviation overlays returned G-AIRMET, AIRMET/SIGMET, CWA, PIREP, and METAR with
+  no provider errors.
+- This is an app-only release: no Worker deployment, D1 migration, or radar
+  publisher change was made. The local Windows ARM64 Worker integration suite
+  was not rerun because `workerd` is unsupported on this host; Linux CI remains
+  the full Worker-test gate.
+- Upload only this version-code `10294` AAB. Do not reuse or upload `10293`.
 
 ## Remaining Acceptance
 
