@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 21, 2026 (Arizona time).
+Release preparation updated: November 22, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -8,7 +8,7 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.274` / Android version code `10292`.
+- Current internal-testing candidate: `1.1.275` / Android version code `10293`.
 - This candidate adds progressive GeoColor startup and a minimum 12-second MP4
   export duration without increasing steady-state renderer concurrency or
   source-frame requests. It also keeps the overlay catalog stationary when
@@ -16,11 +16,12 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   or location-follow state. The aviation filter now retains PIREP metadata and
   exposes CWA/observation categories; Land and Hourly now honor Celsius display
   selection. It also retries a focused GeoColor catalog fetch once after a
-  transient failure, starts the preview and sharp current frame together, keeps
-  zoom controls aligned with pinch gestures, and separates advisory validity
-  times from PIREP observation reports. A fresh production AAB was built and
-  inspected on November 22, 2026; its evidence is recorded in the release
-  notes.
+  transient failure, keeps zoom controls aligned with pinch gestures, and
+  separates advisory validity times from PIREP observation reports. GeoColor no
+  longer paints the temporary 1808px preview: the map waits for the sharp
+  renderer output so state-scale
+  imagery is never presented as ready while soft. Fresh `1.1.275` AAB evidence
+  is recorded in the release notes only after this candidate builds.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready

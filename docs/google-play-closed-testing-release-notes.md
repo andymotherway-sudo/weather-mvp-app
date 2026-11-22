@@ -1,16 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.274**
-Android version code: **10292**
+Release: **OMNIwx 1.1.275**
+Android version code: **10293**
 Track: **Closed testing / internal testing candidate**
-Date: **November 21, 2026**
+Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-Faster True Color startup with automatic recovery if its first catalog request
-fails. Map zoom buttons now respect pinch zoom and never recenter. Aviation
-maps now separate advisory valid times from PIREP reports, remove duplicate
-time labels, and show the source update time correctly.
+GeoColor now waits for its sharp image instead of briefly showing a soft
+preview. Map zoom buttons respect pinch zoom and never recenter. Aviation maps
+separate advisory valid times from PIREP reports and remove duplicate labels.
 
 ## Tester Notes
 
@@ -35,10 +34,10 @@ Please focus on these areas:
   Celsius and km/h where shown; switching back must restore Fahrenheit and mph.
 - Toggle several overlays while scrolled within the selector. Verify the list
   stays at the same position and no active-layers card appears above it.
-- Exercise standard radar and GeoColor playback. Confirm the first preview
-  appears promptly, the sharp current frame begins without waiting for the
-  preview, and the loop continues without blank frames, flashing, or stale
-  source labels.
+- Exercise standard radar and GeoColor playback. Confirm GeoColor does not
+  briefly show a soft or stretched preview, the sharp frame is state-scale
+  readable when it appears, and the loop continues without blank frames,
+  flashing, or stale source labels.
 - Open Maps with True Color already enabled. Confirm it loads without a manual
   layer toggle after a cold app launch or tab switch.
 - In Aviation, choose All products and scan valid times. Confirm each clock
@@ -53,8 +52,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.274`
-- Android version code: `10292`
+- App version: `1.1.275`
+- Android version code: `10293`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -85,23 +84,9 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026 at
-  01:56 UTC. The documented Windows Java local-TCP fallback was applied by the
-  release script.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,845,138` bytes
-- SHA-256: `13C21AAB19439904BF23E56A5DFF7BAB66673114C332D63425417BA4056A6740`
-- Embedded configuration confirms `1.1.274`, Android version code `10292`,
-  `internal-test-aab-10292`, and the production Worker URL.
-- Signing certificate inspection succeeded. Certificate SHA-256:
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
-- Post-build production checks returned HTTP `200` for health, radar backend
-  status, GeoColor frames (12 frames returned), and aviation overlays.
-- This is an app-only release. No Worker deployment, D1 migration, or
-  radar-publisher change was made. The local Windows ARM64 Worker suite remains
-  unavailable because `workerd` does not support that host; Linux CI remains
-  the integration-test gate.
-- Upload this `10292` AAB only. Do not reuse the prior `10291` artifact.
+Pending fresh `1.1.275` / `10293` production AAB build, embedded metadata
+inspection, checksum, signing-certificate inspection, and post-build production
+probes. Do not reuse or upload the prior `10292` artifact.
 
 ## Remaining Acceptance
 
