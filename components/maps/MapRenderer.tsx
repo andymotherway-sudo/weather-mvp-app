@@ -596,7 +596,10 @@ export function MapRenderer(props: MapRendererProps) {
       >
         <MapLibreGL.Camera
           ref={cameraRef}
-          defaultSettings={{ centerCoordinate: initialCamera.centerCoordinate, zoomLevel: initialCamera.zoomLevel }}
+          // MapLibre treats a changed defaultSettings object as a possible
+          // camera update on Android. Keep this mount-only object stable so
+          // parent region updates cannot undo a pinch after a button zoom.
+          defaultSettings={initialCamera}
           followUserLocation={false}
         />
 
