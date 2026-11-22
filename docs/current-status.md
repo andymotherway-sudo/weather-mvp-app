@@ -18,8 +18,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   selection. It also retries a focused GeoColor catalog fetch once after a
   transient failure, starts the preview and sharp current frame together, keeps
   zoom controls aligned with pinch gestures, and separates advisory validity
-  times from PIREP observation reports. Fresh AAB evidence for this candidate
-  is recorded in the release notes only after the build completes.
+  times from PIREP observation reports. A fresh production AAB was built and
+  inspected on November 22, 2026; its evidence is recorded in the release
+  notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready

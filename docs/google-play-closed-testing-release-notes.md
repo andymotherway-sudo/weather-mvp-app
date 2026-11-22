@@ -85,9 +85,23 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending fresh `1.1.274` / `10292` production AAB build, embedded metadata
-inspection, checksum, signing-certificate inspection, and post-build production
-probes. Do not reuse or upload the prior `10291` artifact.
+- Built successfully with `npm run build:android:prod` on November 22, 2026 at
+  01:56 UTC. The documented Windows Java local-TCP fallback was applied by the
+  release script.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170,845,138` bytes
+- SHA-256: `13C21AAB19439904BF23E56A5DFF7BAB66673114C332D63425417BA4056A6740`
+- Embedded configuration confirms `1.1.274`, Android version code `10292`,
+  `internal-test-aab-10292`, and the production Worker URL.
+- Signing certificate inspection succeeded. Certificate SHA-256:
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+- Post-build production checks returned HTTP `200` for health, radar backend
+  status, GeoColor frames (12 frames returned), and aviation overlays.
+- This is an app-only release. No Worker deployment, D1 migration, or
+  radar-publisher change was made. The local Windows ARM64 Worker suite remains
+  unavailable because `workerd` does not support that host; Linux CI remains
+  the integration-test gate.
+- Upload this `10292` AAB only. Do not reuse the prior `10291` artifact.
 
 ## Remaining Acceptance
 
