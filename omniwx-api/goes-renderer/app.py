@@ -30,8 +30,8 @@ STAR_PAGE = "https://www.star.nesdis.noaa.gov/GOES/fulldisk_band.php?band=GEOCOL
 # memory envelope while supplying enough source detail for a 512px map tile.
 STAR_IMAGE = "https://cdn.star.nesdis.noaa.gov/GOES19/ABI/FD/GEOCOLOR/{frame}_GOES19-ABI-FD-GEOCOLOR-{size}x{size}.jpg"
 # The STAR loop manifest references its 1808px preview. The timestamp is shared
-# by every published size, so the renderer can use 1808px for a temporary phone
-# preview and the matching 5424px asset for sharp map and export frames.
+# by every published size, but map and export frames always use the matching
+# 5424px asset so a completed buffer never retains preview-quality imagery.
 FRAME_RE = re.compile(r"(20\d{9})_GOES19-ABI-FD-GEOCOLOR-1808x1808\.jpg")
 FRAME_ID_RE = re.compile(r"^20\d{9}$")
 # A fixed lock stripe avoids accumulating one lock for every historical scan
@@ -163,11 +163,10 @@ def goes_pixel_coordinates(lon_deg: np.ndarray, lat_deg: np.ndarray, source_widt
 
 
 def render(frame: str, bbox: tuple[float, float, float, float], width: int, height: int) -> bytes:
-    # A temporary phone preview does not benefit from decoding the 5424px
-    # source. NOAA publishes the same frame at 1808px, which reaches the user
-    # sooner; high-resolution map and export requests keep the 5424px source.
-    source_size = 1808 if max(width, height) <= 960 else 5424
-    source = fetch_image(frame, source_size)
+    # Never complete a map/export frame from NOAA's 1808px preview. A phone can
+    # request a small viewport while the user is inspecting a state-scale area;
+    # using the 5424px source keeps that finished frame sharp at every size.
+    source = fetch_image(frame, 5424)
     lon, lat = mercator_to_lat_lon(bbox, width, height)
     px, py, visible = goes_pixel_coordinates(lon, lat, source.shape[1], source.shape[0])
     output = np.zeros((height, width, 4), dtype=np.uint8)
