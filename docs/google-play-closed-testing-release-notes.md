@@ -1,16 +1,16 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.273**
-Android version code: **10291**
+Release: **OMNIwx 1.1.274**
+Android version code: **10292**
 Track: **Closed testing / internal testing candidate**
 Date: **November 21, 2026**
 
 ## Play Console Paste Notes
 
-Faster GeoColor startup and smoother saved weather videos. Map zoom now stays
-on your chosen area, and overlay selection no longer shifts while browsing.
-Aviation filters now include PIREPs, CWAs, and observations. Land and Hourly
-screens now honor Celsius and metric wind settings.
+Faster True Color startup with automatic recovery if its first catalog request
+fails. Map zoom buttons now respect pinch zoom and never recenter. Aviation
+maps now separate advisory valid times from PIREP reports, remove duplicate
+time labels, and show the source update time correctly.
 
 ## Tester Notes
 
@@ -36,8 +36,14 @@ Please focus on these areas:
 - Toggle several overlays while scrolled within the selector. Verify the list
   stays at the same position and no active-layers card appears above it.
 - Exercise standard radar and GeoColor playback. Confirm the first preview
-  appears promptly, sharpens without moving the camera, and the loop continues
-  without blank frames, flashing, or stale source labels.
+  appears promptly, the sharp current frame begins without waiting for the
+  preview, and the loop continues without blank frames, flashing, or stale
+  source labels.
+- Open Maps with True Color already enabled. Confirm it loads without a manual
+  layer toggle after a cold app launch or tab switch.
+- In Aviation, choose All products and scan valid times. Confirm each clock
+  label is distinct, PIREPs remain visible as recent reports, and the header
+  has a real update time rather than `pending`.
 - Save GeoColor and radar videos. Confirm gallery playback lasts at least 12
   seconds, retains the expected animation speed, and loops without a blank cut.
 - Review astronomy seeing and marine condition labels. Confirm they describe
@@ -47,8 +53,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.273`
-- Android version code: `10291`
+- App version: `1.1.274`
+- Android version code: `10292`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -79,23 +85,9 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built with `npm run build:android:prod` on November 21, 2026 (Arizona time).
-  The Windows release script applied the documented Java local-TCP fallback
-  (`jdk.net.unixdomain.tmpdir=NUL`) before running Gradle.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Artifact UTC timestamp: `2026-11-22T00:16:11.1267409Z`
-- Size: `170,845,269` bytes
-- SHA-256: `D31F47A900E3CED8815795DAA2B6397411AB7DBF757B47E30975A8752662F7A9`
-- Embedded configuration confirms version `1.1.273`, Android version code
-  `10291`, and `https://omniwx-api-production.omniwx.workers.dev`.
-- The signed bundle certificate was readable. Certificate SHA-256:
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
-- Post-build production probes returned HTTP `200` at `2026-11-22T00:22:04Z`
-  for `/v1/health` and `/v1/radar/backend/status`. The latter continues to
-  report the owned radar read path as disabled for free-tier protection; this
-  release does not change that safeguard.
-- Do not upload an older artifact left at the standard output path. Confirm the
-  Play Console recognizes version code `10291` before completing rollout.
+Pending fresh `1.1.274` / `10292` production AAB build, embedded metadata
+inspection, checksum, signing-certificate inspection, and post-build production
+probes. Do not reuse or upload the prior `10291` artifact.
 
 ## Remaining Acceptance
 

@@ -8,15 +8,18 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.273` / Android version code `10291`.
+- Current internal-testing candidate: `1.1.274` / Android version code `10292`.
 - This candidate adds progressive GeoColor startup and a minimum 12-second MP4
   export duration without increasing steady-state renderer concurrency or
   source-frame requests. It also keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
   exposes CWA/observation categories; Land and Hourly now honor Celsius display
-  selection. A fresh production-targeted AAB has passed the local build and
-  embedded-metadata gates; its exact evidence is recorded in the release notes.
+  selection. It also retries a focused GeoColor catalog fetch once after a
+  transient failure, starts the preview and sharp current frame together, keeps
+  zoom controls aligned with pinch gestures, and separates advisory validity
+  times from PIREP observation reports. Fresh AAB evidence for this candidate
+  is recorded in the release notes only after the build completes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
