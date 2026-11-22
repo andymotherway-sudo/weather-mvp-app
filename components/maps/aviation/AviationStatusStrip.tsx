@@ -28,7 +28,7 @@ export function AviationStatusStrip(props: {
               ? 'Partial aviation data'
               : `Updated ${fmt(props.updatedAt)} · Valid ${fmt(props.validFrom)}-${fmt(props.validTo)}`}
         </Text>
-        <Text style={styles.products}>G-AIRMET · SIGMET · Conv SIGMET · PIREP</Text>
+        <Text style={styles.products}>G-AIRMET · SIGMET · Conv SIGMET · CWA · PIREP</Text>
       </View>
     </Glass>
   );

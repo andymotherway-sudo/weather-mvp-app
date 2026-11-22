@@ -50,6 +50,7 @@ export function filterAviationFeatures(args: {
   selectedValidTime: Date;
   showUnknownAltitude: boolean;
   includeMissingValidTime?: boolean;
+  ignoreValidTime?: boolean;
 }) {
   const {
     features,
@@ -59,12 +60,13 @@ export function filterAviationFeatures(args: {
     selectedValidTime,
     showUnknownAltitude,
     includeMissingValidTime = false,
+    ignoreValidTime = false,
   } = args;
 
   return features.filter((feature) => {
     if (!selectedProducts.includes(feature.productType)) return false;
     if (!selectedHazards.includes(feature.hazardType)) return false;
-    if (!validMatches(feature, selectedValidTime, includeMissingValidTime)) return false;
+    if (!ignoreValidTime && !validMatches(feature, selectedValidTime, includeMissingValidTime)) return false;
     return altitudeMatches(feature, selectedAltitudeFt, showUnknownAltitude);
   });
 }

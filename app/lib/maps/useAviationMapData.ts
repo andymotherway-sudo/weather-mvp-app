@@ -496,6 +496,7 @@ async function fetchWorkerAviationOverlays() {
   return {
     products: json.products as Record<string, any>,
     errors: Array.isArray(json.errors) ? json.errors.map(String) : [],
+    updatedAt: typeof json.updatedAt === 'string' ? json.updatedAt : null,
   };
 }
 
@@ -507,11 +508,13 @@ export function useAviationMapData(enabled: boolean) {
   const [metar, setMetar] = useState<GeoJsonFeatureCollection>(EMPTY_FC);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
       setError(null);
+      setUpdatedAt(null);
       return;
     }
 
@@ -532,6 +535,7 @@ export function useAviationMapData(enabled: boolean) {
           setPirep(normalizeFeatureCollection(worker.products.pirep, 'pirep'));
           setMetar(normalizeFeatureCollection(worker.products.metar, 'metar'));
           setError(worker.errors.length ? `Partial aviation data: ${worker.errors.join(' / ')}` : null);
+          setUpdatedAt(worker.updatedAt);
           return;
         } catch {
           // Fall back to direct AWC calls for older worker deployments or transient worker failures.
@@ -586,9 +590,11 @@ export function useAviationMapData(enabled: boolean) {
         } else {
           setError(null);
         }
+        setUpdatedAt(new Date().toISOString());
       } catch (err: any) {
         if (cancelled) return;
         setError(err?.message ?? 'Failed to load aviation overlays');
+        setUpdatedAt(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -635,17 +641,24 @@ export function useAviationMapData(enabled: boolean) {
     [allHazards, pireps],
   );
   const validTimes = useMemo(() => {
-    const values = new Set<string>();
-    allAdvisories.features.forEach((feature) => {
+    // PIREPs are observed reports, not forecast-valid advisory polygons. Keep
+    // their per-report timestamps out of this control so it describes only
+    // the forecast validity period and cannot show duplicate clock labels.
+    const values = new Map<number, string>();
+    allHazards.features.forEach((feature) => {
       const key = feature?.properties?.validKey;
-      if (typeof key === 'string' && Number.isFinite(Date.parse(key))) values.add(key);
+      const timestamp = typeof key === 'string' ? Date.parse(key) : Number.NaN;
+      if (!Number.isFinite(timestamp)) return;
+      const minute = Math.floor(timestamp / 60_000);
+      if (!values.has(minute)) values.set(minute, key);
     });
-    return Array.from(values).sort((a, b) => Date.parse(a) - Date.parse(b));
-  }, [allAdvisories]);
+    return Array.from(values.values()).sort((a, b) => Date.parse(a) - Date.parse(b));
+  }, [allHazards]);
 
   return {
     loading,
     error,
+    updatedAt,
     turbulence,
     icing,
     advisories,

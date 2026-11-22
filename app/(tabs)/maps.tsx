@@ -2173,6 +2173,7 @@ export default function MapsScreen() {
             selectedValidTime: selectedAviationValidTime,
             showUnknownAltitude: true,
             includeMissingValidTime: true,
+            ignoreValidTime: true,
           })
         : [],
     [
@@ -6279,7 +6280,7 @@ export default function MapsScreen() {
             <AviationStatusStrip
               loading={aviationData.loading}
               error={aviationData.error}
-              updatedAt={aviationTimeSummary.issuedTime}
+              updatedAt={aviationData.updatedAt}
               validFrom={selectedAviationValidTime.toISOString()}
               validTo={aviationTimeSummary.expiresTime}
             />
