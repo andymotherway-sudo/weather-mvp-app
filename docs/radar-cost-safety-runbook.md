@@ -27,8 +27,14 @@ the runner invoked a legacy cleanup script that expects tile-per-object frame
 prefixes. Packed retention is already handled atomically by
 `publish-radar-tile-pack.mjs`, so the runner now skips the incompatible legacy
 cleanup for packed delivery. The corrected image must be deployed with writes
-disabled and dry-run successfully before any second applied publish. Keep all
-schedulers paused until the full re-enablement evidence below is complete.
+disabled and dry-run successfully before any second applied publish. That
+no-write deployment and dry-run completed successfully on November 22 using
+image digest
+`sha256:19f02873936342b23893afaae70128ca53c3b192c97776c918fe8b2e9f2c77cf`.
+The execution ran with packed delivery, `RADAR_RUNNER_APPLY=false`, disabled
+confirmation, a four-operation cap, one MRMS composite, and Level III disabled.
+All five Cloud Scheduler radar jobs were rechecked as `PAUSED` afterward. Keep
+them paused until the full re-enablement evidence below is complete.
 
 ## Emergency Stop
 

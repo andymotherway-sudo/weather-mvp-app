@@ -76,8 +76,12 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   writes. Legacy tile-per-object publishing is not an approved scheduled path.
 - The pilot execution's final status was failed because it invoked the old
   tile-prefix cleanup after the packed publish had already succeeded. The
-  runner now skips that incompatible cleanup for packed delivery; deploy and
-  dry-run the corrected image before any further applied publish or schedule.
+  runner now skips that incompatible cleanup for packed delivery. On November
+  22, the corrected image
+  `sha256:19f02873936342b23893afaae70128ca53c3b192c97776c918fe8b2e9f2c77cf`
+  was deployed with writes disabled and its one-task dry-run succeeded. No
+  follow-up publish, Level III run, or scheduler activation is authorized by
+  that verification alone.
 
 ## Active Gates
 
