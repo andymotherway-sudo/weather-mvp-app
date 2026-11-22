@@ -1,15 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.277**
-Android version code: **10295**
+Release: **OMNIwx 1.1.278**
+Android version code: **10296**
 Track: **Closed testing / internal testing candidate**
 Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-Map fixes improve overlay stability, imagery handling, and aviation controls.
-This build retains safe radar fallbacks while the owned-radar pilot remains
-paused for verification.
+GeoColor now retries transient source rendering within a bounded service budget,
+reducing false skipped frames and blank playback. Radar publishers remain paused.
 
 ## Tester Notes
 
@@ -53,8 +52,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.277`
-- Android version code: `10295`
+- App version: `1.1.278`
+- Android version code: `10296`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -80,34 +79,32 @@ Please focus on these areas:
   runner has not yet been deployed; schedules remain paused and existing
   fallbacks remain required.
 - The Cloudflare Worker contract is unchanged. The bounded private GeoColor
-  Cloud Run renderer must be promoted before building this paired app release;
-  no D1 migration or radar-publisher activation is part of this release.
+  Cloud Run renderer was promoted before building this paired app release; no
+  D1 migration or radar-publisher activation is part of this release.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
+## Production Evidence Before Build
+
+- The private GeoColor renderer is production revision
+  `omniwx-goes-renderer-00009-8b6`, serving 100% of traffic from image
+  `sha256:cf9871148c1452aed3d3a81186dd86c8abb3424dff1881f90e75dc64ed70f23a`.
+- Its cap remains two instances; its request deadline is 120 seconds and each
+  NOAA source request is capped at 20 seconds across four attempts.
+- The production frame catalog returned 12 frames. A current 512px export
+  returned `200 image/png` (363,613 bytes) through the production Worker.
+- Radar publishers remain paused; no D1 migration or publisher activation is
+  part of this release.
+
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,852,458` bytes. Build timestamp: `2026-11-22T18:33:38Z`.
-- SHA-256: `BE3B972D8AFA0B2C5FF3A6CA50258BED8C9E827672D3F8E9549A42D6FC6F59AE`
-- Embedded configuration confirms app version `1.1.277`, Android version code
-  `10295`, build label `internal-test-aab-10295`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
-- Pre-build production checks returned HTTP 200 for Worker health and the real
-  packed MRMS tile route (`image/png`, `x-omni-radar-source: r2-mrms-pack`).
-- This is an app-only release: no Worker deployment, D1 migration, or radar
-  publisher activation was made. The local Windows ARM64 Worker integration
-  suite cannot run because `workerd` is unsupported on this host; the focused
-  Worker unit suite passed and Linux CI remains the full integration gate.
-- Upload only this version-code `10295` AAB. Do not reuse or upload `10294`.
+Populate this section only after `npm run build:android:prod` succeeds. Record
+the artifact size, timestamp, SHA-256, embedded version/environment, and
+signing certificate before uploading the AAB.
 
 ## Remaining Acceptance
 
-- Upload to the intended Play internal-testing track.
+- Upload only version code `10296` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area.

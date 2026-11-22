@@ -8,7 +8,7 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.277` / Android version code `10295`.
+- Current internal-testing candidate: `1.1.278` / Android version code `10296`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
@@ -20,8 +20,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   renderer output so state-scale
   imagery is never presented as ready while soft. GeoColor now retries failed
   sharp-frame downloads before skipping them and serializes its expensive
-  prefetch queue. A fresh `1.1.277` AAB was built and inspected on November
-  22; its artifact evidence is recorded in the release notes.
+  prefetch queue. This release additionally bounds each NOAA source request at
+  20 seconds so the renderer can use all four retries within its 120-second
+  service deadline. Artifact evidence is recorded in the release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
@@ -47,9 +48,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - `omniwx-goes-renderer` is capped at two Cloud Run instances with concurrency
   four. This is a deliberate cost and upstream-protection limit, not a scale
   target. See [scaling-and-cost-controls.md](scaling-and-cost-controls.md).
-- The live GeoColor frame catalog returned 11 frames from NOAA STAR / CIRA in
-  the verified two-hour window after the `1.1.276` build on November 22. Device
-  acceptance remains required for cold-start, sharpness, and animation behavior.
+- On November 22, the production GeoColor frame catalog returned 12 frames and
+  a current 512px render returned `200 image/png` through the production
+  Worker after the retry-budget deployment. Device acceptance remains required
+  for cold-start, sharpness, and animation behavior.
 
 ## Radar And Automation
 
