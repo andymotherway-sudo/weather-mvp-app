@@ -9,9 +9,7 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 ## Product And Release
 
 - Current internal-testing candidate: `1.1.275` / Android version code `10293`.
-- This candidate adds progressive GeoColor startup and a minimum 12-second MP4
-  export duration without increasing steady-state renderer concurrency or
-  source-frame requests. It also keeps the overlay catalog stationary when
+- This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
   exposes CWA/observation categories; Land and Hourly now honor Celsius display
@@ -20,8 +18,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   separates advisory validity times from PIREP observation reports. GeoColor no
   longer paints the temporary 1808px preview: the map waits for the sharp
   renderer output so state-scale
-  imagery is never presented as ready while soft. Fresh `1.1.275` AAB evidence
-  is recorded in the release notes only after this candidate builds.
+  imagery is never presented as ready while soft. A fresh `1.1.275` AAB was
+  built and inspected on November 22; the artifact evidence is recorded in the
+  release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
@@ -47,8 +46,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - `omniwx-goes-renderer` is capped at two Cloud Run instances with concurrency
   four. This is a deliberate cost and upstream-protection limit, not a scale
   target. See [scaling-and-cost-controls.md](scaling-and-cost-controls.md).
-- The live GeoColor frame catalog returned 12 frames in the verified two-hour
-  window. A render followed by the same request returned a Worker cache hit.
+- The live GeoColor frame catalog returned 11 frames from NOAA STAR / CIRA in
+  the verified two-hour window on November 22. Device acceptance remains
+  required for cold-start, sharpness, and animation behavior.
 
 ## Radar And Automation
 
