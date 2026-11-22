@@ -1765,6 +1765,8 @@ export default function MapsScreen() {
   const [trueColorFrames, setTrueColorFrames] = useState<SatelliteFrame[]>([]);
   const [trueColorFrameStatus, setTrueColorFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'stale' | 'unavailable'>('idle');
   const [trueColorSourceAgeMinutes, setTrueColorSourceAgeMinutes] = useState<number | null>(null);
+  const [trueColorCatalogRetry, setTrueColorCatalogRetry] = useState(0);
+  const trueColorCatalogRetryRef = useRef(0);
   const [infraredFrames, setInfraredFrames] = useState<SatelliteFrame[]>([]);
   const [infraredFrameStatus, setInfraredFrameStatus] = useState<'idle' | 'loading' | 'ready' | 'stale' | 'unavailable'>('idle');
   const [satelliteFrameIndex, setSatelliteFrameIndex] = useState(() =>
@@ -1823,10 +1825,17 @@ export default function MapsScreen() {
       setTrueColorFrames([]);
       setTrueColorFrameStatus('idle');
       setTrueColorSourceAgeMinutes(null);
+      trueColorCatalogRetryRef.current = 0;
       return;
     }
 
+    // A background tab can be mounted before its map surface is ready. Waiting
+    // for focus prevents an early transient request from stranding True Color
+    // in an unavailable state until the user toggles the layer manually.
+    if (!isFocused) return;
+
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     setTrueColorFrameStatus('loading');
     fetchNesdisGeoColorFrames(satelliteLoopMinutes)
       .then(({ frames, fallbackFrame, sourceAgeMinutes }) => {
@@ -1836,6 +1845,7 @@ export default function MapsScreen() {
           setSatelliteFrameIndex(frames.length - 1);
           setTrueColorFrameStatus('ready');
           setTrueColorSourceAgeMinutes(sourceAgeMinutes);
+          trueColorCatalogRetryRef.current = 0;
         } else if (fallbackFrame) {
           // Render the newest verified raster as a static image; never animate invented timestamps.
           setTrueColorFrames([fallbackFrame]);
@@ -1853,12 +1863,22 @@ export default function MapsScreen() {
         setTrueColorFrames([]);
         setTrueColorFrameStatus('unavailable');
         setTrueColorSourceAgeMinutes(null);
+
+        // One retry recovers a Worker/renderer cold start without creating an
+        // unbounded client polling path when the upstream is genuinely down.
+        if (trueColorCatalogRetryRef.current < 1) {
+          trueColorCatalogRetryRef.current += 1;
+          retryTimer = setTimeout(() => {
+            if (!cancelled) setTrueColorCatalogRetry((current) => current + 1);
+          }, 2500);
+        }
       });
 
     return () => {
       cancelled = true;
+      if (retryTimer != null) clearTimeout(retryTimer);
     };
-  }, [goesTrueColorEnabled, satelliteLoopMinutes]);
+  }, [goesTrueColorEnabled, isFocused, satelliteLoopMinutes, trueColorCatalogRetry]);
 
   useEffect(() => {
     if (!goesEastIrEnabled) {
