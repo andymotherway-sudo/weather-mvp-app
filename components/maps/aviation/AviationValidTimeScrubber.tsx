@@ -11,14 +11,30 @@ export function AviationValidTimeScrubber(props: {
   validTimes: string[];
   selectedValidTime: Date;
   onSelect: (value: Date) => void;
+  onSelectNow: () => void;
 }) {
   const selectedMs = props.selectedValidTime.getTime();
+  const times = React.useMemo(() => {
+    const seen = new Set<string>();
+    return props.validTimes.filter((time) => {
+      const d = new Date(time);
+      if (!Number.isFinite(d.getTime())) return false;
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [props.validTimes]);
+  const nowActive = Math.abs(Date.now() - selectedMs) < 90 * 1000;
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>Valid time</Text>
+      <Text style={styles.title}>Choose advisory time</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-        {props.validTimes.slice(0, 12).map((time) => {
+        <Pressable onPress={props.onSelectNow} style={[styles.tick, nowActive ? styles.tickActive : null]}>
+          <Text style={[styles.tickText, nowActive ? styles.tickTextActive : null]}>Now</Text>
+        </Pressable>
+        {times.slice(0, 12).map((time) => {
           const ms = Date.parse(time);
           const active = Number.isFinite(ms) && Math.abs(ms - selectedMs) < 60 * 1000;
           return (

@@ -35,6 +35,11 @@ const HAZARDS: Array<{ key: AviationHazardType; label: string }> = [
   { key: 'unknown', label: 'Other' },
 ];
 
+function timeLabel(value: Date) {
+  if (Math.abs(Date.now() - value.getTime()) < 90 * 1000) return 'Now';
+  return value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
@@ -50,13 +55,15 @@ export function AviationMapControls(props: {
   bottomOffset?: number;
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
+  const [advisoryTimeExpanded, setAdvisoryTimeExpanded] = React.useState(false);
   const drawerProgress = React.useRef(new Animated.Value(1)).current;
   const selectedCount = props.selectedProducts.length + props.selectedHazards.length;
+  const selectedTimeLabel = timeLabel(props.selectedValidTime);
   const contentStyle = React.useMemo(
     () => ({
       maxHeight: drawerProgress.interpolate({
         inputRange: [0, 1],
-        outputRange: [0, 245],
+        outputRange: [0, 320],
       }),
       opacity: drawerProgress,
       transform: [
@@ -116,11 +123,34 @@ export function AviationMapControls(props: {
               selected={props.selectedHazards}
               onToggle={props.onToggleHazard}
             />
-            <AviationValidTimeScrubber
-              validTimes={props.validTimes}
-              selectedValidTime={props.selectedValidTime}
-              onSelect={props.onSelectValidTime}
-            />
+            <View style={styles.advisoryTimeSection}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${advisoryTimeExpanded ? 'Hide' : 'Show'} advisory time options`}
+                onPress={() => setAdvisoryTimeExpanded((value) => !value)}
+                style={styles.advisoryTimeHeader}
+              >
+                <View>
+                  <Text style={styles.advisoryTimeTitle}>Advisory time</Text>
+                  <Text style={styles.advisoryTimeSubtitle}>Now filters advisories. PIREPs are observed reports.</Text>
+                </View>
+                <Text style={styles.advisoryTimeToggle}>{advisoryTimeExpanded ? 'Hide' : selectedTimeLabel}</Text>
+              </Pressable>
+              {advisoryTimeExpanded ? (
+                <AviationValidTimeScrubber
+                  validTimes={props.validTimes}
+                  selectedValidTime={props.selectedValidTime}
+                  onSelect={(value) => {
+                    props.onSelectValidTime(value);
+                    setAdvisoryTimeExpanded(false);
+                  }}
+                  onSelectNow={() => {
+                    props.onSelectValidTime(new Date());
+                    setAdvisoryTimeExpanded(false);
+                  }}
+                />
+              ) : null}
+            </View>
         </Animated.View>
       </Glass>
     </View>
@@ -156,6 +186,21 @@ const styles = StyleSheet.create({
   drawerBody: { gap: 8, overflow: 'hidden' },
   drawerToggle: {
     color: 'rgba(186,230,253,0.88)',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  advisoryTimeSection: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.10)',
+    paddingTop: 7,
+    gap: 7,
+  },
+  advisoryTimeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  advisoryTimeTitle: { color: 'rgba(255,255,255,0.84)', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  advisoryTimeSubtitle: { color: 'rgba(255,255,255,0.52)', fontSize: 10, fontWeight: '700', marginTop: 2 },
+  advisoryTimeToggle: {
+    color: 'rgba(186,230,253,0.96)',
     fontSize: 11,
     fontWeight: '900',
     textTransform: 'uppercase',

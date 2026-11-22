@@ -44,7 +44,7 @@ import type { WmsOverlayConfig } from '../../components/maps/overlays/OverlayEng
 import { usePlace } from '../context/PlaceContext';
 import { useSettings } from '../context/SettingsContext';
 import { aviationFillColorExpression, aviationLineColorExpression } from '../lib/aviation/colors';
-import { filterAviationFeatures, pickCurrentValidTime, toggleFilterValue } from '../lib/aviation/filters';
+import { filterAviationFeatures, toggleFilterValue } from '../lib/aviation/filters';
 import { aviationFeaturesToFeatureCollection, normalizeAviationFeatureCollection } from '../lib/aviation/normalize';
 import type { AviationFeature, AviationHazardType, AviationProductType } from '../lib/aviation/types';
 import { useFireContext } from '../lib/fire/useFireContext';
@@ -1483,6 +1483,7 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
+  const aviationModeWasActiveRef = useRef(false);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
   const [mapResetKey, setMapResetKey] = useState(0);
@@ -2129,11 +2130,13 @@ export default function MapsScreen() {
   const aviationAvailableTimes = aviationData.validTimes ?? [];
 
   useEffect(() => {
-    if (!aviationModeActive || !aviationAvailableTimes.length) return;
-    const currentMs = selectedAviationValidTime.getTime();
-    const stillAvailable = aviationAvailableTimes.some((value) => Math.abs(Date.parse(value) - currentMs) < 60 * 1000);
-    if (!stillAvailable) setSelectedAviationValidTime(pickCurrentValidTime(aviationAvailableTimes));
-  }, [aviationAvailableTimes, aviationModeActive, selectedAviationValidTime]);
+    if (aviationModeActive && !aviationModeWasActiveRef.current) {
+      // An aviation session starts at the actual current time, not the next
+      // source timestamp. PIREPs remain independent observed reports.
+      setSelectedAviationValidTime(new Date());
+    }
+    aviationModeWasActiveRef.current = aviationModeActive;
+  }, [aviationModeActive]);
 
   const normalizedAviationHazards = useMemo(
     () => normalizeAviationFeatureCollection(aviationData.allHazards),
