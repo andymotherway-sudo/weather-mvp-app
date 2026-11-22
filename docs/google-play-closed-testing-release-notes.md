@@ -1,15 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.275**
-Android version code: **10293**
+Release: **OMNIwx 1.1.276**
+Android version code: **10294**
 Track: **Closed testing / internal testing candidate**
 Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-GeoColor now waits for its sharp image instead of briefly showing a soft
-preview. Map zoom buttons respect pinch zoom and never recenter. Aviation maps
-separate advisory valid times from PIREP reports and remove duplicate labels.
+GeoColor retries transient sharp-frame failures and buffers frames one at a
+time, preventing skipped timelines and blank maps. Map zoom never recenters.
 
 ## Tester Notes
 
@@ -37,7 +36,8 @@ Please focus on these areas:
 - Exercise standard radar and GeoColor playback. Confirm GeoColor does not
   briefly show a soft or stretched preview, the sharp frame is state-scale
   readable when it appears, and the loop continues without blank frames,
-  flashing, or stale source labels.
+  flashing, or stale source labels. It must not remain at one ready frame with
+  the remaining frames marked skipped.
 - Open Maps with True Color already enabled. Confirm it loads without a manual
   layer toggle after a cold app launch or tab switch.
 - In Aviation, choose All products and scan valid times. Confirm each clock
@@ -52,8 +52,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.275`
-- Android version code: `10293`
+- App version: `1.1.276`
+- Android version code: `10294`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -84,25 +84,11 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,845,108` bytes. Build timestamp: `2026-11-22T15:45:25Z`.
-- SHA-256: `F8B82024B2237AEEB05A0D667A26B997686FF4E3F4C21ED98472F9808D7674B5`
-- Embedded configuration confirms app version `1.1.275`, Android version code
-  `10293`, build label `internal-test-aab-10293`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
-- Post-build production checks returned HTTP 200 for Worker health and radar
-  status. The actual GeoColor catalog route returned 11 NOAA STAR / CIRA frames;
-  aviation overlays returned G-AIRMET, AIRMET/SIGMET, CWA, PIREP, and METAR with
-  no provider errors.
-- This is an app-only release: no Worker deployment, D1 migration, or radar
-  publisher change was made. The local Windows ARM64 Worker integration suite
-  was not rerun because `workerd` is unsupported on this host; Linux CI remains
-  the full Worker-test gate.
-- Upload only this version-code `10293` AAB. Do not reuse or upload `10292`.
+Pending fresh `1.1.276` / `10294` production AAB build, embedded metadata
+inspection, checksum, signing-certificate inspection, and post-build production
+probes. This is an app-only release: no Worker deployment, D1 migration, or
+radar publisher change is required. Do not reuse or upload the prior `10293`
+artifact.
 
 ## Remaining Acceptance
 
