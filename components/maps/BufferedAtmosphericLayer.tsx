@@ -260,14 +260,38 @@ export function BufferedAtmosphericLayer(props: Props) {
     const warmPreviewThenBuffer = async () => {
       const previewEnabled = previewScale < 1;
       const firstRequest = requests[desired];
+      // Start the visible preview and the sharp current frame together. The
+      // previous sequence waited for the preview before beginning the actual
+      // display-quality frame, which made first load unnecessarily slow. This
+      // still uses only two requests initially and remains under the shared
+      // three-download ceiling in animationFrameCache.
+      const primaryFullFrame = async () => {
+        const firstIndex = queue.indexOf(desired);
+        if (firstIndex >= 0) queue.splice(firstIndex, 1);
+        if (!firstRequest) return;
+        try {
+          const localUri = await cacheAtmosphericFrame(firstRequest.remoteUrl);
+          if (cancelled) return;
+          setCachedUris((current) => {
+            const next = new Map(current);
+            next.set(firstRequest.requestId, localUri);
+            return next;
+          });
+        } catch {
+          if (cancelled) return;
+          setFailedIds((current) => {
+            const next = new Set(current);
+            next.add(firstRequest.requestId);
+            return next;
+          });
+        }
+      };
 
-      if (previewEnabled && firstRequest) {
+      const previewFrame = async () => {
+        if (!previewEnabled || !firstRequest) return;
         const previewRemoteUrl = buildUrlRef.current(firstRequest.frame, previewWidth, previewHeight);
         const previewRequestId = `${firstRequest.frame.id}:preview:${shortHash(previewRemoteUrl)}`;
         try {
-          // Give the lightweight current frame the first download/render slot.
-          // Once it is visible, the existing bounded workers fetch the sharp
-          // frame and remaining loop without raising renderer concurrency.
           const localUri = await cacheAtmosphericFrame(previewRemoteUrl);
           if (cancelled) return;
           setPreviewSlot({
@@ -276,11 +300,12 @@ export function BufferedAtmosphericLayer(props: Props) {
             localUri,
           });
         } catch {
-          // Preview is an optimization only; full-resolution buffering remains
-          // the source of truth and can recover independently.
+          // Preview is an optimization only; the sharp frame can recover on
+          // its own and remains the display source of truth.
         }
-      }
+      };
 
+      await Promise.all([previewFrame(), primaryFullFrame()]);
       if (!cancelled) await Promise.all([worker(queue), worker(queue)]);
     };
 
