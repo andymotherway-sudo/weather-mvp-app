@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 16, 2026 (Arizona time).
+Release preparation updated: November 21, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -15,8 +15,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
   exposes CWA/observation categories; Land and Hourly now honor Celsius display
-  selection. Artifact evidence is recorded in the release notes only after the
-  production renderer and AAB pass their release gates.
+  selection. A fresh production-targeted AAB has passed the local build and
+  embedded-metadata gates; its exact evidence is recorded in the release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
@@ -24,10 +24,11 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - Maps and GeoColor remain the highest-risk user-facing area. Validate blank
   first-open behavior, imagery availability, sharpness at state zoom, timeline
   controls, and seamless frame motion on every maps-related release.
-- The current local Android build gate is blocked by Gradle's localhost IPC
-  (`Unable to establish loopback connection`) before compilation starts. This is
-  an environment failure, not evidence of an app compile failure; do not mark
-  the candidate built until a successful clean release build is recorded.
+- The fresh Windows build used the documented Java local-TCP fallback
+  (`jdk.net.unixdomain.tmpdir=NUL`) through `npm run build:android:prod`.
+  Direct raw Gradle invocations can still fail on this host's local IPC path;
+  use the documented release script rather than treating that direct failure as
+  an application build failure.
 - The authoritative release procedure is
   [full-release-path.md](full-release-path.md).
 

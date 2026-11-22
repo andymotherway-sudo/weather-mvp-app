@@ -3,7 +3,7 @@
 Release: **OMNIwx 1.1.273**
 Android version code: **10291**
 Track: **Closed testing / internal testing candidate**
-Date: **November 16, 2026**
+Date: **November 21, 2026**
 
 ## Play Console Paste Notes
 
@@ -85,10 +85,23 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending production renderer promotion, fresh AAB build, embedded metadata
-inspection, checksum, and signing verification. The local Gradle daemon must
-first be able to establish its loopback IPC connection. Do not upload an older
-artifact left at the standard output path.
+- Built with `npm run build:android:prod` on November 21, 2026 (Arizona time).
+  The Windows release script applied the documented Java local-TCP fallback
+  (`jdk.net.unixdomain.tmpdir=NUL`) before running Gradle.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Artifact UTC timestamp: `2026-11-22T00:16:11.1267409Z`
+- Size: `170,845,269` bytes
+- SHA-256: `D31F47A900E3CED8815795DAA2B6397411AB7DBF757B47E30975A8752662F7A9`
+- Embedded configuration confirms version `1.1.273`, Android version code
+  `10291`, and `https://omniwx-api-production.omniwx.workers.dev`.
+- The signed bundle certificate was readable. Certificate SHA-256:
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+- Post-build production probes returned HTTP `200` at `2026-11-22T00:22:04Z`
+  for `/v1/health` and `/v1/radar/backend/status`. The latter continues to
+  report the owned radar read path as disabled for free-tier protection; this
+  release does not change that safeguard.
+- Do not upload an older artifact left at the standard output path. Confirm the
+  Play Console recognizes version code `10291` before completing rollout.
 
 ## Remaining Acceptance
 
