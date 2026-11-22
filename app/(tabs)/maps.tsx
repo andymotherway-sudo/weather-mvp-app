@@ -1789,9 +1789,13 @@ export default function MapsScreen() {
   });
   const satelliteWasActiveRef = useRef(false);
   const satelliteFrameIndexRef = useRef(satelliteFrameIndex);
-  const satellitePlaybackFrames = goesTrueColorEnabled
-    ? trueColorFrames
-    : goesEastIrEnabled && infraredFrames.length > 1
+  // A verified multi-frame catalog may drive the shared animation clock. A
+  // one-frame stale fallback remains visible, but must never freeze healthy
+  // infrared or cloud playback behind it.
+  const satellitePlaybackFrames =
+    goesTrueColorEnabled && trueColorFrames.length > 1
+      ? trueColorFrames
+      : goesEastIrEnabled && infraredFrames.length > 1
         ? infraredFrames
         : satelliteFrames;
   const satellitePlaybackFrameCount = satellitePlaybackFrames.length;
@@ -4214,6 +4218,50 @@ export default function MapsScreen() {
         })),
     [satellitePlaybackFrames],
   );
+  const trueColorCompositorFrames = useMemo(
+    () =>
+      trueColorFrames
+        .filter((frame: any) => typeof frame?.iso === 'string')
+        .map((frame: any, index: number) => ({
+          id: `truecolor-${index}-${frame.iso}`,
+          iso: frame.iso,
+          rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
+          sourceId: typeof frame.sourceId === 'string' ? frame.sourceId : undefined,
+        })),
+    [trueColorFrames],
+  );
+  const infraredCompositorFrames = useMemo(
+    () =>
+      infraredFrames
+        .filter((frame: any) => typeof frame?.iso === 'string')
+        .map((frame: any, index: number) => ({
+          id: `infrared-${index}-${frame.iso}`,
+          iso: frame.iso,
+          rasterId: typeof frame.rasterId === 'number' ? frame.rasterId : undefined,
+          sourceId: typeof frame.sourceId === 'string' ? frame.sourceId : undefined,
+        })),
+    [infraredFrames],
+  );
+  const cloudCompositorFrames = useMemo(
+    () =>
+      satelliteFrames
+        .filter((frame: any) => typeof frame?.iso === 'string')
+        .map((frame: any, index: number) => ({ id: `clouds-${index}-${frame.iso}`, iso: frame.iso })),
+    [satelliteFrames],
+  );
+  const animationClockIso =
+    (radarEnabled ? activeFrameIso : satellitePlaybackFrames[clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length)]?.iso) ??
+    null;
+  const sourceFrameIndex = useCallback(
+    (frames: Array<{ iso?: string | null }>) => {
+      const matched = nearestFrameIndexByIso(frames, animationClockIso);
+      return matched >= 0 ? matched : Math.max(0, frames.length - 1);
+    },
+    [animationClockIso],
+  );
+  const trueColorPlaybackFrameIndex = sourceFrameIndex(trueColorCompositorFrames);
+  const infraredPlaybackFrameIndex = sourceFrameIndex(infraredCompositorFrames);
+  const cloudPlaybackFrameIndex = sourceFrameIndex(cloudCompositorFrames);
   const animationCompositorCoordinates = useMemo(
     () => animationCoordinates(animationViewportRegion),
     [animationViewportRegion],
@@ -4359,16 +4407,20 @@ export default function MapsScreen() {
     ) => {
       const exclude = options?.exclude ?? null;
       const urls: string[] = [];
+      const closestFrame = (frames: SatelliteFrame[]) => {
+        const index = nearestFrameIndexByIso(frames, frame.iso);
+        return index >= 0 ? frames[index] : frame;
+      };
 
       if (cloudsEnabled && exclude !== 'clouds') {
         urls.push(buildAnimationUrl('goes-east-visible', frame, width, height));
         urls.push(buildAnimationUrl('goes-west-visible', frame, width, height));
       }
       if (goesTrueColorEnabled && exclude !== 'truecolor') {
-        urls.push(buildAnimationUrl('geocolor', frame, width, height));
+        urls.push(buildAnimationUrl('geocolor', closestFrame(trueColorFrames), width, height));
       }
       if (goesEastIrEnabled && exclude !== 'ir') {
-        urls.push(buildAnimationUrl('goes-east-ir', frame, width, height));
+        urls.push(buildAnimationUrl('goes-east-ir', closestFrame(infraredFrames), width, height));
       }
       if (goesEastWvEnabled && exclude !== 'wv-east') {
         urls.push(buildAnimationUrl('goes-east-wv', frame, width, height));
@@ -4386,6 +4438,8 @@ export default function MapsScreen() {
       goesEastWvEnabled,
       goesTrueColorEnabled,
       goesWestWvEnabled,
+      infraredFrames,
+      trueColorFrames,
     ],
   );
 
@@ -4721,6 +4775,65 @@ export default function MapsScreen() {
               onBufferStatus={setSatelliteSecondaryBufferStatus}
               onDisplayReady={setSatelliteSecondaryReady}
             />
+          ) : null}
+          {bufferedSatelliteKind !== 'truecolor' && trueColorUsingCatalog && trueColorCompositorFrames.length > 1 ? (
+            <BufferedAtmosphericLayer
+              id="playback-truecolor-synchronized"
+              enabled
+              frames={trueColorCompositorFrames}
+              frameIndex={trueColorPlaybackFrameIndex}
+              coordinates={bufferedPlaybackCoordinates}
+              opacity={goesTrueColorOpacity}
+              blendMs={460}
+              transitionMode="cut"
+              pixelRatioCap={3}
+              maxImageWidth={2048}
+              maxImageHeight={2048}
+              maxConcurrentDownloads={1}
+              buildUrl={(frame, width, height) => buildAnimationUrl('geocolor', frame, width, height)}
+            />
+          ) : null}
+          {bufferedSatelliteKind !== 'ir' && infraredUsingCatalog && infraredCompositorFrames.length > 1 ? (
+            <BufferedAtmosphericLayer
+              id="playback-infrared-synchronized"
+              enabled
+              frames={infraredCompositorFrames}
+              frameIndex={infraredPlaybackFrameIndex}
+              coordinates={bufferedPlaybackCoordinates}
+              opacity={goesEastIrOpacity}
+              blendMs={420}
+              transitionMode="cut"
+              maxConcurrentDownloads={1}
+              buildUrl={(frame, width, height) => buildAnimationUrl('goes-east-ir', frame, width, height)}
+            />
+          ) : null}
+          {bufferedSatelliteKind !== 'clouds' && cloudsEnabled && cloudCompositorFrames.length > 1 ? (
+            <>
+              <BufferedAtmosphericLayer
+                id="playback-clouds-east-synchronized"
+                enabled
+                frames={cloudCompositorFrames}
+                frameIndex={cloudPlaybackFrameIndex}
+                coordinates={bufferedPlaybackCoordinates}
+                opacity={cloudsOpacity}
+                blendMs={420}
+                transitionMode="cut"
+                maxConcurrentDownloads={1}
+                buildUrl={(frame, width, height) => buildAnimationUrl('goes-east-visible', frame, width, height)}
+              />
+              <BufferedAtmosphericLayer
+                id="playback-clouds-west-synchronized"
+                enabled
+                frames={cloudCompositorFrames}
+                frameIndex={cloudPlaybackFrameIndex}
+                coordinates={bufferedPlaybackCoordinates}
+                opacity={cloudsOpacity}
+                blendMs={420}
+                transitionMode="cut"
+                maxConcurrentDownloads={1}
+                buildUrl={(frame, width, height) => buildAnimationUrl('goes-west-visible', frame, width, height)}
+              />
+            </>
           ) : null}
 
           {animationCompositorKind && animationCompositorFrames.length > 1 ? (
