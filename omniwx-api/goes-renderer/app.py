@@ -13,6 +13,7 @@ from io import BytesIO
 import os
 import re
 from threading import BoundedSemaphore, Lock
+import time
 from typing import Any
 
 from flask import Flask, Response, jsonify, request
@@ -40,6 +41,8 @@ IMAGE_FRAME_LOCKS = tuple(Lock() for _ in range(16))
 # allocation. More would improve a cold loop only marginally while making
 # memory consumption and upstream bandwidth much less predictable.
 IMAGE_LOAD_LIMIT = BoundedSemaphore(2)
+SOURCE_FETCH_ATTEMPTS = 4
+SOURCE_RETRY_SECONDS = (1, 3, 7)
 
 # GOES-R fixed-grid geometry. The rendered GeoColor image is the full disk
 # resampled to a square, retaining ABI's +/- 0.151844 radian scan angle range.
@@ -97,10 +100,19 @@ def refreshable_frames() -> tuple[str, ...]:
 @lru_cache(maxsize=3)
 def load_image(frame: str, source_size: int) -> np.ndarray:
     url = STAR_IMAGE.format(frame=frame, size=source_size)
-    response = requests.get(url, timeout=45, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
-    response.raise_for_status()
-    with Image.open(BytesIO(response.content)) as image:
-        return np.asarray(image.convert("RGB"))
+    last_error: Exception | None = None
+    for attempt in range(SOURCE_FETCH_ATTEMPTS):
+        try:
+            response = requests.get(url, timeout=45, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
+            response.raise_for_status()
+            with Image.open(BytesIO(response.content)) as image:
+                return np.asarray(image.convert("RGB"))
+        except (requests.RequestException, OSError) as error:
+            last_error = error
+            if attempt < len(SOURCE_RETRY_SECONDS):
+                time.sleep(SOURCE_RETRY_SECONDS[attempt])
+
+    raise RuntimeError(f"NOAA GeoColor source remained unavailable after {SOURCE_FETCH_ATTEMPTS} attempts: {frame}") from last_error
 
 
 def fetch_image(frame: str, source_size: int) -> np.ndarray:

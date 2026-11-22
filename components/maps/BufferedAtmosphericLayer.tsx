@@ -47,6 +47,8 @@ type Props = {
   onDisplayReady?: (ready: boolean) => void;
 };
 
+const FRAME_DOWNLOAD_RETRY_DELAYS_MS = [0, 1200, 3000, 7000, 15000];
+
 function clampIndex(index: number, count: number) {
   if (count <= 0) return 0;
   return Math.max(0, Math.min(count - 1, Math.floor(index)));
@@ -239,12 +241,13 @@ export function BufferedAtmosphericLayer(props: Props) {
       // Renderer misses can briefly fail while Cloud Run is warming or an
       // upstream NOAA image is being decoded. Do not turn that transient state
       // into a permanently skipped timeline frame on the first attempt.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (let attempt = 0; attempt < FRAME_DOWNLOAD_RETRY_DELAYS_MS.length; attempt += 1) {
         try {
           return await cacheAtmosphericFrame(request.remoteUrl);
         } catch (error) {
           lastError = error;
-          if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+          const delayMs = FRAME_DOWNLOAD_RETRY_DELAYS_MS[attempt + 1];
+          if (delayMs) await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
         }
       }
       throw lastError;

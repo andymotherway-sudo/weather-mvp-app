@@ -4001,7 +4001,7 @@ export default function MapsScreen() {
           : buffering
             ? `${bufferedReady} of ${bufferedTotal} viewport frames are ready. Playback holds the current image until the next frame is available.`
           : bufferedFailed > 0
-            ? `${bufferedReady} frames are ready; ${bufferedFailed} unavailable source frames will be skipped.`
+            ? `${bufferedReady} frames are ready; ${bufferedFailed} frames could not be rendered after retries and will be skipped.`
           : status === 'stale'
             ? `Showing the last verified image${trueColorSourceAgeMinutes != null ? ` (${Math.round(trueColorSourceAgeMinutes / 60)}h old)` : ''}; no synthetic loop is shown.`
             : status === 'unavailable'
@@ -4735,7 +4735,7 @@ export default function MapsScreen() {
               pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 3 : 1}
               maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
               maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
-              maxConcurrentDownloads={bufferedSatelliteKind === 'truecolor' ? 1 : undefined}
+              maxConcurrentDownloads={bufferedSatelliteKind === 'truecolor' ? 2 : undefined}
               // GeoColor is an inspection product. Do not briefly paint the
               // 1808px renderer preview and then replace it with the 5424px
               // source: the temporary soft image makes state-scale imagery
