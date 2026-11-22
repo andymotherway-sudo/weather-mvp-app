@@ -98,9 +98,16 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Populate this section only after `npm run build:android:prod` succeeds. Record
-the artifact size, timestamp, SHA-256, embedded version/environment, and
-signing certificate before uploading the AAB.
+- Built successfully with `npm run build:android:prod` on November 22, 2026.
+  The documented Windows Java local-TCP fallback was applied by the release
+  script.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170,852,954` bytes. Build timestamp: `2026-11-22T19:27:46.9199452Z`.
+- SHA-256: `F6B5286571FF8CDD2F4C694379D1FE21A0A53E196018672B0CBB46A02257B900`
+- Embedded configuration confirms app version `1.1.278`, Android version code
+  `10296`, build label `internal-test-aab-10296`, and the production Worker URL.
+- The signing certificate SHA-256 is
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
 
 ## Remaining Acceptance
 
