@@ -4678,6 +4678,7 @@ export default function MapsScreen() {
               pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 3 : 1}
               maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
               maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
+              maxConcurrentDownloads={bufferedSatelliteKind === 'truecolor' ? 1 : undefined}
               // GeoColor is an inspection product. Do not briefly paint the
               // 1808px renderer preview and then replace it with the 5424px
               // source: the temporary soft image makes state-scale imagery

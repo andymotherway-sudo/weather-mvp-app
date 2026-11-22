@@ -41,6 +41,7 @@ type Props = {
   maxImageHeight?: number;
   previewMaxImageWidth?: number;
   previewMaxImageHeight?: number;
+  maxConcurrentDownloads?: number;
   buildUrl: (frame: FrameLike, width: number, height: number) => string;
   onBufferStatus?: (status: AnimationBufferStatus) => void;
   onDisplayReady?: (ready: boolean) => void;
@@ -79,6 +80,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     maxImageHeight = 1408,
     previewMaxImageWidth,
     previewMaxImageHeight,
+    maxConcurrentDownloads = 2,
     buildUrl,
     onBufferStatus,
     onDisplayReady,
@@ -232,27 +234,47 @@ export function BufferedAtmosphericLayer(props: Props) {
         return distanceA - distanceB;
       });
 
+    const downloadFrame = async (request: (typeof requests)[number]) => {
+      let lastError: unknown;
+      // Renderer misses can briefly fail while Cloud Run is warming or an
+      // upstream NOAA image is being decoded. Do not turn that transient state
+      // into a permanently skipped timeline frame on the first attempt.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          return await cacheAtmosphericFrame(request.remoteUrl);
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+        }
+      }
+      throw lastError;
+    };
+
+    const cacheRequest = async (request: (typeof requests)[number]) => {
+      try {
+        const localUri = await downloadFrame(request);
+        if (cancelled) return;
+        setCachedUris((current) => {
+          const next = new Map(current);
+          next.set(request.requestId, localUri);
+          return next;
+        });
+      } catch {
+        if (cancelled) return;
+        setFailedIds((current) => {
+          const next = new Set(current);
+          next.add(request.requestId);
+          return next;
+        });
+      }
+    };
+
     const worker = async (queue: number[]) => {
       while (queue.length && !cancelled) {
         const index = queue.shift();
         if (index == null) return;
         const request = requests[index];
-        try {
-          const localUri = await cacheAtmosphericFrame(request.remoteUrl);
-          if (cancelled) return;
-          setCachedUris((current) => {
-            const next = new Map(current);
-            next.set(request.requestId, localUri);
-            return next;
-          });
-        } catch {
-          if (cancelled) return;
-          setFailedIds((current) => {
-            const next = new Set(current);
-            next.add(request.requestId);
-            return next;
-          });
-        }
+        await cacheRequest(request);
       }
     };
 
@@ -269,22 +291,7 @@ export function BufferedAtmosphericLayer(props: Props) {
         const firstIndex = queue.indexOf(desired);
         if (firstIndex >= 0) queue.splice(firstIndex, 1);
         if (!firstRequest) return;
-        try {
-          const localUri = await cacheAtmosphericFrame(firstRequest.remoteUrl);
-          if (cancelled) return;
-          setCachedUris((current) => {
-            const next = new Map(current);
-            next.set(firstRequest.requestId, localUri);
-            return next;
-          });
-        } catch {
-          if (cancelled) return;
-          setFailedIds((current) => {
-            const next = new Set(current);
-            next.add(firstRequest.requestId);
-            return next;
-          });
-        }
+        await cacheRequest(firstRequest);
       };
 
       const previewFrame = async () => {
@@ -306,7 +313,10 @@ export function BufferedAtmosphericLayer(props: Props) {
       };
 
       await Promise.all([previewFrame(), primaryFullFrame()]);
-      if (!cancelled) await Promise.all([worker(queue), worker(queue)]);
+      if (!cancelled) {
+        const workerCount = Math.max(1, Math.min(2, Math.floor(maxConcurrentDownloads)));
+        await Promise.all(Array.from({ length: workerCount }, () => worker(queue)));
+      }
     };
 
     setPreviewSlot(null);
@@ -314,7 +324,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [enabled, previewHeight, previewScale, previewWidth, requests]);
+  }, [enabled, maxConcurrentDownloads, previewHeight, previewScale, previewWidth, requests]);
 
   useEffect(() => {
     const requestIds = new Set(requests.map((request) => request.requestId));
