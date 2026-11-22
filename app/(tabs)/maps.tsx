@@ -4851,7 +4851,12 @@ export default function MapsScreen() {
                 />
               </MapLibreGL.ShapeSource>
 
-              <MapLibreGL.ShapeSource id="aviation-mode-pireps-source" shape={aviationPirepsFc as any}>
+              <MapLibreGL.ShapeSource
+                id="aviation-mode-pireps-source"
+                shape={aviationPirepsFc as any}
+                // Keep point reports interactive when they overlap a larger advisory polygon.
+                onPress={handleAviationFeaturePress}
+              >
                 <MapLibreGL.CircleLayer
                   id="aviation-mode-pireps-points"
                   minZoomLevel={4}

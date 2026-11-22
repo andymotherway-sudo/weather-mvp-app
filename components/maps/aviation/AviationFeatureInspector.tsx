@@ -43,6 +43,7 @@ export function AviationFeatureInspector(props: { feature: AviationFeature | nul
         <Row label="Severity" value={feature.severity} />
         <Row label="Source" value={`AWC / ${source}`} />
         <Row label="Raw ID" value={feature.id} />
+        {feature.rawText ? <Row label="Report" value={feature.rawText} /> : null}
       </Glass>
     </View>
   );
