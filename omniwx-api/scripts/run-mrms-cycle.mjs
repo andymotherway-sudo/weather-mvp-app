@@ -89,7 +89,7 @@ Runs one bounded MRMS publish cycle:
 1. Download latest NOAA MRMS frame
 2. Render non-empty XYZ tiles
 3. Publish latest manifest to the target R2 bucket
-4. Ask Worker cleanup to remove retained-frame objects not in latest manifest
+4. Retain packed artifacts during publish, or clean up legacy tile objects
 
 Options:
   --env <dev|production>     Target environment. Default: dev
@@ -206,6 +206,12 @@ function publishFrame(args, bucket, workerEnv, frame = null) {
 
 function cleanupRetained(args, workerEnv) {
   if (args.skipCleanup) return;
+  if (args.delivery === "packed") {
+    // The packed publisher retains whole artifacts from its manifest. The legacy
+    // cleanup utility expects one prefix per frame and cannot safely inspect packs.
+    console.log("Packed MRMS delivery retains artifacts during publish; skipping legacy tile cleanup.");
+    return;
+  }
   const cleanupArgs = [
     join(SCRIPT_DIR, "cleanup-mrms-retained.mjs"),
     "--env",

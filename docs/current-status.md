@@ -55,14 +55,29 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 - MRMS is the owned national radar path for supported US coverage. RainViewer
   remains its fallback; IEM/RIDGE remains the local Storm Scope fallback.
+- On November 22, 2026, the packed MRMS pilot rendered and published one fresh
+  `MergedReflectivityQCComposite` frame (`20261122T180800`) at zooms 3-8. The
+  artifact was about 1.81 MB and the bounded publish used three Class A writes:
+  the pack, latest manifest, and rollback manifest.
+- The production Worker served the published packed artifact through the real
+  MRMS tile route with `200 image/png` and
+  `x-omni-radar-source: r2-mrms-pack`. This proves the compact delivery path,
+  not a continuously operating national radar service.
 - Cloud Scheduler radar jobs are paused. The checked GitHub variables were
   `MRMS_SCHEDULE_ENABLED=false` and `LEVEL3_SCHEDULE_ENABLED=false`; no queued
   or running publisher job was observed in the verification window.
+- The production MRMS job was restored to `RADAR_RUNNER_APPLY=false` and
+  `RADAR_RUNNER_CONFIRM=disabled` immediately after the pilot. Level III was
+  not included in this pilot and its legacy frames remain stale.
 - Do not re-enable a publisher based only on a green build or old frame data.
   Use the containment and re-enablement evidence in
   [radar-cost-safety-runbook.md](radar-cost-safety-runbook.md).
 - Packed artifacts are the only acceptable direction for resumed owned-radar
   writes. Legacy tile-per-object publishing is not an approved scheduled path.
+- The pilot execution's final status was failed because it invoked the old
+  tile-prefix cleanup after the packed publish had already succeeded. The
+  runner now skips that incompatible cleanup for packed delivery; deploy and
+  dry-run the corrected image before any further applied publish or schedule.
 
 ## Active Gates
 
@@ -71,8 +86,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 2. Existing GCP budget alerts were shown in the user's November 14 screenshot.
    Confirm recipients and delivery before raising Cloud Run capacity or enabling
    shared-source caching; alerts must not be treated as a hard spending cap.
-3. Re-enable any radar writer only through a one-publisher packed pilot with a
-   measured aggregate operations and runtime budget.
+3. Re-enable any radar writer only through a corrected one-publisher packed
+   pilot with a measured aggregate operations and runtime budget. The November
+   22 single-frame MRMS pilot is evidence, not authorization for a schedule.
 4. Complete security, provider-use, account ownership, and entitlement gates
    before paid subscriptions.
 

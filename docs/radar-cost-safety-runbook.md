@@ -1,12 +1,34 @@
 # Radar Cost Safety Runbook
 
-Last updated: October 9, 2026
+Last updated: November 22, 2026
 
 Keep radar operations, compute, retention, and recovery bounded. Small R2 storage usage is not evidence of a safe operation rate. This document describes procedures; it does not assert that they have already been executed.
 
 ## Verified Gap
 
 The October 9 audit found active GitHub MRMS and Level III publishing, despite older docs saying all automation was paused. `LEVEL3_SCHEDULE_ENABLED` was `true`; the repository had no `MRMS_SCHEDULE_ENABLED` override and the workflow defaults to enabled. The Level III watchdog currently bypasses the Level III schedule switch by dispatching an applied manual publisher run. Cloud Run/Scheduler state was not verified in that audit.
+
+## November 22 Packed MRMS Pilot Evidence
+
+A single manual MRMS composite pilot used the packed delivery path while every
+Cloud Scheduler job stayed paused. It rendered fresh NOAA
+`MergedReflectivityQCComposite` data for `20261122T180800` into 667 non-empty
+tiles at zooms 3-8, then wrote one approximately 1.81 MB `.owxpack` artifact,
+the latest manifest, and a rollback manifest. The publish was bounded to three
+Class A writes under an explicit cap of four.
+
+The production Worker then returned `200 image/png` from a real MRMS tile
+request with `x-omni-radar-source: r2-mrms-pack`. This validates one compact
+artifact and the Worker read path only. It does not validate a production
+cadence, backfill, or Level III delivery.
+
+The Cloud Run execution was marked failed after that successful publish because
+the runner invoked a legacy cleanup script that expects tile-per-object frame
+prefixes. Packed retention is already handled atomically by
+`publish-radar-tile-pack.mjs`, so the runner now skips the incompatible legacy
+cleanup for packed delivery. The corrected image must be deployed with writes
+disabled and dry-run successfully before any second applied publish. Keep all
+schedulers paused until the full re-enablement evidence below is complete.
 
 ## Emergency Stop
 
