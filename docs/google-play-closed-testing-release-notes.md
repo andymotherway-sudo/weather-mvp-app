@@ -1,14 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.278**
-Android version code: **10296**
+Release: **OMNIwx 1.1.279**
+Android version code: **10297**
 Track: **Closed testing / internal testing candidate**
 Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-GeoColor now retries transient source rendering within a bounded service budget,
-reducing false skipped frames and blank playback. Radar publishers remain paused.
+GeoColor now uses only sharp 5424px source frames and invalidates prior
+preview-quality caches. Radar publishers remain paused.
 
 ## Tester Notes
 
@@ -52,8 +52,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.278`
-- Android version code: `10296`
+- App version: `1.1.279`
+- Android version code: `10297`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -87,31 +87,24 @@ Please focus on these areas:
 ## Production Evidence Before Build
 
 - The private GeoColor renderer is production revision
-  `omniwx-goes-renderer-00009-8b6`, serving 100% of traffic from image
-  `sha256:cf9871148c1452aed3d3a81186dd86c8abb3424dff1881f90e75dc64ed70f23a`.
+  `omniwx-goes-renderer-00010-f5z`, serving 100% of traffic from image
+  `sha256:b61db6dea0e7e76f42ac9e00139fb85976d768e1da264e2dc1e10864c6d58078`.
 - Its cap remains two instances; its request deadline is 120 seconds and each
   NOAA source request is capped at 20 seconds across four attempts.
-- The production frame catalog returned 12 frames. A current 512px export
-  returned `200 image/png` (363,613 bytes) through the production Worker.
+- The production frame catalog returned 11 frames. A fresh cache-v4 512px
+  export returned `200 image/png` (446,666 bytes) through the production Worker.
 - Radar publishers remain paused; no D1 migration or publisher activation is
   part of this release.
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,852,954` bytes. Build timestamp: `2026-11-22T19:27:46.9199452Z`.
-- SHA-256: `F6B5286571FF8CDD2F4C694379D1FE21A0A53E196018672B0CBB46A02257B900`
-- Embedded configuration confirms app version `1.1.278`, Android version code
-  `10296`, build label `internal-test-aab-10296`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+Populate this section only after `npm run build:android:prod` succeeds. Record
+the artifact size, timestamp, SHA-256, embedded version/environment, and
+signing certificate before uploading the AAB.
 
 ## Remaining Acceptance
 
-- Upload only version code `10296` to the intended Play internal-testing track.
+- Upload only version code `10297` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area.

@@ -8,7 +8,7 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.278` / Android version code `10296`.
+- Current internal-testing candidate: `1.1.279` / Android version code `10297`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
@@ -22,7 +22,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   sharp-frame downloads before skipping them and serializes its expensive
   prefetch queue. This release additionally bounds each NOAA source request at
   20 seconds so the renderer can use all four retries within its 120-second
-  service deadline. Artifact evidence is recorded in the release notes.
+  service deadline. GeoColor now always renders from NOAA's 5424px source, and
+  cache version 4 prevents lower-resolution frames from being reused. Artifact
+  evidence is recorded in the release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).
 - Internal testing is the active release channel. A build is not release-ready
@@ -48,10 +50,13 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - `omniwx-goes-renderer` is capped at two Cloud Run instances with concurrency
   four. This is a deliberate cost and upstream-protection limit, not a scale
   target. See [scaling-and-cost-controls.md](scaling-and-cost-controls.md).
-- On November 22, the production GeoColor frame catalog returned 12 frames and
-  a current 512px render returned `200 image/png` through the production
-  Worker after the retry-budget deployment. Device acceptance remains required
+- On November 22, the production GeoColor frame catalog returned 11 frames and
+  a fresh cache-v4 512px render returned `200 image/png` through the production
+  Worker after the sharp-source deployment. Device acceptance remains required
   for cold-start, sharpness, and animation behavior.
+- The user confirmed MRMS imagery is visible in the app. This is device
+  acceptance of the retained pilot data path, not authorization to resume a
+  radar publisher.
 
 ## Radar And Automation
 
