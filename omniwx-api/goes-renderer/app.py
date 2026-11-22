@@ -43,6 +43,9 @@ IMAGE_FRAME_LOCKS = tuple(Lock() for _ in range(16))
 IMAGE_LOAD_LIMIT = BoundedSemaphore(2)
 SOURCE_FETCH_ATTEMPTS = 4
 SOURCE_RETRY_SECONDS = (1, 3, 7)
+# Keep individual NOAA requests bounded so all retries can complete within the
+# Cloud Run request deadline instead of one slow socket consuming the budget.
+SOURCE_REQUEST_TIMEOUT_SECONDS = 20
 
 # GOES-R fixed-grid geometry. The rendered GeoColor image is the full disk
 # resampled to a square, retaining ABI's +/- 0.151844 radian scan angle range.
@@ -103,7 +106,11 @@ def load_image(frame: str, source_size: int) -> np.ndarray:
     last_error: Exception | None = None
     for attempt in range(SOURCE_FETCH_ATTEMPTS):
         try:
-            response = requests.get(url, timeout=45, headers={"User-Agent": "omniwx-goes-renderer/1.0"})
+            response = requests.get(
+                url,
+                timeout=SOURCE_REQUEST_TIMEOUT_SECONDS,
+                headers={"User-Agent": "omniwx-goes-renderer/1.0"},
+            )
             response.raise_for_status()
             with Image.open(BytesIO(response.content)) as image:
                 return np.asarray(image.convert("RGB"))
