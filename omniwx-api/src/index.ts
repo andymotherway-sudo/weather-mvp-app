@@ -14830,33 +14830,37 @@ async function handleWorkerRequest(
         });
       }
 
+      // Share the forecast cache with the hourly endpoint. The home-card cache
+      // is intentionally short-lived, but a provider throttle must not force a
+      // fresh Open-Meteo request while a recent forecast remains available.
+      const forecastCacheRequestUrl = new URL(request.url);
+      forecastCacheRequestUrl.pathname = "/api/openmeteo/hourly";
+      forecastCacheRequestUrl.search = forecastRequestUrl.search;
+      const forecastCacheKey = buildOmHourlyCacheKey(
+        forecastCacheRequestUrl,
+        builtForecast.lats,
+        builtForecast.lons,
+        builtForecast.units,
+      );
+
       const [forecastRes, airQualityRes] = await Promise.all([
-        (async () => {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
-          try {
-            const res = await fetch(builtForecast.upstreamUrl, {
-              signal: ctrl.signal,
-              headers: { accept: "application/json" },
-            });
-            if (!res.ok) {
-              const retryAfter = res.headers.get("retry-after");
-              return new Response(
-                JSON.stringify({ ok: false, error: "Home summary forecast failed", status: res.status }),
-                {
-                  status: res.status,
-                  headers: {
-                    "content-type": "application/json; charset=utf-8",
-                    ...(retryAfter ? { "retry-after": retryAfter } : {}),
-                  },
-                },
-              );
+        swrFetchJson(new Request(forecastCacheRequestUrl.toString()), ctx, {
+          cacheKey: forecastCacheKey,
+          ttlSeconds: OM_HOURLY_TTL_SECONDS,
+          staleSeconds: OM_HOURLY_STALE_SECONDS,
+          fetchUpstream: async () => {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), OPEN_METEO_TIMEOUT_MS);
+            try {
+              return await fetch(builtForecast.upstreamUrl, {
+                signal: ctrl.signal,
+                headers: { accept: "application/json" },
+              });
+            } finally {
+              clearTimeout(t);
             }
-            return res;
-          } finally {
-            clearTimeout(t);
-          }
-        })(),
+          },
+        }),
         fetchAirQualityHourlyResponse(builtAirQuality),
       ]);
 
