@@ -41,6 +41,7 @@ export type MapRendererProps = {
   radarBehaviorZoom?: number | null;
   regionEventMode?: 'continuous' | 'settled';
   onRegionChangeComplete: (r: Region, meta?: { isUserInteraction: boolean }) => void;
+  onZoomChange?: (zoom: number) => void;
   onPanDrag?: () => void;
   radar: RadarOverlay;
   children?: React.ReactNode;
@@ -269,6 +270,7 @@ export function MapRenderer(props: MapRendererProps) {
     radarBehaviorZoom,
     regionEventMode = 'continuous',
     onRegionChangeComplete,
+    onZoomChange,
     onPanDrag,
     radar,
     overlays,
@@ -409,6 +411,10 @@ export function MapRenderer(props: MapRendererProps) {
     const zoom = typeof zRaw === 'number' && Number.isFinite(zRaw) ? clamp(zRaw, 1, 20) : null;
     if (zoom !== null) {
       liveZoomRef.current = zoom;
+      // Parent state is intentionally debounced, but camera controls need the
+      // exact live gesture zoom so a button press cannot jump back to a stale
+      // settled level immediately after a pinch gesture.
+      onZoomChange?.(zoom);
       if (!isUser && Math.abs(zoom - liveZoom) > 0.001) setLiveZoom(zoom);
     }
 

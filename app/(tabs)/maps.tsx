@@ -1573,6 +1573,14 @@ export default function MapsScreen() {
 
   const [mapZoom, setMapZoom] = useState<number>(4);
   const [radarBehaviorZoom, setRadarBehaviorZoom] = useState<number>(4);
+  const mapZoomRef = useRef(4);
+  const updateMapZoom = useCallback((nextZoom: number) => {
+    mapZoomRef.current = nextZoom;
+    setMapZoom(nextZoom);
+  }, []);
+  const trackLiveMapZoom = useCallback((nextZoom: number) => {
+    mapZoomRef.current = nextZoom;
+  }, []);
 
   const radarEnabled = !!state.layers?.['radar.reflectivity']?.enabled;
   const radarViewActive = state.viewId === 'radar' || state.viewId === 'storm';
@@ -3431,7 +3439,7 @@ export default function MapsScreen() {
     routeFocusSeedRegionRef.current = nextRegion;
     setRegion(nextRegion);
     const nextZoom = nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
-    setMapZoom(nextZoom);
+    updateMapZoom(nextZoom);
     setRadarBehaviorZoom(nextZoom);
     setMapResetKey((value) => value + 1);
     setConsumedRouteFocusKey(routeFocusTarget.key);
@@ -3447,7 +3455,7 @@ export default function MapsScreen() {
         targetType: '',
       });
     });
-  }, [routeFocusTarget, router]);
+  }, [routeFocusTarget, router, updateMapZoom]);
 
   const effectiveRegion = region ?? stableInitialRegion;
 
@@ -3653,14 +3661,14 @@ export default function MapsScreen() {
     setCameraDebugLabel(`radar-station:${getStationDisplayId(selectedRadarSite)}`);
     setRegion(nextRegion);
     const nextZoom = nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
-    setMapZoom(nextZoom);
+    updateMapZoom(nextZoom);
     setRadarBehaviorZoom(nextZoom);
     setMapResetKey((value) => value + 1);
 
     requestAnimationFrame(() => {
       radarStationSeedRegionRef.current = null;
     });
-  }, [manualStationRadarMode, selectedRadarId3, selectedRadarSite]);
+  }, [manualStationRadarMode, selectedRadarId3, selectedRadarSite, updateMapZoom]);
 
   useEffect(() => {
     if (!manualStationRadarMode) lastCenteredRadarSiteRef.current = null;
@@ -3840,16 +3848,18 @@ export default function MapsScreen() {
 
   const handleMapZoomButton = useCallback((delta: number) => {
     const targetRegion = region ?? stableInitialRegion;
-    const requestedZoom = Number.isFinite(mapZoom) ? mapZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
+    const requestedZoom = Number.isFinite(mapZoomRef.current)
+      ? mapZoomRef.current
+      : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
-    setMapZoom(nextZoom);
+    updateMapZoom(nextZoom);
     setCameraDebugLabel(`zoom-camera:${nextZoom.toFixed(2)}`);
     // A zoom control must never become a recenter control. Omitting the center
     // keeps MapLibre anchored to its live viewport, including immediately after
     // a user pan, and avoiding a remount prevents fallback to a saved location.
     mapCameraRef.current?.zoomTo?.(nextZoom, 180);
-  }, [mapZoom, region, stableInitialRegion]);
+  }, [region, stableInitialRegion, updateMapZoom]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
     ? activeLayerSummary.title
@@ -4612,6 +4622,7 @@ export default function MapsScreen() {
             radarBehaviorZoom={radarBehaviorZoom}
               boundaryReliefTone={boundaryReliefTone}
             cameraRef={mapCameraRef}
+            onZoomChange={trackLiveMapZoom}
             onMapPress={handleMapPress}
               onPanDrag={() => {
                 locateRequestIdRef.current += 1;
@@ -4630,7 +4641,7 @@ export default function MapsScreen() {
                 : approxZoomFromLongitudeDelta(nextRegion.longitudeDelta);
 
             setRegion(nextRegion);
-            setMapZoom(zFloat);
+            updateMapZoom(zFloat);
             if (meta?.isUserInteraction) setRadarBehaviorZoom(zFloat);
             if (meta?.isUserInteraction) radarCtl.refreshLocalIfNeeded();
           }}
