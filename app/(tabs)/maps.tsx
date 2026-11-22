@@ -4678,8 +4678,10 @@ export default function MapsScreen() {
               pixelRatioCap={bufferedSatelliteKind === 'truecolor' ? 3 : 1}
               maxImageWidth={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
               maxImageHeight={bufferedSatelliteKind === 'truecolor' ? 2048 : undefined}
-              previewMaxImageWidth={bufferedSatelliteKind === 'truecolor' ? 720 : undefined}
-              previewMaxImageHeight={bufferedSatelliteKind === 'truecolor' ? 960 : undefined}
+              // GeoColor is an inspection product. Do not briefly paint the
+              // 1808px renderer preview and then replace it with the 5424px
+              // source: the temporary soft image makes state-scale imagery
+              // look broken and competes with the sharp initial render.
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl(
                   bufferedSatelliteKind === 'truecolor'
