@@ -47,6 +47,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 - The production Cloudflare Worker is the app-facing backend. It serves cached
   and normalized weather/radar endpoints; it is not a radar publisher.
+- Production Worker version `2eb6b3fc-9fa4-484d-8f76-d3e60a4634da` serves the
+  `1.1.280` cache-reuse release. A live Mesa home-summary probe returned `200`
+  after deployment.
 - GeoColor frames and rendered images are cached at the Worker. Production
   render misses are bounded by the `GEOCOLOR_RENDER_LIMITER`; cached responses
   do not consume that allowance.

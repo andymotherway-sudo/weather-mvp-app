@@ -86,6 +86,11 @@ Please focus on these areas:
 
 ## Production Evidence Before Build
 
+- Worker deployment: `omniwx-api-production` version
+  `2eb6b3fc-9fa4-484d-8f76-d3e60a4634da`.
+- Production `/v1/health`, `/v1/radar/backend/status`, and a Mesa home-summary
+  request returned successful responses after deployment. Radar writers remain
+  disabled; no production D1 migration or publisher activation occurred.
 - The private GeoColor renderer is production revision
   `omniwx-goes-renderer-00010-f5z`, serving 100% of traffic from image
   `sha256:b61db6dea0e7e76f42ac9e00139fb85976d768e1da264e2dc1e10864c6d58078`.
@@ -98,9 +103,18 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending `npm run build:android:prod` for this release. Record the fresh artifact
-timestamp, size, SHA-256, embedded production configuration, and signing
-certificate after the build; do not reuse the 1.1.279 evidence.
+- Built successfully with `npm run build:android:prod` on November 22, 2026.
+  The documented Windows Java local-TCP fallback was applied by the release
+  script. Gradle produced the native `10298` bundle; the wrapper's freshness
+  timestamp guard returned nonzero after packaging, so this artifact was
+  independently inspected before acceptance.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170,852,762` bytes. Build timestamp: `2026-11-23T01:13:43.9211169Z`.
+- SHA-256: `DF43FDDFA14D2C189A152471681BC7AA4C387C5495BAA742E18CD7CB46A557B9`
+- Embedded configuration confirms app version `1.1.280`, Android version code
+  `10298`, build label `internal-test-aab-10298`, and the production Worker URL.
+- The signing certificate SHA-256 is
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
 
 ## Remaining Acceptance
 
