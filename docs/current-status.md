@@ -8,7 +8,7 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.279` / Android version code `10297`.
+- Current internal-testing candidate: `1.1.280` / Android version code `10298`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
@@ -23,7 +23,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   prefetch queue. This release additionally bounds each NOAA source request at
   20 seconds so the renderer can use all four retries within its 120-second
   service deadline. GeoColor now always renders from NOAA's 5424px source, and
-  cache version 4 prevents lower-resolution frames from being reused. Artifact
+  cache version 4 prevents lower-resolution frames from being reused. Its Land
+  summary now shares the bounded hourly forecast cache rather than making a
+  separate upstream forecast call on each home-summary cache miss; rate-limit
+  responses remain concise and never expose nested upstream payloads. Artifact
   evidence is recorded in the release notes.
 - Artifact evidence, signing caveat, and tester steps are recorded in
   [release notes](google-play-closed-testing-release-notes.md).

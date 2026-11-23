@@ -6,9 +6,10 @@ Status: proposed product and provider choices, not an enabled billing system.
 The owner is being asked to confirm Free + Plus and Firebase Authentication.
 Prices and limits below are hypotheses to validate, not approved store products.
 
-This is the canonical commercial design. Execution gates remain in
+This is the canonical commercial design for Android and iOS. Execution gates remain in
 [production-readiness-plan.md](production-readiness-plan.md); builds and Play
-distribution follow [full-release-path.md](full-release-path.md).
+distribution follow [full-release-path.md](full-release-path.md). The iOS
+platform plan and parity boundaries live in [ios-release-plan.md](ios-release-plan.md).
 
 ## Current Foundation
 
@@ -70,7 +71,8 @@ withhold official safety warnings behind a purchase prompt.
 | --- | --- | --- |
 | Firebase Authentication | Google sign-in, email/password, verification, recovery, session lifecycle | Weather profiles, subscription authority, our card storage |
 | Google Play Billing | Android checkout, payment processing, store subscription management | OMNIwx settings or profile database |
-| RevenueCat | Store integration, verified subscription state, lifecycle notifications, restores | Authenticating an OMNIwx login |
+| Apple In-App Purchase | iOS checkout, payment processing, store subscription management | OMNIwx settings or profile database |
+| RevenueCat | Play and App Store integration, verified subscription state, lifecycle notifications, restores | Authenticating an OMNIwx login |
 | Cloudflare Worker | Verify identity, authorize profile access, enforce premium API access, process authenticated billing events | Trusting client-supplied paid flags |
 | Cloudflare D1 | Profiles/preferences, ownership, compact entitlement projection and event deduplication | Reading/writing on every weather tile |
 | R2 / existing Cloud Run renderer | Existing bounded weather imagery pipeline | A new per-user profile or billing pipeline |
@@ -83,10 +85,12 @@ is a viable alternative, but installing two identity systems is not the plan.
 No phone/SMS login in v1, to avoid another abuse and per-message cost surface.
 Do not introduce Firestore: keep application-owned profile data in D1.
 
-For Play-distributed digital features, use Play Billing as the initial standard
-checkout path. Regional alternative-billing programs have specific eligibility
-and requirements; do not assume a Stripe web link is a compliant replacement.
-Web checkout is a later, separately reviewed project.
+For Play-distributed digital features, use Play Billing; for iOS-distributed
+digital features, use Apple In-App Purchase. RevenueCat must map the separate
+store products to the same `omniwx_plus` entitlement. Regional alternative-billing
+programs have specific eligibility and requirements; do not assume a Stripe web
+link is a compliant replacement. Web checkout is a later, separately reviewed
+project.
 
 ## Profile V1
 

@@ -1,14 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.279**
-Android version code: **10297**
+Release: **OMNIwx 1.1.280**
+Android version code: **10298**
 Track: **Closed testing / internal testing candidate**
 Date: **November 22, 2026**
 
 ## Play Console Paste Notes
 
-GeoColor now uses only sharp 5424px source frames and invalidates prior
-preview-quality caches. Radar publishers remain paused.
+Land now reuses the bounded forecast cache, reducing avoidable upstream forecast
+requests. Rate-limit messages are concise. Radar publishers remain paused.
 
 ## Tester Notes
 
@@ -52,8 +52,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.279`
-- Android version code: `10297`
+- App version: `1.1.280`
+- Android version code: `10298`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -78,9 +78,9 @@ Please focus on these areas:
   MRMS pilot frame is serving through the Worker, but its corrected no-write
   runner has not yet been deployed; schedules remain paused and existing
   fallbacks remain required.
-- The Cloudflare Worker contract is unchanged. The bounded private GeoColor
-  Cloud Run renderer was promoted before building this paired app release; no
-  D1 migration or radar-publisher activation is part of this release.
+- The Worker shares the home-summary and hourly forecast cache key, reducing
+  duplicate Open-Meteo requests. Its failure response remains privacy-safe and
+  concise. No D1 migration or radar-publisher activation is part of this release.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
@@ -98,20 +98,13 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,852,953` bytes. Build timestamp: `2026-11-22T20:01:05.5702456Z`.
-- SHA-256: `301B2D3238A08115CCF4236FDC15E700435F4CE35D3FB22EFC9966B7E57F18EF`
-- Embedded configuration confirms app version `1.1.279`, Android version code
-  `10297`, build label `internal-test-aab-10297`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+Pending `npm run build:android:prod` for this release. Record the fresh artifact
+timestamp, size, SHA-256, embedded production configuration, and signing
+certificate after the build; do not reuse the 1.1.279 evidence.
 
 ## Remaining Acceptance
 
-- Upload only version code `10297` to the intended Play internal-testing track.
+- Upload only version code `10298` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area.

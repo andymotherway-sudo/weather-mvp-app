@@ -1,6 +1,6 @@
 # OMNIwx Launch Roadmap
 
-Last reviewed: November 14, 2026
+Last reviewed: November 22, 2026
 
 This roadmap uses evidence gates, not promised dates. It supplements the canonical
 [production readiness plan](production-readiness-plan.md).
@@ -13,6 +13,8 @@ This roadmap uses evidence gates, not promised dates. It supplements the canonic
 - Membership/feedback Settings surface with billing explicitly disabled.
 - Freemium, commercial, marketing and blocker documentation.
 - Map zoom/locate controls move the camera without routine map remounts.
+- iOS bundle ID and EAS profiles exist; the detailed two-store release scope is
+  recorded in [ios-release-plan.md](ios-release-plan.md).
 
 Exit: static checks pass and changes receive Sentry review.
 
@@ -29,23 +31,27 @@ provider-rights blocker for the Free catalog, published accurate privacy/support
 
 ## Phase 2: Private Accounts Beta
 
-- Configure development identity provider and verify tokens server-side.
+- Configure development identity provider for Android and iOS, including an
+  Apple-review-compliant sign-in path on iPhone, and verify tokens server-side.
 - Apply versioned migrations to development only.
 - Implement private profile, preferences, three-location sync, sign-out, recovery
   and deletion. Test account switching and ownership attacks.
 - Update Data safety/privacy/deletion pages before opening signup.
 
-Exit: two-account/two-device test matrix passes; backup/export and deletion proof.
+Exit: two-account/two-device test matrix passes on both platforms; backup/export
+and deletion proof.
 
 ## Phase 3: Billing Sandbox
 
-- Configure Play monthly/annual base plans and RevenueCat sandbox after approval.
+- Configure Play and App Store monthly/annual products and RevenueCat sandbox
+  after approval. Both stores unlock `omniwx_plus`; products remain store-specific.
 - Implement authenticated webhook receipt, dedupe/reconciliation and server policy.
 - Add paywall, purchase, restore, manage-subscription and status UI.
 - Exercise pending through refund/expiry and support runbooks using license testers.
 
 Exit: server entitlements match verified store state under duplicates, delays,
-reinstall and account switching; no production charge can be triggered by test code.
+reinstall and account switching on both platforms; no production charge can be
+triggered by test code.
 
 ## Phase 4: First 100 Testers
 
@@ -64,3 +70,13 @@ Exit: repeat use and value evidence supports the final feature catalog and price
 - Expand only after retention, gross margin and support quality meet targets.
 
 Exit: stable conversion/retention and support operations, no unresolved P0 blocker.
+
+## Parallel iOS Readiness Track
+
+- Run the first physical-iPhone EAS development build before feature scope grows.
+- Treat MapLibre map gestures, safe areas, location denial, notification prompts,
+  and large text as device acceptance gates.
+- Decide iOS parity explicitly for Android-native MP4 export, widgets, and
+  Android Auto; do not market unavailable capabilities as cross-platform.
+- Complete TestFlight sandbox subscription and App Review preparation before an
+  iOS public or paid release. See [ios-release-plan.md](ios-release-plan.md).
