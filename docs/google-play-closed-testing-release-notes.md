@@ -1,15 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.281**
-Android version code: **10299**
+Release: **OMNIwx 1.1.282**
+Android version code: **10300**
 Track: **Closed testing / internal testing candidate**
 Date: **November 24, 2026**
 
 ## Play Console Paste Notes
 
-Maps now remove duplicate satellite sources after buffered playback is ready,
-keep the location marker above atmospheric imagery, and use matched live/video
-opacity blends. Radar publishers remain paused.
+Fixes a map-projection rendering regression that could stretch Infrared and
+GeoColor imagery into vertical bands. Radar publishers remain paused.
 
 ## Tester Notes
 
@@ -39,6 +38,8 @@ Please focus on these areas:
   readable when it appears, and the loop continues without blank frames,
   flashing, or stale source labels. It must not remain at one ready frame with
   the remaining frames marked skipped.
+- Turn on Infrared and GeoColor independently at several zoom levels. Confirm
+  each image retains correct geographic proportions with no vertical stretching.
 - Turn on GeoColor with infrared, radar, or clouds. Confirm the map advances
   as one clean scene rather than showing an independently timed duplicate
   beneath it. The blue current-location dot must remain visible above imagery.
@@ -58,8 +59,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.281`
-- Android version code: `10299`
+- App version: `1.1.282`
+- Android version code: `10300`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -114,20 +115,11 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 24, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script; a fresh bundle was then independently inspected.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,855,582` bytes. Build timestamp: `2026-11-25T01:22:48Z`.
-- SHA-256: `C438F85F59E4BA4AE36876F28624DAD385D92411D51C664E5F16232988049BF7`
-- Embedded configuration confirms app version `1.1.281`, Android version code
-  `10299`, build label `internal-test-aab-10299`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+Pending build and independent artifact verification for `1.1.282` / `10300`.
 
 ## Remaining Acceptance
 
-- Upload only version code `10299` to the intended Play internal-testing track.
+- Upload only version code `10300` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area.

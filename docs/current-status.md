@@ -8,7 +8,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.281` / Android version code `10299`.
+- Current internal-testing candidate: `1.1.282` / Android version code `10300`.
+- This hotfix corrects the map-projection units used to request buffered
+  atmospheric frames, preventing infrared and GeoColor imagery from rendering
+  as vertically stretched stripes.
 - This candidate keeps the current-location marker above buffered atmospheric
   imagery, removes duplicate live satellite overlays after the buffered frame
   is ready, and uses deliberate default blends for GeoColor, infrared, clouds,

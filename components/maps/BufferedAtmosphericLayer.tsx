@@ -74,7 +74,7 @@ function projectedAspectRatio(coordinates: ImageCorners) {
   const south = coordinates[2]?.[1];
   if (![west, east, north, south].every(Number.isFinite)) return 1;
 
-  const width = Math.abs((east as number) - (west as number));
+  const width = Math.abs(((east as number) - (west as number)) * Math.PI / 180);
   const height = Math.abs(mercatorY(north as number) - mercatorY(south as number));
   if (width <= 0 || height <= 0) return 1;
   return Math.max(0.1, Math.min(10, width / height));
