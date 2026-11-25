@@ -50,6 +50,7 @@ import type { AviationFeature, AviationHazardType, AviationProductType } from '.
 import { useFireContext } from '../lib/fire/useFireContext';
 import { useLocations, type FavoriteLocation } from '../lib/locations/useLocations';
 import { LAYER_CATALOG_BY_ID } from '../lib/maps/layerCatalog';
+import { resolveAtmosphericComposition } from '../lib/maps/atmosphericComposition';
 import { NEXRAD_SITES, type NexradSite } from '../lib/maps/nexradSites';
 import type { RadarProductId } from '../lib/maps/radarIem';
 import { normalizeRadarSiteId } from '../lib/maps/radarIem';
@@ -2039,7 +2040,7 @@ export default function MapsScreen() {
     satellitePlaybackFrameCount,
   ]);
 
-  const cloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
+  const configuredCloudsOpacity = Number.isFinite(state.layers?.['sat.clouds']?.opacity)
     ? state.layers['sat.clouds'].opacity
     : 0.85;
   const frontsDay1Opacity = Number.isFinite(state.layers?.['wx.fronts.day1']?.opacity)
@@ -2076,11 +2077,11 @@ export default function MapsScreen() {
     ? state.layers['alerts.polygons'].opacity
     : 0.95;
 
-  const goesTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
+  const configuredTrueColorOpacity = Number.isFinite(state.layers?.['sat.goes.truecolor']?.opacity)
     ? state.layers['sat.goes.truecolor'].opacity
     : 0.96;
 
-  const goesEastIrOpacity = Number.isFinite(state.layers?.['sat.goesEast.ir']?.opacity)
+  const configuredInfraredOpacity = Number.isFinite(state.layers?.['sat.goesEast.ir']?.opacity)
     ? state.layers['sat.goesEast.ir'].opacity
     : 0.94;
 
@@ -2254,6 +2255,20 @@ export default function MapsScreen() {
     loopHours: radarLoopHours,
     mrmsProduct: wideMrmsProduct,
   });
+
+  const atmosphericComposition = resolveAtmosphericComposition({
+    radarEnabled,
+    cloudsEnabled,
+    trueColorEnabled: goesTrueColorEnabled,
+    infraredEnabled: goesEastIrEnabled,
+    radarOpacity: radarCtl.radarOpacity,
+    cloudsOpacity: configuredCloudsOpacity,
+    trueColorOpacity: configuredTrueColorOpacity,
+    infraredOpacity: configuredInfraredOpacity,
+  });
+  const cloudsOpacity = atmosphericComposition.cloudsOpacity;
+  const goesTrueColorOpacity = atmosphericComposition.trueColorOpacity;
+  const goesEastIrOpacity = atmosphericComposition.infraredOpacity;
 
   const uiFrames = radarCtl.uiFrames;
   const uiTemplates = radarCtl.uiTemplates ?? [];
@@ -2909,6 +2924,11 @@ export default function MapsScreen() {
 
     return {
       ...radarCtl.radar,
+      opacities: radarCtl.radar.opacities.map((opacity) =>
+        Math.abs(opacity - radarCtl.radarOpacity) < 0.001
+          ? atmosphericComposition.radarOpacity
+          : opacity,
+      ),
       tileMaxZ: radarTileMaxZ,
     };
   }, [
@@ -2917,6 +2937,8 @@ export default function MapsScreen() {
     radarBufferedPlaybackReady,
     isFocused,
     radarCtl.radar,
+    radarCtl.radarOpacity,
+    atmosphericComposition.radarOpacity,
     radarTileMaxZ,
   ]);
 
@@ -3343,6 +3365,23 @@ export default function MapsScreen() {
       animationCompositorKind && animationCompositorKind !== 'radar'
         ? animationCompositorKind
         : null;
+    // Once the disk-backed compositor has painted its first frame, remove the
+    // corresponding tile/image overlays. Leaving both visible blends two
+    // independently timed loops and makes the live animation look worse than
+    // the export, which composites a single complete frame.
+    if (!hiddenAnimationKind && bufferedSatelliteKind && bufferedSatelliteReady) {
+      const satellitePrefixes = [
+        'goes-truecolor',
+        'goes-abi13-ir',
+        'goes-east-ir',
+        'goes-west-ir',
+        'goes-east-wv',
+        'goes-west-wv',
+        'goes-east-visible',
+        'goes-west-visible',
+      ];
+      return overlays.filter((overlay) => !satellitePrefixes.some((prefix) => overlay.id.startsWith(prefix)));
+    }
     if (!hiddenAnimationKind) return overlays;
 
     if (hiddenAnimationKind === 'truecolor') {
@@ -3862,11 +3901,14 @@ export default function MapsScreen() {
     const currentZoom = typeof requestedZoom === 'number' ? requestedZoom : approxZoomFromLongitudeDelta(targetRegion.longitudeDelta);
     const nextZoom = clampNumber(currentZoom + delta, 2, 15.5);
     updateMapZoom(nextZoom);
+    setRadarBehaviorZoom(nextZoom);
     setCameraDebugLabel(`zoom-camera:${nextZoom.toFixed(2)}`);
     // A zoom control must never become a recenter control. Omitting the center
     // keeps MapLibre anchored to its live viewport, including immediately after
-    // a user pan, and avoiding a remount prevents fallback to a saved location.
-    mapCameraRef.current?.zoomTo?.(nextZoom, 180);
+    // a user pan. Do not use zoomTo here: this package implements it as flyTo,
+    // whose delayed completion can override a pinch that starts immediately
+    // after a button press.
+    mapCameraRef.current?.setCamera?.({ zoomLevel: nextZoom, animationDuration: 0 });
   }, [region, stableInitialRegion, updateMapZoom]);
 
   const currentViewTitle = activeLayerSummary.hasActiveLayers
@@ -4268,7 +4310,7 @@ export default function MapsScreen() {
   );
   const animationCompositorOpacity =
     activeAnimationKind === 'radar'
-      ? radarCtl.radarOpacity
+      ? atmosphericComposition.radarOpacity
       : activeAnimationKind === 'truecolor'
         ? goesTrueColorOpacity
         : activeAnimationKind === 'ir'
@@ -4398,46 +4440,53 @@ export default function MapsScreen() {
     [animationExportRegion, infraredUsingCatalog, product, stormMode],
   );
 
-  const buildSatelliteLayerUrls = useCallback(
-    (
-      frame: { iso: string; rasterId?: number },
-      width: number,
-      height: number,
-      options?: { exclude?: AnimationCompositorKind | null },
-    ) => {
-      const exclude = options?.exclude ?? null;
-      const urls: string[] = [];
+  const buildSatelliteExportLayers = useCallback(
+    (frame: { iso: string; rasterId?: number }, width: number, height: number) => {
+      const layers: Array<{ url: string; opacity: number }> = [];
       const closestFrame = (frames: SatelliteFrame[]) => {
         const index = nearestFrameIndexByIso(frames, frame.iso);
         return index >= 0 ? frames[index] : frame;
       };
 
-      if (cloudsEnabled && exclude !== 'clouds') {
-        urls.push(buildAnimationUrl('goes-east-visible', frame, width, height));
-        urls.push(buildAnimationUrl('goes-west-visible', frame, width, height));
+      // Keep export draw order aligned with the intended atmospheric stack:
+      // geographic true color first, then visible-cloud context, then IR detail.
+      if (goesTrueColorEnabled) {
+        layers.push({
+          url: buildAnimationUrl('geocolor', closestFrame(trueColorFrames), width, height),
+          opacity: goesTrueColorOpacity,
+        });
       }
-      if (goesTrueColorEnabled && exclude !== 'truecolor') {
-        urls.push(buildAnimationUrl('geocolor', closestFrame(trueColorFrames), width, height));
+      if (cloudsEnabled) {
+        layers.push({ url: buildAnimationUrl('goes-east-visible', frame, width, height), opacity: cloudsOpacity });
+        layers.push({ url: buildAnimationUrl('goes-west-visible', frame, width, height), opacity: cloudsOpacity });
       }
-      if (goesEastIrEnabled && exclude !== 'ir') {
-        urls.push(buildAnimationUrl('goes-east-ir', closestFrame(infraredFrames), width, height));
+      if (goesEastIrEnabled) {
+        layers.push({
+          url: buildAnimationUrl('goes-east-ir', closestFrame(infraredFrames), width, height),
+          opacity: goesEastIrOpacity,
+        });
       }
-      if (goesEastWvEnabled && exclude !== 'wv-east') {
-        urls.push(buildAnimationUrl('goes-east-wv', frame, width, height));
+      if (goesEastWvEnabled) {
+        layers.push({ url: buildAnimationUrl('goes-east-wv', frame, width, height), opacity: goesEastWvOpacity });
       }
-      if (goesWestWvEnabled && exclude !== 'wv-west') {
-        urls.push(buildAnimationUrl('goes-west-wv', frame, width, height));
+      if (goesWestWvEnabled) {
+        layers.push({ url: buildAnimationUrl('goes-west-wv', frame, width, height), opacity: goesWestWvOpacity });
       }
 
-      return urls;
+      return layers;
     },
     [
       buildAnimationUrl,
       cloudsEnabled,
       goesEastIrEnabled,
       goesEastWvEnabled,
+      goesEastWvOpacity,
+      goesEastIrOpacity,
       goesTrueColorEnabled,
+      goesTrueColorOpacity,
       goesWestWvEnabled,
+      goesWestWvOpacity,
+      cloudsOpacity,
       infraredFrames,
       trueColorFrames,
     ],
@@ -4508,27 +4557,28 @@ export default function MapsScreen() {
         const tileTemplate = idx >= 0 ? uiTemplates[idx] : null;
         const satelliteIndex = nearestFrameIndexByIso(satellitePlaybackFrames, frame.iso);
         const satelliteFrame = satelliteIndex >= 0 ? satellitePlaybackFrames[satelliteIndex] : null;
-        const underlayUrls = satelliteFrame ? buildSatelliteLayerUrls(satelliteFrame, width, height) : [];
+        const underlayLayers = satelliteFrame ? buildSatelliteExportLayers(satelliteFrame, width, height) : [];
         return {
           label,
           urls: tileTemplate ? [] : [buildAnimationUrl('radar', frame, width, height)],
-          underlayUrls,
+          urlOpacities: tileTemplate ? [] : [atmosphericComposition.radarOpacity],
+          underlayUrls: underlayLayers.map((layer) => layer.url),
+          underlayOpacities: underlayLayers.map((layer) => layer.opacity),
           tileTemplate,
           basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
           region: animationExportRegion,
           zoom: mapZoom,
-          opacity: radarCtl.radarOpacity,
+          opacity: atmosphericComposition.radarOpacity,
           windSegments,
           windOpacity: windParticlesOpacity,
         };
       }
       if (activeAnimationKind === 'truecolor') {
+        const layers = buildSatelliteExportLayers(frame, width, height);
         return {
           label,
-          urls: [
-            buildAnimationUrl('geocolor', frame, width, height),
-            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'truecolor' }),
-          ],
+          urls: layers.map((layer) => layer.url),
+          urlOpacities: layers.map((layer) => layer.opacity),
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4536,12 +4586,11 @@ export default function MapsScreen() {
         };
       }
       if (activeAnimationKind === 'ir') {
+        const layers = buildSatelliteExportLayers(frame, width, height);
         return {
           label,
-          urls: [
-            buildAnimationUrl('goes-east-ir', frame, width, height),
-            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'ir' }),
-          ],
+          urls: layers.map((layer) => layer.url),
+          urlOpacities: layers.map((layer) => layer.opacity),
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4549,12 +4598,11 @@ export default function MapsScreen() {
         };
       }
       if (activeAnimationKind === 'wv-west') {
+        const layers = buildSatelliteExportLayers(frame, width, height);
         return {
           label,
-          urls: [
-            buildAnimationUrl('goes-west-wv', frame, width, height),
-            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-west' }),
-          ],
+          urls: layers.map((layer) => layer.url),
+          urlOpacities: layers.map((layer) => layer.opacity),
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4562,26 +4610,23 @@ export default function MapsScreen() {
         };
       }
       if (activeAnimationKind === 'wv-east') {
+        const layers = buildSatelliteExportLayers(frame, width, height);
         return {
           label,
-          urls: [
-            buildAnimationUrl('goes-east-wv', frame, width, height),
-            ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'wv-east' }),
-          ],
+          urls: layers.map((layer) => layer.url),
+          urlOpacities: layers.map((layer) => layer.opacity),
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
           windOpacity: windParticlesOpacity,
         };
       }
+      const layers = buildSatelliteExportLayers(frame, width, height);
       return {
         label,
-        urls: [
-          buildAnimationUrl('goes-east-visible', frame, width, height),
-          buildAnimationUrl('goes-west-visible', frame, width, height),
-          ...buildSatelliteLayerUrls(frame, width, height, { exclude: 'clouds' }),
-        ],
-          region: animationExportRegion,
+        urls: layers.map((layer) => layer.url),
+        urlOpacities: layers.map((layer) => layer.opacity),
+        region: animationExportRegion,
         zoom: mapZoom,
         windSegments,
         windOpacity: windParticlesOpacity,
@@ -4593,7 +4638,8 @@ export default function MapsScreen() {
     animationExportRegion,
     animationExportSize,
     buildAnimationUrl,
-    buildSatelliteLayerUrls,
+    atmosphericComposition.radarOpacity,
+    buildSatelliteExportLayers,
     cloudsEnabled,
     goesEastWvEnabled,
     mapZoom,
@@ -4706,6 +4752,42 @@ export default function MapsScreen() {
           radar={mapRadar}
           overlays={renderedOverlays}
         >
+          {currentGpsGeoJson.features.length ? (
+            <MapLibreGL.ShapeSource id="current-gps-location-source" shape={currentGpsGeoJson as any}>
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-glow"
+                style={{
+                  circleColor: '#38bdf8',
+                  circleOpacity: ['interpolate', ['linear'], ['zoom'], 3, 0.18, 8, 0.24, 12, 0.28] as any,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 16, 7, 22, 12, 28] as any,
+                  circleBlur: 0.62,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-ring"
+                style={{
+                  circleColor: 'rgba(14,165,233,0.30)',
+                  circleOpacity: 0.9,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 9, 7, 12, 12, 15] as any,
+                  circleStrokeColor: 'rgba(224,242,254,0.92)',
+                  circleStrokeWidth: ['interpolate', ['linear'], ['zoom'], 3, 1.2, 8, 1.8, 12, 2.4] as any,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              <MapLibreGL.CircleLayer
+                id="current-gps-location-dot"
+                style={{
+                  circleColor: '#7dd3fc',
+                  circleOpacity: 1,
+                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 4.5, 7, 5.5, 12, 7] as any,
+                  circleStrokeColor: '#eff6ff',
+                  circleStrokeWidth: 1.4,
+                  circlePitchAlignment: 'map',
+                }}
+              />
+            </MapLibreGL.ShapeSource>
+          ) : null}
           {bufferedRadarActive && radarPlaybackFrames.length > 1 ? (
             <BufferedAtmosphericLayer
               id="playback-radar"
@@ -4713,7 +4795,8 @@ export default function MapsScreen() {
               frames={radarPlaybackFrames}
               frameIndex={state.radarTime.frameIndex}
               coordinates={bufferedPlaybackCoordinates}
-              opacity={radarCtl.radarOpacity}
+              belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
+              opacity={atmosphericComposition.radarOpacity}
               blendMs={420}
               buildUrl={(frame, width, height) =>
                 buildAnimationUrl('radar', frame, width, height)
@@ -4729,6 +4812,7 @@ export default function MapsScreen() {
               frames={satelliteCompositorFrames}
               frameIndex={synchronizedSatelliteFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
+              belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
               opacity={bufferedSatelliteOpacity}
               blendMs={460}
               transitionMode={bufferedSatelliteKind === 'truecolor' ? 'cut' : 'crossfade'}
@@ -4767,6 +4851,7 @@ export default function MapsScreen() {
               frames={satelliteCompositorFrames}
               frameIndex={synchronizedSatelliteFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
+              belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
               opacity={bufferedSatelliteOpacity}
               blendMs={460}
               buildUrl={(frame, width, height) =>
@@ -4783,6 +4868,7 @@ export default function MapsScreen() {
               frames={trueColorCompositorFrames}
               frameIndex={trueColorPlaybackFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
+              belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
               opacity={goesTrueColorOpacity}
               blendMs={460}
               transitionMode="cut"
@@ -4800,6 +4886,7 @@ export default function MapsScreen() {
               frames={infraredCompositorFrames}
               frameIndex={infraredPlaybackFrameIndex}
               coordinates={bufferedPlaybackCoordinates}
+              belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
               opacity={goesEastIrOpacity}
               blendMs={420}
               transitionMode="cut"
@@ -4815,6 +4902,7 @@ export default function MapsScreen() {
                 frames={cloudCompositorFrames}
                 frameIndex={cloudPlaybackFrameIndex}
                 coordinates={bufferedPlaybackCoordinates}
+                belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
                 opacity={cloudsOpacity}
                 blendMs={420}
                 transitionMode="cut"
@@ -4827,6 +4915,7 @@ export default function MapsScreen() {
                 frames={cloudCompositorFrames}
                 frameIndex={cloudPlaybackFrameIndex}
                 coordinates={bufferedPlaybackCoordinates}
+                belowLayerID={currentGpsGeoJson.features.length ? 'current-gps-location-glow' : undefined}
                 opacity={cloudsOpacity}
                 blendMs={420}
                 transitionMode="cut"
@@ -6009,42 +6098,6 @@ export default function MapsScreen() {
             </MapLibreGL.ShapeSource>
           ) : null}
 
-          {currentGpsGeoJson.features.length ? (
-            <MapLibreGL.ShapeSource id="current-gps-location-source" shape={currentGpsGeoJson as any}>
-              <MapLibreGL.CircleLayer
-                id="current-gps-location-glow"
-                style={{
-                  circleColor: '#38bdf8',
-                  circleOpacity: ['interpolate', ['linear'], ['zoom'], 3, 0.18, 8, 0.24, 12, 0.28] as any,
-                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 16, 7, 22, 12, 28] as any,
-                  circleBlur: 0.62,
-                  circlePitchAlignment: 'map',
-                }}
-              />
-              <MapLibreGL.CircleLayer
-                id="current-gps-location-ring"
-                style={{
-                  circleColor: 'rgba(14,165,233,0.30)',
-                  circleOpacity: 0.9,
-                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 9, 7, 12, 12, 15] as any,
-                  circleStrokeColor: 'rgba(224,242,254,0.92)',
-                  circleStrokeWidth: ['interpolate', ['linear'], ['zoom'], 3, 1.2, 8, 1.8, 12, 2.4] as any,
-                  circlePitchAlignment: 'map',
-                }}
-              />
-              <MapLibreGL.CircleLayer
-                id="current-gps-location-dot"
-                style={{
-                  circleColor: '#7dd3fc',
-                  circleOpacity: 1,
-                  circleRadius: ['interpolate', ['linear'], ['zoom'], 3, 4.5, 7, 5.5, 12, 7] as any,
-                  circleStrokeColor: '#eff6ff',
-                  circleStrokeWidth: 1.4,
-                  circlePitchAlignment: 'map',
-                }}
-              />
-            </MapLibreGL.ShapeSource>
-          ) : null}
         </MapRenderer>
 
         <WindParticleOverlay

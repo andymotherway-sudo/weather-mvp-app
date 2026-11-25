@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 22, 2026 (Arizona time).
+Release preparation updated: November 24, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -8,7 +8,11 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.280` / Android version code `10298`.
+- Current internal-testing candidate: `1.1.281` / Android version code `10299`.
+- This candidate keeps the current-location marker above buffered atmospheric
+  imagery, removes duplicate live satellite overlays after the buffered frame
+  is ready, and uses deliberate default blends for GeoColor, infrared, clouds,
+  and radar. The same per-layer opacity values now feed Android video export.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and

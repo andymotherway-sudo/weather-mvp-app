@@ -42,6 +42,7 @@ type Props = {
   previewMaxImageWidth?: number;
   previewMaxImageHeight?: number;
   maxConcurrentDownloads?: number;
+  belowLayerID?: string;
   buildUrl: (frame: FrameLike, width: number, height: number) => string;
   onBufferStatus?: (status: AnimationBufferStatus) => void;
   onDisplayReady?: (ready: boolean) => void;
@@ -56,6 +57,27 @@ function clampIndex(index: number, count: number) {
 
 function coordinateKey(coordinates: ImageCorners) {
   return coordinates.flat().map((value) => Number(value).toFixed(4)).join(',');
+}
+
+function mercatorY(latitude: number) {
+  // ImageSource projects its corners in Web Mercator. Match that projection when
+  // asking the renderer for pixels or MapLibre must stretch the image to fit.
+  const safeLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
+  const radians = (safeLatitude * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
+}
+
+function projectedAspectRatio(coordinates: ImageCorners) {
+  const west = coordinates[0]?.[0];
+  const east = coordinates[1]?.[0];
+  const north = coordinates[0]?.[1];
+  const south = coordinates[2]?.[1];
+  if (![west, east, north, south].every(Number.isFinite)) return 1;
+
+  const width = Math.abs((east as number) - (west as number));
+  const height = Math.abs(mercatorY(north as number) - mercatorY(south as number));
+  if (width <= 0 || height <= 0) return 1;
+  return Math.max(0.1, Math.min(10, width / height));
 }
 
 function shortHash(input: string) {
@@ -83,6 +105,7 @@ export function BufferedAtmosphericLayer(props: Props) {
     previewMaxImageWidth,
     previewMaxImageHeight,
     maxConcurrentDownloads = 2,
+    belowLayerID,
     buildUrl,
     onBufferStatus,
     onDisplayReady,
@@ -90,10 +113,15 @@ export function BufferedAtmosphericLayer(props: Props) {
   const window = useWindowDimensions();
   const frameScale = frames.length >= 18 ? 1.02 : frames.length >= 12 ? 1.12 : 1.28;
   const deviceScale = Math.min(Math.max(1, PixelRatio.get()), Math.max(1, pixelRatioCap));
-  const requestedWidth = Math.max(576, Math.round(window.width * frameScale * deviceScale));
-  const requestedHeight = Math.max(640, Math.round(window.height * frameScale * deviceScale));
-  // Clamp the long edge without changing the viewport aspect ratio. Independent
-  // caps stretch a viewport image when MapLibre projects it onto the map.
+  const projectedAspect = projectedAspectRatio(coordinates);
+  const requestedLongEdge = Math.max(640, Math.round(Math.max(window.width, window.height) * frameScale * deviceScale));
+  // Render pixels with the exact projected aspect of the ImageSource bounds.
+  // The app window includes system UI and map chrome, so its aspect can differ
+  // from the map viewport. Using it directly here caused newly attached GOES
+  // images to visibly squeeze or stretch before their next stable frame.
+  const requestedWidth = projectedAspect >= 1 ? requestedLongEdge : Math.round(requestedLongEdge * projectedAspect);
+  const requestedHeight = projectedAspect >= 1 ? Math.round(requestedLongEdge / projectedAspect) : requestedLongEdge;
+  // Clamp the long edge without changing the projected viewport aspect ratio.
   const imageScale = Math.min(1, maxImageWidth / requestedWidth, maxImageHeight / requestedHeight);
   const imageWidth = Math.max(128, Math.round(requestedWidth * imageScale));
   const imageHeight = Math.max(128, Math.round(requestedHeight * imageScale));
@@ -505,6 +533,7 @@ export function BufferedAtmosphericLayer(props: Props) {
             <MapLibreGL.Animated.RasterLayer
               id={`${id}-slot-${slotIndex}-layer`}
               sourceID={`${id}-slot-${slotIndex}-source`}
+              belowLayerID={belowLayerID}
               style={{
                 rasterOpacity: slotOpacityRefs.current[slotIndex],
                 rasterFadeDuration: 0,

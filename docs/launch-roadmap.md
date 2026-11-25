@@ -23,6 +23,12 @@ Exit: static checks pass and changes receive Sentry review.
 - Close Maps cold-open, camera, playback, sharpness and freshness acceptance.
 - Resolve Open-Meteo commercial access before monetized distribution.
 - Resolve standard-radar provider strategy and attribution.
+- Make notification settings truthful before broader beta: retain the local test
+  and solar-capture notification, but label event alerts as unavailable until a
+  server-side delivery pipeline exists.
+- Audit Android widget traffic and route weather reads through the Worker/cache
+  before promoting widgets. Verify freshness, manual refresh, reboot recovery,
+  battery-constrained behavior, and provider-request volume on physical devices.
 - Run accessibility checks and five-to-eight task-based usability sessions.
 - Instrument only approved, non-location analytics and feedback triage.
 
@@ -40,6 +46,28 @@ provider-rights blocker for the Free catalog, published accurate privacy/support
 
 Exit: two-account/two-device test matrix passes on both platforms; backup/export
 and deletion proof.
+
+## Phase 2A: Notification Delivery And Widget Reliability
+
+- Add a Worker-backed device-registration endpoint and D1 token model after
+  identity is available. Never trust a client-selected user, location, or
+  entitlement when delivering notifications.
+- Build one bounded event pipeline for official alerts first: deduplicate by
+  alert identifier, apply location/saved-place matching server-side, record
+  delivery attempts, honor category opt-out, and send through Expo only after
+  a token is verified.
+- Add later categories one at a time (fire, aviation, Kp, sky score, extremes),
+  each with a source, threshold, freshness rule, quiet-hours decision, duplicate
+  policy, and device acceptance test. Do not schedule all categories at once.
+- Keep the Android widget refresh cadence best-effort, not a promised SLA.
+  Consolidate widget weather requests behind the Worker cache and measure cache
+  hit rate, provider failures, refresh duration, and per-active-widget request
+  volume before broader promotion.
+- Decide iOS WidgetKit scope separately; iOS widgets are not currently built.
+
+Exit: a physical-device test proves opt-in, opt-out, local test, one real
+server-sent alert, duplicate suppression, expired-token cleanup, widget fresh
+and offline states, and no uncontrolled direct provider fan-out.
 
 ## Phase 3: Billing Sandbox
 

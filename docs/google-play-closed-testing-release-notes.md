@@ -1,14 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.280**
-Android version code: **10298**
+Release: **OMNIwx 1.1.281**
+Android version code: **10299**
 Track: **Closed testing / internal testing candidate**
-Date: **November 22, 2026**
+Date: **November 24, 2026**
 
 ## Play Console Paste Notes
 
-Land now reuses the bounded forecast cache, reducing avoidable upstream forecast
-requests. Rate-limit messages are concise. Radar publishers remain paused.
+Maps now remove duplicate satellite sources after buffered playback is ready,
+keep the location marker above atmospheric imagery, and use matched live/video
+opacity blends. Radar publishers remain paused.
 
 ## Tester Notes
 
@@ -38,6 +39,11 @@ Please focus on these areas:
   readable when it appears, and the loop continues without blank frames,
   flashing, or stale source labels. It must not remain at one ready frame with
   the remaining frames marked skipped.
+- Turn on GeoColor with infrared, radar, or clouds. Confirm the map advances
+  as one clean scene rather than showing an independently timed duplicate
+  beneath it. The blue current-location dot must remain visible above imagery.
+- Save a layered GeoColor/infrared, radar/GeoColor, and radar/clouds video.
+  Confirm the export matches the map's intended relative layer visibility.
 - Open Maps with True Color already enabled. Confirm it loads without a manual
   layer toggle after a cold app launch or tab switch.
 - In Aviation, choose All products and scan valid times. Confirm each clock
@@ -52,8 +58,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.280`
-- Android version code: `10298`
+- App version: `1.1.281`
+- Android version code: `10299`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -100,25 +106,20 @@ Please focus on these areas:
   export returned `200 image/png` (446,666 bytes) through the production Worker.
 - Radar publishers remain paused; no D1 migration or publisher activation is
   part of this release.
+- On November 24, production `/v1/health` returned `ok` and the radar backend
+  status confirmed its D1 writes remain disabled. This is an app-only Maps and
+  export release, so no Worker deployment was required. Level III remains
+  intentionally stale while its publisher is paused and is not represented as
+  fresh owned imagery.
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 22, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script. Gradle produced the native `10298` bundle; the wrapper's freshness
-  timestamp guard returned nonzero after packaging, so this artifact was
-  independently inspected before acceptance.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,852,762` bytes. Build timestamp: `2026-11-23T01:13:43.9211169Z`.
-- SHA-256: `DF43FDDFA14D2C189A152471681BC7AA4C387C5495BAA742E18CD7CB46A557B9`
-- Embedded configuration confirms app version `1.1.280`, Android version code
-  `10298`, build label `internal-test-aab-10298`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+Awaiting a fresh `1.1.281` AAB build. Artifact timestamp, hash, embedded
+configuration, and signing certificate will be recorded after packaging.
 
 ## Remaining Acceptance
 
-- Upload only version code `10298` to the intended Play internal-testing track.
+- Upload only version code `10299` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area.

@@ -229,7 +229,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       return null
     }
 
-    val tileScene = renderTileScene(width, height, frame, underlayBitmaps)
+    val tileScene = renderTileScene(width, height, frame, underlayBitmaps, frame.underlayOpacities)
     underlayBitmaps.forEach { runCatching { it.recycle() } }
 
     val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
@@ -247,6 +247,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         height,
         RenderSourceFrame(
           bitmaps = sourceBitmaps,
+          bitmapOpacities = (if (tileScene != null) listOf(1.0) else emptyList()) + frame.urlOpacities,
           basemapTemplate = frame.basemapTemplate,
           basemapBoundaryTemplate = frame.basemapBoundaryTemplate,
           basemapOverlayTemplate = frame.basemapOverlayTemplate,
@@ -366,7 +367,11 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
     drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, frame.region, frame.zoom, 245)
-    frame.bitmaps.forEach { drawBitmapFit(canvas, it, width, height, paint) }
+    frame.bitmaps.forEachIndexed { index, bitmap ->
+      val opacity = frame.bitmapOpacities.getOrNull(index)?.coerceIn(0.0, 1.0) ?: 1.0
+      drawBitmapFit(canvas, bitmap, width, height, paint.apply { alpha = (opacity * 255.0).roundToInt() })
+    }
+    paint.alpha = 255
     drawTileTemplateLayer(canvas, width, height, frame.basemapBoundaryTemplate, frame.region, frame.zoom, 190)
     drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, frame.region, frame.zoom, 235)
     drawWindSegments(canvas, frame.windSegments, frame.windOpacity)
@@ -409,7 +414,13 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     }
   }
 
-  private fun renderTileScene(width: Int, height: Int, frame: ExportFrame, underlays: List<Bitmap> = emptyList()): Bitmap? {
+  private fun renderTileScene(
+    width: Int,
+    height: Int,
+    frame: ExportFrame,
+    underlays: List<Bitmap> = emptyList(),
+    underlayOpacities: List<Double> = emptyList(),
+  ): Bitmap? {
     val template = frame.tileTemplate ?: return null
     val region = frame.region ?: return null
     val z = (frame.zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 12)
@@ -440,7 +451,10 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val canvas = Canvas(out)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-    underlays.forEach { drawBitmapFit(canvas, it, width, height, paint.apply { alpha = 255 }) }
+    underlays.forEachIndexed { index, bitmap ->
+      val opacity = underlayOpacities.getOrNull(index)?.coerceIn(0.0, 1.0) ?: 1.0
+      drawBitmapFit(canvas, bitmap, width, height, paint.apply { alpha = (opacity * 255.0).roundToInt() })
+    }
     drawTileTemplateLayer(canvas, width, height, template, region, frame.zoom, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
     paint.alpha = 255
     return out
@@ -735,6 +749,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           urlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { urls.add(it) }
         }
       }
+      val urlOpacities = item.getDoubleList("urlOpacities")
       val underlayUrlsArray = item.getArray("underlayUrls")
       val underlayUrls = mutableListOf<String>()
       if (underlayUrlsArray != null) {
@@ -742,6 +757,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           underlayUrlsArray.getString(j)?.takeIf { it.isNotBlank() }?.let { underlayUrls.add(it) }
         }
       }
+      val underlayOpacities = item.getDoubleList("underlayOpacities")
       val tileTemplate = item.optNullableString("tileTemplate")
       val windSegmentsArray = item.getArray("windSegments")
       val windSegments = mutableListOf<WindSegment>()
@@ -762,7 +778,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           ExportFrame(
             label = item.optString("label", "Frame ${i + 1}"),
             urls = urls,
+            urlOpacities = urlOpacities,
             underlayUrls = underlayUrls,
+            underlayOpacities = underlayOpacities,
             tileTemplate = tileTemplate,
             basemapTemplate = item.optNullableString("basemapTemplate"),
             basemapBoundaryTemplate = item.optNullableString("basemapBoundaryTemplate"),
@@ -790,7 +808,9 @@ private data class ExportRegion(
 private data class ExportFrame(
   val label: String,
   val urls: List<String>,
+  val urlOpacities: List<Double> = emptyList(),
   val underlayUrls: List<String> = emptyList(),
+  val underlayOpacities: List<Double> = emptyList(),
   val tileTemplate: String? = null,
   val basemapTemplate: String? = null,
   val basemapBoundaryTemplate: String? = null,
@@ -804,6 +824,7 @@ private data class ExportFrame(
 
 private data class RenderSourceFrame(
   val bitmaps: List<Bitmap>,
+  val bitmapOpacities: List<Double> = emptyList(),
   val basemapTemplate: String? = null,
   val basemapBoundaryTemplate: String? = null,
   val basemapOverlayTemplate: String? = null,
@@ -841,6 +862,16 @@ private fun ReadableMap.optNullableString(name: String): String? =
 
 private fun ReadableMap.optNullableDouble(name: String): Double? =
   if (hasKey(name) && !isNull(name)) getDouble(name) else null
+
+private fun ReadableMap.getDoubleList(name: String): List<Double> {
+  val array = if (hasKey(name) && !isNull(name)) getArray(name) else null
+  if (array == null) return emptyList()
+  return buildList {
+    for (index in 0 until array.size()) {
+      runCatching { array.getDouble(index) }.getOrNull()?.let(::add)
+    }
+  }
+}
 
 private fun ReadableMap.toExportRegion(): ExportRegion? {
   val lat = optNullableDouble("latitude") ?: return null

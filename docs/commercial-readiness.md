@@ -1,6 +1,6 @@
 # OMNIwx Commercial Readiness Audit
 
-Last reviewed: November 14, 2026
+Last reviewed: November 22, 2026
 
 ## Assessment
 
@@ -47,6 +47,16 @@ migrate production data, create store products, or activate payment collection.
   revocation, expiration, reinstall, account switching and webhook recovery.
 - Establish support procedures for purchase not recognized, restore conflicts,
   cancellation, refunds, deletion and provider outages.
+- Notification settings currently provide permission, category storage, Expo token
+  acquisition, a local test, and one local solar-capture notice only. There is no
+  deployed token-registration endpoint, server-side event watcher, deduplication,
+  delivery sender, or operational delivery evidence. Do not market weather-alert
+  notifications as live until that pipeline exists.
+- Android widgets are implemented, but their weather and aviation paths can fetch
+  providers directly from devices. Route high-volume widget reads through the
+  Worker/cache before broad promotion so commercial-provider, rate-limit, and
+  cost controls remain centralized. Android JobScheduler timing is best-effort;
+  it is not a 30-minute freshness guarantee.
 
 ### P2: Growth and polish
 
@@ -70,6 +80,8 @@ migrate production data, create store products, or activate payment collection.
 | Billing | Architecture and event migration scaffold | Play/RevenueCat sandbox, webhooks, products and support operations |
 | Analytics | Typed privacy-safe no-op event boundary | Provider decision, consent/disclosures and instrumentation rollout |
 | Feedback | Settings email feedback entry point | Structured intake/triage and response targets |
+| Notifications | Permission, category preferences, Expo token attempt, local test/capture notice | Worker registration, server watcher, dedupe, sender, delivery observability and device proof |
+| Android widgets | Eight native home-screen widgets, local cache, manual/reboot/job refresh paths | Worker-routed provider access, freshness/cost telemetry and representative-device reliability evidence |
 | Marketing | Launch documents and landing-page source | Approved links/assets, published site and measured campaigns |
 
 ## Cost Posture
@@ -89,6 +101,11 @@ data providers. Budget alerts are warning systems, not hard caps.
 - Seven-day Maps/radar acceptance window without a known blank-open regression.
 - Commercial agreements/accounts for all features included in Plus.
 - Successful private account beta with two devices and account deletion proof.
+- A production notification acceptance test: opt-in/out, one real server-sent
+  official alert, duplicate suppression, expired-token handling, and no alert
+  delivery without user permission.
+- Widget evidence for fresh, cached, offline, reboot, manual-refresh and
+  battery-constrained states, including measured provider request volume.
 - Complete Play license-test subscription lifecycle and server entitlement proof.
 - Published privacy, deletion and terms pages matching actual behavior.
 - First cohort retention, premium-interest and support-load results.

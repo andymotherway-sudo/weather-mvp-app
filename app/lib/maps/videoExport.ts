@@ -4,7 +4,9 @@ import type { WindParticleExportSegment } from '../../../components/maps/WindPar
 export type AnimationVideoFrame = {
   label: string;
   urls: string[];
+  urlOpacities?: number[];
   underlayUrls?: string[];
+  underlayOpacities?: number[];
   tileTemplate?: string | null;
   basemapTemplate?: string | null;
   basemapBoundaryTemplate?: string | null;
@@ -64,7 +66,9 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     .map((frame) => ({
       label: frame.label,
       urls: frame.urls.filter(Boolean),
+      urlOpacities: frame.urlOpacities ?? [],
       underlayUrls: frame.underlayUrls?.filter(Boolean) ?? [],
+      underlayOpacities: frame.underlayOpacities ?? [],
       tileTemplate: frame.tileTemplate ?? null,
       basemapTemplate: frame.basemapTemplate ?? null,
       basemapBoundaryTemplate: frame.basemapBoundaryTemplate ?? null,

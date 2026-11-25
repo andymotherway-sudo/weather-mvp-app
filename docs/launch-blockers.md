@@ -1,6 +1,6 @@
 # OMNIwx Launch Blockers
 
-Last reviewed: November 14, 2026
+Last reviewed: November 22, 2026
 
 ## Public Free Beta Blockers
 
@@ -12,6 +12,8 @@ Last reviewed: November 14, 2026
 | P0 | Provider rights incomplete | Signed-off matrix for every publicly promoted feature and export |
 | P1 | Privacy/support text predates accounts/analytics | Published accurate policy and Play Data safety answers before collection |
 | P1 | Accessibility and responsive QA incomplete | Large font/display and TalkBack task results on small/large Android screens |
+| P1 | Notification UI implies live weather alerts without a delivery backend | Clearly limited UI now, then permission/token registration, server watcher, dedupe, sender, and physical-device evidence before promotion |
+| P1 | Android widgets bypass central provider controls in some paths | Worker-cached widget data, rate/cost evidence, and fresh/cached/offline/reboot acceptance on representative devices |
 
 ## Account Beta Blockers
 
@@ -46,6 +48,11 @@ products and actual app behavior; a template is not launch evidence.
 - Approve the final feature matrix and saved-location limits.
 - Approve analytics processor/consent posture or keep analytics disabled.
 - Decide whether exported videos are included in Plus after provider-rights review.
+- Decide notification scope, quiet hours, and which alert classes are suitable
+  for the first opt-in release; begin with official alerts rather than every
+  proposed category.
+- Decide whether Android widgets remain beta-only until Worker-routed reads and
+  device reliability evidence are complete.
 - Decide the initial paid cohort size and go/no-go metrics.
 
 No blocker here authorizes a production migration, deployment, store change,
