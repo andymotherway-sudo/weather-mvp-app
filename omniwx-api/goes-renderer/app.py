@@ -152,7 +152,10 @@ def goes_pixel_coordinates(lon_deg: np.ndarray, lat_deg: np.ndarray, source_widt
     relative_lon = lon - SATELLITE_LON
     sx = SATELLITE_DISTANCE - radius * np.cos(lat) * np.cos(relative_lon)
     sy = -radius * np.cos(lat) * np.sin(relative_lon)
-    sz = radius * np.sin(lat)
+    # Geographic latitude is geodetic. The ellipsoid's polar axis is shorter
+    # than its equatorial axis, so its Z coordinate needs the flattening term.
+    # Omitting it shifts satellite samples north/south against map boundaries.
+    sz = radius * (1 - eccentricity_sq) * np.sin(lat)
     scan_x = np.arctan2(-sy, sx)
     scan_y = np.arctan2(sz, np.sqrt(sx * sx + sy * sy))
     visible = sx > 0

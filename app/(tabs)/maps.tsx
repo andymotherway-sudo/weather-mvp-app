@@ -465,7 +465,7 @@ const RADAR_LOOP_HOUR_OPTIONS = [2, 3, 5] as const;
 type RadarLoopHours = (typeof RADAR_LOOP_HOUR_OPTIONS)[number];
 type AnimationCompositorKind = 'radar' | 'truecolor' | 'ir' | 'wv-east' | 'wv-west' | 'clouds';
 const BEST_ANIMATION_QUALITY: AnimationQuality = 'presentation';
-const GEOCOLOR_RENDER_VERSION = '4';
+const GEOCOLOR_RENDER_VERSION = '5';
 
 const NESDIS_GEOCOLOR_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/geocolor/exportImage`;
 const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/exportImage`;
