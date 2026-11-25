@@ -115,7 +115,16 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-Pending build and independent artifact verification for `1.1.282` / `10300`.
+- Built successfully with `npm run build:android:prod` on November 24, 2026.
+  The documented Windows Java local-TCP fallback was applied by the release
+  script; the AAB was independently inspected after the build completed.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170,855,609` bytes. Build timestamp: `2026-11-25T01:56:42Z`.
+- SHA-256: `5C934FDAED3E10A902336D3E7492447EE29BC9FFED3941D88D325B0C6A0D8AB0`
+- Embedded configuration confirms app version `1.1.282`, Android version code
+  `10300`, build label `internal-test-aab-10300`, and the production Worker URL.
+- The signing certificate SHA-256 is
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
 
 ## Remaining Acceptance
 

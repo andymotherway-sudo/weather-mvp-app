@@ -17,8 +17,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   is ready, and uses deliberate default blends for GeoColor, infrared, clouds,
   and radar. The same per-layer opacity values now feed Android video export.
 - A signed production-targeted AAB for this candidate was built and inspected:
-  `170,855,582` bytes, SHA-256
-  `C438F85F59E4BA4AE36876F28624DAD385D92411D51C664E5F16232988049BF7`.
+  `170,855,609` bytes, SHA-256
+  `5C934FDAED3E10A902336D3E7492447EE29BC9FFED3941D88D325B0C6A0D8AB0`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
