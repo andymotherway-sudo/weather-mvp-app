@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   BufferedAtmosphericLayer,
@@ -42,11 +42,28 @@ export function AnimationCompositor(props: Props) {
   } = props;
   const [frameIndex, setFrameIndex] = useState(() => Math.max(0, frames.length - 1));
   const [bufferStatus, setBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const priorFramesRef = useRef(frames);
+  const frameSignature = frames
+    .map((frame) => `${frame.id}:${frame.iso}:${frame.rasterId ?? ''}`)
+    .join('|');
+  const synchronizedFrames = useMemo(() => frames, [frameSignature]);
 
   useEffect(() => {
-    setFrameIndex(Math.max(0, frames.length - 1));
+    const priorFrames = priorFramesRef.current;
+    priorFramesRef.current = synchronizedFrames;
+    setFrameIndex((currentIndex) => {
+      const currentFrame = priorFrames[Math.max(0, Math.min(currentIndex, priorFrames.length - 1))];
+      const preservedIndex = currentFrame
+        ? synchronizedFrames.findIndex((frame) => frame.id === currentFrame.id && frame.iso === currentFrame.iso)
+        : -1;
+
+      // Buffer updates commonly replace the frame array while the user is
+      // watching. Keep the visible timestamp rather than restarting playback
+      // at an edge of the refreshed catalog.
+      return preservedIndex >= 0 ? preservedIndex : Math.max(0, synchronizedFrames.length - 1);
+    });
     setBufferStatus(null);
-  }, [frames]);
+  }, [synchronizedFrames]);
 
   useEffect(() => {
     if (!playing || frames.length < 2) return;
