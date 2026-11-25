@@ -8,7 +8,12 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.282` / Android version code `10300`.
+- Current internal-testing candidate: `1.1.283` / Android version code `10301`.
+- This app-only export hotfix no longer pads a sparse satellite catalog by
+  replaying it. It makes one chronological pass through the selected window,
+  waits longer on each source frame when needed, retries bounded transient
+  image failures, and refuses to save a video when fewer than 75% of the
+  required source scenes are ready.
 - This hotfix corrects the map-projection units used to request buffered
   atmospheric frames, preventing infrared and GeoColor imagery from rendering
   as vertically stretched stripes.
@@ -17,8 +22,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   is ready, and uses deliberate default blends for GeoColor, infrared, clouds,
   and radar. The same per-layer opacity values now feed Android video export.
 - A signed production-targeted AAB for this candidate was built and inspected:
-  `170,855,609` bytes, SHA-256
-  `5C934FDAED3E10A902336D3E7492447EE29BC9FFED3941D88D325B0C6A0D8AB0`.
+  `170,855,996` bytes, SHA-256
+  `31E083B78BDE5D77F0E53540F6DBF69B1256993F2E64F104AF6A3C87462408E3`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and

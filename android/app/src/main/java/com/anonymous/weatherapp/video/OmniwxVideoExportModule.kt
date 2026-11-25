@@ -89,7 +89,16 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
         val prepared = frames.mapNotNull { frame -> prepareFrame(width, height, frame) }
-        if (prepared.size < 2) throw IllegalStateException("Could not download enough frames to export video.")
+        // A two-frame loop may technically encode, but it misrepresents a
+        // multi-hour weather animation as flashing. Require broad timeline
+        // coverage instead of silently saving a degraded video.
+        val minimumPreparedFrames = max(3, kotlin.math.ceil(frames.size * 0.75).toInt())
+        if (prepared.size < minimumPreparedFrames) {
+          throw IllegalStateException(
+            "Only ${prepared.size} of ${frames.size} timeline frames were ready. " +
+              "No video was saved; please try again after imagery finishes loading."
+          )
+        }
 
         val output = File(reactContext.cacheDir, "omniwx-export-${System.currentTimeMillis()}.mp4")
         encodeVideo(
@@ -158,17 +167,22 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
       codec.start()
 
-      val holdFrames = max(1, (secondsPerSourceFrame * fps).roundToInt())
+      // A recording must progress through the selected weather window once.
+      // Padding a short catalog by looping it made sparse five-hour satellite
+      // exports jump from their newest scene back to the oldest scene. Extend
+      // each real frame instead, which keeps the video chronological and lets
+      // the caller request a minimum useful duration without fabricated loops.
+      val effectiveSecondsPerSourceFrame = max(
+        secondsPerSourceFrame,
+        minimumDurationSeconds / frames.size.coerceAtLeast(1).toDouble(),
+      )
+      val holdFrames = max(1, (effectiveSecondsPerSourceFrame * fps).roundToInt())
       val transitionFrames = min(holdFrames - 1, (transitionSeconds * fps).roundToInt())
       val solidFrames = max(1, holdFrames - transitionFrames)
-      val sourceLoopSeconds = frames.size * holdFrames.toDouble() / fps.toDouble()
-      val loopCount = kotlin.math.ceil(minimumDurationSeconds / sourceLoopSeconds).toInt().coerceIn(1, 60)
-
-      repeat(loopCount) {
-        frames.forEachIndexed { index, current ->
-          // Forward loops reuse prepared scenes. Longer shareable videos do not
-          // trigger additional downloads or GeoColor render requests.
-          val next = frames[(index + 1) % frames.size]
+      frames.forEachIndexed { index, current ->
+          // Do not wrap the last scene back to the first. A recording is a
+          // forward pass through the selected time range, not a GIF loop.
+          val next = frames.getOrNull(index + 1)
           repeat(solidFrames) {
             val bitmap = composeFrame(width, height, current, null, 0f, title, subtitle, product)
             presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
@@ -183,7 +197,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             }
             bitmap.recycle()
           }
-          for (step in 1..transitionFrames) {
+          for (step in 1..(if (next == null) 0 else transitionFrames)) {
             val blend = step.toFloat() / (transitionFrames + 1).toFloat()
             val bitmap = composeFrame(width, height, current, next, blend, title, subtitle, product)
             presentationFrame = queueBitmap(codec, bitmap, width, height, colorFormat, presentationFrame, fps, bufferInfo) {
@@ -199,7 +213,6 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             bitmap.recycle()
           }
         }
-      }
 
       val inputIndex = codec.dequeueInputBuffer(10_000)
       if (inputIndex >= 0) {
@@ -223,7 +236,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   }
 
   private fun prepareFrame(width: Int, height: Int, frame: ExportFrame): PreparedFrame? {
-    val underlayBitmaps = frame.underlayUrls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
+    val underlayBitmaps = frame.underlayUrls.mapNotNull {
+      downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000, attempts = 3)
+    }
     if (underlayBitmaps.size != frame.underlayUrls.size) {
       underlayBitmaps.forEach { runCatching { it.recycle() } }
       return null
@@ -232,7 +247,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val tileScene = renderTileScene(width, height, frame, underlayBitmaps, frame.underlayOpacities)
     underlayBitmaps.forEach { runCatching { it.recycle() } }
 
-    val urlBitmaps = frame.urls.mapNotNull { downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000) }
+    val urlBitmaps = frame.urls.mapNotNull {
+      downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000, attempts = 3)
+    }
     val sourceBitmaps = listOfNotNull(tileScene) + urlBitmaps
     val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
     val windOnlyFrame = expectedCount == 0 && frame.windSegments.isNotEmpty() && !frame.basemapTemplate.isNullOrBlank()
@@ -713,25 +730,40 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return Uri.fromFile(dest)
   }
 
-  private fun downloadBitmap(url: String, connectTimeoutMs: Int = 12_000, readTimeoutMs: Int = 18_000): Bitmap? {
-    // Fail a single URL by returning null; exportAnimation decides whether there
-    // are still enough complete frames to proceed.
-    var conn: HttpURLConnection? = null
-    return try {
-      conn = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = connectTimeoutMs
-        readTimeout = readTimeoutMs
-        requestMethod = "GET"
-        setRequestProperty("User-Agent", "OMNIwx Video Export")
-        setRequestProperty("Accept", "image/png,image/jpeg,image/*")
+  private fun downloadBitmap(
+    url: String,
+    connectTimeoutMs: Int = 12_000,
+    readTimeoutMs: Int = 18_000,
+    attempts: Int = 1,
+  ): Bitmap? {
+    // Renderer cold starts and transient upstream misses are recoverable. Keep
+    // retries limited and sequential so a long satellite export cannot turn
+    // into an uncontrolled burst of costly renderer requests.
+    repeat(attempts.coerceIn(1, 3)) { attempt ->
+      var conn: HttpURLConnection? = null
+      var retryAfterMs = if (attempt == 0) 0L else 1_200L * attempt
+      try {
+        conn = (URL(url).openConnection() as HttpURLConnection).apply {
+          connectTimeout = connectTimeoutMs
+          readTimeout = readTimeoutMs
+          requestMethod = "GET"
+          setRequestProperty("User-Agent", "OMNIwx Video Export")
+          setRequestProperty("Accept", "image/png,image/jpeg,image/*")
+        }
+        val responseCode = conn.responseCode
+        if (responseCode in 200..299) return BitmapFactory.decodeStream(conn.inputStream)
+        if (responseCode !in setOf(408, 429, 500, 502, 503, 504)) return null
+        conn.getHeaderField("Retry-After")?.toLongOrNull()?.let { seconds ->
+          retryAfterMs = (seconds * 1_000L).coerceIn(1_000L, 5_000L)
+        }
+      } catch (_: Exception) {
+        // The bounded retry below handles transient socket and decode failures.
+      } finally {
+        conn?.disconnect()
       }
-      if (conn.responseCode !in 200..299) return null
-      BitmapFactory.decodeStream(conn.inputStream)
-    } catch (_: Exception) {
-      null
-    } finally {
-      conn?.disconnect()
+      if (attempt + 1 < attempts.coerceIn(1, 3)) Thread.sleep(retryAfterMs)
     }
+    return null
   }
 
   private fun readFrames(array: ReadableArray?): List<ExportFrame> {
