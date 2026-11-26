@@ -197,7 +197,10 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
         sourceLayerID="boundary"
         layerIndex={901}
         minZoomLevel={1}
-        filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
+        // International borders often omit `maritime` entirely. Treat only
+        // explicit maritime boundaries as excluded so country outlines remain
+        // visible over satellite imagery.
+        filter={['all', ['==', 'admin_level', 2], ['!=', 'maritime', 1]] as any}
         style={{
           lineColor: palette.glow,
           lineOpacity: ['interpolate', ['linear'], ['zoom'], 1, 0.38, 4, 0.66, 7, 0.82],
@@ -211,7 +214,7 @@ function BoundaryReliefLayers({ tone }: { tone: 'teal' | 'orange' }) {
         sourceLayerID="boundary"
         layerIndex={902}
         minZoomLevel={1}
-        filter={['all', ['==', 'admin_level', 2], ['==', 'maritime', 0]] as any}
+        filter={['all', ['==', 'admin_level', 2], ['!=', 'maritime', 1]] as any}
         style={{
           lineColor: palette.core,
           lineOpacity: ['interpolate', ['linear'], ['zoom'], 1, 0.42, 4, 0.82, 7, 0.96],

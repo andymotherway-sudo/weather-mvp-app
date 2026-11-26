@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 24, 2026 (Arizona time).
+Release preparation updated: November 26, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -8,7 +8,11 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current internal-testing candidate: `1.1.284` / Android version code `10302`.
+- Current release candidate: `1.1.285` / Android version code `10303`.
+- This app-only layout and export-progress update makes shared map sheets clear
+  system edges consistently, moves Storm Scope exit to the controller header,
+  and improves Settings spacing on narrow and large displays. It also keeps
+  video-export progress visible while Maps remains usable.
 - This app-only animation hotfix preserves the currently displayed timestamp
   while an atmospheric frame catalog refreshes, so playback does not jump back
   to an edge frame merely because the buffer is still filling.

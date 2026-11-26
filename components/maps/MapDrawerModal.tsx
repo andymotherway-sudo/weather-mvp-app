@@ -1,6 +1,7 @@
 // components/maps/MapDrawerModal.tsx
 import React from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MAP_DESTINATIONS, type MapDestinationId } from '../../app/lib/maps/destinations';
 import { Glass } from '../common/Glass';
@@ -12,6 +13,7 @@ export function MapDrawerModal(props: {
   onSelect: (id: MapDestinationId) => void;
 }) {
   const { visible, onClose, current, onSelect } = props;
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -23,7 +25,14 @@ export function MapDrawerModal(props: {
           justifyContent: 'flex-start',
         }}
       >
-        <Pressable onPress={() => {}} style={{ paddingTop: 72, paddingHorizontal: 12 }}>
+        <Pressable
+          onPress={() => {}}
+          style={{
+            paddingTop: Math.max(54, insets.top + 16),
+            paddingHorizontal: 14,
+            paddingBottom: Math.max(14, insets.bottom + 10),
+          }}
+        >
           <Glass style={{ borderRadius: 22, padding: 14 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ color: 'white', fontWeight: '900', fontSize: 16 }}>Maps</Text>

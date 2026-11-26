@@ -158,7 +158,7 @@ export function AviationMapControls(props: {
 }
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 4, right: 18, maxWidth: 620 },
+  wrap: { position: 'absolute', left: 12, right: 12, maxWidth: 620 },
   tray: {
     borderRadius: 18,
     paddingHorizontal: 12,

@@ -1,14 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.284**
-Android version code: **10302**
+Release: **OMNIwx 1.1.285**
+Android version code: **10303**
 Track: **Closed testing / internal testing candidate**
 Date: **November 24, 2026**
 
 ## Play Console Paste Notes
 
-Prevents GeoColor and infrared playback from jumping back while new imagery
-frames finish buffering. Radar publishers remain paused.
+Tightens map sheets and controls around screen edges, moves Storm Scope exit
+to the top, improves Settings polish, and keeps animation export progress in-app.
 
 ## Tester Notes
 
@@ -17,6 +17,13 @@ Please focus on these areas:
 - Move among Land, Hourly, Almanac, Maps, Space, Nautical, Aviation, and
   Extremes. Verify shared loading, unavailable, and retry states are readable
   and do not overlap navigation or map controls.
+- Open Maps, the layer selector, the Maps drawer, wxLearn, and weather
+  explanations on a small phone and a tablet if available. Confirm every sheet
+  clears system bars, has even side gutters, and leaves all buttons reachable.
+- Open Storm Scope. Confirm `Exit` is visible beside `Done` at the top of the
+  controller rather than being buried at the bottom of the sheet.
+- Open Settings. Confirm the header and cards remain centered and readable on
+  both narrow phones and larger screens without edge-clipped controls.
 - Test default and increased Android font/display scaling. Cards, mode toggles,
   buttons, and status messages should remain usable without clipped actions.
 - Change saved locations repeatedly and verify forecasts, timestamps, and
@@ -64,8 +71,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.284`
-- Android version code: `10302`
+- App version: `1.1.285`
+- Android version code: `10303`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -93,6 +100,9 @@ Please focus on these areas:
 - The Worker shares the home-summary and hourly forecast cache key, reducing
   duplicate Open-Meteo requests. Its failure response remains privacy-safe and
   concise. No D1 migration or radar-publisher activation is part of this release.
+- This is an app-only layout and animation-export progress release. No Worker
+  deploy, production configuration change, D1 migration, or radar-publisher
+  activation is required.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
@@ -120,20 +130,20 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 24, 2026.
+- Built successfully with `npm run build:android:prod` on November 26, 2026.
   The documented Windows Java local-TCP fallback was applied by the release
-  script; the AAB was independently inspected after the build completed.
+  script, and the AAB was independently inspected after it completed.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,856,217` bytes. Build timestamp: `2026-11-25T02:49:22Z`.
-- SHA-256: `6BC03AF38951D0960FF4E0FBE23F2449175E2345DF5414D9B59D8175B314CFC3`
-- Embedded configuration confirms app version `1.1.284`, Android version code
-  `10302`, build label `internal-test-aab-10302`, and the production Worker URL.
+- Size: `170,850,097` bytes. Build timestamp: `2026-11-26T17:10:33Z`.
+- SHA-256: `C148D7F2A3CB7B1E682DEDADECED9F15A46D12694276EA3F1782F16F2AAA4750`
+- Embedded configuration confirms app version `1.1.285`, Android version code
+  `10303`, build label `internal-test-aab-10303`, and the production Worker URL.
 - The signing certificate SHA-256 is
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
 
 ## Remaining Acceptance
 
-- Upload only version code `10302` to the intended Play internal-testing track.
+- Upload only version code `10303` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor

@@ -74,9 +74,9 @@ export function LayerSheetModal(props: {
         <View
           style={{
             flex: 1,
-            paddingHorizontal: 10,
-            paddingTop: 10 + Math.max(insets.top, 6),
-            paddingBottom: 10 + Math.max(insets.bottom, 6),
+            paddingHorizontal: 14,
+            paddingTop: 12 + Math.max(insets.top, 6),
+            paddingBottom: 12 + Math.max(insets.bottom, 6),
           }}
         >
           <Glass
@@ -150,7 +150,7 @@ export function LayerSheetModal(props: {
 
             <ScrollView
               style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 24 + insets.bottom }}
+              contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 14, paddingBottom: 28 }}
               nestedScrollEnabled
               bounces
               keyboardShouldPersistTaps="handled"

@@ -207,8 +207,9 @@ export default function ProfileScreen() {
             </View>
 
             <View style={{ flex: 1 }}>
+              <Text style={styles.heroEyebrow}>YOUR OMNIWX</Text>
               <Text style={styles.title}>Settings</Text>
-              <Text style={styles.subtitle}>Home base, GPS mode, and preferences.</Text>
+              <Text style={styles.subtitle}>Tune your home base, maps, alerts, and forecast experience.</Text>
             </View>
           </View>
         </View>
@@ -553,7 +554,7 @@ const styles = StyleSheet.create({
     borderRadius: 420,
     backgroundColor: 'rgba(120,120,255,0.12)',
   },
-  container: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28 },
+  container: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 28 },
   center: { flex: 1, backgroundColor: '#020617', justifyContent: 'center', alignItems: 'center' },
   loadingState: { paddingHorizontal: 18 },
   loadingCard: { width: '100%', maxWidth: 520 },
@@ -589,6 +590,13 @@ const styles = StyleSheet.create({
   },
   logo: { width: 72, height: 82 },
 
+  heroEyebrow: {
+    color: 'rgba(186,230,253,0.88)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginBottom: 3,
+  },
   title: { color: 'white', fontSize: 28, fontWeight: '900' },
   subtitle: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontWeight: '700', fontSize: 13 },
 

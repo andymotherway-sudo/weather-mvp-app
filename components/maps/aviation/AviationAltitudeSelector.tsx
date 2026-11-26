@@ -37,7 +37,7 @@ export function AviationAltitudeSelector(props: {
 const styles = StyleSheet.create({
   rail: {
     position: 'absolute',
-    left: 10,
+    left: 12,
     top: 118,
     width: 58,
     borderRadius: 18,

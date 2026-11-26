@@ -27,6 +27,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -65,14 +66,38 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 
   override fun getName(): String = "OmniwxVideoExport"
 
+  private fun emitProgress(
+    jobId: String,
+    stage: String,
+    completed: Int,
+    total: Int,
+    message: String,
+  ) {
+    // Export remains native-side while the user continues using the app. These
+    // events only update non-blocking React Native progress UI.
+    val payload = Arguments.createMap().apply {
+      putString("jobId", jobId)
+      putString("stage", stage)
+      putInt("completed", completed)
+      putInt("total", total)
+      putString("message", message)
+    }
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("omniwxVideoExportProgress", payload)
+  }
+
   @ReactMethod
   fun exportAnimation(options: ReadableMap, promise: Promise) {
     // Encoding and network downloads must not run on React Native's JS thread.
     // The Promise is resolved/rejected when this background worker finishes.
     thread(name = "omniwx-video-export") {
+      val jobId = options.optString("jobId", "export-${System.currentTimeMillis()}")
       try {
         val frames = readFrames(options.getArray("frames"))
         if (frames.size < 2) throw IllegalArgumentException("At least two animation frames are required.")
+
+        emitProgress(jobId, "preparing", 0, frames.size, "Preparing source frames")
 
         val width = normalizedEven(options.optInt("width", 1280), 320, 1920)
         val height = normalizedEven(options.optInt("height", 720), 320, 1920)
@@ -88,7 +113,11 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // are composite layers; exporting partial layers would cause flashing or
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
-        val prepared = frames.mapNotNull { frame -> prepareFrame(width, height, frame) }
+        val prepared = mutableListOf<PreparedFrame>()
+        frames.forEachIndexed { index, frame ->
+          prepareFrame(width, height, frame)?.let { prepared.add(it) }
+          emitProgress(jobId, "preparing", index + 1, frames.size, "Preparing source frames")
+        }
         // A two-frame loop may technically encode, but it misrepresents a
         // multi-hour weather animation as flashing. Require broad timeline
         // coverage instead of silently saving a degraded video.
@@ -113,8 +142,12 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           title = title,
           subtitle = subtitle,
           product = product,
+          onProgress = { completed, total ->
+            emitProgress(jobId, "encoding", completed, total, "Rendering video")
+          },
         )
 
+        emitProgress(jobId, "saving", 0, 1, "Saving to Movies")
         val savedUri = saveToMovies(output)
         val result = Arguments.createMap().apply {
           putString("uri", savedUri.toString())
@@ -123,8 +156,10 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           putInt("height", height)
           putInt("frameCount", prepared.size)
         }
+        emitProgress(jobId, "complete", 1, 1, "Video saved")
         promise.resolve(result)
       } catch (t: Throwable) {
+        emitProgress(jobId, "failed", 0, 1, t.message ?: "Video export failed")
         promise.reject("OMNIWX_VIDEO_EXPORT_FAILED", t.message ?: "Video export failed.", t)
       }
     }
@@ -142,6 +177,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     title: String,
     subtitle: String,
     product: String,
+    onProgress: (completed: Int, total: Int) -> Unit,
   ) {
     // Android's broadly compatible MP4 choice is H.264/AVC. We manually feed
     // YUV420 frames to the codec rather than using a Surface so we can draw the
@@ -212,6 +248,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             }
             bitmap.recycle()
           }
+          onProgress(index + 1, frames.size)
         }
 
       val inputIndex = codec.dequeueInputBuffer(10_000)
@@ -267,7 +304,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           bitmapOpacities = (if (tileScene != null) listOf(1.0) else emptyList()) + frame.urlOpacities,
           basemapTemplate = frame.basemapTemplate,
           basemapBoundaryTemplate = frame.basemapBoundaryTemplate,
+          basemapBoundaryOpacity = frame.basemapBoundaryOpacity,
           basemapOverlayTemplate = frame.basemapOverlayTemplate,
+          basemapOverlayOpacity = frame.basemapOverlayOpacity,
           region = frame.region,
           zoom = frame.zoom,
           windSegments = frame.windSegments,
@@ -389,8 +428,24 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       drawBitmapFit(canvas, bitmap, width, height, paint.apply { alpha = (opacity * 255.0).roundToInt() })
     }
     paint.alpha = 255
-    drawTileTemplateLayer(canvas, width, height, frame.basemapBoundaryTemplate, frame.region, frame.zoom, 190)
-    drawTileTemplateLayer(canvas, width, height, frame.basemapOverlayTemplate, frame.region, frame.zoom, 235)
+    drawTileTemplateLayer(
+      canvas,
+      width,
+      height,
+      frame.basemapBoundaryTemplate,
+      frame.region,
+      frame.zoom,
+      ((frame.basemapBoundaryOpacity ?: 0.48) * 255.0).roundToInt(),
+    )
+    drawTileTemplateLayer(
+      canvas,
+      width,
+      height,
+      frame.basemapOverlayTemplate,
+      frame.region,
+      frame.zoom,
+      ((frame.basemapOverlayOpacity ?: 0.92) * 255.0).roundToInt(),
+    )
     drawWindSegments(canvas, frame.windSegments, frame.windOpacity)
     return out
   }
@@ -585,6 +640,17 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       textSize = width * 0.017f
       typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
+    val timeCaptionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(148, 163, 184)
+      textSize = width * 0.011f
+      typeface = android.graphics.Typeface.DEFAULT_BOLD
+      letterSpacing = 0.08f
+    }
+    val timeValuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(103, 232, 249)
+      textSize = width * 0.022f
+      typeface = android.graphics.Typeface.DEFAULT_BOLD
+    }
 
     val pad = width * 0.025f
     val top = pad
@@ -599,9 +665,19 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       canvas.drawText(title, pad + 24f, top + height * 0.043f, titlePaint)
     }
     canvas.drawText(subtitle, pad + 24f, top + height * 0.084f, smallPaint)
-    val rightLabel = "$product  •  $frameLabel"
-    val rightWidth = cyanPaint.measureText(rightLabel)
-    canvas.drawText(rightLabel, width - pad - 24f - rightWidth, top + height * 0.062f, cyanPaint)
+    // Keep the source-frame clock separate from product text so an exported
+    // video remains legible when shared without its surrounding app UI.
+    val timeWidth = min(width * 0.23f, 220f)
+    val timeHeight = height * 0.066f
+    val timeLeft = width - pad - 24f - timeWidth
+    val timeTop = top + height * 0.018f
+    val timePanel = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(156, 15, 23, 42) }
+    canvas.drawRoundRect(RectF(timeLeft, timeTop, timeLeft + timeWidth, timeTop + timeHeight), 16f, 16f, timePanel)
+    canvas.drawText("FRAME TIME", timeLeft + 14f, timeTop + timeHeight * 0.34f, timeCaptionPaint)
+    canvas.drawText(frameLabel, timeLeft + 14f, timeTop + timeHeight * 0.76f, timeValuePaint)
+    val productText = product.uppercase(Locale.US)
+    val productWidth = cyanPaint.measureText(productText)
+    canvas.drawText(productText, width - pad - 24f - productWidth, top + height * 0.094f, cyanPaint)
 
     canvas.drawRoundRect(RectF(pad, height - pad - 48f, width - pad, height - pad), 20f, 20f, panelPaint)
     canvas.drawText("OMNIwx", pad + 24f, height - pad - 17f, smallPaint)
@@ -816,7 +892,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             tileTemplate = tileTemplate,
             basemapTemplate = item.optNullableString("basemapTemplate"),
             basemapBoundaryTemplate = item.optNullableString("basemapBoundaryTemplate"),
+            basemapBoundaryOpacity = item.optNullableDouble("basemapBoundaryOpacity"),
             basemapOverlayTemplate = item.optNullableString("basemapOverlayTemplate"),
+            basemapOverlayOpacity = item.optNullableDouble("basemapOverlayOpacity"),
             region = item.getMap("region")?.toExportRegion(),
             zoom = item.optNullableDouble("zoom"),
             opacity = item.optNullableDouble("opacity"),
@@ -846,7 +924,9 @@ private data class ExportFrame(
   val tileTemplate: String? = null,
   val basemapTemplate: String? = null,
   val basemapBoundaryTemplate: String? = null,
+  val basemapBoundaryOpacity: Double? = null,
   val basemapOverlayTemplate: String? = null,
+  val basemapOverlayOpacity: Double? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
   val opacity: Double? = null,
@@ -859,7 +939,9 @@ private data class RenderSourceFrame(
   val bitmapOpacities: List<Double> = emptyList(),
   val basemapTemplate: String? = null,
   val basemapBoundaryTemplate: String? = null,
+  val basemapBoundaryOpacity: Double? = null,
   val basemapOverlayTemplate: String? = null,
+  val basemapOverlayOpacity: Double? = null,
   val region: ExportRegion? = null,
   val zoom: Double? = null,
   val windSegments: List<WindSegment> = emptyList(),

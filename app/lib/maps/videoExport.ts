@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
 import type { WindParticleExportSegment } from '../../../components/maps/WindParticleOverlay';
 
 export type AnimationVideoFrame = {
@@ -10,7 +10,9 @@ export type AnimationVideoFrame = {
   tileTemplate?: string | null;
   basemapTemplate?: string | null;
   basemapBoundaryTemplate?: string | null;
+  basemapBoundaryOpacity?: number | null;
   basemapOverlayTemplate?: string | null;
+  basemapOverlayOpacity?: number | null;
   region?: {
     latitude: number;
     longitude: number;
@@ -34,6 +36,8 @@ export type AnimationVideoExportOptions = {
   secondsPerSourceFrame?: number;
   transitionSeconds?: number;
   minimumDurationSeconds?: number;
+  /** Used to pair native progress events with the export the user started. */
+  jobId?: string;
 };
 
 export type AnimationVideoExportResult = {
@@ -44,11 +48,32 @@ export type AnimationVideoExportResult = {
   frameCount: number;
 };
 
+export type AnimationVideoExportProgress = {
+  jobId: string;
+  stage: 'preparing' | 'encoding' | 'saving' | 'complete' | 'failed';
+  completed: number;
+  total: number;
+  message: string;
+};
+
 type NativeVideoExport = {
-  exportAnimation(options: Required<AnimationVideoExportOptions>): Promise<AnimationVideoExportResult>;
+  exportAnimation(options: {
+    frames: AnimationVideoFrame[];
+    title: string;
+    subtitle: string;
+    productLabel: string;
+    width: number;
+    height: number;
+    fps: number;
+    secondsPerSourceFrame: number;
+    transitionSeconds: number;
+    minimumDurationSeconds: number;
+    jobId: string;
+  }): Promise<AnimationVideoExportResult>;
 };
 
 const nativeExporter = NativeModules.OmniwxVideoExport as NativeVideoExport | undefined;
+const VIDEO_EXPORT_PROGRESS_EVENT = 'omniwxVideoExportProgress';
 
 // Video export is native-only because React Native/MapLibre do not provide a
 // reliable way to record the composed map surface into an MP4. Android builds
@@ -57,7 +82,10 @@ export function canExportAnimationVideo() {
   return Platform.OS === 'android' && !!nativeExporter?.exportAnimation;
 }
 
-export async function exportAnimationVideo(options: AnimationVideoExportOptions) {
+export async function exportAnimationVideo(
+  options: AnimationVideoExportOptions,
+  onProgress?: (progress: AnimationVideoExportProgress) => void,
+) {
   if (!canExportAnimationVideo() || !nativeExporter) {
     throw new Error('Video export is available on Android builds only.');
   }
@@ -72,7 +100,9 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
       tileTemplate: frame.tileTemplate ?? null,
       basemapTemplate: frame.basemapTemplate ?? null,
       basemapBoundaryTemplate: frame.basemapBoundaryTemplate ?? null,
+      basemapBoundaryOpacity: frame.basemapBoundaryOpacity ?? null,
       basemapOverlayTemplate: frame.basemapOverlayTemplate ?? null,
+      basemapOverlayOpacity: frame.basemapOverlayOpacity ?? null,
       region: frame.region ?? null,
       zoom: frame.zoom ?? null,
       opacity: frame.opacity ?? null,
@@ -94,18 +124,30 @@ export async function exportAnimationVideo(options: AnimationVideoExportOptions)
     throw new Error('At least two prepared frames are required for video export.');
   }
 
-  return nativeExporter.exportAnimation({
-    frames,
-    title: options.title,
-    subtitle: options.subtitle,
-    productLabel: options.productLabel,
-    // Defaults are landscape-friendly; callers can override dimensions for
-    // portrait exports so infrared/true-color recordings keep the phone shape.
-    width: options.width ?? 1280,
-    height: options.height ?? 720,
-    fps: options.fps ?? 30,
-    secondsPerSourceFrame: options.secondsPerSourceFrame ?? 0.52,
-    transitionSeconds: options.transitionSeconds ?? 0.22,
-    minimumDurationSeconds: options.minimumDurationSeconds ?? 12,
-  });
+  const jobId = options.jobId ?? `export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const subscription = onProgress
+    ? DeviceEventEmitter.addListener(VIDEO_EXPORT_PROGRESS_EVENT, (progress: AnimationVideoExportProgress) => {
+        if (progress?.jobId === jobId) onProgress(progress);
+      })
+    : null;
+
+  try {
+    return await nativeExporter.exportAnimation({
+      frames,
+      title: options.title,
+      subtitle: options.subtitle,
+      productLabel: options.productLabel,
+      // Defaults are landscape-friendly; callers can override dimensions for
+      // portrait exports so infrared/true-color recordings keep the phone shape.
+      width: options.width ?? 1280,
+      height: options.height ?? 720,
+      fps: options.fps ?? 30,
+      secondsPerSourceFrame: options.secondsPerSourceFrame ?? 0.52,
+      transitionSeconds: options.transitionSeconds ?? 0.22,
+      minimumDurationSeconds: options.minimumDurationSeconds ?? 12,
+      jobId,
+    });
+  } finally {
+    subscription?.remove();
+  }
 }

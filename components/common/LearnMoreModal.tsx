@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LEARN_CATEGORIES, LEARN_TOPICS, getLearnCategoryForTopic } from '../../app/lib/learn/topics';
 
 type LearnSection = {
@@ -47,6 +48,7 @@ export function LearnMoreModal({
   onClose: () => void;
   initialTopicId?: string;
 }) {
+  const insets = useSafeAreaInsets();
   const topics = useMemo(() => asTopicArray(LEARN_TOPICS), []);
   const [q, setQ] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -131,7 +133,7 @@ export function LearnMoreModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { top: Math.max(54, insets.top + 14), bottom: Math.max(18, insets.bottom + 12) }]}>
         <View style={styles.handle} />
 
         <View style={styles.header}>
@@ -380,10 +382,8 @@ const styles = StyleSheet.create({
 
   sheet: {
     position: 'absolute',
-    left: 10,
-    right: 10,
-    top: 54,
-    bottom: 22,
+    left: 14,
+    right: 14,
     borderRadius: 26,
     backgroundColor: 'rgba(14, 18, 30, 0.985)',
     borderWidth: 1,

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Glass } from '../../common/Glass';
 import { RadarLegend } from '../RadarLegend';
@@ -67,6 +68,7 @@ export function StormScopeController(props: {
   onExitStormScope: () => void;
   density?: 'comfortable' | 'compact' | 'ultraCompact';
 }) {
+  const insets = useSafeAreaInsets();
   const [notice, setNotice] = useState<string | null>(null);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const [radarSitesExpanded, setRadarSitesExpanded] = useState(false);
@@ -144,7 +146,7 @@ export function StormScopeController(props: {
               borderTopRightRadius: 28,
               paddingHorizontal: 14,
               paddingTop: 12,
-              paddingBottom: 18,
+              paddingBottom: Math.max(18, insets.bottom + 10),
               maxHeight: density === 'ultraCompact' ? '94%' : density === 'compact' ? '90%' : '86%',
             }}
           >
@@ -152,19 +154,25 @@ export function StormScopeController(props: {
               <View style={{ width: 48, height: 5, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.18)' }} />
             </View>
 
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
+                STORM SCOPE
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <PillButton label="Exit" tone="danger" onPress={props.onExitStormScope} />
+                <PillButton label="Done" onPress={() => props.onSetConsoleOpen(false)} />
+              </View>
+            </View>
+
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.56)', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }}>
-                  STORM SCOPE
-                </Text>
-                <Text style={{ color: 'white', fontSize: 20, fontWeight: '900', marginTop: 4 }} numberOfLines={1}>
+                <Text style={{ color: 'white', fontSize: 20, fontWeight: '900' }} numberOfLines={1}>
                   {props.siteTitle}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: '800', marginTop: 4 }} numberOfLines={2}>
                   {props.productLine} - {attentionLine}
                 </Text>
               </View>
-              <PillButton label="Done" onPress={() => props.onSetConsoleOpen(false)} />
             </View>
 
             <ScrollView style={{ marginTop: 14 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 12 }}>
@@ -225,7 +233,6 @@ export function StormScopeController(props: {
               <SectionCard title="More" subtitle="Secondary actions stay out of the normal storm view">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   <PillButton label="wxLearn" onPress={props.onOpenLearn} />
-                  <PillButton label="Exit Storm Scope" tone="danger" onPress={props.onExitStormScope} />
                 </View>
               </SectionCard>
             </ScrollView>

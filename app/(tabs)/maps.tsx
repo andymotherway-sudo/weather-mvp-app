@@ -67,7 +67,12 @@ import { useTropicalCycloneLayer } from '../lib/maps/useTropicalCycloneLayer';
 import { useTropicalOutlookLayer } from '../lib/maps/useTropicalOutlookLayer';
 import { useWildfireMapData } from '../lib/maps/useWildfireMapData';
 import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
-import { canExportAnimationVideo, exportAnimationVideo, type AnimationVideoFrame } from '../lib/maps/videoExport';
+import {
+  canExportAnimationVideo,
+  exportAnimationVideo,
+  type AnimationVideoExportProgress,
+  type AnimationVideoFrame,
+} from '../lib/maps/videoExport';
 import { MAP_VIEWS } from '../lib/maps/views';
 import { API_BASE, MRMS_RADAR_PREVIEW_ENABLED, apiUrl } from '../lib/net/apiBase';
 import { fetchWithTimeout } from '../lib/net/fetchWithTimeout';
@@ -473,7 +478,10 @@ const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
 const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png';
 const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
+const EXPORT_BASEMAP_BOUNDARIES_OPACITY = 0.34;
+const EXPORT_BASEMAP_LABELS_OPACITY = 0.92;
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -1425,6 +1433,7 @@ export default function MapsScreen() {
   const [satelliteSecondaryReady, setSatelliteSecondaryReady] = useState(false);
   const [animationExporting, setAnimationExporting] = useState(false);
   const [animationExportStatus, setAnimationExportStatus] = useState<string | null>(null);
+  const [animationExportProgress, setAnimationExportProgress] = useState<AnimationVideoExportProgress | null>(null);
   const [radarMode, setRadarMode] = useState<'mosaic' | 'station'>('mosaic');
   const [wideRadarProvider, setWideRadarProvider] = useState<Extract<RadarProviderId, 'auto' | 'rainviewer' | 'mrms'>>('auto');
   const [wideMrmsProduct, setWideMrmsProduct] = useState<MrmsProductId>('MergedReflectivityQCComposite');
@@ -1484,6 +1493,9 @@ export default function MapsScreen() {
   const routeFocusSeedRegionRef = useRef<Region | null>(null);
   const radarStationSeedRegionRef = useRef<Region | null>(null);
   const lastCenteredRadarSiteRef = useRef<string | null>(null);
+  const initialPlaceSeedAppliedRef = useRef(
+    !!activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon),
+  );
   const aviationModeWasActiveRef = useRef(false);
   const mapPressHandlerRef = useRef<(e: any) => void | Promise<void>>(() => {});
   const [region, setRegion] = useState<Region | null>(null);
@@ -3454,7 +3466,7 @@ export default function MapsScreen() {
   ]);
 
   const [stableInitialRegion] = useState<Region>(() => {
-    if (activePlace && activePlace.source !== 'gps') {
+    if (activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)) {
       return {
         latitude: activePlace.lat,
         longitude: activePlace.lon,
@@ -3470,6 +3482,42 @@ export default function MapsScreen() {
       longitudeDelta: 4,
     };
   });
+
+  useEffect(() => {
+    // PlaceContext hydrates after the tab can mount. Seed the map exactly once
+    // when that location arrives, instead of leaving a GPS user at the generic
+    // central-US fallback. Later GPS refreshes and user pans must not recenter.
+    if (initialPlaceSeedAppliedRef.current || routeFocusTarget) return;
+    const initialPlace = activePlace && Number.isFinite(activePlace.lat) && Number.isFinite(activePlace.lon)
+      ? activePlace
+      : loc.state.currentCoords && Number.isFinite(loc.state.currentCoords.lat) && Number.isFinite(loc.state.currentCoords.lon)
+        ? loc.state.currentCoords
+        : null;
+    if (!initialPlace) return;
+
+    const nextRegion: Region = {
+      latitude: initialPlace.lat,
+      longitude: initialPlace.lon,
+      latitudeDelta: 2.5,
+      longitudeDelta: 2.5,
+      zoom: approxZoomFromLongitudeDelta(2.5),
+    };
+    initialPlaceSeedAppliedRef.current = true;
+    locateSeedRegionRef.current = nextRegion;
+    setRegion(nextRegion);
+    updateMapZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+    setRadarBehaviorZoom(nextRegion.zoom ?? approxZoomFromLongitudeDelta(nextRegion.longitudeDelta));
+    setMapResetKey((value) => value + 1);
+
+    requestAnimationFrame(() => {
+      locateSeedRegionRef.current = null;
+    });
+  }, [
+    activePlace,
+    loc.state.currentCoords,
+    routeFocusTarget,
+    updateMapZoom,
+  ]);
 
   useEffect(() => {
     if (!routeFocusTarget) return;
@@ -4533,12 +4581,21 @@ export default function MapsScreen() {
   ]);
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
+    const exportBasemap = {
+      basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
+      // Satellite source frames cover the base map. Add subdued geographic
+      // context above them, followed by labels, without obscuring the weather.
+      basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE_DARK,
+      basemapBoundaryOpacity: EXPORT_BASEMAP_BOUNDARIES_OPACITY,
+      basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
+      basemapOverlayOpacity: EXPORT_BASEMAP_LABELS_OPACITY,
+    };
     if (!activeAnimationKind) {
       if (windParticleExportFrames.length < 2) return [];
       return windParticleExportFrames.map((windSegments, index) => ({
         label: `Flow ${index + 1}`,
         urls: [],
-        basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
+        ...exportBasemap,
         region: animationExportRegion,
         zoom: mapZoom,
         windSegments,
@@ -4565,7 +4622,7 @@ export default function MapsScreen() {
           underlayUrls: underlayLayers.map((layer) => layer.url),
           underlayOpacities: underlayLayers.map((layer) => layer.opacity),
           tileTemplate,
-          basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
+          ...exportBasemap,
           region: animationExportRegion,
           zoom: mapZoom,
           opacity: atmosphericComposition.radarOpacity,
@@ -4579,6 +4636,7 @@ export default function MapsScreen() {
           label,
           urls: layers.map((layer) => layer.url),
           urlOpacities: layers.map((layer) => layer.opacity),
+          ...exportBasemap,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4591,6 +4649,7 @@ export default function MapsScreen() {
           label,
           urls: layers.map((layer) => layer.url),
           urlOpacities: layers.map((layer) => layer.opacity),
+          ...exportBasemap,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4603,6 +4662,7 @@ export default function MapsScreen() {
           label,
           urls: layers.map((layer) => layer.url),
           urlOpacities: layers.map((layer) => layer.opacity),
+          ...exportBasemap,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4615,6 +4675,7 @@ export default function MapsScreen() {
           label,
           urls: layers.map((layer) => layer.url),
           urlOpacities: layers.map((layer) => layer.opacity),
+          ...exportBasemap,
           region: animationExportRegion,
           zoom: mapZoom,
           windSegments,
@@ -4626,6 +4687,7 @@ export default function MapsScreen() {
         label,
         urls: layers.map((layer) => layer.url),
         urlOpacities: layers.map((layer) => layer.opacity),
+        ...exportBasemap,
         region: animationExportRegion,
         zoom: mapZoom,
         windSegments,
@@ -4664,11 +4726,15 @@ export default function MapsScreen() {
       return;
     }
 
-    setAnimationRecordRegion(effectiveRegion);
-    setAnimationBufferStatus(null);
-    setAnimationRecordMode(true);
     setAnimationExporting(true);
     setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
+    setAnimationExportProgress({
+      jobId: '',
+      stage: 'preparing',
+      completed: 0,
+      total: exportFrames.length,
+      message: 'Preparing source frames',
+    });
     if (activeAnimationKind === 'radar') {
       dispatch({ type: 'SET_RADAR_PLAYING', playing: true });
     } else if (activeAnimationKind) {
@@ -4690,12 +4756,23 @@ export default function MapsScreen() {
           !activeAnimationKind ? 0.12 : activeAnimationKind === 'truecolor' ? 0.62 : 0.46,
         transitionSeconds: 0,
         minimumDurationSeconds: 12,
+      }, (progress) => {
+        setAnimationExportProgress(progress);
+        setAnimationExportStatus(progress.message);
+      });
+      setAnimationExportProgress({
+        jobId: '',
+        stage: 'complete',
+        completed: 1,
+        total: 1,
+        message: 'Video saved',
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
       Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
     } catch (error: any) {
       const message = error?.message ?? 'The video export failed before it could be saved.';
       setAnimationExportStatus('Export failed');
+      setAnimationExportProgress({ jobId: '', stage: 'failed', completed: 0, total: 1, message: 'Export failed' });
       Alert.alert('Could not save video', message);
     } finally {
       setAnimationExporting(false);
@@ -4708,6 +4785,25 @@ export default function MapsScreen() {
     animationProductLabel,
     effectiveRegion,
   ]);
+
+  const animationExportPercent = useMemo(() => {
+    if (!animationExportProgress) return 0;
+    const fraction = animationExportProgress.total > 0
+      ? animationExportProgress.completed / animationExportProgress.total
+      : 0;
+    switch (animationExportProgress.stage) {
+      case 'preparing':
+        return Math.round(5 + fraction * 55);
+      case 'encoding':
+        return Math.round(60 + fraction * 34);
+      case 'saving':
+        return Math.round(95 + fraction * 4);
+      case 'complete':
+        return 100;
+      default:
+        return 0;
+    }
+  }, [animationExportProgress]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -6132,6 +6228,24 @@ export default function MapsScreen() {
             </View>
           </View>
         )}
+
+        {animationExporting ? (
+          <View pointerEvents="none" style={[styles.exportProgressWrap, { top: 96 + insets.top }]}>
+            <Glass style={styles.exportProgressCard}>
+              <View style={styles.exportProgressHeader}>
+                <ActivityIndicator size="small" color="#67e8f9" />
+                <Text style={styles.exportProgressTitle}>Saving animation in the background</Text>
+                <Text style={styles.exportProgressPercent}>{animationExportPercent}%</Text>
+              </View>
+              <View style={styles.exportProgressTrack}>
+                <View style={[styles.exportProgressFill, { width: `${animationExportPercent}%` }]} />
+              </View>
+              <Text style={styles.exportProgressHint}>
+                {animationExportStatus ?? 'Preparing source frames'} · Keep using OMNIwx while this finishes.
+              </Text>
+            </Glass>
+          </View>
+        ) : null}
 
         {!animationRecordMode && showRadarLegend ? (
           <View style={[styles.legendWrap, styles.topLegendWrap]}>
@@ -9089,6 +9203,53 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 8,
+  },
+  exportProgressWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+  },
+  exportProgressCard: {
+    width: '100%',
+    maxWidth: 460,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  exportProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exportProgressTitle: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '900',
+    flex: 1,
+  },
+  exportProgressPercent: {
+    color: '#67e8f9',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  exportProgressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.28)',
+    overflow: 'hidden',
+    marginTop: 10,
+  },
+  exportProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#22d3ee',
+  },
+  exportProgressHint: {
+    color: 'rgba(226,232,240,0.82)',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 8,
   },
   satelliteLoopControls: {
     flexDirection: 'row',

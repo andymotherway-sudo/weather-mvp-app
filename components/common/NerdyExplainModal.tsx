@@ -1,6 +1,7 @@
 // components/common/NerdyExplainModal.tsx
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type ExplainPayload = {
   title: string;
@@ -22,6 +23,7 @@ export function NerdyExplainModal({
   payload: ExplainPayload | null;
   onLearnMore?: (topicId: string) => void;
 }) {
+  const insets = useSafeAreaInsets();
   if (!payload) return null;
 
   const hasOnlySummary =
@@ -34,7 +36,7 @@ export function NerdyExplainModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { top: Math.max(66, insets.top + 18), bottom: Math.max(24, insets.bottom + 14) }]}>
         <View style={styles.header}>
           <Text style={styles.title}>{payload.title}</Text>
 
@@ -96,8 +98,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    top: 90,
-    bottom: 60,
     borderRadius: 22,
     backgroundColor: 'rgba(18, 22, 35, 0.98)',
     borderWidth: 1,
