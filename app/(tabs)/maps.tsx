@@ -70,6 +70,8 @@ import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import {
   canExportAnimationVideo,
   exportAnimationVideo,
+  notifyVideoExportResult,
+  requestVideoExportNotificationPermission,
   type AnimationVideoExportProgress,
   type AnimationVideoFrame,
 } from '../lib/maps/videoExport';
@@ -4726,6 +4728,11 @@ export default function MapsScreen() {
       return;
     }
 
+    // This is a user-initiated export, so it is the appropriate moment to ask
+    // for local-notification permission. A denied permission never blocks the
+    // export itself.
+    const canNotifyWhenFinished = await requestVideoExportNotificationPermission();
+
     setAnimationExporting(true);
     setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
     setAnimationExportProgress({
@@ -4768,12 +4775,20 @@ export default function MapsScreen() {
         message: 'Video saved',
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
-      Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
+      if (canNotifyWhenFinished) {
+        await notifyVideoExportResult({ saved: true, width: result.width, height: result.height });
+      } else {
+        Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
+      }
     } catch (error: any) {
       const message = error?.message ?? 'The video export failed before it could be saved.';
       setAnimationExportStatus('Export failed');
       setAnimationExportProgress({ jobId: '', stage: 'failed', completed: 0, total: 1, message: 'Export failed' });
-      Alert.alert('Could not save video', message);
+      if (canNotifyWhenFinished) {
+        await notifyVideoExportResult({ saved: false, message });
+      } else {
+        Alert.alert('Could not save video', message);
+      }
     } finally {
       setAnimationExporting(false);
     }
@@ -4783,7 +4798,6 @@ export default function MapsScreen() {
     animationExportFrames,
     animationExportSize,
     animationProductLabel,
-    effectiveRegion,
   ]);
 
   const animationExportPercent = useMemo(() => {

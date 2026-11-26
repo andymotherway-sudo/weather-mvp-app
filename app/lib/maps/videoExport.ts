@@ -1,5 +1,7 @@
 import { DeviceEventEmitter, NativeModules, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import type { WindParticleExportSegment } from '../../../components/maps/WindParticleOverlay';
+import { configureNotificationRuntime } from '../notifications/preferences';
 
 export type AnimationVideoFrame = {
   label: string;
@@ -56,6 +58,13 @@ export type AnimationVideoExportProgress = {
   message: string;
 };
 
+export type AnimationVideoExportNotificationResult = {
+  saved: boolean;
+  width?: number;
+  height?: number;
+  message?: string;
+};
+
 type NativeVideoExport = {
   exportAnimation(options: {
     frames: AnimationVideoFrame[];
@@ -80,6 +89,46 @@ const VIDEO_EXPORT_PROGRESS_EVENT = 'omniwxVideoExportProgress';
 // expose OmniwxVideoExport through MainApplication.
 export function canExportAnimationVideo() {
   return Platform.OS === 'android' && !!nativeExporter?.exportAnimation;
+}
+
+// Export is a user-initiated, potentially long-running task. Ask only when the
+// user starts it, then use a local notification so they can keep using OMNIwx.
+export async function requestVideoExportNotificationPermission(): Promise<boolean> {
+  try {
+    await configureNotificationRuntime();
+    const current = await Notifications.getPermissionsAsync();
+    const status = current.status === 'granted'
+      ? current.status
+      : (await Notifications.requestPermissionsAsync()).status;
+    return status === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+export async function notifyVideoExportResult(
+  result: AnimationVideoExportNotificationResult,
+): Promise<void> {
+  try {
+    await configureNotificationRuntime();
+    const permission = await Notifications.getPermissionsAsync();
+    if (permission.status !== 'granted') return;
+
+    const savedSize = result.width && result.height ? ` (${result.width}x${result.height})` : '';
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: result.saved ? 'OMNIwx video saved' : 'OMNIwx video export failed',
+        body: result.saved
+          ? `Your animation${savedSize} is ready in Movies/OMNIwx.`
+          : result.message ?? 'No video was saved. Open Maps to try again.',
+        data: { screen: 'maps', source: 'video-export', saved: result.saved },
+        sound: 'default',
+      },
+      trigger: { seconds: 1, channelId: 'omniwx-alerts' },
+    });
+  } catch {
+    // A notification must never invalidate an otherwise successful export.
+  }
 }
 
 export async function exportAnimationVideo(
