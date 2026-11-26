@@ -36,6 +36,9 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 import kotlin.math.floor
 import kotlin.math.ln
@@ -113,11 +116,34 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // are composite layers; exporting partial layers would cause flashing or
         // misleading blank frames. Radar frames can now arrive as tile templates
         // so the MP4 uses the same time-resolved source as the on-map animation.
-        val prepared = mutableListOf<PreparedFrame>()
-        frames.forEachIndexed { index, frame ->
-          prepareFrame(width, height, frame)?.let { prepared.add(it) }
-          emitProgress(jobId, "preparing", index + 1, frames.size, "Preparing source frames")
+        // Geographic tiles do not change between timeline frames. Rendering them
+        // once avoids hundreds of duplicate network requests during a five-hour
+        // export. Source imagery still remains unique to each source timestamp.
+        val staticMapLayers = prepareStaticMapLayers(width, height, frames.first())
+        val preparedByIndex = arrayOfNulls<PreparedFrame>(frames.size)
+        val workerCount = min(3, max(1, Runtime.getRuntime().availableProcessors() / 2))
+        val executor = Executors.newFixedThreadPool(workerCount)
+        try {
+          val completions = ExecutorCompletionService<Pair<Int, PreparedFrame?>>(executor)
+          frames.forEachIndexed { index, frame ->
+            completions.submit(Callable {
+              // A transient bad source must only skip its own timestamp. It
+              // cannot abort an otherwise useful chronological export.
+              index to runCatching { prepareFrame(width, height, frame, staticMapLayers) }.getOrNull()
+            })
+          }
+          repeat(frames.size) { completed ->
+            val (index, prepared) = completions.take().get()
+            preparedByIndex[index] = prepared
+            emitProgress(jobId, "preparing", completed + 1, frames.size, "Preparing source frames")
+          }
+        } finally {
+          executor.shutdownNow()
+          staticMapLayers.recycle()
         }
+        // Preserve the original source order even though preparation completes
+        // concurrently. A video must never reorder its weather timeline.
+        val prepared = preparedByIndex.filterNotNull()
         // A two-frame loop may technically encode, but it misrepresents a
         // multi-hour weather animation as flashing. Two thirds is enough for
         // a useful chronological story when a small number of source images
@@ -273,7 +299,12 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     }
   }
 
-  private fun prepareFrame(width: Int, height: Int, frame: ExportFrame): PreparedFrame? {
+  private fun prepareFrame(
+    width: Int,
+    height: Int,
+    frame: ExportFrame,
+    staticMapLayers: StaticMapLayers,
+  ): PreparedFrame? {
     val underlayBitmaps = frame.underlayUrls.mapNotNull {
       downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000, attempts = 3)
     }
@@ -312,7 +343,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           zoom = frame.zoom,
           windSegments = frame.windSegments,
           windOpacity = frame.windOpacity,
-        )
+        ),
+        staticMapLayers,
       )
       PreparedFrame(label = frame.label, scene = scene)
     } finally {
@@ -414,7 +446,12 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return out
   }
 
-  private fun composeSatelliteScene(width: Int, height: Int, frame: RenderSourceFrame): Bitmap {
+  private fun composeSatelliteScene(
+    width: Int,
+    height: Int,
+    frame: RenderSourceFrame,
+    staticMapLayers: StaticMapLayers,
+  ): Bitmap {
     // A source frame may include more than one bitmap layer. Draw every layer
     // with aspect-fit rules so radar/satellite products keep their shape.
     val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -423,32 +460,53 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
 
     canvas.drawColor(Color.rgb(5, 10, 22))
     drawExportGrid(canvas, width, height)
-    drawTileTemplateLayer(canvas, width, height, frame.basemapTemplate, frame.region, frame.zoom, 245)
+    staticMapLayers.base?.let { canvas.drawBitmap(it, 0f, 0f, paint) }
     frame.bitmaps.forEachIndexed { index, bitmap ->
       val opacity = frame.bitmapOpacities.getOrNull(index)?.coerceIn(0.0, 1.0) ?: 1.0
       drawBitmapFit(canvas, bitmap, width, height, paint.apply { alpha = (opacity * 255.0).roundToInt() })
     }
     paint.alpha = 255
-    drawTileTemplateLayer(
-      canvas,
-      width,
-      height,
-      frame.basemapBoundaryTemplate,
-      frame.region,
-      frame.zoom,
-      ((frame.basemapBoundaryOpacity ?: 0.48) * 255.0).roundToInt(),
-    )
-    drawTileTemplateLayer(
-      canvas,
-      width,
-      height,
-      frame.basemapOverlayTemplate,
-      frame.region,
-      frame.zoom,
-      ((frame.basemapOverlayOpacity ?: 0.92) * 255.0).roundToInt(),
-    )
+    staticMapLayers.boundaries?.let { canvas.drawBitmap(it, 0f, 0f, paint) }
+    staticMapLayers.labels?.let { canvas.drawBitmap(it, 0f, 0f, paint) }
     drawWindSegments(canvas, frame.windSegments, frame.windOpacity)
     return out
+  }
+
+  private fun prepareStaticMapLayers(width: Int, height: Int, frame: ExportFrame): StaticMapLayers =
+    StaticMapLayers(
+      base = renderStaticTileLayer(width, height, frame.basemapTemplate, frame.region, frame.zoom, 245),
+      boundaries = renderStaticTileLayer(
+        width,
+        height,
+        frame.basemapBoundaryTemplate,
+        frame.region,
+        frame.zoom,
+        ((frame.basemapBoundaryOpacity ?: 0.48) * 255.0).roundToInt(),
+      ),
+      labels = renderStaticTileLayer(
+        width,
+        height,
+        frame.basemapOverlayTemplate,
+        frame.region,
+        frame.zoom,
+        ((frame.basemapOverlayOpacity ?: 0.92) * 255.0).roundToInt(),
+      ),
+    )
+
+  private fun renderStaticTileLayer(
+    width: Int,
+    height: Int,
+    tileTemplate: String?,
+    region: ExportRegion?,
+    zoom: Double?,
+    alpha: Int,
+  ): Bitmap? {
+    if (tileTemplate.isNullOrBlank() || region == null) return null
+    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { out ->
+      val canvas = Canvas(out)
+      canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+      drawTileTemplateLayer(canvas, width, height, tileTemplate, region, zoom, alpha)
+    }
   }
 
   private fun drawWindSegments(canvas: Canvas, segments: List<WindSegment>, opacity: Double?) {
@@ -962,6 +1020,18 @@ private data class PreparedFrame(
   val label: String,
   val scene: Bitmap,
 )
+
+private data class StaticMapLayers(
+  val base: Bitmap?,
+  val boundaries: Bitmap?,
+  val labels: Bitmap?,
+) {
+  fun recycle() {
+    listOfNotNull(base, boundaries, labels).forEach { bitmap ->
+      runCatching { bitmap.recycle() }
+    }
+  }
+}
 
 private fun ReadableMap.optInt(name: String, fallback: Int): Int =
   if (hasKey(name) && !isNull(name)) getInt(name) else fallback

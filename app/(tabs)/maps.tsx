@@ -479,11 +479,12 @@ const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/e
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
-const EXPORT_BASEMAP_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-const EXPORT_BASEMAP_BOUNDARIES_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png';
-const EXPORT_BASEMAP_LABELS_TEMPLATE_DARK = 'https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
-const EXPORT_BASEMAP_BOUNDARIES_OPACITY = 0.34;
-const EXPORT_BASEMAP_LABELS_OPACITY = 0.92;
+// Carto now returns a key-required error image to unauthenticated native
+// exports. Keep video reference geography on the public Esri overlay instead.
+// This template includes country/state boundaries and labels in one tile layer.
+const EXPORT_REFERENCE_TEMPLATE =
+  'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const EXPORT_REFERENCE_OPACITY = 0.86;
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -4584,13 +4585,10 @@ export default function MapsScreen() {
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
     const exportBasemap = {
-      basemapTemplate: EXPORT_BASEMAP_TEMPLATE_DARK,
-      // Satellite source frames cover the base map. Add subdued geographic
-      // context above them, followed by labels, without obscuring the weather.
-      basemapBoundaryTemplate: EXPORT_BASEMAP_BOUNDARIES_TEMPLATE_DARK,
-      basemapBoundaryOpacity: EXPORT_BASEMAP_BOUNDARIES_OPACITY,
-      basemapOverlayTemplate: EXPORT_BASEMAP_LABELS_TEMPLATE_DARK,
-      basemapOverlayOpacity: EXPORT_BASEMAP_LABELS_OPACITY,
+      // Satellite source frames cover the base map. This single, keyless
+      // reference layer supplies consistent state/country borders and labels.
+      basemapOverlayTemplate: EXPORT_REFERENCE_TEMPLATE,
+      basemapOverlayOpacity: EXPORT_REFERENCE_OPACITY,
     };
     if (!activeAnimationKind) {
       if (windParticleExportFrames.length < 2) return [];
