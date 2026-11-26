@@ -123,7 +123,10 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // export. Source imagery still remains unique to each source timestamp.
         val staticMapLayers = prepareStaticMapLayers(width, height, frames.first())
         val preparedByIndex = arrayOfNulls<PreparedFrame>(frames.size)
-        val workerCount = min(3, max(1, Runtime.getRuntime().availableProcessors() / 2))
+        // The protected GeoColor renderer admits two full-disk source decodes
+        // at a time. Matching that limit keeps a long, cold export from
+        // queueing its own requests until the client-side timeout expires.
+        val workerCount = min(2, max(1, Runtime.getRuntime().availableProcessors() / 2))
         val executor = Executors.newFixedThreadPool(workerCount)
         try {
           val completions = ExecutorCompletionService<Pair<Int, PreparedFrame?>>(executor)
@@ -308,7 +311,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     staticMapLayers: StaticMapLayers,
   ): PreparedFrame? {
     val underlayBitmaps = frame.underlayUrls.mapNotNull {
-      downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000, attempts = 3)
+      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4)
     }
     if (underlayBitmaps.size != frame.underlayUrls.size) {
       underlayBitmaps.forEach { runCatching { it.recycle() } }
@@ -319,7 +322,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     underlayBitmaps.forEach { runCatching { it.recycle() } }
 
     val urlBitmaps = frame.urls.mapNotNull {
-      downloadBitmap(it, connectTimeoutMs = 7_000, readTimeoutMs = 10_000, attempts = 3)
+      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4)
     }
     val sourceBitmaps = listOfNotNull(tileScene) + urlBitmaps
     val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
