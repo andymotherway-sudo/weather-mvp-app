@@ -1,14 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.286**
-Android version code: **10304**
+Release: **OMNIwx 1.1.287**
+Android version code: **10305**
 Track: **Closed testing / internal testing candidate**
 Date: **November 24, 2026**
 
 ## Play Console Paste Notes
 
-Adds a local completion notification for saved or failed map-animation videos,
-so you can keep using OMNIwx while a native MP4 export runs.
+Allows a real 8-of-12 prepared timeline to save as a chronological video instead
+of rejecting it, without duplicating frames or accepting partial composites.
 
 ## Tester Notes
 
@@ -28,6 +28,9 @@ Please focus on these areas:
   use another tab. Confirm a local notification reports saved or failed when it
   finishes. If notification permission is denied, confirm the in-app result is
   still shown. Force-closing the app is not supported during an active export.
+- Test an export with some source frames unavailable. A usable two-thirds
+  chronological timeline should save once; sparse timelines must still fail
+  clearly rather than replaying frames or producing a flashing loop.
 - Test default and increased Android font/display scaling. Cards, mode toggles,
   buttons, and status messages should remain usable without clipped actions.
 - Change saved locations repeatedly and verify forecasts, timestamps, and
@@ -75,8 +78,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.286`
-- Android version code: `10304`
+- App version: `1.1.287`
+- Android version code: `10305`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -138,16 +141,16 @@ Please focus on these areas:
   The documented Windows Java local-TCP fallback was applied by the release
   script, and the AAB was independently inspected after it completed.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170,851,477` bytes. Build timestamp: `2026-11-26T21:59:48Z`.
-- SHA-256: `5441150CB6D0FA66CDFED3938392CBE495E0B1A92DD8DBCFDC4050150E940F3E`
-- Embedded configuration confirms app version `1.1.286`, Android version code
-  `10304`, build label `internal-test-aab-10304`, and the production Worker URL.
-- The signing certificate SHA-256 is
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`.
+- Size: `170851696` bytes. Build timestamp: `2026-11-26T22:20:21Z`.
+- SHA-256: `6FBB034FDC8174E33EB55711A5B99383FB3CAD062FDBA5734B924A8E73A134DC`
+- Embedded configuration confirms app version `1.1.287`, Android version code
+  `10305`, build label `internal-test-aab-10305`, and the production Worker URL.
+- Signing certificate SHA-256:
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`
 
 ## Remaining Acceptance
 
-- Upload only version code `10304` to the intended Play internal-testing track.
+- Upload only version code `10305` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor

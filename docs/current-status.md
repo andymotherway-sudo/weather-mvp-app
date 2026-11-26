@@ -8,7 +8,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.286` / Android version code `10304`.
+- Current release candidate: `1.1.287` / Android version code `10305`.
+- This app-only video-export correction accepts a useful two-thirds prepared
+  chronological timeline instead of discarding an 8-of-12 export, while still
+  rejecting sparse, duplicated, or partial-composite animation scenes.
 - This app-only video-export update schedules an Android local notification
   when a user-initiated MP4 save completes or fails, allowing the user to
   navigate through OMNIwx while the native export worker runs.
