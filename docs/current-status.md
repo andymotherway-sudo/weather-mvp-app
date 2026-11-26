@@ -8,7 +8,11 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.287` / Android version code `10305`.
+- Current release candidate: `1.1.288` / Android version code `10306`.
+- This app-only export correction prepares up to three source scenes in parallel
+  and reuses static geographic reference tiles across the video timeline. It
+  removes the unauthenticated Carto export tiles that could be encoded as an
+  `API KEY REQUIRED` image, while preserving source ordering and full scenes.
 - This app-only video-export correction accepts a useful two-thirds prepared
   chronological timeline instead of discarding an 8-of-12 export, while still
   rejecting sparse, duplicated, or partial-composite animation scenes.
@@ -25,8 +29,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 - This app-only export hotfix no longer pads a sparse satellite catalog by
   replaying it. It makes one chronological pass through the selected window,
   waits longer on each source frame when needed, retries bounded transient
-  image failures, and refuses to save a video when fewer than 75% of the
-  required source scenes are ready.
+  image failures, and refuses to save a video when fewer than two-thirds of
+  the required source scenes are ready.
 - This hotfix corrects the map-projection units used to request buffered
   atmospheric frames, preventing infrared and GeoColor imagery from rendering
   as vertically stretched stripes.
@@ -35,8 +39,8 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   is ready, and uses deliberate default blends for GeoColor, infrared, clouds,
   and radar. The same per-layer opacity values now feed Android video export.
 - A signed production-targeted AAB for this candidate was built and inspected:
-  `170,856,217` bytes, SHA-256
-  `6BC03AF38951D0960FF4E0FBE23F2449175E2345DF5414D9B59D8175B314CFC3`.
+  `170,850,673` bytes, SHA-256
+  `652A9FB58504C37FDF0D914DC5789663139468457BF4A655541C5A5737BD4EAE`.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and
