@@ -8,7 +8,10 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.285` / Android version code `10303`.
+- Current release candidate: `1.1.286` / Android version code `10304`.
+- This app-only video-export update schedules an Android local notification
+  when a user-initiated MP4 save completes or fails, allowing the user to
+  navigate through OMNIwx while the native export worker runs.
 - This app-only layout and export-progress update makes shared map sheets clear
   system edges consistently, moves Storm Scope exit to the controller header,
   and improves Settings spacing on narrow and large displays. It also keeps
