@@ -8,11 +8,12 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.288` / Android version code `10306`.
-- This app-only export correction prepares up to three source scenes in parallel
-  and reuses static geographic reference tiles across the video timeline. It
-  removes the unauthenticated Carto export tiles that could be encoded as an
-  `API KEY REQUIRED` image, while preserving source ordering and full scenes.
+- Current release candidate: `1.1.289` / Android version code `10307`.
+- This app-only export correction draws label-free country, continent, and U.S.
+  state boundaries from geographic geometry in the same map projection as the
+  imagery. It removes city, ocean, country, and state labels from saved video
+  exports while preserving border alignment and the fast chronological export
+  preparation path.
 - This app-only video-export correction accepts a useful two-thirds prepared
   chronological timeline instead of discarding an 8-of-12 export, while still
   rejecting sparse, duplicated, or partial-composite animation scenes.
@@ -38,9 +39,9 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
   imagery, removes duplicate live satellite overlays after the buffered frame
   is ready, and uses deliberate default blends for GeoColor, infrared, clouds,
   and radar. The same per-layer opacity values now feed Android video export.
-- A signed production-targeted AAB for this candidate was built and inspected:
-  `170,850,673` bytes, SHA-256
-  `652A9FB58504C37FDF0D914DC5789663139468457BF4A655541C5A5737BD4EAE`.
+- A signed production-targeted AAB is pending for this candidate. Artifact
+  size, hash, embedded production configuration, version code, and signing
+  certificate will be recorded after the release build completes.
 - This candidate keeps the overlay catalog stationary when
   layers are toggled and makes map zoom buttons change zoom only, never center
   or location-follow state. The aviation filter now retains PIREP metadata and

@@ -1,14 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.288**
-Android version code: **10306**
+Release: **OMNIwx 1.1.289**
+Android version code: **10307**
 Track: **Closed testing / internal testing candidate**
 Date: **November 26, 2026**
 
 ## Play Console Paste Notes
 
-Speeds long map-video preparation and fixes exports that could include an
-`API KEY REQUIRED` map image. Videos keep chronological full-composite scenes.
+Fixes saved map videos with label-free, projection-aligned country/continent
+and U.S. state borders. It removes city, ocean, country, and state names while
+preserving fast, chronological weather-loop exports.
 
 ## Tester Notes
 
@@ -31,9 +32,9 @@ Please focus on these areas:
 - Test an export with some source frames unavailable. A usable two-thirds
   chronological timeline should save once; sparse timelines must still fail
   clearly rather than replaying frames or producing a flashing loop.
-- Save a five-hour GeoColor plus infrared video. Confirm preparation progresses
-  steadily, state/country reference geography is visible, and no frame contains
-  an `API KEY REQUIRED` watermark or error image.
+- Save a five-hour GeoColor plus infrared video. Confirm preparation remains
+  fast, country/continent and U.S. state borders align with imagery, and no
+  city, ocean, country, or state labels are baked into the MP4.
 - Test default and increased Android font/display scaling. Cards, mode toggles,
   buttons, and status messages should remain usable without clipped actions.
 - Change saved locations repeatedly and verify forecasts, timestamps, and
@@ -81,8 +82,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.288`
-- Android version code: `10306`
+- App version: `1.1.289`
+- Android version code: `10307`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -110,7 +111,7 @@ Please focus on these areas:
 - The Worker shares the home-summary and hourly forecast cache key, reducing
   duplicate Open-Meteo requests. Its failure response remains privacy-safe and
   concise. No D1 migration or radar-publisher activation is part of this release.
-- This is an app-only video-export preparation and reference-map correction. No Worker
+- This is an app-only video-export boundary-rendering correction. No Worker
   deploy, production configuration change, D1 migration, or radar-publisher
   activation is required.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
@@ -144,20 +145,16 @@ Please focus on these areas:
   The documented Windows Java local-TCP fallback was applied by the release
   script, and the AAB was independently inspected after it completed.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Built successfully with `npm run build:android:prod` on November 26, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script, and the AAB was independently inspected after it completed.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170850673` bytes. Build timestamp: `2026-11-26T22:54:56Z`.
-- SHA-256: `652A9FB58504C37FDF0D914DC5789663139468457BF4A655541C5A5737BD4EAE`
-- Embedded configuration confirms app version `1.1.288`, Android version code
-  `10306`, build label `internal-test-aab-10306`, and the production Worker URL.
+- Size: `170852234` bytes. Build timestamp: `2026-11-26T23:22:01Z`.
+- SHA-256: `3329E5D3FDF8FFA97FFF2898EB7C14E06CA05AA817BB89A40C99018ED78CD071`
+- Embedded configuration confirms app version `1.1.289`, Android version code
+  `10307`, build label `internal-test-aab-10307`, and the production Worker URL.
 - Signing certificate SHA-256:
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`
 
 ## Remaining Acceptance
 
-- Upload only version code `10306` to the intended Play internal-testing track.
+- Upload only version code `10307` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor
