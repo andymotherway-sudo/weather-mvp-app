@@ -28,6 +28,8 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -475,14 +477,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   private fun prepareStaticMapLayers(width: Int, height: Int, frame: ExportFrame): StaticMapLayers =
     StaticMapLayers(
       base = renderStaticTileLayer(width, height, frame.basemapTemplate, frame.region, frame.zoom, 245),
-      boundaries = renderStaticTileLayer(
-        width,
-        height,
-        frame.basemapBoundaryTemplate,
-        frame.region,
-        frame.zoom,
-        ((frame.basemapBoundaryOpacity ?: 0.48) * 255.0).roundToInt(),
-      ),
+      boundaries = renderBoundaryDataLayer(width, height, frame.boundaryDataUrls, frame.region, frame.zoom),
       labels = renderStaticTileLayer(
         width,
         height,
@@ -506,6 +501,85 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       val canvas = Canvas(out)
       canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
       drawTileTemplateLayer(canvas, width, height, tileTemplate, region, zoom, alpha)
+    }
+  }
+
+  private fun renderBoundaryDataLayer(
+    width: Int,
+    height: Int,
+    urls: List<String>,
+    region: ExportRegion?,
+    zoom: Double?,
+  ): Bitmap? {
+    if (urls.isEmpty() || region == null) return null
+    val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(out)
+    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+    urls.forEachIndexed { index, url ->
+      val payload = downloadText(url, connectTimeoutMs = 4_000, readTimeoutMs = 7_000) ?: return@forEachIndexed
+      drawBoundaryFeatures(canvas, payload, region, zoom, index == 0)
+    }
+    return out
+  }
+
+  private fun drawBoundaryFeatures(
+    canvas: Canvas,
+    payload: String,
+    region: ExportRegion,
+    zoom: Double?,
+    countryLayer: Boolean,
+  ) {
+    val features = runCatching { JSONObject(payload).optJSONArray("features") }.getOrNull() ?: return
+    val z = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 13)
+    val tileSize = 256
+    val center = lonLatToWorldPixel(region.longitude, region.latitude, z, tileSize)
+    val west = region.longitude - region.longitudeDelta / 2.0
+    val east = region.longitude + region.longitudeDelta / 2.0
+    val north = (region.latitude + region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val south = (region.latitude - region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
+    val spanX = max(1.0, kotlin.math.abs(lonToWorldPixel(east, z, tileSize) - lonToWorldPixel(west, z, tileSize)))
+    val spanY = max(1.0, kotlin.math.abs(latToWorldPixel(south, z, tileSize) - latToWorldPixel(north, z, tileSize)))
+    val scale = min(canvas.width / spanX, canvas.height / spanY)
+    val leftWorld = center.first - canvas.width / (2.0 * scale)
+    val topWorld = center.second - canvas.height / (2.0 * scale)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+      style = Paint.Style.STROKE
+      strokeJoin = Paint.Join.ROUND
+      strokeCap = Paint.Cap.ROUND
+      color = if (countryLayer) Color.argb(225, 210, 240, 252) else Color.argb(170, 174, 222, 240)
+      strokeWidth = if (countryLayer) 2.2f else 1.35f
+    }
+    for (featureIndex in 0 until features.length()) {
+      val geometry = features.optJSONObject(featureIndex)?.optJSONObject("geometry") ?: continue
+      val rings = geometry.optJSONArray("rings") ?: continue
+      drawBoundaryRings(canvas, rings, z, tileSize, leftWorld, topWorld, scale, paint)
+    }
+  }
+
+  private fun drawBoundaryRings(
+    canvas: Canvas,
+    rings: JSONArray,
+    zoom: Int,
+    tileSize: Int,
+    leftWorld: Double,
+    topWorld: Double,
+    scale: Double,
+    paint: Paint,
+  ) {
+    for (ringIndex in 0 until rings.length()) {
+      val ring = rings.optJSONArray(ringIndex) ?: continue
+      val path = android.graphics.Path()
+      for (pointIndex in 0 until ring.length()) {
+        val point = ring.optJSONArray(pointIndex) ?: continue
+        val lon = point.optDouble(0, Double.NaN)
+        val lat = point.optDouble(1, Double.NaN)
+        if (!lon.isFinite() || !lat.isFinite()) continue
+        val world = lonLatToWorldPixel(lon, lat, zoom, tileSize)
+        val x = ((world.first - leftWorld) * scale).toFloat()
+        val y = ((world.second - topWorld) * scale).toFloat()
+        if (pointIndex == 0) path.moveTo(x, y) else path.lineTo(x, y)
+      }
+      canvas.drawPath(path, paint)
     }
   }
 
@@ -901,6 +975,28 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     return null
   }
 
+  private fun downloadText(
+    url: String,
+    connectTimeoutMs: Int,
+    readTimeoutMs: Int,
+  ): String? {
+    var conn: HttpURLConnection? = null
+    return try {
+      conn = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = connectTimeoutMs
+        readTimeout = readTimeoutMs
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "OMNIwx Video Export")
+        setRequestProperty("Accept", "application/json")
+      }
+      if (conn.responseCode !in 200..299) null else conn.inputStream.bufferedReader().use { it.readText() }
+    } catch (_: Exception) {
+      null
+    } finally {
+      conn?.disconnect()
+    }
+  }
+
   private fun readFrames(array: ReadableArray?): List<ExportFrame> {
     // Defensive parser for the JS bridge payload. Bad/empty frames are skipped
     // here so the encoder only sees frames with at least one image URL or a
@@ -917,6 +1013,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         }
       }
       val urlOpacities = item.getDoubleList("urlOpacities")
+      val boundaryDataUrls = item.getStringList("boundaryDataUrls")
       val underlayUrlsArray = item.getArray("underlayUrls")
       val underlayUrls = mutableListOf<String>()
       if (underlayUrlsArray != null) {
@@ -946,6 +1043,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
             label = item.optString("label", "Frame ${i + 1}"),
             urls = urls,
             urlOpacities = urlOpacities,
+            boundaryDataUrls = boundaryDataUrls,
             underlayUrls = underlayUrls,
             underlayOpacities = underlayOpacities,
             tileTemplate = tileTemplate,
@@ -978,6 +1076,7 @@ private data class ExportFrame(
   val label: String,
   val urls: List<String>,
   val urlOpacities: List<Double> = emptyList(),
+  val boundaryDataUrls: List<String> = emptyList(),
   val underlayUrls: List<String> = emptyList(),
   val underlayOpacities: List<Double> = emptyList(),
   val tileTemplate: String? = null,
@@ -1054,6 +1153,16 @@ private fun ReadableMap.getDoubleList(name: String): List<Double> {
   return buildList {
     for (index in 0 until array.size()) {
       runCatching { array.getDouble(index) }.getOrNull()?.let(::add)
+    }
+  }
+}
+
+private fun ReadableMap.getStringList(name: String): List<String> {
+  val array = if (hasKey(name) && !isNull(name)) getArray(name) else null
+  if (array == null) return emptyList()
+  return buildList {
+    for (index in 0 until array.size()) {
+      array.getString(index)?.takeIf { it.isNotBlank() }?.let(::add)
     }
   }
 }

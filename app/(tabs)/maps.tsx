@@ -479,12 +479,10 @@ const NESDIS_ABI13_ARCHIVE_EXPORT_URL = `${API_BASE}/v1/satellite/nesdis/abi13/e
 const GIBS_WMTS_BASE = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const GIBS_IMERG_FRAME_STEP_MINUTES = 30;
 const GIBS_IMERG_SOURCE_LAG_MINUTES = 12 * 60;
-// Carto now returns a key-required error image to unauthenticated native
-// exports. Keep video reference geography on the public Esri overlay instead.
-// This template includes country/state boundaries and labels in one tile layer.
-const EXPORT_REFERENCE_TEMPLATE =
-  'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
-const EXPORT_REFERENCE_OPACITY = 0.86;
+const EXPORT_WORLD_COUNTRIES_QUERY =
+  'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/World_Countries/FeatureServer/0/query';
+const EXPORT_US_STATES_QUERY =
+  'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0/query';
 
 function arcGisLockedRasterParam(rasterId?: number | null) {
   if (rasterId == null || !Number.isFinite(rasterId)) return '';
@@ -693,6 +691,27 @@ function buildArcGisImageExportUrl(args: {
   return `${args.baseUrl}?bbox=${encodeURIComponent(mercatorBbox(args.region))}&bboxSR=3857&imageSR=3857&size=${Math.round(
     args.width,
   )},${Math.round(args.height)}&format=png32&transparent=true${timeParam}${mosaicParam}${sourceParam}${renderVersionParam}&f=image`;
+}
+
+function buildBoundaryDataUrl(args: { baseUrl: string; region: Region; inputSpatialReference?: 4326 | 3857 }) {
+  const west = Math.max(-180, args.region.longitude - args.region.longitudeDelta / 2);
+  const east = Math.min(180, args.region.longitude + args.region.longitudeDelta / 2);
+  const south = Math.max(-85, args.region.latitude - args.region.latitudeDelta / 2);
+  const north = Math.min(85, args.region.latitude + args.region.latitudeDelta / 2);
+  const inputSpatialReference = args.inputSpatialReference ?? 4326;
+  const query = new URLSearchParams({
+    f: 'json',
+    where: '1=1',
+    geometry: inputSpatialReference === 3857 ? mercatorBbox(args.region) : `${west},${south},${east},${north}`,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: String(inputSpatialReference),
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'OBJECTID',
+    returnGeometry: 'true',
+    outSR: '4326',
+    resultRecordCount: '1000',
+  });
+  return `${args.baseUrl}?${query.toString()}`;
 }
 
 function buildGoesWmsImageUrl(args: {
@@ -4585,10 +4604,16 @@ export default function MapsScreen() {
 
   const animationExportFrames = useMemo<AnimationVideoFrame[]>(() => {
     const exportBasemap = {
-      // Satellite source frames cover the base map. This single, keyless
-      // reference layer supplies consistent state/country borders and labels.
-      basemapOverlayTemplate: EXPORT_REFERENCE_TEMPLATE,
-      basemapOverlayOpacity: EXPORT_REFERENCE_OPACITY,
+      // Draw label-free country/continent and U.S. state boundaries directly
+      // in the export viewport; never bake city, ocean, or state names in.
+      boundaryDataUrls: [
+        buildBoundaryDataUrl({ baseUrl: EXPORT_WORLD_COUNTRIES_QUERY, region: animationExportRegion }),
+        buildBoundaryDataUrl({
+          baseUrl: EXPORT_US_STATES_QUERY,
+          region: animationExportRegion,
+          inputSpatialReference: 3857,
+        }),
+      ],
     };
     if (!activeAnimationKind) {
       if (windParticleExportFrames.length < 2) return [];

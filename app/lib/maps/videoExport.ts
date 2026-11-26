@@ -15,6 +15,8 @@ export type AnimationVideoFrame = {
   basemapBoundaryOpacity?: number | null;
   basemapOverlayTemplate?: string | null;
   basemapOverlayOpacity?: number | null;
+  /** Label-free administrative boundaries drawn once for the entire export. */
+  boundaryDataUrls?: string[];
   region?: {
     latitude: number;
     longitude: number;
@@ -152,6 +154,7 @@ export async function exportAnimationVideo(
       basemapBoundaryOpacity: frame.basemapBoundaryOpacity ?? null,
       basemapOverlayTemplate: frame.basemapOverlayTemplate ?? null,
       basemapOverlayOpacity: frame.basemapOverlayOpacity ?? null,
+      boundaryDataUrls: frame.boundaryDataUrls?.filter(Boolean) ?? [],
       region: frame.region ?? null,
       zoom: frame.zoom ?? null,
       opacity: frame.opacity ?? null,
