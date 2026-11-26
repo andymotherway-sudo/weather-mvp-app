@@ -119,13 +119,14 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           emitProgress(jobId, "preparing", index + 1, frames.size, "Preparing source frames")
         }
         // A two-frame loop may technically encode, but it misrepresents a
-        // multi-hour weather animation as flashing. Require broad timeline
-        // coverage instead of silently saving a degraded video.
-        val minimumPreparedFrames = max(3, kotlin.math.ceil(frames.size * 0.75).toInt())
+        // multi-hour weather animation as flashing. Two thirds is enough for
+        // a useful chronological story when a small number of source images
+        // are transiently unavailable, without padding or replaying frames.
+        val minimumPreparedFrames = max(3, kotlin.math.ceil(frames.size * (2.0 / 3.0)).toInt())
         if (prepared.size < minimumPreparedFrames) {
           throw IllegalStateException(
             "Only ${prepared.size} of ${frames.size} timeline frames were ready. " +
-              "No video was saved; please try again after imagery finishes loading."
+              "At least $minimumPreparedFrames ready frames are required for a smooth chronological video."
           )
         }
 
