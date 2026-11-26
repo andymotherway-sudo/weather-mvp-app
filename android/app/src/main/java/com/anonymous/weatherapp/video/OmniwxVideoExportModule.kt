@@ -532,16 +532,23 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     val features = runCatching { JSONObject(payload).optJSONArray("features") }.getOrNull() ?: return
     val z = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt().coerceIn(1, 13)
     val tileSize = 256
-    val center = lonLatToWorldPixel(region.longitude, region.latitude, z, tileSize)
     val west = region.longitude - region.longitudeDelta / 2.0
     val east = region.longitude + region.longitudeDelta / 2.0
     val north = (region.latitude + region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
     val south = (region.latitude - region.latitudeDelta / 2.0).coerceIn(-85.0, 85.0)
-    val spanX = max(1.0, kotlin.math.abs(lonToWorldPixel(east, z, tileSize) - lonToWorldPixel(west, z, tileSize)))
-    val spanY = max(1.0, kotlin.math.abs(latToWorldPixel(south, z, tileSize) - latToWorldPixel(north, z, tileSize)))
-    val scale = min(canvas.width / spanX, canvas.height / spanY)
-    val leftWorld = center.first - canvas.width / (2.0 * scale)
-    val topWorld = center.second - canvas.height / (2.0 * scale)
+    val westWorld = lonToWorldPixel(west, z, tileSize)
+    val eastWorld = lonToWorldPixel(east, z, tileSize)
+    val northWorld = latToWorldPixel(north, z, tileSize)
+    val southWorld = latToWorldPixel(south, z, tileSize)
+    val leftWorld = min(westWorld, eastWorld)
+    val topWorld = min(northWorld, southWorld)
+    val spanX = max(1.0, kotlin.math.abs(eastWorld - westWorld))
+    val spanY = max(1.0, kotlin.math.abs(southWorld - northWorld))
+    // Satellite export images fill this exact Mercator bbox. Match that pixel
+    // transform rather than re-centering from latitude/longitude deltas, whose
+    // arithmetic latitude midpoint diverges from the Mercator midpoint.
+    val scaleX = canvas.width / spanX
+    val scaleY = canvas.height / spanY
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
       style = Paint.Style.STROKE
       strokeJoin = Paint.Join.ROUND
@@ -552,7 +559,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     for (featureIndex in 0 until features.length()) {
       val geometry = features.optJSONObject(featureIndex)?.optJSONObject("geometry") ?: continue
       val rings = geometry.optJSONArray("rings") ?: continue
-      drawBoundaryRings(canvas, rings, z, tileSize, leftWorld, topWorld, scale, paint)
+      drawBoundaryRings(canvas, rings, z, tileSize, leftWorld, topWorld, scaleX, scaleY, paint)
     }
   }
 
@@ -563,7 +570,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     tileSize: Int,
     leftWorld: Double,
     topWorld: Double,
-    scale: Double,
+    scaleX: Double,
+    scaleY: Double,
     paint: Paint,
   ) {
     for (ringIndex in 0 until rings.length()) {
@@ -575,8 +583,8 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         val lat = point.optDouble(1, Double.NaN)
         if (!lon.isFinite() || !lat.isFinite()) continue
         val world = lonLatToWorldPixel(lon, lat, zoom, tileSize)
-        val x = ((world.first - leftWorld) * scale).toFloat()
-        val y = ((world.second - topWorld) * scale).toFloat()
+        val x = ((world.first - leftWorld) * scaleX).toFloat()
+        val y = ((world.second - topWorld) * scaleY).toFloat()
         if (pointIndex == 0) path.moveTo(x, y) else path.lineTo(x, y)
       }
       canvas.drawPath(path, paint)
