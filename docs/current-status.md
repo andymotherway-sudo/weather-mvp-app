@@ -8,12 +8,13 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.289` / Android version code `10307`.
+- Current release candidate: `1.1.290` / Android version code `10308`.
 - This app-only export correction draws label-free country, continent, and U.S.
   state boundaries from geographic geometry in the same map projection as the
   imagery. It removes city, ocean, country, and state labels from saved video
   exports while preserving border alignment and the fast chronological export
-  preparation path.
+  preparation path. The renderer now maps boundaries directly to the imagery's
+  exact Mercator bounding box rather than a separately centered approximation.
 - This app-only video-export correction accepts a useful two-thirds prepared
   chronological timeline instead of discarding an 8-of-12 export, while still
   rejecting sparse, duplicated, or partial-composite animation scenes.

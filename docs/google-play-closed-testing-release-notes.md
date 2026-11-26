@@ -1,15 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.289**
-Android version code: **10307**
+Release: **OMNIwx 1.1.290**
+Android version code: **10308**
 Track: **Closed testing / internal testing candidate**
 Date: **November 26, 2026**
 
 ## Play Console Paste Notes
 
-Fixes saved map videos with label-free, projection-aligned country/continent
-and U.S. state borders. It removes city, ocean, country, and state names while
-preserving fast, chronological weather-loop exports.
+Fixes saved map videos so label-free country/continent and U.S. state borders
+align to weather imagery. It removes city, ocean, country, and state names
+while preserving fast, chronological weather-loop exports.
 
 ## Tester Notes
 
@@ -33,8 +33,8 @@ Please focus on these areas:
   chronological timeline should save once; sparse timelines must still fail
   clearly rather than replaying frames or producing a flashing loop.
 - Save a five-hour GeoColor plus infrared video. Confirm preparation remains
-  fast, country/continent and U.S. state borders align with imagery, and no
-  city, ocean, country, or state labels are baked into the MP4.
+  fast and country/continent and U.S. state borders track the imagery without
+  an offset. No city, ocean, country, or state labels should be baked into it.
 - Test default and increased Android font/display scaling. Cards, mode toggles,
   buttons, and status messages should remain usable without clipped actions.
 - Change saved locations repeatedly and verify forecasts, timestamps, and
@@ -82,8 +82,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.289`
-- Android version code: `10307`
+- App version: `1.1.290`
+- Android version code: `10308`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -145,16 +145,16 @@ Please focus on these areas:
   The documented Windows Java local-TCP fallback was applied by the release
   script, and the AAB was independently inspected after it completed.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170852234` bytes. Build timestamp: `2026-11-26T23:22:01Z`.
-- SHA-256: `3329E5D3FDF8FFA97FFF2898EB7C14E06CA05AA817BB89A40C99018ED78CD071`
-- Embedded configuration confirms app version `1.1.289`, Android version code
-  `10307`, build label `internal-test-aab-10307`, and the production Worker URL.
+- Size: `170852243` bytes. Build timestamp: `2026-11-26T23:44:11Z`.
+- SHA-256: `E044752BB50841EBCBE7555E8CD5F4BA161D2771E9D3F5F8403D92080DF61A61`
+- Embedded configuration confirms app version `1.1.290`, Android version code
+  `10308`, build label `internal-test-aab-10308`, and the production Worker URL.
 - Signing certificate SHA-256:
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`
 
 ## Remaining Acceptance
 
-- Upload only version code `10307` to the intended Play internal-testing track.
+- Upload only version code `10308` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor
