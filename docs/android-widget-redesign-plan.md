@@ -8,10 +8,10 @@
 | Current plus radar | Current conditions and cached native RainViewer composite | Implemented | Responsive radar dashboard, freshness and manual refresh |
 | Sky Score | Cached OMNIwx Sky Score, cloud layers, Bortle context | Implemented with weather-derived fallback | Responsive observing summary; retain fallback disclosure |
 | Aviation | Aviation briefing | Implemented | Compact supplemental briefing only |
-| Airport Board | METAR and TAF-derived summary | Implemented | Future ICAO configuration and runway-relative wind |
-| Route Briefing | Route-aware aviation summary | Implemented | Keep as supplemental awareness only |
-| Climatology | Climate normals and records cache | Implemented | Future Plus presentation review |
-| Climate Arch | Climate-record visualization | Implemented | Future Plus presentation review |
+| Airport Board | METAR and TAF-derived summary | Implemented | Responsive compact, balanced, and detailed aviation board; future ICAO configuration and runway-relative wind |
+| Route Briefing | Route-aware aviation summary | Implemented | Responsive compact, balanced, and detailed route awareness; remain supplemental only |
+| Climatology | Climate normals and records cache | Implemented | Responsive record-context summary; future Plus presentation review |
+| Climate Arch | Climate-record visualization | Implemented | Responsive detailed annual visualization; future Plus presentation review |
 | Marine | No native provider or verified widget feed | Missing | Requires normalized marine and tide/buoy data contract |
 | Space weather | Worker-cached NOAA SWPC Kp, solar wind, Bz, and X-ray summary | Implemented | Responsive visual refinement and physical-device validation |
 | Extremes | No native provider | Missing | Requires a licensed, normalized extremes feed |
@@ -40,11 +40,11 @@ RemoteViews limitations that affect the design:
 
 ## Delivery Sequence
 
-1. Completed: shared size classes and responsive migrations for Current, Radar, Sky Score, and Aviation. Current Conditions now adds a cached six-point, near-term temperature trend at standard and expanded sizes, with wind, humidity, and dew point at expanded size. This extends its existing forecast request rather than adding a second polling path.
-2. Next: native configuration activity and persistent settings for location, airport, theme, units, radar coverage, and visible metrics.
-3. Then: Airport Board and Route Briefing redesign, including METAR age, TAF-validity, and optional crosswind when runway metadata is defensible.
-4. Add Marine only after wave, tide, buoy, and warning normalization is verified.
-5. Completed: Space Weather uses the Worker-cached NOAA SWPC summary and explicitly reports unavailable data. Add Satellite and Extremes only after their data-cache contracts and licensing/cost posture are documented.
+1. Completed: shared size classes and the visual migration for the current widget suite. Every existing widget now uses the OMNIwx branded header, deep-navy panel system, and progressive disclosure at compact, balanced, and detailed launcher sizes. Current Conditions adds a cached six-point, near-term temperature trend at standard and expanded sizes, with wind, humidity, and dew point at expanded size. This extends its existing forecast request rather than adding a second polling path.
+2. Completed: Airport Board, Route Briefing, Climatology, and Climate Arch now respond to launcher resize events. Compact presentations retain the station, route, or place decision metric while balanced and detailed presentations reveal the supporting panels and chart data.
+3. Next: native configuration activity and persistent settings for location, airport, theme, units, radar coverage, and visible metrics.
+4. Then: add METAR age, TAF-validity, and optional crosswind only when runway metadata is defensible.
+5. Add Marine only after wave, tide, buoy, and warning normalization is verified. Satellite and Extremes remain blocked on small cached-data contracts and licensing/cost review.
 
 ## Validation Matrix
 

@@ -21,7 +21,7 @@
       <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="AIRPORT WEATHER BOARD"
+        android:text="OMNIwx  •  AVIATION"
         android:textColor="#7dd3fc"
         android:textSize="10sp"
         android:textStyle="bold" />
@@ -63,6 +63,7 @@
     android:textStyle="bold" />
 
   <LinearLayout
+    android:id="@+id/widget_status_panel"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="10dp"
@@ -92,6 +93,7 @@
   </LinearLayout>
 
   <GridLayout
+    android:id="@+id/widget_metric_grid"
     android:layout_width="match_parent"
     android:layout_height="0dp"
     android:layout_marginTop="8dp"
@@ -153,6 +155,7 @@
   </GridLayout>
 
   <TextView
+    android:id="@+id/widget_divider"
     android:layout_width="match_parent"
     android:layout_height="1dp"
     android:layout_marginTop="8dp"

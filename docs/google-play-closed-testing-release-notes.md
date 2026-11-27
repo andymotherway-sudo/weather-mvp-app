@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.293**
-Android version code: **10311**
+Release: **OMNIwx 1.1.294**
+Android version code: **10312**
 Track: **Closed testing / internal testing candidate**
 Date: **November 26, 2026**
 
@@ -96,8 +96,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.293`
-- Android version code: `10311`
+- App version: `1.1.294`
+- Android version code: `10312`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -125,9 +125,12 @@ Please focus on these areas:
 - The Worker shares the home-summary and hourly forecast cache key, reducing
   duplicate Open-Meteo requests. Its failure response remains privacy-safe and
   concise. No D1 migration or radar-publisher activation is part of this release.
-- This is an app-only native widget redesign. No Worker deploy, production
-  configuration change, D1 migration, or radar-publisher activation is
-  required. The existing widget refresh path remains serialized and cached.
+- This is an app-only native widget redesign. The existing widget suite now
+  shares OMNIwx headers and progressive compact, balanced, and detailed
+  layouts, including Airport Board, Route Briefing, Climatology, and Climate
+  Arch resize behavior. No Worker deploy, production configuration change, D1
+  migration, or radar-publisher activation is required. The existing widget
+  refresh path remains serialized and cached.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
@@ -155,6 +158,8 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
+### Previous `1.1.293` Artifact
+
 - Built successfully with `npm run build:android:prod` on November 26, 2026.
 - AAB: `android/app/build/outputs/bundle/release/app-release.aab`
 - Size: `170865743` bytes. Build timestamp: `2026-11-27T04:18:44Z`.
@@ -164,9 +169,19 @@ Please focus on these areas:
 - Signing certificate SHA-256:
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76`
 
+## `1.1.294` Tester Focus
+
+- Add Current Conditions, Current + Radar, Sky Score, Aviation, Airport Board,
+  Route Briefing, Climatology, Climate Arch, and Space Weather widgets on a
+  Pixel and Samsung launcher. Resize each through its supported sizes and
+  confirm compact widgets retain the decision metric without clipped text.
+- Confirm Airport Board, Route Briefing, Climatology, and Climate Arch refresh
+  after resize and retain their existing active-place or aviation selection.
+- Confirm tapping each widget still deep-links to the intended OMNIwx screen.
+
 ## Remaining Acceptance
 
-- Upload only version code `10311` to the intended Play internal-testing track.
+- Upload only version code `10312` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor

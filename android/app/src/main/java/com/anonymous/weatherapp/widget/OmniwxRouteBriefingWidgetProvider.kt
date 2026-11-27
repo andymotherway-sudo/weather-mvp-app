@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -15,19 +16,42 @@ class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
     OmniwxWidgetExecutor.execute {
       val route = runCatching { OmniwxWidgetData.fetchRouteBriefing(context) }.getOrNull()
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, route, loading = false))
+        appWidgetManager.updateAppWidget(
+          id,
+          buildViews(context, route, appWidgetManager.omniwxWidgetSizeClass(id), loading = false),
+        )
       }
     }
   }
 
-  private fun buildViews(context: Context, route: WidgetRouteBriefing?, loading: Boolean): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    route: WidgetRouteBriefing?,
+    sizeClass: OmniwxWidgetSizeClass,
+    loading: Boolean,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_route_briefing).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      val expanded = sizeClass == OmniwxWidgetSizeClass.EXPANDED
+      setViewVisibility(R.id.widget_route_concern_panel, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_metric_grid, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (expanded) View.VISIBLE else View.GONE)
       if (loading) {
         setTextViewText(R.id.widget_route_title, "Route Briefing")
         setTextViewText(R.id.widget_route_category, "--")
         setTextViewText(R.id.widget_route_detail, "Updating corridor")
-        setTextViewText(R.id.widget_route_concern, "Loading saved route weather.")
+        setTextViewText(R.id.widget_route_concern_panel, "Loading saved route weather.")
         setCounts("--", "--", "--", "--", "--", "--")
         setTextViewText(R.id.widget_footer, "Situational awareness only.")
         return@apply
@@ -37,7 +61,7 @@ class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_route_title, "Route Briefing")
         setTextViewText(R.id.widget_route_category, "--")
         setTextViewText(R.id.widget_route_detail, "No saved route")
-        setTextViewText(R.id.widget_route_concern, "Analyze a route in OMNIwx Aviation to pin corridor weather here.")
+        setTextViewText(R.id.widget_route_concern_panel, "Analyze a route in OMNIwx Aviation to pin corridor weather here.")
         setCounts("--", "--", "--", "--", "--", "--")
         setTextViewText(R.id.widget_footer, "Situational awareness only.")
         return@apply
@@ -46,7 +70,7 @@ class OmniwxRouteBriefingWidgetProvider : AppWidgetProvider() {
       setTextViewText(R.id.widget_route_title, route.title)
       setTextViewText(R.id.widget_route_category, route.category.uppercase())
       setTextViewText(R.id.widget_route_detail, route.detail)
-      setTextViewText(R.id.widget_route_concern, route.concern)
+      setTextViewText(R.id.widget_route_concern_panel, route.concern)
       setCounts(route.turbulence, route.icing, route.flightCategory, route.sigmet, route.cwa, route.pirep)
       setTextViewText(R.id.widget_footer, route.footer)
     }

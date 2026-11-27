@@ -15,7 +15,7 @@
     <TextView
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:text="CLIMO"
+      android:text="OMNIwx  •  ALMANAC"
       android:textColor="#7dd3fc"
       android:textSize="10sp"
       android:textStyle="bold" />
@@ -66,6 +66,7 @@
     android:scaleType="fitXY" />
 
   <LinearLayout
+    android:id="@+id/widget_summary_row"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="8dp"
@@ -112,6 +113,7 @@
     android:textStyle="bold" />
 
   <TextView
+    android:id="@+id/widget_divider"
     android:layout_width="match_parent"
     android:layout_height="1dp"
     android:layout_marginTop="7dp"

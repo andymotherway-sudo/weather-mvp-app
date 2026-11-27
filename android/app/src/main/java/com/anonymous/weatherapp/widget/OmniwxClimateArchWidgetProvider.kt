@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import java.text.SimpleDateFormat
@@ -19,14 +20,37 @@ class OmniwxClimateArchWidgetProvider : AppWidgetProvider() {
     OmniwxWidgetExecutor.execute {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, climo, loading = false))
+        appWidgetManager.updateAppWidget(
+          id,
+          buildViews(context, climo, appWidgetManager.omniwxWidgetSizeClass(id), loading = false),
+        )
       }
     }
   }
 
-  private fun buildViews(context: Context, climo: WidgetClimatology?, loading: Boolean): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    climo: WidgetClimatology?,
+    sizeClass: OmniwxWidgetSizeClass,
+    loading: Boolean,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_climate_arch).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/almanac"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      setViewVisibility(R.id.widget_arch_large, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_summary_row, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_records, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       setTextViewText(R.id.widget_month, monthLabel())
       setImageViewBitmap(R.id.widget_arch_large, OmniwxWidgetData.climateArchLargeBitmap(climo))
 

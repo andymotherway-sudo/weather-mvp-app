@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 import java.text.SimpleDateFormat
@@ -20,14 +21,36 @@ class OmniwxClimatologyWidgetProvider : AppWidgetProvider() {
     OmniwxWidgetExecutor.execute {
       val climo = runCatching { OmniwxWidgetData.fetchClimatology(context) }.getOrNull()
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, climo))
+        appWidgetManager.updateAppWidget(
+          id,
+          buildViews(context, climo, appWidgetManager.omniwxWidgetSizeClass(id)),
+        )
       }
     }
   }
 
-  private fun buildViews(context: Context, climo: WidgetClimatology?): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    climo: WidgetClimatology?,
+    sizeClass: OmniwxWidgetSizeClass,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_climatology).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/almanac"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      val expanded = sizeClass == OmniwxWidgetSizeClass.EXPANDED
+      setViewVisibility(R.id.widget_record_row, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_arch, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (expanded) View.VISIBLE else View.GONE)
       setTextViewText(R.id.widget_month, monthLabel())
       if (climo == null) {
         setTextViewText(R.id.widget_title, "Climatology")

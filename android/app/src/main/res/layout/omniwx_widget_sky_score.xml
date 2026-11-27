@@ -15,7 +15,7 @@
     <TextView
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:text="SKY SCORE"
+      android:text="OMNIwx  •  SKY SCORE"
       android:textColor="#93c5fd"
       android:textSize="10sp"
       android:textStyle="bold" />
@@ -28,7 +28,7 @@
       android:layout_weight="1"
       android:ellipsize="end"
       android:maxLines="1"
-      android:text="SkyScore"
+      android:text="Tonight"
       android:textColor="#f8fafc"
       android:textSize="16sp"
       android:textStyle="bold" />

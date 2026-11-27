@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -17,14 +18,37 @@ class OmniwxAirportBoardWidgetProvider : AppWidgetProvider() {
       // or nearest sensible station; the provider only maps that board to XML.
       val board = runCatching { OmniwxWidgetData.fetchAirportBoard(context) }.getOrNull()
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, board, loading = false))
+        appWidgetManager.updateAppWidget(
+          id,
+          buildViews(context, board, appWidgetManager.omniwxWidgetSizeClass(id), loading = false),
+        )
       }
     }
   }
 
-  private fun buildViews(context: Context, board: WidgetAirportBoard?, loading: Boolean): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    board: WidgetAirportBoard?,
+    sizeClass: OmniwxWidgetSizeClass,
+    loading: Boolean,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_airport_board).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      val expanded = sizeClass == OmniwxWidgetSizeClass.EXPANDED
+      setViewVisibility(R.id.widget_status_panel, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_metric_grid, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (expanded) View.VISIBLE else View.GONE)
       if (loading) {
         setTextViewText(R.id.widget_station, "Airport")
         setTextViewText(R.id.widget_airport_name, "Updating METAR")
