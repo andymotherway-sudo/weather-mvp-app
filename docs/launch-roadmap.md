@@ -1,6 +1,6 @@
 # OMNIwx Launch Roadmap
 
-Last reviewed: November 22, 2026
+Last reviewed: November 27, 2026
 
 This roadmap uses evidence gates, not promised dates. It supplements the canonical
 [production readiness plan](production-readiness-plan.md).
@@ -34,6 +34,28 @@ Exit: static checks pass and changes receive Sentry review.
 
 Exit: seven-day operational observation, representative-device evidence, no P0
 provider-rights blocker for the Free catalog, published accurate privacy/support.
+
+### Widget Request-Control Gate: Before Public Launch
+
+Target: complete before the planned public launch window, approximately February
+2027. The current Android widget cache and serialized refresh worker reduce
+duplicate calls, but widgets still have a direct Open-Meteo path. Move widget
+weather reads to a Worker endpoint that uses the shared forecast cache before
+public promotion or material user growth.
+
+- The app must never make a direct Open-Meteo request from an Android widget in
+  the production build; the Worker is the single app-facing weather boundary.
+- The Worker must coalesce identical location/unit requests, serve a bounded
+  stale response during an upstream failure, and expose a concise freshness age.
+- Instrument aggregate cache hit rate, upstream response/failure count, refresh
+  duration, and request count per active widget location. Do not record precise
+  user locations in analytics.
+- Exercise at least a current-conditions, radar, and Sky Score widget on a
+  physical Samsung and Pixel device through add, resize, manual refresh, reboot,
+  offline, and background-refresh paths.
+- Accept only if normal refreshes produce one cacheable Worker read per active
+  location per cadence, no uncontrolled provider fan-out, and stale/offline
+  states are clearly labeled rather than shown as current.
 
 ## Phase 2: Private Accounts Beta
 
