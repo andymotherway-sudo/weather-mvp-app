@@ -1,18 +1,25 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.295**
-Android version code: **10313**
+Release: **OMNIwx 1.1.296**
+Android version code: **10314**
 Track: **Closed testing / internal testing candidate**
-Date: **November 26, 2026**
+Date: **November 27, 2026**
 
 ## Play Console Paste Notes
 
-Redesigned responsive Android home-screen widgets and added a live Space
-Weather widget with cached NOAA SWPC Kp, solar-wind, Bz, and X-ray context.
+Redesigned the expanded Current + Radar widget with a radar-first dashboard,
+clearer weather controls, and an honest unavailable state when a live radar
+image cannot be loaded.
 
 ## Tester Notes
 
 Please focus on these areas:
+
+- Add or resize the Current + Radar widget to its largest size. Confirm it uses
+  the new full-radar composition with a compact top header and bottom weather
+  instrument panel, rather than the legacy stacked layout. If the radar image
+  cannot load, confirm it says so plainly and does not show synthetic rings as
+  though they are live radar.
 
 - Move among Land, Hourly, Almanac, Maps, Space, Nautical, Aviation, and
   Extremes. Verify shared loading, unavailable, and retry states are readable
@@ -193,7 +200,7 @@ Please focus on these areas:
 - Signing certificate SHA-256:
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76`
 
-## `1.1.295` Tester Focus
+## `1.1.296` Tester Focus
 
 - Add Current Conditions, Current + Radar, Sky Score, Aviation, Airport Board,
   Route Briefing, Climatology, Climate Arch, and Space Weather widgets on a
@@ -205,7 +212,7 @@ Please focus on these areas:
 
 ## Remaining Acceptance
 
-- Upload only version code `10313` to the intended Play internal-testing track.
+- Upload only version code `10314` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor
