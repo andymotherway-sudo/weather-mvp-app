@@ -35,6 +35,7 @@ class OmniwxWidgetRefreshReceiver : BroadcastReceiver() {
       OmniwxRouteBriefingWidgetProvider::class.java,
       OmniwxClimatologyWidgetProvider::class.java,
       OmniwxClimateArchWidgetProvider::class.java,
+      OmniwxSpaceWeatherWidgetProvider::class.java,
     )
 
     fun refreshAll(context: Context, force: Boolean = false): Boolean {

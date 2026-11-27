@@ -13,7 +13,7 @@
 | Climatology | Climate normals and records cache | Implemented | Future Plus presentation review |
 | Climate Arch | Climate-record visualization | Implemented | Future Plus presentation review |
 | Marine | No native provider or verified widget feed | Missing | Requires normalized marine and tide/buoy data contract |
-| Space weather | No native provider | Missing | Requires normalized Kp, solar wind, Bz and X-ray cache |
+| Space weather | Worker-cached NOAA SWPC Kp, solar wind, Bz, and X-ray summary | Implemented | Responsive visual refinement and physical-device validation |
 | Extremes | No native provider | Missing | Requires a licensed, normalized extremes feed |
 | Satellite | No native provider | Missing | Requires a small cached raster contract and coverage configuration |
 
@@ -44,7 +44,7 @@ RemoteViews limitations that affect the design:
 2. Next: native configuration activity and persistent settings for location, airport, theme, units, radar coverage, and visible metrics.
 3. Then: Airport Board and Route Briefing redesign, including METAR age, TAF-validity, and optional crosswind when runway metadata is defensible.
 4. Add Marine only after wave, tide, buoy, and warning normalization is verified.
-5. Add Space Weather, Satellite, and Extremes only after their data-cache contracts and licensing/cost posture are documented.
+5. Completed: Space Weather uses the Worker-cached NOAA SWPC summary and explicitly reports unavailable data. Add Satellite and Extremes only after their data-cache contracts and licensing/cost posture are documented.
 
 ## Validation Matrix
 

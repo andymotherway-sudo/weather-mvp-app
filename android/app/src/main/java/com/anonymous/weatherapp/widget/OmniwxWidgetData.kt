@@ -98,6 +98,14 @@ data class WidgetWeather(
   val hourlyTemperaturesF: List<Double> = emptyList(),
 )
 
+data class WidgetSpaceWeather(
+  val kp: Double?,
+  val solarWindSpeed: Double?,
+  val bzNt: Double?,
+  val xrayClass: String?,
+  val updatedLabel: String,
+)
+
 private data class CachedWidgetWeather(
   val key: String,
   val savedAtMs: Long,
@@ -870,6 +878,20 @@ object OmniwxWidgetData {
     }
     return bitmap
   }
+
+  fun fetchSpaceWeather(): WidgetSpaceWeather? = runCatching {
+    val root = fetchJsonObject("$OMNIWX_API_BASE/v1/space-weather/summary", "OMNIwx Android Widget")
+    if (!root.optBoolean("ok", false)) return@runCatching null
+    val imf = root.optJSONObject("imf")
+    val xray = root.optJSONObject("goesXray")
+    WidgetSpaceWeather(
+      kp = root.optDouble("kp", Double.NaN).takeIf(Double::isFinite),
+      solarWindSpeed = root.optDouble("solarWindSpeed", Double.NaN).takeIf(Double::isFinite),
+      bzNt = imf?.optDouble("bzGsmNt", Double.NaN)?.takeIf(Double::isFinite),
+      xrayClass = xray?.optString("classLabel")?.takeIf { it.isNotBlank() },
+      updatedLabel = root.optString("updatedAt").takeIf { it.isNotBlank() } ?: nowLabel(),
+    )
+  }.getOrNull()
 
   /** Draws the next few verified hourly temperatures for standard and expanded widgets. */
   fun hourlyTrendBitmap(weather: WidgetWeather?): Bitmap {

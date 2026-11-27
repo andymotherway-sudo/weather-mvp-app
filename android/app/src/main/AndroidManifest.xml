@@ -90,6 +90,12 @@
       </intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_climate_arch_info"/>
     </receiver>
+    <receiver android:name=".widget.OmniwxSpaceWeatherWidgetProvider" android:exported="false" android:label="OMNIwx Space Weather" android:process=":widgets">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+      </intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/omniwx_widget_space_weather_info"/>
+    </receiver>
     <receiver android:name=".widget.OmniwxWidgetRefreshReceiver" android:exported="false" android:process=":widgets">
       <intent-filter>
         <action android:name="com.anonymous.weatherapp.widget.REFRESH_WIDGETS"/>
