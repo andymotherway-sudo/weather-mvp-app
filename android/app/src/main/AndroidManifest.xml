@@ -2,6 +2,8 @@
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <uses-permission android:name="androidx.car.app.ACCESS_SURFACE"/>
   <uses-permission android:name="androidx.car.app.MAP_TEMPLATES"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -38,6 +40,7 @@
         <category android:name="androidx.car.app.category.WEATHER"/>
       </intent-filter>
     </service>
+    <service android:name=".video.OmniwxVideoExportForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>
     <service android:name=".widget.OmniwxWidgetRefreshJobService" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE" android:process=":widgets"/>
     <receiver android:name=".widget.OmniwxCurrentWidgetProvider" android:exported="false" android:label="OMNIwx Current" android:process=":widgets">
       <intent-filter>

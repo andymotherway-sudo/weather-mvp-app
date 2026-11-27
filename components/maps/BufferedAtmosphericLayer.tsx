@@ -45,6 +45,11 @@ type Props = {
   belowLayerID?: string;
   buildUrl: (frame: FrameLike, width: number, height: number) => string;
   onBufferStatus?: (status: AnimationBufferStatus) => void;
+  /**
+   * Reports source timestamps with a full-resolution local image. A parent can
+   * use this to keep multiple atmospheric products on one playback clock.
+   */
+  onReadyFrameIsosChange?: (isos: string[]) => void;
   onDisplayReady?: (ready: boolean) => void;
 };
 
@@ -106,10 +111,11 @@ export function BufferedAtmosphericLayer(props: Props) {
     previewMaxImageHeight,
     maxConcurrentDownloads = 2,
     belowLayerID,
-    buildUrl,
-    onBufferStatus,
-    onDisplayReady,
-  } = props;
+  buildUrl,
+  onBufferStatus,
+  onReadyFrameIsosChange,
+  onDisplayReady,
+} = props;
   const window = useWindowDimensions();
   const frameScale = frames.length >= 18 ? 1.02 : frames.length >= 12 ? 1.12 : 1.28;
   const deviceScale = Math.min(Math.max(1, PixelRatio.get()), Math.max(1, pixelRatioCap));
@@ -133,6 +139,7 @@ export function BufferedAtmosphericLayer(props: Props) {
   const previewHeight = Math.max(128, Math.round(imageHeight * previewScale));
   const buildUrlRef = useRef(buildUrl);
   const onBufferStatusRef = useRef(onBufferStatus);
+  const onReadyFrameIsosChangeRef = useRef(onReadyFrameIsosChange);
   const onDisplayReadyRef = useRef(onDisplayReady);
   const frameIndexRef = useRef(frameIndex);
   const opacityRef = useRef(opacity);
@@ -143,6 +150,9 @@ export function BufferedAtmosphericLayer(props: Props) {
   useEffect(() => {
     onBufferStatusRef.current = onBufferStatus;
   }, [onBufferStatus]);
+  useEffect(() => {
+    onReadyFrameIsosChangeRef.current = onReadyFrameIsosChange;
+  }, [onReadyFrameIsosChange]);
   useEffect(() => {
     onDisplayReadyRef.current = onDisplayReady;
   }, [onDisplayReady]);
@@ -375,6 +385,16 @@ export function BufferedAtmosphericLayer(props: Props) {
       failed,
     });
   }, [cachedUris, enabled, failedIds, requests]);
+
+  useEffect(() => {
+    if (!onReadyFrameIsosChangeRef.current) return;
+    const cachedRequestIds = new Set(cachedUris.keys());
+    const readyIsos = requests
+      .filter((request) => cachedRequestIds.has(request.requestId))
+      .map((request) => request.frame.iso)
+      .filter((iso, index, all) => all.indexOf(iso) === index);
+    onReadyFrameIsosChangeRef.current(readyIsos);
+  }, [cachedUris, requests]);
 
   const desiredIndex = clampIndex(frameIndex, requests.length);
   const desiredRequest = requests[desiredIndex] ?? null;

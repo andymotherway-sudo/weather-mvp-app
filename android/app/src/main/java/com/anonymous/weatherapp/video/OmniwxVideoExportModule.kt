@@ -78,6 +78,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     total: Int,
     message: String,
   ) {
+    OmniwxVideoExportForegroundService.update(reactContext, message)
     // Export remains native-side while the user continues using the app. These
     // events only update non-blocking React Native progress UI.
     val payload = Arguments.createMap().apply {
@@ -96,8 +97,13 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
   fun exportAnimation(options: ReadableMap, promise: Promise) {
     // Encoding and network downloads must not run on React Native's JS thread.
     // The Promise is resolved/rejected when this background worker finishes.
+    // This call originates from a button press, so Android permits starting
+    // foreground work before the user backgrounds the app.
+    OmniwxVideoExportForegroundService.start(reactContext)
     thread(name = "omniwx-video-export") {
       val jobId = options.optString("jobId", "export-${System.currentTimeMillis()}")
+      var completed = false
+      var completionMessage = "No video was saved. Open Maps to try again."
       try {
         val frames = readFrames(options.getArray("frames"))
         if (frames.size < 2) throw IllegalArgumentException("At least two animation frames are required.")
@@ -189,10 +195,15 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           putInt("frameCount", prepared.size)
         }
         emitProgress(jobId, "complete", 1, 1, "Video saved")
+        completed = true
+        completionMessage = "Your animation is ready in Movies/OMNIwx."
         promise.resolve(result)
       } catch (t: Throwable) {
-        emitProgress(jobId, "failed", 0, 1, t.message ?: "Video export failed")
-        promise.reject("OMNIWX_VIDEO_EXPORT_FAILED", t.message ?: "Video export failed.", t)
+        completionMessage = t.message ?: "Video export failed."
+        emitProgress(jobId, "failed", 0, 1, completionMessage)
+        promise.reject("OMNIWX_VIDEO_EXPORT_FAILED", completionMessage, t)
+      } finally {
+        OmniwxVideoExportForegroundService.finish(reactContext, completed, completionMessage)
       }
     }
   }

@@ -70,7 +70,6 @@ import { useWindVectorLayer } from '../lib/maps/useWindVectorLayer';
 import {
   canExportAnimationVideo,
   exportAnimationVideo,
-  notifyVideoExportResult,
   requestVideoExportNotificationPermission,
   type AnimationVideoExportProgress,
   type AnimationVideoFrame,
@@ -1451,6 +1450,8 @@ export default function MapsScreen() {
   const [radarBufferedPlaybackReady, setRadarBufferedPlaybackReady] = useState(false);
   const [satellitePrimaryBufferStatus, setSatellitePrimaryBufferStatus] = useState<AnimationBufferStatus | null>(null);
   const [satelliteSecondaryBufferStatus, setSatelliteSecondaryBufferStatus] = useState<AnimationBufferStatus | null>(null);
+  const [satellitePrimaryReadyFrameIsos, setSatellitePrimaryReadyFrameIsos] = useState<string[]>([]);
+  const [infraredReadyFrameIsos, setInfraredReadyFrameIsos] = useState<string[]>([]);
   const [satellitePrimaryReady, setSatellitePrimaryReady] = useState(false);
   const [satelliteSecondaryReady, setSatelliteSecondaryReady] = useState(false);
   const [animationExporting, setAnimationExporting] = useState(false);
@@ -1864,9 +1865,42 @@ export default function MapsScreen() {
     goesEastWvEnabled ||
     goesWestWvEnabled ||
     cloudsEnabled;
+  // GeoColor is the master when both catalog products are active. Do not let
+  // it advance by itself: a matched infrared frame must be fully local first.
+  const satellitePairReadyForNextFrame = useMemo(() => {
+    if (
+      !goesTrueColorEnabled ||
+      !goesEastIrEnabled ||
+      satellitePlaybackFrames.length < 2 ||
+      trueColorFrames.length < 2 ||
+      infraredFrames.length < 2
+    ) {
+      return true;
+    }
+
+    const nextIndex = (clampIndex(satelliteFrameIndex, satellitePlaybackFrames.length) + 1) % satellitePlaybackFrames.length;
+    const nextTrueColorFrame = satellitePlaybackFrames[nextIndex];
+    const infraredIndex = nearestFrameIndexByIso(infraredFrames, nextTrueColorFrame?.iso);
+    const nextInfraredFrame = infraredIndex >= 0 ? infraredFrames[infraredIndex] : null;
+    return !!(
+      nextTrueColorFrame &&
+      nextInfraredFrame &&
+      satellitePrimaryReadyFrameIsos.includes(nextTrueColorFrame.iso) &&
+      infraredReadyFrameIsos.includes(nextInfraredFrame.iso)
+    );
+  }, [
+    goesEastIrEnabled,
+    goesTrueColorEnabled,
+    infraredFrames,
+    infraredReadyFrameIsos,
+    satelliteFrameIndex,
+    satellitePlaybackFrames,
+    satellitePrimaryReadyFrameIsos,
+    trueColorFrames.length,
+  ]);
   const bufferedSatelliteCanAdvance =
     !bufferedSatelliteCandidate ||
-    (satellitePrimaryLeadReady && satelliteSecondaryLeadReady);
+    (satellitePrimaryLeadReady && satelliteSecondaryLeadReady && satellitePairReadyForNextFrame);
 
   useEffect(() => {
     if (!goesTrueColorEnabled) {
@@ -2939,6 +2973,8 @@ export default function MapsScreen() {
     setSatelliteSecondaryReady(false);
     setSatellitePrimaryBufferStatus(null);
     setSatelliteSecondaryBufferStatus(null);
+    setSatellitePrimaryReadyFrameIsos([]);
+    setInfraredReadyFrameIsos([]);
   }, [bufferedSatelliteKind]);
 
   const mapRadar = useMemo(() => {
@@ -4754,7 +4790,7 @@ export default function MapsScreen() {
     // This is a user-initiated export, so it is the appropriate moment to ask
     // for local-notification permission. A denied permission never blocks the
     // export itself.
-    const canNotifyWhenFinished = await requestVideoExportNotificationPermission();
+    await requestVideoExportNotificationPermission();
 
     setAnimationExporting(true);
     setAnimationExportStatus(`Preparing ${exportFrames.length} frames`);
@@ -4798,20 +4834,10 @@ export default function MapsScreen() {
         message: 'Video saved',
       });
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
-      if (canNotifyWhenFinished) {
-        await notifyVideoExportResult({ saved: true, width: result.width, height: result.height });
-      } else {
-        Alert.alert('Video saved', 'Your OMNIwx animation was saved to Movies/OMNIwx.');
-      }
     } catch (error: any) {
       const message = error?.message ?? 'The video export failed before it could be saved.';
       setAnimationExportStatus('Export failed');
       setAnimationExportProgress({ jobId: '', stage: 'failed', completed: 0, total: 1, message: 'Export failed' });
-      if (canNotifyWhenFinished) {
-        await notifyVideoExportResult({ saved: false, message });
-      } else {
-        Alert.alert('Could not save video', message);
-      }
     } finally {
       setAnimationExporting(false);
     }
@@ -4974,6 +5000,7 @@ export default function MapsScreen() {
                 )
               }
               onBufferStatus={setSatellitePrimaryBufferStatus}
+              onReadyFrameIsosChange={setSatellitePrimaryReadyFrameIsos}
               onDisplayReady={setSatellitePrimaryReady}
             />
           ) : null}
@@ -5025,6 +5052,7 @@ export default function MapsScreen() {
               transitionMode="cut"
               maxConcurrentDownloads={1}
               buildUrl={(frame, width, height) => buildAnimationUrl('goes-east-ir', frame, width, height)}
+              onReadyFrameIsosChange={setInfraredReadyFrameIsos}
             />
           ) : null}
           {bufferedSatelliteKind !== 'clouds' && cloudsEnabled && cloudCompositorFrames.length > 1 ? (
