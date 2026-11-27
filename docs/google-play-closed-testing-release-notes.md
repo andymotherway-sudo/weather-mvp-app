@@ -1,15 +1,15 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.291**
-Android version code: **10309**
+Release: **OMNIwx 1.1.292**
+Android version code: **10310**
 Track: **Closed testing / internal testing candidate**
 Date: **November 26, 2026**
 
 ## Play Console Paste Notes
 
-Improves cold map-video exports by matching image preparation to renderer
-capacity and allowing bounded retries. Border alignment remains label-free and
-projection-correct for country/continent and U.S. state outlines.
+Redesigned Android home-screen widgets with responsive layouts, real cached
+forecast trends, and richer weather detail across current conditions, radar,
+Sky Score, and aviation.
 
 ## Tester Notes
 
@@ -42,6 +42,14 @@ Please focus on these areas:
   buttons, and status messages should remain usable without clipped actions.
 - Change saved locations repeatedly and verify forecasts, timestamps, and
   location context update without retaining stale content from the prior place.
+- Add Current Conditions, Current + Radar, Sky Score, and Aviation widgets at
+  compact, standard, and expanded launcher sizes. Confirm compact layouts keep
+  the primary metric readable, while larger layouts reveal only verified cached
+  detail without clipping at large system font sizes.
+- Resize the Current Conditions widget. Confirm the six-point temperature
+  curve starts near the current local hour, and wind, humidity, and dew point
+  appear only on the expanded layout. Turn off connectivity and confirm cached
+  content is not presented as live after refresh fails.
 - In Maps, pan and zoom before changing products. Verify the camera remains
   stable and missing data is represented as unavailable rather than current.
 - Pan away from the selected or GPS location, then use the map `+` and `-`
@@ -85,8 +93,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.291`
-- Android version code: `10309`
+- App version: `1.1.292`
+- Android version code: `10310`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -114,9 +122,9 @@ Please focus on these areas:
 - The Worker shares the home-summary and hourly forecast cache key, reducing
   duplicate Open-Meteo requests. Its failure response remains privacy-safe and
   concise. No D1 migration or radar-publisher activation is part of this release.
-- This is an app-only video-export boundary-rendering correction. No Worker
-  deploy, production configuration change, D1 migration, or radar-publisher
-  activation is required.
+- This is an app-only native widget redesign. No Worker deploy, production
+  configuration change, D1 migration, or radar-publisher activation is
+  required. The existing widget refresh path remains serialized and cached.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
@@ -144,20 +152,13 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Built successfully with `npm run build:android:prod` on November 26, 2026.
-  The documented Windows Java local-TCP fallback was applied by the release
-  script, and the AAB was independently inspected after it completed.
-- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
-- Size: `170852214` bytes. Build timestamp: `2026-11-27T00:02:02Z`.
-- SHA-256: `7D6A9E5C687CDD8A9295297C67B10B47DB15673225EFF28D0347EF1E06403317`
-- Embedded configuration confirms app version `1.1.291`, Android version code
-  `10309`, build label `internal-test-aab-10309`, and the production Worker URL.
-- Signing certificate SHA-256:
-  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`
+- Pending the `1.1.292` production bundle build. Record its timestamp, size,
+  SHA-256, embedded configuration, and signing certificate here only after the
+  build completes and the artifact is inspected.
 
 ## Remaining Acceptance
 
-- Upload only version code `10309` to the intended Play internal-testing track.
+- Upload only version code `10310` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor
