@@ -895,7 +895,7 @@ object OmniwxWidgetData {
 
   /** Draws the next few verified hourly temperatures for standard and expanded widgets. */
   fun hourlyTrendBitmap(weather: WidgetWeather?): Bitmap {
-    val bitmap = Bitmap.createBitmap(640, 116, Bitmap.Config.ARGB_8888)
+    val bitmap = Bitmap.createBitmap(640, 144, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val temperatures = weather?.hourlyTemperaturesF?.filter(Double::isFinite).orEmpty()
     val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -911,7 +911,18 @@ object OmniwxWidgetData {
       strokeJoin = Paint.Join.ROUND
     }
     val point = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(254, 240, 138) }
-    listOf(24f, 58f, 92f).forEach { y -> canvas.drawLine(10f, y, 630f, y, grid) }
+    val temperatureText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(248, 250, 252)
+      textAlign = Paint.Align.CENTER
+      textSize = 20f
+      isFakeBoldText = true
+    }
+    val hourText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(186, 230, 253)
+      textAlign = Paint.Align.CENTER
+      textSize = 17f
+    }
+    listOf(30f, 64f, 98f).forEach { y -> canvas.drawLine(10f, y, 630f, y, grid) }
     if (temperatures.size < 2) return bitmap
 
     val minTemp = temperatures.minOrNull() ?: return bitmap
@@ -920,14 +931,24 @@ object OmniwxWidgetData {
     val path = android.graphics.Path()
     temperatures.forEachIndexed { index, value ->
       val x = 18f + (index.toFloat() / (temperatures.size - 1).toFloat()) * 604f
-      val y = 96f - (((value - minTemp) / span) * 68.0).toFloat()
+      val y = 100f - (((value - minTemp) / span) * 62.0).toFloat()
       if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     canvas.drawPath(path, line)
     temperatures.forEachIndexed { index, value ->
       val x = 18f + (index.toFloat() / (temperatures.size - 1).toFloat()) * 604f
-      val y = 96f - (((value - minTemp) / span) * 68.0).toFloat()
+      val y = 100f - (((value - minTemp) / span) * 62.0).toFloat()
       canvas.drawCircle(x, y, 5.5f, point)
+      canvas.drawText("${value.roundToInt()}°", x, (y - 10f).coerceAtLeast(19f), temperatureText)
+    }
+    val calendar = Calendar.getInstance()
+    calendar.set(Calendar.MINUTE, 0)
+    calendar.set(Calendar.SECOND, 0)
+    calendar.set(Calendar.MILLISECOND, 0)
+    temperatures.indices.forEach { index ->
+      if (index > 0) calendar.add(Calendar.HOUR_OF_DAY, 1)
+      val x = 18f + (index.toFloat() / (temperatures.size - 1).toFloat()) * 604f
+      canvas.drawText(SimpleDateFormat("ha", Locale.US).format(calendar.time).lowercase(Locale.US), x, 132f, hourText)
     }
     return bitmap
   }

@@ -37,7 +37,14 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
     weatherError: String? = null,
     sizeClass: OmniwxWidgetSizeClass = OmniwxWidgetSizeClass.STANDARD,
   ): RemoteViews {
-    return RemoteViews(context.packageName, R.layout.omniwx_widget_current_radar).apply {
+    // A 4x2 launcher slot needs a horizontal dashboard, while the tall layout
+    // preserves radar as the hero when a user expands to 4x4.
+    val layout = when (sizeClass) {
+      OmniwxWidgetSizeClass.COMPACT -> R.layout.omniwx_widget_current_radar_compact
+      OmniwxWidgetSizeClass.STANDARD -> R.layout.omniwx_widget_current_radar_wide
+      OmniwxWidgetSizeClass.EXPANDED -> R.layout.omniwx_widget_current_radar
+    }
+    return RemoteViews(context.packageName, layout).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/maps"))
       setOnClickPendingIntent(R.id.widget_refresh, OmniwxWidgetData.refreshIntent(context))
       val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT

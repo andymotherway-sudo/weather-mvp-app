@@ -35,7 +35,12 @@ class OmniwxAviationWidgetProvider : AppWidgetProvider() {
     briefing: WidgetAviationBriefing?,
     sizeClass: OmniwxWidgetSizeClass,
   ): RemoteViews {
-    return RemoteViews(context.packageName, R.layout.omniwx_widget_aviation).apply {
+    val layout = if (sizeClass == OmniwxWidgetSizeClass.STANDARD) {
+      R.layout.omniwx_widget_aviation_wide
+    } else {
+      R.layout.omniwx_widget_aviation
+    }
+    return RemoteViews(context.packageName, layout).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
       val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
       setViewVisibility(R.id.widget_metrics, if (compact) View.GONE else View.VISIBLE)

@@ -1,7 +1,7 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.294**
-Android version code: **10312**
+Release: **OMNIwx 1.1.295**
+Android version code: **10313**
 Track: **Closed testing / internal testing candidate**
 Date: **November 26, 2026**
 
@@ -96,8 +96,8 @@ Please focus on these areas:
 
 ## Internal Release Checklist
 
-- App version: `1.1.294`
-- Android version code: `10312`
+- App version: `1.1.295`
+- Android version code: `10313`
 - Intended backend environment: `production`
 - AAB path: `android/app/build/outputs/bundle/release/app-release.aab`
 - TypeScript check: `npx tsc --noEmit`
@@ -127,10 +127,12 @@ Please focus on these areas:
   concise. No D1 migration or radar-publisher activation is part of this release.
 - This is an app-only native widget redesign. The existing widget suite now
   shares OMNIwx headers and progressive compact, balanced, and detailed
-  layouts, including Airport Board, Route Briefing, Climatology, and Climate
-  Arch resize behavior. No Worker deploy, production configuration change, D1
-  migration, or radar-publisher activation is required. The existing widget
-  refresh path remains serialized and cached.
+  layouts. Current + Radar and Sky Score now use separate compact, balanced,
+  and detailed native compositions; Aviation can now be placed at 2x2 and uses
+  a dedicated balanced dashboard. Current Conditions now renders labeled
+  six-hour forecast values from its existing cache. No Worker deploy,
+  production configuration change, D1 migration, or radar-publisher activation
+  is required. The existing widget refresh path remains serialized and cached.
 - Before Play upload, verify the production Worker and renew `NOAA_NCEI_TOKEN`
   if records are expected to work.
 
@@ -180,7 +182,7 @@ Please focus on these areas:
 - Signing certificate SHA-256:
   `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76`
 
-## `1.1.294` Tester Focus
+## `1.1.295` Tester Focus
 
 - Add Current Conditions, Current + Radar, Sky Score, Aviation, Airport Board,
   Route Briefing, Climatology, Climate Arch, and Space Weather widgets on a
@@ -192,7 +194,7 @@ Please focus on these areas:
 
 ## Remaining Acceptance
 
-- Upload only version code `10312` to the intended Play internal-testing track.
+- Upload only version code `10313` to the intended Play internal-testing track.
 - Install the Play-delivered build on physical Android devices.
 - Complete the tester checks above, with Maps and imagery playback treated as
   the highest-risk acceptance area. Specifically verify a five-hour GeoColor

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/widget_root"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@drawable/omniwx_widget_background"
+  android:orientation="vertical">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:text="OMNIwx  •  RADAR"
+      android:textColor="#7dd3fc"
+      android:textSize="10sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_title"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:layout_weight="1"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:text="OMNIwx"
+      android:textColor="#f8fafc"
+      android:textSize="13sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_refresh"
+      android:layout_width="30dp"
+      android:layout_height="24dp"
+      android:background="@drawable/omniwx_widget_chip"
+      android:gravity="center"
+      android:text="&#8635;"
+      android:textColor="#ffffff"
+      android:textSize="13sp"
+      android:textStyle="bold" />
+  </LinearLayout>
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_marginTop="7dp"
+    android:layout_weight="1"
+    android:orientation="horizontal">
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_weight="0.85"
+      android:background="@drawable/omniwx_widget_panel"
+      android:gravity="center"
+      android:orientation="vertical">
+
+      <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+          android:id="@+id/widget_icon"
+          android:layout_width="43dp"
+          android:layout_height="43dp"
+          android:contentDescription="@null" />
+
+        <TextView
+          android:id="@+id/widget_temp"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:text="--"
+          android:textColor="#ffffff"
+          android:textSize="36sp"
+          android:textStyle="bold" />
+      </LinearLayout>
+
+      <LinearLayout
+        android:id="@+id/widget_detail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+          android:id="@+id/widget_condition"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:ellipsize="end"
+          android:gravity="center"
+          android:maxLines="1"
+          android:text="Current conditions"
+          android:textColor="#ffffff"
+          android:textSize="11sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/widget_phrase"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:ellipsize="end"
+          android:gravity="center"
+          android:maxLines="1"
+          android:text="Weather phrase"
+          android:textColor="#dbeafe"
+          android:textSize="9sp" />
+
+        <TextView
+          android:id="@+id/widget_wind"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:ellipsize="end"
+          android:gravity="center"
+          android:maxLines="1"
+          android:text="Wind --"
+          android:textColor="#bae6fd"
+          android:textSize="9sp" />
+      </LinearLayout>
+    </LinearLayout>
+
+    <ImageView
+      android:id="@+id/widget_radar"
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_marginStart="8dp"
+      android:layout_weight="1.35"
+      android:background="@drawable/omniwx_widget_panel"
+      android:contentDescription="@null"
+      android:scaleType="centerCrop" />
+  </LinearLayout>
+
+  <LinearLayout
+    android:id="@+id/widget_range_line"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:orientation="horizontal">
+
+    <TextView
+      android:id="@+id/widget_low"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:text="Low --"
+      android:textColor="#bfdbfe"
+      android:textSize="9sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_range"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:gravity="center"
+      android:text="Now --"
+      android:textColor="#ffffff"
+      android:textSize="9sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/widget_high"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:gravity="end"
+      android:text="High --"
+      android:textColor="#fecaca"
+      android:textSize="9sp"
+      android:textStyle="bold" />
+  </LinearLayout>
+
+  <TextView
+    android:id="@+id/widget_footer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="3dp"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:text="Tap refresh for latest radar snapshot"
+    android:textColor="#cbd5e1"
+    android:textSize="8sp" />
+</LinearLayout>

@@ -41,7 +41,14 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
     sky: WidgetSkyScore?,
     sizeClass: OmniwxWidgetSizeClass,
   ): RemoteViews {
-    return RemoteViews(context.packageName, R.layout.omniwx_widget_sky_score).apply {
+    // The wide card mirrors the launcher-friendly 4x2 dashboard; retain the
+    // taller composition when users expand it for cloud detail.
+    val layout = when (sizeClass) {
+      OmniwxWidgetSizeClass.COMPACT -> R.layout.omniwx_widget_sky_score_compact
+      OmniwxWidgetSizeClass.STANDARD -> R.layout.omniwx_widget_sky_score_wide
+      OmniwxWidgetSizeClass.EXPANDED -> R.layout.omniwx_widget_sky_score
+    }
+    return RemoteViews(context.packageName, layout).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))
       val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
       setViewVisibility(R.id.widget_cloud_grid, if (compact) View.GONE else View.VISIBLE)

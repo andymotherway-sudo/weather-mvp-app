@@ -87,7 +87,7 @@
   <ImageView
     android:id="@+id/widget_trend"
     android:layout_width="match_parent"
-    android:layout_height="42dp"
+    android:layout_height="54dp"
     android:layout_marginTop="4dp"
     android:contentDescription="@null"
     android:scaleType="fitXY" />
