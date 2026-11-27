@@ -155,9 +155,14 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
-- Pending the `1.1.293` production bundle build. Record its timestamp, size,
-  SHA-256, embedded configuration, and signing certificate here only after the
-  build completes and the artifact is inspected.
+- Built successfully with `npm run build:android:prod` on November 26, 2026.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170865743` bytes. Build timestamp: `2026-11-27T04:18:44Z`.
+- SHA-256: `EDD4FECBB0B893FFBFC209A7D16701ABC78A2EC917EE8235A692A94093BF362B`
+- Embedded configuration confirms app version `1.1.293`, Android version code
+  `10311`, build label `internal-test-aab-10311`, and the production Worker URL.
+- Signing certificate SHA-256:
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76`
 
 ## Remaining Acceptance
 
