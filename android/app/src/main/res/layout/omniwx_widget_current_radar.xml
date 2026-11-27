@@ -1,179 +1,211 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
   android:id="@+id/widget_root"
   android:layout_width="match_parent"
   android:layout_height="match_parent"
-  android:background="@drawable/omniwx_widget_background"
-  android:orientation="vertical">
-
-  <LinearLayout
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:gravity="center_vertical"
-    android:orientation="horizontal">
-
-    <TextView
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:text="OMNIwx  •  RADAR"
-      android:textColor="#7dd3fc"
-      android:textSize="10sp"
-      android:textStyle="bold" />
-
-    <TextView
-      android:id="@+id/widget_title"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_marginStart="8dp"
-      android:layout_weight="1"
-      android:ellipsize="end"
-      android:maxLines="1"
-      android:text="OMNIwx"
-      android:textColor="#f8fafc"
-      android:textSize="15sp"
-      android:textStyle="bold" />
-
-    <TextView
-      android:id="@+id/widget_refresh"
-      android:layout_width="34dp"
-      android:layout_height="28dp"
-      android:background="@drawable/omniwx_widget_chip"
-      android:gravity="center"
-      android:text="&#8635;"
-      android:textColor="#ffffff"
-      android:textSize="15sp"
-      android:textStyle="bold" />
-  </LinearLayout>
-
-  <LinearLayout
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="8dp"
-    android:gravity="center_vertical"
-    android:orientation="horizontal">
-
-    <TextView
-      android:id="@+id/widget_temp"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:includeFontPadding="false"
-      android:text="--"
-      android:textColor="#ffffff"
-      android:textSize="46sp"
-      android:textStyle="bold" />
-
-    <ImageView
-      android:id="@+id/widget_icon"
-      android:layout_width="48dp"
-      android:layout_height="48dp"
-      android:layout_marginStart="7dp"
-      android:contentDescription="@null" />
-
-    <LinearLayout
-      android:id="@+id/widget_detail"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_marginStart="9dp"
-      android:layout_weight="1"
-      android:orientation="vertical">
-
-      <TextView
-        android:id="@+id/widget_condition"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="Current conditions"
-        android:textColor="#ffffff"
-        android:textSize="15sp"
-        android:textStyle="bold" />
-
-      <TextView
-        android:id="@+id/widget_phrase"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:text="Weather phrase"
-        android:textColor="#dbeafe"
-        android:textSize="11sp"
-        android:textStyle="bold" />
-
-      <TextView
-        android:id="@+id/widget_wind"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="H/L -- / --  Wind --  Dew --"
-        android:textColor="#bae6fd"
-        android:textSize="11sp" />
-    </LinearLayout>
-  </LinearLayout>
-
-  <LinearLayout
-    android:id="@+id/widget_range_line"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="7dp"
-    android:background="@drawable/omniwx_widget_panel"
-    android:gravity="center_vertical"
-    android:orientation="horizontal">
-
-    <TextView
-      android:id="@+id/widget_low"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_weight="1"
-      android:gravity="start"
-      android:text="Low --"
-      android:textColor="#bfdbfe"
-      android:textSize="10sp"
-      android:textStyle="bold" />
-
-    <TextView
-      android:id="@+id/widget_range"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_weight="1.35"
-      android:gravity="center"
-      android:text="Now --"
-      android:textColor="#ffffff"
-      android:textSize="11sp"
-      android:textStyle="bold" />
-
-    <TextView
-      android:id="@+id/widget_high"
-      android:layout_width="0dp"
-      android:layout_height="wrap_content"
-      android:layout_weight="1"
-      android:gravity="end"
-      android:text="High --"
-      android:textColor="#fecaca"
-      android:textSize="10sp"
-      android:textStyle="bold" />
-  </LinearLayout>
+  android:background="@drawable/omniwx_widget_background">
 
   <ImageView
     android:id="@+id/widget_radar"
     android:layout_width="match_parent"
-    android:layout_height="0dp"
-    android:layout_marginTop="8dp"
-    android:layout_weight="1"
-    android:background="@drawable/omniwx_widget_panel"
+    android:layout_height="match_parent"
     android:contentDescription="@null"
-    android:scaleType="fitXY" />
+    android:scaleType="centerCrop" />
 
-  <TextView
-    android:id="@+id/widget_footer"
+  <View
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginTop="6dp"
-    android:ellipsize="end"
-    android:maxLines="1"
-    android:text="Tap refresh for latest radar snapshot"
-    android:textColor="#cbd5e1"
-    android:textSize="9sp" />
-</LinearLayout>
+    android:layout_height="match_parent"
+    android:background="@drawable/omniwx_widget_radar_scrim" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:background="@drawable/omniwx_widget_radar_header"
+      android:gravity="center_vertical"
+      android:orientation="horizontal"
+      android:paddingStart="10dp"
+      android:paddingTop="7dp"
+      android:paddingEnd="7dp"
+      android:paddingBottom="7dp">
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="OMNIwx"
+        android:textColor="#E0F2FE"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="RADAR"
+        android:textColor="#38BDF8"
+        android:textSize="9sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="9dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="OMNIwx"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_refresh"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:background="@drawable/omniwx_widget_chip"
+        android:gravity="center"
+        android:text="&#8635;"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+
+    <Space
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1" />
+
+    <LinearLayout
+      android:id="@+id/widget_detail"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:background="@drawable/omniwx_widget_radar_bottom"
+      android:gravity="center_vertical"
+      android:orientation="horizontal"
+      android:padding="10dp">
+
+      <ImageView
+        android:id="@+id/widget_icon"
+        android:layout_width="45dp"
+        android:layout_height="45dp"
+        android:contentDescription="@null" />
+
+      <TextView
+        android:id="@+id/widget_temp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="3dp"
+        android:includeFontPadding="false"
+        android:text="--"
+        android:textColor="#FFFFFF"
+        android:textSize="35sp"
+        android:textStyle="bold" />
+
+      <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="9dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+          android:id="@+id/widget_condition"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:ellipsize="end"
+          android:maxLines="1"
+          android:text="Current conditions"
+          android:textColor="#FFFFFF"
+          android:textSize="13sp"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/widget_phrase"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:ellipsize="end"
+          android:maxLines="1"
+          android:text="Weather phrase"
+          android:textColor="#D5E8F7"
+          android:textSize="10sp" />
+
+        <TextView
+          android:id="@+id/widget_wind"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:ellipsize="end"
+          android:maxLines="1"
+          android:text="Wind --"
+          android:textColor="#7DD3FC"
+          android:textSize="10sp"
+          android:textStyle="bold" />
+      </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+      android:id="@+id/widget_range_line"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:background="@drawable/omniwx_widget_radar_scale"
+      android:gravity="center_vertical"
+      android:orientation="horizontal"
+      android:paddingStart="10dp"
+      android:paddingTop="5dp"
+      android:paddingEnd="10dp"
+      android:paddingBottom="5dp">
+
+      <TextView
+        android:id="@+id/widget_low"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Low --"
+        android:textColor="#BAE6FD"
+        android:textSize="9sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_range"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="Now --"
+        android:textColor="#FFFFFF"
+        android:textSize="9sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/widget_high"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="end"
+        android:text="High --"
+        android:textColor="#FECACA"
+        android:textSize="9sp"
+        android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/widget_footer"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="4dp"
+      android:ellipsize="end"
+      android:gravity="center"
+      android:maxLines="1"
+      android:text="Live radar"
+      android:textColor="#D7F4FF"
+      android:textSize="9sp"
+      android:textStyle="bold" />
+  </LinearLayout>
+</FrameLayout>

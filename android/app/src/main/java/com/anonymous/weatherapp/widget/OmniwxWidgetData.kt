@@ -1180,37 +1180,34 @@ object OmniwxWidgetData {
       }
     }
 
-    // Keep launcher updates cheap. Live tile composites can require dozens of
-    // network bitmap decodes during a widget refresh, which can make the
-    // foreground app feel sluggish on some devices.
+    return radarUnavailableBitmap(place?.name)
+  }
+
+  private fun radarUnavailableBitmap(placeName: String?): Bitmap {
     val bitmap = Bitmap.createBitmap(720, 360, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-      color = Color.rgb(5, 17, 36)
-      style = Paint.Style.FILL
-    }
-    canvas.drawRect(0f, 0f, 720f, 360f, bg)
+    canvas.drawColor(Color.rgb(4, 15, 31))
     val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
       color = Color.rgb(56, 189, 248)
-      alpha = 38
+      alpha = 18
       strokeWidth = 2f
     }
     for (x in 0..720 step 72) canvas.drawLine(x.toFloat(), 0f, x.toFloat(), 360f, grid)
     for (y in 0..360 step 60) canvas.drawLine(0f, y.toFloat(), 720f, y.toFloat(), grid)
-    val precipCode = weather?.weatherCode ?: -1
-    val activePrecip = precipCode in listOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99)
-    if (activePrecip) {
-      val colors = listOf(Color.rgb(34, 197, 94), Color.rgb(234, 179, 8), Color.rgb(249, 115, 22), Color.rgb(239, 68, 68))
-      colors.forEachIndexed { idx, color ->
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-          this.color = color
-          alpha = 160 - idx * 18
-          style = Paint.Style.FILL
-        }
-        canvas.drawOval(RectF(420f + idx * 18f, 72f + idx * 18f, 650f - idx * 8f, 260f - idx * 2f), p)
-      }
+    val title = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(226, 245, 255)
+      textSize = 28f
+      typeface = android.graphics.Typeface.DEFAULT_BOLD
+      textAlign = Paint.Align.CENTER
     }
-    drawRadarWidgetOverlays(canvas, place?.name ?: "OMNIwx", weather, hasLiveTiles = false)
+    val detail = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(125, 211, 252)
+      textSize = 18f
+      textAlign = Paint.Align.CENTER
+    }
+    canvas.drawText("Radar image unavailable", 360f, 164f, title)
+    canvas.drawText("Tap refresh or open Maps", 360f, 198f, detail)
+    placeName?.takeIf { it.isNotBlank() }?.let { canvas.drawText(it, 360f, 232f, detail) }
     return bitmap
   }
 
