@@ -316,6 +316,14 @@ object OmniwxWidgetData {
       ?.takeIf { it.key == cacheKey && now - it.savedAtMs in 0..WIDGET_WEATHER_CACHE_TTL_MS }
       ?.let { return it.weather }
 
+    // Launcher callbacks can outlive the app process. Reuse a fresh persisted
+    // snapshot as well, so adding/resizing several widgets after a process
+    // restart does not create a second upstream weather request.
+    readCachedWidgetWeather(context, place, WIDGET_WEATHER_CACHE_TTL_MS)?.let { cached ->
+      weatherCache = CachedWidgetWeather(cacheKey, now, cached)
+      return cached
+    }
+
     val weather = try {
       fetchWeatherFresh(place).also {
         saveCachedWidgetWeather(context, it)
@@ -470,14 +478,18 @@ object OmniwxWidgetData {
     editor.commit()
   }
 
-  private fun readCachedWidgetWeather(context: Context, place: WidgetPlace): WidgetWeather? {
+  private fun readCachedWidgetWeather(
+    context: Context,
+    place: WidgetPlace,
+    maxAgeMs: Long = 6L * 60L * 60L * 1000L,
+  ): WidgetWeather? {
     val raw = widgetPrefs(context).getString(LAST_WEATHER_JSON, null)
       ?: return null
     return runCatching {
       val root = JSONObject(raw)
       if (root.optString("key") != weatherCacheKey(place)) return@runCatching null
       val savedAtMs = root.optLong("savedAtMs", 0L)
-      if (savedAtMs <= 0L || System.currentTimeMillis() - savedAtMs > 6L * 60L * 60L * 1000L) return@runCatching null
+      if (savedAtMs <= 0L || System.currentTimeMillis() - savedAtMs > maxAgeMs) return@runCatching null
       val cachedPlace = root.optJSONObject("place")?.let { placeFromJson(it) } ?: place
       WidgetWeather(
         place = cachedPlace,
