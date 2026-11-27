@@ -40,7 +40,7 @@ RemoteViews limitations that affect the design:
 
 ## Delivery Sequence
 
-1. Completed in this change: shared size classes and responsive migrations for Current, Radar, Sky Score, and Aviation.
+1. Completed: shared size classes and responsive migrations for Current, Radar, Sky Score, and Aviation. Current Conditions now adds a cached six-point, near-term temperature trend at standard and expanded sizes, with wind, humidity, and dew point at expanded size. This extends its existing forecast request rather than adding a second polling path.
 2. Next: native configuration activity and persistent settings for location, airport, theme, units, radar coverage, and visible metrics.
 3. Then: Airport Board and Route Briefing redesign, including METAR age, TAF-validity, and optional crosswind when runway metadata is defensible.
 4. Add Marine only after wave, tide, buoy, and warning normalization is verified.

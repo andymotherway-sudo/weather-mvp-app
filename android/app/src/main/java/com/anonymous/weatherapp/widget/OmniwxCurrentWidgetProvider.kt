@@ -47,8 +47,12 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
       setOnClickPendingIntent(R.id.widget_brand, OmniwxWidgetData.refreshIntent(context))
       val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      val expanded = sizeClass == OmniwxWidgetSizeClass.EXPANDED
       setViewVisibility(R.id.widget_high, if (compact) View.GONE else View.VISIBLE)
       setViewVisibility(R.id.widget_low, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_metrics, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_trend, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_detail_metrics, if (expanded) View.VISIBLE else View.GONE)
       setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
       setViewVisibility(R.id.widget_tertiary, if (compact) View.GONE else View.VISIBLE)
       setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
@@ -64,6 +68,7 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
         )
         setTextViewText(R.id.widget_footer, "--")
         setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(-1))
+        setImageViewBitmap(R.id.widget_trend, OmniwxWidgetData.hourlyTrendBitmap(null))
       } else {
         setTextViewText(R.id.widget_title, weather.place.name)
         setTextViewText(R.id.widget_primary, "${weather.temperatureF.roundLabel()}")
@@ -76,6 +81,10 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
         )
         setTextViewText(R.id.widget_footer, weather.updatedLabel)
         setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(weather.weatherCode))
+        setImageViewBitmap(R.id.widget_trend, OmniwxWidgetData.hourlyTrendBitmap(weather))
+        setTextViewText(R.id.widget_wind_metric, "${windDirectionLabel(weather.windDirectionDeg)} ${weather.windMph.roundLabel()} mph")
+        setTextViewText(R.id.widget_humidity_metric, "RH ${weather.humidityPct.roundLabel()}%")
+        setTextViewText(R.id.widget_dew_metric, "Dew ${weather.dewPointF.roundLabel()}°")
       }
     }
   }

@@ -28,6 +28,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.ln
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -94,6 +95,7 @@ data class WidgetWeather(
   val cloudPct: Double,
   val weatherCode: Int,
   val updatedLabel: String,
+  val hourlyTemperaturesF: List<Double> = emptyList(),
 )
 
 private data class CachedWidgetWeather(
@@ -354,6 +356,7 @@ object OmniwxWidgetData {
         "&longitude=${place.lon}" +
         "&current=temperature_2m,apparent_temperature,dew_point_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,visibility,relative_humidity_2m,cloud_cover" +
         "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+        "&hourly=temperature_2m" +
         "&temperature_unit=fahrenheit" +
         "&wind_speed_unit=mph" +
         "&timezone=auto" +
@@ -362,6 +365,8 @@ object OmniwxWidgetData {
     val root = fetchJsonObject(url, "OMNIwx Android Widget")
     val current = root.getJSONObject("current")
     val daily = root.optJSONObject("daily")
+    val hourly = root.optJSONObject("hourly")
+    val hourlyStart = hourly?.optJSONArray("time").widgetHourlyStart(current.optString("time"))
 
     return WidgetWeather(
       place = place,
@@ -378,6 +383,7 @@ object OmniwxWidgetData {
       cloudPct = current.optDouble("cloud_cover", Double.NaN),
       weatherCode = current.optInt("weather_code", -1),
       updatedLabel = nowLabel(),
+      hourlyTemperaturesF = hourly?.optJSONArray("temperature_2m").widgetDoubles(start = hourlyStart, limit = 6) ?: emptyList(),
     )
   }
 
@@ -429,6 +435,7 @@ object OmniwxWidgetData {
       .put("cloudPct", weather.cloudPct)
       .put("weatherCode", weather.weatherCode)
       .put("updatedLabel", weather.updatedLabel)
+      .put("hourlyTemperaturesF", JSONArray(weather.hourlyTemperaturesF))
 
     widgetPrefs(context)
       .edit()
@@ -479,6 +486,7 @@ object OmniwxWidgetData {
         cloudPct = root.optDouble("cloudPct", Double.NaN),
         weatherCode = root.optInt("weatherCode", -1),
         updatedLabel = root.optString("updatedLabel", "recent cache"),
+        hourlyTemperaturesF = root.optJSONArray("hourlyTemperaturesF").widgetDoubles(limit = 6),
       )
     }.getOrNull()
   }
@@ -859,6 +867,45 @@ object OmniwxWidgetData {
       val sweep = (score.coerceIn(0, 100) / 100f) * 360f
       canvas.drawArc(rect, -90f, sweep, false, glow)
       canvas.drawArc(rect, -90f, sweep, false, arc)
+    }
+    return bitmap
+  }
+
+  /** Draws the next few verified hourly temperatures for standard and expanded widgets. */
+  fun hourlyTrendBitmap(weather: WidgetWeather?): Bitmap {
+    val bitmap = Bitmap.createBitmap(640, 116, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val temperatures = weather?.hourlyTemperaturesF?.filter(Double::isFinite).orEmpty()
+    val grid = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(56, 189, 248)
+      alpha = 48
+      strokeWidth = 1.5f
+    }
+    val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(250, 204, 21)
+      style = Paint.Style.STROKE
+      strokeWidth = 5f
+      strokeCap = Paint.Cap.ROUND
+      strokeJoin = Paint.Join.ROUND
+    }
+    val point = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(254, 240, 138) }
+    listOf(24f, 58f, 92f).forEach { y -> canvas.drawLine(10f, y, 630f, y, grid) }
+    if (temperatures.size < 2) return bitmap
+
+    val minTemp = temperatures.minOrNull() ?: return bitmap
+    val maxTemp = temperatures.maxOrNull() ?: return bitmap
+    val span = (maxTemp - minTemp).takeIf { it >= 2.0 } ?: 2.0
+    val path = android.graphics.Path()
+    temperatures.forEachIndexed { index, value ->
+      val x = 18f + (index.toFloat() / (temperatures.size - 1).toFloat()) * 604f
+      val y = 96f - (((value - minTemp) / span) * 68.0).toFloat()
+      if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    canvas.drawPath(path, line)
+    temperatures.forEachIndexed { index, value ->
+      val x = 18f + (index.toFloat() / (temperatures.size - 1).toFloat()) * 604f
+      val y = 96f - (((value - minTemp) / span) * 68.0).toFloat()
+      canvas.drawCircle(x, y, 5.5f, point)
     }
     return bitmap
   }
@@ -1922,6 +1969,19 @@ private fun drawSun(canvas: Canvas, cx: Float, cy: Float, radius: Float, fill: P
     val x2 = cx + ((radius + 23f) * cos(angle)).toFloat()
     val y2 = cy + ((radius + 23f) * sin(angle)).toFloat()
     canvas.drawLine(x1, y1, x2, y2, ray)
+  }
+}
+
+private fun JSONArray?.widgetHourlyStart(currentTime: String): Int {
+  if (this == null || currentTime.length < 13) return 0
+  val currentHour = currentTime.take(13)
+  return (0 until length()).firstOrNull { index -> optString(index).take(13) == currentHour } ?: 0
+}
+
+private fun JSONArray?.widgetDoubles(start: Int = 0, limit: Int): List<Double> {
+  if (this == null) return emptyList()
+  return (start.coerceIn(0, length()) until min(length(), start.coerceAtLeast(0) + limit)).mapNotNull { index ->
+    optDouble(index, Double.NaN).takeIf(Double::isFinite)
   }
 }
 
