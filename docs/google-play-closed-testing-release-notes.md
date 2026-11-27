@@ -167,6 +167,17 @@ Please focus on these areas:
 
 ## Built Artifact Evidence
 
+### `1.1.296` Artifact
+
+- Built successfully with `npm run build:android:prod` on November 27, 2026.
+- AAB: `android/app/build/outputs/bundle/release/app-release.aab`
+- Size: `170879554` bytes. Build timestamp: `2026-11-27T23:42:32Z`.
+- SHA-256: `89E9C35B63E5FC7D937117D265DE904F8F08358AD79D6972D8258B0B44AC4ED6`
+- Embedded configuration confirms app version `1.1.296`, Android version code
+  `10314`, build label `internal-test-aab-10314`, and the production Worker URL.
+- Signing certificate SHA-256:
+  `46:F8:21:65:2A:F8:43:54:F1:34:25:F4:27:E0:74:3F:A2:CE:1C:C9:B4:2A:AA:F6:71:BE:6D:74:EE:1F:76:6B`
+
 ### `1.1.295` Artifact
 
 - Built successfully with `npm run build:android:prod` on November 27, 2026.
