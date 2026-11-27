@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -15,14 +16,31 @@ class OmniwxAviationWidgetProvider : AppWidgetProvider() {
     OmniwxWidgetExecutor.execute {
       val briefing = runCatching { OmniwxWidgetData.fetchAviationBriefing(context) }.getOrNull()
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, briefing))
+        appWidgetManager.updateAppWidget(id, buildViews(context, briefing, appWidgetManager.omniwxWidgetSizeClass(id)))
       }
     }
   }
 
-  private fun buildViews(context: Context, briefing: WidgetAviationBriefing?): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    briefing: WidgetAviationBriefing?,
+    sizeClass: OmniwxWidgetSizeClass,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_aviation).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/aviation"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      setViewVisibility(R.id.widget_metrics, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       if (briefing == null) {
         setTextViewText(R.id.widget_title, "Aviation")
         setTextViewText(R.id.widget_primary, "--")

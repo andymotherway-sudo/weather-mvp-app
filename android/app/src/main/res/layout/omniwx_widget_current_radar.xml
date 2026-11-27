@@ -70,6 +70,7 @@
       android:contentDescription="@null" />
 
     <LinearLayout
+      android:id="@+id/widget_detail"
       android:layout_width="0dp"
       android:layout_height="wrap_content"
       android:layout_marginStart="9dp"

@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -19,17 +20,38 @@ class OmniwxCurrentWidgetProvider : AppWidgetProvider() {
       val weatherError = weatherResult?.exceptionOrNull()?.shortWidgetMessage()
         ?: OmniwxWidgetData.lastWeatherError(context)
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, weatherError))
+        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, weatherError, appWidgetManager.omniwxWidgetSizeClass(id)))
       }
     }
   }
 
   // RemoteViews is a constrained native view tree: no React components, no
   // arbitrary layout logic at render time, only setting text/bitmaps on XML ids.
-  private fun buildViews(context: Context, place: WidgetPlace?, weather: WidgetWeather?, weatherError: String?): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    place: WidgetPlace?,
+    weather: WidgetWeather?,
+    weatherError: String?,
+    sizeClass: OmniwxWidgetSizeClass,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/"))
       setOnClickPendingIntent(R.id.widget_brand, OmniwxWidgetData.refreshIntent(context))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      setViewVisibility(R.id.widget_high, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_low, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_tertiary, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       if (weather == null) {
         setTextViewText(R.id.widget_title, place?.name ?: "OMNIwx")
         setTextViewText(R.id.widget_primary, "--")

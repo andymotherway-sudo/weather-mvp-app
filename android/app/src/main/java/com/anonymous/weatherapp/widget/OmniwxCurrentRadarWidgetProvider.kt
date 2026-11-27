@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -20,7 +21,10 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
       val weatherError = weatherResult?.exceptionOrNull()?.shortWidgetMessage()
         ?: OmniwxWidgetData.lastWeatherError(context)
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, place, weather, loading = false, weatherError = weatherError))
+        appWidgetManager.updateAppWidget(
+          id,
+          buildViews(context, place, weather, loading = false, weatherError = weatherError, sizeClass = appWidgetManager.omniwxWidgetSizeClass(id)),
+        )
       }
     }
   }
@@ -30,11 +34,16 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
     place: WidgetPlace?,
     weather: WidgetWeather?,
     loading: Boolean,
-    weatherError: String? = null
+    weatherError: String? = null,
+    sizeClass: OmniwxWidgetSizeClass = OmniwxWidgetSizeClass.STANDARD,
   ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_current_radar).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/maps"))
       setOnClickPendingIntent(R.id.widget_refresh, OmniwxWidgetData.refreshIntent(context))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      setViewVisibility(R.id.widget_detail, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_range_line, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       if (loading) {
         setTextViewText(R.id.widget_title, "OMNIwx")
         setTextViewText(R.id.widget_temp, "--")
@@ -82,6 +91,15 @@ class OmniwxCurrentRadarWidgetProvider : AppWidgetProvider() {
       setImageViewBitmap(R.id.widget_icon, OmniwxWidgetData.weatherIconBitmap(weather.weatherCode))
       setImageViewBitmap(R.id.widget_radar, OmniwxWidgetData.radarSnapshotBitmap(weather.place, weather))
     }
+  }
+
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
   }
 
   private fun smartWeatherPhrase(weather: WidgetWeather): String {

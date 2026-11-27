@@ -3,6 +3,7 @@ package com.anonymous.weatherapp.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
@@ -20,14 +21,32 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
       val sky = runCatching { OmniwxWidgetData.fetchSkyScore(context) }.getOrNull()
         ?: place?.let { runCatching { OmniwxWidgetData.skyScore(OmniwxWidgetData.fetchWeather(context, it)) }.getOrNull() }
       appWidgetIds.forEach { id ->
-        appWidgetManager.updateAppWidget(id, buildViews(context, place, sky))
+        appWidgetManager.updateAppWidget(id, buildViews(context, place, sky, appWidgetManager.omniwxWidgetSizeClass(id)))
       }
     }
   }
 
-  private fun buildViews(context: Context, place: WidgetPlace?, sky: WidgetSkyScore?): RemoteViews {
+  override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: android.os.Bundle,
+  ) {
+    onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+  }
+
+  private fun buildViews(
+    context: Context,
+    place: WidgetPlace?,
+    sky: WidgetSkyScore?,
+    sizeClass: OmniwxWidgetSizeClass,
+  ): RemoteViews {
     return RemoteViews(context.packageName, R.layout.omniwx_widget_sky_score).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))
+      val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
+      setViewVisibility(R.id.widget_cloud_grid, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       if (place == null || sky == null) {
         setTextViewText(R.id.widget_title, "SkyScore")
         setTextViewText(R.id.widget_chip, "Space")
