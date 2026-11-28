@@ -4836,8 +4836,8 @@ export default function MapsScreen() {
       setAnimationExportStatus(`Saved ${result.width}x${result.height} MP4`);
     } catch (error: any) {
       const message = error?.message ?? 'The video export failed before it could be saved.';
-      setAnimationExportStatus('Export failed');
-      setAnimationExportProgress({ jobId: '', stage: 'failed', completed: 0, total: 1, message: 'Export failed' });
+      setAnimationExportStatus(message);
+      setAnimationExportProgress({ jobId: '', stage: 'failed', completed: 0, total: 1, message });
     } finally {
       setAnimationExporting(false);
     }

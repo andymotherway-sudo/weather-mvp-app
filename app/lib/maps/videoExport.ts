@@ -184,6 +184,9 @@ export async function exportAnimationVideo(
     : null;
 
   try {
+    // Native resolves this immediately after it has accepted and persisted the
+    // job. Completion arrives through progress events, so Maps can unmount and
+    // JavaScript can be suspended without cancelling downloads or encoding.
     return await nativeExporter.exportAnimation({
       frames,
       title: options.title,

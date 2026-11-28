@@ -1,15 +1,14 @@
 # Google Play Closed Testing Release Notes
 
-Release: **OMNIwx 1.1.296**
-Android version code: **10314**
+Release: **OMNIwx 1.1.297**
+Android version code: **10315**
 Track: **Closed testing / internal testing candidate**
 Date: **November 27, 2026**
 
 ## Play Console Paste Notes
 
-Redesigned the expanded Current + Radar widget with a radar-first dashboard,
-clearer weather controls, and an honest unavailable state when a live radar
-image cannot be loaded.
+Sky Score widget redesign with clearer astronomy data, honest unavailable
+states, and improved video-export reliability.
 
 ## Tester Notes
 
@@ -35,6 +34,10 @@ Please focus on these areas:
   use another tab. Confirm a local notification reports saved or failed when it
   finishes. If notification permission is denied, confirm the in-app result is
   still shown. Force-closing the app is not supported during an active export.
+- Start a five-hour export, then lock the screen or switch to another app.
+  Confirm the visible "Creating OMNIwx video" notification continues updating
+  and that a completion or actionable failure notification arrives without
+  reopening Maps.
 - Test an export with some source frames unavailable. A usable two-thirds
   chronological timeline should save once; sparse timelines must still fail
   clearly rather than replaying frames or producing a flashing loop.
@@ -51,7 +54,9 @@ Please focus on these areas:
 - Add Current Conditions, Current + Radar, Sky Score, and Aviation widgets at
   compact, standard, and expanded launcher sizes. Confirm compact layouts keep
   the primary metric readable, while larger layouts reveal only verified cached
-  detail without clipping at large system font sizes.
+  detail without clipping at large system font sizes. For Sky Score, confirm
+  the score and observing window come from Space data; no score or time window
+  should be invented when that data is unavailable.
 - Resize the Current Conditions widget. Confirm the six-point temperature
   curve starts near the current local hour, and wind, humidity, and dew point
   appear only on the expanded layout. Turn off connectivity and confirm cached

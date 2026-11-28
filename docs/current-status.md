@@ -1,6 +1,6 @@
 # OMNIwx Current Status
 
-Release preparation updated: November 26, 2026 (Arizona time).
+Release preparation updated: November 27, 2026 (Arizona time).
 Infrastructure observations below retain their original verification scope unless noted.
 
 This is the factual operating snapshot. It is not a backlog. For priority and
@@ -8,7 +8,15 @@ sequencing, use [production-readiness-plan.md](production-readiness-plan.md).
 
 ## Product And Release
 
-- Current release candidate: `1.1.291` / Android version code `10309`.
+- Current release candidate: `1.1.297` / Android version code `10315`.
+- This app-only release redesigns the native Sky Score home-screen widget as a
+  compact astronomy instrument across compact, wide, and expanded sizes. It
+  uses only the canonical Space score/cache, never invents a score or a
+  time-specific observing window, and hides the detailed cloud profile when
+  cloud-layer data is unavailable. It also includes the ongoing Android
+  foreground-service work for resilient user-initiated video exports. No Worker
+  deployment, D1 migration, radar publisher change, or production configuration
+  change is part of this release.
 - This app-only export correction draws label-free country, continent, and U.S.
   state boundaries from geographic geometry in the same map projection as the
   imagery. It removes city, ocean, country, and state labels from saved video

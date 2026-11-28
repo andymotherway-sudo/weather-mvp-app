@@ -35,6 +35,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,7 +79,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     total: Int,
     message: String,
   ) {
-    OmniwxVideoExportForegroundService.update(reactContext, message)
+    OmniwxVideoExportForegroundService.update(reactContext, jobId, stage, completed, total, message)
     // Export remains native-side while the user continues using the app. These
     // events only update non-blocking React Native progress UI.
     val payload = Arguments.createMap().apply {
@@ -99,12 +100,13 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     // The Promise is resolved/rejected when this background worker finishes.
     // This call originates from a button press, so Android permits starting
     // foreground work before the user backgrounds the app.
-    OmniwxVideoExportForegroundService.start(reactContext)
+    val jobId = options.optString("jobId", "export-${System.currentTimeMillis()}")
+    OmniwxVideoExportForegroundService.start(reactContext, jobId)
     thread(name = "omniwx-video-export") {
-      val jobId = options.optString("jobId", "export-${System.currentTimeMillis()}")
       var completed = false
       var completionMessage = "No video was saved. Open Maps to try again."
       try {
+        pruneSourceCache()
         val frames = readFrames(options.getArray("frames"))
         if (frames.size < 2) throw IllegalArgumentException("At least two animation frames are required.")
 
@@ -129,24 +131,34 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // export. Source imagery still remains unique to each source timestamp.
         val staticMapLayers = prepareStaticMapLayers(width, height, frames.first())
         val preparedByIndex = arrayOfNulls<PreparedFrame>(frames.size)
+        val diagnosticsByIndex = arrayOfNulls<FramePreparationResult>(frames.size)
         // The protected GeoColor renderer admits two full-disk source decodes
         // at a time. Matching that limit keeps a long, cold export from
         // queueing its own requests until the client-side timeout expires.
         val workerCount = min(2, max(1, Runtime.getRuntime().availableProcessors() / 2))
         val executor = Executors.newFixedThreadPool(workerCount)
         try {
-          val completions = ExecutorCompletionService<Pair<Int, PreparedFrame?>>(executor)
+          val completions = ExecutorCompletionService<FramePreparationResult>(executor)
           frames.forEachIndexed { index, frame ->
             completions.submit(Callable {
-              // A transient bad source must only skip its own timestamp. It
-              // cannot abort an otherwise useful chronological export.
-              index to runCatching { prepareFrame(width, height, frame, staticMapLayers) }.getOrNull()
+              val failures = mutableListOf<String>()
+              val prepared = runCatching { prepareFrame(width, height, frame, staticMapLayers, failures) }
+                .onFailure { failures += "compose:${it.javaClass.simpleName}" }
+                .getOrNull()
+              FramePreparationResult(index, frame.label, prepared, failures.distinct())
             })
           }
           repeat(frames.size) { completed ->
-            val (index, prepared) = completions.take().get()
-            preparedByIndex[index] = prepared
-            emitProgress(jobId, "preparing", completed + 1, frames.size, "Preparing source frames")
+            val result = completions.take().get()
+            preparedByIndex[result.index] = result.prepared
+            diagnosticsByIndex[result.index] = result
+            val detail = if (result.prepared != null) {
+              "Frame ${result.index + 1}/${frames.size} ready: ${result.label}"
+            } else {
+              "Frame ${result.index + 1}/${frames.size} unavailable: ${result.failures.joinToString(", ").ifBlank { "unknown" }}"
+            }
+            android.util.Log.i("OMNIwxVideoExport", detail)
+            emitProgress(jobId, "preparing", completed + 1, frames.size, detail)
           }
         } finally {
           executor.shutdownNow()
@@ -161,9 +173,20 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         // are transiently unavailable, without padding or replaying frames.
         val minimumPreparedFrames = max(3, kotlin.math.ceil(frames.size * (2.0 / 3.0)).toInt())
         if (prepared.size < minimumPreparedFrames) {
+          val failureSummary = diagnosticsByIndex
+            .filterNotNull()
+            .filter { it.prepared == null }
+            .flatMap { it.failures.ifEmpty { listOf("unknown") } }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(3)
+            .joinToString(", ") { "${it.key} x${it.value}" }
           throw IllegalStateException(
             "Only ${prepared.size} of ${frames.size} timeline frames were ready. " +
-              "At least $minimumPreparedFrames ready frames are required for a smooth chronological video."
+              "At least $minimumPreparedFrames ready frames are required for a smooth chronological video. " +
+              "Unavailable sources: ${failureSummary.ifBlank { "unknown" }}."
           )
         }
 
@@ -320,25 +343,27 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     height: Int,
     frame: ExportFrame,
     staticMapLayers: StaticMapLayers,
+    failures: MutableList<String>,
   ): PreparedFrame? {
     val underlayBitmaps = frame.underlayUrls.mapNotNull {
-      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4)
+      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4, failures = failures, purpose = "underlay")
     }
     if (underlayBitmaps.size != frame.underlayUrls.size) {
       underlayBitmaps.forEach { runCatching { it.recycle() } }
       return null
     }
 
-    val tileScene = renderTileScene(width, height, frame, underlayBitmaps, frame.underlayOpacities)
+    val tileScene = renderTileScene(width, height, frame, underlayBitmaps, frame.underlayOpacities, failures)
     underlayBitmaps.forEach { runCatching { it.recycle() } }
 
     val urlBitmaps = frame.urls.mapNotNull {
-      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4)
+      downloadBitmap(it, connectTimeoutMs = 10_000, readTimeoutMs = 35_000, attempts = 4, failures = failures, purpose = "source")
     }
     val sourceBitmaps = listOfNotNull(tileScene) + urlBitmaps
     val expectedCount = frame.urls.size + if (frame.tileTemplate != null) 1 else 0
     val windOnlyFrame = expectedCount == 0 && frame.windSegments.isNotEmpty() && !frame.basemapTemplate.isNullOrBlank()
     if ((!windOnlyFrame && sourceBitmaps.isEmpty()) || sourceBitmaps.size != expectedCount) {
+      if (failures.isEmpty()) failures += "incomplete-layer"
       sourceBitmaps.forEach { runCatching { it.recycle() } }
       return null
     }
@@ -647,6 +672,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     frame: ExportFrame,
     underlays: List<Bitmap> = emptyList(),
     underlayOpacities: List<Double> = emptyList(),
+    failures: MutableList<String>? = null,
   ): Bitmap? {
     val template = frame.tileTemplate ?: return null
     val region = frame.region ?: return null
@@ -682,7 +708,15 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       val opacity = underlayOpacities.getOrNull(index)?.coerceIn(0.0, 1.0) ?: 1.0
       drawBitmapFit(canvas, bitmap, width, height, paint.apply { alpha = (opacity * 255.0).roundToInt() })
     }
-    drawTileTemplateLayer(canvas, width, height, template, region, frame.zoom, ((frame.opacity ?: 0.9) * 255.0).roundToInt())
+    val loadedTiles = drawTileTemplateLayer(
+      canvas, width, height, template, region, frame.zoom,
+      ((frame.opacity ?: 0.9) * 255.0).roundToInt(), failures,
+    )
+    if (loadedTiles == 0) {
+      out.recycle()
+      if (failures?.isEmpty() != false) failures?.add("missing-tile")
+      return null
+    }
     paint.alpha = 255
     return out
   }
@@ -695,8 +729,9 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     region: ExportRegion?,
     zoom: Double?,
     alpha: Int,
-  ) {
-    if (tileTemplate.isNullOrBlank() || region == null) return
+    failures: MutableList<String>? = null,
+  ): Int {
+    if (tileTemplate.isNullOrBlank() || region == null) return 0
     val isLabelOverlay = tileTemplate.contains("only_labels", ignoreCase = true)
     val zBase = (zoom ?: approxZoom(region.longitudeDelta)).roundToInt()
     // Exported place labels look softer and larger than the live map if we
@@ -732,6 +767,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
       this.alpha = alpha.coerceIn(0, 255)
     }
 
+    var loadedTiles = 0
     for (ty in minTileY..maxTileY) {
       for (txRaw in minTileX..maxTileX) {
         val tx = ((txRaw % (1 shl z)) + (1 shl z)) % (1 shl z)
@@ -739,7 +775,15 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           .replace("{z}", z.toString())
           .replace("{x}", tx.toString())
           .replace("{y}", ty.toString())
-        val tile = downloadBitmap(url, connectTimeoutMs = 2_500, readTimeoutMs = 3_500) ?: continue
+        val tile = downloadBitmap(
+          url,
+          connectTimeoutMs = 2_500,
+          readTimeoutMs = 3_500,
+          attempts = 3,
+          failures = failures,
+          purpose = "tile",
+        ) ?: continue
+        loadedTiles += 1
         val left = ((txRaw * tileSize) - leftWorld) * scale
         val top = ((ty * tileSize) - topWorld) * scale
         val dst = RectF(
@@ -752,6 +796,7 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
         tile.recycle()
       }
     }
+    return loadedTiles
   }
 
   private fun drawExportGrid(canvas: Canvas, width: Int, height: Int) {
@@ -966,11 +1011,19 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
     connectTimeoutMs: Int = 12_000,
     readTimeoutMs: Int = 18_000,
     attempts: Int = 1,
+    failures: MutableList<String>? = null,
+    purpose: String = "image",
   ): Bitmap? {
     // Renderer cold starts and transient upstream misses are recoverable. Keep
     // retries limited and sequential so a long satellite export cannot turn
     // into an uncontrolled burst of costly renderer requests.
-    repeat(attempts.coerceIn(1, 3)) { attempt ->
+    val cacheFile = cachedSourceFile(url)
+    if (cacheFile.exists()) {
+      BitmapFactory.decodeFile(cacheFile.absolutePath)?.let { return it }
+      cacheFile.delete()
+      failures?.add("$purpose:decode-cache")
+    }
+    repeat(attempts.coerceIn(1, 4)) { attempt ->
       var conn: HttpURLConnection? = null
       var retryAfterMs = if (attempt == 0) 0L else 1_200L * attempt
       try {
@@ -982,19 +1035,62 @@ class OmniwxVideoExportModule(private val reactContext: ReactApplicationContext)
           setRequestProperty("Accept", "image/png,image/jpeg,image/*")
         }
         val responseCode = conn.responseCode
-        if (responseCode in 200..299) return BitmapFactory.decodeStream(conn.inputStream)
+        if (responseCode in 200..299) {
+          val temp = File(cacheFile.parentFile, "${cacheFile.name}.part")
+          conn.inputStream.use { input -> FileOutputStream(temp).use { output -> input.copyTo(output) } }
+          if (!temp.renameTo(cacheFile)) {
+            temp.copyTo(cacheFile, overwrite = true)
+            temp.delete()
+          }
+          BitmapFactory.decodeFile(cacheFile.absolutePath)?.let { return it }
+          cacheFile.delete()
+          failures?.add("$purpose:decode")
+          return null
+        }
+        failures?.add("$purpose:http-$responseCode")
         if (responseCode !in setOf(408, 429, 500, 502, 503, 504)) return null
         conn.getHeaderField("Retry-After")?.toLongOrNull()?.let { seconds ->
           retryAfterMs = (seconds * 1_000L).coerceIn(1_000L, 5_000L)
         }
-      } catch (_: Exception) {
-        // The bounded retry below handles transient socket and decode failures.
+      } catch (error: Exception) {
+        val category = when (error) {
+          is java.net.SocketTimeoutException -> "timeout"
+          is java.net.UnknownHostException -> "network"
+          else -> "network-${error.javaClass.simpleName.take(32)}"
+        }
+        failures?.add("$purpose:$category")
       } finally {
         conn?.disconnect()
       }
-      if (attempt + 1 < attempts.coerceIn(1, 3)) Thread.sleep(retryAfterMs)
+      if (attempt + 1 < attempts.coerceIn(1, 4)) Thread.sleep(retryAfterMs)
     }
     return null
+  }
+
+  private fun cachedSourceFile(url: String): File {
+    val directory = File(reactContext.cacheDir, "omniwx-video-sources").apply { mkdirs() }
+    val digest = MessageDigest.getInstance("SHA-256")
+      .digest(url.toByteArray(Charsets.UTF_8))
+      .joinToString("") { byte -> "%02x".format(byte) }
+    return File(directory, "$digest.img")
+  }
+
+  // Keep successful source downloads available for retries and a resumed export,
+  // without turning the app cache into an unbounded media archive.
+  private fun pruneSourceCache() {
+    val directory = File(reactContext.cacheDir, "omniwx-video-sources")
+    val files = directory.listFiles()?.toList().orEmpty()
+    val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1_000L
+    files.filter { it.name.endsWith(".part") || it.lastModified() < cutoff }.forEach { it.delete() }
+
+    val retained = directory.listFiles()?.filter { it.isFile }?.sortedBy { it.lastModified() }.orEmpty()
+    var totalBytes = retained.sumOf { it.length() }
+    val maxBytes = 160L * 1024L * 1024L
+    for (file in retained) {
+      if (totalBytes <= maxBytes) break
+      val bytes = file.length()
+      if (file.delete()) totalBytes -= bytes
+    }
   }
 
   private fun downloadText(
@@ -1140,6 +1236,13 @@ private data class WindSegment(
 private data class PreparedFrame(
   val label: String,
   val scene: Bitmap,
+)
+
+private data class FramePreparationResult(
+  val index: Int,
+  val label: String,
+  val prepared: PreparedFrame?,
+  val failures: List<String>,
 )
 
 private data class StaticMapLayers(

@@ -511,46 +511,6 @@ object OmniwxWidgetData {
     }.getOrNull()
   }
 
-  fun skyScore(weather: WidgetWeather): WidgetSkyScore {
-    // Fallback-only Sky Score. Prefer fetchSkyScore(), which reads the canonical
-    // app cache. This keeps the widget useful before the Space tab has refreshed.
-    var score = 86
-    score -= when (weather.weatherCode) {
-      0 -> 0
-      1, 2 -> 8
-      3 -> 20
-      45, 48 -> 30
-      51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82 -> 34
-      71, 73, 75, 77, 85, 86 -> 38
-      95, 96, 99 -> 45
-      else -> 12
-    }
-    if (weather.cloudPct.isFinite()) score -= (weather.cloudPct * 0.42).roundToInt()
-    if (weather.humidityPct.isFinite() && weather.humidityPct > 70) score -= ((weather.humidityPct - 70) * 0.3).roundToInt()
-    if (weather.visibilityMiles.isFinite() && weather.visibilityMiles < 10) score -= ((10 - weather.visibilityMiles) * 2.2).roundToInt()
-    if (weather.gustMph.isFinite() && weather.gustMph > 18) score -= ((weather.gustMph - 18) * 0.7).roundToInt()
-    val clamped = score.coerceIn(0, 100)
-    val label = when {
-      clamped >= 90 -> "Excellent"
-      clamped >= 80 -> "Very Good"
-      clamped >= 65 -> "Good"
-      clamped >= 45 -> "Fair"
-      else -> "Poor"
-    }
-    val bestWindow = if (clamped >= 65) "Best window 9 PM-12 AM" else "Best window limited tonight"
-    return WidgetSkyScore(
-      score = clamped,
-      label = label,
-      bestWindow = bestWindow,
-      bortle = "Bortle unavailable",
-      cloudLow = "--",
-      cloudMid = "--",
-      cloudHigh = "${weather.cloudPct.roundLabel()}%",
-      clouds = "Clouds ${weather.cloudPct.roundLabel()}%",
-      aurora = "Aurora unavailable",
-    )
-  }
-
   fun fetchSkyScore(context: Context): WidgetSkyScore? {
     // Best path: read the Sky Score cache produced by the React Native Space
     // screen. Fallback path: call the worker's astro inspect endpoint so a new
@@ -889,6 +849,52 @@ object OmniwxWidgetData {
       canvas.drawArc(rect, -90f, sweep, false, arc)
     }
     return bitmap
+  }
+
+  /**
+   * Compact, factual cloud-layer instrument for the expanded Sky Score widget.
+   * It draws only the low/mid/high values supplied by the canonical Space cache;
+   * unknown inputs stay visibly unknown rather than being interpolated.
+   */
+  fun skyCloudProfileBitmap(low: String, mid: String, high: String): Bitmap {
+    val bitmap = Bitmap.createBitmap(640, 72, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val labels = listOf("LOW" to low, "MID" to mid, "HIGH" to high)
+    val colors = listOf(Color.rgb(56, 189, 248), Color.rgb(129, 140, 248), Color.rgb(192, 132, 252))
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.rgb(186, 230, 253)
+      textSize = 20f
+      isFakeBoldText = true
+    }
+    val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = Color.WHITE
+      textSize = 21f
+      textAlign = Paint.Align.RIGHT
+      isFakeBoldText = true
+    }
+    labels.forEachIndexed { index, (label, raw) ->
+      val top = 4f + index * 23f
+      val value = raw.filter { it.isDigit() }.toIntOrNull()?.coerceIn(0, 100)
+      canvas.drawText(label, 0f, top + 16f, labelPaint)
+      val track = RectF(74f, top + 2f, 560f, top + 16f)
+      canvas.drawRoundRect(track, 8f, 8f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(58, 148, 163, 184) })
+      if (value != null) {
+        canvas.drawRoundRect(
+          RectF(track.left, track.top, track.left + track.width() * value / 100f, track.bottom),
+          8f,
+          8f,
+          Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors[index] },
+        )
+        canvas.drawText("$value%", 632f, top + 17f, valuePaint)
+      } else {
+        canvas.drawText("--", 632f, top + 17f, valuePaint)
+      }
+    }
+    return bitmap
+  }
+
+  fun hasSkyCloudProfile(low: String, mid: String, high: String): Boolean {
+    return listOf(low, mid, high).any { it.any(Char::isDigit) }
   }
 
   fun fetchSpaceWeather(): WidgetSpaceWeather? = runCatching {
@@ -1812,7 +1818,9 @@ private fun skyScoreFromInspectJson(root: JSONObject): WidgetSkyScore? {
   return WidgetSkyScore(
     score = score.coerceIn(0, 100),
     label = skyQualityLabel(score),
-    bestWindow = skyWindowLine(score, low, mid, high),
+    // The inspect response has a canonical score but no verified hourly window.
+    // Do not turn one inspect snapshot into a made-up observing time.
+    bestWindow = "Open Space for hourly observing window",
     bortle = bortleLine(bortleClass, bortleLabel),
     cloudLow = pctLabel(low),
     cloudMid = pctLabel(mid),
@@ -1948,16 +1956,6 @@ private fun cloudLayerLine(low: Double?, mid: Double?, high: Double?): String {
 
 private fun cloudLayerShort(low: Double?, mid: Double?, high: Double?): String {
   return "Clouds L ${pctLabel(low)} M ${pctLabel(mid)} H ${pctLabel(high)}"
-}
-
-private fun skyWindowLine(score: Int, low: Double?, mid: Double?, high: Double?): String {
-  val worstCloud = listOfNotNull(low, mid, high).filter { it.isFinite() }.maxOrNull()
-  return when {
-    score >= 80 && (worstCloud == null || worstCloud <= 25) -> "Best window favorable tonight"
-    score >= 65 -> "Best window worth checking"
-    score >= 45 -> "Best window limited tonight"
-    else -> "Poor observing window"
-  }
 }
 
 private fun pctLabel(value: Double?): String {

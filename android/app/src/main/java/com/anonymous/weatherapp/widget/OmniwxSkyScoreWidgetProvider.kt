@@ -7,9 +7,8 @@ import android.view.View
 import android.widget.RemoteViews
 import com.anonymous.weatherapp.R
 
-// SkyScore widget. It tries to mirror the Space tab by reading the app's cached
-// sky-score payload first; only if that is missing do we fall back to a rough
-// weather-derived score so the widget never stays empty forever.
+// SkyScore is a canonical astronomy product. Unlike a weather icon, it must
+// never invent an observing score or a "best" time from current conditions.
 class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     OmniwxWidgetScheduler.schedule(context)
@@ -17,9 +16,8 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
     OmniwxWidgetExecutor.execute {
       val place = OmniwxWidgetData.readPlace(context)
       // Cache-first keeps the widget synchronized with the Space screen's
-      // official score instead of inventing a second score on every refresh.
+      // official score. A missing canonical payload is shown as unavailable.
       val sky = runCatching { OmniwxWidgetData.fetchSkyScore(context) }.getOrNull()
-        ?: place?.let { runCatching { OmniwxWidgetData.skyScore(OmniwxWidgetData.fetchWeather(context, it)) }.getOrNull() }
       appWidgetIds.forEach { id ->
         appWidgetManager.updateAppWidget(id, buildViews(context, place, sky, appWidgetManager.omniwxWidgetSizeClass(id)))
       }
@@ -51,21 +49,22 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
     return RemoteViews(context.packageName, layout).apply {
       setOnClickPendingIntent(R.id.widget_root, OmniwxWidgetData.openIntent(context, "/solar"))
       val compact = sizeClass == OmniwxWidgetSizeClass.COMPACT
-      setViewVisibility(R.id.widget_cloud_grid, if (compact) View.GONE else View.VISIBLE)
+      setViewVisibility(R.id.widget_cloud_summary, if (compact) View.GONE else View.VISIBLE)
       setViewVisibility(R.id.widget_divider, if (compact) View.GONE else View.VISIBLE)
       setViewVisibility(R.id.widget_footer, if (compact) View.GONE else View.VISIBLE)
       if (place == null || sky == null) {
         setTextViewText(R.id.widget_title, "SkyScore")
-        setTextViewText(R.id.widget_chip, "Space")
+        setTextViewText(R.id.widget_chip, "ASTRO")
         setTextViewText(R.id.widget_primary, "--")
-        setTextViewText(R.id.widget_secondary, "Quality --")
-        setTextViewText(R.id.widget_best_window, "Open Space to refresh")
-        setTextViewText(R.id.widget_tertiary, "Bortle unavailable")
-        setTextViewText(R.id.widget_cloud_low, "LOW CLOUDS\n--")
-        setTextViewText(R.id.widget_cloud_mid, "MID CLOUDS\n--")
-        setTextViewText(R.id.widget_cloud_high, "HIGH CLOUDS\n--")
-        setTextViewText(R.id.widget_footer, "Updated --")
+        setTextViewText(R.id.widget_secondary, "Astronomy data unavailable")
+        setTextViewText(R.id.widget_best_window, "Open Space to calculate tonight")
+        setTextViewText(R.id.widget_tertiary, "No observing window asserted")
+        setTextViewText(R.id.widget_cloud_summary, "Cloud-layer forecast unavailable")
+        setTextViewText(R.id.widget_footer, "Tap to refresh OMNIwx Space")
         setImageViewBitmap(R.id.widget_score_ring, OmniwxWidgetData.skyScoreRingBitmap(null))
+        if (sizeClass == OmniwxWidgetSizeClass.EXPANDED) {
+          setViewVisibility(R.id.widget_cloud_profile, View.GONE)
+        }
       } else {
         setTextViewText(R.id.widget_title, place.name)
         setTextViewText(R.id.widget_chip, "Space")
@@ -73,11 +72,19 @@ class OmniwxSkyScoreWidgetProvider : AppWidgetProvider() {
         setTextViewText(R.id.widget_secondary, sky.label)
         setTextViewText(R.id.widget_best_window, sky.bestWindow)
         setTextViewText(R.id.widget_tertiary, sky.bortle)
-        setTextViewText(R.id.widget_cloud_low, "LOW CLOUDS\n${sky.cloudLow}")
-        setTextViewText(R.id.widget_cloud_mid, "MID CLOUDS\n${sky.cloudMid}")
-        setTextViewText(R.id.widget_cloud_high, "HIGH CLOUDS\n${sky.cloudHigh}")
+        setTextViewText(R.id.widget_cloud_summary, sky.clouds)
         setTextViewText(R.id.widget_footer, sky.aurora)
         setImageViewBitmap(R.id.widget_score_ring, OmniwxWidgetData.skyScoreRingBitmap(sky.score))
+        if (sizeClass == OmniwxWidgetSizeClass.EXPANDED) {
+          val hasCloudProfile = OmniwxWidgetData.hasSkyCloudProfile(sky.cloudLow, sky.cloudMid, sky.cloudHigh)
+          setViewVisibility(R.id.widget_cloud_profile, if (hasCloudProfile) View.VISIBLE else View.GONE)
+          if (hasCloudProfile) {
+            setImageViewBitmap(
+              R.id.widget_cloud_profile,
+              OmniwxWidgetData.skyCloudProfileBitmap(sky.cloudLow, sky.cloudMid, sky.cloudHigh),
+            )
+          }
+        }
       }
     }
   }
